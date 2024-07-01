@@ -1,6 +1,15 @@
 [package]
 name = "coop"
+description = "nostr client"
 version = "0.1.0"
+authors = ["npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445"]
+repository = "https://github.com/lumehq/coop"
 edition = "2021"
+rust-version = "1.70"
 
 [dependencies]
+gpui = { git = "https://github.com/zed-industries/zed" }
+nostr-sdk = { version = "0.32", features = ["sqlite"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
