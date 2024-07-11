@@ -5,11 +5,26 @@ version = "0.1.0"
 authors = ["npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445"]
 repository = "https://github.com/lumehq/coop"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.75"
 
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed" }
-nostr-sdk = { version = "0.32", features = ["sqlite"] }
+freya = { git = "https://github.com/marc2332/freya" }
+dioxus = { version = "0.5", default-features = false, features = [
+	"macro",
+	"hooks",
+] }
+dioxus-router = "0.5.0"
+dioxus-query = "0.5.1"
+dioxus-radio = "0.2.4"
+nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
+	"sqlite",
+] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+winit = "0.30.3"
+dirs = "5.0"
+itertools = "0.13.0"
+futures = "0.3.30"
+chrono = "0.4.38"
+tracing = "0.1.40"
