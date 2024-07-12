@@ -28,3 +28,5 @@ itertools = "0.13.0"
 futures = "0.3.30"
 chrono = "0.4.38"
 tracing = "0.1.40"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+keyring-search = "1.2.0"

@@ -2,6 +2,30 @@
 // pub static ARROW_DOWN_ICON: &[u8] = include_bytes!("../assets/arrow_down.svg");
 // pub static SEND_ICON: &[u8] = include_bytes!("../assets/send.svg");
 
+pub struct Sizes<'a> {
+	pub xs: &'a str,
+	pub sm: &'a str,
+	pub base: &'a str,
+	pub lg: &'a str,
+	pub xl: &'a str,
+}
+
+pub const SIZES: Sizes<'static> = Sizes {
+	xs: "4",
+	sm: "6",
+	base: "8",
+	lg: "12",
+	xl: "16",
+};
+
+pub struct Smoothing<'a> {
+	pub base: &'a str,
+}
+
+pub const SMOOTHING: Smoothing<'static> = Smoothing {
+	base: "60%",
+};
+
 pub struct Colors<'a> {
 	pub neutral_100: &'a str,
 	pub neutral_200: &'a str,
