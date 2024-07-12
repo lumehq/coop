@@ -1,5 +1,5 @@
 // pub static MENU_ICON: &[u8] = include_bytes!("../assets/menu.svg");
-// pub static ARROW_DOWN_ICON: &[u8] = include_bytes!("../assets/arrow_down.svg");
+pub static ARROW_DOWN_ICON: &[u8] = include_bytes!("../assets/arrow_down.svg");
 // pub static SEND_ICON: &[u8] = include_bytes!("../assets/send.svg");
 
 pub struct Sizes<'a> {

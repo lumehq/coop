@@ -23,7 +23,9 @@ pub fn LoginUser(id: String) -> Element {
 		is_loading.set(true);
 
 		spawn(async move {
-			if let Ok(user) = login(public_key).await { radio.write().current_user = user }
+			if let Ok(user) = login(public_key).await {
+				radio.write().current_user = user;
+			}
 		});
 	};
 
@@ -174,4 +176,72 @@ pub fn LoginUser(id: String) -> Element {
       }
     ),
 	}
+}
+
+#[component]
+pub fn CurrentUser() -> Element {
+	let metadata = use_resource(|| async move { get_profile(None).await });
+
+	rsx!(
+    rect {
+      match &*metadata.read_unchecked() {
+        Some(Ok(profile)) => rsx!(
+          rect {
+						width: "100%",
+						height: "44",
+            padding: "0 12",
+            direction: "horizontal",
+            cross_align: "center",
+            NetworkImage {
+              theme: Some(NetworkImageThemeWith { width: Some(Cow::from("32")), height: Some(Cow::from("32")) }),
+              url: format!("https://wsrv.nl/?url={}&w=200&h=200&fit=cover&mask=circle&output=png", profile.picture.clone().unwrap()).parse::<Url>().unwrap(),
+            },
+            rect {
+              margin: "0 0 0 8",
+              font_weight: "500",
+              direction: "horizontal",
+              cross_align: "center",
+              match &profile.display_name {
+	              Some(display_name) => rsx!(
+	                label {
+	                  "{display_name}"
+	                }
+	              ),
+	              None => rsx!(
+	                rect {
+	                  match &profile.name {
+	                    Some(name) => rsx!(
+	                      label {
+	                        "{name}"
+	                      }
+	                    ),
+	                    None => rsx!(
+	                      label {
+	                        "Anon"
+	                      }
+	                    )
+	                  }
+	                }
+	              )
+	            }
+            }
+          }
+        ),
+        Some(Err(err)) => rsx!(
+          rect {
+            label {
+              "{err}"
+            }
+          }
+        ),
+        None => rsx!(
+          rect {
+            label {
+              "Loading..."
+            }
+          }
+        )
+      }
+    }
+  )
 }

@@ -1,7 +1,7 @@
 use dioxus_router::prelude::Routable;
 use freya::prelude::*;
 
-use crate::commons::get_accounts;
+use crate::common::get_accounts;
 use crate::theme::{COLORS, SIZES, SMOOTHING};
 use crate::ui::components::user::LoginUser;
 

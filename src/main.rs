@@ -11,7 +11,7 @@ use crate::ui::UI;
 mod system;
 mod theme;
 mod ui;
-mod commons;
+mod common;
 
 fn main() {
 	launch_cfg(

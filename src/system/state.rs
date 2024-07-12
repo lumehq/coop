@@ -1,14 +1,11 @@
+use std::fs;
+
 use dirs::config_dir;
 use freya::prelude::*;
 use nostr_sdk::prelude::*;
-use std::fs;
 use tokio::sync::OnceCell;
 
 pub static CLIENT: OnceCell<Client> = OnceCell::const_new();
-
-pub enum ClientAction {
-	NewEvent(UnsignedEvent)
-}
 
 pub async fn get_client() -> &'static Client {
 	CLIENT
