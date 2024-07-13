@@ -8,14 +8,12 @@ edition = "2021"
 rust-version = "1.75"
 
 [dependencies]
-freya = { git = "https://github.com/marc2332/freya" }
+freya = { git = "https://github.com/marc2332/freya", features = ["custom-tokio-rt"] }
 dioxus = { version = "0.5", default-features = false, features = [
 	"macro",
 	"hooks",
 ] }
 dioxus-router = "0.5.0"
-dioxus-query = "0.5.1"
-dioxus-radio = "0.2.4"
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"sqlite",
 ] }

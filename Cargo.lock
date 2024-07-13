@@ -1099,8 +1099,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dioxus",
- "dioxus-query",
- "dioxus-radio",
  "dioxus-router",
  "dirs",
  "freya",
@@ -1479,27 +1477,6 @@ dependencies = [
  "dioxus-html",
  "dioxus-rsx",
  "dioxus-signals",
-]
-
-[[package]]
-name = "dioxus-query"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c84184c06ee2823957aa3ef939da6a04f0ab934f007745eb65dadb105bde241"
-dependencies = [
- "dioxus-lib",
- "futures-util",
- "instant",
-]
-
-[[package]]
-name = "dioxus-radio"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea121893ada21cc848a39e12cd3fb724e922ad2af06c556722d8ddc500d5ee45"
-dependencies = [
- "dioxus-lib",
- "generational-box",
 ]
 
 [[package]]

@@ -5,9 +5,9 @@ use itertools::Itertools;
 use keyring::Entry;
 use nostr_sdk::prelude::*;
 
+use crate::common::is_target;
 use crate::system::state::get_client;
 
-pub mod radio;
 pub mod state;
 
 pub async fn login(public_key: PublicKey) -> Result<String, String> {
@@ -26,7 +26,6 @@ pub async fn login(public_key: PublicKey) -> Result<String, String> {
 	// Set signer
 	client.set_signer(Some(signer)).await;
 
-	let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 	let inbox = Filter::new()
 		.kind(Kind::Custom(10050))
 		.author(public_key)
@@ -49,8 +48,18 @@ pub async fn login(public_key: PublicKey) -> Result<String, String> {
 		}
 	}
 
+	let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
 	if client
-		.reconcile(incoming, NegentropyOptions::default())
+		.reconcile(incoming.clone(), NegentropyOptions::default())
+		.await
+		.is_ok()
+	{
+		println!("Sync done.")
+	}
+
+	if client
+		.subscribe(vec![incoming.limit(0)], None)
 		.await
 		.is_ok()
 	{
@@ -128,4 +137,71 @@ pub async fn get_chats() -> Result<Vec<UnsignedEvent>, String> {
 		}
 		Err(err) => Err(err.to_string()),
 	}
+}
+
+pub async fn get_channel(id: String) {}
+
+pub async fn preload(public_key: PublicKey) {
+	let client = get_client().await;
+	let signer = client.signer().await.unwrap();
+	let receiver_pk = signer.public_key().await.unwrap();
+
+	let messages = Filter::new()
+		.kind(Kind::GiftWrap)
+		.pubkeys(vec![public_key, receiver_pk])
+		.limit(128);
+
+	if client
+		.reconcile(messages, NegentropyOptions::default())
+		.await
+		.is_ok()
+	{
+		println!("preloaded.")
+	}
+}
+
+pub async fn get_chat_messages(sender_pk: PublicKey) -> Result<Vec<UnsignedEvent>, String> {
+	let client = get_client().await;
+	let database = client.database();
+	let signer = client.signer().await.unwrap();
+	let receiver_pk = signer.public_key().await.unwrap();
+
+	let filter = Filter::new()
+		.kind(Kind::GiftWrap)
+		.pubkeys(vec![receiver_pk, sender_pk]);
+
+	let events = match database.query(vec![filter], Order::Desc).await {
+		Ok(events) => {
+			let rumors = stream::iter(events)
+				.filter_map(|ev| async move {
+					match client.unwrap_gift_wrap(&ev).await {
+						Ok(UnwrappedGift { rumor, sender }) => {
+							if rumor.kind == Kind::PrivateDirectMessage {
+								if sender == sender_pk {
+									Some(rumor)
+								} else {
+									match is_target(&sender_pk, &rumor.tags) {
+										true => Some(rumor),
+										false => None,
+									}
+								}
+							} else {
+								None
+							}
+						}
+						Err(_) => None,
+					}
+				})
+				.collect::<Vec<_>>()
+				.await;
+
+			rumors
+				.into_iter()
+				.sorted_by_key(|ev| ev.created_at)
+				.collect::<Vec<_>>()
+		}
+		Err(err) => return Err(err.to_string()),
+	};
+
+	Ok(events)
 }

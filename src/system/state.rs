@@ -2,8 +2,11 @@ use std::fs;
 
 use dirs::config_dir;
 use freya::prelude::*;
-use nostr_sdk::prelude::*;
+use nostr_sdk::{Client, ClientBuilder, RelayOptions, SQLiteDatabase, UnsignedEvent};
 use tokio::sync::OnceCell;
+
+pub static CHATS: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
+pub static CURRENT_USER: GlobalSignal<String> = Signal::global(String::new);
 
 pub static CLIENT: OnceCell<Client> = OnceCell::const_new();
 

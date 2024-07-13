@@ -1,11 +1,10 @@
 use std::str::FromStr;
 
-use dioxus_radio::hooks::use_radio;
 use freya::prelude::*;
 use nostr_sdk::prelude::*;
 
 use crate::system::{get_profile, login};
-use crate::system::radio::{Data, DataChannel};
+use crate::system::state::CURRENT_USER;
 use crate::theme::{COLORS, SIZES, SMOOTHING};
 
 #[component]
@@ -15,7 +14,6 @@ pub fn LoginUser(id: String) -> Element {
     get_profile(Some(&public_key)).await
   }));
 
-	let mut radio = use_radio::<Data, DataChannel>(DataChannel::SetCurrentUser);
 	let mut is_hover = use_signal(|| false);
 	let mut is_loading = use_signal(|| false);
 
@@ -24,7 +22,7 @@ pub fn LoginUser(id: String) -> Element {
 
 		spawn(async move {
 			if let Ok(user) = login(public_key).await {
-				radio.write().current_user = user;
+				*CURRENT_USER.write() = user
 			}
 		});
 	};

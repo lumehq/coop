@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, Duration};
 use keyring_search::{Limit, List, Search};
-use nostr_sdk::Timestamp;
+use nostr_sdk::prelude::*;
 
 pub fn get_accounts() -> Vec<String> {
 	let search = Search::new().expect("Secure Storage is not working.");
@@ -37,4 +37,20 @@ pub fn time_ago(time: Timestamp) -> String {
 	}
 
 	format!("{}d", diff.num_days())
+}
+
+pub fn message_time(time: Timestamp) -> String {
+	let input = DateTime::from_timestamp(time.as_u64() as i64, 0).unwrap();
+	input.format("%H:%M %p").to_string()
+}
+
+pub fn is_target(target: &PublicKey, tags: &Vec<Tag>) -> bool {
+	for tag in tags {
+		if let Some(TagStandard::PublicKey { public_key, .. }) = tag.as_standardized() {
+			if public_key == target {
+				return true;
+			}
+		}
+	}
+	false
 }
