@@ -4,7 +4,7 @@ use nostr_sdk::prelude::*;
 use crate::common::{is_target, message_time, time_ago};
 use crate::system::{get_chats, get_profile, preload};
 use crate::system::state::{CHATS, CURRENT_USER, get_client};
-use crate::theme::{COLORS, SIZES, SMOOTHING};
+use crate::theme::{ARROW_UP_ICON, COLORS, SIZES, SMOOTHING};
 use crate::ui::chats::Chats;
 
 #[component]
@@ -404,6 +404,79 @@ fn MessageTime(created_at: Timestamp) -> Element {
 				font_size: "11",
 	      text_align: "right",
 				"{message_time}"
+			}
+		}
+	)
+}
+
+#[component]
+pub fn MessageForm() -> Element {
+	let arrow_up_icon = static_bytes(ARROW_UP_ICON);
+	let mut value = use_signal(String::new);
+
+	rsx!(
+		rect {
+			width: "100%",
+      direction: "horizontal",
+			main_align: "center",
+			cross_align: "center",
+			Input {
+				theme: Some(InputThemeWith {
+					border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+					background: Some(Cow::Borrowed(COLORS.white)),
+					hover_background: Some(Cow::Borrowed(COLORS.white)),
+					corner_radius: Some(Cow::Borrowed("44")),
+					font_theme: Some(FontThemeWith {
+						color: Some(Cow::Borrowed(COLORS.black)),
+					}),
+					placeholder_font_theme: Some(FontThemeWith {
+						color: Some(Cow::Borrowed(COLORS.neutral_500)),
+					}),
+					margin: Some(Cow::Borrowed("0")),
+					shadow: Some(Cow::Borrowed("none")),
+					width: Some(Cow::Borrowed("calc(100% - 56)")),
+				}),
+				placeholder: "Message...",
+				value: value.read().clone(),
+	      onchange: move |e| {
+	        value.set(e)
+	      }
+			}
+			rect {
+				width: "56",
+				height: "32",
+				main_align: "center",
+				cross_align: "end",
+				Button {
+					onpress: |_| println!("clicked"),
+					theme: Some(ButtonThemeWith {
+						background: Some(Cow::Borrowed(COLORS.neutral_200)),
+						hover_background: Some(Cow::Borrowed(COLORS.neutral_200)),
+						border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+						focus_border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+						corner_radius: Some(Cow::Borrowed("32")),
+						font_theme: Some(FontThemeWith {
+							color: Some(Cow::Borrowed(COLORS.black)),
+						}),
+						width: Some(Cow::Borrowed("44")),
+						height: Some(Cow::Borrowed("32")),
+						margin: Some(Cow::Borrowed("0")),
+						padding: Some(Cow::Borrowed("0")),
+						shadow: Some(Cow::Borrowed("none")),
+					}),
+					rect {
+						width: "44",
+						height: "32",
+						corner_radius: "32",
+						main_align: "center",
+						cross_align: "center",
+						svg {
+	            width: "16",
+	            height: "16",
+	            svg_data: arrow_up_icon,
+	          }
+					}
+				}
 			}
 		}
 	)

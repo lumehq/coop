@@ -205,3 +205,16 @@ pub async fn get_chat_messages(sender_pk: PublicKey) -> Result<Vec<UnsignedEvent
 
 	Ok(events)
 }
+
+pub async fn send_message(
+	receiver: PublicKey,
+	message: String,
+	reply_to: Option<EventId>,
+) -> Result<(), String> {
+	let client = get_client().await;
+
+	match client.send_private_msg(receiver, message, reply_to).await {
+		Ok(_) => Ok(()),
+		Err(err) => Err(err.to_string()),
+	}
+}

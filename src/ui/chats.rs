@@ -8,7 +8,7 @@ use nostr_sdk::prelude::*;
 use crate::system::get_chat_messages;
 use crate::theme::COLORS;
 use crate::ui::components::{Direction, Divider};
-use crate::ui::components::chat::{ChannelList, ChannelMembers, Messages, NewMessages};
+use crate::ui::components::chat::{ChannelList, ChannelMembers, MessageForm, Messages, NewMessages};
 use crate::ui::components::user::CurrentUser;
 
 #[derive(Routable, Clone, PartialEq)]
@@ -73,7 +73,6 @@ pub fn Welcome() -> Element {
 pub fn Channel(id: String) -> Element {
 	let sender = PublicKey::from_hex(id.clone()).unwrap();
 	let messages = use_resource(use_reactive!(|(sender)| async move { get_chat_messages(sender).await }));
-
 	let info_panel = use_signal(|| false);
 
 	rsx!(
@@ -142,7 +141,7 @@ pub fn Channel(id: String) -> Element {
 	      main_align: "center",
 	      cross_align: "center",
 	      direction: "horizontal",
-				// TODO: form
+				MessageForm {}
 			}
     }
 	)
