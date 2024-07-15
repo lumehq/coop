@@ -1,79 +1,97 @@
-use dioxus_router::prelude::{
-	Outlet,
-	Routable,
-};
+use dioxus_router::prelude::Routable;
 use freya::prelude::*;
 use nostr_sdk::prelude::*;
 
-use crate::system::get_chat_messages;
+use crate::system::state::{CHATS, get_client, MESSAGES};
 use crate::theme::COLORS;
 use crate::ui::components::{Direction, Divider};
-use crate::ui::components::chat::{ChannelList, ChannelMembers, MessageForm, Messages, NewMessages};
+use crate::ui::components::chat::{ChannelForm, ChannelList, ChannelMembers, Messages};
 use crate::ui::components::user::CurrentUser;
 
 #[derive(Routable, Clone, PartialEq)]
 #[rustfmt::skip]
 pub enum Chats {
-	// @formatter:off
-	#[layout(Main)]
-		#[route("/")]
-		Welcome,
-		#[route("/:id")]
-		Channel { id: String },
-	#[end_layout]
+	#[route("/")]
+	Main,
 	#[route("/..route")]
 	NotFound,
 }
 
 #[component]
 fn Main() -> Element {
-	rsx!(
-		NativeRouter {
-			rect {
-				content: "fit",
-				height: "100%",
-				direction: "horizontal",
-				rect {
-			        width: "280",
-			        height: "100%",
-			        direction: "vertical",
-					ChannelList {},
-					Divider { background: COLORS.neutral_200, direction: Direction::HORIZONTAL },
-		            rect {
-						width: "100%",
-						height: "44",
-						CurrentUser {}
-		            }
+	let current_channel = use_signal(String::new);
+
+	let mut future = use_future(move || async move {
+		let client = get_client().await;
+
+		client
+			.handle_notifications(|notification| async {
+				if let RelayPoolNotification::Event { event, .. } = notification {
+					if event.kind == Kind::GiftWrap {
+						if let Ok(UnwrappedGift { rumor, sender }) = client.unwrap_gift_wrap(&event).await {
+							let chats = CHATS.read().iter().map(|ev| ev.pubkey).collect::<Vec<_>>();
+
+							if chats.iter().any(|pk| pk == &sender) {
+								MESSAGES.write().push(rumor);
+							} else {
+								CHATS.write().push(rumor);
+							}
+						}
+					}
 				}
-				Divider { background: COLORS.neutral_250, direction: Direction::VERTICAL },
-				rect {
-			        width: "fill-min",
-			        height: "100%",
-			        background: COLORS.white,
-					Outlet::<Chats> {}
+				Ok(false)
+			})
+			.await
+			.expect("TODO: panic message");
+	});
+
+	use_drop(move || {
+		future.cancel();
+	});
+
+	rsx!(
+		rect {
+			content: "fit",
+			height: "100%",
+			direction: "horizontal",
+			rect {
+		        width: "280",
+		        height: "100%",
+		        direction: "vertical",
+				ChannelList { current_channel },
+				Divider { background: COLORS.neutral_200, direction: Direction::HORIZONTAL },
+	            rect {
+					width: "100%",
+					height: "44",
+					CurrentUser {}
 	            }
 			}
+			Divider { background: COLORS.neutral_250, direction: Direction::VERTICAL },
+			rect {
+		        width: "fill-min",
+		        height: "100%",
+		        background: COLORS.white,
+				match current_channel.read().is_empty() {
+					false => rsx!( Channel { current_channel } ),
+					true => rsx!(
+				        rect {
+							width: "100%",
+							height: "100%",
+							main_align: "center",
+							cross_align: "center",
+						}
+					),
+				}
+            }
 		}
 	)
 }
 
 #[component]
-pub fn Welcome() -> Element {
-	rsx!(
-        rect {
-			width: "100%",
-			height: "100%",
-			main_align: "center",
-			cross_align: "center",
-		}
-	)
-}
-
-#[component]
-pub fn Channel(id: String) -> Element {
-	let sender = PublicKey::from_hex(id.clone()).unwrap();
-	let messages = use_resource(use_reactive!(|(sender)| async move { get_chat_messages(sender).await }));
+pub fn Channel(current_channel: Signal<String>) -> Element {
+	let sender = PublicKey::from_hex(current_channel.read().to_string()).unwrap();
 	let info_panel = use_signal(|| false);
+
 	let scroll_controller = use_scroll_controller(|| ScrollConfig {
 		default_vertical_position: ScrollPosition::End,
 		..Default::default()
@@ -91,10 +109,10 @@ pub fn Channel(id: String) -> Element {
 				rect {
 					height: "44",
 					main_align: "center",
-					ChannelMembers { id }
+					ChannelMembers { sender }
 				}
 			},
-			Divider { background: COLORS.neutral_200, direction: Direction::HORIZONTAL }
+			Divider { background: COLORS.neutral_200, direction: Direction::HORIZONTAL },
 			rect {
 				height: "calc(100% - 89)",
 				ScrollView {
@@ -104,26 +122,7 @@ pub fn Channel(id: String) -> Element {
 			        }),
 					show_scrollbar: false,
 					scroll_with_arrows: true,
-					match &*messages.read_unchecked() {
-						Some(Ok(events)) => rsx!(
-				            Messages { events: events.to_owned() }
-							NewMessages { sender }
-				        ),
-						Some(Err(_)) => rsx!(
-			                rect {
-				                label {
-				                    "Error."
-			                    }
-			                }
-				        ),
-						None => rsx!(
-				            rect {
-				                label {
-				                    "Loading..."
-				                }
-				            }
-				        )
-					}
+					Messages { sender }
 				},
 				match info_panel() {
 					true => rsx!(
@@ -138,16 +137,8 @@ pub fn Channel(id: String) -> Element {
 					),
 					false => rsx!( rect {})
 				}
-			}
-			rect {
-				width: "100%",
-				height: "44",
-				padding: "0 12 0 12",
-				main_align: "center",
-				cross_align: "center",
-				direction: "horizontal",
-				MessageForm {}
-			}
+			},
+			ChannelForm { sender }
         }
 	)
 }

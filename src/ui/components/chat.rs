@@ -1,14 +1,25 @@
+use std::cmp::Reverse;
+
 use freya::prelude::*;
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
 use crate::common::{is_target, message_time, time_ago};
-use crate::system::{get_chats, get_profile, preload};
-use crate::system::state::{CHATS, CURRENT_USER, get_client};
+use crate::system::{
+    ensure_inboxes, get_chat_messages, get_chats, get_profile, preload, send_message,
+};
+use crate::system::state::{CHATS, CURRENT_USER, get_client, MESSAGES};
 use crate::theme::{ARROW_UP_ICON, COLORS, SIZES, SMOOTHING};
-use crate::ui::chats::Chats;
 
 #[component]
-pub fn ChannelList() -> Element {
+pub fn ChannelList(current_channel: Signal<String>) -> Element {
+	let chats = use_memo(use_reactive((&CHATS(), ), |(events, )| {
+		events
+			.into_iter()
+			.sorted_by_key(|ev| Reverse(ev.created_at))
+			.collect::<Vec<_>>()
+	}));
+
 	use_future(move || async move {
 		if let Ok(mut events) = get_chats().await {
 			CHATS.write().append(&mut events)
@@ -16,47 +27,157 @@ pub fn ChannelList() -> Element {
 	});
 
 	rsx!(
-		rect {
-			width: "100%",
-			height: "calc(100% - 45)",
-			margin: "44 8 0 8",
-			VirtualScrollView {
-				length: CHATS.read().len(),
-				item_size: 56.0,
-				direction: "vertical",
-				builder: move |index, _: &Option<()>| {
-					let event = &CHATS.read()[index];
-					let pk = event.pubkey;
-					let hex = event.pubkey.to_hex();
+        rect {
+            width: "100%",
+            height: "calc(100% - 45)",
+            margin: "44 8 0 8",
+            VirtualScrollView {
+                length: chats.len(),
+                item_size: 56.0,
+                direction: "vertical",
+                builder: move |index, _: &Option<()>| {
+                    let event = &chats.get(index).unwrap();
+                    let pk = event.pubkey;
+                    let hex = event.pubkey.to_hex();
+                    let is_active = current_channel.read().as_str() == hex;
 
-					rsx! {
-						rect {
-							key: "{hex}",
-							height: "56",
-							main_align: "center",
-							cross_align: "center",
-							Link {
-								to: Chats::Channel { id: hex.clone() },
-								ActivableRoute {
-									route: Chats::Channel { id: hex },
-									exact: true,
-									Item { public_key: pk, created_at: event.created_at }
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	)
+                    rsx! {
+                        rect {
+                            key: "{hex}",
+                            onpointerup: move |_| {
+                                current_channel.write().clone_from(&hex);
+                            },
+                            onmouseenter: move |_| {
+                                spawn(async move {
+                                    preload(pk).await;
+                                });
+                            },
+                            height: "56",
+                            main_align: "center",
+                            cross_align: "center",
+                            Item { public_key: pk, created_at: event.created_at, is_active }
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 #[component]
-pub fn ChannelMembers(id: String) -> Element {
-	let public_key = PublicKey::from_hex(id.clone()).unwrap();
+fn Item(public_key: PublicKey, created_at: Timestamp, is_active: bool) -> Element {
+	let time_ago = time_ago(created_at);
+
 	let metadata = use_resource(use_reactive!(|(public_key)| async move {
         get_profile(Some(&public_key)).await
-	}));
+    }));
+
+	let (background, color, label_color) = match is_active {
+		true => (COLORS.neutral_200, COLORS.blue_500, COLORS.neutral_600),
+		false => ("none", COLORS.black, COLORS.neutral_500),
+	};
+
+	match &*metadata.read_unchecked() {
+		Some(Ok(profile)) => rsx!(
+            rect {
+                background: background,
+                height: "56",
+                content: "fit",
+                corner_radius: SIZES.base,
+                corner_smoothing: SMOOTHING.base,
+                padding: SIZES.base,
+                direction: "horizontal",
+                cross_align: "center",
+                rect {
+                    width: "32",
+                    height: "32",
+                    match &profile.picture {
+                        Some(picture) => rsx!(
+                            NetworkImage {
+                                theme: Some(NetworkImageThemeWith { width: Some(Cow::from("32")), height: Some(Cow::from("32")) }),
+                                url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
+                            }
+                        ),
+                    None => rsx!(
+                        rect {
+                            width: "32",
+                            height: "32",
+                            corner_radius: "32",
+                            background: COLORS.neutral_950
+                        }
+                    )
+                    }
+                }
+                rect {
+                    width: "fill",
+                    cross_align: "center",
+                    direction: "horizontal",
+                    padding: "0 0 0 8",
+                    rect {
+                        color: color,
+                        font_weight: "500",
+                        match &profile.display_name {
+                            Some(display_name) => rsx!(
+                            label {
+                                max_lines: "1",
+                                text_overflow: "ellipsis",
+                                "{display_name}"
+                            }
+                        ),
+                        None => rsx!(
+                            rect {
+                                match &profile.name {
+                                    Some(name) => rsx!(
+                                        label {
+                                            max_lines: "1",
+                                            text_overflow: "ellipsis",
+                                            "{name}"
+                                        }
+                                    ),
+                                    None => rsx!(
+                                            label {
+                                                "Anon"
+                                            }
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    },
+                    rect {
+                        padding: "1 0 0 0",
+                        label {
+                            color: label_color,
+                            font_size: "12",
+                            text_align: "right",
+                            "{time_ago}"
+                        }
+                    }
+                }
+            }
+        ),
+		Some(Err(_)) => rsx!(
+            rect {
+                label {
+                    "Error."
+                }
+            }
+        ),
+		None => rsx!(
+            rect {
+                label {
+                    "Loading..."
+                }
+            }
+        ),
+	}
+}
+
+#[component]
+pub fn ChannelMembers(sender: PublicKey) -> Element {
+	let metadata = use_resource(use_reactive!(|(sender)| async move {
+        get_profile(Some(&sender)).await
+    }));
 
 	let mut is_hover = use_signal(|| false);
 
@@ -71,292 +192,336 @@ pub fn ChannelMembers(id: String) -> Element {
 
 	match &*metadata.read_unchecked() {
 		Some(Ok(profile)) => rsx!(
-			rect {
-				onmouseenter,
+            rect {
+                onmouseenter,
                 onmouseleave,
-		        background: background,
-		        corner_radius: SIZES.sm,
-		        corner_smoothing: SMOOTHING.base,
-		        padding: SIZES.xs,
-		        direction: "horizontal",
-				cross_align: "center",
-				rect {
-					width: "28",
-					height: "28",
-					margin: "0 4 0 0",
-					match &profile.picture {
-						Some(picture) => rsx!(
-							NetworkImage {
-								theme: Some(NetworkImageThemeWith { width: Some(Cow::from("28")), height: Some(Cow::from("28")) }),
-								url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
-							}
-						),
-						None => rsx!(
-							rect {
-								width: "28",
-								height: "28",
-								corner_radius: "28",
-								background: COLORS.neutral_950
-							}
-						)
-					}
-				}
-				rect {
-					match &profile.display_name {
-						Some(display_name) => rsx!(
-							label {
-								"{display_name}"
-							}
-						),
-						None => rsx!(
-							rect {
-								match &profile.name {
-									Some(name) => rsx!(
-										label {
-											"{name}"
-										}
-									),
-									None => rsx!(
-										label {
-											"Anon"
-										}
-									)
-								}
-							}
-						)
-					}
-				}
-			}
-		),
+                background: background,
+                corner_radius: SIZES.sm,
+                corner_smoothing: SMOOTHING.base,
+                padding: SIZES.xs,
+                direction: "horizontal",
+                cross_align: "center",
+                rect {
+                    width: "28",
+                    height: "28",
+                    margin: "0 4 0 0",
+                    match &profile.picture {
+                        Some(picture) => rsx!(
+                            NetworkImage {
+                                theme: Some(NetworkImageThemeWith { width: Some(Cow::from("28")), height: Some(Cow::from("28")) }),
+                                url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
+                            }
+                        ),
+                        None => rsx!(
+                            rect {
+                                width: "28",
+                                height: "28",
+                                corner_radius: "28",
+                                background: COLORS.neutral_950
+                            }
+                        )
+                    }
+                }
+                rect {
+                    match &profile.display_name {
+                        Some(display_name) => rsx!(
+                            label {
+                                "{display_name}"
+                            }
+                        ),
+                        None => rsx!(
+                            rect {
+                                match &profile.name {
+                                    Some(name) => rsx!(
+                                        label {
+                                            "{name}"
+                                        }
+                                    ),
+                                    None => rsx!(
+                                        label {
+                                            "Anon"
+                                        }
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        ),
 		Some(Err(err)) => rsx!(
-			rect {
-				corner_radius: SIZES.sm,
+            rect {
+                corner_radius: SIZES.sm,
                 corner_smoothing: SMOOTHING.base,
                 padding: SIZES.base,
-				width: "100%",
-				direction: "horizontal",
-				cross_align: "center",
-				label {
-					"Cannot load profile: {err}"
-				}
-			}
-		),
+                width: "100%",
+                direction: "horizontal",
+                cross_align: "center",
+                label {
+                    "Cannot load profile: {err}"
+                }
+            }
+        ),
 		None => rsx!(
-			rect {
-				corner_radius: SIZES.sm,
-				corner_smoothing: SMOOTHING.base,
-				padding: SIZES.base,
-				width: "100%",
-				content: "fit",
-				direction: "horizontal",
-				cross_align: "center",
-				rect {
-					margin: "0 4 0 0",
-					width: "28",
-					height: "28",
-					corner_radius: "28",
-					background: COLORS.neutral_200
-				}
-				rect {
-					width: "60",
-					height: "10",
-					corner_radius: "2",
-					background: COLORS.neutral_200,
-				}
-			}
-		),
+            rect {
+                corner_radius: SIZES.sm,
+                corner_smoothing: SMOOTHING.base,
+                padding: SIZES.base,
+                width: "100%",
+                content: "fit",
+                direction: "horizontal",
+                cross_align: "center",
+                rect {
+                    margin: "0 4 0 0",
+                    width: "28",
+                    height: "28",
+                    corner_radius: "28",
+                    background: COLORS.neutral_200
+                }
+                rect {
+                    width: "60",
+                    height: "10",
+                    corner_radius: "2",
+                    background: COLORS.neutral_200,
+                }
+            }
+        ),
 	}
 }
 
 #[component]
-fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
-	let time_ago = time_ago(created_at);
-	let is_active = use_activable_route();
-
-	let metadata = use_resource(use_reactive!(|(public_key)| async move {
-		get_profile(Some(&public_key)).await
+pub fn ChannelForm(sender: PublicKey) -> Element {
+	let arrow_up_icon = static_bytes(ARROW_UP_ICON);
+	let ensure_inboxes = use_resource(use_reactive((&sender, ), |(pk, )| async move {
+		ensure_inboxes(pk).await
 	}));
 
-	let (background, color, label_color) = match is_active {
-		true => (COLORS.neutral_200, COLORS.blue_500, COLORS.neutral_600),
-		false => ("none", COLORS.black, COLORS.neutral_500),
-	};
+	let mut value = use_signal(String::new);
 
-	let onmouseenter = move |_| {
-		tokio::spawn(async move {
-			let _ = preload(public_key).await;
-		});
-	};
+	match &*ensure_inboxes.read_unchecked() {
+		Some(true) => rsx!(
+            rect {
+                width: "100%",
+                height: "44",
+                padding: "0 12 0 12",
+                main_align: "center",
+                cross_align: "center",
+                direction: "horizontal",
+                rect {
+                    width: "100%",
+                    direction: "horizontal",
+                    main_align: "center",
+                    cross_align: "center",
+                    Input {
+                        theme: Some(InputThemeWith {
+                            border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+                            background: Some(Cow::Borrowed(COLORS.white)),
+                            hover_background: Some(Cow::Borrowed(COLORS.white)),
+                            corner_radius: Some(Cow::Borrowed("44")),
+                            font_theme: Some(FontThemeWith {
+                                color: Some(Cow::Borrowed(COLORS.black)),
+                            }),
+                            placeholder_font_theme: Some(FontThemeWith {
+                                color: Some(Cow::Borrowed(COLORS.neutral_500)),
+                            }),
+                            margin: Some(Cow::Borrowed("0")),
+                            shadow: Some(Cow::Borrowed("none")),
+                            width: Some(Cow::Borrowed("calc(100% - 56)")),
+                        }),
+                        placeholder: "Message...",
+                        value: value.read().clone(),
+                        onchange: move |e| {
+                            value.set(e)
+                        }
+                    }
+                    rect {
+                        width: "56",
+                        height: "32",
+                        main_align: "center",
+                        cross_align: "end",
+                        Button {
+                            onpress: move |_| {
+                                spawn(async move {
+                                    let message = value.read().to_string();
 
-	match &*metadata.read_unchecked() {
-		Some(Ok(profile)) => rsx!(
-			rect {
-		        onmouseenter,
-		        background: background,
-		        height: "56",
-		        content: "fit",
-		        corner_radius: SIZES.base,
-		        corner_smoothing: SMOOTHING.base,
-		        padding: SIZES.base,
-		        direction: "horizontal",
-		        cross_align: "center",
-				rect {
-					width: "32",
-					height: "32",
-					match &profile.picture {
-						Some(picture) => rsx!(
-							NetworkImage {
-								theme: Some(NetworkImageThemeWith { width: Some(Cow::from("32")), height: Some(Cow::from("32")) }),
-								url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
-							}
-						),
-					None => rsx!(
-						rect {
-							width: "32",
-							height: "32",
-							corner_radius: "32",
-							background: COLORS.neutral_950
-						}
-					)
-					}
-				}
-				rect {
-					width: "fill",
-					cross_align: "center",
-					direction: "horizontal",
-					padding: "0 0 0 8",
-					rect {
-			            color: color,
-			            font_weight: "500",
-						match &profile.display_name {
-							Some(display_name) => rsx!(
-							label {
-								max_lines: "1",
-								text_overflow: "ellipsis",
-								"{display_name}"
-							}
-						),
-						None => rsx!(
-							rect {
-								match &profile.name {
-									Some(name) => rsx!(
-										label {
-											max_lines: "1",
-											text_overflow: "ellipsis",
-											"{name}"
-										}
-									),
-									None => rsx!(
-											label {
-												"Anon"
-											}
-										)
-									}
-								}
-							)
-						}
-					},
-					rect {
-						padding: "1 0 0 0",
-						label {
-							color: label_color,
-							font_size: "12",
-							text_align: "right",
-							"{time_ago}"
-						}
-					}
-				}
-			}
-		),
-		Some(Err(_)) => rsx!(
-			rect {
-				label {
-					"Error."
-				}
-			}
-		),
+                                    if message.is_empty() {
+                                        return;
+                                    };
+
+                                    if let Ok(event) = send_message(sender, message).await {
+                                        MESSAGES.write().push(event);
+                                        value.set(String::new())
+                                    };
+                                });
+                            },
+                            theme: Some(ButtonThemeWith {
+                                background: Some(Cow::Borrowed(COLORS.neutral_200)),
+                                hover_background: Some(Cow::Borrowed(COLORS.neutral_400)),
+                                border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+                                focus_border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+                                corner_radius: Some(Cow::Borrowed("32")),
+                                font_theme: Some(FontThemeWith {
+                                    color: Some(Cow::Borrowed(COLORS.black)),
+                                }),
+                                width: Some(Cow::Borrowed("44")),
+                                height: Some(Cow::Borrowed("32")),
+                                margin: Some(Cow::Borrowed("0")),
+                                padding: Some(Cow::Borrowed("0")),
+                                shadow: Some(Cow::Borrowed("none")),
+                            }),
+                            rect {
+                                width: "44",
+                                height: "32",
+                                corner_radius: "32",
+                                main_align: "center",
+                                cross_align: "center",
+                                svg {
+                                    width: "16",
+                                    height: "16",
+                                    svg_data: arrow_up_icon,
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ),
+		Some(false) => rsx!(
+            rect {
+                width: "100%",
+                height: "44",
+                main_align: "center",
+                cross_align: "center",
+                rect {
+                    height: "28",
+                    background: COLORS.neutral_100,
+                    padding: SIZES.sm,
+                    corner_radius: "32",
+                    main_align: "center",
+                    cross_align: "center",
+                    label {
+                        font_size: "12",
+                        "This user isn't have inbox relays, you cannot send message."
+                    }
+                }
+            }
+        ),
 		None => rsx!(
-			rect {
-				label {
-					"Loading..."
-				}
-			}
-		),
+            rect {
+                width: "100%",
+                height: "44",
+                main_align: "center",
+                cross_align: "center",
+                rect {
+                    height: "28",
+                    background: COLORS.neutral_100,
+                    padding: SIZES.sm,
+                    corner_radius: "32",
+                    main_align: "center",
+                    cross_align: "center",
+                    label {
+                        font_size: "12",
+                        "Connecting to inbox relays..."
+                    }
+                }
+            }
+        )
 	}
 }
 
 #[component]
-pub fn Messages(events: Vec<UnsignedEvent>) -> Element {
-	rsx!(
-        for (index, event) in events.iter().enumerate() {
-			rect {
-				key: "{index}",
-				width: "100%",
-				margin: "8 0 8 0",
-				rect {
-					width: "100%",
-					padding: "0 8 0 8",
-					direction: "horizontal",
-					cross_align: "center",
-					MessageContent { public_key: event.pubkey.to_hex(), content: event.content.clone() }
-					MessageTime { created_at: event.created_at }
-				}
-			}
-		}
-	)
-}
+pub fn Messages(sender: PublicKey) -> Element {
+	let messages = use_resource(use_reactive!(|(sender)| async move {
+        get_chat_messages(sender).await
+    }));
 
-#[component]
-pub fn NewMessages(sender: PublicKey) -> Element {
-	let new_messages = use_signal::<Vec<UnsignedEvent>>(Vec::new);
+	let new_messages = use_memo(use_reactive((&sender, ), |(sender, )| {
+		let receiver = PublicKey::from_hex(CURRENT_USER.read().as_str()).unwrap();
+		MESSAGES
+			.read()
+			.clone()
+			.into_iter()
+			.filter_map(|ev| {
+				if is_target(&sender, &ev.tags) || is_target(&receiver, &ev.tags) {
+					Some(ev)
+				} else {
+					None
+				}
+			})
+			.collect::<Vec<_>>()
+	}));
 
 	use_future(move || async move {
 		let client = get_client().await;
-		let signer = client.signer().await.unwrap();
-		let receiver = signer.public_key().await.unwrap();
-		let id = SubscriptionId::new(format!("{}_{}", sender.to_hex(), receiver.to_hex()));
+		let subscription_id = SubscriptionId::new(format!("channel_{}", sender.to_hex()));
 
-		let messages = Filter::new()
-			.kind(Kind::GiftWrap)
-			.pubkeys(vec![sender, receiver])
-			.limit(0);
+		let messages = Filter::new().kind(Kind::GiftWrap).pubkey(sender).limit(0);
 
-		if client.subscribe_with_id(id, vec![messages], None).await.is_ok() {
-			client
-				.handle_notifications(|notification| async {
-					if let RelayPoolNotification::Event { event, .. } = notification {
-						if event.kind == Kind::GiftWrap {
-							if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(&event).await {
-								if rumor.kind == Kind::PrivateDirectMessage && is_target(&receiver, &rumor.tags) {
-									new_messages.write_unchecked().push(rumor)
-								}
-							}
-						}
-					}
-					Ok(false)
-				})
-				.await
-				.expect("TODO: panic message");
-		}
+		client
+			.subscribe_with_id(subscription_id, vec![messages], None)
+			.await
+			.expect("TODO: panic message");
+	});
+
+	use_drop(move || {
+		spawn(async move {
+			let client = get_client().await;
+			let subscription_id = SubscriptionId::new(format!("channel_{}", sender.to_hex()));
+
+			client.unsubscribe(subscription_id).await;
+		});
 	});
 
 	rsx!(
-		for (index, event) in new_messages.read().iter().enumerate() {
-			rect {
-				key: "{index}",
-				width: "100%",
-				margin: "8 0 8 0",
-				rect {
-					width: "100%",
-					padding: "0 8 0 8",
-					direction: "horizontal",
-					cross_align: "center",
-					MessageContent { public_key: event.pubkey.to_hex(), content: event.content.clone() }
-					MessageTime { created_at: event.created_at }
-				}
-			}
-		}
-	)
+        match &*messages.read_unchecked() {
+            Some(Ok(events)) => rsx!(
+                for (index, event) in events.iter().enumerate() {
+                    rect {
+                        key: "{index}",
+                        width: "100%",
+                        margin: "8 0 8 0",
+                        rect {
+                            width: "100%",
+                            padding: "0 8 0 8",
+                            direction: "horizontal",
+                            cross_align: "center",
+                            MessageContent { public_key: event.pubkey.to_hex(), content: event.content.clone() }
+                            MessageTime { created_at: event.created_at }
+                        }
+                    }
+                }
+            ),
+            Some(Err(_)) => rsx!(
+                rect {
+                    label {
+                        "Error."
+                    }
+                }
+            ),
+            None => rsx!(
+                rect {
+                    label {
+                        "Loading..."
+                    }
+                }
+            )
+        }
+        for (index, event) in new_messages.read().iter().enumerate() {
+            rect {
+                key: "{index}",
+                width: "100%",
+                margin: "8 0 8 0",
+                rect {
+                    width: "100%",
+                    padding: "0 8 0 8",
+                    direction: "horizontal",
+                    cross_align: "center",
+                    MessageContent { public_key: event.pubkey.to_hex(), content: event.content.clone() }
+                    MessageTime { created_at: event.created_at }
+                }
+            }
+        }
+    )
 }
 
 #[component]
@@ -365,26 +530,26 @@ fn MessageContent(public_key: String, content: String) -> Element {
 
 	let (align, radius, background, color) = match is_self {
 		true => ("end", "24 8 24 24", COLORS.blue_500, COLORS.white),
-		false => ("start", "24 24 8 24", COLORS.neutral_100, COLORS.black)
+		false => ("start", "24 24 8 24", COLORS.neutral_100, COLORS.black),
 	};
 
 	rsx!(
-		rect {
-			width: "calc(100% - 64)",
-			cross_align: align,
-			rect {
-				corner_radius: radius,
-				corner_smoothing: SMOOTHING.base,
-				background: background,
-				padding: "10 12 10 12",
-				label {
-					color: color,
-					line_height: "1.5",
-					"{content}"
-				}
-			}
-		}
-	)
+        rect {
+            width: "calc(100% - 64)",
+            cross_align: align,
+            rect {
+                corner_radius: radius,
+                corner_smoothing: SMOOTHING.base,
+                background: background,
+                padding: "10 12 10 12",
+                label {
+                    color: color,
+                    line_height: "1.5",
+                    "{content}"
+                }
+            }
+        }
+    )
 }
 
 #[component]
@@ -392,87 +557,14 @@ fn MessageTime(created_at: Timestamp) -> Element {
 	let message_time = message_time(created_at);
 
 	rsx!(
-		rect {
-			width: "64",
-			label {
-				color: COLORS.neutral_600,
-				font_size: "11",
-	            text_align: "right",
-				"{message_time}"
-			}
-		}
-	)
-}
-
-#[component]
-pub fn MessageForm() -> Element {
-	let arrow_up_icon = static_bytes(ARROW_UP_ICON);
-	let mut value = use_signal(String::new);
-
-	rsx!(
-		rect {
-			width: "100%",
-            direction: "horizontal",
-			main_align: "center",
-			cross_align: "center",
-			Input {
-				theme: Some(InputThemeWith {
-					border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
-					background: Some(Cow::Borrowed(COLORS.white)),
-					hover_background: Some(Cow::Borrowed(COLORS.white)),
-					corner_radius: Some(Cow::Borrowed("44")),
-					font_theme: Some(FontThemeWith {
-						color: Some(Cow::Borrowed(COLORS.black)),
-					}),
-					placeholder_font_theme: Some(FontThemeWith {
-						color: Some(Cow::Borrowed(COLORS.neutral_500)),
-					}),
-					margin: Some(Cow::Borrowed("0")),
-					shadow: Some(Cow::Borrowed("none")),
-					width: Some(Cow::Borrowed("calc(100% - 56)")),
-				}),
-				placeholder: "Message...",
-				value: value.read().clone(),
-				onchange: move |e| {
-					value.set(e)
-				}
-			}
-			rect {
-				width: "56",
-				height: "32",
-				main_align: "center",
-				cross_align: "end",
-				Button {
-					onpress: |_| println!("clicked"),
-					theme: Some(ButtonThemeWith {
-						background: Some(Cow::Borrowed(COLORS.neutral_200)),
-						hover_background: Some(Cow::Borrowed(COLORS.neutral_200)),
-						border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
-						focus_border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
-						corner_radius: Some(Cow::Borrowed("32")),
-						font_theme: Some(FontThemeWith {
-							color: Some(Cow::Borrowed(COLORS.black)),
-						}),
-						width: Some(Cow::Borrowed("44")),
-						height: Some(Cow::Borrowed("32")),
-						margin: Some(Cow::Borrowed("0")),
-						padding: Some(Cow::Borrowed("0")),
-						shadow: Some(Cow::Borrowed("none")),
-					}),
-					rect {
-						width: "44",
-						height: "32",
-						corner_radius: "32",
-						main_align: "center",
-						cross_align: "center",
-						svg {
-				            width: "16",
-				            height: "16",
-				            svg_data: arrow_up_icon,
-						}
-					}
-				}
-			}
-		}
-	)
+        rect {
+            width: "64",
+            label {
+                color: COLORS.neutral_600,
+                font_size: "11",
+                text_align: "right",
+                "{message_time}"
+            }
+        }
+    )
 }

@@ -6,6 +6,7 @@ use nostr_sdk::{Client, ClientBuilder, RelayOptions, SQLiteDatabase, UnsignedEve
 use tokio::sync::OnceCell;
 
 pub static CHATS: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
+pub static MESSAGES: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
 pub static CURRENT_USER: GlobalSignal<String> = Signal::global(String::new);
 
 pub static CLIENT: OnceCell<Client> = OnceCell::const_new();
