@@ -16,52 +16,47 @@ pub fn ChannelList() -> Element {
 	});
 
 	rsx!(
-    rect {
-      width: "100%",
-      height: "calc(100% - 45)",
-      margin: "44 8 0 8",
-      VirtualScrollView {
-        length: CHATS.read().len(),
-        item_size: 56.0,
-        direction: "vertical",
-        builder: move |index, _: &Option<()>| {
-          let event = &CHATS.read()[index];
-          let pk = event.pubkey;
-          let hex = event.pubkey.to_hex();
+		rect {
+			width: "100%",
+			height: "calc(100% - 45)",
+			margin: "44 8 0 8",
+			VirtualScrollView {
+				length: CHATS.read().len(),
+				item_size: 56.0,
+				direction: "vertical",
+				builder: move |index, _: &Option<()>| {
+					let event = &CHATS.read()[index];
+					let pk = event.pubkey;
+					let hex = event.pubkey.to_hex();
 
-          rsx! {
-            rect {
-              key: "{hex}",
-              height: "56",
-              main_align: "center",
-              cross_align: "center",
-              onmouseenter: move |_| {
-                spawn(async move {
-                  // TODO: preload messages
-                });
-              },
-              Link {
-                to: Chats::Channel { id: hex.clone() },
-                ActivableRoute {
-                  route: Chats::Channel { id: hex },
-                  exact: true,
-                  Item { public_key: pk, created_at: event.created_at }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  )
+					rsx! {
+						rect {
+							key: "{hex}",
+							height: "56",
+							main_align: "center",
+							cross_align: "center",
+							Link {
+								to: Chats::Channel { id: hex.clone() },
+								ActivableRoute {
+									route: Chats::Channel { id: hex },
+									exact: true,
+									Item { public_key: pk, created_at: event.created_at }
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	)
 }
 
 #[component]
 pub fn ChannelMembers(id: String) -> Element {
 	let public_key = PublicKey::from_hex(id.clone()).unwrap();
 	let metadata = use_resource(use_reactive!(|(public_key)| async move {
-    get_profile(Some(&public_key)).await
-  }));
+        get_profile(Some(&public_key)).await
+	}));
 
 	let mut is_hover = use_signal(|| false);
 
@@ -76,100 +71,100 @@ pub fn ChannelMembers(id: String) -> Element {
 
 	match &*metadata.read_unchecked() {
 		Some(Ok(profile)) => rsx!(
-      rect {
-        onmouseenter,
-        onmouseleave,
-        background: background,
-        corner_radius: SIZES.sm,
-        corner_smoothing: SMOOTHING.base,
-        padding: SIZES.xs,
-        direction: "horizontal",
+			rect {
+				onmouseenter,
+                onmouseleave,
+		        background: background,
+		        corner_radius: SIZES.sm,
+		        corner_smoothing: SMOOTHING.base,
+		        padding: SIZES.xs,
+		        direction: "horizontal",
 				cross_align: "center",
 				rect {
-          width: "28",
-          height: "28",
-          margin: "0 4 0 0",
-          match &profile.picture {
-            Some(picture) => rsx!(
-              NetworkImage {
-                theme: Some(NetworkImageThemeWith { width: Some(Cow::from("28")), height: Some(Cow::from("28")) }),
-                url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
-              }
-            ),
-            None => rsx!(
-              rect {
-                width: "28",
-                height: "28",
-                corner_radius: "28",
-                background: COLORS.neutral_950
-              }
-            )
-          }
-        }
-        rect {
-          match &profile.display_name {
-            Some(display_name) => rsx!(
-              label {
-                "{display_name}"
-              }
-            ),
-            None => rsx!(
-              rect {
-                match &profile.name {
-                  Some(name) => rsx!(
-                    label {
-                      "{name}"
-                    }
-                  ),
-                  None => rsx!(
-                    label {
-                      "Anon"
-                    }
-                  )
-                }
-              }
-            )
-          }
-        }
-      }
-    ),
+					width: "28",
+					height: "28",
+					margin: "0 4 0 0",
+					match &profile.picture {
+						Some(picture) => rsx!(
+							NetworkImage {
+								theme: Some(NetworkImageThemeWith { width: Some(Cow::from("28")), height: Some(Cow::from("28")) }),
+								url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
+							}
+						),
+						None => rsx!(
+							rect {
+								width: "28",
+								height: "28",
+								corner_radius: "28",
+								background: COLORS.neutral_950
+							}
+						)
+					}
+				}
+				rect {
+					match &profile.display_name {
+						Some(display_name) => rsx!(
+							label {
+								"{display_name}"
+							}
+						),
+						None => rsx!(
+							rect {
+								match &profile.name {
+									Some(name) => rsx!(
+										label {
+											"{name}"
+										}
+									),
+									None => rsx!(
+										label {
+											"Anon"
+										}
+									)
+								}
+							}
+						)
+					}
+				}
+			}
+		),
 		Some(Err(err)) => rsx!(
-      rect {
+			rect {
 				corner_radius: SIZES.sm,
-        corner_smoothing: SMOOTHING.base,
-        padding: SIZES.base,
+                corner_smoothing: SMOOTHING.base,
+                padding: SIZES.base,
 				width: "100%",
 				direction: "horizontal",
-			  cross_align: "center",
-        label {
-          "Cannot load profile: {err}"
-        }
-      }
-    ),
+				cross_align: "center",
+				label {
+					"Cannot load profile: {err}"
+				}
+			}
+		),
 		None => rsx!(
-      rect {
-        corner_radius: SIZES.sm,
-        corner_smoothing: SMOOTHING.base,
-        padding: SIZES.base,
+			rect {
+				corner_radius: SIZES.sm,
+				corner_smoothing: SMOOTHING.base,
+				padding: SIZES.base,
 				width: "100%",
 				content: "fit",
 				direction: "horizontal",
-			  cross_align: "center",
+				cross_align: "center",
 				rect {
 					margin: "0 4 0 0",
-          width: "28",
-          height: "28",
-          corner_radius: "28",
-          background: COLORS.neutral_200
-        }
+					width: "28",
+					height: "28",
+					corner_radius: "28",
+					background: COLORS.neutral_200
+				}
 				rect {
-          width: "60",
-          height: "10",
-          corner_radius: "2",
-          background: COLORS.neutral_200,
-        }
-      }
-    ),
+					width: "60",
+					height: "10",
+					corner_radius: "2",
+					background: COLORS.neutral_200,
+				}
+			}
+		),
 	}
 }
 
@@ -179,8 +174,8 @@ fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
 	let is_active = use_activable_route();
 
 	let metadata = use_resource(use_reactive!(|(public_key)| async move {
-    get_profile(Some(&public_key)).await
-  }));
+		get_profile(Some(&public_key)).await
+	}));
 
 	let (background, color, label_color) = match is_active {
 		true => (COLORS.neutral_200, COLORS.blue_500, COLORS.neutral_600),
@@ -195,105 +190,105 @@ fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
 
 	match &*metadata.read_unchecked() {
 		Some(Ok(profile)) => rsx!(
-      rect {
-        onmouseenter,
-        background: background,
-        height: "56",
-        content: "fit",
-        corner_radius: SIZES.base,
-        corner_smoothing: SMOOTHING.base,
-        padding: SIZES.base,
-        direction: "horizontal",
-        cross_align: "center",
-        rect {
-          width: "32",
-          height: "32",
-          match &profile.picture {
-            Some(picture) => rsx!(
-              NetworkImage {
-                theme: Some(NetworkImageThemeWith { width: Some(Cow::from("32")), height: Some(Cow::from("32")) }),
-                url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
-              }
-            ),
-            None => rsx!(
-              rect {
-                width: "32",
-                height: "32",
-                corner_radius: "32",
-                background: COLORS.neutral_950
-              }
-            )
-          }
-        }
-        rect {
-          width: "fill",
-          cross_align: "center",
-          direction: "horizontal",
-          padding: "0 0 0 8",
-          rect {
-            color: color,
-            font_weight: "500",
-            match &profile.display_name {
-              Some(display_name) => rsx!(
-                label {
-                  max_lines: "1",
-                  text_overflow: "ellipsis",
-                  "{display_name}"
-                }
-              ),
-              None => rsx!(
-                rect {
-                  match &profile.name {
-                    Some(name) => rsx!(
-                      label {
-                        max_lines: "1",
-                        text_overflow: "ellipsis",
-                        "{name}"
-                      }
-                    ),
-                    None => rsx!(
-                      label {
-                        "Anon"
-                      }
-                    )
-                  }
-                }
-              )
-            }
-          },
-          rect {
-            padding: "1 0 0 0",
-            label {
-              color: label_color,
-              font_size: "12",
-              text_align: "right",
-              "{time_ago}"
-            }
-          }
-        }
-      }
-    ),
+			rect {
+		        onmouseenter,
+		        background: background,
+		        height: "56",
+		        content: "fit",
+		        corner_radius: SIZES.base,
+		        corner_smoothing: SMOOTHING.base,
+		        padding: SIZES.base,
+		        direction: "horizontal",
+		        cross_align: "center",
+				rect {
+					width: "32",
+					height: "32",
+					match &profile.picture {
+						Some(picture) => rsx!(
+							NetworkImage {
+								theme: Some(NetworkImageThemeWith { width: Some(Cow::from("32")), height: Some(Cow::from("32")) }),
+								url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
+							}
+						),
+					None => rsx!(
+						rect {
+							width: "32",
+							height: "32",
+							corner_radius: "32",
+							background: COLORS.neutral_950
+						}
+					)
+					}
+				}
+				rect {
+					width: "fill",
+					cross_align: "center",
+					direction: "horizontal",
+					padding: "0 0 0 8",
+					rect {
+			            color: color,
+			            font_weight: "500",
+						match &profile.display_name {
+							Some(display_name) => rsx!(
+							label {
+								max_lines: "1",
+								text_overflow: "ellipsis",
+								"{display_name}"
+							}
+						),
+						None => rsx!(
+							rect {
+								match &profile.name {
+									Some(name) => rsx!(
+										label {
+											max_lines: "1",
+											text_overflow: "ellipsis",
+											"{name}"
+										}
+									),
+									None => rsx!(
+											label {
+												"Anon"
+											}
+										)
+									}
+								}
+							)
+						}
+					},
+					rect {
+						padding: "1 0 0 0",
+						label {
+							color: label_color,
+							font_size: "12",
+							text_align: "right",
+							"{time_ago}"
+						}
+					}
+				}
+			}
+		),
 		Some(Err(_)) => rsx!(
-      rect {
-        label {
-          "Error."
-        }
-      }
-    ),
+			rect {
+				label {
+					"Error."
+				}
+			}
+		),
 		None => rsx!(
-      rect {
-        label {
-          "Loading..."
-        }
-      }
-    ),
+			rect {
+				label {
+					"Loading..."
+				}
+			}
+		),
 	}
 }
 
 #[component]
 pub fn Messages(events: Vec<UnsignedEvent>) -> Element {
 	rsx!(
-    for (index, event) in events.iter().enumerate() {
+        for (index, event) in events.iter().enumerate() {
 			rect {
 				key: "{index}",
 				width: "100%",
@@ -308,7 +303,7 @@ pub fn Messages(events: Vec<UnsignedEvent>) -> Element {
 				}
 			}
 		}
-  )
+	)
 }
 
 #[component]
@@ -346,7 +341,7 @@ pub fn NewMessages(sender: PublicKey) -> Element {
 	});
 
 	rsx!(
-    for (index, event) in new_messages.read().iter().enumerate() {
+		for (index, event) in new_messages.read().iter().enumerate() {
 			rect {
 				key: "{index}",
 				width: "100%",
@@ -361,7 +356,7 @@ pub fn NewMessages(sender: PublicKey) -> Element {
 				}
 			}
 		}
-  )
+	)
 }
 
 #[component]
@@ -402,7 +397,7 @@ fn MessageTime(created_at: Timestamp) -> Element {
 			label {
 				color: COLORS.neutral_600,
 				font_size: "11",
-	      text_align: "right",
+	            text_align: "right",
 				"{message_time}"
 			}
 		}
@@ -417,7 +412,7 @@ pub fn MessageForm() -> Element {
 	rsx!(
 		rect {
 			width: "100%",
-      direction: "horizontal",
+            direction: "horizontal",
 			main_align: "center",
 			cross_align: "center",
 			Input {
@@ -438,9 +433,9 @@ pub fn MessageForm() -> Element {
 				}),
 				placeholder: "Message...",
 				value: value.read().clone(),
-	      onchange: move |e| {
-	        value.set(e)
-	      }
+				onchange: move |e| {
+					value.set(e)
+				}
 			}
 			rect {
 				width: "56",
@@ -471,10 +466,10 @@ pub fn MessageForm() -> Element {
 						main_align: "center",
 						cross_align: "center",
 						svg {
-	            width: "16",
-	            height: "16",
-	            svg_data: arrow_up_icon,
-	          }
+				            width: "16",
+				            height: "16",
+				            svg_data: arrow_up_icon,
+						}
 					}
 				}
 			}

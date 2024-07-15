@@ -39,11 +39,11 @@ fn main() {
 
 fn app() -> Element {
 	rsx!(
-    rect {
-      width: "100%",
-      height: "100%",
-      font_size: "14",
-      UI {}
-    }
+		rect {
+			width: "100%",
+			height: "100%",
+			font_size: "14",
+			UI {}
+		}
   )
 }

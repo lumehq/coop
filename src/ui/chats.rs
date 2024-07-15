@@ -31,27 +31,27 @@ fn Main() -> Element {
 		NativeRouter {
 			rect {
 				content: "fit",
-	      height: "100%",
-	      direction: "horizontal",
+				height: "100%",
+				direction: "horizontal",
 				rect {
-	        width: "280",
-	        height: "100%",
-	        direction: "vertical",
+			        width: "280",
+			        height: "100%",
+			        direction: "vertical",
 					ChannelList {},
 					Divider { background: COLORS.neutral_200, direction: Direction::HORIZONTAL },
-	        rect {
-	          width: "100%",
-	          height: "44",
+		            rect {
+						width: "100%",
+						height: "44",
 						CurrentUser {}
-	        }
-        }
+		            }
+				}
 				Divider { background: COLORS.neutral_250, direction: Direction::VERTICAL },
 				rect {
-	        width: "fill-min",
-	        height: "100%",
-	        background: COLORS.white,
+			        width: "fill-min",
+			        height: "100%",
+			        background: COLORS.white,
 					Outlet::<Chats> {}
-	      }
+	            }
 			}
 		}
 	)
@@ -60,12 +60,12 @@ fn Main() -> Element {
 #[component]
 pub fn Welcome() -> Element {
 	rsx!(
-    rect {
+        rect {
 			width: "100%",
-      height: "100%",
-      main_align: "center",
-      cross_align: "center",
-    }
+			height: "100%",
+			main_align: "center",
+			cross_align: "center",
+		}
 	)
 }
 
@@ -74,11 +74,15 @@ pub fn Channel(id: String) -> Element {
 	let sender = PublicKey::from_hex(id.clone()).unwrap();
 	let messages = use_resource(use_reactive!(|(sender)| async move { get_chat_messages(sender).await }));
 	let info_panel = use_signal(|| false);
+	let scroll_controller = use_scroll_controller(|| ScrollConfig {
+		default_vertical_position: ScrollPosition::End,
+		..Default::default()
+	});
 
 	rsx!(
-    rect {
+	    rect {
 			width: "100%",
-      height: "100%",
+	        height: "100%",
 			rect {
 				width: "100%",
 				height: "44",
@@ -94,30 +98,31 @@ pub fn Channel(id: String) -> Element {
 			rect {
 				height: "calc(100% - 89)",
 				ScrollView {
+					scroll_controller,
 					theme: theme_with!(ScrollViewTheme {
-		        height: "100%".into(),
-		      }),
+			            height: "100%".into(),
+			        }),
 					show_scrollbar: false,
 					scroll_with_arrows: true,
 					match &*messages.read_unchecked() {
 						Some(Ok(events)) => rsx!(
-				      Messages { events: events.to_owned() }
+				            Messages { events: events.to_owned() }
 							NewMessages { sender }
-				    ),
+				        ),
 						Some(Err(_)) => rsx!(
-				      rect {
-				        label {
-				          "Error."
-				        }
-				      }
-				    ),
+			                rect {
+				                label {
+				                    "Error."
+			                    }
+			                }
+				        ),
 						None => rsx!(
-				      rect {
-				        label {
-				          "Loading..."
-				        }
-				      }
-				    )
+				            rect {
+				                label {
+				                    "Loading..."
+				                }
+				            }
+				        )
 					}
 				},
 				match info_panel() {
@@ -135,21 +140,21 @@ pub fn Channel(id: String) -> Element {
 				}
 			}
 			rect {
-	      width: "100%",
-	      height: "44",
-	      padding: "0 12 0 12",
-	      main_align: "center",
-	      cross_align: "center",
-	      direction: "horizontal",
+				width: "100%",
+				height: "44",
+				padding: "0 12 0 12",
+				main_align: "center",
+				cross_align: "center",
+				direction: "horizontal",
 				MessageForm {}
 			}
-    }
+        }
 	)
 }
 
 #[component]
 fn NotFound() -> Element {
 	rsx!(
-    rect {}
+        rect {}
 	)
 }
