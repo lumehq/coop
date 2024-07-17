@@ -10,6 +10,7 @@ pub static CHATS: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
 pub static MESSAGES: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
 pub static INBOXES: GlobalSignal<HashMap<PublicKey, Vec<String>>> = Signal::global(HashMap::new);
 pub static CURRENT_USER: GlobalSignal<String> = Signal::global(String::new);
+pub static CONTACT_LIST: GlobalSignal<Vec<Contact>> = Signal::global(Vec::new);
 
 pub static CLIENT: OnceCell<Client> = OnceCell::const_new();
 

@@ -1,4 +1,5 @@
-// pub static MENU_ICON: &[u8] = include_bytes!("../assets/menu.svg");
+pub static PLUS_ICON: &[u8] = include_bytes!("../assets/plus.svg");
+pub static GRID_ICON: &[u8] = include_bytes!("../assets/grid.svg");
 pub static ARROW_DOWN_ICON: &[u8] = include_bytes!("../assets/arrow_down.svg");
 pub static ARROW_UP_ICON: &[u8] = include_bytes!("../assets/arrow_up.svg");
 

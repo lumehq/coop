@@ -248,11 +248,16 @@ pub async fn get_inboxes(public_key: PublicKey) -> Result<Vec<String>, ()> {
 	Ok(relays)
 }
 
-pub async fn send_message(receiver: PublicKey, message: String) -> Result<UnsignedEvent, ()> {
+pub async fn send_message(receiver: PublicKey, message: String, relays: Vec<String>) -> Result<UnsignedEvent, ()> {
 	let client = get_client().await;
 	let signer = client.signer().await.unwrap();
 	let public_key = signer.public_key().await.unwrap();
 
+	for relay in relays.iter() {
+		let _ = client.connect_relay(relay).await;
+	}
+
+	// TODO: send message to inbox relays only.
 	match client
 		.send_private_msg(receiver, message.clone(), None)
 		.await

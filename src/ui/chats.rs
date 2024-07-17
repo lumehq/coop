@@ -3,9 +3,9 @@ use freya::prelude::*;
 use nostr_sdk::prelude::*;
 
 use crate::system::state::{CHATS, get_client, INBOXES, MESSAGES};
-use crate::theme::COLORS;
+use crate::theme::{COLORS, GRID_ICON, PLUS_ICON};
 use crate::ui::components::{Direction, Divider};
-use crate::ui::components::chat::{ChannelForm, ChannelList, ChannelMembers, Messages};
+use crate::ui::components::chat::{ChannelForm, ChannelList, ChannelMembers, Messages, NewMessagePopup};
 use crate::ui::components::user::CurrentUser;
 
 #[derive(Routable, Clone, PartialEq)]
@@ -23,6 +23,10 @@ pub enum Chats {
 
 #[component]
 fn Main() -> Element {
+	let grid_icon = static_bytes(GRID_ICON);
+	let plus_icon = static_bytes(PLUS_ICON);
+
+	let mut show_popup = use_signal(|| false);
 	let mut future = use_future(move || async move {
 		let client = get_client().await;
 		client
@@ -53,6 +57,7 @@ fn Main() -> Element {
 	});
 
 	rsx!(
+		NewMessagePopup { show_popup }
         rect {
             content: "fit",
             height: "100%",
@@ -61,7 +66,69 @@ fn Main() -> Element {
                 width: "280",
                 height: "100%",
                 direction: "vertical",
-                ChannelList {},
+				rect {
+					height: "calc(100% - 45)",
+					padding: "0 8",
+					rect {
+						width: "100%",
+						height: "44",
+						direction: "horizontal",
+						main_align: "space-between",
+						cross_align: "center",
+						rect {}
+						rect {
+							direction: "horizontal",
+							main_align: "center",
+							cross_align: "center",
+							Link {
+								to: Chats::Welcome,
+								rect {
+		                            width: "24",
+		                            height: "24",
+		                            main_align: "center",
+		                            cross_align: "center",
+									margin: "0 8 0 0",
+		                            svg {
+		                                width: "16",
+		                                height: "16",
+		                                svg_data: grid_icon,
+		                            }
+		                        }
+							}
+							Button {
+				                onpress: move |_| show_popup.set(true),
+				                theme: Some(ButtonThemeWith {
+		                            background: Some(Cow::Borrowed(COLORS.neutral_200)),
+		                            hover_background: Some(Cow::Borrowed(COLORS.neutral_400)),
+		                            border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+		                            focus_border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+		                            corner_radius: Some(Cow::Borrowed("24 8 24 24")),
+		                            font_theme: Some(FontThemeWith {
+		                                color: Some(Cow::Borrowed(COLORS.black)),
+		                            }),
+		                            width: Some(Cow::Borrowed("44")),
+		                            height: Some(Cow::Borrowed("24")),
+		                            margin: Some(Cow::Borrowed("0")),
+		                            padding: Some(Cow::Borrowed("0")),
+		                            shadow: Some(Cow::Borrowed("none")),
+		                        }),
+		                        rect {
+		                            width: "44",
+		                            height: "24",
+		                            corner_radius: "24 8 24 24",
+		                            main_align: "center",
+		                            cross_align: "center",
+		                            svg {
+		                                width: "16",
+		                                height: "16",
+		                                svg_data: plus_icon,
+		                            }
+		                        }
+				            }
+						}
+					}
+	                ChannelList {},
+				}
                 Divider { background: COLORS.neutral_200, direction: Direction::HORIZONTAL },
                 rect {
                     width: "100%",

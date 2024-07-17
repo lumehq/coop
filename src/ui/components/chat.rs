@@ -1,14 +1,55 @@
 use std::cmp::Reverse;
+use std::time::Duration;
 
 use freya::prelude::*;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
-use crate::common::{is_target, message_time, time_ago};
+use crate::common::{is_target, message_time, time_ago, use_debounce};
 use crate::system::{get_chat_messages, get_chats, get_inboxes, get_profile, preload, send_message};
-use crate::system::state::{CHATS, CURRENT_USER, get_client, INBOXES, MESSAGES};
+use crate::system::state::{CHATS, CONTACT_LIST, CURRENT_USER, get_client, INBOXES, MESSAGES};
 use crate::theme::{ARROW_UP_ICON, COLORS, SIZES, SMOOTHING};
 use crate::ui::chats::Chats;
+
+#[component]
+pub fn NewMessagePopup(show_popup: Signal<bool>) -> Element {
+	use_future(|| async move {
+		let client = get_client().await;
+
+		if let Ok(mut list) = client.get_contact_list(None).await {
+			CONTACT_LIST.write().append(&mut list);
+		};
+	});
+
+	rsx!(
+		if *show_popup.read() {
+            Popup {
+                oncloserequest: move |_| {
+                    show_popup.set(false)
+                },
+                PopupTitle {
+                    label {
+                        "New message"
+                    }
+                }
+                PopupContent {
+                    VirtualScrollView {
+			            length: CONTACT_LIST.read().len(),
+			            item_size: 56.0,
+			            direction: "vertical",
+			            builder: move |index, _: &Option<()>| {
+			                let contact = &CONTACT_LIST.read()[index];
+		
+			                rsx! {
+			                    ListItem { public_key: contact.public_key, created_at: None }
+			                }
+			            }
+			        }
+                }
+            }
+        }
+	)
+}
 
 #[component]
 pub fn ChannelList() -> Element {
@@ -27,60 +68,59 @@ pub fn ChannelList() -> Element {
 
 	rsx!(
         NativeRouter {
-            rect {
-                width: "100%",
-                height: "calc(100% - 45)",
-                margin: "44 8 0 8",
-                VirtualScrollView {
-                    length: chats.len(),
-                    item_size: 56.0,
-                    direction: "vertical",
-                    builder: move |index, _: &Option<()>| {
-                        let event = &chats.get(index).unwrap();
-                        let pk = event.pubkey;
-                        let hex = event.pubkey.to_hex();
+            VirtualScrollView {
+	            length: chats.len(),
+	            item_size: 56.0,
+	            direction: "vertical",
+	            builder: move |index, _: &Option<()>| {
+	                let event = &chats.get(index).unwrap();
+	                let pk = event.pubkey;
+	                let hex = event.pubkey.to_hex();
 
-                        rsx! {
-                            Link {
-                                to: Chats::Channel { hex: hex.clone() },
-                                ActivableRoute {
-                                    route: Chats::Channel { hex },
-                                    exact: true,
-                                    Item { public_key: pk, created_at: event.created_at }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+	                rsx! {
+	                    Link {
+	                        to: Chats::Channel { hex: hex.clone() },
+	                        ActivableRoute {
+	                            route: Chats::Channel { hex },
+	                            exact: true,
+	                            ListItem { public_key: pk, created_at: Some(event.created_at) }
+	                        }
+	                    }
+	                }
+	            }
+	        }
         }
     )
 }
 
 #[component]
-fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
+fn ListItem(public_key: PublicKey, created_at: Option<Timestamp>) -> Element {
 	let is_active = use_activable_route();
 	let metadata = use_resource(use_reactive!(|(public_key)| async move {
         get_profile(Some(&public_key)).await
     }));
+
+	let mut debounce = use_debounce(Duration::from_millis(500), move |pk| {
+		spawn(async move {
+			if let Ok(relays) = get_inboxes(pk).await {
+				INBOXES.write().insert(pk, relays);
+				preload(public_key).await;
+			};
+		});
+	});
 
 	let (background, color, label_color) = match is_active {
 		true => (COLORS.neutral_200, COLORS.blue_500, COLORS.neutral_600),
 		false => ("none", COLORS.black, COLORS.neutral_500),
 	};
 
-	let time_ago = time_ago(created_at);
+	let time_ago = created_at.map(time_ago);
 
 	match &*metadata.read_unchecked() {
 		Some(Ok(profile)) => rsx!(
             rect {
                 onmouseenter: move |_| {
-                    spawn(async move {
-                        if let Ok(relays) = get_inboxes(public_key).await {
-                            INBOXES.write().insert(public_key, relays);
-                            preload(public_key).await;
-                        };
-                    });
+					debounce.action(public_key)
                 },
                 background: background,
                 height: "56",
@@ -105,7 +145,7 @@ fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
                             width: "32",
                             height: "32",
                             corner_radius: "32",
-                            background: COLORS.neutral_950
+                            background: "linear-gradient(90deg, #9FCCFA 0%, #0974F1 100%)",
                         }
                     )
                     }
@@ -146,15 +186,20 @@ fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
                             )
                         }
                     },
-                    rect {
-                        padding: "1 0 0 0",
-                        label {
-                            color: label_color,
-                            font_size: "12",
-                            text_align: "right",
-                            "{time_ago}"
-                        }
-                    }
+                    match time_ago {
+						Some(t) => rsx!(
+							rect {
+		                        padding: "1 0 0 0",
+		                        label {
+		                            color: label_color,
+		                            font_size: "12",
+		                            text_align: "right",
+		                            "{t}"
+		                        }
+		                    }
+						),
+						None => rsx!( rect {} )
+					}
                 }
             }
         ),
@@ -204,21 +249,21 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
                 direction: "horizontal",
                 cross_align: "center",
                 rect {
-                    width: "28",
-                    height: "28",
+                    width: "24",
+                    height: "24",
                     margin: "0 4 0 0",
                     match &profile.picture {
                         Some(picture) => rsx!(
                             NetworkImage {
-                                theme: Some(NetworkImageThemeWith { width: Some(Cow::from("28")), height: Some(Cow::from("28")) }),
+                                theme: Some(NetworkImageThemeWith { width: Some(Cow::from("24")), height: Some(Cow::from("24")) }),
                                 url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
                             }
                         ),
                         None => rsx!(
                             rect {
-                                width: "28",
-                                height: "28",
-                                corner_radius: "28",
+                                width: "24",
+                                height: "24",
+                                corner_radius: "24",
                                 background: COLORS.neutral_950
                             }
                         )
@@ -275,8 +320,8 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
                 cross_align: "center",
                 rect {
                     margin: "0 4 0 0",
-                    width: "28",
-                    height: "28",
+                    width: "24",
+                    height: "24",
                     corner_radius: "28",
                     background: COLORS.neutral_200
                 }
@@ -292,10 +337,25 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
 }
 
 #[component]
-pub fn ChannelForm(sender: PublicKey, relays: Vec<String>) -> Element {
+pub fn ChannelForm(sender: PublicKey, relays: ReadOnlySignal<Vec<String>>) -> Element {
 	let arrow_up_icon = static_bytes(ARROW_UP_ICON);
 
 	let mut value = use_signal(String::new);
+
+	let onpress = move |_| {
+		spawn(async move {
+			let message = value.read().to_string();
+
+			if message.is_empty() {
+				return;
+			};
+
+			if let Ok(event) = send_message(sender, message, relays()).await {
+				MESSAGES.write().push(event);
+				value.set(String::new())
+			};
+		});
+	};
 
 	rsx!(
         rect {
@@ -338,20 +398,7 @@ pub fn ChannelForm(sender: PublicKey, relays: Vec<String>) -> Element {
                     main_align: "center",
                     cross_align: "end",
                     Button {
-                        onpress: move |_| {
-                            spawn(async move {
-                                let message = value.read().to_string();
-
-                                if message.is_empty() {
-                                    return;
-                                };
-
-                                if let Ok(event) = send_message(sender, message).await {
-                                    MESSAGES.write().push(event);
-                                    value.set(String::new())
-                                };
-                            });
-                        },
+                        onpress,
                         theme: Some(ButtonThemeWith {
                             background: Some(Cow::Borrowed(COLORS.neutral_200)),
                             hover_background: Some(Cow::Borrowed(COLORS.neutral_400)),
