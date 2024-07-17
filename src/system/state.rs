@@ -1,12 +1,14 @@
+use std::collections::HashMap;
 use std::fs;
 
 use dirs::config_dir;
 use freya::prelude::*;
-use nostr_sdk::{Client, ClientBuilder, RelayOptions, SQLiteDatabase, UnsignedEvent};
+use nostr_sdk::prelude::*;
 use tokio::sync::OnceCell;
 
 pub static CHATS: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
 pub static MESSAGES: GlobalSignal<Vec<UnsignedEvent>> = Signal::global(Vec::new);
+pub static INBOXES: GlobalSignal<HashMap<PublicKey, Vec<String>>> = Signal::global(HashMap::new);
 pub static CURRENT_USER: GlobalSignal<String> = Signal::global(String::new);
 
 pub static CLIENT: OnceCell<Client> = OnceCell::const_new();

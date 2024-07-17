@@ -5,14 +5,13 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
 use crate::common::{is_target, message_time, time_ago};
-use crate::system::{
-    ensure_inboxes, get_chat_messages, get_chats, get_profile, preload, send_message,
-};
-use crate::system::state::{CHATS, CURRENT_USER, get_client, MESSAGES};
+use crate::system::{get_chat_messages, get_chats, get_inboxes, get_profile, preload, send_message};
+use crate::system::state::{CHATS, CURRENT_USER, get_client, INBOXES, MESSAGES};
 use crate::theme::{ARROW_UP_ICON, COLORS, SIZES, SMOOTHING};
+use crate::ui::chats::Chats;
 
 #[component]
-pub fn ChannelList(current_channel: Signal<String>) -> Element {
+pub fn ChannelList() -> Element {
 	let chats = use_memo(use_reactive((&CHATS(), ), |(events, )| {
 		events
 			.into_iter()
@@ -27,35 +26,29 @@ pub fn ChannelList(current_channel: Signal<String>) -> Element {
 	});
 
 	rsx!(
-        rect {
-            width: "100%",
-            height: "calc(100% - 45)",
-            margin: "44 8 0 8",
-            VirtualScrollView {
-                length: chats.len(),
-                item_size: 56.0,
-                direction: "vertical",
-                builder: move |index, _: &Option<()>| {
-                    let event = &chats.get(index).unwrap();
-                    let pk = event.pubkey;
-                    let hex = event.pubkey.to_hex();
-                    let is_active = current_channel.read().as_str() == hex;
+        NativeRouter {
+            rect {
+                width: "100%",
+                height: "calc(100% - 45)",
+                margin: "44 8 0 8",
+                VirtualScrollView {
+                    length: chats.len(),
+                    item_size: 56.0,
+                    direction: "vertical",
+                    builder: move |index, _: &Option<()>| {
+                        let event = &chats.get(index).unwrap();
+                        let pk = event.pubkey;
+                        let hex = event.pubkey.to_hex();
 
-                    rsx! {
-                        rect {
-                            key: "{hex}",
-                            onpointerup: move |_| {
-                                current_channel.write().clone_from(&hex);
-                            },
-                            onmouseenter: move |_| {
-                                spawn(async move {
-                                    preload(pk).await;
-                                });
-                            },
-                            height: "56",
-                            main_align: "center",
-                            cross_align: "center",
-                            Item { public_key: pk, created_at: event.created_at, is_active }
+                        rsx! {
+                            Link {
+                                to: Chats::Channel { hex: hex.clone() },
+                                ActivableRoute {
+                                    route: Chats::Channel { hex },
+                                    exact: true,
+                                    Item { public_key: pk, created_at: event.created_at }
+                                }
+                            }
                         }
                     }
                 }
@@ -65,9 +58,8 @@ pub fn ChannelList(current_channel: Signal<String>) -> Element {
 }
 
 #[component]
-fn Item(public_key: PublicKey, created_at: Timestamp, is_active: bool) -> Element {
-	let time_ago = time_ago(created_at);
-
+fn Item(public_key: PublicKey, created_at: Timestamp) -> Element {
+	let is_active = use_activable_route();
 	let metadata = use_resource(use_reactive!(|(public_key)| async move {
         get_profile(Some(&public_key)).await
     }));
@@ -77,9 +69,19 @@ fn Item(public_key: PublicKey, created_at: Timestamp, is_active: bool) -> Elemen
 		false => ("none", COLORS.black, COLORS.neutral_500),
 	};
 
+	let time_ago = time_ago(created_at);
+
 	match &*metadata.read_unchecked() {
 		Some(Ok(profile)) => rsx!(
             rect {
+                onmouseenter: move |_| {
+                    spawn(async move {
+                        if let Ok(relays) = get_inboxes(public_key).await {
+                            INBOXES.write().insert(public_key, relays);
+                            preload(public_key).await;
+                        };
+                    });
+                },
                 background: background,
                 height: "56",
                 content: "fit",
@@ -290,143 +292,98 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
 }
 
 #[component]
-pub fn ChannelForm(sender: PublicKey) -> Element {
+pub fn ChannelForm(sender: PublicKey, relays: Vec<String>) -> Element {
 	let arrow_up_icon = static_bytes(ARROW_UP_ICON);
-	let ensure_inboxes = use_resource(use_reactive((&sender, ), |(pk, )| async move {
-		ensure_inboxes(pk).await
-	}));
 
 	let mut value = use_signal(String::new);
 
-	match &*ensure_inboxes.read_unchecked() {
-		Some(true) => rsx!(
+	rsx!(
+        rect {
+            width: "100%",
+            height: "44",
+            padding: "0 12 0 12",
+            main_align: "center",
+            cross_align: "center",
+            direction: "horizontal",
             rect {
                 width: "100%",
-                height: "44",
-                padding: "0 12 0 12",
+                direction: "horizontal",
                 main_align: "center",
                 cross_align: "center",
-                direction: "horizontal",
+                Input {
+                    theme: Some(InputThemeWith {
+                        border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+                        background: Some(Cow::Borrowed(COLORS.white)),
+                        hover_background: Some(Cow::Borrowed(COLORS.white)),
+                        corner_radius: Some(Cow::Borrowed("44")),
+                        font_theme: Some(FontThemeWith {
+                            color: Some(Cow::Borrowed(COLORS.black)),
+                        }),
+                        placeholder_font_theme: Some(FontThemeWith {
+                            color: Some(Cow::Borrowed(COLORS.neutral_500)),
+                        }),
+                        margin: Some(Cow::Borrowed("0")),
+                        shadow: Some(Cow::Borrowed("none")),
+                        width: Some(Cow::Borrowed("calc(100% - 56)")),
+                    }),
+                    placeholder: "Message...",
+                    value: value.read().clone(),
+                    onchange: move |e| {
+                        value.set(e)
+                    }
+                }
                 rect {
-                    width: "100%",
-                    direction: "horizontal",
+                    width: "56",
+                    height: "32",
                     main_align: "center",
-                    cross_align: "center",
-                    Input {
-                        theme: Some(InputThemeWith {
+                    cross_align: "end",
+                    Button {
+                        onpress: move |_| {
+                            spawn(async move {
+                                let message = value.read().to_string();
+
+                                if message.is_empty() {
+                                    return;
+                                };
+
+                                if let Ok(event) = send_message(sender, message).await {
+                                    MESSAGES.write().push(event);
+                                    value.set(String::new())
+                                };
+                            });
+                        },
+                        theme: Some(ButtonThemeWith {
+                            background: Some(Cow::Borrowed(COLORS.neutral_200)),
+                            hover_background: Some(Cow::Borrowed(COLORS.neutral_400)),
                             border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
-                            background: Some(Cow::Borrowed(COLORS.white)),
-                            hover_background: Some(Cow::Borrowed(COLORS.white)),
-                            corner_radius: Some(Cow::Borrowed("44")),
+                            focus_border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
+                            corner_radius: Some(Cow::Borrowed("32")),
                             font_theme: Some(FontThemeWith {
                                 color: Some(Cow::Borrowed(COLORS.black)),
                             }),
-                            placeholder_font_theme: Some(FontThemeWith {
-                                color: Some(Cow::Borrowed(COLORS.neutral_500)),
-                            }),
+                            width: Some(Cow::Borrowed("44")),
+                            height: Some(Cow::Borrowed("32")),
                             margin: Some(Cow::Borrowed("0")),
+                            padding: Some(Cow::Borrowed("0")),
                             shadow: Some(Cow::Borrowed("none")),
-                            width: Some(Cow::Borrowed("calc(100% - 56)")),
                         }),
-                        placeholder: "Message...",
-                        value: value.read().clone(),
-                        onchange: move |e| {
-                            value.set(e)
-                        }
-                    }
-                    rect {
-                        width: "56",
-                        height: "32",
-                        main_align: "center",
-                        cross_align: "end",
-                        Button {
-                            onpress: move |_| {
-                                spawn(async move {
-                                    let message = value.read().to_string();
-
-                                    if message.is_empty() {
-                                        return;
-                                    };
-
-                                    if let Ok(event) = send_message(sender, message).await {
-                                        MESSAGES.write().push(event);
-                                        value.set(String::new())
-                                    };
-                                });
-                            },
-                            theme: Some(ButtonThemeWith {
-                                background: Some(Cow::Borrowed(COLORS.neutral_200)),
-                                hover_background: Some(Cow::Borrowed(COLORS.neutral_400)),
-                                border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
-                                focus_border_fill: Some(Cow::Borrowed(COLORS.neutral_200)),
-                                corner_radius: Some(Cow::Borrowed("32")),
-                                font_theme: Some(FontThemeWith {
-                                    color: Some(Cow::Borrowed(COLORS.black)),
-                                }),
-                                width: Some(Cow::Borrowed("44")),
-                                height: Some(Cow::Borrowed("32")),
-                                margin: Some(Cow::Borrowed("0")),
-                                padding: Some(Cow::Borrowed("0")),
-                                shadow: Some(Cow::Borrowed("none")),
-                            }),
-                            rect {
-                                width: "44",
-                                height: "32",
-                                corner_radius: "32",
-                                main_align: "center",
-                                cross_align: "center",
-                                svg {
-                                    width: "16",
-                                    height: "16",
-                                    svg_data: arrow_up_icon,
-                                }
+                        rect {
+                            width: "44",
+                            height: "32",
+                            corner_radius: "32",
+                            main_align: "center",
+                            cross_align: "center",
+                            svg {
+                                width: "16",
+                                height: "16",
+                                svg_data: arrow_up_icon,
                             }
                         }
                     }
                 }
             }
-        ),
-		Some(false) => rsx!(
-            rect {
-                width: "100%",
-                height: "44",
-                main_align: "center",
-                cross_align: "center",
-                rect {
-                    height: "28",
-                    background: COLORS.neutral_100,
-                    padding: SIZES.sm,
-                    corner_radius: "32",
-                    main_align: "center",
-                    cross_align: "center",
-                    label {
-                        font_size: "12",
-                        "This user isn't have inbox relays, you cannot send message."
-                    }
-                }
-            }
-        ),
-		None => rsx!(
-            rect {
-                width: "100%",
-                height: "44",
-                main_align: "center",
-                cross_align: "center",
-                rect {
-                    height: "28",
-                    background: COLORS.neutral_100,
-                    padding: SIZES.sm,
-                    corner_radius: "32",
-                    main_align: "center",
-                    cross_align: "center",
-                    label {
-                        font_size: "12",
-                        "Connecting to inbox relays..."
-                    }
-                }
-            }
-        )
-	}
+        }
+    )
 }
 
 #[component]

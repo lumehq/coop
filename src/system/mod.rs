@@ -27,8 +27,26 @@ pub async fn login(public_key: PublicKey) -> Result<String, String> {
 	client.set_signer(Some(signer)).await;
 
 	// Connect inbox relay
-	let _ = ensure_inboxes(public_key).await;
+	let inbox = Filter::new()
+		.kind(Kind::Custom(10050))
+		.author(public_key)
+		.limit(1);
 	let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+	if let Ok(events) = client
+		.get_events_of(vec![inbox], Some(Duration::from_secs(8)))
+		.await
+	{
+		if let Some(event) = events.into_iter().next() {
+			for tag in &event.tags {
+				if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
+					let relay = url.to_string();
+					let _ = client.add_relay(&relay).await;
+					let _ = client.connect_relay(&relay).await;
+				}
+			}
+		}
+	}
 
 	if client
 		.reconcile(incoming.clone(), NegentropyOptions::default())
@@ -154,7 +172,10 @@ pub async fn get_chat_messages(sender_pk: PublicKey) -> Result<Vec<UnsignedEvent
 		.limit(0);
 
 	let subscription_id = SubscriptionId::new(format!("channel_{}", sender_pk.to_hex()));
-	client.subscribe_with_id(subscription_id, vec![messages], None).await.expect("TODO: panic message");
+	client
+		.subscribe_with_id(subscription_id, vec![messages], None)
+		.await
+		.expect("TODO: panic message");
 
 	let events = match database.query(vec![filter], Order::Desc).await {
 		Ok(events) => {
@@ -192,48 +213,50 @@ pub async fn get_chat_messages(sender_pk: PublicKey) -> Result<Vec<UnsignedEvent
 	Ok(events)
 }
 
-pub async fn ensure_inboxes(public_key: PublicKey) -> bool {
+pub async fn get_inboxes(public_key: PublicKey) -> Result<Vec<String>, ()> {
 	let client = get_client().await;
-	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
+	let inbox = Filter::new()
+		.kind(Kind::Custom(10050))
+		.author(public_key)
+		.limit(1);
 	let mut relays: Vec<String> = Vec::new();
 
 	match client
 		.get_events_of(vec![inbox], Some(Duration::from_secs(8)))
-		.await {
+		.await
+	{
 		Ok(events) => {
-			if let Some(event) = events.into_iter().nth(0) {
+			if let Some(event) = events.into_iter().next() {
 				for tag in &event.tags {
 					if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
 						relays.push(url.to_string())
 					}
 				}
 			} else {
-				return false;
+				return Ok(Vec::new());
 			}
 		}
-		Err(_) => return false,
+		Err(_) => return Err(()),
 	};
 
-	for relay in relays {
-		if client.add_relay(&relay).await.is_ok() {
-			let _ = client.connect_relay(&relay).await;
+	for relay in relays.iter() {
+		if client.add_relay(relay).await.is_ok() {
+			println!("Adding inbox relay: {}", relay)
 		}
 	}
 
-	println!("Connecting to inbox relays: {}", public_key.to_hex());
-
-	true
+	Ok(relays)
 }
 
-pub async fn send_message(
-	receiver: PublicKey,
-	message: String,
-) -> Result<UnsignedEvent, ()> {
+pub async fn send_message(receiver: PublicKey, message: String) -> Result<UnsignedEvent, ()> {
 	let client = get_client().await;
 	let signer = client.signer().await.unwrap();
 	let public_key = signer.public_key().await.unwrap();
 
-	match client.send_private_msg(receiver, message.clone(), None).await {
+	match client
+		.send_private_msg(receiver, message.clone(), None)
+		.await
+	{
 		Ok(_) => {
 			let rumor = EventBuilder::private_msg_rumor(receiver, message, None);
 			Ok(rumor.to_unsigned_event(public_key))
