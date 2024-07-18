@@ -6,24 +6,25 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
 use crate::common::{is_target, message_time, time_ago, use_debounce};
-use crate::system::state::{get_client, CHATS, CONTACT_LIST, CURRENT_USER, INBOXES, MESSAGES};
 use crate::system::{
     get_chat_messages, get_chats, get_inboxes, get_profile, preload, send_message,
 };
+use crate::system::state::{CHATS, CONTACT_LIST, CURRENT_USER, get_client, INBOXES, MESSAGES};
 use crate::theme::{ARROW_UP_ICON, COLORS, SIZES, SMOOTHING};
+use crate::ui::AppRoute;
 use crate::ui::chats::Chats;
 
 #[component]
 pub fn NewMessagePopup(show_popup: Signal<bool>) -> Element {
-    use_future(|| async move {
-        let client = get_client().await;
+	use_future(|| async move {
+		let client = get_client().await;
 
-        if let Ok(mut list) = client.get_contact_list(None).await {
-            CONTACT_LIST.write().append(&mut list);
-        };
-    });
+		if let Ok(mut list) = client.get_contact_list(None).await {
+			CONTACT_LIST.write().append(&mut list);
+		};
+	});
 
-    rsx!(
+	rsx!(
         if *show_popup.read() {
             Popup {
                 oncloserequest: move |_| {
@@ -55,20 +56,20 @@ pub fn NewMessagePopup(show_popup: Signal<bool>) -> Element {
 
 #[component]
 pub fn ChannelList() -> Element {
-    let chats = use_memo(use_reactive((&CHATS(),), |(events,)| {
-        events
-            .into_iter()
-            .sorted_by_key(|ev| Reverse(ev.created_at))
-            .collect::<Vec<_>>()
-    }));
+	let chats = use_memo(use_reactive((&CHATS(), ), |(events, )| {
+		events
+			.into_iter()
+			.sorted_by_key(|ev| Reverse(ev.created_at))
+			.collect::<Vec<_>>()
+	}));
 
-    use_future(move || async move {
-        if let Ok(mut events) = get_chats().await {
-            CHATS.write().append(&mut events)
-        }
-    });
+	use_future(move || async move {
+		if let Ok(mut events) = get_chats().await {
+			CHATS.write().append(&mut events)
+		}
+	});
 
-    rsx!(
+	rsx!(
         NativeRouter {
             VirtualScrollView {
                 length: chats.len(),
@@ -81,9 +82,9 @@ pub fn ChannelList() -> Element {
 
                     rsx! {
                         Link {
-                            to: Chats::Channel { hex: hex.clone() },
+                            to: AppRoute::Channel { hex: hex.clone() },
                             ActivableRoute {
-                                route: Chats::Channel { hex },
+                                route: AppRoute::Channel { hex },
                                 exact: true,
                                 ListItem { public_key: pk, created_at: Some(event.created_at) }
                             }
@@ -97,29 +98,29 @@ pub fn ChannelList() -> Element {
 
 #[component]
 fn ListItem(public_key: PublicKey, created_at: Option<Timestamp>) -> Element {
-    let is_active = use_activable_route();
-    let metadata = use_resource(use_reactive!(|(public_key)| async move {
+	let is_active = use_activable_route();
+	let metadata = use_resource(use_reactive!(|(public_key)| async move {
         get_profile(Some(&public_key)).await
     }));
 
-    let mut debounce = use_debounce(Duration::from_millis(500), move |pk| {
-        spawn(async move {
-            if let Ok(relays) = get_inboxes(pk).await {
-                INBOXES.write().insert(pk, relays);
-                let _ = preload(public_key).await;
-            };
-        });
-    });
+	let mut debounce = use_debounce(Duration::from_millis(500), move |pk| {
+		spawn(async move {
+			if let Ok(relays) = get_inboxes(pk).await {
+				INBOXES.write().insert(pk, relays);
+				let _ = preload(public_key).await;
+			};
+		});
+	});
 
-    let (background, color, label_color) = match is_active {
-        true => (COLORS.neutral_200, COLORS.blue_500, COLORS.neutral_600),
-        false => ("none", COLORS.black, COLORS.neutral_500),
-    };
+	let (background, color, label_color) = match is_active {
+		true => (COLORS.neutral_200, COLORS.blue_500, COLORS.neutral_600),
+		false => ("none", COLORS.black, COLORS.neutral_500),
+	};
 
-    let time_ago = created_at.map(time_ago);
+	let time_ago = created_at.map(time_ago);
 
-    match &*metadata.read_unchecked() {
-        Some(Ok(profile)) => rsx!(
+	match &*metadata.read_unchecked() {
+		Some(Ok(profile)) => rsx!(
             rect {
                 onmouseenter: move |_| {
                     debounce.action(public_key)
@@ -205,42 +206,42 @@ fn ListItem(public_key: PublicKey, created_at: Option<Timestamp>) -> Element {
                 }
             }
         ),
-        Some(Err(_)) => rsx!(
+		Some(Err(_)) => rsx!(
             rect {
                 label {
                     "Error."
                 }
             }
         ),
-        None => rsx!(
+		None => rsx!(
             rect {
                 label {
                     "Loading..."
                 }
             }
         ),
-    }
+	}
 }
 
 #[component]
 pub fn ChannelMembers(sender: PublicKey) -> Element {
-    let metadata = use_resource(use_reactive!(|(sender)| async move {
+	let metadata = use_resource(use_reactive!(|(sender)| async move {
         get_profile(Some(&sender)).await
     }));
 
-    let mut is_hover = use_signal(|| false);
+	let mut is_hover = use_signal(|| false);
 
-    let onmouseenter = move |_| is_hover.set(true);
+	let onmouseenter = move |_| is_hover.set(true);
 
-    let onmouseleave = move |_| is_hover.set(false);
+	let onmouseleave = move |_| is_hover.set(false);
 
-    let background = match is_hover() {
-        true => COLORS.neutral_100,
-        false => "none",
-    };
+	let background = match is_hover() {
+		true => COLORS.neutral_100,
+		false => "none",
+	};
 
-    match &*metadata.read_unchecked() {
-        Some(Ok(profile)) => rsx!(
+	match &*metadata.read_unchecked() {
+		Some(Ok(profile)) => rsx!(
             rect {
                 onmouseenter,
                 onmouseleave,
@@ -298,7 +299,7 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
                 }
             }
         ),
-        Some(Err(err)) => rsx!(
+		Some(Err(err)) => rsx!(
             rect {
                 corner_radius: SIZES.sm,
                 corner_smoothing: SMOOTHING.base,
@@ -311,7 +312,7 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
                 }
             }
         ),
-        None => rsx!(
+		None => rsx!(
             rect {
                 corner_radius: SIZES.sm,
                 corner_smoothing: SMOOTHING.base,
@@ -335,31 +336,31 @@ pub fn ChannelMembers(sender: PublicKey) -> Element {
                 }
             }
         ),
-    }
+	}
 }
 
 #[component]
 pub fn ChannelForm(sender: PublicKey, relays: ReadOnlySignal<Vec<String>>) -> Element {
-    let arrow_up_icon = static_bytes(ARROW_UP_ICON);
+	let arrow_up_icon = static_bytes(ARROW_UP_ICON);
 
-    let mut value = use_signal(String::new);
+	let mut value = use_signal(String::new);
 
-    let onpress = move |_| {
-        spawn(async move {
-            let message = value.read().to_string();
+	let onpress = move |_| {
+		spawn(async move {
+			let message = value.read().to_string();
 
-            if message.is_empty() {
-                return;
-            };
+			if message.is_empty() {
+				return;
+			};
 
-            if let Ok(event) = send_message(sender, message, relays()).await {
-                MESSAGES.write().push(event);
-                value.set(String::new())
-            };
-        });
-    };
+			if let Ok(event) = send_message(sender, message, relays()).await {
+				MESSAGES.write().push(event);
+				value.set(String::new())
+			};
+		});
+	};
 
-    rsx!(
+	rsx!(
         rect {
             width: "100%",
             height: "44",
@@ -437,48 +438,48 @@ pub fn ChannelForm(sender: PublicKey, relays: ReadOnlySignal<Vec<String>>) -> El
 
 #[component]
 pub fn Messages(sender: PublicKey) -> Element {
-    let messages = use_resource(use_reactive!(|(sender)| async move {
+	let messages = use_resource(use_reactive!(|(sender)| async move {
         get_chat_messages(sender).await
     }));
 
-    let new_messages = use_memo(use_reactive((&sender,), |(sender,)| {
-        let receiver = PublicKey::from_hex(CURRENT_USER.read().as_str()).unwrap();
-        MESSAGES
-            .read()
-            .clone()
-            .into_iter()
-            .filter_map(|ev| {
-                if is_target(&sender, &ev.tags) || is_target(&receiver, &ev.tags) {
-                    Some(ev)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-    }));
+	let new_messages = use_memo(use_reactive((&sender, ), |(sender, )| {
+		let receiver = PublicKey::from_hex(CURRENT_USER.read().as_str()).unwrap();
+		MESSAGES
+			.read()
+			.clone()
+			.into_iter()
+			.filter_map(|ev| {
+				if is_target(&sender, &ev.tags) || is_target(&receiver, &ev.tags) {
+					Some(ev)
+				} else {
+					None
+				}
+			})
+			.collect::<Vec<_>>()
+	}));
 
-    use_future(move || async move {
-        let client = get_client().await;
-        let subscription_id = SubscriptionId::new(format!("channel_{}", sender.to_hex()));
+	use_future(move || async move {
+		let client = get_client().await;
+		let subscription_id = SubscriptionId::new(format!("channel_{}", sender.to_hex()));
 
-        let messages = Filter::new().kind(Kind::GiftWrap).pubkey(sender).limit(0);
+		let messages = Filter::new().kind(Kind::GiftWrap).pubkey(sender).limit(0);
 
-        client
-            .subscribe_with_id(subscription_id, vec![messages], None)
-            .await
-            .expect("TODO: panic message");
-    });
+		client
+			.subscribe_with_id(subscription_id, vec![messages], None)
+			.await
+			.expect("TODO: panic message");
+	});
 
-    use_drop(move || {
-        spawn(async move {
-            let client = get_client().await;
-            let subscription_id = SubscriptionId::new(format!("channel_{}", sender.to_hex()));
+	use_drop(move || {
+		spawn(async move {
+			let client = get_client().await;
+			let subscription_id = SubscriptionId::new(format!("channel_{}", sender.to_hex()));
 
-            client.unsubscribe(subscription_id).await;
-        });
-    });
+			client.unsubscribe(subscription_id).await;
+		});
+	});
 
-    rsx!(
+	rsx!(
         match &*messages.read_unchecked() {
             Some(Ok(events)) => rsx!(
                 for (index, event) in events.iter().enumerate() {
@@ -532,14 +533,14 @@ pub fn Messages(sender: PublicKey) -> Element {
 
 #[component]
 fn MessageContent(public_key: String, content: String) -> Element {
-    let is_self = public_key == *CURRENT_USER.read();
+	let is_self = public_key == *CURRENT_USER.read();
 
-    let (align, radius, background, color) = match is_self {
-        true => ("end", "24 8 24 24", COLORS.blue_500, COLORS.white),
-        false => ("start", "24 24 8 24", COLORS.neutral_100, COLORS.black),
-    };
+	let (align, radius, background, color) = match is_self {
+		true => ("end", "24 8 24 24", COLORS.blue_500, COLORS.white),
+		false => ("start", "24 24 8 24", COLORS.neutral_100, COLORS.black),
+	};
 
-    rsx!(
+	rsx!(
         rect {
             width: "calc(100% - 64)",
             cross_align: align,
@@ -560,9 +561,9 @@ fn MessageContent(public_key: String, content: String) -> Element {
 
 #[component]
 fn MessageTime(created_at: Timestamp) -> Element {
-    let message_time = message_time(created_at);
+	let message_time = message_time(created_at);
 
-    rsx!(
+	rsx!(
         rect {
             width: "64",
             label {

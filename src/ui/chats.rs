@@ -1,28 +1,16 @@
-use dioxus_router::prelude::{Outlet, Routable};
+use dioxus_router::prelude::Outlet;
 use freya::prelude::*;
 use nostr_sdk::prelude::*;
 
 use crate::system::state::{CHATS, get_client, INBOXES, MESSAGES};
 use crate::theme::{COLORS, GRID_ICON, PLUS_ICON};
+use crate::ui::AppRoute;
 use crate::ui::components::{Direction, Divider};
 use crate::ui::components::chat::{ChannelForm, ChannelList, ChannelMembers, Messages, NewMessagePopup};
 use crate::ui::components::user::CurrentUser;
 
-#[derive(Routable, Clone, PartialEq)]
-#[rustfmt::skip]
-pub enum Chats {
-	#[layout(Main)]
-	#[route("/")]
-	Welcome,
-	#[route("/:hex")]
-	Channel { hex: String },
-	#[end_layout]
-	#[route("/..route")]
-	NotFound,
-}
-
 #[component]
-fn Main() -> Element {
+pub fn Main() -> Element {
 	let grid_icon = static_bytes(GRID_ICON);
 	let plus_icon = static_bytes(PLUS_ICON);
 
@@ -81,7 +69,7 @@ fn Main() -> Element {
 							main_align: "center",
 							cross_align: "center",
 							Link {
-								to: Chats::Welcome,
+								to: AppRoute::Chats,
 								rect {
 		                            width: "24",
 		                            height: "24",
@@ -141,14 +129,14 @@ fn Main() -> Element {
                 width: "fill-min",
                 height: "100%",
                 background: COLORS.white,
-                Outlet::<Chats> {}
+                Outlet::<AppRoute> {}
             }
         }
     )
 }
 
 #[component]
-fn Welcome() -> Element {
+pub fn Chats() -> Element {
 	rsx!(
         rect {
             width: "100%",
@@ -163,7 +151,7 @@ fn Welcome() -> Element {
 }
 
 #[component]
-fn Channel(hex: ReadOnlySignal<String>) -> Element {
+pub fn Channel(hex: ReadOnlySignal<String>) -> Element {
 	let sender = PublicKey::from_hex(hex.read().to_string()).unwrap();
 
 	let inbox = use_memo(use_reactive((&sender, &INBOXES()), |(sender, inboxes)| {
@@ -256,6 +244,6 @@ fn Channel(hex: ReadOnlySignal<String>) -> Element {
 }
 
 #[component]
-fn NotFound() -> Element {
+pub fn NotFound() -> Element {
 	rsx!(rect {})
 }

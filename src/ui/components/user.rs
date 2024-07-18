@@ -1,16 +1,20 @@
 use std::str::FromStr;
 
+use dioxus_router::prelude::navigator;
 use freya::prelude::*;
 use nostr_sdk::prelude::*;
 
 use crate::system::{get_profile, login};
 use crate::system::state::CURRENT_USER;
 use crate::theme::{COLORS, SIZES, SMOOTHING};
+use crate::ui::AppRoute;
 use crate::ui::components::Spinner;
 
 #[component]
 pub fn LoginUser(id: String) -> Element {
 	let public_key = PublicKey::from_str(&id).unwrap();
+	let nav = navigator();
+
 	let metadata = use_resource(use_reactive!(|(public_key)| async move {
         get_profile(Some(&public_key)).await
     }));
@@ -23,7 +27,8 @@ pub fn LoginUser(id: String) -> Element {
 
 		spawn(async move {
 			if let Ok(user) = login(public_key).await {
-				*CURRENT_USER.write() = user
+				*CURRENT_USER.write() = user;
+				nav.replace(AppRoute::Chats);
 			}
 		});
 	};
