@@ -1096,6 +1096,7 @@ dependencies = [
 name = "coop"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "dioxus",
  "dioxus-router",
@@ -1940,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "freya"
 version = "0.2.2"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "dioxus",
  "dioxus-core",
@@ -1963,7 +1964,7 @@ dependencies = [
 [[package]]
 name = "freya-common"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -1979,7 +1980,7 @@ dependencies = [
 [[package]]
 name = "freya-components"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "bytes",
  "dioxus",
@@ -2002,7 +2003,7 @@ dependencies = [
 [[package]]
 name = "freya-core"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "accesskit",
  "dioxus-core",
@@ -2024,7 +2025,7 @@ dependencies = [
 [[package]]
 name = "freya-elements"
 version = "0.2.0"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "dioxus-core",
  "dioxus-rsx",
@@ -2036,7 +2037,7 @@ dependencies = [
 [[package]]
 name = "freya-engine"
 version = "0.2.2"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "bitflags 2.6.0",
  "glutin",
@@ -2046,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "freya-hooks"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "bitflags 2.6.0",
  "bytes",
@@ -2071,7 +2072,7 @@ dependencies = [
 [[package]]
 name = "freya-native-core"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "anymap",
  "dashmap",
@@ -2085,7 +2086,7 @@ dependencies = [
 [[package]]
 name = "freya-native-core-macro"
 version = "0.2.0"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "quote",
  "syn 2.0.71",
@@ -2094,7 +2095,7 @@ dependencies = [
 [[package]]
 name = "freya-node-state"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "accesskit",
  "bytes",
@@ -2114,7 +2115,7 @@ dependencies = [
 [[package]]
 name = "freya-renderer"
 version = "0.2.1"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -5587,7 +5588,7 @@ dependencies = [
 [[package]]
 name = "torin"
 version = "0.2.0"
-source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e97f682e601258f2439bf5a07a75b7fe6dd563c8"
+source = "git+https://github.com/reyamir/freya?branch=feat/reverse-scroll-list#e6a4368b323ddab2c7b32bde0c1928cb228b1aac"
 dependencies = [
  "euclid",
  "freya-native-core",
