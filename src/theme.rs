@@ -1,7 +1,7 @@
 pub static PLUS_ICON: &[u8] = include_bytes!("../assets/plus.svg");
 pub static GRID_ICON: &[u8] = include_bytes!("../assets/grid.svg");
-pub static ARROW_DOWN_ICON: &[u8] = include_bytes!("../assets/arrow_down.svg");
 pub static ARROW_UP_ICON: &[u8] = include_bytes!("../assets/arrow_up.svg");
+pub static LOADER_ICON: &[u8] = include_bytes!("../assets/loader.svg");
 
 pub struct Sizes<'a> {
 	pub xs: &'a str,

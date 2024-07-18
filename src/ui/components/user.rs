@@ -6,6 +6,7 @@ use nostr_sdk::prelude::*;
 use crate::system::{get_profile, login};
 use crate::system::state::CURRENT_USER;
 use crate::theme::{COLORS, SIZES, SMOOTHING};
+use crate::ui::components::Spinner;
 
 #[component]
 pub fn LoginUser(id: String) -> Element {
@@ -43,7 +44,7 @@ pub fn LoginUser(id: String) -> Element {
                 onmouseenter,
                 onmouseleave,
                 background: background,
-                corner_radius: SIZES.sm,
+                corner_radius: SIZES.base,
                 corner_smoothing: SMOOTHING.base,
                 padding: SIZES.base,
                 width: "100%",
@@ -62,6 +63,7 @@ pub fn LoginUser(id: String) -> Element {
                         match &profile.picture {
                             Some(picture) => rsx!(
                                 NetworkImage {
+									loading: Some(rsx!( Spinner {} )),
                                     theme: Some(NetworkImageThemeWith { width: Some(Cow::from("36")), height: Some(Cow::from("36")) }),
                                     url: format!("https://wsrv.nl/?url={}&w=100&h=100&fit=cover&mask=circle&output=png", picture).parse::<Url>().unwrap(),
                                 }
@@ -111,16 +113,11 @@ pub fn LoginUser(id: String) -> Element {
                         }
                     }
                 },
-                rect {
-                    width: "32",
-                    match is_loading() {
-                        true => rsx!(rect {
-                            label {
-                                "..."
-                            }
-                        }),
-                        false => rsx!()
-                    }
+                match is_loading() {
+                    true => rsx!(
+						Spinner {}
+					),
+                    false => rsx!( rect {} )
                 }
             }
         ),
