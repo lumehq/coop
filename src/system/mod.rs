@@ -156,6 +156,14 @@ pub async fn get_profile(public_key: Option<&PublicKey>) -> Result<Metadata> {
 	}
 }
 
+pub async fn get_contact_list() -> Result<Vec<Contact>> {
+	let client = get_client().await;
+	let list = client.get_contact_list(None).await?;
+
+	Ok(list)
+}
+
+
 pub async fn get_chats() -> Result<Vec<UnsignedEvent>> {
 	let client = get_client().await;
 	let signer = client.signer().await?;

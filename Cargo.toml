@@ -1,19 +1,23 @@
 [package]
 name = "coop"
 description = "nostr client"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445"]
 repository = "https://github.com/lumehq/coop"
 edition = "2021"
 rust-version = "1.75"
+build = "build.rs"
+
+[build-dependencies]
+winresource = "0.1"
 
 [dependencies]
 freya = { git = "https://github.com/reyamir/freya", branch = "feat/reverse-scroll-list", features = [
-    "custom-tokio-rt",
+	"custom-tokio-rt",
 ] }
 dioxus = { version = "0.5", default-features = false, features = [
-    "macro",
-    "hooks",
+	"macro",
+	"hooks",
 ] }
 dioxus-router = "0.5.0"
 nostr-sdk = { version = "0.33", features = ["sqlite"] }
@@ -27,9 +31,35 @@ futures = "0.3.30"
 chrono = "0.4.38"
 tracing = "0.1.40"
 keyring = { version = "3", features = [
-    "apple-native",
-    "windows-native",
-    "linux-native",
+	"apple-native",
+	"windows-native",
+	"linux-native",
 ] }
 keyring-search = "1.2.0"
 anyhow = "1.0.44"
+
+[package.metadata.packager]
+before-packaging-command = "cargo build --release"
+product-name = "Coop"
+identifier = "nu.lume.coop"
+resources = ["icons/**"]
+icons = [
+	"icons/icon.png",
+	"icons/icon.icns",
+	"icons/icon.ico",
+]
+
+[package.metadata.winresource]
+ProductName = "Coop"
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+incremental = false
+opt-level = "z"
+strip = true
+rpath = false
+debug = false
+debug-assertions = false
+overflow-checks = false

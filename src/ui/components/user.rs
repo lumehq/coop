@@ -4,8 +4,8 @@ use dioxus_router::prelude::navigator;
 use freya::prelude::*;
 use nostr_sdk::prelude::*;
 
-use crate::system::{get_profile, login};
-use crate::system::state::CURRENT_USER;
+use crate::system::{get_contact_list, get_profile, login};
+use crate::system::state::{CONTACT_LIST, CURRENT_USER};
 use crate::theme::{COLORS, SIZES, SMOOTHING};
 use crate::ui::AppRoute;
 use crate::ui::components::Spinner;

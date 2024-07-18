@@ -5,6 +5,8 @@ use coop::system::state::get_client;
 use coop::theme::COLORS;
 use coop::ui::App;
 
+const ICON: &[u8] = include_bytes!("../../icons/icon.png");
+
 fn main() {
 	let rt = tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
@@ -28,6 +30,7 @@ fn main() {
 					.with_fullsize_content_view(true)
 					.with_title_hidden(true)
 					.with_content_protected(false) // TODO: set to true
-			}),
+			})
+			.with_icon(LaunchConfig::load_icon(ICON)),
 	);
 }

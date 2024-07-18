@@ -6,20 +6,15 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
 use crate::common::{is_target, message_time, time_ago, use_debounce};
-use crate::system::{
-    get_chat_messages, get_chats, get_inboxes, get_profile, preload, send_message,
-};
+use crate::system::{get_chat_messages, get_chats, get_contact_list, get_inboxes, get_profile, preload, send_message};
 use crate::system::state::{CHATS, CONTACT_LIST, CURRENT_USER, get_client, INBOXES, MESSAGES};
 use crate::theme::{ARROW_UP_ICON, COLORS, SIZES, SMOOTHING};
 use crate::ui::AppRoute;
-use crate::ui::chats::Chats;
 
 #[component]
 pub fn NewMessagePopup(show_popup: Signal<bool>) -> Element {
 	use_future(|| async move {
-		let client = get_client().await;
-
-		if let Ok(mut list) = client.get_contact_list(None).await {
+		if let Ok(mut list) = get_contact_list().await {
 			CONTACT_LIST.write().append(&mut list);
 		};
 	});
@@ -30,7 +25,17 @@ pub fn NewMessagePopup(show_popup: Signal<bool>) -> Element {
                 oncloserequest: move |_| {
                     show_popup.set(false)
                 },
-                PopupTitle {
+				theme: Some(PopupThemeWith {
+					background: Some(Cow::Borrowed(COLORS.white)),
+					color: None,
+					cross_fill: None,
+					width: Some(Cow::Borrowed("400")),
+					height: Some(Cow::Borrowed("500"))
+				}),
+                rect {
+					font_size: "16",
+		            margin: "4 2 8 2",
+		            font_weight: "600",
                     label {
                         "New message"
                     }
@@ -44,7 +49,7 @@ pub fn NewMessagePopup(show_popup: Signal<bool>) -> Element {
                             let contact = &CONTACT_LIST.read()[index];
 
                             rsx! {
-                                ListItem { public_key: contact.public_key, created_at: None }
+                                ListItem { key: "{index}", public_key: contact.public_key, created_at: None }
                             }
                         }
                     }
@@ -157,7 +162,7 @@ fn ListItem(public_key: PublicKey, created_at: Option<Timestamp>) -> Element {
                     width: "fill",
                     cross_align: "center",
                     direction: "horizontal",
-                    padding: "0 0 0 8",
+                    margin: "0 0 0 8",
                     rect {
                         color: color,
                         font_weight: "500",
@@ -208,16 +213,50 @@ fn ListItem(public_key: PublicKey, created_at: Option<Timestamp>) -> Element {
         ),
 		Some(Err(_)) => rsx!(
             rect {
-                label {
-                    "Error."
-                }
+				background: background,
+                height: "56",
+                content: "fit",
+                corner_radius: SIZES.base,
+                corner_smoothing: SMOOTHING.base,
+                padding: SIZES.base,
+                direction: "horizontal",
+                cross_align: "center",
+                rect {
+					width: "32",
+					height: "32",
+					corner_radius: "32",
+                    background: COLORS.neutral_200,
+				}
+				rect {
+					margin: "0 0 0 8",
+					label {
+	                    "Error."
+	                }
+				}
             }
         ),
 		None => rsx!(
             rect {
-                label {
-                    "Loading..."
-                }
+				background: background,
+                height: "56",
+                content: "fit",
+                corner_radius: SIZES.base,
+                corner_smoothing: SMOOTHING.base,
+                padding: SIZES.base,
+                direction: "horizontal",
+                cross_align: "center",
+                rect {
+					width: "32",
+					height: "32",
+					corner_radius: "32",
+                    background: COLORS.neutral_200,
+				}
+				rect {
+					margin: "0 0 0 8",
+					label {
+	                    "Loading.."
+	                }
+				}
             }
         ),
 	}
