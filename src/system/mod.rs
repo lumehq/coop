@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -7,12 +8,10 @@ use keyring::Entry;
 use nostr_sdk::prelude::*;
 
 use crate::common::is_target;
-use crate::system::state::get_client;
 
 pub mod state;
 
-pub async fn create_account() -> Result<()> {
-	let client = get_client().await;
+pub async fn create_account(client: &Client) -> Result<()> {
 	let keys = Keys::generate();
 	let npub = keys.public_key().to_bech32()?;
 	let nsec = keys.secret_key().unwrap().to_bech32()?;
@@ -29,8 +28,7 @@ pub async fn create_account() -> Result<()> {
 	Ok(())
 }
 
-pub async fn connect_account(uri: String) -> Result<()> {
-	let client = get_client().await;
+pub async fn connect_account(client: &Client, uri: String) -> Result<()> {
 	let bunker_uri = NostrConnectURI::parse(uri)?;
 
 	let app_keys = Keys::generate();
@@ -51,8 +49,7 @@ pub async fn connect_account(uri: String) -> Result<()> {
 	Ok(())
 }
 
-pub async fn import_key(nsec: String) -> Result<()> {
-	let client = get_client().await;
+pub async fn import_key(client: &Client, nsec: String) -> Result<()> {
 	let secret_key = SecretKey::parse(nsec.clone())?;
 	let keys = Keys::new(secret_key);
 	let npub = keys.public_key().to_bech32()?;
@@ -67,26 +64,22 @@ pub async fn import_key(nsec: String) -> Result<()> {
 	Ok(())
 }
 
-pub async fn login(public_key: PublicKey) -> Result<String> {
+pub async fn login(client: &Client, public_key: PublicKey) -> Result<PublicKey> {
 	let npub = public_key.to_bech32()?;
-	let hex = public_key.to_hex();
 	let keyring = Entry::new(&npub, "nostr_secret")?;
 
 	let key = keyring.get_password()?;
 	let parsed_key = Keys::parse(key)?;
-
-	let client = get_client().await;
 	let signer = NostrSigner::Keys(parsed_key);
 
 	// Set signer
 	client.set_signer(Some(signer)).await;
 
-	// Connect to inbox relay
+	let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 	let inbox = Filter::new()
 		.kind(Kind::Custom(10050))
 		.author(public_key)
 		.limit(1);
-	let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
 	if let Ok(events) = client
 		.get_events_of(vec![inbox], Some(Duration::from_secs(8)))
@@ -98,17 +91,41 @@ pub async fn login(public_key: PublicKey) -> Result<String> {
 					let relay = url.to_string();
 					let _ = client.add_relay(&relay).await;
 					let _ = client.connect_relay(&relay).await;
+
+					println!("Connecting to {} ...", relay);
 				}
 			}
 		}
 	}
 
-	if client
+	if let Ok(report) = client
 		.reconcile(incoming.clone(), NegentropyOptions::default())
 		.await
-		.is_ok()
 	{
-		println!("Sync done.")
+		let receives = report.received.clone();
+		let ids = receives.into_iter().collect::<Vec<_>>();
+
+		let events = client
+			.database()
+			.query(vec![Filter::new().ids(ids)], Order::Desc)
+			.await?;
+
+		let pubkeys = events
+			.into_iter()
+			.unique_by(|ev| ev.pubkey)
+			.map(|ev| ev.pubkey)
+			.collect::<Vec<_>>();
+
+		if client
+			.reconcile(
+				Filter::new().kind(Kind::GiftWrap).pubkeys(pubkeys),
+				NegentropyOptions::default(),
+			)
+			.await
+			.is_ok()
+		{
+			println!("Sync done.")
+		}
 	}
 
 	if client
@@ -119,19 +136,15 @@ pub async fn login(public_key: PublicKey) -> Result<String> {
 		println!("Waiting for new message...")
 	}
 
-	Ok(hex)
+	Ok(public_key)
 }
 
-pub async fn update_profile(metadata: Metadata) -> Result<()> {
-	let client = get_client().await;
+pub async fn update_profile(client: &Client, metadata: Metadata) -> Result<()> {
 	let _ = client.set_metadata(&metadata).await?;
-
 	Ok(())
 }
 
-pub async fn get_profile(public_key: Option<&PublicKey>) -> Result<Metadata> {
-	let client = get_client().await;
-
+pub async fn get_profile(client: &Client, public_key: Option<&PublicKey>) -> Result<Metadata> {
 	let public_key = match public_key {
 		Some(pk) => *pk,
 		None => {
@@ -146,7 +159,7 @@ pub async fn get_profile(public_key: Option<&PublicKey>) -> Result<Metadata> {
 		.limit(1);
 
 	let events = client
-		.get_events_of(vec![filter], Some(Duration::from_secs(2)))
+		.get_events_of(vec![filter], Some(Duration::from_secs(5)))
 		.await?;
 
 	if let Some(event) = events.first() {
@@ -156,21 +169,16 @@ pub async fn get_profile(public_key: Option<&PublicKey>) -> Result<Metadata> {
 	}
 }
 
-pub async fn get_contact_list() -> Result<Vec<Contact>> {
-	let client = get_client().await;
+pub async fn get_contact_list(client: &Client) -> Result<Vec<Contact>> {
 	let list = client.get_contact_list(None).await?;
-
 	Ok(list)
 }
 
-
-pub async fn get_chats() -> Result<Vec<UnsignedEvent>> {
-	let client = get_client().await;
+pub async fn get_chats(client: &Client) -> Result<Vec<UnsignedEvent>> {
 	let signer = client.signer().await?;
 	let public_key = signer.public_key().await?;
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
 	let events = client.database().query(vec![filter], Order::Desc).await?;
 
 	let rumors = stream::iter(events)
@@ -187,12 +195,11 @@ pub async fn get_chats() -> Result<Vec<UnsignedEvent>> {
 
 	Ok(rumors
 		.into_iter()
-		.unique_by(|ev| ev.pubkey.to_hex())
+		.unique_by(|ev| ev.pubkey)
 		.collect::<Vec<_>>())
 }
 
-pub async fn preload(public_key: PublicKey) -> Result<()> {
-	let client = get_client().await;
+pub async fn preload(client: &Client, public_key: PublicKey) -> Result<()> {
 	let signer = client.signer().await?;
 	let receiver_pk = signer.public_key().await?;
 
@@ -211,8 +218,10 @@ pub async fn preload(public_key: PublicKey) -> Result<()> {
 	Ok(())
 }
 
-pub async fn get_chat_messages(sender_pk: PublicKey) -> Result<Vec<UnsignedEvent>> {
-	let client = get_client().await;
+pub async fn get_chat_messages(
+	client: &Client,
+	sender_pk: PublicKey,
+) -> Result<Vec<UnsignedEvent>> {
 	let database = client.database();
 	let signer = client.signer().await?;
 	let receiver_pk = signer.public_key().await?;
@@ -253,53 +262,45 @@ pub async fn get_chat_messages(sender_pk: PublicKey) -> Result<Vec<UnsignedEvent
 		.collect::<Vec<_>>())
 }
 
-pub async fn get_inboxes(public_key: PublicKey) -> Result<Vec<String>> {
-	let client = get_client().await;
+pub async fn get_inboxes(client: &Client, public_key: PublicKey) -> Result<Vec<String>> {
 	let inbox = Filter::new()
 		.kind(Kind::Custom(10050))
 		.author(public_key)
 		.limit(1);
-	let mut relays = Vec::new();
 
 	let events = client
-		.get_events_of(vec![inbox], Some(Duration::from_secs(8)))
+		.get_events_of(vec![inbox], Some(Duration::from_secs(5)))
 		.await?;
+
+	let mut relays = Vec::new();
 
 	if let Some(event) = events.into_iter().next() {
 		for tag in &event.tags {
 			if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
-				relays.push(url.to_string())
+				let relay = url.to_string();
+				if client.add_relay(&relay).await.is_ok() {
+					relays.push(relay)
+				}
 			}
 		}
 	}
-
-	for relay in &relays {
-		if client.add_relay(relay).await.is_ok() {
-			println!("Adding inbox relay: {}", relay);
-		}
-	}
+	
+	client.connect().await;
 
 	Ok(relays)
 }
 
 pub async fn send_message(
+	client: &Client,
 	receiver: PublicKey,
 	message: String,
 	relays: Vec<String>,
-) -> Result<UnsignedEvent> {
-	let client = get_client().await;
-	let signer = client.signer().await?;
-	let public_key = signer.public_key().await?;
-
-	for relay in &relays {
-		let _ = client.connect_relay(relay).await;
+) -> Result<HashSet<Url>> {
+	match client
+		.send_private_msg_to(relays, receiver, message.clone(), None)
+		.await
+	{
+		Ok(output) => Ok(output.success),
+		Err(_) => Err(anyhow!("Error.")),
 	}
-
-	// TODO: send message to inbox relays only.
-	client
-		.send_private_msg(receiver, message.clone(), None)
-		.await?;
-
-	let rumor = EventBuilder::private_msg_rumor(receiver, message, None);
-	Ok(rumor.to_unsigned_event(public_key))
 }

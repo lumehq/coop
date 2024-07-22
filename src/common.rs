@@ -10,21 +10,15 @@ use futures::{
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
 
-/// The interface for calling a debounce.
-///
-/// See [`use_debounce`] for more information.
 pub struct UseDebounce<T: 'static> {
 	sender: Signal<Sender<T>>,
 }
 
 impl<T> UseDebounce<T> {
-	/// Will start the debounce countdown, resetting it if already started.
 	pub fn action(&mut self, data: T) {
 		self.sender.write().unbounded_send(data).ok();
 	}
 }
-
-// Manually implement Clone, Copy, and PartialEq as #[derive] thinks that T needs to implement these (it doesn't).
 
 impl<T> Clone for UseDebounce<T> {
 	fn clone(&self) -> Self {
@@ -40,31 +34,6 @@ impl<T> PartialEq for UseDebounce<T> {
 	}
 }
 
-/// A hook for allowing a function to be called only after a provided [`Duration`] has passed.
-///
-/// Once the [`UseDebounce::action`] method is called, a timer will start counting down until
-/// the callback is ran. If the [`UseDebounce::action`] method is called again, the timer will restart.
-///
-/// # Example
-///
-/// ```rust
-/// use dioxus::prelude::*;
-/// use dioxus_sdk::utils::timing::use_debounce;
-/// use std::time::Duration;
-///
-/// fn App() -> Element {
-///     let mut debounce = use_debounce(Duration::from_millis(2000), |_| println!("ran"));
-///
-///     rsx! {
-///         button {
-///             onclick: move |_| {
-///                 debounce.action(());
-///             },
-///             "Click!"
-///         }
-///     }
-/// }
-/// ```
 pub fn use_debounce<T>(time: Duration, cb: impl FnOnce(T) + Copy + 'static) -> UseDebounce<T> {
 	use_hook(|| {
 		let (sender, mut receiver) = mpsc::unbounded();
@@ -109,6 +78,18 @@ pub fn get_accounts() -> Vec<String> {
 		.collect();
 
 	accounts.into_iter().collect()
+}
+
+pub fn get_channel_id(event: UnsignedEvent) -> String {
+	let mut v = vec![event.pubkey.to_hex()];
+
+	for tag in event.tags.iter() {
+		if let Some(TagStandard::PublicKey { public_key, .. }) = tag.as_standardized() {
+			v.push(public_key.to_hex())
+		}
+	}
+
+	v.join("_")
 }
 
 pub fn time_ago(time: Timestamp) -> String {

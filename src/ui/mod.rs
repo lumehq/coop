@@ -1,13 +1,22 @@
 use dioxus_router::prelude::{Routable, Router};
 use freya::prelude::*;
 
-use crate::system::state::CURRENT_USER;
-use crate::ui::authenticate::*;
-use crate::ui::chats::*;
+use crate::ui::{
+	chats::Chats,
+	connect_account::ConnectAccount,
+	create_account::CreateAccount,
+	import_account::ImportAccount,
+	landing::Landing,
+	new::New,
+};
 
-mod authenticate;
 mod chats;
 mod components;
+mod connect_account;
+mod create_account;
+mod import_account;
+mod landing;
+mod new;
 
 #[derive(Routable, Clone, PartialEq)]
 #[rustfmt::skip]
@@ -15,20 +24,15 @@ pub enum AppRoute {
 	#[route("/")]
 	Landing,
 	#[route("/new")]
-	NewAccount,
-	#[route("/create")]
-	Create,
-	#[route("/import")]
-	Import,
-	#[route("/connect")]
-	Connect,
-	// @formatter:off
-	#[layout(Main)]
-		#[route("/chats")]
-		Chats,
-		#[route("/chats/:hex")]
-		Channel { hex: String },
-		#[end_layout]
+	New,
+	#[route("/create-account")]
+	CreateAccount,
+	#[route("/import-account")]
+	ImportAccount,
+	#[route("/connect-account")]
+	ConnectAccount,
+	#[route("/")]
+	Chats,
 	#[route("/..route")]
 	NotFound,
 }
@@ -43,4 +47,9 @@ pub fn App() -> Element {
             Router::<AppRoute> {}
         }
     )
+}
+
+#[component]
+pub fn NotFound() -> Element {
+	rsx!(rect {})
 }
