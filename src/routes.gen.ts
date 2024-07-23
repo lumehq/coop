@@ -13,17 +13,29 @@ import { createFileRoute } from '@tanstack/react-router'
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as IndexImport } from './routes/index'
+import { Route as AccountChatsImport } from './routes/$account.chats'
 
 // Create Virtual Routes
 
-const IndexLazyImport = createFileRoute('/')()
+const NewLazyImport = createFileRoute('/new')()
 
 // Create/Update Routes
 
-const IndexLazyRoute = IndexLazyImport.update({
+const NewLazyRoute = NewLazyImport.update({
+  path: '/new',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() => import('./routes/new.lazy').then((d) => d.Route))
+
+const IndexRoute = IndexImport.update({
   path: '/',
   getParentRoute: () => rootRoute,
-} as any).lazy(() => import('./routes/index.lazy').then((d) => d.Route))
+} as any)
+
+const AccountChatsRoute = AccountChatsImport.update({
+  path: '/$account/chats',
+  getParentRoute: () => rootRoute,
+} as any)
 
 // Populate the FileRoutesByPath interface
 
@@ -33,7 +45,21 @@ declare module '@tanstack/react-router' {
       id: '/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexLazyImport
+      preLoaderRoute: typeof IndexImport
+      parentRoute: typeof rootRoute
+    }
+    '/new': {
+      id: '/new'
+      path: '/new'
+      fullPath: '/new'
+      preLoaderRoute: typeof NewLazyImport
+      parentRoute: typeof rootRoute
+    }
+    '/$account/chats': {
+      id: '/$account/chats'
+      path: '/$account/chats'
+      fullPath: '/$account/chats'
+      preLoaderRoute: typeof AccountChatsImport
       parentRoute: typeof rootRoute
     }
   }
@@ -41,7 +67,11 @@ declare module '@tanstack/react-router' {
 
 // Create and export the route tree
 
-export const routeTree = rootRoute.addChildren({ IndexLazyRoute })
+export const routeTree = rootRoute.addChildren({
+  IndexRoute,
+  NewLazyRoute,
+  AccountChatsRoute,
+})
 
 /* prettier-ignore-end */
 
@@ -51,11 +81,19 @@ export const routeTree = rootRoute.addChildren({ IndexLazyRoute })
     "__root__": {
       "filePath": "__root.tsx",
       "children": [
-        "/"
+        "/",
+        "/new",
+        "/$account/chats"
       ]
     },
     "/": {
-      "filePath": "index.lazy.tsx"
+      "filePath": "index.tsx"
+    },
+    "/new": {
+      "filePath": "new.lazy.tsx"
+    },
+    "/$account/chats": {
+      "filePath": "$account.chats.tsx"
     }
   }
 }
