@@ -1,0 +1,20 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "Coop",
+        "label": "main",
+        "width": 860,
+        "height": 650,
+        "minWidth": 860,
+        "minHeight": 650,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "mica"
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "productName": "coop",
+  "productName": "Coop",
   "version": "0.0.0",
   "identifier": "com.tauri.dev",
   "build": {
@@ -9,15 +9,27 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "coop",
-        "width": 800,
-        "height": 600
-      }
-    ],
+    "macOSPrivateApi": true,
+    "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/*",
+          "$DATA/*",
+          "$LOCALDATA/*",
+          "$DESKTOP/*",
+          "$DOCUMENT/*",
+          "$DOWNLOAD/*",
+          "$HOME/*",
+          "$PICTURE/*",
+          "$PUBLIC/*",
+          "$VIDEO/*",
+          "$APPCONFIG/*",
+          "$RESOURCE/*"
+        ]
+      }
     }
   },
   "bundle": {
