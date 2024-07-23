@@ -1,14 +1,16 @@
+import { commands } from "@/commands";
 import { npub } from "@/commons";
+import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
 import { Plus } from "@phosphor-icons/react";
 import { Link, createFileRoute, redirect } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
-import { useMemo, useState } from "react";
+import { message } from "@tauri-apps/plugin-dialog";
+import { useMemo, useState, useTransition } from "react";
 
 export const Route = createFileRoute("/")({
 	beforeLoad: async () => {
-		const accounts: string[] = await invoke("get_accounts");
+		const accounts = await commands.getAccounts();
 
 		if (!accounts.length) {
 			throw redirect({
@@ -36,24 +38,28 @@ function Screen() {
 		[],
 	);
 
-	const [loading, setLoading] = useState({ npub: "", status: false });
+	const [value, setValue] = useState("");
+	const [isPending, startTransition] = useTransition();
 
-	const login = async (npub: string) => {
-		try {
-			setLoading({ npub, status: true });
+	const loginWith = async (npub: string) => {
+		setValue(npub);
+		startTransition(async () => {
+			const run = await commands.login(npub);
 
-			const status = await invoke("login", { id: npub });
-
-			if (status) {
-				return navigate({
+			if (run.status === "ok") {
+				navigate({
 					to: "/$account/chats",
 					params: { account: npub },
 					replace: true,
 				});
+			} else {
+				setValue("");
+				await message(run.error, {
+					title: "Login",
+					kind: "error",
+				});
 			}
-		} catch (e) {
-			setLoading({ npub: "", status: false });
-		}
+		});
 	};
 
 	return (
@@ -65,12 +71,15 @@ function Screen() {
 					</h3>
 					<h1 className="leading-tight text-xl font-semibold">Welcome back!</h1>
 				</div>
-				<div className="flex flex-col w-full bg-white divide-y divide-neutral-100 dark:divide-white/5 rounded-xl shadow-lg shadow-neutral-500/10 dark:shadow-none dark:bg-white/10 dark:ring-1 dark:ring-white/5">
+				<Frame
+					className="flex flex-col w-full divide-y divide-neutral-100 dark:divide-white/5 rounded-xl overflow-hidden"
+					shadow
+				>
 					{context.accounts.map((account) => (
 						<div
 							key={account}
-							onClick={() => login(account)}
-							onKeyDown={() => login(account)}
+							onClick={() => loginWith(account)}
+							onKeyDown={() => loginWith(account)}
 							className="flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5"
 						>
 							<User.Provider pubkey={account}>
@@ -85,9 +94,7 @@ function Screen() {
 								</User.Root>
 							</User.Provider>
 							<div className="inline-flex items-center justify-center size-10">
-								{loading.npub === account && loading.status ? (
-									<Spinner />
-								) : null}
+								{value === account && isPending ? <Spinner /> : null}
 							</div>
 						</div>
 					))}
@@ -99,12 +106,12 @@ function Screen() {
 							<div className="inline-flex items-center justify-center rounded-full size-10 bg-neutral-200 dark:bg-white/10">
 								<Plus className="size-5" />
 							</div>
-							<span className="max-w-[6rem] truncate text-sm font-medium leading-tight">
+							<span className="truncate text-sm font-medium leading-tight">
 								Add an account
 							</span>
 						</div>
 					</Link>
-				</div>
+				</Frame>
 			</div>
 		</div>
 	);

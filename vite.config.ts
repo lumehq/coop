@@ -3,9 +3,21 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
+const ReactCompilerConfig = {
+	/* ... */
+};
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-	plugins: [TanStackRouterVite(), tsconfigPaths(), react()],
+	plugins: [
+		TanStackRouterVite(),
+		tsconfigPaths(),
+		react({
+			babel: {
+				plugins: [["babel-plugin-react-compiler", ReactCompilerConfig]],
+			},
+		}),
+	],
 
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

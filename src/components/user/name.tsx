@@ -1,21 +1,12 @@
-import { cn, npub } from "@/commons";
+import { cn } from "@/commons";
 import { useUserContext } from "./provider";
 
-export function UserName({
-	className,
-	prefix,
-}: {
-	className?: string;
-	prefix?: string;
-}) {
+export function UserName({ className }: { className?: string }) {
 	const user = useUserContext();
 
 	return (
 		<div className={cn("max-w-[12rem] truncate", className)}>
-			{prefix}
-			{user.profile?.display_name ||
-				user.profile?.name ||
-				npub(user.pubkey, 16)}
+			{user.profile?.display_name || user.profile?.name || "Anon"}
 		</div>
 	);
 }

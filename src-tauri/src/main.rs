@@ -19,6 +19,20 @@ pub struct Nostr {
 }
 
 fn main() {
+	let mut ctx = tauri::generate_context!();
+	let invoke_handler = {
+		let builder = tauri_specta::ts::builder().commands(tauri_specta::collect_commands![
+			get_accounts,
+			login,
+			get_profile
+		]);
+
+		#[cfg(debug_assertions)]
+		let builder = builder.path("../src/commands.ts");
+
+		builder.build().unwrap()
+	};
+
 	tauri::Builder::default()
 		.setup(|app| {
 			#[cfg(not(target_os = "linux"))]
@@ -58,9 +72,13 @@ fn main() {
 
 			Ok(())
 		})
+		.enable_macos_default_menu(false)
+		.plugin(tauri_plugin_os::init())
+		.plugin(tauri_plugin_clipboard_manager::init())
+		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_decorum::init())
 		.plugin(tauri_plugin_shell::init())
-		.invoke_handler(tauri::generate_handler![login, get_accounts, get_profile])
-		.run(tauri::generate_context!())
+		.invoke_handler(invoke_handler)
+		.run(ctx)
 		.expect("error while running tauri application");
 }

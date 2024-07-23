@@ -17,6 +17,12 @@ tauri = { version = "2.0.0-beta", features = [
   "macos-private-api",
   "protocol-asset",
 ] }
+tauri-specta = { git = "https://github.com/reyamir/tauri-specta", branch = "feat/tauri-v2", features = [
+  "typescript",
+] }
+tauri-plugin-os = "2.0.0-beta"
+tauri-plugin-clipboard-manager = "2.0.0-beta"
+tauri-plugin-dialog = "2.0.0-beta"
 tauri-plugin-shell = "2.0.0-beta"
 tauri-plugin-decorum = "0.1.5"
 serde = { version = "1", features = ["derive"] }
@@ -28,6 +34,7 @@ keyring = { version = "3", features = [
 ] }
 keyring-search = "1.2.0"
 itertools = "0.13.0"
+specta = "^2.0.0-rc.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 border = { git = "https://github.com/ahkohd/tauri-toolkit", branch = "v2" }

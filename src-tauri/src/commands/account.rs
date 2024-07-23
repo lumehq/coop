@@ -3,11 +3,12 @@ use keyring::Entry;
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
 use std::{collections::HashSet, str::FromStr};
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::Nostr;
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_accounts() -> Vec<String> {
 	let search = Search::new().expect("Unexpected.");
 	let results = search.by_user("nostr_secret");
@@ -19,6 +20,7 @@ pub fn get_accounts() -> Vec<String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_profile(id: String, state: State<'_, Nostr>) -> Result<String, ()> {
 	let client = &state.client;
 	let public_key = PublicKey::from_str(&id).unwrap();
@@ -34,7 +36,12 @@ pub async fn get_profile(id: String, state: State<'_, Nostr>) -> Result<String, 
 }
 
 #[tauri::command]
-pub async fn login(id: String, state: State<'_, Nostr>) -> Result<(), String> {
+#[specta::specta]
+pub async fn login(
+	id: String,
+	state: State<'_, Nostr>,
+	handle: tauri::AppHandle,
+) -> Result<(), String> {
 	let client = &state.client;
 	let keyring = Entry::new(&id, "nostr_secret").expect("Unexpected.");
 
@@ -50,7 +57,6 @@ pub async fn login(id: String, state: State<'_, Nostr>) -> Result<(), String> {
 	client.set_signer(Some(signer)).await;
 
 	let public_key = PublicKey::from_str(&id).unwrap();
-	let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
 	if let Ok(events) = client.get_events_of(vec![inbox], None).await {
@@ -67,34 +73,43 @@ pub async fn login(id: String, state: State<'_, Nostr>) -> Result<(), String> {
 		}
 	}
 
-	if let Ok(report) = client.reconcile(incoming.clone(), NegentropyOptions::default()).await {
-		let receives = report.received.clone();
-		let ids = receives.into_iter().collect::<Vec<_>>();
+	tauri::async_runtime::spawn(async move {
+		let window = handle.get_webview_window("main").unwrap();
+		let state = window.state::<Nostr>();
+		let client = &state.client;
 
-		if let Ok(events) = client.database().query(vec![Filter::new().ids(ids)], Order::Desc).await
-		{
-			let pubkeys = events
-				.into_iter()
-				.unique_by(|ev| ev.pubkey)
-				.map(|ev| ev.pubkey)
-				.collect::<Vec<_>>();
+		let incoming = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-			if client
-				.reconcile(
-					Filter::new().kind(Kind::GiftWrap).pubkeys(pubkeys),
-					NegentropyOptions::default(),
-				)
-				.await
-				.is_ok()
+		if let Ok(report) = client.reconcile(incoming.clone(), NegentropyOptions::default()).await {
+			let receives = report.received.clone();
+			let ids = receives.into_iter().collect::<Vec<_>>();
+
+			if let Ok(events) =
+				client.database().query(vec![Filter::new().ids(ids)], Order::Desc).await
 			{
-				println!("Sync done.")
+				let pubkeys = events
+					.into_iter()
+					.unique_by(|ev| ev.pubkey)
+					.map(|ev| ev.pubkey)
+					.collect::<Vec<_>>();
+
+				if client
+					.reconcile(
+						Filter::new().kind(Kind::GiftWrap).pubkeys(pubkeys),
+						NegentropyOptions::default(),
+					)
+					.await
+					.is_ok()
+				{
+					println!("Sync done.")
+				}
 			}
 		}
-	}
 
-	if client.subscribe(vec![incoming.limit(0)], None).await.is_ok() {
-		println!("Waiting for new message...")
-	}
+		if client.subscribe(vec![incoming.limit(0)], None).await.is_ok() {
+			println!("Waiting for new message...")
+		}
+	});
 
 	Ok(())
 }
