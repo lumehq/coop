@@ -11,7 +11,9 @@ edition = "2021"
 tauri-build = { version = "2.0.0-beta", features = [] }
 
 [dependencies]
-nostr-sdk = { version = "0.33", features = ["sqlite"] }
+nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
+  "sqlite",
+] }
 tauri = { version = "2.0.0-beta", features = [
   "tray-icon",
   "macos-private-api",
@@ -34,6 +36,7 @@ keyring = { version = "3", features = [
 ] }
 keyring-search = "1.2.0"
 itertools = "0.13.0"
+futures = "0.3.30"
 specta = "^2.0.0-rc.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]

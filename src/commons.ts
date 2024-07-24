@@ -1,5 +1,24 @@
 import { type ClassValue, clsx } from "clsx";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import updateLocale from "dayjs/plugin/updateLocale";
 import { twMerge } from "tailwind-merge";
+
+dayjs.extend(relativeTime);
+dayjs.extend(updateLocale);
+
+dayjs.updateLocale("en", {
+	relativeTime: {
+		past: "%s",
+		s: "now",
+		m: "1m",
+		mm: "%dm",
+		h: "1h",
+		hh: "%dh",
+		d: "1d",
+		dd: "%dd",
+	},
+});
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -20,4 +39,36 @@ export function npub(pubkey: string, len: number) {
 		separator +
 		pubkey.substring(pubkey.length - backChars)
 	);
+}
+
+export function ago(time: number) {
+	let formated: string;
+
+	const now = dayjs();
+	const inputTime = dayjs.unix(time);
+	const diff = now.diff(inputTime, "hour");
+
+	if (diff < 24) {
+		formated = inputTime.from(now, true);
+	} else {
+		formated = inputTime.format("MMM DD");
+	}
+
+	return formated;
+}
+
+export function time(time: number) {
+	const input = new Date(time * 1000);
+	const formattedTime = input.toLocaleTimeString([], {
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: true,
+	});
+
+	return formattedTime;
+}
+
+export function getReceivers(tags: string[][]) {
+	const p = tags.map((tag) => tag[0] === "p" && tag[1]);
+	return p;
 }

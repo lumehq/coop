@@ -2,14 +2,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use border::WebviewWindowExt as WebviewWindowExtAlt;
-use commands::account::{get_accounts, get_profile, login};
 use nostr_sdk::prelude::*;
 use serde::Serialize;
-use std::{fs, sync::Mutex};
+use std::{fs, sync::Mutex, time::Duration};
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 
+use commands::{
+	account::{get_accounts, get_profile, login},
+	chat::{get_chat_messages, get_chats},
+};
+
 mod commands;
+mod common;
 
 #[derive(Serialize)]
 pub struct Nostr {
@@ -19,12 +24,13 @@ pub struct Nostr {
 }
 
 fn main() {
-	let mut ctx = tauri::generate_context!();
 	let invoke_handler = {
 		let builder = tauri_specta::ts::builder().commands(tauri_specta::collect_commands![
-			get_accounts,
 			login,
-			get_profile
+			get_accounts,
+			get_profile,
+			get_chats,
+			get_chat_messages
 		]);
 
 		#[cfg(debug_assertions)]
@@ -39,7 +45,12 @@ fn main() {
 			let main_window = app.get_webview_window("main").unwrap();
 
 			// Set custom decoration
+			#[cfg(target_os = "windows")]
 			main_window.create_overlay_titlebar().unwrap();
+
+			// Set traffic light inset
+			#[cfg(target_os = "macos")]
+			main_window.set_traffic_lights_inset(12.0, 18.0).unwrap();
 
 			// Restore native border
 			#[cfg(target_os = "macos")]
@@ -53,10 +64,17 @@ fn main() {
 				// Setup database
 				let database = SQLiteDatabase::open(dir.join("Coop/coop.db")).await;
 
+				// Config
+				let opts = Options::new()
+					.automatic_authentication(true)
+					.timeout(Duration::from_secs(5))
+					.send_timeout(Some(Duration::from_secs(10)))
+					.connection_timeout(Some(Duration::from_secs(10)));
+
 				// Setup nostr client
 				let client = match database {
-					Ok(db) => ClientBuilder::default().database(db).build(),
-					Err(_) => ClientBuilder::default().build(),
+					Ok(db) => ClientBuilder::default().opts(opts).database(db).build(),
+					Err(_) => ClientBuilder::default().opts(opts).build(),
 				};
 
 				// Add bootstrap relay
@@ -79,6 +97,6 @@ fn main() {
 		.plugin(tauri_plugin_decorum::init())
 		.plugin(tauri_plugin_shell::init())
 		.invoke_handler(invoke_handler)
-		.run(ctx)
+		.run(tauri::generate_context!())
 		.expect("error while running tauri application");
 }

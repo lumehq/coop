@@ -44,17 +44,19 @@ function Screen() {
 	const loginWith = async (npub: string) => {
 		setValue(npub);
 		startTransition(async () => {
-			const run = await commands.login(npub);
+			try {
+				const res = await commands.login(npub);
 
-			if (run.status === "ok") {
-				navigate({
-					to: "/$account/chats",
-					params: { account: npub },
-					replace: true,
-				});
-			} else {
+				if (res.status === "ok") {
+					navigate({
+						to: "/$account/chats",
+						params: { account: res.data },
+						replace: true,
+					});
+				}
+			} catch (e) {
 				setValue("");
-				await message(run.error, {
+				message(String(e), {
 					title: "Login",
 					kind: "error",
 				});

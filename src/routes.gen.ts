@@ -15,6 +15,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Route as rootRoute } from './routes/__root'
 import { Route as IndexImport } from './routes/index'
 import { Route as AccountChatsImport } from './routes/$account.chats'
+import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
 
 // Create Virtual Routes
 
@@ -35,6 +36,11 @@ const IndexRoute = IndexImport.update({
 const AccountChatsRoute = AccountChatsImport.update({
   path: '/$account/chats',
   getParentRoute: () => rootRoute,
+} as any)
+
+const AccountChatsIdRoute = AccountChatsIdImport.update({
+  path: '/$id',
+  getParentRoute: () => AccountChatsRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -62,6 +68,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountChatsImport
       parentRoute: typeof rootRoute
     }
+    '/$account/chats/$id': {
+      id: '/$account/chats/$id'
+      path: '/$id'
+      fullPath: '/$account/chats/$id'
+      preLoaderRoute: typeof AccountChatsIdImport
+      parentRoute: typeof AccountChatsImport
+    }
   }
 }
 
@@ -70,7 +83,7 @@ declare module '@tanstack/react-router' {
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
   NewLazyRoute,
-  AccountChatsRoute,
+  AccountChatsRoute: AccountChatsRoute.addChildren({ AccountChatsIdRoute }),
 })
 
 /* prettier-ignore-end */
@@ -93,7 +106,14 @@ export const routeTree = rootRoute.addChildren({
       "filePath": "new.lazy.tsx"
     },
     "/$account/chats": {
-      "filePath": "$account.chats.tsx"
+      "filePath": "$account.chats.tsx",
+      "children": [
+        "/$account/chats/$id"
+      ]
+    },
+    "/$account/chats/$id": {
+      "filePath": "$account.chats.$id.tsx",
+      "parent": "/$account/chats"
     }
   }
 }

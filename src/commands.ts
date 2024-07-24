@@ -4,10 +4,7 @@
          /** user-defined commands **/
 
          export const commands = {
-async getAccounts() : Promise<string[]> {
-return await TAURI_INVOKE("get_accounts");
-},
-async login(id: string) : Promise<Result<null, string>> {
+async login(id: string) : Promise<Result<string, string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("login", { id }) };
 } catch (e) {
@@ -15,9 +12,28 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async getProfile(id: string) : Promise<Result<string, null>> {
+async getAccounts() : Promise<string[]> {
+return await TAURI_INVOKE("get_accounts");
+},
+async getProfile(id: string) : Promise<Result<string, string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("get_profile", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getChats() : Promise<Result<string[], string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("get_chats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getChatMessages(sender: string) : Promise<Result<string[], string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("get_chat_messages", { sender }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
