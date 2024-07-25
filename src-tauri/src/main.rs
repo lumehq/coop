@@ -43,7 +43,12 @@ fn main() {
 		builder.build().unwrap()
 	};
 
-	tauri::Builder::default()
+	#[cfg(debug_assertions)]
+	let builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
+	#[cfg(not(debug_assertions))]
+	let builder = tauri::Builder::default();
+
+	builder
 		.setup(|app| {
 			#[cfg(not(target_os = "linux"))]
 			let main_window = app.get_webview_window("main").unwrap();

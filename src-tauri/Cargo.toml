@@ -38,6 +38,7 @@ keyring-search = "1.2.0"
 itertools = "0.13.0"
 futures = "0.3.30"
 specta = "^2.0.0-rc.12"
+tauri-plugin-devtools = "2.0.0-beta"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 border = { git = "https://github.com/ahkohd/tauri-toolkit", branch = "v2" }
