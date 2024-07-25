@@ -149,77 +149,16 @@ pub async fn login(
 	state: State<'_, Nostr>,
 	handle: tauri::AppHandle,
 ) -> Result<String, String> {
+	let app = handle.app_handle().clone();
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
+	let hex = public_key.to_hex();
 	let keyring = Entry::new(&id, "nostr_secret").expect("Unexpected.");
 
-	let password = match keyring.get_password() {
-		Ok(pw) => pw,
-		Err(_) => return Err("Cancelled".into()),
-	};
-
-	match bunker {
-		Some(uri) => {
-			let app_keys =
-				Keys::parse(password).expect("Secret Key is modified, please check again.");
-
-			match NostrConnectURI::parse(uri) {
-				Ok(bunker_uri) => {
-					match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(30), None)
-						.await
-					{
-						Ok(signer) => client.set_signer(Some(signer.into())).await,
-						Err(err) => return Err(err.to_string()),
-					}
-				}
-				Err(err) => return Err(err.to_string()),
-			}
-		}
-		None => {
-			let keys = Keys::parse(password).expect("Secret Key is modified, please check again.");
-			let signer = NostrSigner::Keys(keys);
-
-			// Update signer
-			client.set_signer(Some(signer)).await;
-		}
-	}
-
-	let hex = public_key.to_hex();
-	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
-
-	if let Ok(events) = client.get_events_of(vec![inbox], None).await {
-		if let Some(event) = events.into_iter().next() {
-			for tag in &event.tags {
-				if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
-					let url = url.to_string();
-
-					if client.add_relay(&url).await.is_ok() {
-						println!("Adding relay {} ...", url);
-
-						if client.connect_relay(&url).await.is_ok() {
-							println!("Connecting relay {} ...", url);
-						}
-					}
-				}
-			}
-		}
-	}
-
 	tauri::async_runtime::spawn(async move {
-		let window = handle.get_webview_window("main").expect("Window is terminated.");
+		let window = app.get_webview_window("main").expect("Window is terminated.");
 		let state = window.state::<Nostr>();
 		let client = &state.client;
-
-		let old = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-		let new = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
-
-		if client.reconcile(old, NegentropyOptions::default()).await.is_ok() {
-			println!("Sync done.")
-		};
-
-		if client.subscribe(vec![new], None).await.is_ok() {
-			println!("Waiting for new message...")
-		};
 
 		client
 			.handle_notifications(|notification| async {
@@ -264,6 +203,65 @@ pub async fn login(
 			})
 			.await
 	});
+
+	let password = match keyring.get_password() {
+		Ok(pw) => pw,
+		Err(_) => return Err("Cancelled".into()),
+	};
+
+	match bunker {
+		Some(uri) => {
+			let app_keys =
+				Keys::parse(password).expect("Secret Key is modified, please check again.");
+
+			match NostrConnectURI::parse(uri) {
+				Ok(bunker_uri) => {
+					match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(30), None)
+						.await
+					{
+						Ok(signer) => client.set_signer(Some(signer.into())).await,
+						Err(err) => return Err(err.to_string()),
+					}
+				}
+				Err(err) => return Err(err.to_string()),
+			}
+		}
+		None => {
+			let keys = Keys::parse(password).expect("Secret Key is modified, please check again.");
+			let signer = NostrSigner::Keys(keys);
+
+			// Update signer
+			client.set_signer(Some(signer)).await;
+		}
+	}
+
+	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
+	let old = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+	let new = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
+
+	let mut relays = Vec::new();
+
+	if let Ok(events) = client.get_events_of(vec![inbox], None).await {
+		if let Some(event) = events.into_iter().next() {
+			for tag in &event.tags {
+				if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
+					let url = relay.to_string();
+					if client.add_relay(&url).await.is_ok() {
+						relays.push(url)
+					}
+				}
+			}
+		}
+	}
+
+	if client.reconcile_with(relays.clone(), old, NegentropyOptions::default()).await.is_ok() {
+		handle.emit("synchronized", ()).unwrap();
+		println!("synchronized");
+	};
+
+	if client.subscribe_to(relays, vec![new], None).await.is_ok() {
+		println!("Waiting for new message...")
+	};
 
 	Ok(hex)
 }

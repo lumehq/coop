@@ -1,5 +1,5 @@
 import { commands } from "@/commands";
-import { cn, getReceivers, time } from "@/commons";
+import { cn, getReceivers, time, useRelays } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { ArrowUp, CloudArrowUp, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
@@ -23,14 +23,17 @@ export const Route = createLazyFileRoute("/$account/chats/$id")({
 
 function Screen() {
 	const { id } = Route.useParams();
+	const { isLoading, data: relays } = useRelays(id);
 
 	useEffect(() => {
-		commands.subscribeTo(id).then(() => console.log("sub: ", id));
+		if (!isLoading && relays?.length)
+			commands.subscribeTo(id, relays).then(() => console.log("sub: ", id));
 
 		return () => {
-			commands.unsubscribe(id).then(() => console.log("unsub: ", id));
+			if (!isLoading && relays?.length)
+				commands.unsubscribe(id).then(() => console.log("unsub: ", id));
 		};
-	}, []);
+	}, [isLoading, relays]);
 
 	return (
 		<div className="size-full flex flex-col">
@@ -43,6 +46,7 @@ function Screen() {
 
 function List() {
 	const { account, id } = Route.useParams();
+	const { isLoading: rl, isError: rE } = useRelays(id);
 	const { isLoading, isError, data } = useQuery({
 		queryKey: ["chats", id],
 		queryFn: async () => {
@@ -59,18 +63,20 @@ function List() {
 				throw new Error(res.error);
 			}
 		},
+		enabled: !rl && !rE,
+		refetchOnWindowFocus: false,
 	});
 
 	const queryClient = useQueryClient();
 	const ref = useRef<HTMLDivElement>(null);
 
 	const renderItem = useCallback(
-		(item: NostrEvent) => {
+		(item: NostrEvent, idx: number) => {
 			const self = account === item.pubkey;
 
 			return (
 				<div
-					key={item.id}
+					key={idx + item.id}
 					className="flex items-center justify-between gap-3 my-1.5 px-3 border-l-2 border-transparent hover:border-blue-400"
 				>
 					<div
@@ -139,12 +145,21 @@ function List() {
 				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
 				<Virtualizer scrollRef={ref} shift>
-					{isLoading ? (
-						<p>Loading...</p>
-					) : isError || !data ? (
-						<p>Error</p>
+					{isLoading || !data ? (
+						<div className="w-full h-56 flex items-center justify-center">
+							<div className="flex items-center gap-1.5">
+								<Spinner />
+								Loading message...
+							</div>
+						</div>
+					) : isError ? (
+						<div className="w-full h-56 flex items-center justify-center">
+							<div className="flex items-center gap-1.5">
+								Cannot load message. Please try again later.
+							</div>
+						</div>
 					) : (
-						data.map((item) => renderItem(item))
+						data.map((item, idx) => renderItem(item, idx))
 					)}
 				</Virtualizer>
 			</ScrollArea.Viewport>
@@ -161,25 +176,7 @@ function List() {
 
 function Form() {
 	const { id } = Route.useParams();
-	const {
-		isLoading,
-		isError,
-		data: relays,
-	} = useQuery({
-		queryKey: ["inboxes", id],
-		queryFn: async () => {
-			const res = await commands.getInboxes(id);
-
-			if (res.status === "ok") {
-				return res.data;
-			} else {
-				throw new Error(res.error);
-			}
-		},
-		refetchOnWindowFocus: false,
-		refetchOnMount: false,
-		refetchOnReconnect: false,
-	});
+	const { isLoading, isError, data: relays } = useRelays(id);
 
 	const [newMessage, setNewMessage] = useState("");
 	const [isPending, startTransition] = useTransition();

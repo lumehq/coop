@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { type ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import updateLocale from "dayjs/plugin/updateLocale";
 import { twMerge } from "tailwind-merge";
+import { commands } from "./commands";
 
 dayjs.extend(relativeTime);
 dayjs.extend(updateLocale);
@@ -72,3 +74,20 @@ export function getReceivers(tags: string[][]) {
 	const p = tags.map((tag) => tag[0] === "p" && tag[1]);
 	return p;
 }
+
+export const useRelays = (id: string) =>
+	useQuery({
+		queryKey: ["relays", id],
+		queryFn: async () => {
+			const res = await commands.getInboxes(id);
+
+			if (res.status === "ok") {
+				return res.data;
+			} else {
+				throw new Error(res.error);
+			}
+		},
+		refetchOnWindowFocus: false,
+		refetchOnMount: false,
+		refetchOnReconnect: false,
+	});

@@ -21,13 +21,15 @@ export function UserAvatar({ className }: { className?: string }) {
 				className,
 			)}
 		>
-			<Avatar.Image
-				src={`//wsrv.nl/?url=${user.profile?.picture}&w=200&h=200`}
-				alt={user.pubkey}
-				loading="lazy"
-				decoding="async"
-				className="w-full aspect-square object-cover outline-[.5px] outline-black/5 content-visibility-auto contain-intrinsic-size-[auto]"
-			/>
+			{user?.profile?.picture ? (
+				<Avatar.Image
+					src={`//wsrv.nl/?url=${user.profile?.picture}&w=200&h=200`}
+					alt={user.pubkey}
+					loading="lazy"
+					decoding="async"
+					className="w-full aspect-square object-cover outline-[.5px] outline-black/5 content-visibility-auto contain-intrinsic-size-[auto]"
+				/>
+			) : null}
 			<Avatar.Fallback>
 				<img
 					src={fallback}

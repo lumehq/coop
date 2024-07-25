@@ -22,6 +22,7 @@ const NewLazyImport = createFileRoute('/new')()
 const ImportKeyLazyImport = createFileRoute('/import-key')()
 const CreateAccountLazyImport = createFileRoute('/create-account')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
+const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
 const AccountChatsIdLazyImport = createFileRoute('/$account/chats/$id')()
 
 // Create/Update Routes
@@ -58,6 +59,13 @@ const AccountChatsLazyRoute = AccountChatsLazyImport.update({
   getParentRoute: () => rootRoute,
 } as any).lazy(() =>
   import('./routes/$account.chats.lazy').then((d) => d.Route),
+)
+
+const AccountChatsNewLazyRoute = AccountChatsNewLazyImport.update({
+  path: '/new',
+  getParentRoute: () => AccountChatsLazyRoute,
+} as any).lazy(() =>
+  import('./routes/$account.chats.new.lazy').then((d) => d.Route),
 )
 
 const AccountChatsIdLazyRoute = AccountChatsIdLazyImport.update({
@@ -120,6 +128,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountChatsIdLazyImport
       parentRoute: typeof AccountChatsLazyImport
     }
+    '/$account/chats/new': {
+      id: '/$account/chats/new'
+      path: '/new'
+      fullPath: '/$account/chats/new'
+      preLoaderRoute: typeof AccountChatsNewLazyImport
+      parentRoute: typeof AccountChatsLazyImport
+    }
   }
 }
 
@@ -133,6 +148,7 @@ export const routeTree = rootRoute.addChildren({
   NostrConnectLazyRoute,
   AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
     AccountChatsIdLazyRoute,
+    AccountChatsNewLazyRoute,
   }),
 })
 
@@ -170,11 +186,16 @@ export const routeTree = rootRoute.addChildren({
     "/$account/chats": {
       "filePath": "$account.chats.lazy.tsx",
       "children": [
-        "/$account/chats/$id"
+        "/$account/chats/$id",
+        "/$account/chats/new"
       ]
     },
     "/$account/chats/$id": {
       "filePath": "$account.chats.$id.lazy.tsx",
+      "parent": "/$account/chats"
+    },
+    "/$account/chats/new": {
+      "filePath": "$account.chats.new.lazy.tsx",
       "parent": "/$account/chats"
     }
   }

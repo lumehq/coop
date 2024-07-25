@@ -80,27 +80,40 @@ function ChatList() {
 				throw new Error(res.error);
 			}
 		},
+		refetchOnWindowFocus: false,
 	});
 
 	const queryClient = useQueryClient();
 
 	useEffect(() => {
+		const unlisten = listen("synchronized", async () => {
+			await queryClient.refetchQueries({ queryKey: ["chats"] });
+		});
+
+		return () => {
+			unlisten.then((f) => f());
+		};
+	}, []);
+
+	useEffect(() => {
 		const unlisten = listen<Payload>("event", async (data) => {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
-			const exist = chats.find((ev) => ev.pubkey === event.pubkey);
 
-			if (!exist) {
-				await queryClient.setQueryData(
-					["chats"],
-					(prevEvents: NostrEvent[]) => {
-						if (!prevEvents) return prevEvents;
-						if (event.pubkey === account) return;
+			if (chats) {
+				const exist = chats.find((ev) => ev.pubkey === event.pubkey);
 
-						return [event, ...prevEvents];
-						// queryClient.invalidateQueries(['chats', id]);
-					},
-				);
+				if (!exist) {
+					await queryClient.setQueryData(
+						["chats"],
+						(prevEvents: NostrEvent[]) => {
+							if (!prevEvents) return prevEvents;
+							if (event.pubkey === account) return;
+
+							return [event, ...prevEvents];
+						},
+					);
+				}
 			}
 		});
 

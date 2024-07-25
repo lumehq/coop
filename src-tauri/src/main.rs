@@ -35,7 +35,6 @@ fn main() {
 			send_message,
 			subscribe_to,
 			unsubscribe,
-			drop_inbox
 		]);
 
 		#[cfg(debug_assertions)]
@@ -71,9 +70,10 @@ fn main() {
 
 				// Config
 				let opts = Options::new()
-					.automatic_authentication(true)
+					.autoconnect(true)
+					.automatic_authentication(false)
 					.timeout(Duration::from_secs(5))
-					.send_timeout(Some(Duration::from_secs(5)))
+					.send_timeout(Some(Duration::from_secs(50)))
 					.connection_timeout(Some(Duration::from_secs(20)));
 
 				// Setup nostr client
@@ -83,11 +83,8 @@ fn main() {
 				};
 
 				// Add bootstrap relay
-				let _ = client.add_relay("wss://relay.damus.io/").await;
-				let _ = client.add_relay("wss://relay.nostr.net/").await;
-
-				// Connect
-				client.connect().await;
+				let _ =
+					client.add_relays(["wss://relay.damus.io/", "wss://relay.nostr.net/"]).await;
 
 				// Create global state
 				app.handle().manage(Nostr { client, contact_list: Mutex::new(vec![]) })

@@ -16,7 +16,7 @@ pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-	match client.database().query(vec![filter], Order::Desc).await {
+	match client.get_events_of(vec![filter], None).await {
 		Ok(events) => {
 			let rumors = stream::iter(events)
 				.filter_map(|ev| async move {
@@ -51,14 +51,13 @@ pub async fn get_chat_messages(
 	state: State<'_, Nostr>,
 ) -> Result<Vec<String>, String> {
 	let client = &state.client;
-	let database = client.database();
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let receiver_pk = signer.public_key().await.map_err(|e| e.to_string())?;
 	let sender_pk = PublicKey::parse(sender).map_err(|e| e.to_string())?;
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkeys(vec![receiver_pk, sender_pk]);
 
-	match database.query(vec![filter], Order::Desc).await {
+	match client.get_events_of(vec![filter], None).await {
 		Ok(events) => {
 			let rumors = stream::iter(events)
 				.filter_map(|ev| async move {
@@ -84,14 +83,18 @@ pub async fn get_chat_messages(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn subscribe_to(id: String, state: State<'_, Nostr>) -> Result<(), String> {
+pub async fn subscribe_to(
+	id: String,
+	relays: Vec<String>,
+	state: State<'_, Nostr>,
+) -> Result<(), String> {
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
 	let subscription_id = SubscriptionId::new(&id[..6]);
 
-	if client.subscribe_with_id(subscription_id, vec![filter], None).await.is_ok() {
+	if client.subscribe_with_id_to(relays, subscription_id, vec![filter], None).await.is_ok() {
 		println!("Watching ... {}", id)
 	};
 
@@ -126,8 +129,6 @@ pub async fn get_inboxes(id: String, state: State<'_, Nostr>) -> Result<Vec<Stri
 					if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
 						let relay = url.to_string();
 						let _ = client.add_relay(&relay).await;
-						let _ = client.connect_relay(&relay).await;
-
 						relays.push(relay);
 					}
 				}
@@ -137,18 +138,6 @@ pub async fn get_inboxes(id: String, state: State<'_, Nostr>) -> Result<Vec<Stri
 		}
 		Err(e) => Err(e.to_string()),
 	}
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn drop_inbox(relays: Vec<String>, state: State<'_, Nostr>) -> Result<(), ()> {
-	let client = &state.client;
-
-	for relay in relays.iter() {
-		let _ = client.disconnect_relay(relay).await;
-	}
-
-	Ok(())
 }
 
 #[tauri::command]

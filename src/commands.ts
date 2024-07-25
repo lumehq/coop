@@ -79,9 +79,9 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async subscribeTo(id: string) : Promise<Result<null, string>> {
+async subscribeTo(id: string, relays: string[]) : Promise<Result<null, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("subscribe_to", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("subscribe_to", { id, relays }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -90,14 +90,6 @@ try {
 async unsubscribe(id: string) : Promise<Result<null, null>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("unsubscribe", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async dropInbox(relays: string[]) : Promise<Result<null, null>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("drop_inbox", { relays }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

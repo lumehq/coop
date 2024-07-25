@@ -16,13 +16,13 @@ function Screen() {
 				<div className="flex flex-col gap-3">
 					<Link
 						to="/create-account"
-						className="w-full h-10 bg-blue-500 hover:bg-blue-600 text-white rounded-lg inline-flex items-center justify-center shadow"
+						className="w-full h-9 bg-blue-500 hover:bg-blue-600 text-white rounded-lg inline-flex items-center justify-center shadow"
 					>
 						Create a new identity
 					</Link>
 					<Link
 						to="/nostr-connect"
-						className="w-full h-10 bg-white hover:bg-neutral-100 dark:hover:bg-neutral-950 dark:bg-neutral-900 rounded-lg inline-flex items-center justify-center"
+						className="w-full h-9 bg-white hover:bg-neutral-100 dark:hover:bg-neutral-950 dark:bg-neutral-900 rounded-lg inline-flex items-center justify-center"
 					>
 						Login with Nostr Connect
 					</Link>

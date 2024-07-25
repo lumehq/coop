@@ -90,7 +90,7 @@ function Screen() {
 							type="button"
 							onClick={() => submit()}
 							disabled={isPending}
-							className="inline-flex items-center justify-center w-full h-10 text-sm font-semibold text-white bg-blue-500 rounded-lg shrink-0 hover:bg-blue-600 disabled:opacity-50"
+							className="inline-flex items-center justify-center w-full h-9 text-sm font-semibold text-white bg-blue-500 rounded-lg shrink-0 hover:bg-blue-600 disabled:opacity-50"
 						>
 							{isPending ? <Spinner /> : "Continue"}
 						</button>
