@@ -5,7 +5,6 @@ import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
 import { Plus } from "@phosphor-icons/react";
 import { Link, createFileRoute, redirect } from "@tanstack/react-router";
-import { message } from "@tauri-apps/plugin-dialog";
 import { useMemo, useState, useTransition } from "react";
 
 export const Route = createFileRoute("/")({
@@ -44,21 +43,13 @@ function Screen() {
 	const loginWith = async (npub: string) => {
 		setValue(npub);
 		startTransition(async () => {
-			try {
-				const res = await commands.login(npub);
+			const res = await commands.login(npub);
 
-				if (res.status === "ok") {
-					navigate({
-						to: "/$account/chats",
-						params: { account: res.data },
-						replace: true,
-					});
-				}
-			} catch (e) {
-				setValue("");
-				message(String(e), {
-					title: "Login",
-					kind: "error",
+			if (res.status === "ok") {
+				navigate({
+					to: "/$account/chats",
+					params: { account: res.data },
+					replace: true,
 				});
 			}
 		});

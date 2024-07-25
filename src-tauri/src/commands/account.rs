@@ -3,7 +3,7 @@ use keyring::Entry;
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
 use serde::Serialize;
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 use tauri::{Emitter, Manager, State};
 
 use crate::Nostr;
@@ -33,7 +33,7 @@ pub async fn get_profile(id: String, state: State<'_, Nostr>) -> Result<String, 
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_of(vec![filter], Some(Duration::from_secs(1))).await {
+	match client.get_events_of(vec![filter], None).await {
 		Ok(events) => {
 			if let Some(event) = events.first() {
 				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())
@@ -53,6 +53,7 @@ pub async fn login(
 	handle: tauri::AppHandle,
 ) -> Result<String, String> {
 	let client = &state.client;
+	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let keyring = Entry::new(&id, "nostr_secret").expect("Unexpected.");
 
 	let password = match keyring.get_password() {
@@ -60,39 +61,36 @@ pub async fn login(
 		Err(_) => return Err("Cancelled".into()),
 	};
 
-	let id_clone = id.clone();
 	let keys = Keys::parse(password).expect("Secret Key is modified, please check again.");
 	let signer = NostrSigner::Keys(keys);
 
 	// Set signer
 	client.set_signer(Some(signer)).await;
 
-	tauri::async_runtime::spawn(async move {
-		let window = handle.get_webview_window("main").unwrap();
-		let state = window.state::<Nostr>();
-		let client = &state.client;
+	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-		let public_key = PublicKey::parse(&id_clone).unwrap();
-		let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
+	if let Ok(events) = client.get_events_of(vec![inbox], None).await {
+		if let Some(event) = events.into_iter().next() {
+			for tag in &event.tags {
+				if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
+					let url = url.to_string();
 
-		if let Ok(events) = client.get_events_of(vec![inbox], None).await {
-			if let Some(event) = events.into_iter().next() {
-				for tag in &event.tags {
-					if let Some(TagStandard::Relay(url)) = tag.as_standardized() {
-						let opts = RelayOptions::new().retry_sec(5);
-						let url = url.to_string();
+					if client.add_relay(&url).await.is_ok() {
+						println!("Adding relay {} ...", url);
 
-						if client.add_relay_with_opts(&url, opts).await.is_ok() {
-							println!("Adding relay {} ...", url);
-
-							if client.connect_relay(&url).await.is_ok() {
-								println!("Connecting relay {} ...", url);
-							}
+						if client.connect_relay(&url).await.is_ok() {
+							println!("Connecting relay {} ...", url);
 						}
 					}
 				}
 			}
 		}
+	}
+
+	tauri::async_runtime::spawn(async move {
+		let window = handle.get_webview_window("main").expect("Window is terminated.");
+		let state = window.state::<Nostr>();
+		let client = &state.client;
 
 		let old = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).until(Timestamp::now());
 		let new = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
@@ -129,7 +127,7 @@ pub async fn login(
 
 		client
 			.handle_notifications(|notification| async {
-				if let RelayPoolNotification::Message { message, .. } = notification {
+				if let RelayPoolNotification::Message { message, relay_url } = notification {
 					if let RelayMessage::Event { event, .. } = message {
 						if event.kind == Kind::GiftWrap {
 							if let Ok(UnwrappedGift { rumor, sender }) =
@@ -143,6 +141,27 @@ pub async fn login(
 									.unwrap();
 							}
 						}
+					} else if let RelayMessage::Auth { challenge } = message {
+						match client.auth(challenge, relay_url.clone()).await {
+							Ok(..) => {
+								println!("Authenticated to {} relay.", relay_url);
+
+								if let Ok(relay) = client.relay(relay_url).await {
+									let opts = RelaySendOptions::new().skip_send_confirmation(true);
+									if let Err(e) = relay.resubscribe(opts).await {
+										println!(
+											"Impossible to resubscribe to '{}': {e}",
+											relay.url()
+										);
+									}
+								}
+							}
+							Err(e) => {
+								println!("Can't authenticate to '{relay_url}' relay: {e}");
+							}
+						}
+					} else {
+						println!("relay message: {}", message.as_json());
 					}
 				}
 				Ok(false)
@@ -150,7 +169,6 @@ pub async fn login(
 			.await
 	});
 
-	let public_key = PublicKey::parse(&id).unwrap();
 	let hex = public_key.to_hex();
 
 	Ok(hex)

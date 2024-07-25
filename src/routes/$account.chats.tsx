@@ -73,9 +73,7 @@ function ChatList() {
 
 			if (res.status === "ok") {
 				const raw = res.data;
-				const events = raw
-					.map((item) => JSON.parse(item) as NostrEvent)
-					.sort((a, b) => b.created_at - a.created_at);
+				const events = raw.map((item) => JSON.parse(item) as NostrEvent);
 
 				return events;
 			} else {
@@ -96,9 +94,9 @@ function ChatList() {
 				await queryClient.setQueryData(
 					["chats"],
 					(prevEvents: NostrEvent[]) => {
-						if (!prevEvents) {
-							return prevEvents;
-						}
+						if (!prevEvents) return prevEvents;
+						if (event.pubkey === account) return;
+
 						return [event, ...prevEvents];
 						// queryClient.invalidateQueries(['chats', id]);
 					},

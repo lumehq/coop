@@ -15,6 +15,8 @@
     "menu:default",
     "tray:default",
     "shell:allow-open",
+    "dialog:default",
+    "dialog:allow-open",
     "window:allow-close",
     "window:allow-center",
     "window:allow-minimize",

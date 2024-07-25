@@ -1,12 +1,14 @@
 import { commands } from "@/commands";
 import { cn, getReceivers, time } from "@/commons";
-import { ArrowUp } from "@phosphor-icons/react";
+import { Spinner } from "@/components/spinner";
+import { ArrowUp, CloudArrowUp, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
+import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 import { useEffect } from "react";
 import { Virtualizer } from "virtua";
 
@@ -20,6 +22,26 @@ export const Route = createFileRoute("/$account/chats/$id")({
 });
 
 function Screen() {
+	const { id } = Route.useParams();
+
+	useEffect(() => {
+		commands.subscribeTo(id).then(() => console.log("sub: ", id));
+
+		return () => {
+			commands.unsubscribe(id).then(() => console.log("unsub: ", id));
+		};
+	}, []);
+
+	return (
+		<div className="size-full flex flex-col">
+			<div className="h-11 shrink-0 border-b border-neutral-100 dark:border-neutral-800" />
+			<List />
+			<Form />
+		</div>
+	);
+}
+
+function List() {
 	const { account, id } = Route.useParams();
 	const { isLoading, isError, data } = useQuery({
 		queryKey: ["chats", id],
@@ -84,9 +106,10 @@ function Screen() {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const sender = data.payload.sender;
 			const receivers = getReceivers(event.tags);
+			const group = [account, id];
 
-			if (sender !== account || sender !== id) return;
-			if (!receivers.includes(account) || !receivers.includes(id)) return;
+			if (!group.includes(sender)) return;
+			if (!group.some((item) => receivers.includes(item))) return;
 
 			await queryClient.setQueryData(
 				["chats", id],
@@ -106,47 +129,123 @@ function Screen() {
 	}, []);
 
 	return (
-		<div className="size-full flex flex-col">
-			<div className="h-11 shrink-0 border-b border-neutral-100 dark:border-neutral-900" />
-			<ScrollArea.Root
-				type={"scroll"}
-				scrollHideDelay={300}
-				className="overflow-hidden flex-1 w-full"
+		<ScrollArea.Root
+			type={"scroll"}
+			scrollHideDelay={300}
+			className="overflow-hidden flex-1 w-full"
+		>
+			<ScrollArea.Viewport
+				ref={ref}
+				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
-				<ScrollArea.Viewport
-					ref={ref}
-					className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
-				>
-					<Virtualizer scrollRef={ref} shift>
-						{isLoading ? (
-							<p>Loading...</p>
-						) : isError || !data ? (
-							<p>Error</p>
-						) : (
-							data.map((item) => renderItem(item))
-						)}
-					</Virtualizer>
-				</ScrollArea.Viewport>
-				<ScrollArea.Scrollbar
-					className="flex select-none touch-none p-0.5 duration-[160ms] ease-out data-[orientation=vertical]:w-2"
-					orientation="vertical"
-				>
-					<ScrollArea.Thumb className="flex-1 bg-black/40 dark:bg-white/40 rounded-full relative before:content-[''] before:absolute before:top-1/2 before:left-1/2 before:-translate-x-1/2 before:-translate-y-1/2 before:w-full before:h-full before:min-w-[44px] before:min-h-[44px]" />
-				</ScrollArea.Scrollbar>
-				<ScrollArea.Corner className="bg-transparent" />
-			</ScrollArea.Root>
-			<div className="h-12 shrink-0 flex items-center gap-2 px-3.5">
-				<input
-					placeholder="Message..."
-					className="flex-1 h-9 rounded-full px-3.5 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:outline-none focus:border-blue-500"
-				/>
-				<button
-					type="button"
-					className="rounded-full size-9 inline-flex items-center justify-center bg-blue-300 hover:bg-blue-500 dark:bg-blue-700 text-white"
-				>
-					<ArrowUp className="size-4" />
-				</button>
-			</div>
+				<Virtualizer scrollRef={ref} shift>
+					{isLoading ? (
+						<p>Loading...</p>
+					) : isError || !data ? (
+						<p>Error</p>
+					) : (
+						data.map((item) => renderItem(item))
+					)}
+				</Virtualizer>
+			</ScrollArea.Viewport>
+			<ScrollArea.Scrollbar
+				className="flex select-none touch-none p-0.5 duration-[160ms] ease-out data-[orientation=vertical]:w-2"
+				orientation="vertical"
+			>
+				<ScrollArea.Thumb className="flex-1 bg-black/40 dark:bg-white/40 rounded-full relative before:content-[''] before:absolute before:top-1/2 before:left-1/2 before:-translate-x-1/2 before:-translate-y-1/2 before:w-full before:h-full before:min-w-[44px] before:min-h-[44px]" />
+			</ScrollArea.Scrollbar>
+			<ScrollArea.Corner className="bg-transparent" />
+		</ScrollArea.Root>
+	);
+}
+
+function Form() {
+	const { id } = Route.useParams();
+	const {
+		isLoading,
+		isError,
+		data: relays,
+	} = useQuery({
+		queryKey: ["inboxes", id],
+		queryFn: async () => {
+			const res = await commands.getInboxes(id);
+
+			if (res.status === "ok") {
+				return res.data;
+			} else {
+				throw new Error(res.error);
+			}
+		},
+		refetchOnWindowFocus: false,
+		refetchOnMount: false,
+		refetchOnReconnect: false,
+	});
+
+	const [newMessage, setNewMessage] = useState("");
+	const [isPending, startTransition] = useTransition();
+
+	const submit = async () => {
+		startTransition(async () => {
+			if (newMessage.length < 1) return;
+
+			const res = await commands.sendMessage(id, newMessage, relays);
+
+			if (res.status === "ok") {
+				setNewMessage("");
+			} else {
+				await message(res.error, { title: "Coop", kind: "error" });
+				return;
+			}
+		});
+	};
+
+	return (
+		<div className="h-12 shrink-0 flex items-center justify-center px-3.5">
+			{isLoading ? (
+				<div className="inline-flex items-center justify-center gap-2 h-9 w-fit px-3 bg-neutral-100 dark:bg-neutral-800 rounded-full text-sm">
+					<Spinner />
+					Connecting to inbox relays
+				</div>
+			) : isError || !relays.length ? (
+				<div className="inline-flex items-center justify-center gap-2 h-9 w-fit px-3 bg-neutral-100 dark:bg-neutral-800 rounded-full text-sm">
+					This user doesn't have inbox relays. You cannot send messages to them.
+				</div>
+			) : (
+				<div className="flex-1 flex items-center gap-2">
+					<div className="inline-flex gap-px">
+						<div
+							title="Attach media"
+							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
+						>
+							<Paperclip className="size-5" />
+						</div>
+						<div
+							title="Inbox Relays"
+							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
+						>
+							<CloudArrowUp className="size-5" />
+						</div>
+					</div>
+					<input
+						placeholder="Message..."
+						value={newMessage}
+						onChange={(e) => setNewMessage(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") submit();
+						}}
+						className="flex-1 h-9 rounded-full px-3.5 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:outline-none focus:border-blue-500"
+					/>
+					<button
+						type="button"
+						title="Send message"
+						disabled={isPending}
+						onClick={() => submit()}
+						className="rounded-full size-9 inline-flex items-center justify-center bg-blue-300 hover:bg-blue-500 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
+					>
+						{isPending ? <Spinner /> : <ArrowUp className="size-5" />}
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }

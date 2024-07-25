@@ -10,7 +10,10 @@ use tauri_plugin_decorum::WebviewWindowExt;
 
 use commands::{
 	account::{get_accounts, get_profile, login},
-	chat::{get_chat_messages, get_chats},
+	chat::{
+		drop_inbox, get_chat_messages, get_chats, get_inboxes, send_message, subscribe_to,
+		unsubscribe,
+	},
 };
 
 mod commands;
@@ -29,8 +32,13 @@ fn main() {
 			login,
 			get_accounts,
 			get_profile,
+			get_inboxes,
 			get_chats,
-			get_chat_messages
+			get_chat_messages,
+			send_message,
+			subscribe_to,
+			unsubscribe,
+			drop_inbox
 		]);
 
 		#[cfg(debug_assertions)]
@@ -68,8 +76,8 @@ fn main() {
 				let opts = Options::new()
 					.automatic_authentication(true)
 					.timeout(Duration::from_secs(5))
-					.send_timeout(Some(Duration::from_secs(10)))
-					.connection_timeout(Some(Duration::from_secs(10)));
+					.send_timeout(Some(Duration::from_secs(5)))
+					.connection_timeout(Some(Duration::from_secs(20)));
 
 				// Setup nostr client
 				let client = match database {
