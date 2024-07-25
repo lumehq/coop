@@ -8,13 +8,7 @@ use std::{fs, sync::Mutex, time::Duration};
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 
-use commands::{
-	account::{get_accounts, get_profile, login},
-	chat::{
-		drop_inbox, get_chat_messages, get_chats, get_inboxes, send_message, subscribe_to,
-		unsubscribe,
-	},
-};
+use commands::{account::*, chat::*};
 
 mod commands;
 mod common;
@@ -30,8 +24,11 @@ fn main() {
 	let invoke_handler = {
 		let builder = tauri_specta::ts::builder().commands(tauri_specta::collect_commands![
 			login,
+			create_account,
+			import_key,
+			connect_account,
 			get_accounts,
-			get_profile,
+			get_metadata,
 			get_inboxes,
 			get_chats,
 			get_chat_messages,

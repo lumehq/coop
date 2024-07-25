@@ -4,7 +4,7 @@ import { Spinner } from "@/components/spinner";
 import { ArrowUp, CloudArrowUp, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
@@ -17,7 +17,7 @@ type Payload = {
 	sender: string;
 };
 
-export const Route = createFileRoute("/$account/chats/$id")({
+export const Route = createLazyFileRoute("/$account/chats/$id")({
 	component: Screen,
 });
 

@@ -4,7 +4,7 @@ import { User } from "@/components/user";
 import { Plus, UsersThree } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
+import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import type { NostrEvent } from "nostr-tools";
 import { useEffect } from "react";
@@ -14,7 +14,7 @@ type Payload = {
 	sender: string;
 };
 
-export const Route = createFileRoute("/$account/chats")({
+export const Route = createLazyFileRoute("/$account/chats")({
 	component: Screen,
 });
 

@@ -42,7 +42,7 @@ export function UserProvider({
 					.replace("nostr:", "")
 					.replace(/[^\w\s]/gi, "");
 
-				const query: string = await invoke("get_profile", {
+				const query: string = await invoke("get_metadata", {
 					id: normalizePubkey,
 				});
 

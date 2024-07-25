@@ -43,7 +43,9 @@ function Screen() {
 	const loginWith = async (npub: string) => {
 		setValue(npub);
 		startTransition(async () => {
-			const res = await commands.login(npub);
+			const bunker: string = localStorage.getItem(`${npub}_bunker`);
+			const verifyBunker = bunker?.length && bunker?.startsWith("bunker://");
+			const res = await commands.login(npub, verifyBunker ? bunker : null);
 
 			if (res.status === "ok") {
 				navigate({

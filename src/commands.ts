@@ -4,9 +4,33 @@
          /** user-defined commands **/
 
          export const commands = {
-async login(id: string) : Promise<Result<string, string>> {
+async login(id: string, bunker: string | null) : Promise<Result<string, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("login", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("login", { id, bunker }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createAccount(name: string, picture: string) : Promise<Result<null, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("create_account", { name, picture }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importKey(nsec: string, password: string) : Promise<Result<string, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("import_key", { nsec, password }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async connectAccount(uri: string) : Promise<Result<string, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("connect_account", { uri }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -15,9 +39,9 @@ try {
 async getAccounts() : Promise<string[]> {
 return await TAURI_INVOKE("get_accounts");
 },
-async getProfile(id: string) : Promise<Result<string, string>> {
+async getMetadata(id: string) : Promise<Result<string, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("get_profile", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_metadata", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

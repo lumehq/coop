@@ -14,34 +14,58 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as IndexImport } from './routes/index'
-import { Route as AccountChatsImport } from './routes/$account.chats'
-import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
 
 // Create Virtual Routes
 
+const NostrConnectLazyImport = createFileRoute('/nostr-connect')()
 const NewLazyImport = createFileRoute('/new')()
+const ImportKeyLazyImport = createFileRoute('/import-key')()
+const CreateAccountLazyImport = createFileRoute('/create-account')()
+const AccountChatsLazyImport = createFileRoute('/$account/chats')()
+const AccountChatsIdLazyImport = createFileRoute('/$account/chats/$id')()
 
 // Create/Update Routes
+
+const NostrConnectLazyRoute = NostrConnectLazyImport.update({
+  path: '/nostr-connect',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() => import('./routes/nostr-connect.lazy').then((d) => d.Route))
 
 const NewLazyRoute = NewLazyImport.update({
   path: '/new',
   getParentRoute: () => rootRoute,
 } as any).lazy(() => import('./routes/new.lazy').then((d) => d.Route))
 
+const ImportKeyLazyRoute = ImportKeyLazyImport.update({
+  path: '/import-key',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() => import('./routes/import-key.lazy').then((d) => d.Route))
+
+const CreateAccountLazyRoute = CreateAccountLazyImport.update({
+  path: '/create-account',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() =>
+  import('./routes/create-account.lazy').then((d) => d.Route),
+)
+
 const IndexRoute = IndexImport.update({
   path: '/',
   getParentRoute: () => rootRoute,
 } as any)
 
-const AccountChatsRoute = AccountChatsImport.update({
+const AccountChatsLazyRoute = AccountChatsLazyImport.update({
   path: '/$account/chats',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/$account.chats.lazy').then((d) => d.Route),
+)
 
-const AccountChatsIdRoute = AccountChatsIdImport.update({
+const AccountChatsIdLazyRoute = AccountChatsIdLazyImport.update({
   path: '/$id',
-  getParentRoute: () => AccountChatsRoute,
-} as any)
+  getParentRoute: () => AccountChatsLazyRoute,
+} as any).lazy(() =>
+  import('./routes/$account.chats.$id.lazy').then((d) => d.Route),
+)
 
 // Populate the FileRoutesByPath interface
 
@@ -54,6 +78,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
+    '/create-account': {
+      id: '/create-account'
+      path: '/create-account'
+      fullPath: '/create-account'
+      preLoaderRoute: typeof CreateAccountLazyImport
+      parentRoute: typeof rootRoute
+    }
+    '/import-key': {
+      id: '/import-key'
+      path: '/import-key'
+      fullPath: '/import-key'
+      preLoaderRoute: typeof ImportKeyLazyImport
+      parentRoute: typeof rootRoute
+    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -61,19 +99,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NewLazyImport
       parentRoute: typeof rootRoute
     }
+    '/nostr-connect': {
+      id: '/nostr-connect'
+      path: '/nostr-connect'
+      fullPath: '/nostr-connect'
+      preLoaderRoute: typeof NostrConnectLazyImport
+      parentRoute: typeof rootRoute
+    }
     '/$account/chats': {
       id: '/$account/chats'
       path: '/$account/chats'
       fullPath: '/$account/chats'
-      preLoaderRoute: typeof AccountChatsImport
+      preLoaderRoute: typeof AccountChatsLazyImport
       parentRoute: typeof rootRoute
     }
     '/$account/chats/$id': {
       id: '/$account/chats/$id'
       path: '/$id'
       fullPath: '/$account/chats/$id'
-      preLoaderRoute: typeof AccountChatsIdImport
-      parentRoute: typeof AccountChatsImport
+      preLoaderRoute: typeof AccountChatsIdLazyImport
+      parentRoute: typeof AccountChatsLazyImport
     }
   }
 }
@@ -82,8 +127,13 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
+  CreateAccountLazyRoute,
+  ImportKeyLazyRoute,
   NewLazyRoute,
-  AccountChatsRoute: AccountChatsRoute.addChildren({ AccountChatsIdRoute }),
+  NostrConnectLazyRoute,
+  AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
+    AccountChatsIdLazyRoute,
+  }),
 })
 
 /* prettier-ignore-end */
@@ -95,24 +145,36 @@ export const routeTree = rootRoute.addChildren({
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/create-account",
+        "/import-key",
         "/new",
+        "/nostr-connect",
         "/$account/chats"
       ]
     },
     "/": {
       "filePath": "index.tsx"
     },
+    "/create-account": {
+      "filePath": "create-account.lazy.tsx"
+    },
+    "/import-key": {
+      "filePath": "import-key.lazy.tsx"
+    },
     "/new": {
       "filePath": "new.lazy.tsx"
     },
+    "/nostr-connect": {
+      "filePath": "nostr-connect.lazy.tsx"
+    },
     "/$account/chats": {
-      "filePath": "$account.chats.tsx",
+      "filePath": "$account.chats.lazy.tsx",
       "children": [
         "/$account/chats/$id"
       ]
     },
     "/$account/chats/$id": {
-      "filePath": "$account.chats.$id.tsx",
+      "filePath": "$account.chats.$id.lazy.tsx",
       "parent": "/$account/chats"
     }
   }
