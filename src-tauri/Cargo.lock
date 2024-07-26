@@ -2874,7 +2874,7 @@ checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 [[package]]
 name = "nostr"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "aes",
  "base64 0.21.7",
@@ -2903,7 +2903,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-trait",
  "flatbuffers",
@@ -2917,7 +2917,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -2932,7 +2932,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-utility",
  "atomic-destructor",
@@ -2952,7 +2952,7 @@ dependencies = [
 [[package]]
 name = "nostr-signer"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-utility",
  "nostr",
@@ -2965,7 +2965,7 @@ dependencies = [
 [[package]]
 name = "nostr-sqlite"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-trait",
  "nostr",
@@ -2979,7 +2979,7 @@ dependencies = [
 [[package]]
 name = "nostr-zapper"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-trait",
  "nostr",
@@ -3099,7 +3099,7 @@ dependencies = [
 [[package]]
 name = "nwc"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#79b84f618d2e339f13c763f697c6fd56d8062aec"
+source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4418,9 +4418,9 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "0.6.6"
+version = "0.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79e674e01f999af37c49f70a6ede167a8a60b2503e56c5599532a65baa5969a0"
+checksum = "eb5b1b31579f3811bf615c144393417496f152e12ac8b7663bf664f4a815306d"
 dependencies = [
  "serde",
 ]
@@ -5901,9 +5901,9 @@ checksum = "852e951cb7832cb45cb1169900d19760cfa39b82bc0ea9c0e5a14ae88411c98b"
 
 [[package]]
 name = "version_check"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vswhom"

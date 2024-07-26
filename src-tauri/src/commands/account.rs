@@ -224,18 +224,25 @@ pub async fn login(
 
 		client
 			.handle_notifications(|notification| async {
-				if let RelayPoolNotification::Event { event, .. } = notification {
-					if event.kind == Kind::GiftWrap {
-						if let Ok(UnwrappedGift { rumor, sender }) =
-							client.unwrap_gift_wrap(&event).await
-						{
-							window
-								.emit(
-									"event",
-									Payload { event: rumor.as_json(), sender: sender.to_hex() },
-								)
-								.unwrap();
+				if let RelayPoolNotification::Message { message, relay_url } = notification {
+					if let RelayMessage::Event { event, .. } = message {
+						if event.kind == Kind::GiftWrap {
+							match client.unwrap_gift_wrap(&event).await {
+								Ok(UnwrappedGift { rumor, sender }) => {
+									let payload =
+										Payload { event: rumor.as_json(), sender: sender.to_hex() };
+
+									if window.emit("event", payload).is_err() {
+										println!("Failed")
+									}
+								}
+								Err(e) => {
+									println!("Unwrapped Error: {} from {}", e, relay_url)
+								}
+							}
 						}
+					} else {
+						println!("message: {}", message.as_json())
 					}
 				}
 				Ok(false)

@@ -12,7 +12,7 @@ export function UserName({ className }: { className?: string }) {
 
 	if (user.isLoading) {
 		return (
-			<div className="size-4 w-20 bg-black/10 dark:bg-white/10 animate-pulse" />
+			<div className="size-4 w-20 rounded bg-black/10 dark:bg-white/10 animate-pulse" />
 		);
 	}
 

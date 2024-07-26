@@ -53,6 +53,10 @@ fn main() {
 			#[cfg(not(target_os = "linux"))]
 			let main_window = app.get_webview_window("main").unwrap();
 
+			// Open devtools
+			#[cfg(debug_assertions)]
+			main_window.open_devtools();
+
 			// Set custom decoration
 			#[cfg(target_os = "windows")]
 			main_window.create_overlay_titlebar().unwrap();

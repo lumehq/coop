@@ -46,16 +46,13 @@ pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chat_messages(
-	sender: String,
-	state: State<'_, Nostr>,
-) -> Result<Vec<String>, String> {
+pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let receiver_pk = signer.public_key().await.map_err(|e| e.to_string())?;
-	let sender_pk = PublicKey::parse(sender).map_err(|e| e.to_string())?;
+	let sender_pk = PublicKey::parse(id).map_err(|e| e.to_string())?;
 
-	let filter = Filter::new().kind(Kind::GiftWrap).pubkeys(vec![receiver_pk, sender_pk]);
+	let filter = Filter::new().kind(Kind::GiftWrap).pubkeys(vec![sender_pk, receiver_pk]);
 
 	match client.get_events_of(vec![filter], None).await {
 		Ok(events) => {
@@ -63,15 +60,17 @@ pub async fn get_chat_messages(
 				.filter_map(|ev| async move {
 					if let Ok(UnwrappedGift { rumor, sender }) = client.unwrap_gift_wrap(&ev).await
 					{
-						if rumor.kind == Kind::PrivateDirectMessage
-							&& (sender == sender_pk || is_target(&sender_pk, &rumor.tags))
-						{
-							return Some(rumor);
+						let is_target = is_target(&sender_pk, &rumor.tags);
+						let is_member = sender == sender_pk;
+						if rumor.kind == Kind::PrivateDirectMessage && (is_member || is_target) {
+							Some(rumor.as_json())
+						} else {
+							None
 						}
+					} else {
+						None
 					}
-					None
 				})
-				.map(|ev| ev.as_json())
 				.collect::<Vec<_>>()
 				.await;
 
@@ -152,7 +151,10 @@ pub async fn send_message(
 	let receiver = PublicKey::parse(&to).map_err(|e| e.to_string())?;
 
 	match client.send_private_msg_to(relays, receiver, message, None).await {
-		Ok(_) => Ok(()),
+		Ok(output) => {
+			println!("send to: {}", output.success.iter().join(", "));
+			Ok(())
+		}
 		Err(e) => Err(e.to_string()),
 	}
 }

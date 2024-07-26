@@ -127,7 +127,7 @@ function ChatList() {
 			<ScrollArea.Viewport className="relative h-full px-1.5">
 				{isLoading ? (
 					<div>
-						{Array.from(Array(5)).map((index) => (
+						{Array.from(Array(5)).map((_, index) => (
 							<div
 								key={index}
 								className="flex items-center rounded-lg p-2 mb-1 gap-2"
@@ -138,7 +138,7 @@ function ChatList() {
 						))}
 					</div>
 				) : isError ? (
-					<div>Error</div>
+					<div className="p-2">Error</div>
 				) : (
 					data.map((item) => (
 						<Link

@@ -144,7 +144,7 @@ function List() {
 				ref={ref}
 				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
-				<Virtualizer scrollRef={ref} shift>
+				<Virtualizer scrollRef={ref}>
 					{isLoading || !data ? (
 						<div className="w-full h-56 flex items-center justify-center">
 							<div className="flex items-center gap-1.5">
