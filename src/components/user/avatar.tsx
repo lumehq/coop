@@ -17,26 +17,29 @@ export function UserAvatar({ className }: { className?: string }) {
 	return (
 		<Avatar.Root
 			className={cn(
-				"shrink-0 block overflow-hidden bg-neutral-200 dark:bg-neutral-800",
+				"shrink-0 block overflow-hidden bg-black/10 dark:bg-white/10",
+				user.isLoading ? "animate-pulse" : "",
 				className,
 			)}
 		>
-			{user?.profile?.picture ? (
-				<Avatar.Image
-					src={`//wsrv.nl/?url=${user.profile?.picture}&w=200&h=200`}
-					alt={user.pubkey}
-					loading="lazy"
-					decoding="async"
-					className="w-full aspect-square object-cover outline-[.5px] outline-black/5 content-visibility-auto contain-intrinsic-size-[auto]"
-				/>
+			{!user.isLoading ? (
+				<>
+					<Avatar.Image
+						src={`//wsrv.nl/?url=${user.profile?.picture}&w=200&h=200`}
+						alt={user.pubkey}
+						loading="lazy"
+						decoding="async"
+						className="w-full aspect-square object-cover outline-[.5px] outline-black/5 content-visibility-auto contain-intrinsic-size-[auto]"
+					/>
+					<Avatar.Fallback>
+						<img
+							src={fallback}
+							alt={user.pubkey}
+							className="size-full bg-black dark:bg-white outline-[.5px] outline-black/5 content-visibility-auto contain-intrinsic-size-[auto]"
+						/>
+					</Avatar.Fallback>
+				</>
 			) : null}
-			<Avatar.Fallback>
-				<img
-					src={fallback}
-					alt={user.pubkey}
-					className="size-full bg-black dark:bg-white outline-[.5px] outline-black/5 content-visibility-auto contain-intrinsic-size-[auto]"
-				/>
-			</Avatar.Fallback>
 		</Avatar.Root>
 	);
 }

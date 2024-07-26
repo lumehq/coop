@@ -76,9 +76,8 @@ fn main() {
 				// Config
 				let opts = Options::new()
 					.autoconnect(true)
-					.automatic_authentication(false)
 					.timeout(Duration::from_secs(5))
-					.send_timeout(Some(Duration::from_secs(50)))
+					.send_timeout(Some(Duration::from_secs(5)))
 					.connection_timeout(Some(Duration::from_secs(20)));
 
 				// Setup nostr client
@@ -98,6 +97,7 @@ fn main() {
 			Ok(())
 		})
 		.enable_macos_default_menu(false)
+		.plugin(tauri_plugin_prevent_default::init())
 		.plugin(tauri_plugin_os::init())
 		.plugin(tauri_plugin_clipboard_manager::init())
 		.plugin(tauri_plugin_dialog::init())

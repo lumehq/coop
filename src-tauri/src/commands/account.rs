@@ -155,55 +155,6 @@ pub async fn login(
 	let hex = public_key.to_hex();
 	let keyring = Entry::new(&id, "nostr_secret").expect("Unexpected.");
 
-	tauri::async_runtime::spawn(async move {
-		let window = app.get_webview_window("main").expect("Window is terminated.");
-		let state = window.state::<Nostr>();
-		let client = &state.client;
-
-		client
-			.handle_notifications(|notification| async {
-				if let RelayPoolNotification::Message { message, relay_url } = notification {
-					if let RelayMessage::Event { event, .. } = message {
-						if event.kind == Kind::GiftWrap {
-							if let Ok(UnwrappedGift { rumor, sender }) =
-								client.unwrap_gift_wrap(&event).await
-							{
-								window
-									.emit(
-										"event",
-										Payload { event: rumor.as_json(), sender: sender.to_hex() },
-									)
-									.unwrap();
-							}
-						}
-					} else if let RelayMessage::Auth { challenge } = message {
-						match client.auth(challenge, relay_url.clone()).await {
-							Ok(..) => {
-								println!("Authenticated to {} relay.", relay_url);
-
-								if let Ok(relay) = client.relay(relay_url).await {
-									let opts = RelaySendOptions::new().skip_send_confirmation(true);
-									if let Err(e) = relay.resubscribe(opts).await {
-										println!(
-											"Impossible to resubscribe to '{}': {e}",
-											relay.url()
-										);
-									}
-								}
-							}
-							Err(e) => {
-								println!("Can't authenticate to '{relay_url}' relay: {e}");
-							}
-						}
-					} else {
-						println!("relay message: {}", message.as_json());
-					}
-				}
-				Ok(false)
-			})
-			.await
-	});
-
 	let password = match keyring.get_password() {
 		Ok(pw) => pw,
 		Err(_) => return Err("Cancelled".into()),
@@ -256,12 +207,41 @@ pub async fn login(
 
 	if client.reconcile_with(relays.clone(), old, NegentropyOptions::default()).await.is_ok() {
 		handle.emit("synchronized", ()).unwrap();
-		println!("synchronized");
 	};
 
 	if client.subscribe_to(relays, vec![new], None).await.is_ok() {
 		println!("Waiting for new message...")
 	};
+
+	tauri::async_runtime::spawn(async move {
+		let window = app.get_webview_window("main").expect("Window is terminated.");
+		let state = window.state::<Nostr>();
+		let client = &state.client;
+
+		// Workaround for https://github.com/rust-nostr/nostr/issues/509
+		// TODO: remove
+		let _ = client.get_events_of(vec![Filter::new().kind(Kind::TextNote).limit(0)], None).await;
+
+		client
+			.handle_notifications(|notification| async {
+				if let RelayPoolNotification::Event { event, .. } = notification {
+					if event.kind == Kind::GiftWrap {
+						if let Ok(UnwrappedGift { rumor, sender }) =
+							client.unwrap_gift_wrap(&event).await
+						{
+							window
+								.emit(
+									"event",
+									Payload { event: rumor.as_json(), sender: sender.to_hex() },
+								)
+								.unwrap();
+						}
+					}
+				}
+				Ok(false)
+			})
+			.await
+	});
 
 	Ok(hex)
 }

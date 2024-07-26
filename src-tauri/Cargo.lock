@@ -929,6 +929,7 @@ dependencies = [
  "tauri-plugin-devtools",
  "tauri-plugin-dialog",
  "tauri-plugin-os",
+ "tauri-plugin-prevent-default",
  "tauri-plugin-shell",
  "tauri-specta",
 ]
@@ -5090,6 +5091,16 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror",
+]
+
+[[package]]
+name = "tauri-plugin-prevent-default"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38be0ac8fcc5fa03422409fc506015b01dc29cc8a3a72572c68d41e6f10f4491"
+dependencies = [
+ "bitflags 2.6.0",
+ "tauri",
 ]
 
 [[package]]

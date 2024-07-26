@@ -32,9 +32,9 @@ pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 
 			let uniqs = rumors
 				.into_iter()
+				.sorted_by_key(|ev| Reverse(ev.created_at))
 				.filter(|ev| ev.pubkey != public_key)
 				.unique_by(|ev| ev.pubkey)
-				.sorted_by_key(|ev| Reverse(ev.created_at))
 				.map(|ev| ev.as_json())
 				.collect::<Vec<_>>();
 

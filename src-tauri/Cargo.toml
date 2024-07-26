@@ -12,16 +12,18 @@ tauri-build = { version = "2.0.0-beta", features = [] }
 
 [dependencies]
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
-  "sqlite",
+	"sqlite",
 ] }
 tauri = { version = "2.0.0-beta", features = [
-  "tray-icon",
-  "macos-private-api",
-  "protocol-asset",
+	"tray-icon",
+	"macos-private-api",
+	"protocol-asset",
 ] }
 tauri-specta = { git = "https://github.com/reyamir/tauri-specta", branch = "feat/tauri-v2", features = [
-  "typescript",
+	"typescript",
 ] }
+tauri-plugin-devtools = "2.0.0-beta"
+tauri-plugin-prevent-default = "0.1"
 tauri-plugin-os = "2.0.0-beta"
 tauri-plugin-clipboard-manager = "2.0.0-beta"
 tauri-plugin-dialog = "2.0.0-beta"
@@ -30,15 +32,14 @@ tauri-plugin-decorum = "0.1.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = { version = "3", features = [
-  "apple-native",
-  "windows-native",
-  "linux-native",
+	"apple-native",
+	"windows-native",
+	"linux-native",
 ] }
 keyring-search = "1.2.0"
 itertools = "0.13.0"
 futures = "0.3.30"
 specta = "^2.0.0-rc.12"
-tauri-plugin-devtools = "2.0.0-beta"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 border = { git = "https://github.com/ahkohd/tauri-toolkit", branch = "v2" }

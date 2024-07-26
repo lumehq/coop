@@ -25,13 +25,9 @@ function Screen() {
 				data-tauri-drag-region
 				className="shrink-0 w-[280px] h-full flex flex-col justify-between border-r border-black/5 dark:border-white/5"
 			>
-				<div data-tauri-drag-region className="flex-1">
-					<Header />
-					<ChatList />
-				</div>
-				<div className="h-12 shrink-0 flex items-center px-2.5 border-t border-black/5 dark:border-white/5">
-					<CurrentUser />
-				</div>
+				<Header />
+				<ChatList />
+				<CurrentUser />
 			</div>
 			<div className="flex-1 min-w-0 min-h-0 bg-white dark:bg-neutral-900 overflow-auto">
 				<Outlet />
@@ -44,7 +40,7 @@ function Header() {
 	return (
 		<div
 			data-tauri-drag-region
-			className="h-12 px-3.5 flex items-center justify-end"
+			className="shrink-0 h-12 px-3.5 flex items-center justify-end"
 		>
 			<div className="flex items-center gap-2">
 				<Link
@@ -130,9 +126,19 @@ function ChatList() {
 		>
 			<ScrollArea.Viewport className="relative h-full px-1.5">
 				{isLoading ? (
-					<p>Loading...</p>
+					<div>
+						{Array.from(Array(5)).map((index) => (
+							<div
+								key={index}
+								className="flex items-center rounded-lg p-2 mb-1 gap-2"
+							>
+								<div className="size-9 rounded-full animate-pulse bg-black/10 dark:bg-white/10" />
+								<div className="size-4 w-20 rounded animate-pulse bg-black/10 dark:bg-white/10" />
+							</div>
+						))}
+					</div>
 				) : isError ? (
-					<p>Error</p>
+					<div>Error</div>
 				) : (
 					data.map((item) => (
 						<Link
@@ -148,7 +154,7 @@ function ChatList() {
 											isActive ? "bg-black/5 dark:bg-white/5" : "",
 										)}
 									>
-										<User.Avatar className="shrink-0 size-9 rounded-full object-cover" />
+										<User.Avatar className="size-9 rounded-full" />
 										<div className="flex-1 inline-flex items-center justify-between text-sm">
 											<div className="inline-flex leading-tight">
 												<User.Name className="max-w-[8rem] truncate font-semibold" />
@@ -182,11 +188,13 @@ function CurrentUser() {
 	const { account } = Route.useParams();
 
 	return (
-		<User.Provider pubkey={account}>
-			<User.Root className="inline-flex items-center gap-2">
-				<User.Avatar className="size-8 rounded-full object-cover" />
-				<User.Name className="text-sm font-medium leading-tight" />
-			</User.Root>
-		</User.Provider>
+		<div className="shrink-0 h-12 flex items-center px-2.5 border-t border-black/5 dark:border-white/5">
+			<User.Provider pubkey={account}>
+				<User.Root className="inline-flex items-center gap-2">
+					<User.Avatar className="size-8 rounded-full" />
+					<User.Name className="text-sm font-medium leading-tight" />
+				</User.Root>
+			</User.Provider>
+		</div>
 	);
 }
