@@ -1,7 +1,8 @@
 import { commands } from "@/commands";
 import { cn, getReceivers, time } from "@/commons";
 import { Spinner } from "@/components/spinner";
-import { ArrowUp, Paperclip } from "@phosphor-icons/react";
+import { User } from "@/components/user";
+import { ArrowUp, DotsThree, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -20,11 +21,8 @@ type Payload = {
 
 export const Route = createFileRoute("/$account/chats/$id")({
 	beforeLoad: async ({ params }) => {
-		const inboxRelays: string[] = await invoke("get_inboxes", {
-			id: params.id,
-		});
-
-		return { inboxRelays };
+		const inbox: string[] = await invoke("connect_inbox", { id: params.id });
+		return { inbox };
 	},
 	component: Screen,
 	pendingComponent: Pending,
@@ -41,9 +39,44 @@ function Pending() {
 function Screen() {
 	return (
 		<div className="size-full flex flex-col">
-			<div className="h-11 shrink-0 border-b border-neutral-100 dark:border-neutral-800" />
+			<Header />
 			<List />
 			<Form />
+		</div>
+	);
+}
+
+function Header() {
+	const { account, id } = Route.useParams();
+
+	return (
+		<div
+			data-tauri-drag-region
+			className="h-12 shrink-0 flex items-center justify-between px-3.5 border-b border-neutral-100 dark:border-neutral-800"
+		>
+			<div>
+				<div className="flex -space-x-1 overflow-hidden">
+					<User.Provider pubkey={account}>
+						<User.Root className="size-7 rounded-full inline-block ring-2 ring-white dark:ring-neutral-900">
+							<User.Avatar className="size-7 rounded-full" />
+						</User.Root>
+					</User.Provider>
+					<User.Provider pubkey={id}>
+						<User.Root className="size-7 rounded-full inline-block ring-2 ring-white dark:ring-neutral-900">
+							<User.Avatar className="size-7 rounded-full" />
+						</User.Root>
+					</User.Provider>
+				</div>
+			</div>
+			<div className="flex items-center gap-2">
+				<div className="h-7 inline-flex items-center justify-center gap-1.5 px-2 rounded-full bg-neutral-100 dark:bg-neutral-900">
+					<span className="relative flex size-2">
+						<span className="animate-ping absolute inline-flex size-full rounded-full bg-teal-400 opacity-75" />
+						<span className="relative inline-flex rounded-full size-2 bg-teal-500" />
+					</span>
+					<div className="text-xs leading-tight">Connected</div>
+				</div>
+			</div>
 		</div>
 	);
 }
@@ -195,17 +228,14 @@ function List() {
 
 function Form() {
 	const { id } = Route.useParams();
-	const { inboxRelays } = Route.useRouteContext();
+	const { inbox } = Route.useRouteContext();
 
 	const [newMessage, setNewMessage] = useState("");
 	const [isPending, startTransition] = useTransition();
 
-	// const queryClient = useQueryClient();
-
 	const submit = async () => {
 		startTransition(async () => {
 			if (!newMessage.length) return;
-			if (!inboxRelays?.length) return;
 
 			const res = await commands.sendMessage(id, newMessage);
 
@@ -220,27 +250,19 @@ function Form() {
 
 	return (
 		<div className="h-12 shrink-0 flex items-center justify-center px-3.5">
-			{!inboxRelays.length ? (
-				<div className="inline-flex items-center justify-center gap-2 h-9 w-fit px-3 bg-neutral-100 dark:bg-neutral-800 rounded-full text-sm">
+			{!inbox.length ? (
+				<div className="text-xs">
 					This user doesn't have inbox relays. You cannot send messages to them.
 				</div>
 			) : (
 				<div className="flex-1 flex items-center gap-2">
-					<div className="inline-flex gap-px">
+					<div className="inline-flex gap-1">
 						<div
 							title="Attach media"
 							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
 						>
 							<Paperclip className="size-5" />
 						</div>
-						{/*
-						<div
-							title="Inbox Relays"
-							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
-						>
-							<CloudArrowUp className="size-5" />
-						</div>
-						 */}
 					</div>
 					<input
 						placeholder="Message..."

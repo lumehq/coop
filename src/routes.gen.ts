@@ -22,6 +22,7 @@ const NostrConnectLazyImport = createFileRoute('/nostr-connect')()
 const NewLazyImport = createFileRoute('/new')()
 const ImportKeyLazyImport = createFileRoute('/import-key')()
 const CreateAccountLazyImport = createFileRoute('/create-account')()
+const ContactsLazyImport = createFileRoute('/contacts')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
 const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
 
@@ -48,6 +49,11 @@ const CreateAccountLazyRoute = CreateAccountLazyImport.update({
 } as any).lazy(() =>
   import('./routes/create-account.lazy').then((d) => d.Route),
 )
+
+const ContactsLazyRoute = ContactsLazyImport.update({
+  path: '/contacts',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() => import('./routes/contacts.lazy').then((d) => d.Route))
 
 const IndexRoute = IndexImport.update({
   path: '/',
@@ -82,6 +88,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexImport
+      parentRoute: typeof rootRoute
+    }
+    '/contacts': {
+      id: '/contacts'
+      path: '/contacts'
+      fullPath: '/contacts'
+      preLoaderRoute: typeof ContactsLazyImport
       parentRoute: typeof rootRoute
     }
     '/create-account': {
@@ -140,6 +153,7 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
+  ContactsLazyRoute,
   CreateAccountLazyRoute,
   ImportKeyLazyRoute,
   NewLazyRoute,
@@ -159,6 +173,7 @@ export const routeTree = rootRoute.addChildren({
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/contacts",
         "/create-account",
         "/import-key",
         "/new",
@@ -168,6 +183,9 @@ export const routeTree = rootRoute.addChildren({
     },
     "/": {
       "filePath": "index.tsx"
+    },
+    "/contacts": {
+      "filePath": "contacts.lazy.tsx"
     },
     "/create-account": {
       "filePath": "create-account.lazy.tsx"

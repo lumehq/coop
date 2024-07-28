@@ -54,9 +54,9 @@ pub async fn get_chats(db_only: bool, state: State<'_, Nostr>) -> Result<Vec<Str
 
 	let uniqs = events
 		.into_iter()
+		.sorted_by_key(|ev| Reverse(ev.created_at))
 		.filter(|ev| ev.pubkey != public_key)
 		.unique_by(|ev| ev.pubkey)
-		.sorted_by_key(|ev| Reverse(ev.created_at))
 		.map(|ev| ev.as_json())
 		.collect::<Vec<_>>();
 
@@ -102,9 +102,17 @@ pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Ve
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_inboxes(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
+pub async fn connect_inbox(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
+	let mut inbox_relays = state.inbox_relays.lock().await;
+
+	if let Some(relays) = inbox_relays.get(&public_key) {
+		for relay in relays {
+			let _ = client.connect_relay(relay).await;
+		}
+		return Ok(relays.to_owned());
+	}
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
@@ -123,7 +131,6 @@ pub async fn get_inboxes(id: String, state: State<'_, Nostr>) -> Result<Vec<Stri
 					}
 				}
 
-				let mut inbox_relays = state.inbox_relays.lock().await;
 				inbox_relays.insert(public_key, relays.clone());
 			}
 
@@ -131,6 +138,22 @@ pub async fn get_inboxes(id: String, state: State<'_, Nostr>) -> Result<Vec<Stri
 		}
 		Err(e) => Err(e.to_string()),
 	}
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn disconnect_inbox(id: String, state: State<'_, Nostr>) -> Result<(), String> {
+	let client = &state.client;
+	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
+	let inbox_relays = state.inbox_relays.lock().await;
+
+	if let Some(relays) = inbox_relays.get(&public_key) {
+		for relay in relays {
+			let _ = client.disconnect_relay(relay).await;
+		}
+	}
+
+	Ok(())
 }
 
 #[tauri::command]

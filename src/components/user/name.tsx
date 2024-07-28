@@ -1,14 +1,8 @@
-import { cn } from "@/commons";
+import { cn, npub } from "@/commons";
 import { useUserContext } from "./provider";
-import { useMemo } from "react";
-import { uniqueNamesGenerator, names } from "unique-names-generator";
 
 export function UserName({ className }: { className?: string }) {
 	const user = useUserContext();
-	const name = useMemo(
-		() => uniqueNamesGenerator({ dictionaries: [names] }),
-		[user.pubkey],
-	);
 
 	if (user.isLoading) {
 		return (
@@ -18,7 +12,9 @@ export function UserName({ className }: { className?: string }) {
 
 	return (
 		<div className={cn("max-w-[12rem] truncate", className)}>
-			{user.profile?.display_name || user.profile?.name || name}
+			{user.profile?.display_name ||
+				user.profile?.name ||
+				npub(user.pubkey, 16)}
 		</div>
 	);
 }

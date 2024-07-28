@@ -1,13 +1,14 @@
 import { commands } from "@/commands";
 import { ago, cn } from "@/commons";
 import { User } from "@/components/user";
-import { Plus, UsersThree } from "@phosphor-icons/react";
+import { DotsThree, Plus, UsersThree } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
+import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import type { NostrEvent } from "nostr-tools";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 type Payload = {
 	event: string;
@@ -44,14 +45,14 @@ function Header() {
 		>
 			<div className="flex items-center gap-2">
 				<Link
-					to="/new"
-					className="size-7 rounded-md inline-flex items-center justify-center text-neutral-600 dark:text-neutral-400 hover:bg-black/10 dark:hover:bg-white/10"
+					to="/contacts"
+					className="size-7 rounded-lg inline-flex items-center justify-center text-neutral-600 dark:text-neutral-400 hover:bg-black/5 dark:hover:bg-white/5"
 				>
 					<UsersThree className="size-4" />
 				</Link>
 				<Link
 					to="/new"
-					className="h-7 w-12 rounded-t-md rounded-b-md rounded-l-md rounded-r inline-flex items-center justify-center bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"
+					className="h-7 w-12 rounded-t-lg rounded-l-lg rounded-r inline-flex items-center justify-center bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"
 				>
 					<Plus className="size-4" />
 				</Link>
@@ -82,7 +83,7 @@ function ChatList() {
 	});
 
 	useEffect(() => {
-		const unlisten = listen<Payload>("event", async (data) => {
+		const unlisten = listen<Payload>("new_chat", async (data) => {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
 
@@ -99,6 +100,17 @@ function ChatList() {
 							return [event, ...prevEvents];
 						},
 					);
+				} else {
+					const index = chats.findIndex((item) => item.pubkey === event.pubkey);
+					const newEvents = [...chats];
+
+					if (index !== -1) {
+						newEvents[index] = {
+							...event,
+						};
+
+						await queryClient.setQueryData(["chats"], newEvents);
+					}
 				}
 			}
 		});
@@ -142,7 +154,7 @@ function ChatList() {
 											isActive ? "bg-black/5 dark:bg-white/5" : "",
 										)}
 									>
-										<User.Avatar className="size-9 rounded-full" />
+										<User.Avatar className="size-8 rounded-full" />
 										<div className="flex-1 inline-flex items-center justify-between text-sm">
 											<div className="inline-flex leading-tight">
 												<User.Name className="max-w-[8rem] truncate font-semibold" />
@@ -173,16 +185,50 @@ function ChatList() {
 }
 
 function CurrentUser() {
-	const { account } = Route.useParams();
+	const params = Route.useParams();
+	const navigate = Route.useNavigate();
+
+	const showContextMenu = useCallback(async (e: React.MouseEvent) => {
+		e.preventDefault();
+
+		const menuItems = await Promise.all([
+			MenuItem.new({
+				text: "Settings",
+				action: () => navigate({ to: "/" }),
+			}),
+			MenuItem.new({
+				text: "Feedback",
+				action: () => navigate({ to: "/" }),
+			}),
+			PredefinedMenuItem.new({ item: "Separator" }),
+			MenuItem.new({
+				text: "Switch account",
+				action: () => navigate({ to: "/" }),
+			}),
+		]);
+
+		const menu = await Menu.new({
+			items: menuItems,
+		});
+
+		await menu.popup().catch((e) => console.error(e));
+	}, []);
 
 	return (
-		<div className="shrink-0 h-12 flex items-center px-3.5 border-t border-black/5 dark:border-white/5">
-			<User.Provider pubkey={account}>
+		<div className="shrink-0 h-12 flex items-center justify-between px-3.5 border-t border-black/5 dark:border-white/5">
+			<User.Provider pubkey={params.account}>
 				<User.Root className="inline-flex items-center gap-2">
 					<User.Avatar className="size-8 rounded-full" />
 					<User.Name className="text-sm font-medium leading-tight" />
 				</User.Root>
 			</User.Provider>
+			<button
+				type="button"
+				onClick={(e) => showContextMenu(e)}
+				className="size-7 inline-flex items-center justify-center rounded-md text-neutral-700 dark:text-neutral-300 hover:bg-black/5 dark:hover:bg-white/5"
+			>
+				<DotsThree className="size-5" />
+			</button>
 		</div>
 	);
 }

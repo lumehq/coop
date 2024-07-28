@@ -3,6 +3,7 @@ import { type ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import updateLocale from "dayjs/plugin/updateLocale";
+import { nip19 } from "nostr-tools";
 import { twMerge } from "tailwind-merge";
 import { commands } from "./commands";
 
@@ -29,6 +30,7 @@ export function cn(...inputs: ClassValue[]) {
 export function npub(pubkey: string, len: number) {
 	if (pubkey.length <= len) return pubkey;
 
+	const npub = pubkey.startsWith("npub1") ? pubkey : nip19.npubEncode(pubkey);
 	const separator = " ... ";
 
 	const sepLen = separator.length;
@@ -37,9 +39,9 @@ export function npub(pubkey: string, len: number) {
 	const backChars = Math.floor(charsToShow / 2);
 
 	return (
-		pubkey.substring(0, frontChars) +
+		npub.substring(0, frontChars) +
 		separator +
-		pubkey.substring(pubkey.length - backChars)
+		npub.substring(npub.length - backChars)
 	);
 }
 

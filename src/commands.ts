@@ -63,9 +63,17 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async getInboxes(id: string) : Promise<Result<string[], string>> {
+async connectInbox(id: string) : Promise<Result<string[], string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("get_inboxes", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("connect_inbox", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async disconnectInbox(id: string) : Promise<Result<null, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("disconnect_inbox", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

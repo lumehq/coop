@@ -14,6 +14,7 @@ mod common;
 
 pub struct Nostr {
 	client: Client,
+	contact_list: Mutex<Vec<Contact>>,
 	inbox_relays: Mutex<HashMap<PublicKey, Vec<String>>>,
 }
 
@@ -28,7 +29,8 @@ fn main() {
 			get_metadata,
 			get_chats,
 			get_chat_messages,
-			get_inboxes,
+			connect_inbox,
+			disconnect_inbox,
 			send_message,
 		]);
 
@@ -84,7 +86,9 @@ fn main() {
 				let client = ClientBuilder::default().opts(opts).database(database).build();
 
 				// Add bootstrap relay
-				let _ = client.add_relays(["wss://relay.damus.io", "wss://relay.nostr.net"]).await;
+				let _ = client
+					.add_relays(["wss://relay.poster.place/", "wss://bostr.nokotaro.com/"])
+					.await;
 
 				// Connect
 				client.connect().await;
@@ -93,7 +97,11 @@ fn main() {
 			});
 
 			// Create global state
-			app.manage(Nostr { client, inbox_relays: Mutex::new(HashMap::new()) });
+			app.manage(Nostr {
+				client,
+				contact_list: Mutex::new(Vec::new()),
+				inbox_relays: Mutex::new(HashMap::new()),
+			});
 
 			Ok(())
 		})
