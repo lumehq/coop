@@ -55,7 +55,6 @@ export function UserProvider({
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 		staleTime: Number.POSITIVE_INFINITY,
-		retry: 2,
 	});
 
 	return (

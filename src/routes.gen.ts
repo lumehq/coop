@@ -14,6 +14,7 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as IndexImport } from './routes/index'
+import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
 
 // Create Virtual Routes
 
@@ -23,7 +24,6 @@ const ImportKeyLazyImport = createFileRoute('/import-key')()
 const CreateAccountLazyImport = createFileRoute('/create-account')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
 const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
-const AccountChatsIdLazyImport = createFileRoute('/$account/chats/$id')()
 
 // Create/Update Routes
 
@@ -68,12 +68,10 @@ const AccountChatsNewLazyRoute = AccountChatsNewLazyImport.update({
   import('./routes/$account.chats.new.lazy').then((d) => d.Route),
 )
 
-const AccountChatsIdLazyRoute = AccountChatsIdLazyImport.update({
+const AccountChatsIdRoute = AccountChatsIdImport.update({
   path: '/$id',
   getParentRoute: () => AccountChatsLazyRoute,
-} as any).lazy(() =>
-  import('./routes/$account.chats.$id.lazy').then((d) => d.Route),
-)
+} as any)
 
 // Populate the FileRoutesByPath interface
 
@@ -125,7 +123,7 @@ declare module '@tanstack/react-router' {
       id: '/$account/chats/$id'
       path: '/$id'
       fullPath: '/$account/chats/$id'
-      preLoaderRoute: typeof AccountChatsIdLazyImport
+      preLoaderRoute: typeof AccountChatsIdImport
       parentRoute: typeof AccountChatsLazyImport
     }
     '/$account/chats/new': {
@@ -147,7 +145,7 @@ export const routeTree = rootRoute.addChildren({
   NewLazyRoute,
   NostrConnectLazyRoute,
   AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
-    AccountChatsIdLazyRoute,
+    AccountChatsIdRoute,
     AccountChatsNewLazyRoute,
   }),
 })
@@ -191,7 +189,7 @@ export const routeTree = rootRoute.addChildren({
       ]
     },
     "/$account/chats/$id": {
-      "filePath": "$account.chats.$id.lazy.tsx",
+      "filePath": "$account.chats.$id.tsx",
       "parent": "/$account/chats"
     },
     "/$account/chats/new": {

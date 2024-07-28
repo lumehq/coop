@@ -32,7 +32,7 @@ pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String,
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_of(vec![filter], None).await {
+	match client.get_events_of(vec![filter], Some(Duration::from_secs(2))).await {
 		Ok(events) => {
 			if let Some(event) = events.first() {
 				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())
@@ -149,7 +149,6 @@ pub async fn login(
 	state: State<'_, Nostr>,
 	handle: tauri::AppHandle,
 ) -> Result<String, String> {
-	let app = handle.app_handle().clone();
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let hex = public_key.to_hex();
@@ -187,62 +186,65 @@ pub async fn login(
 	}
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
-	let old = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-	let new = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
-
-	let mut relays = Vec::new();
 
 	if let Ok(events) = client.get_events_of(vec![inbox], None).await {
 		if let Some(event) = events.into_iter().next() {
-			for tag in &event.tags {
-				if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
-					let url = relay.to_string();
-					if client.add_relay(&url).await.is_ok() {
-						relays.push(url)
+			let urls = event
+				.tags()
+				.iter()
+				.filter_map(|tag| {
+					if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
+						Some(relay.to_string())
+					} else {
+						None
 					}
-				}
+				})
+				.collect::<Vec<_>>();
+
+			for url in urls.iter() {
+				let _ = client.add_relay(url).await;
+				let _ = client.connect_relay(url).await;
 			}
+
+			let mut inbox_relays = state.inbox_relays.lock().await;
+			inbox_relays.insert(public_key, urls);
 		}
 	}
 
-	if client.reconcile_with(relays.clone(), old, NegentropyOptions::default()).await.is_ok() {
-		handle.emit("synchronized", ()).unwrap();
-	};
+	let new_message = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+	let subscription_id = SubscriptionId::new("personal_inbox");
+	let _ = client.subscribe_with_id(subscription_id, vec![new_message], None).await;
 
-	if client.subscribe_to(relays, vec![new], None).await.is_ok() {
-		println!("Waiting for new message...")
-	};
+	let handle_clone = handle.app_handle().clone();
 
 	tauri::async_runtime::spawn(async move {
-		let window = app.get_webview_window("main").expect("Window is terminated.");
+		let window = handle_clone.get_webview_window("main").expect("Window is terminated.");
 		let state = window.state::<Nostr>();
 		let client = &state.client;
 
-		// Workaround for https://github.com/rust-nostr/nostr/issues/509
-		// TODO: remove
-		let _ = client.get_events_of(vec![Filter::new().kind(Kind::TextNote).limit(0)], None).await;
+		let sync = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+		let _ = client.reconcile(sync, NegentropyOptions::default()).await;
+	});
+
+	tauri::async_runtime::spawn(async move {
+		let window = handle.get_webview_window("main").expect("Window is terminated.");
+		let state = window.state::<Nostr>();
+		let client = &state.client;
 
 		client
 			.handle_notifications(|notification| async {
-				if let RelayPoolNotification::Message { message, relay_url } = notification {
-					if let RelayMessage::Event { event, .. } = message {
-						if event.kind == Kind::GiftWrap {
-							match client.unwrap_gift_wrap(&event).await {
-								Ok(UnwrappedGift { rumor, sender }) => {
-									let payload =
-										Payload { event: rumor.as_json(), sender: sender.to_hex() };
-
-									if window.emit("event", payload).is_err() {
-										println!("Failed")
-									}
-								}
-								Err(e) => {
-									println!("Unwrapped Error: {} from {}", e, relay_url)
-								}
+				if let RelayPoolNotification::Event { event, .. } = notification {
+					if event.kind == Kind::GiftWrap {
+						if let Ok(UnwrappedGift { rumor, sender }) =
+							client.unwrap_gift_wrap(&event).await
+						{
+							if let Err(e) = window.emit(
+								"event",
+								Payload { event: rumor.as_json(), sender: sender.to_hex() },
+							) {
+								println!("emit failed: {}", e)
 							}
 						}
-					} else {
-						println!("message: {}", message.as_json())
 					}
 				}
 				Ok(false)

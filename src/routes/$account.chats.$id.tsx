@@ -1,10 +1,11 @@
 import { commands } from "@/commands";
-import { cn, getReceivers, time, useRelays } from "@/commons";
+import { cn, getReceivers, time } from "@/commons";
 import { Spinner } from "@/components/spinner";
-import { ArrowUp, CloudArrowUp, Paperclip } from "@phosphor-icons/react";
+import { ArrowUp, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createLazyFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
@@ -17,24 +18,27 @@ type Payload = {
 	sender: string;
 };
 
-export const Route = createLazyFileRoute("/$account/chats/$id")({
+export const Route = createFileRoute("/$account/chats/$id")({
+	beforeLoad: async ({ params }) => {
+		const inboxRelays: string[] = await invoke("get_inboxes", {
+			id: params.id,
+		});
+
+		return { inboxRelays };
+	},
 	component: Screen,
+	pendingComponent: Pending,
 });
 
+function Pending() {
+	return (
+		<div className="size-full flex items-center justify-center">
+			<Spinner />
+		</div>
+	);
+}
+
 function Screen() {
-	const { id } = Route.useParams();
-	const { isLoading, data: relays } = useRelays(id);
-
-	useEffect(() => {
-		if (!isLoading && relays?.length)
-			commands.subscribeTo(id, relays).then(() => console.log("sub: ", id));
-
-		return () => {
-			if (!isLoading && relays?.length)
-				commands.unsubscribe(id).then(() => console.log("unsub: ", id));
-		};
-	}, [isLoading, relays]);
-
 	return (
 		<div className="size-full flex flex-col">
 			<div className="h-11 shrink-0 border-b border-neutral-100 dark:border-neutral-800" />
@@ -46,7 +50,6 @@ function Screen() {
 
 function List() {
 	const { account, id } = Route.useParams();
-	const { isLoading: rl, isError: rE } = useRelays(id);
 	const { isLoading, isError, data } = useQuery({
 		queryKey: ["chats", id],
 		queryFn: async () => {
@@ -63,7 +66,6 @@ function List() {
 				throw new Error(res.error);
 			}
 		},
-		enabled: !rl && !rE,
 		refetchOnWindowFocus: false,
 	});
 
@@ -120,11 +122,8 @@ function List() {
 			await queryClient.setQueryData(
 				["chats", id],
 				(prevEvents: NostrEvent[]) => {
-					if (!prevEvents) {
-						return prevEvents;
-					}
+					if (!prevEvents) return prevEvents;
 					return [...prevEvents, event];
-					// queryClient.invalidateQueries(['chats', id]);
 				},
 			);
 		});
@@ -144,14 +143,34 @@ function List() {
 				ref={ref}
 				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
-				<Virtualizer scrollRef={ref}>
+				<Virtualizer scrollRef={ref} shift>
 					{isLoading || !data ? (
-						<div className="w-full h-56 flex items-center justify-center">
-							<div className="flex items-center gap-1.5">
-								<Spinner />
-								Loading message...
+						<>
+							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
+								<div className="flex-1 min-w-0 inline-flex">
+									<div className="py-2 px-3 w-fit max-w-[400px] bg-neutral-100 dark:bg-neutral-800 rounded-l-md rounded-r-xl rounded-t-2xl">
+										Loading...
+									</div>
+								</div>
+								<div className="shrink-0 w-16 flex items-center justify-end">
+									<span className="text-xs text-right text-neutral-600 dark:text-neutral-400">
+										{time(Math.floor(Date.now() / 1000))}
+									</span>
+								</div>
 							</div>
-						</div>
+							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
+								<div className="flex-1 min-w-0 inline-flex justify-end">
+									<div className="py-2 px-3 w-fit max-w-[400px] bg-blue-500 text-white rounded-l-xl rounded-r-md rounded-t-2xl">
+										Loading...
+									</div>
+								</div>
+								<div className="shrink-0 w-16 flex items-center justify-end">
+									<span className="text-xs text-right text-neutral-600 dark:text-neutral-400">
+										{time(Math.floor(Date.now() / 1000))}
+									</span>
+								</div>
+							</div>
+						</>
 					) : isError ? (
 						<div className="w-full h-56 flex items-center justify-center">
 							<div className="flex items-center gap-1.5">
@@ -176,34 +195,32 @@ function List() {
 
 function Form() {
 	const { id } = Route.useParams();
-	const { isLoading, isError, data: relays } = useRelays(id);
+	const { inboxRelays } = Route.useRouteContext();
 
 	const [newMessage, setNewMessage] = useState("");
 	const [isPending, startTransition] = useTransition();
 
+	// const queryClient = useQueryClient();
+
 	const submit = async () => {
 		startTransition(async () => {
-			if (newMessage.length < 1) return;
+			if (!newMessage.length) return;
+			if (!inboxRelays?.length) return;
 
-			const res = await commands.sendMessage(id, newMessage, relays);
+			const res = await commands.sendMessage(id, newMessage);
 
-			if (res.status === "ok") {
-				setNewMessage("");
-			} else {
+			if (res.status === "error") {
 				await message(res.error, { title: "Coop", kind: "error" });
 				return;
 			}
+
+			setNewMessage("");
 		});
 	};
 
 	return (
 		<div className="h-12 shrink-0 flex items-center justify-center px-3.5">
-			{isLoading ? (
-				<div className="inline-flex items-center justify-center gap-2 h-9 w-fit px-3 bg-neutral-100 dark:bg-neutral-800 rounded-full text-sm">
-					<Spinner />
-					Connecting to inbox relays
-				</div>
-			) : isError || !relays.length ? (
+			{!inboxRelays.length ? (
 				<div className="inline-flex items-center justify-center gap-2 h-9 w-fit px-3 bg-neutral-100 dark:bg-neutral-800 rounded-full text-sm">
 					This user doesn't have inbox relays. You cannot send messages to them.
 				</div>
@@ -216,12 +233,14 @@ function Form() {
 						>
 							<Paperclip className="size-5" />
 						</div>
+						{/*
 						<div
 							title="Inbox Relays"
 							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
 						>
 							<CloudArrowUp className="size-5" />
 						</div>
+						 */}
 					</div>
 					<input
 						placeholder="Message..."

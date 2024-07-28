@@ -47,17 +47,9 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async getInboxes(id: string) : Promise<Result<string[], string>> {
+async getChats(dbOnly: boolean) : Promise<Result<string[], string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("get_inboxes", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getChats() : Promise<Result<string[], string>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("get_chats") };
+    return { status: "ok", data: await TAURI_INVOKE("get_chats", { dbOnly }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -71,25 +63,17 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async sendMessage(to: string, message: string, relays: string[]) : Promise<Result<null, string>> {
+async getInboxes(id: string) : Promise<Result<string[], string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("send_message", { to, message, relays }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_inboxes", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async subscribeTo(id: string, relays: string[]) : Promise<Result<null, string>> {
+async sendMessage(to: string, message: string) : Promise<Result<null, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("subscribe_to", { id, relays }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async unsubscribe(id: string) : Promise<Result<null, null>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("unsubscribe", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_message", { to, message }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

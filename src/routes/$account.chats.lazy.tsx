@@ -3,7 +3,7 @@ import { ago, cn } from "@/commons";
 import { User } from "@/components/user";
 import { Plus, UsersThree } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import type { NostrEvent } from "nostr-tools";
@@ -62,10 +62,11 @@ function Header() {
 
 function ChatList() {
 	const { account } = Route.useParams();
-	const { isLoading, isError, data } = useQuery({
+	const { queryClient } = Route.useRouteContext();
+	const { isLoading, data } = useQuery({
 		queryKey: ["chats"],
 		queryFn: async () => {
-			const res = await commands.getChats();
+			const res = await commands.getChats(true);
 
 			if (res.status === "ok") {
 				const raw = res.data;
@@ -76,20 +77,9 @@ function ChatList() {
 				throw new Error(res.error);
 			}
 		},
+		select: (data) => data.sort((a, b) => b.created_at - a.created_at),
 		refetchOnWindowFocus: false,
 	});
-
-	const queryClient = useQueryClient();
-
-	useEffect(() => {
-		const unlisten = listen("synchronized", async () => {
-			await queryClient.refetchQueries({ queryKey: ["chats"] });
-		});
-
-		return () => {
-			unlisten.then((f) => f());
-		};
-	}, []);
 
 	useEffect(() => {
 		const unlisten = listen<Payload>("event", async (data) => {
@@ -127,9 +117,9 @@ function ChatList() {
 			<ScrollArea.Viewport className="relative h-full px-1.5">
 				{isLoading ? (
 					<div>
-						{Array.from(Array(5)).map((_, index) => (
+						{[...Array(5).keys()].map((i) => (
 							<div
-								key={index}
+								key={i}
 								className="flex items-center rounded-lg p-2 mb-1 gap-2"
 							>
 								<div className="size-9 rounded-full animate-pulse bg-black/10 dark:bg-white/10" />
@@ -137,12 +127,10 @@ function ChatList() {
 							</div>
 						))}
 					</div>
-				) : isError ? (
-					<div className="p-2">Error</div>
 				) : (
 					data.map((item) => (
 						<Link
-							key={item.pubkey}
+							key={item.id + item.pubkey}
 							to="/$account/chats/$id"
 							params={{ account, id: item.pubkey }}
 						>
@@ -188,7 +176,7 @@ function CurrentUser() {
 	const { account } = Route.useParams();
 
 	return (
-		<div className="shrink-0 h-12 flex items-center px-2.5 border-t border-black/5 dark:border-white/5">
+		<div className="shrink-0 h-12 flex items-center px-3.5 border-t border-black/5 dark:border-white/5">
 			<User.Provider pubkey={account}>
 				<User.Root className="inline-flex items-center gap-2">
 					<User.Avatar className="size-8 rounded-full" />

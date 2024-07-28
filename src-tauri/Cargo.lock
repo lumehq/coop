@@ -593,7 +593,7 @@ dependencies = [
 [[package]]
 name = "border"
 version = "0.1.0"
-source = "git+https://github.com/ahkohd/tauri-toolkit?branch=v2#bb267e4d34b34fc01a94a60a14579fb6cdd2a256"
+source = "git+https://github.com/ahkohd/tauri-toolkit?branch=v2#4ca90fd2a56565af26aeb5d0518d2e85d80a35b0"
 dependencies = [
  "cocoa",
  "color",
@@ -868,7 +868,7 @@ dependencies = [
 [[package]]
 name = "color"
 version = "0.1.0"
-source = "git+https://github.com/ahkohd/tauri-toolkit?branch=v2#bb267e4d34b34fc01a94a60a14579fb6cdd2a256"
+source = "git+https://github.com/ahkohd/tauri-toolkit?branch=v2#4ca90fd2a56565af26aeb5d0518d2e85d80a35b0"
 dependencies = [
  "cocoa",
  "tauri",
@@ -2874,7 +2874,7 @@ checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 [[package]]
 name = "nostr"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "aes",
  "base64 0.21.7",
@@ -2903,7 +2903,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-trait",
  "flatbuffers",
@@ -2917,7 +2917,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -2932,7 +2932,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-utility",
  "atomic-destructor",
@@ -2952,7 +2952,7 @@ dependencies = [
 [[package]]
 name = "nostr-signer"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-utility",
  "nostr",
@@ -2965,7 +2965,7 @@ dependencies = [
 [[package]]
 name = "nostr-sqlite"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-trait",
  "nostr",
@@ -2979,7 +2979,7 @@ dependencies = [
 [[package]]
 name = "nostr-zapper"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-trait",
  "nostr",
@@ -3099,7 +3099,7 @@ dependencies = [
 [[package]]
 name = "nwc"
 version = "0.33.0"
-source = "git+https://github.com/rust-nostr/nostr#66d4b5905c8722952644d914ca480b2c33fa1395"
+source = "git+https://github.com/rust-nostr/nostr#52b4f439c55033a871f2d00aa916160bcd35f6ff"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4720,6 +4720,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
+name = "strum"
+version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.72",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5095,12 +5117,17 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-prevent-default"
-version = "0.1.12"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38be0ac8fcc5fa03422409fc506015b01dc29cc8a3a72572c68d41e6f10f4491"
+checksum = "c76ff4be3c049bac253390c06f26c805a74b58722f8be97f99550213036df949"
 dependencies = [
  "bitflags 2.6.0",
+ "itertools 0.13.0",
+ "serde",
+ "strum",
  "tauri",
+ "tauri-plugin",
+ "thiserror",
 ]
 
 [[package]]
@@ -5357,9 +5384,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.39.1"
+version = "1.39.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d040ac2b29ab03b09d4129c2f5bbd012a3ac2f79d38ff506a4bf8dd34b0eac8a"
+checksum = "daa4fb1bc778bd6f04cbfc4bb2d06a7396a8f299dc33ea1900cedaa316f467b1"
 dependencies = [
  "backtrace",
  "bytes",
@@ -5407,9 +5434,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-socks"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51165dfa029d2a65969413a6cc96f354b86b464498702f174a4efa13608fd8c0"
+checksum = "0d4770b8024672c1101b3f6733eab95b18007dbe0847a8afe341fcf79e06043f"
 dependencies = [
  "either",
  "futures-util",

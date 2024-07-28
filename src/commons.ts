@@ -75,19 +75,7 @@ export function getReceivers(tags: string[][]) {
 	return p;
 }
 
-export const useRelays = (id: string) =>
-	useQuery({
-		queryKey: ["relays", id],
-		queryFn: async () => {
-			const res = await commands.getInboxes(id);
-
-			if (res.status === "ok") {
-				return res.data;
-			} else {
-				throw new Error(res.error);
-			}
-		},
-		refetchOnWindowFocus: false,
-		refetchOnMount: false,
-		refetchOnReconnect: false,
-	});
+export function getChatId(pubkey: string, tags: string[][]) {
+	const id = [pubkey, tags.map((tag) => tag[0] === "p" && tag[1])].join("-");
+	return id;
+}
