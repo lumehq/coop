@@ -8,48 +8,28 @@ use crate::{common::is_member, Nostr};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chats(db_only: bool, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
+pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-	let events = match db_only {
-		true => match client.database().query(vec![filter], Order::Desc).await {
-			Ok(events) => {
-				stream::iter(events)
-					.filter_map(|ev| async move {
-						if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(&ev).await
-						{
-							if rumor.kind == Kind::PrivateDirectMessage {
-								return Some(rumor);
-							}
+	let events = match client.database().query(vec![filter], Order::Desc).await {
+		Ok(events) => {
+			stream::iter(events)
+				.filter_map(|ev| async move {
+					if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(&ev).await {
+						if rumor.kind == Kind::PrivateDirectMessage {
+							return Some(rumor);
 						}
-						None
-					})
-					.collect::<Vec<_>>()
-					.await
-			}
-			Err(err) => return Err(err.to_string()),
-		},
-		false => match client.get_events_of(vec![filter], Some(Duration::from_secs(12))).await {
-			Ok(events) => {
-				stream::iter(events)
-					.filter_map(|ev| async move {
-						if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(&ev).await
-						{
-							if rumor.kind == Kind::PrivateDirectMessage {
-								return Some(rumor);
-							}
-						}
-						None
-					})
-					.collect::<Vec<_>>()
-					.await
-			}
-			Err(err) => return Err(err.to_string()),
-		},
+					}
+					None
+				})
+				.collect::<Vec<_>>()
+				.await
+		}
+		Err(err) => return Err(err.to_string()),
 	};
 
 	let uniqs = events

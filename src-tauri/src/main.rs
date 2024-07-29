@@ -70,12 +70,11 @@ fn main() {
 
 			let client = tauri::async_runtime::block_on(async move {
 				// Create data folder if not exist
-				let dir = handle.path().config_dir().expect("Config Directory not found.");
-				let _ = fs::create_dir_all(dir.join("Coop/"));
+				let dir = handle.path().app_config_dir().expect("App config directory not found.");
+				let _ = fs::create_dir_all(dir.clone());
 
 				// Setup database
-				let database =
-					SQLiteDatabase::open(dir.join("Coop/coop.db")).await.expect("Error.");
+				let database = SQLiteDatabase::open(dir.join("nostr.db")).await.expect("Error.");
 
 				// Setup nostr client
 				let opts = Options::new()

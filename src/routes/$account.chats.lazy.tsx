@@ -67,7 +67,7 @@ function ChatList() {
 	const { isLoading, data } = useQuery({
 		queryKey: ["chats"],
 		queryFn: async () => {
-			const res = await commands.getChats(true);
+			const res = await commands.getChats();
 
 			if (res.status === "ok") {
 				const raw = res.data;
@@ -79,11 +79,20 @@ function ChatList() {
 			}
 		},
 		select: (data) => data.sort((a, b) => b.created_at - a.created_at),
-		refetchOnWindowFocus: false,
 	});
 
 	useEffect(() => {
-		const unlisten = listen<Payload>("new_chat", async (data) => {
+		const unlisten = listen("synchronized", async () => {
+			await queryClient.refetchQueries({ queryKey: ["chats"] })
+		});
+
+		return () => {
+			unlisten.then((f) => f());
+		};
+	}, []);
+
+	useEffect(() => {
+		const unlisten = listen<Payload>("event", async (data) => {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
 

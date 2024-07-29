@@ -47,9 +47,9 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async getChats(dbOnly: boolean) : Promise<Result<string[], string>> {
+async getChats() : Promise<Result<string[], string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("get_chats", { dbOnly }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_chats") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

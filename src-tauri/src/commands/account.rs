@@ -211,9 +211,17 @@ pub async fn login(
 		}
 	}
 
-	let new_message = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 	let subscription_id = SubscriptionId::new("personal_inbox");
-	let _ = client.subscribe_with_id(subscription_id, vec![new_message], None).await;
+	let new_message = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+	if client.subscription(&subscription_id).await.is_some() {
+		// Remove old subscriotion
+		client.unsubscribe(subscription_id.clone()).await;
+		// Resubscribe new message for current user
+		let _ = client.subscribe_with_id(subscription_id, vec![new_message], None).await;
+	} else {
+		let _ = client.subscribe_with_id(subscription_id, vec![new_message], None).await;
+	}
 
 	let handle_clone = handle.app_handle().clone();
 
@@ -223,7 +231,14 @@ pub async fn login(
 		let client = &state.client;
 
 		let sync = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-		let _ = client.reconcile(sync, NegentropyOptions::default()).await;
+
+		if client.reconcile(sync.clone(), NegentropyOptions::default()).await.is_ok() {
+			handle_clone.emit("synchronized", ()).unwrap();
+		};
+
+		if client.get_events_of(vec![sync], Some(Duration::from_secs(20))).await.is_ok() {
+			handle_clone.emit("synchronized", ()).unwrap();
+		};
 	});
 
 	tauri::async_runtime::spawn(async move {

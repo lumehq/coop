@@ -1,8 +1,8 @@
 import { commands } from "@/commands";
-import { cn, getReceivers, time } from "@/commons";
+import { cn, getReceivers, groupEventByDate, time } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { ArrowUp, DotsThree, Paperclip } from "@phosphor-icons/react";
+import { ArrowUp, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -90,14 +90,16 @@ function List() {
 
 			if (res.status === "ok") {
 				const raw = res.data;
-				const events = raw
-					.map((item) => JSON.parse(item) as NostrEvent)
-					.sort((a, b) => a.created_at - b.created_at);
+				const events: NostrEvent[] = raw.map((item) => JSON.parse(item));
 
 				return events;
 			} else {
 				throw new Error(res.error);
 			}
+		},
+		select: (data) => {
+			const groups = groupEventByDate(data);
+			return Object.entries(groups).reverse();
 		},
 		refetchOnWindowFocus: false,
 	});
@@ -122,10 +124,10 @@ function List() {
 					>
 						<div
 							className={cn(
-								"py-2 px-3 w-fit max-w-[400px] text-pretty break-message rounded-t-2xl",
+								"py-2 px-3 w-fit max-w-[400px] text-pretty break-message",
 								!self
-									? "bg-neutral-100 dark:bg-neutral-800 rounded-l-md rounded-r-xl"
-									: "bg-blue-500 text-white rounded-l-xl rounded-r-md",
+									? "bg-neutral-100 dark:bg-neutral-800 rounded-tl-3xl rounded-tr-3xl rounded-br-3xl rounded-bl-md"
+									: "bg-blue-500 text-white rounded-tl-3xl rounded-tr-3xl rounded-br-md rounded-bl-3xl",
 							)}
 						>
 							{item.content}
@@ -177,31 +179,19 @@ function List() {
 				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
 				<Virtualizer scrollRef={ref} shift>
-					{isLoading || !data ? (
+					{isLoading ? (
 						<>
 							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
 								<div className="flex-1 min-w-0 inline-flex">
-									<div className="py-2 px-3 w-fit max-w-[400px] bg-neutral-100 dark:bg-neutral-800 rounded-l-md rounded-r-xl rounded-t-2xl">
-										Loading...
-									</div>
+									<div className="w-44 h-[35px] py-2 max-w-[400px] bg-neutral-100 dark:bg-neutral-800 animate-pulse rounded-tl-3xl rounded-tr-3xl rounded-br-3xl rounded-bl-md" />
 								</div>
-								<div className="shrink-0 w-16 flex items-center justify-end">
-									<span className="text-xs text-right text-neutral-600 dark:text-neutral-400">
-										{time(Math.floor(Date.now() / 1000))}
-									</span>
-								</div>
+								<div className="shrink-0 w-16 flex items-center justify-end" />
 							</div>
 							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
 								<div className="flex-1 min-w-0 inline-flex justify-end">
-									<div className="py-2 px-3 w-fit max-w-[400px] bg-blue-500 text-white rounded-l-xl rounded-r-md rounded-t-2xl">
-										Loading...
-									</div>
+									<div className="w-44 h-[35px] py-2 max-w-[400px] bg-blue-500 text-white animate-pulse rounded-tl-3xl rounded-tr-3xl rounded-br-md rounded-bl-3xl" />
 								</div>
-								<div className="shrink-0 w-16 flex items-center justify-end">
-									<span className="text-xs text-right text-neutral-600 dark:text-neutral-400">
-										{time(Math.floor(Date.now() / 1000))}
-									</span>
-								</div>
+								<div className="shrink-0 w-16 flex items-center justify-end" />
 							</div>
 						</>
 					) : isError ? (
@@ -211,7 +201,21 @@ function List() {
 							</div>
 						</div>
 					) : (
-						data.map((item, idx) => renderItem(item, idx))
+						data.map((item) => (
+							<div
+								key={item[0]}
+								className="w-full flex flex-col items-center mt-3 gap-3"
+							>
+								<div className="text-xs text-center text-neutral-600 dark:text-neutral-400">
+									{item[0]}
+								</div>
+								<div className="w-full">
+									{item[1]
+										.sort((a, b) => a.created_at - b.created_at)
+										.map((item, idx) => renderItem(item, idx))}
+								</div>
+							</div>
+						))
 					)}
 				</Virtualizer>
 			</ScrollArea.Viewport>

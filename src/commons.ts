@@ -1,11 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
 import { type ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import updateLocale from "dayjs/plugin/updateLocale";
-import { nip19 } from "nostr-tools";
+import { type NostrEvent, nip19 } from "nostr-tools";
 import { twMerge } from "tailwind-merge";
-import { commands } from "./commands";
 
 dayjs.extend(relativeTime);
 dayjs.extend(updateLocale);
@@ -80,4 +78,12 @@ export function getReceivers(tags: string[][]) {
 export function getChatId(pubkey: string, tags: string[][]) {
 	const id = [pubkey, tags.map((tag) => tag[0] === "p" && tag[1])].join("-");
 	return id;
+}
+
+export function groupEventByDate(events: NostrEvent[]) {
+	const groups = Object.groupBy(events, (event) => {
+		return dayjs.unix(event.created_at).startOf("day").format("MMM DD, YYYY");
+	});
+
+	return groups;
 }
