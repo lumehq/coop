@@ -143,6 +143,15 @@ pub async fn connect_account(uri: &str, state: State<'_, Nostr>) -> Result<Strin
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_contact_list(state: State<'_, Nostr>) -> Result<Vec<String>, ()> {
+	let contact_list = state.contact_list.lock().await;
+	let list = contact_list.clone().into_iter().map(|c| c.public_key.to_hex()).collect::<Vec<_>>();
+
+	Ok(list)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn login(
 	id: String,
 	bunker: Option<String>,
@@ -184,6 +193,11 @@ pub async fn login(
 			client.set_signer(Some(signer)).await;
 		}
 	}
+
+	if let Ok(contacts) = client.get_contact_list(Some(Duration::from_secs(10))).await {
+		let mut contact_list = state.contact_list.lock().await;
+		*contact_list = contacts;
+	};
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 

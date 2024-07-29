@@ -27,6 +27,7 @@ fn main() {
 			connect_account,
 			get_accounts,
 			get_metadata,
+			get_contact_list,
 			get_chats,
 			get_chat_messages,
 			connect_inbox,

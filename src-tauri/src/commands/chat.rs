@@ -54,7 +54,7 @@ pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Ve
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkeys(vec![receiver_pk, sender_pk]);
 
-	let rumors = match client.get_events_of(vec![filter], Some(Duration::from_secs(10))).await {
+	let rumors = match client.database().query(vec![filter], Order::Desc).await {
 		Ok(events) => {
 			stream::iter(events)
 				.filter_map(|ev| async move {

@@ -14,6 +14,7 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as IndexImport } from './routes/index'
+import { Route as AccountContactsImport } from './routes/$account.contacts'
 import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
 
 // Create Virtual Routes
@@ -22,7 +23,6 @@ const NostrConnectLazyImport = createFileRoute('/nostr-connect')()
 const NewLazyImport = createFileRoute('/new')()
 const ImportKeyLazyImport = createFileRoute('/import-key')()
 const CreateAccountLazyImport = createFileRoute('/create-account')()
-const ContactsLazyImport = createFileRoute('/contacts')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
 const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
 
@@ -50,11 +50,6 @@ const CreateAccountLazyRoute = CreateAccountLazyImport.update({
   import('./routes/create-account.lazy').then((d) => d.Route),
 )
 
-const ContactsLazyRoute = ContactsLazyImport.update({
-  path: '/contacts',
-  getParentRoute: () => rootRoute,
-} as any).lazy(() => import('./routes/contacts.lazy').then((d) => d.Route))
-
 const IndexRoute = IndexImport.update({
   path: '/',
   getParentRoute: () => rootRoute,
@@ -67,6 +62,13 @@ const AccountChatsLazyRoute = AccountChatsLazyImport.update({
   import('./routes/$account.chats.lazy').then((d) => d.Route),
 )
 
+const AccountContactsRoute = AccountContactsImport.update({
+  path: '/$account/contacts',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() =>
+  import('./routes/$account.contacts.lazy').then((d) => d.Route),
+)
+
 const AccountChatsNewLazyRoute = AccountChatsNewLazyImport.update({
   path: '/new',
   getParentRoute: () => AccountChatsLazyRoute,
@@ -77,7 +79,9 @@ const AccountChatsNewLazyRoute = AccountChatsNewLazyImport.update({
 const AccountChatsIdRoute = AccountChatsIdImport.update({
   path: '/$id',
   getParentRoute: () => AccountChatsLazyRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/$account.chats.$id.lazy').then((d) => d.Route),
+)
 
 // Populate the FileRoutesByPath interface
 
@@ -88,13 +92,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/contacts': {
-      id: '/contacts'
-      path: '/contacts'
-      fullPath: '/contacts'
-      preLoaderRoute: typeof ContactsLazyImport
       parentRoute: typeof rootRoute
     }
     '/create-account': {
@@ -125,6 +122,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NostrConnectLazyImport
       parentRoute: typeof rootRoute
     }
+    '/$account/contacts': {
+      id: '/$account/contacts'
+      path: '/$account/contacts'
+      fullPath: '/$account/contacts'
+      preLoaderRoute: typeof AccountContactsImport
+      parentRoute: typeof rootRoute
+    }
     '/$account/chats': {
       id: '/$account/chats'
       path: '/$account/chats'
@@ -153,11 +157,11 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
-  ContactsLazyRoute,
   CreateAccountLazyRoute,
   ImportKeyLazyRoute,
   NewLazyRoute,
   NostrConnectLazyRoute,
+  AccountContactsRoute,
   AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
     AccountChatsIdRoute,
     AccountChatsNewLazyRoute,
@@ -173,19 +177,16 @@ export const routeTree = rootRoute.addChildren({
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/contacts",
         "/create-account",
         "/import-key",
         "/new",
         "/nostr-connect",
+        "/$account/contacts",
         "/$account/chats"
       ]
     },
     "/": {
       "filePath": "index.tsx"
-    },
-    "/contacts": {
-      "filePath": "contacts.lazy.tsx"
     },
     "/create-account": {
       "filePath": "create-account.lazy.tsx"
@@ -198,6 +199,9 @@ export const routeTree = rootRoute.addChildren({
     },
     "/nostr-connect": {
       "filePath": "nostr-connect.lazy.tsx"
+    },
+    "/$account/contacts": {
+      "filePath": "$account.contacts.tsx"
     },
     "/$account/chats": {
       "filePath": "$account.chats.lazy.tsx",
