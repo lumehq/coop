@@ -1,7 +1,8 @@
 import { commands } from "@/commands";
+import { GoBack } from "@/components/back";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
-import { createLazyFileRoute } from "@tanstack/react-router";
+import { Link, createLazyFileRoute } from "@tanstack/react-router";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useState, useTransition } from "react";
 
@@ -94,6 +95,9 @@ function Screen() {
 						>
 							{isPending ? <Spinner /> : "Continue"}
 						</button>
+						<GoBack className="mt-2 w-full text-sm text-neutral-600 dark:text-neutral-400 inline-flex items-center justify-center">
+							Back
+						</GoBack>
 					</div>
 				</div>
 			</div>

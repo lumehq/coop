@@ -2,7 +2,13 @@ import { commands } from "@/commands";
 import { ago, cn } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { ArrowRight, CirclesFour, Plus, X } from "@phosphor-icons/react";
+import {
+	ArrowRight,
+	CaretDown,
+	CirclesFour,
+	Plus,
+	X,
+} from "@phosphor-icons/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery } from "@tanstack/react-query";
@@ -48,7 +54,7 @@ function Header() {
 			data-tauri-drag-region
 			className={cn(
 				"shrink-0 h-12 flex items-center justify-between",
-				platform === "macos" ? "pl-24 pr-3.5" : "px-3.5",
+				platform === "macos" ? "pl-[78px] pr-3.5" : "px-3.5",
 			)}
 		>
 			<CurrentUser />
@@ -152,6 +158,12 @@ function ChatList() {
 								<div className="size-4 w-20 rounded animate-pulse bg-black/10 dark:bg-white/10" />
 							</div>
 						))}
+					</div>
+				) : !data?.length ? (
+					<div className="p-2">
+						<div className="px-2 h-12 w-full rounded-lg bg-black/5 dark:bg-white/5 flex items-center justify-center text-sm">
+							No chats.
+						</div>
 					</div>
 				) : (
 					data.map((item) => (
@@ -380,13 +392,14 @@ function CurrentUser() {
 		<button
 			type="button"
 			onClick={(e) => showContextMenu(e)}
-			className="shrink-0 size-8 flex items-center justify-center rounded-full ring-1 ring-teal-500"
+			className="h-8 inline-flex items-center gap-1.5"
 		>
 			<User.Provider pubkey={params.account}>
 				<User.Root className="shrink-0">
-					<User.Avatar className="size-7 rounded-full" />
+					<User.Avatar className="size-8 rounded-full" />
 				</User.Root>
 			</User.Provider>
+			<CaretDown className="size-3 text-neutral-600 dark:text-neutral-400" />
 		</button>
 	);
 }

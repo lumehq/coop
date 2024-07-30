@@ -30,6 +30,8 @@ fn main() {
 			get_contact_list,
 			get_chats,
 			get_chat_messages,
+			get_inbox,
+			set_inbox,
 			connect_inbox,
 			disconnect_inbox,
 			send_message,

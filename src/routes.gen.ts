@@ -23,6 +23,7 @@ const NostrConnectLazyImport = createFileRoute('/nostr-connect')()
 const NewLazyImport = createFileRoute('/new')()
 const ImportKeyLazyImport = createFileRoute('/import-key')()
 const CreateAccountLazyImport = createFileRoute('/create-account')()
+const AccountRelaysLazyImport = createFileRoute('/$account/relays')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
 const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
 
@@ -53,7 +54,14 @@ const CreateAccountLazyRoute = CreateAccountLazyImport.update({
 const IndexRoute = IndexImport.update({
   path: '/',
   getParentRoute: () => rootRoute,
-} as any)
+} as any).lazy(() => import('./routes/index.lazy').then((d) => d.Route))
+
+const AccountRelaysLazyRoute = AccountRelaysLazyImport.update({
+  path: '/$account/relays',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() =>
+  import('./routes/$account.relays.lazy').then((d) => d.Route),
+)
 
 const AccountChatsLazyRoute = AccountChatsLazyImport.update({
   path: '/$account/chats',
@@ -136,6 +144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountChatsLazyImport
       parentRoute: typeof rootRoute
     }
+    '/$account/relays': {
+      id: '/$account/relays'
+      path: '/$account/relays'
+      fullPath: '/$account/relays'
+      preLoaderRoute: typeof AccountRelaysLazyImport
+      parentRoute: typeof rootRoute
+    }
     '/$account/chats/$id': {
       id: '/$account/chats/$id'
       path: '/$id'
@@ -166,6 +181,7 @@ export const routeTree = rootRoute.addChildren({
     AccountChatsIdRoute,
     AccountChatsNewLazyRoute,
   }),
+  AccountRelaysLazyRoute,
 })
 
 /* prettier-ignore-end */
@@ -182,7 +198,8 @@ export const routeTree = rootRoute.addChildren({
         "/new",
         "/nostr-connect",
         "/$account/contacts",
-        "/$account/chats"
+        "/$account/chats",
+        "/$account/relays"
       ]
     },
     "/": {
@@ -209,6 +226,9 @@ export const routeTree = rootRoute.addChildren({
         "/$account/chats/$id",
         "/$account/chats/new"
       ]
+    },
+    "/$account/relays": {
+      "filePath": "$account.relays.lazy.tsx"
     },
     "/$account/chats/$id": {
       "filePath": "$account.chats.$id.tsx",

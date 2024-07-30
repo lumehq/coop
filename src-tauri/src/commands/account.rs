@@ -48,9 +48,9 @@ pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String,
 #[specta::specta]
 pub async fn create_account(
 	name: String,
-	picture: String,
+	picture: Option<String>,
 	state: State<'_, Nostr>,
-) -> Result<(), String> {
+) -> Result<String, String> {
 	let client = &state.client;
 	let keys = Keys::generate();
 	let npub = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
@@ -66,11 +66,18 @@ pub async fn create_account(
 	client.set_signer(Some(signer)).await;
 
 	// Update metadata
-	let url = Url::parse(&picture).map_err(|e| e.to_string())?;
-	let metadata = Metadata::new().display_name(name).picture(url);
+	let url = match picture {
+		Some(p) => Some(Url::parse(&p).map_err(|e| e.to_string())?),
+		None => None,
+	};
+
+	let metadata = match url {
+		Some(picture) => Metadata::new().display_name(name).picture(picture),
+		None => Metadata::new().display_name(name),
+	};
 
 	match client.set_metadata(&metadata).await {
-		Ok(_) => Ok(()),
+		Ok(_) => Ok(npub),
 		Err(e) => Err(e.to_string()),
 	}
 }
@@ -152,6 +159,51 @@ pub async fn get_contact_list(state: State<'_, Nostr>) -> Result<Vec<String>, ()
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_inbox(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
+	let client = &state.client;
+	let public_key = PublicKey::parse(id).map_err(|e| e.to_string())?;
+	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
+
+	match client.get_events_of(vec![inbox], None).await {
+		Ok(events) => {
+			if let Some(event) = events.into_iter().next() {
+				let urls = event
+					.tags()
+					.iter()
+					.filter_map(|tag| {
+						if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
+							Some(relay.to_string())
+						} else {
+							None
+						}
+					})
+					.collect::<Vec<_>>();
+
+				Ok(urls)
+			} else {
+				Ok(Vec::new())
+			}
+		}
+		Err(e) => Err(e.to_string()),
+	}
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_inbox(relays: Vec<String>, state: State<'_, Nostr>) -> Result<(), String> {
+	let client = &state.client;
+
+	let tags = relays.into_iter().map(|t| Tag::custom(TagKind::Relay, vec![t])).collect::<Vec<_>>();
+	let event = EventBuilder::new(Kind::Custom(10050), "", tags);
+
+	match client.send_event_builder(event).await {
+		Ok(_) => Ok(()),
+		Err(e) => Err(e.to_string()),
+	}
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn login(
 	id: String,
 	bunker: Option<String>,
@@ -222,6 +274,8 @@ pub async fn login(
 
 			let mut inbox_relays = state.inbox_relays.lock().await;
 			inbox_relays.insert(public_key, urls);
+		} else {
+			return Err("404".into());
 		}
 	}
 

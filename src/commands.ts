@@ -12,7 +12,7 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async createAccount(name: string, picture: string) : Promise<Result<null, string>> {
+async createAccount(name: string, picture: string | null) : Promise<Result<string, string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("create_account", { name, picture }) };
 } catch (e) {
@@ -66,6 +66,22 @@ try {
 async getChatMessages(id: string) : Promise<Result<string[], string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("get_chat_messages", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getInbox(id: string) : Promise<Result<string[], string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("get_inbox", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setInbox(relays: string[]) : Promise<Result<null, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("set_inbox", { relays }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

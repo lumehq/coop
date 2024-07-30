@@ -1,4 +1,5 @@
 import { commands } from "@/commands";
+import { GoBack } from "@/components/back";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
 import { createLazyFileRoute } from "@tanstack/react-router";
@@ -12,7 +13,7 @@ export const Route = createLazyFileRoute("/create-account")({
 function Screen() {
 	const navigate = Route.useNavigate();
 
-	const [picture, setPicture] = useState("");
+	const [picture, setPicture] = useState(null);
 	const [name, setName] = useState("");
 	const [isPending, startTransition] = useTransition();
 
@@ -21,7 +22,11 @@ function Screen() {
 			const res = await commands.createAccount(name, picture);
 
 			if (res.status === "ok") {
-				navigate({ to: "/", replace: true });
+				navigate({
+					to: "/$account/relays",
+					params: { account: res.data },
+					replace: true,
+				});
 			} else {
 				await message(res.error, {
 					title: "New Identity",
@@ -36,9 +41,7 @@ function Screen() {
 		<div className="size-full flex items-center justify-center">
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
-					<h1 className="leading-tight text-xl font-semibold">
-						Import Private Key
-					</h1>
+					<h1 className="leading-tight text-xl font-semibold">New Identity</h1>
 				</div>
 				<div className="flex flex-col gap-3">
 					<Frame
@@ -86,6 +89,9 @@ function Screen() {
 						>
 							{isPending ? <Spinner /> : "Continue"}
 						</button>
+						<GoBack className="mt-2 w-full text-sm text-neutral-600 dark:text-neutral-400 inline-flex items-center justify-center">
+							Back
+						</GoBack>
 					</div>
 				</div>
 			</div>
