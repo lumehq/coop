@@ -109,6 +109,8 @@ fn main() {
 		})
 		.enable_macos_default_menu(false)
 		.plugin(tauri_plugin_prevent_default::init())
+		.plugin(tauri_plugin_process::init())
+		.plugin(tauri_plugin_updater::Builder::new().build())
 		.plugin(tauri_plugin_os::init())
 		.plugin(tauri_plugin_clipboard_manager::init())
 		.plugin(tauri_plugin_dialog::init())

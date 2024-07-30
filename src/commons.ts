@@ -1,3 +1,6 @@
+import { ask, message } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 import { type ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -88,9 +91,46 @@ export function groupEventByDate(events: NostrEvent[]) {
 	return groups;
 }
 
+/*
 export function isEmojiOnly(str: string) {
 	const stringToTest = str.replace(/ /g, "");
 	const emojiRegex =
 		/^(?:(?:\p{RI}\p{RI}|\p{Emoji}(?:\p{Emoji_Modifier}|\u{FE0F}\u{20E3}?|[\u{E0020}-\u{E007E}]+\u{E007F})?(?:\u{200D}\p{Emoji}(?:\p{Emoji_Modifier}|\u{FE0F}\u{20E3}?|[\u{E0020}-\u{E007E}]+\u{E007F})?)*)|[\u{1f900}-\u{1f9ff}\u{2600}-\u{26ff}\u{2700}-\u{27bf}])+$/u;
 	return emojiRegex.test(stringToTest) && Number.isNaN(Number(stringToTest));
+}
+*/
+
+export async function checkForAppUpdates(silent: boolean) {
+	const update = await check();
+
+	if (!update) {
+		if (silent) return;
+
+		await message("You are on the latest version. Stay awesome!", {
+			title: "No Update Available",
+			kind: "info",
+			okLabel: "OK",
+		});
+
+		return;
+	}
+
+	if (update?.available) {
+		const yes = await ask(
+			`Update to ${update.version} is available!\n\nRelease notes: ${update.body}`,
+			{
+				title: "Update Available",
+				kind: "info",
+				okLabel: "Update",
+				cancelLabel: "Cancel",
+			},
+		);
+
+		if (yes) {
+			await update.downloadAndInstall();
+			await relaunch();
+		}
+
+		return;
+	}
 }

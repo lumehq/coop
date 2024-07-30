@@ -33,14 +33,46 @@
 		}
 	},
 	"bundle": {
-		"active": true,
+		"homepage": "https://lume.nu/coop",
+		"longDescription": "direct message client for desktop",
+		"shortDescription": "nostr client",
 		"targets": "all",
+		"active": true,
+		"category": "SocialNetworking",
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
 			"icons/128x128@2x.png",
 			"icons/icon.icns",
 			"icons/icon.ico"
-		]
+		],
+		"linux": {
+			"appimage": {
+				"bundleMediaFramework": true,
+				"files": {}
+			},
+			"deb": {
+				"files": {}
+			},
+			"rpm": {
+				"epoch": 0,
+				"files": {},
+				"release": "1"
+			}
+		},
+		"macOS": {
+			"minimumSystemVersion": "10.15"
+		},
+		"createUpdaterArtifacts": true
+	},
+	"plugins": {
+		"updater": {
+			"active": true,
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY2OUJBNzZDOUYwNzREOApSV1RZZFBESmRycHBEMDV0NVZodllibXZNT21YTXBVOG1kRjdpUEpVS1ZkOGVuT295RENrWkpBRAo=",
+			"endpoints": [
+				"https://tauri-updater.coop-updater-service.workers.dev/check/lumehq/coop/{{target}}/{{arch}}/{{current_version}}",
+				"https://github.com/lumehq/coop/releases/latest/download/latest.json"
+			]
+		}
 	}
 }
