@@ -1,10 +1,12 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(not(target_os = "linux"))]
 use border::WebviewWindowExt as WebviewWindowExtAlt;
 use nostr_sdk::prelude::*;
 use std::{collections::HashMap, fs, time::Duration};
 use tauri::{async_runtime::Mutex, Manager};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 
 use commands::{account::*, chat::*};
@@ -51,8 +53,6 @@ fn main() {
 	builder
 		.setup(|app| {
 			let handle = app.handle();
-
-			#[cfg(not(target_os = "linux"))]
 			let main_window = app.get_webview_window("main").unwrap();
 
 			// Open devtools
