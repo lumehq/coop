@@ -30,6 +30,8 @@
 		"prevent-default:default",
 		"updater:default",
 		"updater:allow-check",
-		"updater:allow-download-and-install"
+		"updater:allow-download-and-install",
+		"clipboard-manager:allow-write-text",
+		"clipboard-manager:allow-read-text"
 	]
 }

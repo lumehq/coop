@@ -25,7 +25,7 @@ tauri-specta = { git = "https://github.com/reyamir/tauri-specta", branch = "feat
 tauri-plugin-devtools = "2.0.0-beta"
 tauri-plugin-prevent-default = "0.2"
 tauri-plugin-os = "2.0.0-beta"
-tauri-plugin-clipboard-manager = "2.0.0-beta"
+tauri-plugin-clipboard-manager = "2.1.0-beta"
 tauri-plugin-dialog = "2.0.0-beta"
 tauri-plugin-shell = "2.0.0-beta"
 tauri-plugin-updater = "2.0.0-beta"
