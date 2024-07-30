@@ -17,6 +17,8 @@
 		"shell:allow-open",
 		"dialog:default",
 		"dialog:allow-open",
+		"dialog:allow-ask",
+		"dialog:allow-message",
 		"window:allow-close",
 		"window:allow-center",
 		"window:allow-minimize",
@@ -25,6 +27,9 @@
 		"window:allow-set-focus",
 		"window:allow-start-dragging",
 		"decorum:allow-show-snap-overlay",
-		"prevent-default:default"
+		"prevent-default:default",
+		"updater:default",
+		"updater:allow-check",
+		"updater:allow-download-and-install"
 	]
 }

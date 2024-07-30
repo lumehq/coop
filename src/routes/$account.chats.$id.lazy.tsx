@@ -256,12 +256,12 @@ function Form() {
 			) : (
 				<div className="flex-1 flex items-center gap-2">
 					<div className="inline-flex gap-1">
-						<div
+						{/*<div
 							title="Attach media"
 							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
 						>
 							<Paperclip className="size-5" />
-						</div>
+						</div>*/}
 					</div>
 					<input
 						placeholder="Message..."
