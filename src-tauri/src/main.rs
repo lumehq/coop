@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 use border::WebviewWindowExt as WebviewWindowExtAlt;
 use nostr_sdk::prelude::*;
 use std::{collections::HashMap, fs, time::Duration};
