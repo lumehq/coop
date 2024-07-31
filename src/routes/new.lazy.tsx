@@ -6,7 +6,10 @@ export const Route = createLazyFileRoute("/new")({
 
 function Screen() {
 	return (
-		<div className="size-full flex items-center justify-center">
+		<div
+			data-tauri-drag-region
+			className="size-full flex items-center justify-center"
+		>
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
 					<h1 className="leading-tight text-xl font-semibold">
@@ -22,7 +25,7 @@ function Screen() {
 					</Link>
 					<Link
 						to="/nostr-connect"
-						className="w-full h-10 bg-white hover:bg-neutral-100 dark:hover:bg-neutral-950 dark:bg-neutral-900 rounded-lg inline-flex items-center justify-center"
+						className="w-full h-10 bg-white hover:bg-neutral-100 dark:hover:bg-neutral-100 dark:bg-white dark:text-black rounded-lg inline-flex items-center justify-center"
 					>
 						Login with Nostr Connect
 					</Link>

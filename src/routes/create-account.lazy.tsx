@@ -38,7 +38,10 @@ function Screen() {
 	};
 
 	return (
-		<div className="size-full flex items-center justify-center">
+		<div
+			data-tauri-drag-region
+			className="size-full flex items-center justify-center"
+		>
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
 					<h1 className="leading-tight text-xl font-semibold">New Identity</h1>
@@ -61,7 +64,7 @@ function Screen() {
 								placeholder="https://"
 								value={picture}
 								onChange={(e) => setPicture(e.target.value)}
-								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:border-blue-500 focus:outline-none"
+								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
 							/>
 						</div>
 						<div className="flex flex-col gap-1">
@@ -76,7 +79,7 @@ function Screen() {
 								type="text"
 								value={name}
 								onChange={(e) => setName(e.target.value)}
-								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:border-blue-500 focus:outline-none"
+								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
 							/>
 						</div>
 					</Frame>

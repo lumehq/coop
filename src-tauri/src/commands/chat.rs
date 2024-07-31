@@ -15,24 +15,27 @@ pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-	let events = match client.database().query(vec![filter], Order::Desc).await {
+	let rumors = match client.get_events_of(vec![filter], Some(Duration::from_secs(20))).await {
 		Ok(events) => {
 			stream::iter(events)
 				.filter_map(|ev| async move {
 					if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(&ev).await {
 						if rumor.kind == Kind::PrivateDirectMessage {
-							return Some(rumor);
+							Some(rumor)
+						} else {
+							None
 						}
+					} else {
+						None
 					}
-					None
 				})
 				.collect::<Vec<_>>()
 				.await
 		}
-		Err(err) => return Err(err.to_string()),
+		Err(e) => return Err(e.to_string()),
 	};
 
-	let uniqs = events
+	let uniqs = rumors
 		.into_iter()
 		.sorted_by_key(|ev| Reverse(ev.created_at))
 		.filter(|ev| ev.pubkey != public_key)
@@ -47,14 +50,14 @@ pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 #[specta::specta]
 pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
-	let signer = client.signer().await.map_err(|e| e.to_string())?;
 
+	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let receiver_pk = signer.public_key().await.map_err(|e| e.to_string())?;
 	let sender_pk = PublicKey::parse(id).map_err(|e| e.to_string())?;
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkeys(vec![receiver_pk, sender_pk]);
 
-	let rumors = match client.database().query(vec![filter], Order::Desc).await {
+	let rumors = match client.get_events_of(vec![filter], None).await {
 		Ok(events) => {
 			stream::iter(events)
 				.filter_map(|ev| async move {

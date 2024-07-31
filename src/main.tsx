@@ -1,6 +1,4 @@
-import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
-import { QueryClient } from "@tanstack/react-query";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { type } from "@tauri-apps/plugin-os";
 import { StrictMode } from "react";
@@ -9,18 +7,7 @@ import "./global.css";
 // Import the generated route tree
 import { routeTree } from "./routes.gen";
 
-const queryClient = new QueryClient({
-	defaultOptions: {
-		queries: {
-			gcTime: 1000 * 60 * 60 * 24,
-		},
-	},
-});
-
-const persister = createSyncStoragePersister({
-	storage: window.localStorage,
-});
-
+const queryClient = new QueryClient();
 const platform = type();
 
 const router = createRouter({
@@ -44,12 +31,9 @@ if (!rootElement.innerHTML) {
 	const root = ReactDOM.createRoot(rootElement);
 	root.render(
 		<StrictMode>
-			<PersistQueryClientProvider
-				client={queryClient}
-				persistOptions={{ persister }}
-			>
+			<QueryClientProvider client={queryClient}>
 				<RouterProvider router={router} />
-			</PersistQueryClientProvider>
+			</QueryClientProvider>
 		</StrictMode>,
 	);
 }

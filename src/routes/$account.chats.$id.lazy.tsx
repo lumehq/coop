@@ -2,7 +2,7 @@ import { commands } from "@/commands";
 import { cn, getReceivers, groupEventByDate, time } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { ArrowUp, Paperclip } from "@phosphor-icons/react";
+import { ArrowUp } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createLazyFileRoute } from "@tanstack/react-router";

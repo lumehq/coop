@@ -47,7 +47,7 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async getContactList() : Promise<Result<string[], null>> {
+async getContactList() : Promise<Result<string[], string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("get_contact_list") };
 } catch (e) {

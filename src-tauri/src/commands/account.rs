@@ -5,10 +5,10 @@ use serde::Serialize;
 use std::{collections::HashSet, time::Duration};
 use tauri::{Emitter, Manager, State};
 
-use crate::Nostr;
+use crate::{Nostr, BOOTSTRAP_RELAYS};
 
 #[derive(Clone, Serialize)]
-struct Payload {
+struct EventPayload {
 	event: String,
 	sender: String,
 }
@@ -32,7 +32,8 @@ pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String,
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_of(vec![filter], Some(Duration::from_secs(2))).await {
+	match client.get_events_from(BOOTSTRAP_RELAYS, vec![filter], Some(Duration::from_secs(3))).await
+	{
 		Ok(events) => {
 			if let Some(event) = events.first() {
 				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())
@@ -150,11 +151,16 @@ pub async fn connect_account(uri: &str, state: State<'_, Nostr>) -> Result<Strin
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_contact_list(state: State<'_, Nostr>) -> Result<Vec<String>, ()> {
-	let contact_list = state.contact_list.lock().await;
-	let list = contact_list.clone().into_iter().map(|c| c.public_key.to_hex()).collect::<Vec<_>>();
+pub async fn get_contact_list(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
+	let client = &state.client;
 
-	Ok(list)
+	match client.get_contact_list(Some(Duration::from_secs(10))).await {
+		Ok(contacts) => {
+			let list = contacts.into_iter().map(|c| c.public_key.to_hex()).collect::<Vec<_>>();
+			Ok(list)
+		}
+		Err(e) => Err(e.to_string()),
+	}
 }
 
 #[tauri::command]
@@ -164,7 +170,7 @@ pub async fn get_inbox(id: String, state: State<'_, Nostr>) -> Result<Vec<String
 	let public_key = PublicKey::parse(id).map_err(|e| e.to_string())?;
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	match client.get_events_of(vec![inbox], None).await {
+	match client.get_events_from(BOOTSTRAP_RELAYS, vec![inbox], None).await {
 		Ok(events) => {
 			if let Some(event) = events.into_iter().next() {
 				let urls = event
@@ -246,14 +252,9 @@ pub async fn login(
 		}
 	}
 
-	if let Ok(contacts) = client.get_contact_list(Some(Duration::from_secs(10))).await {
-		let mut contact_list = state.contact_list.lock().await;
-		*contact_list = contacts;
-	};
-
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	if let Ok(events) = client.get_events_of(vec![inbox], None).await {
+	if let Ok(events) = client.get_events_of(vec![inbox], Some(Duration::from_secs(5))).await {
 		if let Some(event) = events.into_iter().next() {
 			let urls = event
 				.tags()
@@ -279,35 +280,17 @@ pub async fn login(
 		}
 	}
 
-	let subscription_id = SubscriptionId::new("personal_inbox");
-	let new_message = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+	let sub_id = SubscriptionId::new("personal_inbox");
+	let new_message = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
 
-	if client.subscription(&subscription_id).await.is_some() {
+	if client.subscription(&sub_id).await.is_some() {
 		// Remove old subscriotion
-		client.unsubscribe(subscription_id.clone()).await;
+		client.unsubscribe(sub_id.clone()).await;
 		// Resubscribe new message for current user
-		let _ = client.subscribe_with_id(subscription_id, vec![new_message], None).await;
+		let _ = client.subscribe_with_id(sub_id.clone(), vec![new_message], None).await;
 	} else {
-		let _ = client.subscribe_with_id(subscription_id, vec![new_message], None).await;
+		let _ = client.subscribe_with_id(sub_id, vec![new_message], None).await;
 	}
-
-	let handle_clone = handle.app_handle().clone();
-
-	tauri::async_runtime::spawn(async move {
-		let window = handle_clone.get_webview_window("main").expect("Window is terminated.");
-		let state = window.state::<Nostr>();
-		let client = &state.client;
-
-		let sync = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-		if client.reconcile(sync.clone(), NegentropyOptions::default()).await.is_ok() {
-			handle_clone.emit("synchronized", ()).unwrap();
-		};
-
-		if client.get_events_of(vec![sync], Some(Duration::from_secs(20))).await.is_ok() {
-			handle_clone.emit("synchronized", ()).unwrap();
-		};
-	});
 
 	tauri::async_runtime::spawn(async move {
 		let window = handle.get_webview_window("main").expect("Window is terminated.");
@@ -323,7 +306,7 @@ pub async fn login(
 						{
 							if let Err(e) = window.emit(
 								"event",
-								Payload { event: rumor.as_json(), sender: sender.to_hex() },
+								EventPayload { event: rumor.as_json(), sender: sender.to_hex() },
 							) {
 								println!("emit failed: {}", e)
 							}

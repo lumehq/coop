@@ -48,7 +48,10 @@ function Screen() {
 	};
 
 	return (
-		<div className="size-full flex items-center justify-center">
+		<div
+			data-tauri-drag-region
+			className="size-full flex items-center justify-center"
+		>
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
 					<h1 className="leading-tight text-xl font-semibold">
@@ -75,7 +78,7 @@ function Screen() {
 									placeholder="nsec or ncryptsec..."
 									value={key}
 									onChange={(e) => setKey(e.target.value)}
-									className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:border-blue-500 focus:outline-none"
+									className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
 								/>
 								<button
 									type="button"
@@ -98,7 +101,7 @@ function Screen() {
 								type="password"
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
-								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:border-blue-500 focus:outline-none"
+								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
 							/>
 						</div>
 					</Frame>

@@ -16,9 +16,16 @@ mod common;
 
 pub struct Nostr {
 	client: Client,
-	contact_list: Mutex<Vec<Contact>>,
 	inbox_relays: Mutex<HashMap<PublicKey, Vec<String>>>,
 }
+
+// TODO: Allow user config bootstrap relays.
+pub const BOOTSTRAP_RELAYS: [&str; 4] = [
+	"wss://relay.damus.io/",
+	"wss://relay.nostr.net/",
+	"wss://relay.0xchat.com/",
+	"wss://nostr.wine/",
+];
 
 fn main() {
 	let invoke_handler = {
@@ -67,6 +74,19 @@ fn main() {
 			#[cfg(target_os = "macos")]
 			main_window.set_traffic_lights_inset(12.0, 18.0).unwrap();
 
+			// Workaround for reset traffic light when window resized
+			#[cfg(target_os = "macos")]
+			let win_ = main_window.clone();
+			#[cfg(target_os = "macos")]
+			main_window.on_window_event(move |event| {
+				if let tauri::WindowEvent::Resized(_) = event {
+					win_.set_traffic_lights_inset(12.0, 18.0).unwrap();
+				}
+				if let tauri::WindowEvent::ThemeChanged(_) = event {
+					win_.set_traffic_lights_inset(12.0, 18.0).unwrap();
+				}
+			});
+
 			// Restore native border
 			#[cfg(target_os = "macos")]
 			main_window.add_border(None);
@@ -81,16 +101,14 @@ fn main() {
 
 				// Setup nostr client
 				let opts = Options::new()
-					.timeout(Duration::from_secs(30))
-					.send_timeout(Some(Duration::from_secs(5)))
-					.connection_timeout(Some(Duration::from_secs(5)));
+					.timeout(Duration::from_secs(40))
+					.send_timeout(Some(Duration::from_secs(10)))
+					.connection_timeout(Some(Duration::from_secs(10)));
 
 				let client = ClientBuilder::default().opts(opts).database(database).build();
 
 				// Add bootstrap relay
-				let _ = client
-					.add_relays(["wss://relay.poster.place/", "wss://bostr.nokotaro.com/"])
-					.await;
+				let _ = client.add_relays(BOOTSTRAP_RELAYS).await;
 
 				// Connect
 				client.connect().await;
@@ -99,11 +117,7 @@ fn main() {
 			});
 
 			// Create global state
-			app.manage(Nostr {
-				client,
-				contact_list: Mutex::new(Vec::new()),
-				inbox_relays: Mutex::new(HashMap::new()),
-			});
+			app.manage(Nostr { client, inbox_relays: Mutex::new(HashMap::new()) });
 
 			Ok(())
 		})

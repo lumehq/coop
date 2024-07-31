@@ -19,7 +19,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
-type Payload = {
+type EventPayload = {
 	event: string;
 	sender: string;
 };
@@ -90,6 +90,8 @@ function ChatList() {
 			}
 		},
 		select: (data) => data.sort((a, b) => b.created_at - a.created_at),
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
 	});
 
 	useEffect(() => {
@@ -103,14 +105,14 @@ function ChatList() {
 	}, []);
 
 	useEffect(() => {
-		const unlisten = listen<Payload>("event", async (data) => {
+		const unlisten = listen<EventPayload>("event", async (data) => {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
 
 			if (chats) {
-				const exist = chats.find((ev) => ev.pubkey === event.pubkey);
+				const index = chats.findIndex((item) => item.pubkey === event.pubkey);
 
-				if (!exist) {
+				if (index === -1) {
 					await queryClient.setQueryData(
 						["chats"],
 						(prevEvents: NostrEvent[]) => {
@@ -121,16 +123,12 @@ function ChatList() {
 						},
 					);
 				} else {
-					const index = chats.findIndex((item) => item.pubkey === event.pubkey);
 					const newEvents = [...chats];
+					newEvents[index] = {
+						...event,
+					};
 
-					if (index !== -1) {
-						newEvents[index] = {
-							...event,
-						};
-
-						await queryClient.setQueryData(["chats"], newEvents);
-					}
+					await queryClient.setQueryData(["chats"], newEvents);
 				}
 			}
 		});
@@ -147,7 +145,7 @@ function ChatList() {
 			className="overflow-hidden flex-1 w-full"
 		>
 			<ScrollArea.Viewport className="relative h-full px-1.5">
-				{isLoading ? (
+				{isLoading || !data.length ? (
 					<div>
 						{[...Array(5).keys()].map((i) => (
 							<div
