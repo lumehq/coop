@@ -1,6 +1,6 @@
 {
 	"productName": "Coop",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"identifier": "nu.lume.coop",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
