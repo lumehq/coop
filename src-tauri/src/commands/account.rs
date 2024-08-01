@@ -1,10 +1,17 @@
 use keyring::Entry;
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
+use serde::Serialize;
 use std::{collections::HashSet, time::Duration};
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 use crate::{Nostr, BOOTSTRAP_RELAYS};
+
+#[derive(Clone, Serialize)]
+pub struct EventPayload {
+	event: String, // JSON String
+	sender: String,
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -207,6 +214,7 @@ pub async fn login(
 	id: String,
 	bunker: Option<String>,
 	state: State<'_, Nostr>,
+	handle: tauri::AppHandle,
 ) -> Result<String, String> {
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
@@ -281,8 +289,31 @@ pub async fn login(
 		// Resubscribe new message for current user
 		let _ = client.subscribe_with_id(sub_id.clone(), vec![new_message], None).await;
 	} else {
-		let _ = client.subscribe_with_id(sub_id, vec![new_message], None).await;
+		let _ = client.subscribe_with_id(sub_id.clone(), vec![new_message], None).await;
 	}
+
+	tauri::async_runtime::spawn(async move {
+		let state = handle.state::<Nostr>();
+		let client = &state.client;
+
+		client
+			.handle_notifications(|notification| async {
+				if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
+					if subscription_id == sub_id && event.kind == Kind::GiftWrap {
+						if let Ok(UnwrappedGift { rumor, sender }) =
+							client.unwrap_gift_wrap(&event).await
+						{
+							let payload =
+								EventPayload { event: rumor.as_json(), sender: sender.to_hex() };
+
+							handle.emit("event", payload).unwrap();
+						}
+					}
+				}
+				Ok(false)
+			})
+			.await
+	});
 
 	Ok(hex)
 }

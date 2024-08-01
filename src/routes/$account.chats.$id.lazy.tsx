@@ -9,9 +9,15 @@ import { createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
-import { useCallback, useRef, useState, useTransition } from "react";
+import {
+	useCallback,
+	useLayoutEffect,
+	useRef,
+	useState,
+	useTransition,
+} from "react";
 import { useEffect } from "react";
-import { Virtualizer } from "virtua";
+import { Virtualizer, type VirtualizerHandle } from "virtua";
 
 type ChatPayload = {
 	events: string[];
@@ -104,7 +110,10 @@ function List() {
 	});
 
 	const queryClient = useQueryClient();
-	const ref = useRef<HTMLDivElement>(null);
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const ref = useRef<VirtualizerHandle>(null);
+	const isPrepend = useRef(false);
+	const shouldStickToBottom = useRef(true);
 
 	const renderItem = useCallback(
 		(item: NostrEvent, idx: number) => {
@@ -189,6 +198,20 @@ function List() {
 		};
 	}, []);
 
+	useEffect(() => {
+		if (!data?.length) return;
+		if (!ref.current) return;
+		if (!shouldStickToBottom.current) return;
+
+		ref.current.scrollToIndex(data.length - 1, {
+			align: "end",
+		});
+	}, [data]);
+
+	useLayoutEffect(() => {
+		isPrepend.current = false;
+	});
+
 	return (
 		<ScrollArea.Root
 			type={"scroll"}
@@ -196,10 +219,20 @@ function List() {
 			className="overflow-hidden flex-1 w-full"
 		>
 			<ScrollArea.Viewport
-				ref={ref}
+				ref={scrollRef}
 				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
-				<Virtualizer scrollRef={ref} shift>
+				<Virtualizer
+					scrollRef={scrollRef}
+					ref={ref}
+					shift={isPrepend.current}
+					onScroll={(offset) => {
+						if (!ref.current) return;
+						shouldStickToBottom.current =
+							offset - ref.current.scrollSize + ref.current.viewportSize >=
+							-1.5;
+					}}
+				>
 					{isLoading ? (
 						<>
 							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
