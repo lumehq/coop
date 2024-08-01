@@ -1,84 +1,83 @@
-use futures::stream::{self, StreamExt};
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use std::{cmp::Reverse, time::Duration};
-use tauri::State;
+use serde::Serialize;
+use std::time::Duration;
+use tauri::{Emitter, Manager, State};
 
-use crate::{common::is_member, Nostr};
+use crate::{
+	common::{process_chat_event, process_message_event},
+	Nostr,
+};
+
+#[derive(Clone, Serialize)]
+pub struct ChatPayload {
+	events: Vec<String>,
+}
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
+pub async fn get_chats(
+	state: State<'_, Nostr>,
+	handle: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
 	let client = &state.client;
+	let database = client.database();
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
 
 	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-	let rumors = match client.get_events_of(vec![filter], Some(Duration::from_secs(20))).await {
-		Ok(events) => {
-			stream::iter(events)
-				.filter_map(|ev| async move {
-					if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(&ev).await {
-						if rumor.kind == Kind::PrivateDirectMessage {
-							Some(rumor)
-						} else {
-							None
-						}
-					} else {
-						None
-					}
-				})
-				.collect::<Vec<_>>()
-				.await
-		}
+	let events = match database.query(vec![filter.clone()], Order::Desc).await {
+		Ok(events) => process_chat_event(client, events).await,
 		Err(e) => return Err(e.to_string()),
 	};
 
-	let uniqs = rumors
-		.into_iter()
-		.sorted_by_key(|ev| Reverse(ev.created_at))
-		.filter(|ev| ev.pubkey != public_key)
-		.unique_by(|ev| ev.pubkey)
-		.map(|ev| ev.as_json())
-		.collect::<Vec<_>>();
+	tauri::async_runtime::spawn(async move {
+		let state = handle.state::<Nostr>();
+		let client = &state.client;
 
-	Ok(uniqs)
+		if let Ok(events) = client.get_events_of(vec![filter], None).await {
+			let rumors = process_chat_event(client, events).await;
+			handle.emit("sync_chat", ChatPayload { events: rumors }).unwrap();
+		}
+	});
+
+	Ok(events)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
+pub async fn get_chat_messages(
+	id: String,
+	state: State<'_, Nostr>,
+	handle: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
 	let client = &state.client;
+	let database = client.database();
 
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
-	let receiver_pk = signer.public_key().await.map_err(|e| e.to_string())?;
-	let sender_pk = PublicKey::parse(id).map_err(|e| e.to_string())?;
 
-	let filter = Filter::new().kind(Kind::GiftWrap).pubkeys(vec![receiver_pk, sender_pk]);
+	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
+	let sender = PublicKey::parse(id.clone()).map_err(|e| e.to_string())?;
 
-	let rumors = match client.get_events_of(vec![filter], None).await {
-		Ok(events) => {
-			stream::iter(events)
-				.filter_map(|ev| async move {
-					if let Ok(UnwrappedGift { rumor, sender }) = client.unwrap_gift_wrap(&ev).await
-					{
-						let groups = vec![&receiver_pk, &sender_pk];
+	let group = vec![public_key, sender];
+	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-						if groups.contains(&&sender) && is_member(groups, &rumor.tags) {
-							Some(rumor.as_json())
-						} else {
-							None
-						}
-					} else {
-						None
-					}
-				})
-				.collect::<Vec<_>>()
-				.await
-		}
+	let rumors = match database.query(vec![filter.clone()], Order::Desc).await {
+		Ok(events) => process_message_event(client, events, &group).await,
 		Err(e) => return Err(e.to_string()),
 	};
+
+	tauri::async_runtime::spawn(async move {
+		let state = handle.state::<Nostr>();
+		let client = &state.client;
+
+		if let Ok(events) = client.get_events_of(vec![filter], None).await {
+			let rumors = process_message_event(client, events, &group).await;
+			let emit_to = format!("sync_chat_{}", id);
+
+			handle.emit(&emit_to, ChatPayload { events: rumors }).unwrap();
+		}
+	});
 
 	Ok(rumors)
 }

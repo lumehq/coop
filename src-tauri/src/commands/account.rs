@@ -1,23 +1,16 @@
 use keyring::Entry;
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
-use serde::Serialize;
 use std::{collections::HashSet, time::Duration};
-use tauri::{Emitter, Manager, State};
+use tauri::State;
 
 use crate::{Nostr, BOOTSTRAP_RELAYS};
-
-#[derive(Clone, Serialize)]
-struct EventPayload {
-	event: String,
-	sender: String,
-}
 
 #[tauri::command]
 #[specta::specta]
 pub fn get_accounts() -> Vec<String> {
 	let search = Search::new().expect("Unexpected.");
-	let results = search.by_user("nostr_secret");
+	let results = search.by_service("coop");
 	let list = List::list_credentials(&results, Limit::All);
 	let accounts: HashSet<String> =
 		list.split_whitespace().filter(|v| v.starts_with("npub1")).map(String::from).collect();
@@ -58,7 +51,7 @@ pub async fn create_account(
 	let nsec = keys.secret_key().unwrap().to_bech32().map_err(|e| e.to_string())?;
 
 	// Save account
-	let keyring = Entry::new(&npub, "nostr_secret").unwrap();
+	let keyring = Entry::new("coop", &npub).unwrap();
 	let _ = keyring.set_password(&nsec);
 
 	let signer = NostrSigner::Keys(keys);
@@ -103,7 +96,7 @@ pub async fn import_key(
 			let npub = nostr_keys.public_key().to_bech32().unwrap();
 			let nsec = nostr_keys.secret_key().unwrap().to_bech32().unwrap();
 
-			let keyring = Entry::new(&npub, "nostr_secret").unwrap();
+			let keyring = Entry::new("coop", &npub).unwrap();
 			let _ = keyring.set_password(&nsec);
 
 			let signer = NostrSigner::Keys(nostr_keys);
@@ -134,7 +127,7 @@ pub async fn connect_account(uri: &str, state: State<'_, Nostr>) -> Result<Strin
 
 			match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(120), None).await {
 				Ok(signer) => {
-					let keyring = Entry::new(&remote_npub, "nostr_secret").unwrap();
+					let keyring = Entry::new("coop", &remote_npub).unwrap();
 					let _ = keyring.set_password(&app_secret);
 
 					// Update signer
@@ -214,12 +207,11 @@ pub async fn login(
 	id: String,
 	bunker: Option<String>,
 	state: State<'_, Nostr>,
-	handle: tauri::AppHandle,
 ) -> Result<String, String> {
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let hex = public_key.to_hex();
-	let keyring = Entry::new(&id, "nostr_secret").expect("Unexpected.");
+	let keyring = Entry::new("coop", &id).expect("Unexpected.");
 
 	let password = match keyring.get_password() {
 		Ok(pw) => pw,
@@ -280,7 +272,7 @@ pub async fn login(
 		}
 	}
 
-	let sub_id = SubscriptionId::new("personal_inbox");
+	let sub_id = SubscriptionId::new("inbox");
 	let new_message = Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0);
 
 	if client.subscription(&sub_id).await.is_some() {
@@ -291,32 +283,6 @@ pub async fn login(
 	} else {
 		let _ = client.subscribe_with_id(sub_id, vec![new_message], None).await;
 	}
-
-	tauri::async_runtime::spawn(async move {
-		let window = handle.get_webview_window("main").expect("Window is terminated.");
-		let state = window.state::<Nostr>();
-		let client = &state.client;
-
-		client
-			.handle_notifications(|notification| async {
-				if let RelayPoolNotification::Event { event, .. } = notification {
-					if event.kind == Kind::GiftWrap {
-						if let Ok(UnwrappedGift { rumor, sender }) =
-							client.unwrap_gift_wrap(&event).await
-						{
-							if let Err(e) = window.emit(
-								"event",
-								EventPayload { event: rumor.as_json(), sender: sender.to_hex() },
-							) {
-								println!("emit failed: {}", e)
-							}
-						}
-					}
-				}
-				Ok(false)
-			})
-			.await
-	});
 
 	Ok(hex)
 }

@@ -13,7 +13,11 @@ import { useCallback, useRef, useState, useTransition } from "react";
 import { useEffect } from "react";
 import { Virtualizer } from "virtua";
 
-type Payload = {
+type ChatPayload = {
+	events: string[];
+};
+
+type EventPayload = {
 	event: string;
 	sender: string;
 };
@@ -140,7 +144,29 @@ function List() {
 	);
 
 	useEffect(() => {
-		const unlisten = listen<Payload>("event", async (data) => {
+		const unlisten = listen<ChatPayload>(`sync_chat_${id}`, async (data) => {
+			const raw = data.payload.events;
+			const events: NostrEvent[] = raw.map((item) => JSON.parse(item));
+			const chats: NostrEvent[] = await queryClient.getQueryData(["chats", id]);
+
+			if (chats?.length) {
+				const newEvents = [...events, ...chats];
+				const dedup = newEvents.filter(
+					(obj1, i, arr) => arr.findIndex((obj2) => obj2.id === obj1.id) === i,
+				);
+				await queryClient.setQueryData(["chats", id], dedup);
+			} else {
+				await queryClient.setQueryData(["chats", id], events);
+			}
+		});
+
+		return () => {
+			unlisten.then((f) => f());
+		};
+	}, []);
+
+	useEffect(() => {
+		const unlisten = listen<EventPayload>("event", async (data) => {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const sender = data.payload.sender;
 			const receivers = getReceivers(event.tags);

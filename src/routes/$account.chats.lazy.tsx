@@ -19,6 +19,10 @@ import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
+type ChatPayload = {
+	events: string[];
+};
+
 type EventPayload = {
 	event: string;
 	sender: string;
@@ -95,8 +99,20 @@ function ChatList() {
 	});
 
 	useEffect(() => {
-		const unlisten = listen("synchronized", async () => {
-			await queryClient.refetchQueries({ queryKey: ["chats"] });
+		const unlisten = listen<ChatPayload>("sync_chat", async (data) => {
+			const raw = data.payload.events;
+			const events: NostrEvent[] = raw.map((item) => JSON.parse(item));
+			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
+
+			if (chats?.length) {
+				const newEvents = [...events, ...chats];
+				const uniqs = [
+					...new Map(newEvents.map((item) => [item.pubkey, item])).values(),
+				];
+				await queryClient.setQueryData(["chats"], uniqs);
+			} else {
+				await queryClient.setQueryData(["chats"], events);
+			}
 		});
 
 		return () => {

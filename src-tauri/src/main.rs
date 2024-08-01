@@ -24,7 +24,7 @@ pub const BOOTSTRAP_RELAYS: [&str; 4] = [
 	"wss://relay.damus.io/",
 	"wss://relay.nostr.net/",
 	"wss://relay.0xchat.com/",
-	"wss://nostr.wine/",
+	"wss://auth.nostr1.com/",
 ];
 
 fn main() {
