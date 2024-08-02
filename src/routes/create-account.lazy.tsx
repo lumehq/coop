@@ -93,7 +93,7 @@ function Screen() {
 							{isPending ? <Spinner /> : "Continue"}
 						</button>
 						<GoBack className="mt-2 w-full text-sm text-neutral-600 dark:text-neutral-400 inline-flex items-center justify-center">
-							Back
+							Go back to previous screen
 						</GoBack>
 					</div>
 				</div>

@@ -212,45 +212,24 @@ pub async fn set_inbox(relays: Vec<String>, state: State<'_, Nostr>) -> Result<(
 #[specta::specta]
 pub async fn login(
 	id: String,
-	bunker: Option<String>,
 	state: State<'_, Nostr>,
 	handle: tauri::AppHandle,
 ) -> Result<String, String> {
 	let client = &state.client;
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let hex = public_key.to_hex();
-	let keyring = Entry::new("coop", &id).expect("Unexpected.");
+	let keyring = Entry::new("coop", &id).map_err(|e| e.to_string())?;
 
 	let password = match keyring.get_password() {
 		Ok(pw) => pw,
 		Err(_) => return Err("Cancelled".into()),
 	};
 
-	match bunker {
-		Some(uri) => {
-			let app_keys =
-				Keys::parse(password).expect("Secret Key is modified, please check again.");
+	let keys = Keys::parse(password).map_err(|e| e.to_string())?;
+	let signer = NostrSigner::Keys(keys);
 
-			match NostrConnectURI::parse(uri) {
-				Ok(bunker_uri) => {
-					match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(30), None)
-						.await
-					{
-						Ok(signer) => client.set_signer(Some(signer.into())).await,
-						Err(err) => return Err(err.to_string()),
-					}
-				}
-				Err(err) => return Err(err.to_string()),
-			}
-		}
-		None => {
-			let keys = Keys::parse(password).expect("Secret Key is modified, please check again.");
-			let signer = NostrSigner::Keys(keys);
-
-			// Update signer
-			client.set_signer(Some(signer)).await;
-		}
-	}
+	// Update signer
+	client.set_signer(Some(signer)).await;
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 

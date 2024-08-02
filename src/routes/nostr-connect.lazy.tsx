@@ -35,13 +35,6 @@ function Screen() {
 			const res = await commands.connectAccount(uri);
 
 			if (res.status === "ok") {
-				const npub = res.data;
-				const parsed = new URL(uri);
-				parsed.searchParams.delete("secret");
-
-				// save connection string
-				localStorage.setItem(`${npub}_bunker`, parsed.toString());
-
 				navigate({ to: "/", replace: true });
 			} else {
 				await message(res.error, { title: "Nostr Connect", kind: "error" });
@@ -103,7 +96,7 @@ function Screen() {
 							</p>
 						) : (
 							<GoBack className="mt-2 w-full text-sm text-neutral-600 dark:text-neutral-400 inline-flex items-center justify-center">
-								Back
+								Go back to previous screen
 							</GoBack>
 						)}
 					</div>
