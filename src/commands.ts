@@ -4,9 +4,9 @@
          /** user-defined commands **/
 
          export const commands = {
-async login(id: string, bunker: string | null) : Promise<Result<string, string>> {
+async login(id: string) : Promise<Result<string, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("login", { id, bunker }) };
+    return { status: "ok", data: await TAURI_INVOKE("login", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
