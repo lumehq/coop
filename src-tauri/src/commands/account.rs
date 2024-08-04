@@ -296,6 +296,10 @@ pub async fn login(
 
 		let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
+		// Generate a fake sig for rumor event.
+		// TODO: Find better way to save unsigned event to database.
+		let fake_sig = Signature::from_str("f9e79d141c004977192d05a86f81ec7c585179c371f7350a5412d33575a2a356433f58e405c2296ed273e2fe0aafa25b641e39cc4e1f3f261ebf55bce0cbac83").unwrap();
+
 		if let Ok(events) = client
 			.get_events_of_with_opts(
 				vec![filter],
@@ -304,10 +308,6 @@ pub async fn login(
 			)
 			.await
 		{
-			// Use fake sig, it doesn't matter.
-			// TODO: Find better way to save unsigned event to database.
-			let fake_sig = Signature::from_str("f9e79d141c004977192d05a86f81ec7c585179c371f7350a5412d33575a2a356433f58e405c2296ed273e2fe0aafa25b641e39cc4e1f3f261ebf55bce0cbac83").unwrap();
-
 			for event in events.iter() {
 				if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(event).await {
 					let rumor_clone = rumor.clone();
@@ -336,6 +336,21 @@ pub async fn login(
 						if let Ok(UnwrappedGift { rumor, sender }) =
 							client.unwrap_gift_wrap(&event).await
 						{
+							let rumor_clone = rumor.clone();
+							let ev = Event::new(
+								rumor_clone.id.unwrap(),
+								rumor_clone.pubkey,
+								rumor_clone.created_at,
+								rumor_clone.kind,
+								rumor_clone.tags,
+								rumor_clone.content,
+								fake_sig,
+							);
+
+							if let Err(e) = client.database().save_event(&ev).await {
+								println!("Error: {}", e)
+							}
+
 							let payload =
 								EventPayload { event: rumor.as_json(), sender: sender.to_hex() };
 

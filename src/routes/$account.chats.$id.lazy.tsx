@@ -191,7 +191,7 @@ function List() {
 				["chats", id],
 				(prevEvents: NostrEvent[]) => {
 					if (!prevEvents) return prevEvents;
-					return [...prevEvents, event];
+					return [event, ...prevEvents];
 				},
 			);
 		});
@@ -236,9 +236,6 @@ function List() {
 							-1.5;
 					}}
 				>
-					<div className="h-20 flex items-center justify-center">
-						<CoopIcon className="size-10 text-neutral-200 dark:text-neutral-800" />
-					</div>
 					{isLoading ? (
 						<>
 							<div className="flex items-center gap-3 my-1.5 px-3">
@@ -257,6 +254,10 @@ function List() {
 							<div className="text-sm flex items-center gap-1.5">
 								Cannot load message. Please try again later.
 							</div>
+						</div>
+					) : !data.length ? (
+						<div className="h-20 flex items-center justify-center">
+							<CoopIcon className="size-10 text-neutral-200 dark:text-neutral-800" />
 						</div>
 					) : (
 						data.map((item) => (
