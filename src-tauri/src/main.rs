@@ -19,17 +19,13 @@ pub struct Nostr {
 }
 
 // TODO: Allow user config bootstrap relays.
-pub const BOOTSTRAP_RELAYS: [&str; 4] = [
-	"wss://relay.damus.io/",
-	"wss://relay.nostr.net/",
-	"wss://relay.0xchat.com/",
-	"wss://auth.nostr1.com/",
-];
+pub const BOOTSTRAP_RELAYS: [&str; 2] = ["wss://relay.damus.io/", "wss://relay.nostr.net/"];
 
 fn main() {
 	let invoke_handler = {
 		let builder = tauri_specta::ts::builder().commands(tauri_specta::collect_commands![
 			login,
+			delete_account,
 			create_account,
 			import_key,
 			connect_account,

@@ -158,7 +158,7 @@ function ChatList() {
 			className="relative overflow-hidden flex-1 w-full"
 		>
 			<ScrollArea.Viewport className="relative h-full px-1.5">
-				{isLoading || !isSync ? (
+				{isLoading ? (
 					<>
 						{[...Array(5).keys()].map((i) => (
 							<div
@@ -210,25 +210,7 @@ function ChatList() {
 					))
 				)}
 			</ScrollArea.Viewport>
-			{!isSync ? (
-				<div className="absolute bottom-0 w-full p-4">
-					<div className="flex flex-col items-center gap-1.5">
-						<Progress.Root
-							className="relative overflow-hidden bg-black/20 dark:bg-white/20 rounded-full w-full h-1"
-							style={{
-								transform: "translateZ(0)",
-							}}
-							value={progress}
-						>
-							<Progress.Indicator
-								className="bg-blue-500 size-full transition-transform duration-[660ms] ease-[cubic-bezier(0.65, 0, 0.35, 1)]"
-								style={{ transform: `translateX(-${100 - progress}%)` }}
-							/>
-						</Progress.Root>
-						<span className="text-center text-xs">Syncing message...</span>
-					</div>
-				</div>
-			) : null}
+			{!isSync && !data ? <SyncPopup progress={progress} /> : null}
 			<ScrollArea.Scrollbar
 				className="flex select-none touch-none p-0.5 duration-[160ms] ease-out data-[orientation=vertical]:w-2"
 				orientation="vertical"
@@ -237,6 +219,28 @@ function ChatList() {
 			</ScrollArea.Scrollbar>
 			<ScrollArea.Corner className="bg-transparent" />
 		</ScrollArea.Root>
+	);
+}
+
+function SyncPopup({ progress }: { progress: number }) {
+	return (
+		<div className="absolute bottom-0 w-full p-4">
+			<div className="relative flex flex-col items-center gap-1.5">
+				<Progress.Root
+					className="relative overflow-hidden bg-black/20 dark:bg-white/20 rounded-full w-full h-1"
+					style={{
+						transform: "translateZ(0)",
+					}}
+					value={progress}
+				>
+					<Progress.Indicator
+						className="bg-blue-500 size-full transition-transform duration-[660ms] ease-[cubic-bezier(0.65, 0, 0.35, 1)]"
+						style={{ transform: `translateX(-${100 - progress}%)` }}
+					/>
+				</Progress.Root>
+				<span className="text-center text-xs">Syncing message...</span>
+			</div>
+		</div>
 	);
 }
 

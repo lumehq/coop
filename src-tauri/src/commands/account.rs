@@ -47,6 +47,15 @@ pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String,
 
 #[tauri::command]
 #[specta::specta]
+pub fn delete_account(id: String) -> Result<(), String> {
+	let keyring = Entry::new("coop", &id).map_err(|e| e.to_string())?;
+	let _ = keyring.delete_credential();
+
+	Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn create_account(
 	name: String,
 	picture: Option<String>,
@@ -258,7 +267,7 @@ pub async fn login(
 				.get_events_from(
 					urls.clone(),
 					vec![Filter::new().kind(Kind::TextNote).limit(0)],
-					None,
+					Some(Duration::from_secs(5)),
 				)
 				.await;
 

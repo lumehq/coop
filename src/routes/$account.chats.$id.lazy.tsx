@@ -2,7 +2,8 @@ import { commands } from "@/commands";
 import { cn, getReceivers, groupEventByDate, time } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { ArrowUp } from "@phosphor-icons/react";
+import { CoopIcon } from "@/icons/coop";
+import { ArrowUp, Paperclip } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createLazyFileRoute } from "@tanstack/react-router";
@@ -233,6 +234,9 @@ function List() {
 							-1.5;
 					}}
 				>
+					<div className="h-20 flex items-center justify-center">
+						<CoopIcon className="size-10 text-neutral-200 dark:text-neutral-800" />
+					</div>
 					{isLoading ? (
 						<>
 							<div className="flex items-center gap-3 my-1.5 px-3">
@@ -313,12 +317,12 @@ function Form() {
 			) : (
 				<div className="flex-1 flex items-center gap-2">
 					<div className="inline-flex gap-1">
-						{/*<div
+						<div
 							title="Attach media"
 							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
 						>
 							<Paperclip className="size-5" />
-						</div>*/}
+						</div>
 					</div>
 					<input
 						placeholder="Message..."

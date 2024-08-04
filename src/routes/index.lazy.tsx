@@ -3,9 +3,9 @@ import { npub } from "@/commons";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { Plus } from "@phosphor-icons/react";
+import { Plus, X } from "@phosphor-icons/react";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 export const Route = createLazyFileRoute("/")({
 	component: Screen,
@@ -25,8 +25,17 @@ function Screen() {
 		[],
 	);
 
+	const [accounts, setAccounts] = useState([]);
 	const [value, setValue] = useState("");
 	const [isPending, startTransition] = useTransition();
+
+	const deleteAccount = async (npub: string) => {
+		const res = await commands.deleteAccount(npub);
+
+		if (res.status === "ok") {
+			setAccounts((prev) => prev.filter((item) => item !== npub));
+		}
+	};
 
 	const loginWith = async (npub: string) => {
 		setValue(npub);
@@ -51,6 +60,10 @@ function Screen() {
 		});
 	};
 
+	useEffect(() => {
+		setAccounts(context.accounts);
+	}, [context.accounts]);
+
 	return (
 		<div
 			data-tauri-drag-region
@@ -67,12 +80,12 @@ function Screen() {
 					className="flex flex-col w-full divide-y divide-neutral-100 dark:divide-white/5 rounded-xl overflow-hidden"
 					shadow
 				>
-					{context.accounts.map((account) => (
+					{accounts.map((account) => (
 						<div
 							key={account}
 							onClick={() => loginWith(account)}
 							onKeyDown={() => loginWith(account)}
-							className="flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5"
+							className="group flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5"
 						>
 							<User.Provider pubkey={account}>
 								<User.Root className="flex items-center gap-2.5 p-3">
@@ -86,7 +99,17 @@ function Screen() {
 								</User.Root>
 							</User.Provider>
 							<div className="inline-flex items-center justify-center size-10">
-								{value === account && isPending ? <Spinner /> : null}
+								{value === account && isPending ? (
+									<Spinner />
+								) : (
+									<button
+										type="button"
+										onClick={() => deleteAccount(account)}
+										className="size-10 hidden group-hover:flex items-center justify-center text-neutral-600 dark:text-neutral-400"
+									>
+										<X className="size-4" />
+									</button>
+								)}
 							</div>
 						</div>
 					))}
