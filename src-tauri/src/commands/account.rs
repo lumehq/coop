@@ -2,7 +2,7 @@ use keyring::Entry;
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
 use serde::Serialize;
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, str::FromStr, time::Duration};
 use tauri::{Emitter, Manager, State};
 
 use crate::{Nostr, BOOTSTRAP_RELAYS};
@@ -252,6 +252,16 @@ pub async fn login(
 				let _ = client.connect_relay(url).await;
 			}
 
+			// Workaround for https://github.com/rust-nostr/nostr/issues/509
+			// TODO: remove this
+			let _ = client
+				.get_events_from(
+					urls.clone(),
+					vec![Filter::new().kind(Kind::TextNote).limit(0)],
+					None,
+				)
+				.await;
+
 			let mut inbox_relays = state.inbox_relays.lock().await;
 			inbox_relays.insert(public_key, urls);
 		} else {
@@ -274,6 +284,41 @@ pub async fn login(
 	tauri::async_runtime::spawn(async move {
 		let state = handle.state::<Nostr>();
 		let client = &state.client;
+
+		let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+		if let Ok(events) = client
+			.get_events_of_with_opts(
+				vec![filter],
+				Some(Duration::from_secs(20)),
+				FilterOptions::WaitDurationAfterEOSE(Duration::from_secs(20)),
+			)
+			.await
+		{
+			// Use fake sig, it doesn't matter.
+			// TODO: Find better way to save unsigned event to database.
+			let fake_sig = Signature::from_str("f9e79d141c004977192d05a86f81ec7c585179c371f7350a5412d33575a2a356433f58e405c2296ed273e2fe0aafa25b641e39cc4e1f3f261ebf55bce0cbac83").unwrap();
+
+			for event in events.iter() {
+				if let Ok(UnwrappedGift { rumor, .. }) = client.unwrap_gift_wrap(event).await {
+					let rumor_clone = rumor.clone();
+					let ev = Event::new(
+						rumor_clone.id.unwrap(),
+						rumor_clone.pubkey,
+						rumor_clone.created_at,
+						rumor_clone.kind,
+						rumor_clone.tags,
+						rumor_clone.content,
+						fake_sig,
+					);
+
+					if let Err(e) = client.database().save_event(&ev).await {
+						println!("Error: {}", e)
+					}
+				}
+			}
+			handle.emit("synchronized", ()).unwrap();
+		}
 
 		client
 			.handle_notifications(|notification| async {

@@ -13,6 +13,7 @@
 		"@phosphor-icons/react": "^2.1.7",
 		"@radix-ui/react-avatar": "^1.1.0",
 		"@radix-ui/react-dialog": "^1.1.1",
+		"@radix-ui/react-progress": "^1.1.0",
 		"@radix-ui/react-scroll-area": "^1.1.0",
 		"@tanstack/react-query": "^5.51.21",
 		"@tanstack/react-router": "^1.46.3",

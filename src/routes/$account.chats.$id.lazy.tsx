@@ -235,17 +235,15 @@ function List() {
 				>
 					{isLoading ? (
 						<>
-							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
+							<div className="flex items-center gap-3 my-1.5 px-3">
 								<div className="flex-1 min-w-0 inline-flex">
 									<div className="w-44 h-[35px] py-2 max-w-[400px] bg-neutral-100 dark:bg-neutral-800 animate-pulse rounded-tl-3xl rounded-tr-3xl rounded-br-3xl rounded-bl-md" />
 								</div>
-								<div className="shrink-0 w-16 flex items-center justify-end" />
 							</div>
-							<div className="flex items-center justify-between gap-3 my-1.5 px-3">
+							<div className="flex items-center gap-3 my-1.5 px-3">
 								<div className="flex-1 min-w-0 inline-flex justify-end">
 									<div className="w-44 h-[35px] py-2 max-w-[400px] bg-blue-500 text-white animate-pulse rounded-tl-3xl rounded-tr-3xl rounded-br-md rounded-bl-3xl" />
 								</div>
-								<div className="shrink-0 w-16 flex items-center justify-end" />
 							</div>
 						</>
 					) : isError ? (

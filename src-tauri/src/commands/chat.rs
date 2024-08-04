@@ -1,85 +1,57 @@
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use serde::Serialize;
+use std::cmp::Reverse;
 use std::time::Duration;
-use tauri::{Emitter, Manager, State};
+use tauri::State;
 
-use crate::{
-	common::{process_chat_event, process_message_event},
-	Nostr,
-};
-
-#[derive(Clone, Serialize)]
-pub struct ChatPayload {
-	events: Vec<String>,
-}
+use crate::Nostr;
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chats(
-	state: State<'_, Nostr>,
-	handle: tauri::AppHandle,
-) -> Result<Vec<String>, String> {
+pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
-	let database = client.database();
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
 
-	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+	let filter = Filter::new().kind(Kind::PrivateDirectMessage).pubkey(public_key);
 
-	let events = match database.query(vec![filter.clone()], Order::Desc).await {
-		Ok(events) => process_chat_event(client, events).await,
-		Err(e) => return Err(e.to_string()),
-	};
+	match client.database().query(vec![filter.clone()], Order::Desc).await {
+		Ok(events) => {
+			let ev = events
+				.into_iter()
+				.sorted_by_key(|ev| Reverse(ev.created_at))
+				.filter(|ev| ev.pubkey != public_key)
+				.unique_by(|ev| ev.pubkey)
+				.map(|ev| ev.as_json())
+				.collect::<Vec<_>>();
 
-	tauri::async_runtime::spawn(async move {
-		let state = handle.state::<Nostr>();
-		let client = &state.client;
-
-		if let Ok(events) = client.get_events_of(vec![filter], None).await {
-			let rumors = process_chat_event(client, events).await;
-			handle.emit("sync_chat", ChatPayload { events: rumors }).unwrap();
+			Ok(ev)
 		}
-	});
-
-	Ok(events)
+		Err(e) => Err(e.to_string()),
+	}
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_chat_messages(
-	id: String,
-	state: State<'_, Nostr>,
-	handle: tauri::AppHandle,
-) -> Result<Vec<String>, String> {
+pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
-	let database = client.database();
-
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 
-	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
+	let receiver = signer.public_key().await.map_err(|e| e.to_string())?;
 	let sender = PublicKey::parse(id.clone()).map_err(|e| e.to_string())?;
 
-	let group = vec![public_key, sender];
-	let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+	let recv_filter =
+		Filter::new().kind(Kind::PrivateDirectMessage).author(sender).pubkey(receiver);
+	let sender_filter =
+		Filter::new().kind(Kind::PrivateDirectMessage).author(receiver).pubkey(sender);
 
-	let rumors = match database.query(vec![filter.clone()], Order::Desc).await {
-		Ok(events) => process_message_event(client, events, &group).await,
-		Err(e) => return Err(e.to_string()),
-	};
-
-	tauri::async_runtime::spawn(async move {
-		let state = handle.state::<Nostr>();
-		let client = &state.client;
-
-		if let Ok(events) = client.get_events_of(vec![filter], None).await {
-			let rumors = process_message_event(client, events, &group).await;
-			let emit_to = format!("sync_chat_{}", id);
-
-			handle.emit(&emit_to, ChatPayload { events: rumors }).unwrap();
+	match client.database().query(vec![recv_filter, sender_filter], Order::Desc).await {
+		Ok(events) => {
+			let ev = events.into_iter().map(|ev| ev.as_json()).collect::<Vec<_>>();
+			Ok(ev)
 		}
-	});
-
-	Ok(rumors)
+		Err(e) => Err(e.to_string()),
+	}
 }
 
 #[tauri::command]

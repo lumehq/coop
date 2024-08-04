@@ -10,6 +10,7 @@ import {
 	X,
 } from "@phosphor-icons/react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as Progress from "@radix-ui/react-progress";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
@@ -18,10 +19,6 @@ import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
 import { useCallback, useEffect, useState, useTransition } from "react";
-
-type ChatPayload = {
-	events: string[];
-};
 
 type EventPayload = {
 	event: string;
@@ -98,21 +95,21 @@ function ChatList() {
 		refetchOnWindowFocus: false,
 	});
 
-	useEffect(() => {
-		const unlisten = listen<ChatPayload>("sync_chat", async (data) => {
-			const raw = data.payload.events;
-			const events: NostrEvent[] = raw.map((item) => JSON.parse(item));
-			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
+	const [isSync, setIsSync] = useState(false);
+	const [progress, setProgress] = useState(0);
 
-			if (chats?.length) {
-				const newEvents = [...events, ...chats];
-				const uniqs = [
-					...new Map(newEvents.map((item) => [item.pubkey, item])).values(),
-				];
-				await queryClient.setQueryData(["chats"], uniqs);
-			} else {
-				await queryClient.setQueryData(["chats"], events);
-			}
+	useEffect(() => {
+		const timer = setInterval(
+			() => setProgress((prev) => (prev <= 100 ? prev + 4 : 100)),
+			1200,
+		);
+		return () => clearInterval(timer);
+	}, []);
+
+	useEffect(() => {
+		const unlisten = listen("synchronized", async () => {
+			await queryClient.refetchQueries({ queryKey: ["chats"] });
+			setIsSync(true);
 		});
 
 		return () => {
@@ -158,11 +155,11 @@ function ChatList() {
 		<ScrollArea.Root
 			type={"scroll"}
 			scrollHideDelay={300}
-			className="overflow-hidden flex-1 w-full"
+			className="relative overflow-hidden flex-1 w-full"
 		>
 			<ScrollArea.Viewport className="relative h-full px-1.5">
-				{isLoading || !data.length ? (
-					<div>
+				{isLoading || !isSync ? (
+					<>
 						{[...Array(5).keys()].map((i) => (
 							<div
 								key={i}
@@ -172,8 +169,8 @@ function ChatList() {
 								<div className="size-4 w-20 rounded animate-pulse bg-black/10 dark:bg-white/10" />
 							</div>
 						))}
-					</div>
-				) : !data?.length ? (
+					</>
+				) : isSync && !data.length ? (
 					<div className="p-2">
 						<div className="px-2 h-12 w-full rounded-lg bg-black/5 dark:bg-white/5 flex items-center justify-center text-sm">
 							No chats.
@@ -213,6 +210,25 @@ function ChatList() {
 					))
 				)}
 			</ScrollArea.Viewport>
+			{!isSync ? (
+				<div className="absolute bottom-0 w-full p-4">
+					<div className="flex flex-col items-center gap-1.5">
+						<Progress.Root
+							className="relative overflow-hidden bg-black/20 dark:bg-white/20 rounded-full w-full h-1"
+							style={{
+								transform: "translateZ(0)",
+							}}
+							value={progress}
+						>
+							<Progress.Indicator
+								className="bg-blue-500 size-full transition-transform duration-[660ms] ease-[cubic-bezier(0.65, 0, 0.35, 1)]"
+								style={{ transform: `translateX(-${100 - progress}%)` }}
+							/>
+						</Progress.Root>
+						<span className="text-center text-xs">Syncing message...</span>
+					</div>
+				</div>
+			) : null}
 			<ScrollArea.Scrollbar
 				className="flex select-none touch-none p-0.5 duration-[160ms] ease-out data-[orientation=vertical]:w-2"
 				orientation="vertical"

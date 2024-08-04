@@ -12,7 +12,6 @@ use tauri_plugin_decorum::WebviewWindowExt;
 use commands::{account::*, chat::*};
 
 mod commands;
-mod common;
 
 pub struct Nostr {
 	client: Client,
