@@ -17,6 +17,7 @@ import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { message } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-shell";
 import type { NostrEvent } from "nostr-tools";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
@@ -362,8 +363,8 @@ function Compose() {
 									>
 										<User.Provider pubkey={contact}>
 											<User.Root className="flex items-center gap-2">
-												<User.Avatar className="size-10 rounded-full" />
-												<User.Name className="font-medium" />
+												<User.Avatar className="size-8 rounded-full" />
+												<User.Name className="text-sm font-medium" />
 											</User.Root>
 										</User.Provider>
 									</button>
@@ -406,7 +407,7 @@ function CurrentUser() {
 			}),
 			MenuItem.new({
 				text: "Feedback",
-				action: () => navigate({ to: "/" }),
+				action: async () => await open("https://github.com/lumehq/coop/issues"),
 			}),
 			PredefinedMenuItem.new({ item: "Separator" }),
 			MenuItem.new({

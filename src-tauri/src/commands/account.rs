@@ -17,7 +17,7 @@ pub struct EventPayload {
 #[specta::specta]
 pub fn get_accounts() -> Vec<String> {
 	let search = Search::new().expect("Unexpected.");
-	let results = search.by_service("coop");
+	let results = search.by_service("Coop Secret Storage");
 	let list = List::list_credentials(&results, Limit::All);
 	let accounts: HashSet<String> =
 		list.split_whitespace().filter(|v| v.starts_with("npub1")).map(String::from).collect();
@@ -48,7 +48,7 @@ pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String,
 #[tauri::command]
 #[specta::specta]
 pub fn delete_account(id: String) -> Result<(), String> {
-	let keyring = Entry::new("coop", &id).map_err(|e| e.to_string())?;
+	let keyring = Entry::new("Coop Secret Storage", &id).map_err(|e| e.to_string())?;
 	let _ = keyring.delete_credential();
 
 	Ok(())
@@ -67,7 +67,7 @@ pub async fn create_account(
 	let nsec = keys.secret_key().unwrap().to_bech32().map_err(|e| e.to_string())?;
 
 	// Save account
-	let keyring = Entry::new("coop", &npub).unwrap();
+	let keyring = Entry::new("Coop Secret Storage", &npub).unwrap();
 	let _ = keyring.set_password(&nsec);
 
 	let signer = NostrSigner::Keys(keys);
@@ -95,36 +95,34 @@ pub async fn create_account(
 #[tauri::command]
 #[specta::specta]
 pub async fn import_key(
-	nsec: &str,
-	password: &str,
+	key: String,
+	password: Option<String>,
 	state: State<'_, Nostr>,
 ) -> Result<String, String> {
-	let secret_key = if nsec.starts_with("ncryptsec") {
-		let encrypted_key = EncryptedSecretKey::from_bech32(nsec).unwrap();
-		encrypted_key.to_secret_key(password).map_err(|err| err.to_string())
-	} else {
-		SecretKey::from_bech32(nsec).map_err(|err| err.to_string())
+	let client = &state.client;
+	let secret_key = SecretKey::from_bech32(key).map_err(|err| err.to_string())?;
+	let keys = Keys::new(secret_key.clone());
+	let npub = keys.public_key().to_bech32().unwrap();
+
+	let enc_bech32 = match password {
+		Some(pw) => {
+			let enc = EncryptedSecretKey::new(&secret_key, pw, 16, KeySecurity::Medium)
+				.map_err(|err| err.to_string())?;
+
+			enc.to_bech32().map_err(|err| err.to_string())?
+		}
+		None => secret_key.to_bech32().map_err(|err| err.to_string())?,
 	};
 
-	match secret_key {
-		Ok(val) => {
-			let nostr_keys = Keys::new(val);
-			let npub = nostr_keys.public_key().to_bech32().unwrap();
-			let nsec = nostr_keys.secret_key().unwrap().to_bech32().unwrap();
+	let keyring = Entry::new("Coop Secret Storage", &npub).unwrap();
+	let _ = keyring.set_password(&enc_bech32);
 
-			let keyring = Entry::new("coop", &npub).unwrap();
-			let _ = keyring.set_password(&nsec);
+	let signer = NostrSigner::Keys(keys);
 
-			let signer = NostrSigner::Keys(nostr_keys);
-			let client = &state.client;
+	// Update client's signer
+	client.set_signer(Some(signer)).await;
 
-			// Update client's signer
-			client.set_signer(Some(signer)).await;
-
-			Ok(npub)
-		}
-		Err(msg) => Err(msg),
-	}
+	Ok(npub)
 }
 
 #[tauri::command]
@@ -143,7 +141,7 @@ pub async fn connect_account(uri: &str, state: State<'_, Nostr>) -> Result<Strin
 
 			match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(120), None).await {
 				Ok(signer) => {
-					let keyring = Entry::new("coop", &remote_npub).unwrap();
+					let keyring = Entry::new("Coop Secret Storage", &remote_npub).unwrap();
 					let _ = keyring.set_password(&app_secret);
 
 					// Update signer
@@ -220,21 +218,23 @@ pub async fn set_inbox(relays: Vec<String>, state: State<'_, Nostr>) -> Result<(
 #[tauri::command]
 #[specta::specta]
 pub async fn login(
-	id: String,
+	account: String,
+	password: String,
 	state: State<'_, Nostr>,
 	handle: tauri::AppHandle,
 ) -> Result<String, String> {
 	let client = &state.client;
-	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
-	let hex = public_key.to_hex();
-	let keyring = Entry::new("coop", &id).map_err(|e| e.to_string())?;
+	let keyring = Entry::new("Coop Secret Storage", &account).map_err(|e| e.to_string())?;
 
-	let password = match keyring.get_password() {
+	let bech32 = match keyring.get_password() {
 		Ok(pw) => pw,
-		Err(_) => return Err("Cancelled".into()),
+		Err(_) => return Err("Action have been cancelled".into()),
 	};
 
-	let keys = Keys::parse(password).map_err(|e| e.to_string())?;
+	let ncryptsec = EncryptedSecretKey::from_bech32(bech32).map_err(|e| e.to_string())?;
+	let secret_key = ncryptsec.to_secret_key(password).map_err(|e| e.to_string())?;
+	let keys = Keys::new(secret_key);
+	let public_key = keys.public_key();
 	let signer = NostrSigner::Keys(keys);
 
 	// Update signer
@@ -363,5 +363,5 @@ pub async fn login(
 			.await
 	});
 
-	Ok(hex)
+	Ok(public_key.to_hex())
 }

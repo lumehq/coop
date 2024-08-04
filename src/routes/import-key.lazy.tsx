@@ -25,11 +25,19 @@ function Screen() {
 
 	const submit = async () => {
 		startTransition(async () => {
-			if (!key.startsWith("nsec1")) {
+			if (!key.startsWith("nsec1") && !key.startsWith("ncryptsec")) {
 				await message(
 					"You need to enter a valid private key starts with nsec or ncryptsec",
-					{ title: "Import Key", kind: "info" },
+					{ title: "Login", kind: "info" },
 				);
+				return;
+			}
+
+			if (key.startsWith("nsec1") && !password.length) {
+				await message("You must set password to secure your key", {
+					title: "Login",
+					kind: "info",
+				});
 				return;
 			}
 
@@ -63,47 +71,48 @@ function Screen() {
 						className="flex flex-col gap-3 p-3 rounded-xl overflow-hidden"
 						shadow
 					>
-						<div className="flex flex-col gap-1">
+						<div className="flex flex-col gap-1.5">
 							<label
 								htmlFor="key"
-								className="font-medium text-neutral-900 dark:text-neutral-100"
+								className="text-sm font-medium text-neutral-800 dark:text-neutral-200"
 							>
 								Private Key
 							</label>
-
 							<div className="relative">
 								<input
 									name="key"
-									type="text"
+									type="password"
 									placeholder="nsec or ncryptsec..."
 									value={key}
 									onChange={(e) => setKey(e.target.value)}
-									className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
+									className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
 								/>
 								<button
 									type="button"
 									onClick={() => pasteFromClipboard()}
-									className="absolute top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500"
+									className="absolute uppercase top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500"
 								>
 									Paste
 								</button>
 							</div>
 						</div>
-						<div className="flex flex-col gap-1">
-							<label
-								htmlFor="password"
-								className="font-medium text-neutral-900 dark:text-neutral-100"
-							>
-								Password (Optional)
-							</label>
-							<input
-								name="password"
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
-							/>
-						</div>
+						{key.length && !key.startsWith("ncryptsec") ? (
+							<div className="flex flex-col gap-1">
+								<label
+									htmlFor="password"
+									className="text-sm font-medium text-neutral-800 dark:text-neutral-200"
+								>
+									Set password to secure your key
+								</label>
+								<input
+									name="password"
+									type="password"
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									className="px-3 rounded-lg h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
+								/>
+							</div>
+						) : null}
 					</Frame>
 					<div className="flex flex-col items-center gap-1">
 						<button

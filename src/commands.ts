@@ -4,9 +4,9 @@
          /** user-defined commands **/
 
          export const commands = {
-async login(id: string) : Promise<Result<string, string>> {
+async login(account: string, password: string) : Promise<Result<string, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("login", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("login", { account, password }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -28,9 +28,9 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async importKey(nsec: string, password: string) : Promise<Result<string, string>> {
+async importKey(key: string, password: string | null) : Promise<Result<string, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("import_key", { nsec, password }) };
+    return { status: "ok", data: await TAURI_INVOKE("import_key", { key, password }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

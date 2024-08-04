@@ -15,7 +15,7 @@ pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 
 	let filter = Filter::new().kind(Kind::PrivateDirectMessage).pubkey(public_key);
 
-	match client.database().query(vec![filter.clone()], Order::Desc).await {
+	match client.database().query(vec![filter], Order::Asc).await {
 		Ok(events) => {
 			let ev = events
 				.into_iter()
@@ -38,7 +38,7 @@ pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Ve
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 
 	let receiver = signer.public_key().await.map_err(|e| e.to_string())?;
-	let sender = PublicKey::parse(id.clone()).map_err(|e| e.to_string())?;
+	let sender = PublicKey::parse(id).map_err(|e| e.to_string())?;
 
 	let recv_filter =
 		Filter::new().kind(Kind::PrivateDirectMessage).author(sender).pubkey(receiver);

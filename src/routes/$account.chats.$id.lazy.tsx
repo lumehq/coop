@@ -291,7 +291,7 @@ function List() {
 
 function Form() {
 	const { id } = Route.useParams();
-	const { inbox } = Route.useRouteContext();
+	const inboxRelays = Route.useLoaderData();
 
 	const [newMessage, setNewMessage] = useState("");
 	const [isPending, startTransition] = useTransition();
@@ -313,7 +313,7 @@ function Form() {
 
 	return (
 		<div className="h-12 shrink-0 flex items-center justify-center px-3.5">
-			{!inbox.length ? (
+			{!inboxRelays.length ? (
 				<div className="text-xs">
 					This user doesn't have inbox relays. You cannot send messages to them.
 				</div>
