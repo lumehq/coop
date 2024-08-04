@@ -117,6 +117,7 @@ fn main() {
 			Ok(())
 		})
 		.enable_macos_default_menu(false)
+		.plugin(tauri_plugin_fs::init())
 		.plugin(tauri_plugin_prevent_default::init())
 		.plugin(tauri_plugin_process::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())

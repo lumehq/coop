@@ -1,5 +1,5 @@
 import { commands } from "@/commands";
-import { cn, getReceivers, groupEventByDate, time } from "@/commons";
+import { cn, getReceivers, groupEventByDate, time, upload } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
 import { CoopIcon } from "@/icons/coop";
@@ -11,6 +11,8 @@ import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
 import {
+	type Dispatch,
+	type SetStateAction,
 	useCallback,
 	useLayoutEffect,
 	useRef,
@@ -317,12 +319,7 @@ function Form() {
 			) : (
 				<div className="flex-1 flex items-center gap-2">
 					<div className="inline-flex gap-1">
-						<div
-							title="Attach media"
-							className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
-						>
-							<Paperclip className="size-5" />
-						</div>
+						<AttachMedia callback={setNewMessage} />
 					</div>
 					<input
 						placeholder="Message..."
@@ -345,5 +342,38 @@ function Form() {
 				</div>
 			)}
 		</div>
+	);
+}
+
+function AttachMedia({
+	callback,
+}: { callback: Dispatch<SetStateAction<string>> }) {
+	const [isPending, startTransition] = useTransition();
+
+	const attach = async () => {
+		startTransition(async () => {
+			const file = await upload();
+
+			if (file) {
+				callback((prev) => `${prev} ${file}`);
+			} else {
+				return;
+			}
+		});
+	};
+
+	return (
+		<button
+			type="button"
+			title="Attach media"
+			onClick={() => attach()}
+			className="size-9 inline-flex items-center justify-center hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full"
+		>
+			{isPending ? (
+				<Spinner className="size-4" />
+			) : (
+				<Paperclip className="size-5" />
+			)}
+		</button>
 	);
 }

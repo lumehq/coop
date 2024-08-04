@@ -949,6 +949,7 @@ dependencies = [
  "tauri-plugin-decorum",
  "tauri-plugin-devtools",
  "tauri-plugin-dialog",
+ "tauri-plugin-fs",
  "tauri-plugin-os",
  "tauri-plugin-prevent-default",
  "tauri-plugin-process",

@@ -1,4 +1,5 @@
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { ask, message, open } from "@tauri-apps/plugin-dialog";
+import { readFile } from "@tauri-apps/plugin-fs";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { type ClassValue, clsx } from "clsx";
@@ -136,5 +137,57 @@ export async function checkForAppUpdates(silent: boolean) {
 		}
 	} catch {
 		return;
+	}
+}
+
+export async function upload() {
+	const allowExts = [
+		"png",
+		"jpeg",
+		"jpg",
+		"gif",
+		"mp4",
+		"mp3",
+		"webm",
+		"mkv",
+		"avi",
+		"mov",
+	];
+
+	const selected = await open({
+		multiple: false,
+		filters: [
+			{
+				name: "Media",
+				extensions: allowExts,
+			},
+		],
+	});
+
+	// User cancelled action
+	if (!selected) return null;
+
+	try {
+		const selectedPath = selected.path;
+		const file = await readFile(selectedPath);
+		const blob = new Blob([file]);
+
+		const data = new FormData();
+		data.append("fileToUpload", blob);
+		data.append("submit", "Upload Image");
+
+		const res = await fetch("https://nostr.build/api/v2/upload/files", {
+			method: "POST",
+			body: data,
+		});
+
+		if (!res.ok) return null;
+
+		const json = await res.json();
+		const content = json.data[0];
+
+		return content.url as string;
+	} catch (e) {
+		return null;
 	}
 }

@@ -32,6 +32,7 @@
 		"updater:allow-check",
 		"updater:allow-download-and-install",
 		"clipboard-manager:allow-write-text",
-		"clipboard-manager:allow-read-text"
+		"clipboard-manager:allow-read-text",
+		"fs:allow-read-file"
 	]
 }
