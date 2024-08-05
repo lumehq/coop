@@ -20,9 +20,9 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
-async createAccount(name: string, picture: string | null) : Promise<Result<string, string>> {
+async createAccount(name: string, about: string, picture: string, password: string) : Promise<Result<string, string>> {
 try {
-    return { status: "ok", data: await TAURI_INVOKE("create_account", { name, picture }) };
+    return { status: "ok", data: await TAURI_INVOKE("create_account", { name, about, picture, password }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -58,33 +58,34 @@ pub fn delete_account(id: String) -> Result<(), String> {
 #[specta::specta]
 pub async fn create_account(
 	name: String,
-	picture: Option<String>,
+	about: String,
+	picture: String,
+	password: String,
 	state: State<'_, Nostr>,
 ) -> Result<String, String> {
 	let client = &state.client;
 	let keys = Keys::generate();
 	let npub = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
-	let nsec = keys.secret_key().unwrap().to_bech32().map_err(|e| e.to_string())?;
+	let secret_key = keys.secret_key().map_err(|e| e.to_string())?;
+	let enc = EncryptedSecretKey::new(secret_key, password, 16, KeySecurity::Medium)
+		.map_err(|err| err.to_string())?;
+	let enc_bech32 = enc.to_bech32().map_err(|err| err.to_string())?;
 
 	// Save account
 	let keyring = Entry::new("Coop Secret Storage", &npub).unwrap();
-	let _ = keyring.set_password(&nsec);
+	let _ = keyring.set_password(&enc_bech32);
 
 	let signer = NostrSigner::Keys(keys);
 
 	// Update signer
 	client.set_signer(Some(signer)).await;
 
-	// Update metadata
-	let url = match picture {
-		Some(p) => Some(Url::parse(&p).map_err(|e| e.to_string())?),
-		None => None,
-	};
+	let mut metadata =
+		Metadata::new().display_name(name.clone()).name(name.to_lowercase()).about(about);
 
-	let metadata = match url {
-		Some(picture) => Metadata::new().display_name(name).picture(picture),
-		None => Metadata::new().display_name(name),
-	};
+	if let Ok(url) = Url::parse(&picture) {
+		metadata = metadata.picture(url)
+	}
 
 	match client.set_metadata(&metadata).await {
 		Ok(_) => Ok(npub),
@@ -232,7 +233,7 @@ pub async fn login(
 	};
 
 	let ncryptsec = EncryptedSecretKey::from_bech32(bech32).map_err(|e| e.to_string())?;
-	let secret_key = ncryptsec.to_secret_key(password).map_err(|e| e.to_string())?;
+	let secret_key = ncryptsec.to_secret_key(password).map_err(|_| "Wrong password.")?;
 	let keys = Keys::new(secret_key);
 	let public_key = keys.public_key();
 	let signer = NostrSigner::Keys(keys);
