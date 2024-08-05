@@ -3,10 +3,17 @@ import { npub } from "@/commons";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { ArrowRight, Plus, X } from "@phosphor-icons/react";
+import { ArrowRight, DotsThree, Plus } from "@phosphor-icons/react";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
+import { Menu, MenuItem } from "@tauri-apps/api/menu";
 import { message } from "@tauri-apps/plugin-dialog";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+	useTransition,
+} from "react";
 
 export const Route = createLazyFileRoute("/")({
 	component: Screen,
@@ -31,11 +38,11 @@ function Screen() {
 	const [password, setPassword] = useState("");
 	const [isPending, startTransition] = useTransition();
 
-	const deleteAccount = async (npub: string) => {
-		const res = await commands.deleteAccount(npub);
+	const deleteAccount = async (account: string) => {
+		const res = await commands.deleteAccount(account);
 
 		if (res.status === "ok") {
-			setAccounts((prev) => prev.filter((item) => item !== npub));
+			setAccounts((prev) => prev.filter((item) => item !== account));
 		}
 	};
 
@@ -68,6 +75,26 @@ function Screen() {
 			}
 		});
 	};
+
+	const showContextMenu = useCallback(
+		async (e: React.MouseEvent, account: string) => {
+			e.stopPropagation();
+
+			const menuItems = await Promise.all([
+				MenuItem.new({
+					text: "Delete account",
+					action: async () => await deleteAccount(account),
+				}),
+			]);
+
+			const menu = await Menu.new({
+				items: menuItems,
+			});
+
+			await menu.popup().catch((e) => console.error(e));
+		},
+		[],
+	);
 
 	useEffect(() => {
 		setAccounts(context.accounts);
@@ -126,17 +153,25 @@ function Screen() {
 							<div className="inline-flex items-center justify-center size-8 shrink-0">
 								{value === account ? (
 									isPending ? (
-										<Spinner className="size-4" />
+										<Spinner />
 									) : (
 										<button
 											type="button"
 											onClick={() => loginWith()}
 											className="rounded-full size-10 inline-flex items-center justify-center"
 										>
-											<ArrowRight className="size-4" />
+											<ArrowRight className="size-5" />
 										</button>
 									)
-								) : null}
+								) : (
+									<button
+										type="button"
+										onClick={(e) => showContextMenu(e, account)}
+										className="rounded-full size-10 hidden group-hover:inline-flex items-center justify-center"
+									>
+										<DotsThree className="size-5" />
+									</button>
+								)}
 							</div>
 						</div>
 					))}
@@ -149,7 +184,7 @@ function Screen() {
 								<Plus className="size-5" />
 							</div>
 							<span className="truncate text-sm font-medium leading-tight">
-								Add an account
+								New account
 							</span>
 						</div>
 					</Link>

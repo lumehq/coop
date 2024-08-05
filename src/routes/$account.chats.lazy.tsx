@@ -184,7 +184,7 @@ function ChatList() {
 							to="/$account/chats/$id"
 							params={{ account, id: item.pubkey }}
 						>
-							{({ isActive }) => (
+							{({ isActive, isTransitioning }) => (
 								<User.Provider pubkey={item.pubkey}>
 									<User.Root
 										className={cn(
@@ -200,9 +200,13 @@ function ChatList() {
 													{account === item.pubkey ? "(you)" : ""}
 												</span>
 											</div>
-											<span className="leading-tight text-right text-neutral-600 dark:text-neutral-400">
-												{ago(item.created_at)}
-											</span>
+											{isTransitioning ? (
+												<Spinner className="size-4" />
+											) : (
+												<span className="leading-tight text-right text-neutral-600 dark:text-neutral-400">
+													{ago(item.created_at)}
+												</span>
+											)}
 										</div>
 									</User.Root>
 								</User.Provider>
