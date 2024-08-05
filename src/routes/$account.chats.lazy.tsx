@@ -215,7 +215,7 @@ function ChatList() {
 					))
 				)}
 			</ScrollArea.Viewport>
-			{!isSync && !data ? <SyncPopup progress={progress} /> : null}
+			{!isSync ? <SyncPopup progress={progress} /> : null}
 			<ScrollArea.Scrollbar
 				className="flex select-none touch-none p-0.5 duration-[160ms] ease-out data-[orientation=vertical]:w-2"
 				orientation="vertical"
