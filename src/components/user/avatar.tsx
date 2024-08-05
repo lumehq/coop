@@ -26,7 +26,7 @@ export function UserAvatar({ className }: { className?: string }) {
 				<>
 					{user.profile?.picture ? (
 						<Avatar.Image
-							src={`//wsrv.nl/?url=${user.profile?.picture}&w=200&h=200`}
+							src={`https://wsrv.nl/?url=${user.profile?.picture}&w=200&h=200`}
 							alt={user.pubkey}
 							loading="lazy"
 							decoding="async"
