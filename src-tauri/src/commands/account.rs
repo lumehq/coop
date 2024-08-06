@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 use tauri::{Emitter, Manager, State};
 
-use crate::{Nostr, BOOTSTRAP_RELAYS};
+use crate::Nostr;
 
 #[derive(Clone, Serialize)]
 pub struct EventPayload {
@@ -32,8 +32,7 @@ pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String,
 	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_from(BOOTSTRAP_RELAYS, vec![filter], Some(Duration::from_secs(3))).await
-	{
+	match client.get_events_of(vec![filter], Some(Duration::from_secs(3))).await {
 		Ok(events) => {
 			if let Some(event) = events.first() {
 				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())
@@ -167,51 +166,6 @@ pub async fn get_contact_list(state: State<'_, Nostr>) -> Result<Vec<String>, St
 			let list = contacts.into_iter().map(|c| c.public_key.to_hex()).collect::<Vec<_>>();
 			Ok(list)
 		}
-		Err(e) => Err(e.to_string()),
-	}
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn get_inbox(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
-	let client = &state.client;
-	let public_key = PublicKey::parse(id).map_err(|e| e.to_string())?;
-	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
-
-	match client.get_events_from(BOOTSTRAP_RELAYS, vec![inbox], None).await {
-		Ok(events) => {
-			if let Some(event) = events.into_iter().next() {
-				let urls = event
-					.tags()
-					.iter()
-					.filter_map(|tag| {
-						if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
-							Some(relay.to_string())
-						} else {
-							None
-						}
-					})
-					.collect::<Vec<_>>();
-
-				Ok(urls)
-			} else {
-				Ok(Vec::new())
-			}
-		}
-		Err(e) => Err(e.to_string()),
-	}
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn set_inbox(relays: Vec<String>, state: State<'_, Nostr>) -> Result<(), String> {
-	let client = &state.client;
-
-	let tags = relays.into_iter().map(|t| Tag::custom(TagKind::Relay, vec![t])).collect::<Vec<_>>();
-	let event = EventBuilder::new(Kind::Custom(10050), "", tags);
-
-	match client.send_event_builder(event).await {
-		Ok(_) => Ok(()),
 		Err(e) => Err(e.to_string()),
 	}
 }

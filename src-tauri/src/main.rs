@@ -4,12 +4,18 @@
 #[cfg(target_os = "macos")]
 use border::WebviewWindowExt as WebviewWindowExtAlt;
 use nostr_sdk::prelude::*;
-use std::{collections::HashMap, fs, time::Duration};
+use std::{
+	collections::HashMap,
+	fs,
+	io::{self, BufRead},
+	str::FromStr,
+	time::Duration,
+};
 use tauri::{async_runtime::Mutex, Manager};
 #[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 
-use commands::{account::*, chat::*};
+use commands::{account::*, chat::*, relay::*};
 
 mod commands;
 
@@ -18,12 +24,13 @@ pub struct Nostr {
 	inbox_relays: Mutex<HashMap<PublicKey, Vec<String>>>,
 }
 
-// TODO: Allow user config bootstrap relays.
-pub const BOOTSTRAP_RELAYS: [&str; 2] = ["wss://relay.damus.io/", "wss://relay.nostr.net/"];
-
 fn main() {
 	let invoke_handler = {
 		let builder = tauri_specta::ts::builder().commands(tauri_specta::collect_commands![
+			get_bootstrap_relays,
+			set_bootstrap_relays,
+			get_inbox_relays,
+			set_inbox_relays,
 			login,
 			delete_account,
 			create_account,
@@ -34,8 +41,6 @@ fn main() {
 			get_contact_list,
 			get_chats,
 			get_chat_messages,
-			get_inbox,
-			set_inbox,
 			connect_inbox,
 			disconnect_inbox,
 			send_message,
@@ -102,8 +107,35 @@ fn main() {
 
 				let client = ClientBuilder::default().opts(opts).database(database).build();
 
-				// Add bootstrap relay
-				let _ = client.add_relays(BOOTSTRAP_RELAYS).await;
+				// Add bootstrap relays
+				if let Ok(path) = handle
+					.path()
+					.resolve("resources/relays.txt", tauri::path::BaseDirectory::Resource)
+				{
+					let file = std::fs::File::open(&path).unwrap();
+					let lines = io::BufReader::new(file).lines();
+
+					// Add bootstrap relays to relay pool
+					for line in lines.map_while(Result::ok) {
+						if let Some((relay, option)) = line.split_once(',') {
+							match RelayMetadata::from_str(option) {
+								Ok(meta) => {
+									println!("Connecting to relay...: {} - {}", relay, meta);
+									let opts = if meta == RelayMetadata::Read {
+										RelayOptions::new().read(true).write(false)
+									} else {
+										RelayOptions::new().write(true).read(false)
+									};
+									let _ = client.add_relay_with_opts(relay, opts).await;
+								}
+								Err(_) => {
+									println!("Connecting to relay...: {}", relay);
+									let _ = client.add_relay(relay).await;
+								}
+							}
+						}
+					}
+				}
 
 				// Connect
 				client.connect().await;

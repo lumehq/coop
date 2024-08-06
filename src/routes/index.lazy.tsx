@@ -3,7 +3,7 @@ import { npub } from "@/commons";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
-import { ArrowRight, DotsThree, Plus } from "@phosphor-icons/react";
+import { ArrowRight, DotsThree, GearSix, Plus } from "@phosphor-icons/react";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
 import { Menu, MenuItem } from "@tauri-apps/api/menu";
 import { message } from "@tauri-apps/plugin-dialog";
@@ -103,7 +103,7 @@ function Screen() {
 	return (
 		<div
 			data-tauri-drag-region
-			className="size-full flex items-center justify-center"
+			className="relative size-full flex items-center justify-center"
 		>
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
@@ -189,6 +189,15 @@ function Screen() {
 						</div>
 					</Link>
 				</Frame>
+			</div>
+			<div className="absolute bottom-2 right-2">
+				<Link
+					to="/bootstrap-relays"
+					className="h-8 w-max text-xs px-3 inline-flex items-center justify-center gap-1.5 bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 rounded-full"
+				>
+					<GearSix className="size-4" />
+					Manage Relays
+				</Link>
 			</div>
 		</div>
 	);

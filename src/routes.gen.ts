@@ -13,7 +13,9 @@ import { createFileRoute } from '@tanstack/react-router'
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as BootstrapRelaysImport } from './routes/bootstrap-relays'
 import { Route as IndexImport } from './routes/index'
+import { Route as AccountRelaysImport } from './routes/$account.relays'
 import { Route as AccountContactsImport } from './routes/$account.contacts'
 import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
 
@@ -23,7 +25,6 @@ const NostrConnectLazyImport = createFileRoute('/nostr-connect')()
 const NewLazyImport = createFileRoute('/new')()
 const ImportKeyLazyImport = createFileRoute('/import-key')()
 const CreateAccountLazyImport = createFileRoute('/create-account')()
-const AccountRelaysLazyImport = createFileRoute('/$account/relays')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
 const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
 
@@ -51,23 +52,30 @@ const CreateAccountLazyRoute = CreateAccountLazyImport.update({
   import('./routes/create-account.lazy').then((d) => d.Route),
 )
 
+const BootstrapRelaysRoute = BootstrapRelaysImport.update({
+  path: '/bootstrap-relays',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() =>
+  import('./routes/bootstrap-relays.lazy').then((d) => d.Route),
+)
+
 const IndexRoute = IndexImport.update({
   path: '/',
   getParentRoute: () => rootRoute,
 } as any).lazy(() => import('./routes/index.lazy').then((d) => d.Route))
-
-const AccountRelaysLazyRoute = AccountRelaysLazyImport.update({
-  path: '/$account/relays',
-  getParentRoute: () => rootRoute,
-} as any).lazy(() =>
-  import('./routes/$account.relays.lazy').then((d) => d.Route),
-)
 
 const AccountChatsLazyRoute = AccountChatsLazyImport.update({
   path: '/$account/chats',
   getParentRoute: () => rootRoute,
 } as any).lazy(() =>
   import('./routes/$account.chats.lazy').then((d) => d.Route),
+)
+
+const AccountRelaysRoute = AccountRelaysImport.update({
+  path: '/$account/relays',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() =>
+  import('./routes/$account.relays.lazy').then((d) => d.Route),
 )
 
 const AccountContactsRoute = AccountContactsImport.update({
@@ -100,6 +108,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexImport
+      parentRoute: typeof rootRoute
+    }
+    '/bootstrap-relays': {
+      id: '/bootstrap-relays'
+      path: '/bootstrap-relays'
+      fullPath: '/bootstrap-relays'
+      preLoaderRoute: typeof BootstrapRelaysImport
       parentRoute: typeof rootRoute
     }
     '/create-account': {
@@ -137,18 +152,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountContactsImport
       parentRoute: typeof rootRoute
     }
+    '/$account/relays': {
+      id: '/$account/relays'
+      path: '/$account/relays'
+      fullPath: '/$account/relays'
+      preLoaderRoute: typeof AccountRelaysImport
+      parentRoute: typeof rootRoute
+    }
     '/$account/chats': {
       id: '/$account/chats'
       path: '/$account/chats'
       fullPath: '/$account/chats'
       preLoaderRoute: typeof AccountChatsLazyImport
-      parentRoute: typeof rootRoute
-    }
-    '/$account/relays': {
-      id: '/$account/relays'
-      path: '/$account/relays'
-      fullPath: '/$account/relays'
-      preLoaderRoute: typeof AccountRelaysLazyImport
       parentRoute: typeof rootRoute
     }
     '/$account/chats/$id': {
@@ -172,16 +187,17 @@ declare module '@tanstack/react-router' {
 
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
+  BootstrapRelaysRoute,
   CreateAccountLazyRoute,
   ImportKeyLazyRoute,
   NewLazyRoute,
   NostrConnectLazyRoute,
   AccountContactsRoute,
+  AccountRelaysRoute,
   AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
     AccountChatsIdRoute,
     AccountChatsNewLazyRoute,
   }),
-  AccountRelaysLazyRoute,
 })
 
 /* prettier-ignore-end */
@@ -193,17 +209,21 @@ export const routeTree = rootRoute.addChildren({
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/bootstrap-relays",
         "/create-account",
         "/import-key",
         "/new",
         "/nostr-connect",
         "/$account/contacts",
-        "/$account/chats",
-        "/$account/relays"
+        "/$account/relays",
+        "/$account/chats"
       ]
     },
     "/": {
       "filePath": "index.tsx"
+    },
+    "/bootstrap-relays": {
+      "filePath": "bootstrap-relays.tsx"
     },
     "/create-account": {
       "filePath": "create-account.lazy.tsx"
@@ -220,15 +240,15 @@ export const routeTree = rootRoute.addChildren({
     "/$account/contacts": {
       "filePath": "$account.contacts.tsx"
     },
+    "/$account/relays": {
+      "filePath": "$account.relays.tsx"
+    },
     "/$account/chats": {
       "filePath": "$account.chats.lazy.tsx",
       "children": [
         "/$account/chats/$id",
         "/$account/chats/new"
       ]
-    },
-    "/$account/relays": {
-      "filePath": "$account.relays.lazy.tsx"
     },
     "/$account/chats/$id": {
       "filePath": "$account.chats.$id.tsx",

@@ -6,28 +6,20 @@ import { createLazyFileRoute } from "@tanstack/react-router";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useTransition } from "react";
 
-export const Route = createLazyFileRoute("/$account/relays")({
+export const Route = createLazyFileRoute("/bootstrap-relays")({
 	component: Screen,
 });
 
 function Screen() {
-	const navigate = Route.useNavigate();
-	const inboxRelays = Route.useLoaderData();
-	const { account } = Route.useParams();
+	const bootstrapRelays = Route.useLoaderData();
 
-	const [newRelay, setNewRelay] = useState("");
 	const [relays, setRelays] = useState<string[]>([]);
+	const [newRelay, setNewRelay] = useState("");
 	const [isPending, startTransition] = useTransition();
 
 	const add = () => {
 		try {
 			let url = newRelay;
-
-			if (relays.length >= 3) {
-				return message("You should keep relay lists small (1 - 3 relays).", {
-					kind: "info",
-				});
-			}
 
 			if (!url.startsWith("wss://")) {
 				url = `wss://${url}`;
@@ -51,21 +43,23 @@ function Screen() {
 	const submit = async () => {
 		startTransition(async () => {
 			if (!relays.length) {
-				await message("You need to add at least 1 relay", { kind: "info" });
+				await message("You need to add at least 1 relay", {
+					title: "Manage Relays",
+					kind: "info",
+				});
 				return;
 			}
 
-			const res = await commands.setInboxRelays(relays);
+			const merged = relays
+				.map((relay) => Object.values(relay).join(","))
+				.join("\n");
+			const res = await commands.setBootstrapRelays(merged);
 
 			if (res.status === "ok") {
-				navigate({
-					to: "/",
-					params: { account },
-					replace: true,
-				});
+				// TODO: restart app
 			} else {
 				await message(res.error, {
-					title: "Inbox Relays",
+					title: "Manage Relays",
 					kind: "error",
 				});
 				return;
@@ -74,16 +68,16 @@ function Screen() {
 	};
 
 	useEffect(() => {
-		setRelays(inboxRelays);
-	}, [inboxRelays]);
+		setRelays(bootstrapRelays);
+	}, [bootstrapRelays]);
 
 	return (
 		<div className="size-full flex items-center justify-center">
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
-					<h1 className="leading-tight text-xl font-semibold">Inbox Relays</h1>
+					<h1 className="leading-tight text-xl font-semibold">Manage Relays</h1>
 					<p className="text-sm text-neutral-700 dark:text-neutral-300">
-						Inbox Relay is used to receive message from others
+						This relays will be only use to get user's metadata.
 					</p>
 				</div>
 				<div className="flex flex-col gap-3">
@@ -91,22 +85,6 @@ function Screen() {
 						className="flex flex-col gap-3 p-3 rounded-xl overflow-hidden"
 						shadow
 					>
-						<div className="text-sm text-neutral-700 dark:text-neutral-300">
-							<p className="mb-1.5">
-								You need to set at least 1 inbox relay in order to receive
-								message from others.
-							</p>
-							<p>
-								If you don't know which relay to add, you can use{" "}
-								<span
-									onClick={() => setNewRelay("wss://auth.nostr1.com")}
-									onKeyDown={() => setNewRelay("wss://auth.nostr1.com")}
-									className="font-semibold"
-								>
-									auth.nostr1.com
-								</span>
-							</p>
-						</div>
 						<div className="flex gap-2">
 							<input
 								name="relay"
@@ -154,7 +132,7 @@ function Screen() {
 							disabled={isPending || !relays.length}
 							className="inline-flex items-center justify-center w-full h-9 text-sm font-semibold text-white bg-blue-500 rounded-lg shrink-0 hover:bg-blue-600 disabled:opacity-50"
 						>
-							{isPending ? <Spinner /> : "Continue"}
+							{isPending ? <Spinner /> : "Save & Restart"}
 						</button>
 					</div>
 				</div>

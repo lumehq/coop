@@ -4,6 +4,38 @@
          /** user-defined commands **/
 
          export const commands = {
+async getBootstrapRelays() : Promise<Result<string[], string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("get_bootstrap_relays") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setBootstrapRelays(relays: string) : Promise<Result<null, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("set_bootstrap_relays", { relays }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getInboxRelays(userId: string) : Promise<Result<string[], string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("get_inbox_relays", { userId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setInboxRelays(relays: string[]) : Promise<Result<null, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("set_inbox_relays", { relays }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async login(account: string, password: string) : Promise<Result<string, string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("login", { account, password }) };
@@ -74,22 +106,6 @@ try {
 async getChatMessages(id: string) : Promise<Result<string[], string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("get_chat_messages", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getInbox(id: string) : Promise<Result<string[], string>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("get_inbox", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setInbox(relays: string[]) : Promise<Result<null, string>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("set_inbox", { relays }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
