@@ -29,10 +29,13 @@ pub fn get_accounts() -> Vec<String> {
 #[specta::specta]
 pub async fn get_metadata(user_id: String, state: State<'_, Nostr>) -> Result<String, String> {
 	let client = &state.client;
+	let bootstrap_relays = state.bootstrap_relays.lock().await.clone();
+
 	let public_key = PublicKey::parse(&user_id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_of(vec![filter], Some(Duration::from_secs(2))).await {
+	match client.get_events_from(bootstrap_relays, vec![filter], Some(Duration::from_secs(2))).await
+	{
 		Ok(events) => {
 			if let Some(event) = events.first() {
 				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())
@@ -197,7 +200,7 @@ pub async fn login(
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	if let Ok(events) = client.get_events_of(vec![inbox], Some(Duration::from_secs(5))).await {
+	if let Ok(events) = client.get_events_of(vec![inbox], Some(Duration::from_secs(3))).await {
 		if let Some(event) = events.into_iter().next() {
 			let urls = event
 				.tags()
@@ -212,8 +215,9 @@ pub async fn login(
 				.collect::<Vec<_>>();
 
 			for url in urls.iter() {
-				let _ = client.add_relay(url).await;
-				let _ = client.connect_relay(url).await;
+				if let Err(e) = client.add_relay(url).await {
+					println!("Connect relay failed: {}", e)
+				}
 			}
 
 			// Workaround for https://github.com/rust-nostr/nostr/issues/509

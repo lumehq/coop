@@ -1,19 +1,29 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { type } from "@tauri-apps/plugin-os";
+import { LRUCache } from "lru-cache";
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import "./global.css";
+import { commands } from "./commands";
 // Import the generated route tree
 import { routeTree } from "./routes.gen";
 
-const queryClient = new QueryClient();
 const platform = type();
+const queryClient = new QueryClient();
+const chatManager = new LRUCache<string, string>({
+	max: 3,
+	dispose: async (v, _) => {
+		console.log("disconnect: ", v);
+		await commands.disconnectInboxRelays(v);
+	},
+});
 
 const router = createRouter({
 	routeTree,
 	context: {
 		queryClient,
+		chatManager,
 		platform,
 	},
 });

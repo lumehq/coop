@@ -33,16 +33,7 @@ type EventPayload = {
 
 export const Route = createLazyFileRoute("/$account/chats/$id")({
 	component: Screen,
-	pendingComponent: Pending,
 });
-
-function Pending() {
-	return (
-		<div className="size-full flex items-center justify-center">
-			<Spinner />
-		</div>
-	);
-}
 
 function Screen() {
 	return (

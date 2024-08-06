@@ -21,9 +21,9 @@ async setBootstrapRelays(relays: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getInboxRelays(userId: string) : Promise<Result<string[], string>> {
+async collectInboxRelays(userId: string) : Promise<Result<string[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_inbox_relays", { userId }) };
+    return { status: "ok", data: await TAURI_INVOKE("collect_inbox_relays", { userId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

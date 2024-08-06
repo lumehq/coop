@@ -8,19 +8,28 @@ use tauri::{Manager, State};
 
 use crate::Nostr;
 
-async fn get_nip65_list(public_key: PublicKey, client: &Client) -> Vec<String> {
+async fn connect_nip65_relays(public_key: PublicKey, client: &Client) -> Vec<String> {
 	let filter = Filter::new().author(public_key).kind(Kind::RelayList).limit(1);
 	let mut relay_list: Vec<String> = Vec::new();
 
-	if let Ok(events) = client.get_events_of(vec![filter], Some(Duration::from_secs(10))).await {
+	if let Ok(events) = client.get_events_of(vec![filter], Some(Duration::from_secs(2))).await {
 		if let Some(event) = events.first() {
 			for (url, ..) in nip65::extract_relay_list(event) {
+				let _ = client.add_relay(url).await;
 				relay_list.push(url.to_string())
 			}
 		}
 	};
 
 	relay_list
+}
+
+async fn disconnect_nip65_relays(relays: Vec<String>, client: &Client) {
+	for relay in relays.iter() {
+		if let Err(e) = client.disconnect_relay(relay).await {
+			println!("Disconnect failed: {}", e)
+		}
+	}
 }
 
 #[tauri::command]
@@ -51,7 +60,7 @@ pub fn set_bootstrap_relays(relays: String, app: tauri::AppHandle) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_inbox_relays(
+pub async fn collect_inbox_relays(
 	user_id: String,
 	state: State<'_, Nostr>,
 ) -> Result<Vec<String>, String> {
@@ -106,12 +115,16 @@ pub async fn connect_inbox_relays(
 ) -> Result<Vec<String>, String> {
 	let client = &state.client;
 	let public_key = PublicKey::parse(&user_id).map_err(|e| e.to_string())?;
+
+	// let nip65_relays = connect_nip65_relays(public_key, client).await;
 	let mut inbox_relays = state.inbox_relays.lock().await;
 
 	if !ignore_cache {
 		if let Some(relays) = inbox_relays.get(&public_key) {
 			for relay in relays {
-				let _ = client.connect_relay(relay).await;
+				if let Err(e) = client.connect_relay(relay).await {
+					println!("Connect relay failed: {}", e)
+				}
 			}
 			return Ok(relays.to_owned());
 		};
@@ -127,32 +140,21 @@ pub async fn connect_inbox_relays(
 				for tag in &event.tags {
 					if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
 						let url = relay.to_string();
-						let _ = client.add_relay(&url).await;
-						let _ = client.connect_relay(&url).await;
+
+						if let Err(e) = client.add_relay(&url).await {
+							println!("Connect relay failed: {}", e)
+						};
 
 						relays.push(url)
 					}
 				}
 
+				// Update state
 				inbox_relays.insert(public_key, relays.clone());
+
+				// Disconnect user's nip65 relays to save bandwidth
+				// disconnect_nip65_relays(nip65_relays, client).await;
 			}
-
-			// Workaround for https://github.com/rust-nostr/nostr/issues/509
-			// TODO: remove this
-			// let relays_clone = relays.clone();
-			/*tauri::async_runtime::spawn(async move {
-				let state = handle.state::<Nostr>();
-				let client = &state.client;
-
-				client
-					.get_events_from(
-						relays_clone,
-						vec![Filter::new().kind(Kind::TextNote).limit(0)],
-						Some(Duration::from_secs(5)),
-					)
-					.await
-			});
-			*/
 
 			Ok(relays)
 		}

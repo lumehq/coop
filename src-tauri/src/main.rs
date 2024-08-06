@@ -24,6 +24,7 @@ mod commands;
 
 pub struct Nostr {
 	client: Client,
+	bootstrap_relays: Mutex<Vec<String>>,
 	inbox_relays: Mutex<HashMap<PublicKey, Vec<String>>>,
 }
 
@@ -34,7 +35,7 @@ fn main() {
 	let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
 		get_bootstrap_relays,
 		set_bootstrap_relays,
-		get_inbox_relays,
+		collect_inbox_relays,
 		set_inbox_relays,
 		connect_inbox_relays,
 		disconnect_inbox_relays,
@@ -97,7 +98,7 @@ fn main() {
 			#[cfg(target_os = "macos")]
 			main_window.add_border(None);
 
-			let client = tauri::async_runtime::block_on(async move {
+			let (client, bootstrap_relays) = tauri::async_runtime::block_on(async move {
 				// Create data folder if not exist
 				let dir = handle.path().app_config_dir().expect("App config directory not found.");
 				let _ = fs::create_dir_all(dir.clone());
@@ -107,6 +108,7 @@ fn main() {
 
 				// Setup nostr client
 				let opts = Options::new()
+					.autoconnect(true)
 					.timeout(Duration::from_secs(40))
 					.send_timeout(Some(Duration::from_secs(10)))
 					.connection_timeout(Some(Duration::from_secs(10)));
@@ -143,14 +145,22 @@ fn main() {
 					}
 				}
 
-				// Connect
-				client.connect().await;
+				let bootstrap_relays = client
+					.relays()
+					.await
+					.keys()
+					.map(|item| item.to_string())
+					.collect::<Vec<String>>();
 
-				client
+				(client, bootstrap_relays)
 			});
 
 			// Create global state
-			app.manage(Nostr { client, inbox_relays: Mutex::new(HashMap::new()) });
+			app.manage(Nostr {
+				client,
+				bootstrap_relays: Mutex::new(bootstrap_relays),
+				inbox_relays: Mutex::new(HashMap::new()),
+			});
 
 			Ok(())
 		})

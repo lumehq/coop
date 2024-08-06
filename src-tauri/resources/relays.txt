@@ -1,4 +1,4 @@
 wss://purplepag.es/,
 wss://directory.yabu.me/,
 wss://user.kindpag.es/,
-wss://relay.nos.social/,
+wss://bostr.online/,

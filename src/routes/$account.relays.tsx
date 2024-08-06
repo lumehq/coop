@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/$account/relays")({
 	loader: async ({ params }) => {
-		const res = await commands.getInboxRelays(params.account);
+		const res = await commands.collectInboxRelays(params.account);
 
 		if (res.status === "ok") {
 			return res.data;
