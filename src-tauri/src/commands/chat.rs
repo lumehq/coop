@@ -61,6 +61,7 @@ pub async fn send_message(
 	state: State<'_, Nostr>,
 ) -> Result<(), String> {
 	let client = &state.client;
+	let relays = state.inbox_relays.lock().await;
 
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
@@ -69,19 +70,13 @@ pub async fn send_message(
 	// TODO: Add support reply_to
 	let rumor = EventBuilder::private_msg_rumor(receiver, message, None);
 
-	// Get inbox state
-	let relays = state.inbox_relays.lock().await;
-
 	// Get inbox relays per member
-	let outbox = relays.get(&receiver);
-	let inbox = relays.get(&public_key);
-
-	let outbox_urls = match outbox {
+	let outbox_urls = match relays.get(&receiver) {
 		Some(relays) => relays,
 		None => return Err("Receiver didn't have inbox relays to receive message.".into()),
 	};
 
-	let inbox_urls = match inbox {
+	let inbox_urls = match relays.get(&public_key) {
 		Some(relays) => relays,
 		None => return Err("Please config inbox relays to backup your message.".into()),
 	};

@@ -109,8 +109,8 @@ fn main() {
 				// Setup nostr client
 				let opts = Options::new()
 					.autoconnect(true)
-					.timeout(Duration::from_secs(40))
-					.send_timeout(Some(Duration::from_secs(10)))
+					.timeout(Duration::from_secs(30))
+					.send_timeout(Some(Duration::from_secs(2)))
 					.connection_timeout(Some(Duration::from_secs(10)));
 
 				let client = ClientBuilder::default().opts(opts).database(database).build();

@@ -68,7 +68,7 @@ pub async fn collect_inbox_relays(
 	let public_key = PublicKey::parse(user_id).map_err(|e| e.to_string())?;
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	match client.get_events_of(vec![inbox], None).await {
+	match client.get_events_of(vec![inbox], Some(Duration::from_secs(2))).await {
 		Ok(events) => {
 			if let Some(event) = events.into_iter().next() {
 				let urls = event
@@ -121,8 +121,14 @@ pub async fn connect_inbox_relays(
 
 	if !ignore_cache {
 		if let Some(relays) = inbox_relays.get(&public_key) {
-			for relay in relays {
-				if let Err(e) = client.connect_relay(relay).await {
+			for url in relays {
+				if let Ok(relay) = client.relay(url).await {
+					if !relay.is_connected().await {
+						if let Err(e) = client.connect_relay(url).await {
+							println!("Connect relay failed: {}", e)
+						}
+					}
+				} else if let Err(e) = client.add_relay(url).await {
 					println!("Connect relay failed: {}", e)
 				}
 			}

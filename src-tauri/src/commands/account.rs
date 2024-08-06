@@ -290,31 +290,37 @@ pub async fn login(
 
 		client
 			.handle_notifications(|notification| async {
-				if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
-					if subscription_id == sub_id && event.kind == Kind::GiftWrap {
-						if let Ok(UnwrappedGift { rumor, sender }) =
-							client.unwrap_gift_wrap(&event).await
-						{
-							let rumor_clone = rumor.clone();
-							let ev = Event::new(
-								rumor_clone.id.unwrap(),
-								rumor_clone.pubkey,
-								rumor_clone.created_at,
-								rumor_clone.kind,
-								rumor_clone.tags,
-								rumor_clone.content,
-								fake_sig,
-							);
+				if let RelayPoolNotification::Message { message, .. } = notification {
+					if let RelayMessage::Event { event, subscription_id, .. } = message {
+						if subscription_id == sub_id && event.kind == Kind::GiftWrap {
+							if let Ok(UnwrappedGift { rumor, sender }) =
+								client.unwrap_gift_wrap(&event).await
+							{
+								let rumor_clone = rumor.clone();
+								let ev = Event::new(
+									rumor_clone.id.unwrap(),
+									rumor_clone.pubkey,
+									rumor_clone.created_at,
+									rumor_clone.kind,
+									rumor_clone.tags,
+									rumor_clone.content,
+									fake_sig,
+								);
 
-							if let Err(e) = client.database().save_event(&ev).await {
-								println!("Error: {}", e)
+								if let Err(e) = client.database().save_event(&ev).await {
+									println!("Error: {}", e)
+								}
+
+								let payload = EventPayload {
+									event: rumor.as_json(),
+									sender: sender.to_hex(),
+								};
+
+								handle.emit("event", payload).unwrap();
 							}
-
-							let payload =
-								EventPayload { event: rumor.as_json(), sender: sender.to_hex() };
-
-							handle.emit("event", payload).unwrap();
 						}
+					} else {
+						println!("relay message: {}", message.as_json())
 					}
 				}
 				Ok(false)
