@@ -296,7 +296,7 @@ function Form() {
 	const [newMessage, setNewMessage] = useState("");
 	const [isPending, startTransition] = useTransition();
 
-	const submit = async () => {
+	const submit = () => {
 		startTransition(async () => {
 			if (!newMessage.length) return;
 
@@ -351,7 +351,7 @@ function AttachMedia({
 }: { callback: Dispatch<SetStateAction<string>> }) {
 	const [isPending, startTransition] = useTransition();
 
-	const attach = async () => {
+	const attach = () => {
 		startTransition(async () => {
 			const file = await upload();
 

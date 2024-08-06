@@ -23,7 +23,7 @@ function Screen() {
 		setKey(val);
 	};
 
-	const submit = async () => {
+	const submit = () => {
 		startTransition(async () => {
 			if (!key.startsWith("nsec1") && !key.startsWith("ncryptsec")) {
 				await message(

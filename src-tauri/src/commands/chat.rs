@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use std::cmp::Reverse;
-use std::time::Duration;
 use tauri::State;
 
 use crate::Nostr;
@@ -56,62 +55,6 @@ pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Ve
 
 #[tauri::command]
 #[specta::specta]
-pub async fn connect_inbox(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
-	let client = &state.client;
-	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
-	let mut inbox_relays = state.inbox_relays.lock().await;
-
-	if let Some(relays) = inbox_relays.get(&public_key) {
-		for relay in relays {
-			let _ = client.connect_relay(relay).await;
-		}
-		return Ok(relays.to_owned());
-	}
-
-	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
-
-	match client.get_events_of(vec![inbox], Some(Duration::from_secs(2))).await {
-		Ok(events) => {
-			let mut relays = Vec::new();
-
-			if let Some(event) = events.into_iter().next() {
-				for tag in &event.tags {
-					if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
-						let url = relay.to_string();
-						let _ = client.add_relay(&url).await;
-						let _ = client.connect_relay(&url).await;
-
-						relays.push(url)
-					}
-				}
-
-				inbox_relays.insert(public_key, relays.clone());
-			}
-
-			Ok(relays)
-		}
-		Err(e) => Err(e.to_string()),
-	}
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn disconnect_inbox(id: String, state: State<'_, Nostr>) -> Result<(), String> {
-	let client = &state.client;
-	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
-	let inbox_relays = state.inbox_relays.lock().await;
-
-	if let Some(relays) = inbox_relays.get(&public_key) {
-		for relay in relays {
-			let _ = client.disconnect_relay(relay).await;
-		}
-	}
-
-	Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn send_message(
 	to: String,
 	message: String,
@@ -126,24 +69,27 @@ pub async fn send_message(
 	// TODO: Add support reply_to
 	let rumor = EventBuilder::private_msg_rumor(receiver, message, None);
 
-	// Get inbox relays
+	// Get inbox state
 	let relays = state.inbox_relays.lock().await;
 
+	// Get inbox relays per member
 	let outbox = relays.get(&receiver);
 	let inbox = relays.get(&public_key);
 
 	let outbox_urls = match outbox {
 		Some(relays) => relays,
-		None => return Err("User's didn't have inbox relays to receive message.".into()),
+		None => return Err("Receiver didn't have inbox relays to receive message.".into()),
 	};
 
 	let inbox_urls = match inbox {
 		Some(relays) => relays,
-		None => return Err("User's didn't have inbox relays to receive message.".into()),
+		None => return Err("Please config inbox relays to backup your message.".into()),
 	};
 
+	// Send message to [receiver]
 	match client.gift_wrap_to(outbox_urls, receiver, rumor.clone(), None).await {
 		Ok(_) => {
+			// Send message to [yourself]
 			if let Err(e) = client.gift_wrap_to(inbox_urls, public_key, rumor, None).await {
 				return Err(e.to_string());
 			}

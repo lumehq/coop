@@ -36,6 +36,22 @@ try {
     else return { status: "error", error: e  as any };
 }
 },
+async connectInboxRelays(userId: string, ignoreCache: boolean) : Promise<Result<string[], string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("connect_inbox_relays", { userId, ignoreCache }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async disconnectInboxRelays(userId: string) : Promise<Result<null, string>> {
+try {
+    return { status: "ok", data: await TAURI_INVOKE("disconnect_inbox_relays", { userId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async login(account: string, password: string) : Promise<Result<string, string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("login", { account, password }) };
@@ -106,22 +122,6 @@ try {
 async getChatMessages(id: string) : Promise<Result<string[], string>> {
 try {
     return { status: "ok", data: await TAURI_INVOKE("get_chat_messages", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async connectInbox(id: string) : Promise<Result<string[], string>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("connect_inbox", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async disconnectInbox(id: string) : Promise<Result<null, string>> {
-try {
-    return { status: "ok", data: await TAURI_INVOKE("disconnect_inbox", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -31,6 +31,8 @@ fn main() {
 			set_bootstrap_relays,
 			get_inbox_relays,
 			set_inbox_relays,
+			connect_inbox_relays,
+			disconnect_inbox_relays,
 			login,
 			delete_account,
 			create_account,
@@ -41,8 +43,6 @@ fn main() {
 			get_contact_list,
 			get_chats,
 			get_chat_messages,
-			connect_inbox,
-			disconnect_inbox,
 			send_message,
 		]);
 

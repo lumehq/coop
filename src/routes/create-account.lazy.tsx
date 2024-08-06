@@ -31,7 +31,7 @@ function Screen() {
 		}
 	};
 
-	const submit = async () => {
+	const submit = () => {
 		startTransition(async () => {
 			if (!name.length) {
 				await message("Please add your name", {

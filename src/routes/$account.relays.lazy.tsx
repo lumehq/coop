@@ -48,7 +48,7 @@ function Screen() {
 		setRelays((prev) => prev.filter((item) => item !== relay));
 	};
 
-	const submit = async () => {
+	const submit = () => {
 		startTransition(async () => {
 			if (!relays.length) {
 				await message("You need to add at least 1 relay", { kind: "info" });

@@ -22,7 +22,7 @@ function Screen() {
 		setUri(val);
 	};
 
-	const submit = async () => {
+	const submit = () => {
 		startTransition(async () => {
 			if (!uri.startsWith("bunker://")) {
 				await message(

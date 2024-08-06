@@ -50,7 +50,7 @@ function Screen() {
 		setValue(account);
 	};
 
-	const loginWith = async () => {
+	const loginWith = () => {
 		startTransition(async () => {
 			if (!value || !password) return;
 

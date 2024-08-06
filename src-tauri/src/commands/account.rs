@@ -27,12 +27,12 @@ pub fn get_accounts() -> Vec<String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String, String> {
+pub async fn get_metadata(user_id: String, state: State<'_, Nostr>) -> Result<String, String> {
 	let client = &state.client;
-	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
+	let public_key = PublicKey::parse(&user_id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_of(vec![filter], Some(Duration::from_secs(3))).await {
+	match client.get_events_of(vec![filter], Some(Duration::from_secs(2))).await {
 		Ok(events) => {
 			if let Some(event) = events.first() {
 				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())

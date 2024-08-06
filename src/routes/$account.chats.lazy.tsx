@@ -16,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
 import type { NostrEvent } from "nostr-tools";
@@ -273,20 +274,41 @@ function Compose() {
 
 	const navigate = Route.useNavigate();
 
-	const sendMessage = async () => {
+	const pasteFromClipboard = async () => {
+		const val = await readText();
+		setTarget(val);
+	};
+
+	const sendMessage = () => {
 		startTransition(async () => {
 			if (!newMessage.length) return;
 			if (!target.length) return;
 
-			const res = await commands.sendMessage(target, newMessage);
+			// Connect to user's inbox relays
+			const connect = await commands.connectInboxRelays(target, false);
 
-			if (res.status === "ok") {
-				navigate({
-					to: "/$account/chats/$id",
-					params: { account, id: target },
-				});
+			// Send message
+			if (connect.status === "ok") {
+				const res = await commands.sendMessage(target, newMessage);
+
+				if (res.status === "ok") {
+					setTarget("");
+					setNewMessage("");
+					setIsOpen(false);
+
+					navigate({
+						to: "/$account/chats/$id",
+						params: { account, id: target },
+					});
+				} else {
+					await message(res.error, { title: "Send Message", kind: "error" });
+					return;
+				}
 			} else {
-				await message(res.error, { title: "Coop", kind: "error" });
+				await message(connect.error, {
+					title: "Connect Inbox Relays",
+					kind: "error",
+				});
 				return;
 			}
 		});
@@ -307,7 +329,7 @@ function Compose() {
 				<Dialog.Content className="flex flex-col data-[state=open]:animate-content fixed top-[50%] left-[50%] w-full h-full max-h-[500px] max-w-[400px] translate-x-[-50%] translate-y-[-50%] rounded-xl bg-white dark:bg-neutral-900 shadow-[hsl(206_22%_7%_/_35%)_0px_10px_38px_-10px,_hsl(206_22%_7%_/_20%)_0px_10px_20px_-15px] focus:outline-none">
 					<div className="h-28 shrink-0 flex flex-col justify-end">
 						<div className="h-10 inline-flex items-center justify-between px-3.5 text-sm font-semibold text-neutral-600 dark:text-neutral-400">
-							Send to
+							<Dialog.Title>Send to</Dialog.Title>
 							<Dialog.Close asChild>
 								<button type="button">
 									<X className="size-4" />
@@ -316,13 +338,22 @@ function Compose() {
 						</div>
 						<div className="flex items-center gap-1 px-3.5 border-b border-neutral-100 dark:border-neutral-800">
 							<span className="shrink-0 font-medium">To:</span>
-							<input
-								placeholder="npub1..."
-								value={target}
-								onChange={(e) => setTarget(e.target.value)}
-								disabled={isPending || isLoading}
-								className="flex-1 h-9 bg-transparent focus:outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
-							/>
+							<div className="flex-1 relative">
+								<input
+									placeholder="npub1..."
+									value={target}
+									onChange={(e) => setTarget(e.target.value)}
+									disabled={isPending || isLoading}
+									className="w-full pr-14 h-9 bg-transparent focus:outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
+								/>
+								<button
+									type="button"
+									onClick={() => pasteFromClipboard()}
+									className="absolute uppercase top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500"
+								>
+									Paste
+								</button>
+							</div>
 						</div>
 						<div className="flex items-center gap-1 px-3.5 border-b border-neutral-100 dark:border-neutral-800">
 							<span className="shrink-0 font-medium">Message:</span>
@@ -339,7 +370,11 @@ function Compose() {
 								onClick={() => sendMessage()}
 								className="rounded-full size-7 inline-flex items-center justify-center bg-blue-300 hover:bg-blue-500 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
 							>
-								<ArrowRight className="size-4" />
+								{isPending ? (
+									<Spinner className="size-4" />
+								) : (
+									<ArrowRight className="size-4" />
+								)}
 							</button>
 						</div>
 					</div>
