@@ -4,6 +4,7 @@
 #[cfg(target_os = "macos")]
 use border::WebviewWindowExt as WebviewWindowExtAlt;
 use nostr_sdk::prelude::*;
+use specta_typescript::Typescript;
 use std::{
 	collections::HashMap,
 	fs,
@@ -14,6 +15,7 @@ use std::{
 use tauri::{async_runtime::Mutex, Manager};
 #[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
+use tauri_specta::{collect_commands, Builder};
 
 use commands::{account::*, chat::*, relay::*};
 
@@ -25,40 +27,43 @@ pub struct Nostr {
 }
 
 fn main() {
-	let invoke_handler = {
-		let builder = tauri_specta::ts::builder().commands(tauri_specta::collect_commands![
-			get_bootstrap_relays,
-			set_bootstrap_relays,
-			get_inbox_relays,
-			set_inbox_relays,
-			connect_inbox_relays,
-			disconnect_inbox_relays,
-			login,
-			delete_account,
-			create_account,
-			import_key,
-			connect_account,
-			get_accounts,
-			get_metadata,
-			get_contact_list,
-			get_chats,
-			get_chat_messages,
-			send_message,
-		]);
-
-		#[cfg(debug_assertions)]
-		let builder = builder.path("../src/commands.ts");
-
-		builder.build().unwrap()
-	};
+	let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
+		get_bootstrap_relays,
+		set_bootstrap_relays,
+		get_inbox_relays,
+		set_inbox_relays,
+		connect_inbox_relays,
+		disconnect_inbox_relays,
+		login,
+		delete_account,
+		create_account,
+		import_key,
+		connect_account,
+		get_accounts,
+		get_metadata,
+		get_contact_list,
+		get_chats,
+		get_chat_messages,
+		send_message,
+	]);
 
 	#[cfg(debug_assertions)]
-	let builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
-	#[cfg(not(debug_assertions))]
-	let builder = tauri::Builder::default();
-
 	builder
-		.setup(|app| {
+		.export(Typescript::default(), "../src/commands.ts")
+		.expect("Failed to export typescript bindings");
+
+	#[cfg(debug_assertions)]
+	let tauri_builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
+
+	#[cfg(not(debug_assertions))]
+	let tauri_builder = tauri::Builder::default();
+
+	tauri_builder
+		.invoke_handler(builder.invoke_handler())
+		.setup(move |app| {
+			// This is also required if you want to use events
+			builder.mount_events(app);
+
 			let handle = app.handle();
 			let main_window = app.get_webview_window("main").unwrap();
 
@@ -79,9 +84,6 @@ fn main() {
 			let win_ = main_window.clone();
 			#[cfg(target_os = "macos")]
 			main_window.on_window_event(move |event| {
-				if let tauri::WindowEvent::Resized(_) = event {
-					win_.set_traffic_lights_inset(12.0, 18.0).unwrap();
-				}
 				if let tauri::WindowEvent::ThemeChanged(_) = event {
 					win_.set_traffic_lights_inset(12.0, 18.0).unwrap();
 				}
@@ -158,7 +160,6 @@ fn main() {
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_decorum::init())
 		.plugin(tauri_plugin_shell::init())
-		.invoke_handler(invoke_handler)
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application");
 }

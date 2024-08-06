@@ -8,30 +8,28 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "2.0.0-beta", features = [] }
+tauri-build = { version = "2.0.0-rc", features = [] }
 
 [dependencies]
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"sqlite",
 ] }
-tauri = { version = "2.0.0-beta", features = [
+tauri = { version = "2.0.0-rc", features = [
 	"tray-icon",
 	"macos-private-api",
 	"protocol-asset",
 ] }
-tauri-specta = { git = "https://github.com/reyamir/tauri-specta", branch = "feat/tauri-v2", features = [
-	"typescript",
-] }
-tauri-plugin-devtools = "2.0.0-beta"
-tauri-plugin-prevent-default = "0.2"
-tauri-plugin-os = "2.0.0-beta"
-tauri-plugin-clipboard-manager = "2.1.0-beta"
-tauri-plugin-dialog = "2.0.0-beta"
-tauri-plugin-shell = "2.0.0-beta"
-tauri-plugin-updater = "2.0.0-beta"
-tauri-plugin-process = "2.0.0-beta"
-tauri-plugin-fs = "2.0.0-beta"
-tauri-plugin-decorum = "0.1.5"
+tauri-specta = { version = "2.0.0-rc.15", features = ["derive", "typescript"] }
+tauri-plugin-devtools = "2.0.0-rc"
+tauri-plugin-prevent-default = "0.3"
+tauri-plugin-os = "2.0.0-rc"
+tauri-plugin-clipboard-manager = "2.0.0-rc"
+tauri-plugin-dialog = "2.0.0-rc"
+tauri-plugin-shell = "2.0.0-rc"
+tauri-plugin-updater = "2.0.0-rc"
+tauri-plugin-process = "2.0.0-rc"
+tauri-plugin-fs = "2.0.0-rc"
+tauri-plugin-decorum = "1.0.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = { version = "3", features = [
@@ -42,7 +40,8 @@ keyring = { version = "3", features = [
 keyring-search = "1.2.0"
 itertools = "0.13.0"
 futures = "0.3.30"
-specta = "^2.0.0-rc.12"
+specta = "^2.0.0-rc.20"
+specta-typescript = "0.0.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 border = { git = "https://github.com/ahkohd/tauri-toolkit", branch = "v2" }

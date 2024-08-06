@@ -1,5 +1,5 @@
+import { commands } from "@/commands";
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { type ReactNode, createContext, useContext } from "react";
 
 type Metadata = {
@@ -42,11 +42,13 @@ export function UserProvider({
 					.replace("nostr:", "")
 					.replace(/[^\w\s]/gi, "");
 
-				const query: string = await invoke("get_metadata", {
-					id: normalizePubkey,
-				});
+				const res = await commands.getMetadata(normalizePubkey);
 
-				return JSON.parse(query) as Metadata;
+				if (res.status === "ok") {
+					return JSON.parse(res.data) as Metadata;
+				} else {
+					throw new Error(res.error);
+				}
 			} catch (e) {
 				throw new Error(String(e));
 			}
