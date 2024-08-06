@@ -5,6 +5,7 @@
 use border::WebviewWindowExt as WebviewWindowExtAlt;
 use nostr_sdk::prelude::*;
 use specta_typescript::Typescript;
+use std::env;
 use std::{
 	collections::HashMap,
 	fs,
@@ -27,6 +28,9 @@ pub struct Nostr {
 }
 
 fn main() {
+	#[cfg(target_os = "linux")]
+	std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
 	let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
 		get_bootstrap_relays,
 		set_bootstrap_relays,
