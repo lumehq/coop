@@ -13,10 +13,7 @@ const platform = type();
 const queryClient = new QueryClient();
 const chatManager = new LRUCache<string, string>({
 	max: 3,
-	dispose: async (v, _) => {
-		console.log("disconnect: ", v);
-		await commands.disconnectInboxRelays(v);
-	},
+	dispose: async (v, _) => await commands.disconnectInboxRelays(v),
 });
 
 const router = createRouter({

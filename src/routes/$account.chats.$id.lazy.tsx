@@ -14,7 +14,6 @@ import {
 	type Dispatch,
 	type SetStateAction,
 	useCallback,
-	useLayoutEffect,
 	useRef,
 	useState,
 	useTransition,
@@ -106,7 +105,6 @@ function List() {
 	const queryClient = useQueryClient();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const ref = useRef<VirtualizerHandle>(null);
-	const isPrepend = useRef(false);
 	const shouldStickToBottom = useRef(true);
 
 	const renderItem = useCallback(
@@ -147,28 +145,6 @@ function List() {
 	);
 
 	useEffect(() => {
-		const unlisten = listen<ChatPayload>(`sync_chat_${id}`, async (data) => {
-			const raw = data.payload.events;
-			const events: NostrEvent[] = raw.map((item) => JSON.parse(item));
-			const chats: NostrEvent[] = await queryClient.getQueryData(["chats", id]);
-
-			if (chats?.length) {
-				const newEvents = [...events, ...chats];
-				const dedup = newEvents.filter(
-					(obj1, i, arr) => arr.findIndex((obj2) => obj2.id === obj1.id) === i,
-				);
-				await queryClient.setQueryData(["chats", id], dedup);
-			} else {
-				await queryClient.setQueryData(["chats", id], events);
-			}
-		});
-
-		return () => {
-			unlisten.then((f) => f());
-		};
-	}, []);
-
-	useEffect(() => {
 		const unlisten = listen<EventPayload>("event", async (data) => {
 			const event: NostrEvent = JSON.parse(data.payload.event);
 			const sender = data.payload.sender;
@@ -190,7 +166,7 @@ function List() {
 		return () => {
 			unlisten.then((f) => f());
 		};
-	}, []);
+	}, [account, id]);
 
 	useEffect(() => {
 		if (!data?.length) return;
@@ -201,10 +177,6 @@ function List() {
 			align: "end",
 		});
 	}, [data]);
-
-	useLayoutEffect(() => {
-		isPrepend.current = false;
-	});
 
 	return (
 		<ScrollArea.Root
@@ -219,7 +191,7 @@ function List() {
 				<Virtualizer
 					scrollRef={scrollRef}
 					ref={ref}
-					shift={isPrepend.current}
+					shift={true}
 					onScroll={(offset) => {
 						if (!ref.current) return;
 						shouldStickToBottom.current =
