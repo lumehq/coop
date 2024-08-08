@@ -324,16 +324,18 @@ pub async fn login(
 									println!("[emit] error: {}", e)
 								}
 
-								if let Some(window) = handle.get_webview_window("main") {
-									if !window.is_focused().unwrap() {
-										if let Err(e) = handle
-											.notification()
-											.builder()
-											.body("You have a new message")
-											.title("Coop")
-											.show()
-										{
-											println!("[notification] error: {}", e);
+								if sender != public_key {
+									if let Some(window) = handle.get_webview_window("main") {
+										if !window.is_focused().unwrap() {
+											if let Err(e) = handle
+												.notification()
+												.builder()
+												.body("You have a new message")
+												.title("Coop")
+												.show()
+											{
+												println!("[notification] error: {}", e);
+											}
 										}
 									}
 								}

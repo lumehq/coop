@@ -3,7 +3,6 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import {
 	isPermissionGranted,
 	requestPermission,
-	sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
