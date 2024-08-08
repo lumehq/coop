@@ -157,7 +157,7 @@ function List() {
 			await queryClient.setQueryData(
 				["chats", id],
 				(prevEvents: NostrEvent[]) => {
-					if (!prevEvents) return prevEvents;
+					if (!prevEvents) return [event];
 					return [event, ...prevEvents];
 				},
 			);

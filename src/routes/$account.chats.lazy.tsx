@@ -19,8 +19,9 @@ import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
-import type { NostrEvent } from "nostr-tools";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { type NostrEvent, nip19 } from "nostr-tools";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Virtualizer } from "virtua";
 
 type EventPayload = {
 	event: string;
@@ -273,6 +274,7 @@ function Compose() {
 	});
 
 	const navigate = Route.useNavigate();
+	const scrollRef = useRef<HTMLDivElement>(null);
 
 	const pasteFromClipboard = async () => {
 		const val = await readText();
@@ -283,13 +285,33 @@ function Compose() {
 		startTransition(async () => {
 			if (!newMessage.length) return;
 			if (!target.length) return;
+			if (!target.startsWith("npub1")) {
+				await message("You must enter the public key as npub", {
+					title: "Send Message",
+					kind: "error",
+				});
+				return;
+			}
+
+			const decoded = nip19.decode(target);
+			let id: string;
+
+			if (decoded.type !== "npub") {
+				await message("You must enter the public key as npub", {
+					title: "Send Message",
+					kind: "error",
+				});
+				return;
+			} else {
+				id = decoded.data;
+			}
 
 			// Connect to user's inbox relays
 			const connect = await commands.connectInboxRelays(target, false);
 
 			// Send message
 			if (connect.status === "ok") {
-				const res = await commands.sendMessage(target, newMessage);
+				const res = await commands.sendMessage(id, newMessage);
 
 				if (res.status === "ok") {
 					setTarget("");
@@ -298,7 +320,7 @@ function Compose() {
 
 					navigate({
 						to: "/$account/chats/$id",
-						params: { account, id: target },
+						params: { account, id },
 					});
 				} else {
 					await message(res.error, { title: "Send Message", kind: "error" });
@@ -343,7 +365,7 @@ function Compose() {
 									placeholder="npub1..."
 									value={target}
 									onChange={(e) => setTarget(e.target.value)}
-									disabled={isPending || isLoading}
+									disabled={isPending}
 									className="w-full pr-14 h-9 bg-transparent focus:outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
 								/>
 								<button
@@ -361,7 +383,7 @@ function Compose() {
 								placeholder="hello..."
 								value={newMessage}
 								onChange={(e) => setNewMessage(e.target.value)}
-								disabled={isPending || isLoading}
+								disabled={isPending}
 								className="flex-1 h-9 bg-transparent focus:outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
 							/>
 							<button
@@ -383,32 +405,37 @@ function Compose() {
 						scrollHideDelay={300}
 						className="overflow-hidden flex-1 size-full"
 					>
-						<ScrollArea.Viewport className="relative h-full p-2">
-							{isLoading ? (
-								<div className="h-[400px] flex items-center justify-center">
-									<Spinner className="size-4" />
-								</div>
-							) : !contacts?.length ? (
-								<div className="h-[400px] flex items-center justify-center">
-									<p className="text-sm">Contact is empty.</p>
-								</div>
-							) : (
-								contacts?.map((contact) => (
-									<button
-										key={contact}
-										type="button"
-										onClick={() => setTarget(contact)}
-										className="block w-full p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
-									>
-										<User.Provider pubkey={contact}>
-											<User.Root className="flex items-center gap-2">
-												<User.Avatar className="size-8 rounded-full" />
-												<User.Name className="text-sm font-medium" />
-											</User.Root>
-										</User.Provider>
-									</button>
-								))
-							)}
+						<ScrollArea.Viewport
+							ref={scrollRef}
+							className="relative h-full p-2"
+						>
+							<Virtualizer scrollRef={scrollRef} overscan={1}>
+								{isLoading ? (
+									<div className="h-[400px] flex items-center justify-center">
+										<Spinner className="size-4" />
+									</div>
+								) : !contacts?.length ? (
+									<div className="h-[400px] flex items-center justify-center">
+										<p className="text-sm">Contact is empty.</p>
+									</div>
+								) : (
+									contacts?.map((contact) => (
+										<button
+											key={contact}
+											type="button"
+											onClick={() => setTarget(contact)}
+											className="block w-full p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
+										>
+											<User.Provider pubkey={contact}>
+												<User.Root className="flex items-center gap-2">
+													<User.Avatar className="size-8 rounded-full" />
+													<User.Name className="text-sm font-medium" />
+												</User.Root>
+											</User.Provider>
+										</button>
+									))
+								)}
+							</Virtualizer>
 						</ScrollArea.Viewport>
 						<ScrollArea.Scrollbar
 							className="flex select-none touch-none p-0.5 duration-[160ms] ease-out data-[orientation=vertical]:w-2"

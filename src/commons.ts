@@ -79,11 +79,6 @@ export function getReceivers(tags: string[][]) {
 	return p;
 }
 
-export function getChatId(pubkey: string, tags: string[][]) {
-	const id = [pubkey, tags.map((tag) => tag[0] === "p" && tag[1])].join("-");
-	return id;
-}
-
 export function groupEventByDate(events: NostrEvent[]) {
 	const groups = Object.groupBy(events, (event) => {
 		return dayjs.unix(event.created_at).startOf("day").format("MMM DD, YYYY");
