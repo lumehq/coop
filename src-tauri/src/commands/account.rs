@@ -4,6 +4,7 @@ use nostr_sdk::prelude::*;
 use serde::Serialize;
 use std::{collections::HashSet, str::FromStr, time::Duration};
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::Nostr;
 
@@ -307,16 +308,35 @@ pub async fn login(
 									fake_sig,
 								);
 
+								// Save rumor to database to further query
 								if let Err(e) = client.database().save_event(&ev).await {
-									println!("Error: {}", e)
+									println!("[save event] error: {}", e)
 								}
 
-								let payload = EventPayload {
-									event: rumor.as_json(),
-									sender: sender.to_hex(),
-								};
+								// Emit new event to frontend
+								if let Err(e) = handle.emit(
+									"event",
+									EventPayload {
+										event: rumor.as_json(),
+										sender: sender.to_hex(),
+									},
+								) {
+									println!("[emit] error: {}", e)
+								}
 
-								handle.emit("event", payload).unwrap();
+								if let Some(window) = handle.get_webview_window("main") {
+									if !window.is_focused().unwrap() {
+										if let Err(e) = handle
+											.notification()
+											.builder()
+											.body("You have a new message")
+											.title("Coop")
+											.show()
+										{
+											println!("[notification] error: {}", e);
+										}
+									}
+								}
 							}
 						}
 					} else {

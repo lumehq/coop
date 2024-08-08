@@ -1,5 +1,5 @@
 import { commands } from "@/commands";
-import { checkForAppUpdates } from "@/commons";
+import { checkForAppUpdates, checkPermission } from "@/commons";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
@@ -8,6 +8,10 @@ export const Route = createFileRoute("/")({
 		// TODO: move this function to rust
 		await checkForAppUpdates(true);
 
+		// Request notification permission
+		await checkPermission();
+
+		// Get all accounts from system
 		const accounts = await commands.getAccounts();
 
 		if (!accounts.length) {

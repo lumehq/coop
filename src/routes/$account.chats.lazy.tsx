@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, createLazyFileRoute } from "@tanstack/react-router";
 import { listen } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
 import { type NostrEvent, nip19 } from "nostr-tools";
@@ -460,12 +460,11 @@ function CurrentUser() {
 
 		const menuItems = await Promise.all([
 			MenuItem.new({
-				text: "Contacts",
-				action: () =>
-					navigate({
-						to: "/$account/contacts",
-						params: { account: params.account },
-					}),
+				text: "Copy Public Key",
+				action: async () => {
+					const npub = nip19.npubEncode(params.account);
+					await writeText(npub);
+				},
 			}),
 			MenuItem.new({
 				text: "Settings",

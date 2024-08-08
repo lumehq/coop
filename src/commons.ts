@@ -1,5 +1,10 @@
 import { ask, message, open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
+import {
+	isPermissionGranted,
+	requestPermission,
+	sendNotification,
+} from "@tauri-apps/plugin-notification";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { type ClassValue, clsx } from "clsx";
@@ -87,14 +92,12 @@ export function groupEventByDate(events: NostrEvent[]) {
 	return groups;
 }
 
-/*
-export function isEmojiOnly(str: string) {
-	const stringToTest = str.replace(/ /g, "");
-	const emojiRegex =
-		/^(?:(?:\p{RI}\p{RI}|\p{Emoji}(?:\p{Emoji_Modifier}|\u{FE0F}\u{20E3}?|[\u{E0020}-\u{E007E}]+\u{E007F})?(?:\u{200D}\p{Emoji}(?:\p{Emoji_Modifier}|\u{FE0F}\u{20E3}?|[\u{E0020}-\u{E007E}]+\u{E007F})?)*)|[\u{1f900}-\u{1f9ff}\u{2600}-\u{26ff}\u{2700}-\u{27bf}])+$/u;
-	return emojiRegex.test(stringToTest) && Number.isNaN(Number(stringToTest));
+export async function checkPermission() {
+	if (!(await isPermissionGranted())) {
+		return (await requestPermission()) === "granted";
+	}
+	return true;
 }
-*/
 
 export async function checkForAppUpdates(silent: boolean) {
 	try {

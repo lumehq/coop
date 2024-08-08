@@ -173,6 +173,7 @@ fn main() {
 		.plugin(tauri_plugin_clipboard_manager::init())
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_decorum::init())
+		.plugin(tauri_plugin_notification::init())
 		.plugin(tauri_plugin_shell::init())
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application");

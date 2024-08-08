@@ -33,6 +33,7 @@
 		"updater:allow-download-and-install",
 		"clipboard-manager:allow-write-text",
 		"clipboard-manager:allow-read-text",
-		"fs:allow-read-file"
+		"fs:allow-read-file",
+		"notification:default"
 	]
 }
