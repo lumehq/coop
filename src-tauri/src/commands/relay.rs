@@ -12,7 +12,9 @@ async fn connect_nip65_relays(public_key: PublicKey, client: &Client) -> Vec<Str
 	let filter = Filter::new().author(public_key).kind(Kind::RelayList).limit(1);
 	let mut relay_list: Vec<String> = Vec::new();
 
-	if let Ok(events) = client.get_events_of(vec![filter], Some(Duration::from_secs(2))).await {
+	if let Ok(events) =
+		client.get_events_of(vec![filter], EventSource::relays(Some(Duration::from_secs(3)))).await
+	{
 		if let Some(event) = events.first() {
 			for (url, ..) in nip65::extract_relay_list(event) {
 				let _ = client.add_relay(url).await;
@@ -68,7 +70,8 @@ pub async fn collect_inbox_relays(
 	let public_key = PublicKey::parse(user_id).map_err(|e| e.to_string())?;
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	match client.get_events_of(vec![inbox], Some(Duration::from_secs(2))).await {
+	match client.get_events_of(vec![inbox], EventSource::relays(Some(Duration::from_secs(3)))).await
+	{
 		Ok(events) => {
 			if let Some(event) = events.into_iter().next() {
 				let urls = event
@@ -138,7 +141,8 @@ pub async fn connect_inbox_relays(
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	match client.get_events_of(vec![inbox], Some(Duration::from_secs(2))).await {
+	match client.get_events_of(vec![inbox], EventSource::relays(Some(Duration::from_secs(3)))).await
+	{
 		Ok(events) => {
 			let mut relays = Vec::new();
 

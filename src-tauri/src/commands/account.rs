@@ -201,7 +201,9 @@ pub async fn login(
 
 	let inbox = Filter::new().kind(Kind::Custom(10050)).author(public_key).limit(1);
 
-	if let Ok(events) = client.get_events_of(vec![inbox], Some(Duration::from_secs(3))).await {
+	if let Ok(events) =
+		client.get_events_of(vec![inbox], EventSource::relays(Some(Duration::from_secs(3)))).await
+	{
 		if let Some(event) = events.into_iter().next() {
 			let urls = event
 				.tags()
@@ -261,9 +263,10 @@ pub async fn login(
 		let fake_sig = Signature::from_str("f9e79d141c004977192d05a86f81ec7c585179c371f7350a5412d33575a2a356433f58e405c2296ed273e2fe0aafa25b641e39cc4e1f3f261ebf55bce0cbac83").unwrap();
 
 		if let Ok(events) = client
-			.get_events_of_with_opts(
+			.pool()
+			.get_events_of(
 				vec![filter],
-				Some(Duration::from_secs(20)),
+				Duration::from_secs(12),
 				FilterOptions::WaitDurationAfterEOSE(Duration::from_secs(20)),
 			)
 			.await
