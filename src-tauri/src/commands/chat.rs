@@ -82,10 +82,10 @@ pub async fn send_message(
 	};
 
 	// Send message to [receiver]
-	match client.gift_wrap_to(outbox_urls, receiver, rumor.clone(), None).await {
+	match client.gift_wrap_to(outbox_urls, &receiver, rumor.clone(), None).await {
 		Ok(_) => {
 			// Send message to [yourself]
-			if let Err(e) = client.gift_wrap_to(inbox_urls, public_key, rumor, None).await {
+			if let Err(e) = client.gift_wrap_to(inbox_urls, &public_key, rumor, None).await {
 				return Err(e.to_string());
 			}
 
