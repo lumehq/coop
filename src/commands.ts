@@ -61,14 +61,6 @@ async login(account: string, password: string) : Promise<Result<string, string>>
     else return { status: "error", error: e  as any };
 }
 },
-async deleteAccount(id: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_account", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async createAccount(name: string, about: string, picture: string, password: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_account", { name, about, picture, password }) };
@@ -77,9 +69,9 @@ async createAccount(name: string, about: string, picture: string, password: stri
     else return { status: "error", error: e  as any };
 }
 },
-async importKey(key: string, password: string | null) : Promise<Result<string, string>> {
+async importAccount(key: string, password: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("import_key", { key, password }) };
+    return { status: "ok", data: await TAURI_INVOKE("import_account", { key, password }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -88,6 +80,22 @@ async importKey(key: string, password: string | null) : Promise<Result<string, s
 async connectAccount(uri: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("connect_account", { uri }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteAccount(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_account", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resetPassword(key: string, password: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_password", { key, password }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

@@ -1,9 +1,11 @@
 import { commands } from "@/commands";
+import { GoBack } from "@/components";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
-import { Plus, X } from "@phosphor-icons/react";
+import { ArrowLeft, Plus, X } from "@phosphor-icons/react";
 import { createLazyFileRoute } from "@tanstack/react-router";
 import { message } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { useEffect, useState, useTransition } from "react";
 
 export const Route = createLazyFileRoute("/bootstrap-relays")({
@@ -50,13 +52,11 @@ function Screen() {
 				return;
 			}
 
-			const merged = relays
-				.map((relay) => Object.values(relay).join(","))
-				.join("\n");
+			const merged = relays.join("\r\n");
 			const res = await commands.setBootstrapRelays(merged);
 
 			if (res.status === "ok") {
-				// TODO: restart app
+				return await relaunch();
 			} else {
 				await message(res.error, {
 					title: "Manage Relays",
@@ -72,7 +72,10 @@ function Screen() {
 	}, [bootstrapRelays]);
 
 	return (
-		<div className="size-full flex items-center justify-center">
+		<div
+			data-tauri-drag-region
+			className="relative size-full flex items-center justify-center"
+		>
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
 					<h1 className="leading-tight text-xl font-semibold">Manage Relays</h1>
@@ -134,9 +137,16 @@ function Screen() {
 						>
 							{isPending ? <Spinner /> : "Save & Restart"}
 						</button>
+						<span className="mt-2 w-full text-sm text-neutral-600 dark:text-neutral-400 inline-flex items-center justify-center">
+							Lume will relaunch after saving.
+						</span>
 					</div>
 				</div>
 			</div>
+			<GoBack className="fixed top-11 left-2 flex items-center gap-1.5 text-sm font-medium">
+				<ArrowLeft className="size-5" />
+				Back
+			</GoBack>
 		</div>
 	);
 }

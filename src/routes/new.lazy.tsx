@@ -18,7 +18,7 @@ function Screen() {
 				</div>
 				<div className="flex flex-col gap-4">
 					<Link
-						to="/create-account"
+						to="/auth/new"
 						className="w-full h-10 bg-blue-500 font-medium hover:bg-blue-600 text-white rounded-lg inline-flex items-center justify-center shadow"
 					>
 						Create a new identity
@@ -32,7 +32,7 @@ function Screen() {
 							Login with Nostr Connect
 						</Link>*/}
 						<Link
-							to="/import-key"
+							to="/auth/import"
 							className="w-full h-10 bg-white hover:bg-neutral-100 dark:hover:bg-neutral-100 dark:bg-white dark:text-black rounded-lg inline-flex items-center justify-center"
 						>
 							Login with Private Key

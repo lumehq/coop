@@ -2,12 +2,12 @@ import { commands } from "@/commands";
 import { GoBack } from "@/components/back";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
-import { createLazyFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useState, useTransition } from "react";
 
-export const Route = createLazyFileRoute("/nostr-connect")({
+export const Route = createFileRoute("/auth/connect")({
 	component: Screen,
 });
 
@@ -70,12 +70,12 @@ function Screen() {
 								placeholder="bunker://..."
 								value={uri}
 								onChange={(e) => setUri(e.target.value)}
-								className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none"
+								className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none placeholder:text-neutral-400"
 							/>
 							<button
 								type="button"
 								onClick={() => pasteFromClipboard()}
-								className="absolute top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500"
+								className="absolute top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500 dark:text-blue-300"
 							>
 								Paste
 							</button>

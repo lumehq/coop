@@ -2,12 +2,12 @@ import { commands } from "@/commands";
 import { GoBack } from "@/components/back";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
-import { createLazyFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useState, useTransition } from "react";
 
-export const Route = createLazyFileRoute("/import-key")({
+export const Route = createFileRoute("/auth/import")({
 	component: Screen,
 });
 
@@ -41,7 +41,7 @@ function Screen() {
 				return;
 			}
 
-			const res = await commands.importKey(key, password);
+			const res = await commands.importAccount(key, password);
 
 			if (res.status === "ok") {
 				navigate({ to: "/", replace: true });
@@ -63,7 +63,7 @@ function Screen() {
 			<div className="w-[320px] flex flex-col gap-8">
 				<div className="flex flex-col gap-1 text-center">
 					<h1 className="leading-tight text-xl font-semibold">
-						Import Private Key
+						Import Account
 					</h1>
 				</div>
 				<div className="flex flex-col gap-3">
@@ -85,24 +85,26 @@ function Screen() {
 									placeholder="nsec or ncryptsec..."
 									value={key}
 									onChange={(e) => setKey(e.target.value)}
-									className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
+									className="pl-3 pr-12 rounded-lg w-full h-10 bg-transparent border border-neutral-200 dark:border-neutral-500 focus:border-blue-500 focus:outline-none placeholder:text-neutral-400"
 								/>
 								<button
 									type="button"
 									onClick={() => pasteFromClipboard()}
-									className="absolute uppercase top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500"
+									className="absolute top-1/2 right-2 transform -translate-y-1/2 text-xs font-semibold text-blue-500 dark:text-blue-300"
 								>
 									Paste
 								</button>
 							</div>
 						</div>
-						{key.length && !key.startsWith("ncryptsec") ? (
+						{key.length ? (
 							<div className="flex flex-col gap-1">
 								<label
 									htmlFor="password"
 									className="text-sm font-medium text-neutral-800 dark:text-neutral-200"
 								>
-									Set password to secure your key
+									{!key.startsWith("ncryptsec")
+										? "Set password to secure your key"
+										: "Enter password to decrypt your key"}
 								</label>
 								<input
 									name="password"

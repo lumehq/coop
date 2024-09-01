@@ -15,42 +15,31 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Route as rootRoute } from './routes/__root'
 import { Route as BootstrapRelaysImport } from './routes/bootstrap-relays'
 import { Route as IndexImport } from './routes/index'
+import { Route as AuthNewImport } from './routes/auth/new'
+import { Route as AuthImportImport } from './routes/auth/import'
+import { Route as AuthConnectImport } from './routes/auth/connect'
 import { Route as AccountRelaysImport } from './routes/$account.relays'
 import { Route as AccountContactsImport } from './routes/$account.contacts'
 import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
 
 // Create Virtual Routes
 
-const NostrConnectLazyImport = createFileRoute('/nostr-connect')()
+const ResetLazyImport = createFileRoute('/reset')()
 const NewLazyImport = createFileRoute('/new')()
-const ImportKeyLazyImport = createFileRoute('/import-key')()
-const CreateAccountLazyImport = createFileRoute('/create-account')()
 const AccountChatsLazyImport = createFileRoute('/$account/chats')()
 const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
 
 // Create/Update Routes
 
-const NostrConnectLazyRoute = NostrConnectLazyImport.update({
-  path: '/nostr-connect',
+const ResetLazyRoute = ResetLazyImport.update({
+  path: '/reset',
   getParentRoute: () => rootRoute,
-} as any).lazy(() => import('./routes/nostr-connect.lazy').then((d) => d.Route))
+} as any).lazy(() => import('./routes/reset.lazy').then((d) => d.Route))
 
 const NewLazyRoute = NewLazyImport.update({
   path: '/new',
   getParentRoute: () => rootRoute,
 } as any).lazy(() => import('./routes/new.lazy').then((d) => d.Route))
-
-const ImportKeyLazyRoute = ImportKeyLazyImport.update({
-  path: '/import-key',
-  getParentRoute: () => rootRoute,
-} as any).lazy(() => import('./routes/import-key.lazy').then((d) => d.Route))
-
-const CreateAccountLazyRoute = CreateAccountLazyImport.update({
-  path: '/create-account',
-  getParentRoute: () => rootRoute,
-} as any).lazy(() =>
-  import('./routes/create-account.lazy').then((d) => d.Route),
-)
 
 const BootstrapRelaysRoute = BootstrapRelaysImport.update({
   path: '/bootstrap-relays',
@@ -70,6 +59,21 @@ const AccountChatsLazyRoute = AccountChatsLazyImport.update({
 } as any).lazy(() =>
   import('./routes/$account.chats.lazy').then((d) => d.Route),
 )
+
+const AuthNewRoute = AuthNewImport.update({
+  path: '/auth/new',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AuthImportRoute = AuthImportImport.update({
+  path: '/auth/import',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AuthConnectRoute = AuthConnectImport.update({
+  path: '/auth/connect',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const AccountRelaysRoute = AccountRelaysImport.update({
   path: '/$account/relays',
@@ -117,20 +121,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BootstrapRelaysImport
       parentRoute: typeof rootRoute
     }
-    '/create-account': {
-      id: '/create-account'
-      path: '/create-account'
-      fullPath: '/create-account'
-      preLoaderRoute: typeof CreateAccountLazyImport
-      parentRoute: typeof rootRoute
-    }
-    '/import-key': {
-      id: '/import-key'
-      path: '/import-key'
-      fullPath: '/import-key'
-      preLoaderRoute: typeof ImportKeyLazyImport
-      parentRoute: typeof rootRoute
-    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -138,11 +128,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NewLazyImport
       parentRoute: typeof rootRoute
     }
-    '/nostr-connect': {
-      id: '/nostr-connect'
-      path: '/nostr-connect'
-      fullPath: '/nostr-connect'
-      preLoaderRoute: typeof NostrConnectLazyImport
+    '/reset': {
+      id: '/reset'
+      path: '/reset'
+      fullPath: '/reset'
+      preLoaderRoute: typeof ResetLazyImport
       parentRoute: typeof rootRoute
     }
     '/$account/contacts': {
@@ -157,6 +147,27 @@ declare module '@tanstack/react-router' {
       path: '/$account/relays'
       fullPath: '/$account/relays'
       preLoaderRoute: typeof AccountRelaysImport
+      parentRoute: typeof rootRoute
+    }
+    '/auth/connect': {
+      id: '/auth/connect'
+      path: '/auth/connect'
+      fullPath: '/auth/connect'
+      preLoaderRoute: typeof AuthConnectImport
+      parentRoute: typeof rootRoute
+    }
+    '/auth/import': {
+      id: '/auth/import'
+      path: '/auth/import'
+      fullPath: '/auth/import'
+      preLoaderRoute: typeof AuthImportImport
+      parentRoute: typeof rootRoute
+    }
+    '/auth/new': {
+      id: '/auth/new'
+      path: '/auth/new'
+      fullPath: '/auth/new'
+      preLoaderRoute: typeof AuthNewImport
       parentRoute: typeof rootRoute
     }
     '/$account/chats': {
@@ -188,12 +199,13 @@ declare module '@tanstack/react-router' {
 export const routeTree = rootRoute.addChildren({
   IndexRoute,
   BootstrapRelaysRoute,
-  CreateAccountLazyRoute,
-  ImportKeyLazyRoute,
   NewLazyRoute,
-  NostrConnectLazyRoute,
+  ResetLazyRoute,
   AccountContactsRoute,
   AccountRelaysRoute,
+  AuthConnectRoute,
+  AuthImportRoute,
+  AuthNewRoute,
   AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
     AccountChatsIdRoute,
     AccountChatsNewLazyRoute,
@@ -210,12 +222,13 @@ export const routeTree = rootRoute.addChildren({
       "children": [
         "/",
         "/bootstrap-relays",
-        "/create-account",
-        "/import-key",
         "/new",
-        "/nostr-connect",
+        "/reset",
         "/$account/contacts",
         "/$account/relays",
+        "/auth/connect",
+        "/auth/import",
+        "/auth/new",
         "/$account/chats"
       ]
     },
@@ -225,23 +238,26 @@ export const routeTree = rootRoute.addChildren({
     "/bootstrap-relays": {
       "filePath": "bootstrap-relays.tsx"
     },
-    "/create-account": {
-      "filePath": "create-account.lazy.tsx"
-    },
-    "/import-key": {
-      "filePath": "import-key.lazy.tsx"
-    },
     "/new": {
       "filePath": "new.lazy.tsx"
     },
-    "/nostr-connect": {
-      "filePath": "nostr-connect.lazy.tsx"
+    "/reset": {
+      "filePath": "reset.lazy.tsx"
     },
     "/$account/contacts": {
       "filePath": "$account.contacts.tsx"
     },
     "/$account/relays": {
       "filePath": "$account.relays.tsx"
+    },
+    "/auth/connect": {
+      "filePath": "auth/connect.tsx"
+    },
+    "/auth/import": {
+      "filePath": "auth/import.tsx"
+    },
+    "/auth/new": {
+      "filePath": "auth/new.tsx"
     },
     "/$account/chats": {
       "filePath": "$account.chats.lazy.tsx",
