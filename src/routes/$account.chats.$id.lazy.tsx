@@ -46,13 +46,17 @@ function Screen() {
 
 function Header() {
 	const { account, id } = Route.useParams();
+	const { platform } = Route.useRouteContext();
 
 	return (
 		<div
 			data-tauri-drag-region
-			className="h-12 shrink-0 flex items-center justify-between px-3.5 border-b border-neutral-100 dark:border-neutral-800"
+			className={cn(
+				"h-12 shrink-0 flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800",
+				platform === "windows" ? "pl-3.5 pr-[150px]" : "px-3.5"
+			)}
 		>
-			<div>
+			<div className="z-[200]">
 				<div className="flex -space-x-1 overflow-hidden">
 					<User.Provider pubkey={account}>
 						<User.Root className="size-8 rounded-full inline-block ring-2 ring-white dark:ring-neutral-900">

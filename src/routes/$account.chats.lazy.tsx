@@ -57,7 +57,7 @@ function Header() {
 		<div
 			data-tauri-drag-region
 			className={cn(
-				"shrink-0 h-12 flex items-center justify-between",
+				"z-[200] shrink-0 h-12 flex items-center justify-between",
 				platform === "macos" ? "pl-[78px] pr-3.5" : "px-3.5",
 			)}
 		>

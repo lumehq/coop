@@ -3,98 +3,106 @@
 @tailwind utilities;
 
 @layer utilities {
-  .break-message {
-    word-break: break-word;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
+	.break-message {
+		word-break: break-word;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+	}
 }
 
 html {
-  font-size: 14px;
+	font-size: 14px;
 }
 
 a {
-  @apply cursor-default no-underline !important;
+	@apply cursor-default no-underline !important;
 }
 
 button {
-  @apply cursor-default focus:outline-none;
+	@apply cursor-default focus:outline-none;
 }
 
 input::-ms-reveal,
 input::-ms-clear {
-  display: none;
+	display: none;
 }
 
 ::-webkit-input-placeholder {
-  line-height: normal;
+	line-height: normal;
+}
+
+div[data-tauri-decorum-tb] {
+	@apply h-12 !important;
+}
+
+button.decorum-tb-btn {
+	@apply h-12 !important;
 }
 
 .spinner-leaf {
-  position: absolute;
-  top: 0;
-  left: calc(50% - 12.5% / 2);
-  width: 12.5%;
-  height: 100%;
-  animation: spinner-leaf-fade 800ms linear infinite;
+	position: absolute;
+	top: 0;
+	left: calc(50% - 12.5% / 2);
+	width: 12.5%;
+	height: 100%;
+	animation: spinner-leaf-fade 800ms linear infinite;
 
-  &::before {
-    content: "";
-    display: block;
-    width: 100%;
-    height: 30%;
-    background-color: currentColor;
-    @apply rounded;
-  }
+	&::before {
+		content: "";
+		display: block;
+		width: 100%;
+		height: 30%;
+		background-color: currentColor;
+		@apply rounded;
+	}
 
-  &:where(:nth-child(1)) {
-    transform: rotate(0deg);
-    animation-delay: -800ms;
-  }
+	&:where(:nth-child(1)) {
+		transform: rotate(0deg);
+		animation-delay: -800ms;
+	}
 
-  &:where(:nth-child(2)) {
-    transform: rotate(45deg);
-    animation-delay: -700ms;
-  }
+	&:where(:nth-child(2)) {
+		transform: rotate(45deg);
+		animation-delay: -700ms;
+	}
 
-  &:where(:nth-child(3)) {
-    transform: rotate(90deg);
-    animation-delay: -600ms;
-  }
+	&:where(:nth-child(3)) {
+		transform: rotate(90deg);
+		animation-delay: -600ms;
+	}
 
-  &:where(:nth-child(4)) {
-    transform: rotate(135deg);
-    animation-delay: -500ms;
-  }
+	&:where(:nth-child(4)) {
+		transform: rotate(135deg);
+		animation-delay: -500ms;
+	}
 
-  &:where(:nth-child(5)) {
-    transform: rotate(180deg);
-    animation-delay: -400ms;
-  }
+	&:where(:nth-child(5)) {
+		transform: rotate(180deg);
+		animation-delay: -400ms;
+	}
 
-  &:where(:nth-child(6)) {
-    transform: rotate(225deg);
-    animation-delay: -300ms;
-  }
+	&:where(:nth-child(6)) {
+		transform: rotate(225deg);
+		animation-delay: -300ms;
+	}
 
-  &:where(:nth-child(7)) {
-    transform: rotate(270deg);
-    animation-delay: -200ms;
-  }
+	&:where(:nth-child(7)) {
+		transform: rotate(270deg);
+		animation-delay: -200ms;
+	}
 
-  &:where(:nth-child(8)) {
-    transform: rotate(315deg);
-    animation-delay: -100ms;
-  }
+	&:where(:nth-child(8)) {
+		transform: rotate(315deg);
+		animation-delay: -100ms;
+	}
 }
 
 @keyframes spinner-leaf-fade {
-  from {
-    opacity: 1;
-  }
+	from {
+		opacity: 1;
+	}
 
-  to {
-    opacity: 0.25;
-  }
+	to {
+		opacity: 0.25;
+	}
 }

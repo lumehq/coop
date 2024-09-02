@@ -59,7 +59,7 @@ function Screen() {
 
 			if (res.status === "ok") {
 				navigate({
-					to: "/$account/chats",
+					to: "/$account/chats/new",
 					params: { account: res.data },
 					replace: true,
 				});

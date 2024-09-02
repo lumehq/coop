@@ -73,10 +73,6 @@ fn main() {
 			let handle = app.handle();
 			let main_window = app.get_webview_window("main").unwrap();
 
-			// Open devtools
-			#[cfg(debug_assertions)]
-			main_window.open_devtools();
-
 			// Set custom decoration
 			#[cfg(target_os = "windows")]
 			main_window.create_overlay_titlebar().unwrap();
@@ -85,7 +81,7 @@ fn main() {
 			#[cfg(target_os = "macos")]
 			main_window.set_traffic_lights_inset(12.0, 18.0).unwrap();
 
-			// Workaround for reset traffic light when window resized
+			// Workaround for reset traffic light when theme changed
 			#[cfg(target_os = "macos")]
 			let win_ = main_window.clone();
 			#[cfg(target_os = "macos")]
@@ -165,9 +161,8 @@ fn main() {
 
 			Ok(())
 		})
-		.enable_macos_default_menu(false)
+		.plugin(prevent_default())
 		.plugin(tauri_plugin_fs::init())
-		.plugin(tauri_plugin_prevent_default::init())
 		.plugin(tauri_plugin_process::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.plugin(tauri_plugin_os::init())
@@ -178,4 +173,18 @@ fn main() {
 		.plugin(tauri_plugin_shell::init())
 		.run(tauri::generate_context!())
 		.expect("error while running tauri application");
+}
+
+#[cfg(debug_assertions)]
+fn prevent_default() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+	use tauri_plugin_prevent_default::Flags;
+
+	tauri_plugin_prevent_default::Builder::new()
+		.with_flags(Flags::all().difference(Flags::CONTEXT_MENU))
+		.build()
+}
+
+#[cfg(not(debug_assertions))]
+fn prevent_default() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+	tauri_plugin_prevent_default::Builder::new().build()
 }
