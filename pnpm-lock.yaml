@@ -30,31 +30,31 @@ importers:
         specifier: ^1.48.1
         version: 1.48.1(react-dom@19.0.0-rc-d025ddd3-20240722(react@19.0.0-rc-d025ddd3-20240722))(react@19.0.0-rc-d025ddd3-20240722)
       '@tauri-apps/api':
-        specifier: 2.0.0-rc.1
+        specifier: ^2.0.0-rc.1
         version: 2.0.0-rc.1
       '@tauri-apps/plugin-clipboard-manager':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       '@tauri-apps/plugin-dialog':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       '@tauri-apps/plugin-fs':
-        specifier: 2.0.0-rc.1
+        specifier: ^2.0.0-rc.1
         version: 2.0.0-rc.1
       '@tauri-apps/plugin-notification':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       '@tauri-apps/plugin-os':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       '@tauri-apps/plugin-process':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       '@tauri-apps/plugin-shell':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       '@tauri-apps/plugin-updater':
-        specifier: 2.0.0-rc.0
+        specifier: ^2.0.0-rc.0
         version: 2.0.0-rc.0
       dayjs:
         specifier: ^1.11.12
@@ -88,7 +88,7 @@ importers:
         specifier: ^1.47.0
         version: 1.47.0(vite@5.4.1)
       '@tauri-apps/cli':
-        specifier: 2.0.0-rc.4
+        specifier: ^2.0.0-rc.4
         version: 2.0.0-rc.4
       '@types/react':
         specifier: npm:types-react@19.0.0-rc.1
