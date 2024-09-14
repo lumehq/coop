@@ -5,6 +5,7 @@ import { LRUCache } from "lru-cache";
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import "./global.css";
+// Import the generated commands
 import { commands } from "./commands";
 // Import the generated route tree
 import { routeTree } from "./routes.gen";

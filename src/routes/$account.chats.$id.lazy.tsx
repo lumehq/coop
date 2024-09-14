@@ -21,10 +21,6 @@ import {
 import { useEffect } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
 
-type ChatPayload = {
-	events: string[];
-};
-
 type EventPayload = {
 	event: string;
 	sender: string;
@@ -53,7 +49,7 @@ function Header() {
 			data-tauri-drag-region
 			className={cn(
 				"h-12 shrink-0 flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800",
-				platform === "windows" ? "pl-3.5 pr-[150px]" : "px-3.5"
+				platform === "windows" ? "pl-3.5 pr-[150px]" : "px-3.5",
 			)}
 		>
 			<div className="z-[200]">

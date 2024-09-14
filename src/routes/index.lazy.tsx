@@ -1,6 +1,6 @@
 import { commands } from "@/commands";
 import { npub } from "@/commons";
-import { Frame, User, Spinner } from "@/components";
+import { Frame, Spinner, User } from "@/components";
 import { ArrowRight, DotsThree, GearSix, Plus } from "@phosphor-icons/react";
 import { Link, createLazyFileRoute } from "@tanstack/react-router";
 import { Menu, MenuItem } from "@tauri-apps/api/menu";

@@ -14,6 +14,7 @@ use std::{
 	time::Duration,
 };
 use tauri::{async_runtime::Mutex, Manager};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_specta::{collect_commands, Builder};
 
@@ -70,10 +71,11 @@ fn main() {
 			builder.mount_events(app);
 
 			let handle = app.handle();
+			#[cfg(not(target_os = "linux"))]
 			let main_window = app.get_webview_window("main").unwrap();
 
 			// Set custom decoration
-			#[cfg(not(target_os = "macos"))]
+			#[cfg(target_os = "windows")]
 			main_window.create_overlay_titlebar().unwrap();
 
 			// Set traffic light inset

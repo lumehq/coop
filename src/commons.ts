@@ -151,7 +151,7 @@ export async function upload() {
 		"mov",
 	];
 
-	const selected = await open({
+	const selectedPath = await open({
 		multiple: false,
 		filters: [
 			{
@@ -162,10 +162,9 @@ export async function upload() {
 	});
 
 	// User cancelled action
-	if (!selected) return null;
+	if (!selectedPath) return null;
 
 	try {
-		const selectedPath = selected.path;
 		const file = await readFile(selectedPath);
 		const blob = new Blob([file]);
 
