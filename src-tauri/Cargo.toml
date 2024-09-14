@@ -14,7 +14,7 @@ tauri-build = { version = "2.0.0-rc", features = [] }
 
 [dependencies]
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
-	"sqlite",
+	"lmdb",
 ] }
 tauri = { version = "2.0.0-rc", features = [
 	"tray-icon",
@@ -32,13 +32,13 @@ tauri-plugin-updater = "2.0.0-rc"
 tauri-plugin-process = "2.0.0-rc"
 tauri-plugin-fs = "2.0.0-rc"
 tauri-plugin-notification = "2.0.0-rc"
-tauri-plugin-decorum = "1.0.0"
+tauri-plugin-decorum = "1.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = { version = "3", features = [
 	"apple-native",
 	"windows-native",
-	"sync-secret-service",
+	"linux-native",
 ] }
 keyring-search = "1.2.0"
 itertools = "0.13.0"

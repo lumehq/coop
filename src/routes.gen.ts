@@ -196,21 +196,140 @@ declare module '@tanstack/react-router' {
 
 // Create and export the route tree
 
-export const routeTree = rootRoute.addChildren({
-  IndexRoute,
-  BootstrapRelaysRoute,
-  NewLazyRoute,
-  ResetLazyRoute,
-  AccountContactsRoute,
-  AccountRelaysRoute,
-  AuthConnectRoute,
-  AuthImportRoute,
-  AuthNewRoute,
-  AccountChatsLazyRoute: AccountChatsLazyRoute.addChildren({
-    AccountChatsIdRoute,
-    AccountChatsNewLazyRoute,
-  }),
-})
+interface AccountChatsLazyRouteChildren {
+  AccountChatsIdRoute: typeof AccountChatsIdRoute
+  AccountChatsNewLazyRoute: typeof AccountChatsNewLazyRoute
+}
+
+const AccountChatsLazyRouteChildren: AccountChatsLazyRouteChildren = {
+  AccountChatsIdRoute: AccountChatsIdRoute,
+  AccountChatsNewLazyRoute: AccountChatsNewLazyRoute,
+}
+
+const AccountChatsLazyRouteWithChildren =
+  AccountChatsLazyRoute._addFileChildren(AccountChatsLazyRouteChildren)
+
+export interface FileRoutesByFullPath {
+  '/': typeof IndexRoute
+  '/bootstrap-relays': typeof BootstrapRelaysRoute
+  '/new': typeof NewLazyRoute
+  '/reset': typeof ResetLazyRoute
+  '/$account/contacts': typeof AccountContactsRoute
+  '/$account/relays': typeof AccountRelaysRoute
+  '/auth/connect': typeof AuthConnectRoute
+  '/auth/import': typeof AuthImportRoute
+  '/auth/new': typeof AuthNewRoute
+  '/$account/chats': typeof AccountChatsLazyRouteWithChildren
+  '/$account/chats/$id': typeof AccountChatsIdRoute
+  '/$account/chats/new': typeof AccountChatsNewLazyRoute
+}
+
+export interface FileRoutesByTo {
+  '/': typeof IndexRoute
+  '/bootstrap-relays': typeof BootstrapRelaysRoute
+  '/new': typeof NewLazyRoute
+  '/reset': typeof ResetLazyRoute
+  '/$account/contacts': typeof AccountContactsRoute
+  '/$account/relays': typeof AccountRelaysRoute
+  '/auth/connect': typeof AuthConnectRoute
+  '/auth/import': typeof AuthImportRoute
+  '/auth/new': typeof AuthNewRoute
+  '/$account/chats': typeof AccountChatsLazyRouteWithChildren
+  '/$account/chats/$id': typeof AccountChatsIdRoute
+  '/$account/chats/new': typeof AccountChatsNewLazyRoute
+}
+
+export interface FileRoutesById {
+  __root__: typeof rootRoute
+  '/': typeof IndexRoute
+  '/bootstrap-relays': typeof BootstrapRelaysRoute
+  '/new': typeof NewLazyRoute
+  '/reset': typeof ResetLazyRoute
+  '/$account/contacts': typeof AccountContactsRoute
+  '/$account/relays': typeof AccountRelaysRoute
+  '/auth/connect': typeof AuthConnectRoute
+  '/auth/import': typeof AuthImportRoute
+  '/auth/new': typeof AuthNewRoute
+  '/$account/chats': typeof AccountChatsLazyRouteWithChildren
+  '/$account/chats/$id': typeof AccountChatsIdRoute
+  '/$account/chats/new': typeof AccountChatsNewLazyRoute
+}
+
+export interface FileRouteTypes {
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | '/'
+    | '/bootstrap-relays'
+    | '/new'
+    | '/reset'
+    | '/$account/contacts'
+    | '/$account/relays'
+    | '/auth/connect'
+    | '/auth/import'
+    | '/auth/new'
+    | '/$account/chats'
+    | '/$account/chats/$id'
+    | '/$account/chats/new'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/bootstrap-relays'
+    | '/new'
+    | '/reset'
+    | '/$account/contacts'
+    | '/$account/relays'
+    | '/auth/connect'
+    | '/auth/import'
+    | '/auth/new'
+    | '/$account/chats'
+    | '/$account/chats/$id'
+    | '/$account/chats/new'
+  id:
+    | '__root__'
+    | '/'
+    | '/bootstrap-relays'
+    | '/new'
+    | '/reset'
+    | '/$account/contacts'
+    | '/$account/relays'
+    | '/auth/connect'
+    | '/auth/import'
+    | '/auth/new'
+    | '/$account/chats'
+    | '/$account/chats/$id'
+    | '/$account/chats/new'
+  fileRoutesById: FileRoutesById
+}
+
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  BootstrapRelaysRoute: typeof BootstrapRelaysRoute
+  NewLazyRoute: typeof NewLazyRoute
+  ResetLazyRoute: typeof ResetLazyRoute
+  AccountContactsRoute: typeof AccountContactsRoute
+  AccountRelaysRoute: typeof AccountRelaysRoute
+  AuthConnectRoute: typeof AuthConnectRoute
+  AuthImportRoute: typeof AuthImportRoute
+  AuthNewRoute: typeof AuthNewRoute
+  AccountChatsLazyRoute: typeof AccountChatsLazyRouteWithChildren
+}
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  BootstrapRelaysRoute: BootstrapRelaysRoute,
+  NewLazyRoute: NewLazyRoute,
+  ResetLazyRoute: ResetLazyRoute,
+  AccountContactsRoute: AccountContactsRoute,
+  AccountRelaysRoute: AccountRelaysRoute,
+  AuthConnectRoute: AuthConnectRoute,
+  AuthImportRoute: AuthImportRoute,
+  AuthNewRoute: AuthNewRoute,
+  AccountChatsLazyRoute: AccountChatsLazyRouteWithChildren,
+}
+
+export const routeTree = rootRoute
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
 
 /* prettier-ignore-end */
 

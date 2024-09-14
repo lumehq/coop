@@ -8,32 +8,6 @@ use tauri::{Manager, State};
 
 use crate::Nostr;
 
-async fn connect_nip65_relays(public_key: PublicKey, client: &Client) -> Vec<String> {
-	let filter = Filter::new().author(public_key).kind(Kind::RelayList).limit(1);
-	let mut relay_list: Vec<String> = Vec::new();
-
-	if let Ok(events) =
-		client.get_events_of(vec![filter], EventSource::relays(Some(Duration::from_secs(3)))).await
-	{
-		if let Some(event) = events.first() {
-			for (url, ..) in nip65::extract_relay_list(event) {
-				let _ = client.add_relay(url).await;
-				relay_list.push(url.to_string())
-			}
-		}
-	};
-
-	relay_list
-}
-
-async fn disconnect_nip65_relays(relays: Vec<String>, client: &Client) {
-	for relay in relays.iter() {
-		if let Err(e) = client.disconnect_relay(relay).await {
-			println!("Disconnect failed: {}", e)
-		}
-	}
-}
-
 #[tauri::command]
 #[specta::specta]
 pub fn get_bootstrap_relays(app: tauri::AppHandle) -> Result<Vec<String>, String> {
@@ -75,7 +49,7 @@ pub async fn collect_inbox_relays(
 		Ok(events) => {
 			if let Some(event) = events.into_iter().next() {
 				let urls = event
-					.tags()
+					.tags
 					.iter()
 					.filter_map(|tag| {
 						if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {

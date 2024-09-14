@@ -142,7 +142,7 @@ pub async fn connect_account(uri: String, state: State<'_, Nostr>) -> Result<Str
 		Ok(bunker_uri) => {
 			// Local user
 			let app_keys = Keys::generate();
-			let app_secret = app_keys.secret_key().to_string();
+			let app_secret = app_keys.secret_key().to_secret_hex();
 
 			// Get remote user
 			let remote_user = bunker_uri.signer_public_key().unwrap();
@@ -275,7 +275,7 @@ pub async fn login(
 	{
 		if let Some(event) = events.into_iter().next() {
 			let urls = event
-				.tags()
+				.tags
 				.iter()
 				.filter_map(|tag| {
 					if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {

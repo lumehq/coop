@@ -14,7 +14,6 @@ use std::{
 	time::Duration,
 };
 use tauri::{async_runtime::Mutex, Manager};
-#[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_specta::{collect_commands, Builder};
 
@@ -74,7 +73,7 @@ fn main() {
 			let main_window = app.get_webview_window("main").unwrap();
 
 			// Set custom decoration
-			#[cfg(target_os = "windows")]
+			#[cfg(not(target_os = "macos"))]
 			main_window.create_overlay_titlebar().unwrap();
 
 			// Set traffic light inset
@@ -97,11 +96,13 @@ fn main() {
 
 			let (client, bootstrap_relays) = tauri::async_runtime::block_on(async move {
 				// Create data folder if not exist
-				let dir = handle.path().app_config_dir().expect("App config directory not found.");
-				let _ = fs::create_dir_all(dir.clone());
+				let dir =
+					handle.path().app_config_dir().expect("Error: config directory not found.");
+				let _ = fs::create_dir_all(&dir);
 
 				// Setup database
-				let database = SQLiteDatabase::open(dir.join("nostr.db")).await.expect("Error.");
+				let database = NostrLMDB::open(dir.join("nostr-lmdb"))
+					.expect("Error: cannot create database.");
 
 				// Setup nostr client
 				let opts = Options::new()
@@ -131,7 +132,7 @@ fn main() {
 									} else {
 										RelayOptions::new().write(true).read(false)
 									};
-									let _ = client.add_relay_with_opts(relay, opts).await;
+									let _ = client.pool().add_relay(relay, opts).await;
 								}
 								Err(_) => {
 									println!("Connecting to relay...: {}", relay);
