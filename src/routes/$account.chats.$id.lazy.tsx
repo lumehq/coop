@@ -3,7 +3,7 @@ import { cn, getReceivers, groupEventByDate, time, upload } from "@/commons";
 import { Spinner } from "@/components/spinner";
 import { User } from "@/components/user";
 import { CoopIcon } from "@/icons/coop";
-import { ArrowUp, Paperclip } from "@phosphor-icons/react";
+import { ArrowUp, Paperclip, X } from "@phosphor-icons/react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createLazyFileRoute } from "@tanstack/react-router";
@@ -257,16 +257,25 @@ function Form() {
 	const inboxRelays = Route.useLoaderData();
 
 	const [newMessage, setNewMessage] = useState("");
+	const [attaches, setAttaches] = useState<string[]>([]);
 	const [isPending, startTransition] = useTransition();
+
+	const remove = (item: string) => {
+		setAttaches((prev) => prev.filter((att) => att !== item));
+	};
 
 	const submit = () => {
 		startTransition(async () => {
 			if (!newMessage.length) return;
 
-			const res = await commands.sendMessage(id, newMessage);
+			const content = `${newMessage}\r\n${attaches.join("\r\n")}`;
+			const res = await commands.sendMessage(id, content);
 
 			if (res.status === "error") {
-				await message(res.error, { title: "Coop", kind: "error" });
+				await message(res.error, {
+					title: "Send mesaage failed",
+					kind: "error",
+				});
 				return;
 			}
 
@@ -275,34 +284,59 @@ function Form() {
 	};
 
 	return (
-		<div className="h-12 shrink-0 flex items-center justify-center px-3.5">
+		<div className="shrink-0 flex items-center justify-center px-3.5">
 			{!inboxRelays.length ? (
 				<div className="text-xs">
 					This user doesn't have inbox relays. You cannot send messages to them.
 				</div>
 			) : (
-				<div className="flex-1 flex items-center gap-2">
-					<div className="inline-flex gap-1">
-						<AttachMedia callback={setNewMessage} />
+				<div className="flex-1 flex flex-col justify-end">
+					{attaches?.length ? (
+						<div className="flex items-center gap-2">
+							{attaches.map((item, index) => (
+								<button
+									type="button"
+									key={item}
+									onClick={() => remove(item)}
+									className="relative"
+								>
+									<img
+										src={item}
+										alt={`File ${index}`}
+										className="aspect-square w-16 object-cover rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-black/50"
+										loading="lazy"
+										decoding="async"
+									/>
+									<span className="absolute -top-2 -right-2 size-4 flex items-center justify-center bg-neutral-100 dark:bg-neutral-900 rounded-full border border-neutral-200 dark:border-neutral-800">
+										<X className="size-2" />
+									</span>
+								</button>
+							))}
+						</div>
+					) : null}
+					<div className="h-12 w-full flex items-center gap-2">
+						<div className="inline-flex gap-1">
+							<AttachMedia onUpload={setAttaches} />
+						</div>
+						<input
+							placeholder="Message..."
+							value={newMessage}
+							onChange={(e) => setNewMessage(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") submit();
+							}}
+							className="flex-1 h-9 rounded-full px-3.5 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:outline-none focus:border-blue-500 placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
+						/>
+						<button
+							type="button"
+							title="Send message"
+							disabled={isPending}
+							onClick={() => submit()}
+							className="rounded-full size-9 inline-flex items-center justify-center bg-blue-300 hover:bg-blue-500 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
+						>
+							{isPending ? <Spinner /> : <ArrowUp className="size-5" />}
+						</button>
 					</div>
-					<input
-						placeholder="Message..."
-						value={newMessage}
-						onChange={(e) => setNewMessage(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter") submit();
-						}}
-						className="flex-1 h-9 rounded-full px-3.5 bg-transparent border border-neutral-200 dark:border-neutral-800 focus:outline-none focus:border-blue-500 placeholder:text-neutral-400 dark:placeholder:text-neutral-600"
-					/>
-					<button
-						type="button"
-						title="Send message"
-						disabled={isPending}
-						onClick={() => submit()}
-						className="rounded-full size-9 inline-flex items-center justify-center bg-blue-300 hover:bg-blue-500 dark:bg-blue-700 dark:hover:bg-blue-800 text-white"
-					>
-						{isPending ? <Spinner /> : <ArrowUp className="size-5" />}
-					</button>
 				</div>
 			)}
 		</div>
@@ -310,8 +344,8 @@ function Form() {
 }
 
 function AttachMedia({
-	callback,
-}: { callback: Dispatch<SetStateAction<string>> }) {
+	onUpload,
+}: { onUpload: Dispatch<SetStateAction<string[]>> }) {
 	const [isPending, startTransition] = useTransition();
 
 	const attach = () => {
@@ -319,7 +353,7 @@ function AttachMedia({
 			const file = await upload();
 
 			if (file) {
-				callback((prev) => `${prev} ${file}`);
+				onUpload((prev) => [...prev, file]);
 			} else {
 				return;
 			}
