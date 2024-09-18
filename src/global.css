@@ -15,7 +15,7 @@ html {
 }
 
 a {
-	@apply cursor-default no-underline !important;
+	@apply cursor-default !important;
 }
 
 button {
