@@ -13,23 +13,34 @@ import { createFileRoute } from '@tanstack/react-router'
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as InboxRelaysImport } from './routes/inbox-relays'
 import { Route as BootstrapRelaysImport } from './routes/bootstrap-relays'
 import { Route as IndexImport } from './routes/index'
 import { Route as AuthNewImport } from './routes/auth/new'
 import { Route as AuthImportImport } from './routes/auth/import'
 import { Route as AuthConnectImport } from './routes/auth/connect'
-import { Route as AccountRelaysImport } from './routes/$account.relays'
-import { Route as AccountContactsImport } from './routes/$account.contacts'
-import { Route as AccountChatsIdImport } from './routes/$account.chats.$id'
+import { Route as AccountLayoutImport } from './routes/$account/_layout'
+import { Route as AccountLayoutContactsImport } from './routes/$account/_layout/contacts'
+import { Route as AccountLayoutChatsIdImport } from './routes/$account/_layout/chats.$id'
 
 // Create Virtual Routes
 
+const AccountImport = createFileRoute('/$account')()
 const ResetLazyImport = createFileRoute('/reset')()
 const NewLazyImport = createFileRoute('/new')()
-const AccountChatsLazyImport = createFileRoute('/$account/chats')()
-const AccountChatsNewLazyImport = createFileRoute('/$account/chats/new')()
+const AccountLayoutChatsLazyImport = createFileRoute(
+  '/$account/_layout/chats',
+)()
+const AccountLayoutChatsNewLazyImport = createFileRoute(
+  '/$account/_layout/chats/new',
+)()
 
 // Create/Update Routes
+
+const AccountRoute = AccountImport.update({
+  path: '/$account',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const ResetLazyRoute = ResetLazyImport.update({
   path: '/reset',
@@ -40,6 +51,11 @@ const NewLazyRoute = NewLazyImport.update({
   path: '/new',
   getParentRoute: () => rootRoute,
 } as any).lazy(() => import('./routes/new.lazy').then((d) => d.Route))
+
+const InboxRelaysRoute = InboxRelaysImport.update({
+  path: '/inbox-relays',
+  getParentRoute: () => rootRoute,
+} as any).lazy(() => import('./routes/inbox-relays.lazy').then((d) => d.Route))
 
 const BootstrapRelaysRoute = BootstrapRelaysImport.update({
   path: '/bootstrap-relays',
@@ -52,13 +68,6 @@ const IndexRoute = IndexImport.update({
   path: '/',
   getParentRoute: () => rootRoute,
 } as any).lazy(() => import('./routes/index.lazy').then((d) => d.Route))
-
-const AccountChatsLazyRoute = AccountChatsLazyImport.update({
-  path: '/$account/chats',
-  getParentRoute: () => rootRoute,
-} as any).lazy(() =>
-  import('./routes/$account.chats.lazy').then((d) => d.Route),
-)
 
 const AuthNewRoute = AuthNewImport.update({
   path: '/auth/new',
@@ -75,32 +84,37 @@ const AuthConnectRoute = AuthConnectImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const AccountRelaysRoute = AccountRelaysImport.update({
-  path: '/$account/relays',
-  getParentRoute: () => rootRoute,
+const AccountLayoutRoute = AccountLayoutImport.update({
+  id: '/_layout',
+  getParentRoute: () => AccountRoute,
+} as any)
+
+const AccountLayoutChatsLazyRoute = AccountLayoutChatsLazyImport.update({
+  path: '/chats',
+  getParentRoute: () => AccountLayoutRoute,
 } as any).lazy(() =>
-  import('./routes/$account.relays.lazy').then((d) => d.Route),
+  import('./routes/$account/_layout/chats.lazy').then((d) => d.Route),
 )
 
-const AccountContactsRoute = AccountContactsImport.update({
-  path: '/$account/contacts',
-  getParentRoute: () => rootRoute,
+const AccountLayoutContactsRoute = AccountLayoutContactsImport.update({
+  path: '/contacts',
+  getParentRoute: () => AccountLayoutRoute,
 } as any).lazy(() =>
-  import('./routes/$account.contacts.lazy').then((d) => d.Route),
+  import('./routes/$account/_layout/contacts.lazy').then((d) => d.Route),
 )
 
-const AccountChatsNewLazyRoute = AccountChatsNewLazyImport.update({
+const AccountLayoutChatsNewLazyRoute = AccountLayoutChatsNewLazyImport.update({
   path: '/new',
-  getParentRoute: () => AccountChatsLazyRoute,
+  getParentRoute: () => AccountLayoutChatsLazyRoute,
 } as any).lazy(() =>
-  import('./routes/$account.chats.new.lazy').then((d) => d.Route),
+  import('./routes/$account/_layout/chats.new.lazy').then((d) => d.Route),
 )
 
-const AccountChatsIdRoute = AccountChatsIdImport.update({
+const AccountLayoutChatsIdRoute = AccountLayoutChatsIdImport.update({
   path: '/$id',
-  getParentRoute: () => AccountChatsLazyRoute,
+  getParentRoute: () => AccountLayoutChatsLazyRoute,
 } as any).lazy(() =>
-  import('./routes/$account.chats.$id.lazy').then((d) => d.Route),
+  import('./routes/$account/_layout/chats.$id.lazy').then((d) => d.Route),
 )
 
 // Populate the FileRoutesByPath interface
@@ -121,6 +135,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BootstrapRelaysImport
       parentRoute: typeof rootRoute
     }
+    '/inbox-relays': {
+      id: '/inbox-relays'
+      path: '/inbox-relays'
+      fullPath: '/inbox-relays'
+      preLoaderRoute: typeof InboxRelaysImport
+      parentRoute: typeof rootRoute
+    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -135,19 +156,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetLazyImport
       parentRoute: typeof rootRoute
     }
-    '/$account/contacts': {
-      id: '/$account/contacts'
-      path: '/$account/contacts'
-      fullPath: '/$account/contacts'
-      preLoaderRoute: typeof AccountContactsImport
+    '/$account': {
+      id: '/$account'
+      path: '/$account'
+      fullPath: '/$account'
+      preLoaderRoute: typeof AccountImport
       parentRoute: typeof rootRoute
     }
-    '/$account/relays': {
-      id: '/$account/relays'
-      path: '/$account/relays'
-      fullPath: '/$account/relays'
-      preLoaderRoute: typeof AccountRelaysImport
-      parentRoute: typeof rootRoute
+    '/$account/_layout': {
+      id: '/$account/_layout'
+      path: '/$account'
+      fullPath: '/$account'
+      preLoaderRoute: typeof AccountLayoutImport
+      parentRoute: typeof AccountRoute
     }
     '/auth/connect': {
       id: '/auth/connect'
@@ -170,89 +191,128 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthNewImport
       parentRoute: typeof rootRoute
     }
-    '/$account/chats': {
-      id: '/$account/chats'
-      path: '/$account/chats'
-      fullPath: '/$account/chats'
-      preLoaderRoute: typeof AccountChatsLazyImport
-      parentRoute: typeof rootRoute
+    '/$account/_layout/contacts': {
+      id: '/$account/_layout/contacts'
+      path: '/contacts'
+      fullPath: '/$account/contacts'
+      preLoaderRoute: typeof AccountLayoutContactsImport
+      parentRoute: typeof AccountLayoutImport
     }
-    '/$account/chats/$id': {
-      id: '/$account/chats/$id'
+    '/$account/_layout/chats': {
+      id: '/$account/_layout/chats'
+      path: '/chats'
+      fullPath: '/$account/chats'
+      preLoaderRoute: typeof AccountLayoutChatsLazyImport
+      parentRoute: typeof AccountLayoutImport
+    }
+    '/$account/_layout/chats/$id': {
+      id: '/$account/_layout/chats/$id'
       path: '/$id'
       fullPath: '/$account/chats/$id'
-      preLoaderRoute: typeof AccountChatsIdImport
-      parentRoute: typeof AccountChatsLazyImport
+      preLoaderRoute: typeof AccountLayoutChatsIdImport
+      parentRoute: typeof AccountLayoutChatsLazyImport
     }
-    '/$account/chats/new': {
-      id: '/$account/chats/new'
+    '/$account/_layout/chats/new': {
+      id: '/$account/_layout/chats/new'
       path: '/new'
       fullPath: '/$account/chats/new'
-      preLoaderRoute: typeof AccountChatsNewLazyImport
-      parentRoute: typeof AccountChatsLazyImport
+      preLoaderRoute: typeof AccountLayoutChatsNewLazyImport
+      parentRoute: typeof AccountLayoutChatsLazyImport
     }
   }
 }
 
 // Create and export the route tree
 
-interface AccountChatsLazyRouteChildren {
-  AccountChatsIdRoute: typeof AccountChatsIdRoute
-  AccountChatsNewLazyRoute: typeof AccountChatsNewLazyRoute
+interface AccountLayoutChatsLazyRouteChildren {
+  AccountLayoutChatsIdRoute: typeof AccountLayoutChatsIdRoute
+  AccountLayoutChatsNewLazyRoute: typeof AccountLayoutChatsNewLazyRoute
 }
 
-const AccountChatsLazyRouteChildren: AccountChatsLazyRouteChildren = {
-  AccountChatsIdRoute: AccountChatsIdRoute,
-  AccountChatsNewLazyRoute: AccountChatsNewLazyRoute,
+const AccountLayoutChatsLazyRouteChildren: AccountLayoutChatsLazyRouteChildren =
+  {
+    AccountLayoutChatsIdRoute: AccountLayoutChatsIdRoute,
+    AccountLayoutChatsNewLazyRoute: AccountLayoutChatsNewLazyRoute,
+  }
+
+const AccountLayoutChatsLazyRouteWithChildren =
+  AccountLayoutChatsLazyRoute._addFileChildren(
+    AccountLayoutChatsLazyRouteChildren,
+  )
+
+interface AccountLayoutRouteChildren {
+  AccountLayoutContactsRoute: typeof AccountLayoutContactsRoute
+  AccountLayoutChatsLazyRoute: typeof AccountLayoutChatsLazyRouteWithChildren
 }
 
-const AccountChatsLazyRouteWithChildren =
-  AccountChatsLazyRoute._addFileChildren(AccountChatsLazyRouteChildren)
+const AccountLayoutRouteChildren: AccountLayoutRouteChildren = {
+  AccountLayoutContactsRoute: AccountLayoutContactsRoute,
+  AccountLayoutChatsLazyRoute: AccountLayoutChatsLazyRouteWithChildren,
+}
+
+const AccountLayoutRouteWithChildren = AccountLayoutRoute._addFileChildren(
+  AccountLayoutRouteChildren,
+)
+
+interface AccountRouteChildren {
+  AccountLayoutRoute: typeof AccountLayoutRouteWithChildren
+}
+
+const AccountRouteChildren: AccountRouteChildren = {
+  AccountLayoutRoute: AccountLayoutRouteWithChildren,
+}
+
+const AccountRouteWithChildren =
+  AccountRoute._addFileChildren(AccountRouteChildren)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/bootstrap-relays': typeof BootstrapRelaysRoute
+  '/inbox-relays': typeof InboxRelaysRoute
   '/new': typeof NewLazyRoute
   '/reset': typeof ResetLazyRoute
-  '/$account/contacts': typeof AccountContactsRoute
-  '/$account/relays': typeof AccountRelaysRoute
+  '/$account': typeof AccountLayoutRouteWithChildren
   '/auth/connect': typeof AuthConnectRoute
   '/auth/import': typeof AuthImportRoute
   '/auth/new': typeof AuthNewRoute
-  '/$account/chats': typeof AccountChatsLazyRouteWithChildren
-  '/$account/chats/$id': typeof AccountChatsIdRoute
-  '/$account/chats/new': typeof AccountChatsNewLazyRoute
+  '/$account/contacts': typeof AccountLayoutContactsRoute
+  '/$account/chats': typeof AccountLayoutChatsLazyRouteWithChildren
+  '/$account/chats/$id': typeof AccountLayoutChatsIdRoute
+  '/$account/chats/new': typeof AccountLayoutChatsNewLazyRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/bootstrap-relays': typeof BootstrapRelaysRoute
+  '/inbox-relays': typeof InboxRelaysRoute
   '/new': typeof NewLazyRoute
   '/reset': typeof ResetLazyRoute
-  '/$account/contacts': typeof AccountContactsRoute
-  '/$account/relays': typeof AccountRelaysRoute
+  '/$account': typeof AccountLayoutRouteWithChildren
   '/auth/connect': typeof AuthConnectRoute
   '/auth/import': typeof AuthImportRoute
   '/auth/new': typeof AuthNewRoute
-  '/$account/chats': typeof AccountChatsLazyRouteWithChildren
-  '/$account/chats/$id': typeof AccountChatsIdRoute
-  '/$account/chats/new': typeof AccountChatsNewLazyRoute
+  '/$account/contacts': typeof AccountLayoutContactsRoute
+  '/$account/chats': typeof AccountLayoutChatsLazyRouteWithChildren
+  '/$account/chats/$id': typeof AccountLayoutChatsIdRoute
+  '/$account/chats/new': typeof AccountLayoutChatsNewLazyRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/bootstrap-relays': typeof BootstrapRelaysRoute
+  '/inbox-relays': typeof InboxRelaysRoute
   '/new': typeof NewLazyRoute
   '/reset': typeof ResetLazyRoute
-  '/$account/contacts': typeof AccountContactsRoute
-  '/$account/relays': typeof AccountRelaysRoute
+  '/$account': typeof AccountRouteWithChildren
+  '/$account/_layout': typeof AccountLayoutRouteWithChildren
   '/auth/connect': typeof AuthConnectRoute
   '/auth/import': typeof AuthImportRoute
   '/auth/new': typeof AuthNewRoute
-  '/$account/chats': typeof AccountChatsLazyRouteWithChildren
-  '/$account/chats/$id': typeof AccountChatsIdRoute
-  '/$account/chats/new': typeof AccountChatsNewLazyRoute
+  '/$account/_layout/contacts': typeof AccountLayoutContactsRoute
+  '/$account/_layout/chats': typeof AccountLayoutChatsLazyRouteWithChildren
+  '/$account/_layout/chats/$id': typeof AccountLayoutChatsIdRoute
+  '/$account/_layout/chats/new': typeof AccountLayoutChatsNewLazyRoute
 }
 
 export interface FileRouteTypes {
@@ -260,13 +320,14 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/bootstrap-relays'
+    | '/inbox-relays'
     | '/new'
     | '/reset'
-    | '/$account/contacts'
-    | '/$account/relays'
+    | '/$account'
     | '/auth/connect'
     | '/auth/import'
     | '/auth/new'
+    | '/$account/contacts'
     | '/$account/chats'
     | '/$account/chats/$id'
     | '/$account/chats/new'
@@ -274,13 +335,14 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/bootstrap-relays'
+    | '/inbox-relays'
     | '/new'
     | '/reset'
-    | '/$account/contacts'
-    | '/$account/relays'
+    | '/$account'
     | '/auth/connect'
     | '/auth/import'
     | '/auth/new'
+    | '/$account/contacts'
     | '/$account/chats'
     | '/$account/chats/$id'
     | '/$account/chats/new'
@@ -288,43 +350,43 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/bootstrap-relays'
+    | '/inbox-relays'
     | '/new'
     | '/reset'
-    | '/$account/contacts'
-    | '/$account/relays'
+    | '/$account'
+    | '/$account/_layout'
     | '/auth/connect'
     | '/auth/import'
     | '/auth/new'
-    | '/$account/chats'
-    | '/$account/chats/$id'
-    | '/$account/chats/new'
+    | '/$account/_layout/contacts'
+    | '/$account/_layout/chats'
+    | '/$account/_layout/chats/$id'
+    | '/$account/_layout/chats/new'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BootstrapRelaysRoute: typeof BootstrapRelaysRoute
+  InboxRelaysRoute: typeof InboxRelaysRoute
   NewLazyRoute: typeof NewLazyRoute
   ResetLazyRoute: typeof ResetLazyRoute
-  AccountContactsRoute: typeof AccountContactsRoute
-  AccountRelaysRoute: typeof AccountRelaysRoute
+  AccountRoute: typeof AccountRouteWithChildren
   AuthConnectRoute: typeof AuthConnectRoute
   AuthImportRoute: typeof AuthImportRoute
   AuthNewRoute: typeof AuthNewRoute
-  AccountChatsLazyRoute: typeof AccountChatsLazyRouteWithChildren
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BootstrapRelaysRoute: BootstrapRelaysRoute,
+  InboxRelaysRoute: InboxRelaysRoute,
   NewLazyRoute: NewLazyRoute,
   ResetLazyRoute: ResetLazyRoute,
-  AccountContactsRoute: AccountContactsRoute,
-  AccountRelaysRoute: AccountRelaysRoute,
+  AccountRoute: AccountRouteWithChildren,
   AuthConnectRoute: AuthConnectRoute,
   AuthImportRoute: AuthImportRoute,
   AuthNewRoute: AuthNewRoute,
-  AccountChatsLazyRoute: AccountChatsLazyRouteWithChildren,
 }
 
 export const routeTree = rootRoute
@@ -341,14 +403,13 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/bootstrap-relays",
+        "/inbox-relays",
         "/new",
         "/reset",
-        "/$account/contacts",
-        "/$account/relays",
+        "/$account",
         "/auth/connect",
         "/auth/import",
-        "/auth/new",
-        "/$account/chats"
+        "/auth/new"
       ]
     },
     "/": {
@@ -357,17 +418,28 @@ export const routeTree = rootRoute
     "/bootstrap-relays": {
       "filePath": "bootstrap-relays.tsx"
     },
+    "/inbox-relays": {
+      "filePath": "inbox-relays.tsx"
+    },
     "/new": {
       "filePath": "new.lazy.tsx"
     },
     "/reset": {
       "filePath": "reset.lazy.tsx"
     },
-    "/$account/contacts": {
-      "filePath": "$account.contacts.tsx"
+    "/$account": {
+      "filePath": "$account",
+      "children": [
+        "/$account/_layout"
+      ]
     },
-    "/$account/relays": {
-      "filePath": "$account.relays.tsx"
+    "/$account/_layout": {
+      "filePath": "$account/_layout.tsx",
+      "parent": "/$account",
+      "children": [
+        "/$account/_layout/contacts",
+        "/$account/_layout/chats"
+      ]
     },
     "/auth/connect": {
       "filePath": "auth/connect.tsx"
@@ -378,20 +450,25 @@ export const routeTree = rootRoute
     "/auth/new": {
       "filePath": "auth/new.tsx"
     },
-    "/$account/chats": {
-      "filePath": "$account.chats.lazy.tsx",
+    "/$account/_layout/contacts": {
+      "filePath": "$account/_layout/contacts.tsx",
+      "parent": "/$account/_layout"
+    },
+    "/$account/_layout/chats": {
+      "filePath": "$account/_layout/chats.lazy.tsx",
+      "parent": "/$account/_layout",
       "children": [
-        "/$account/chats/$id",
-        "/$account/chats/new"
+        "/$account/_layout/chats/$id",
+        "/$account/_layout/chats/new"
       ]
     },
-    "/$account/chats/$id": {
-      "filePath": "$account.chats.$id.tsx",
-      "parent": "/$account/chats"
+    "/$account/_layout/chats/$id": {
+      "filePath": "$account/_layout/chats.$id.tsx",
+      "parent": "/$account/_layout/chats"
     },
-    "/$account/chats/new": {
-      "filePath": "$account.chats.new.lazy.tsx",
-      "parent": "/$account/chats"
+    "/$account/_layout/chats/new": {
+      "filePath": "$account/_layout/chats.new.lazy.tsx",
+      "parent": "/$account/_layout/chats"
     }
   }
 }

@@ -17,7 +17,7 @@ export const Route = createFileRoute("/")({
 			});
 		}
 
-		// Workaround for keyring bug on Windows
+		// Workaround for keyring bug on Windows and Linux
 		const fil = accounts.filter((item) => !item.includes("Coop"));
 
 		return { accounts: fil };

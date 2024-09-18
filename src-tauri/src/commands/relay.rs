@@ -36,7 +36,7 @@ pub fn set_bootstrap_relays(relays: String, app: tauri::AppHandle) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
-pub async fn collect_inbox_relays(
+pub async fn get_inbox_relays(
 	user_id: String,
 	state: State<'_, Nostr>,
 ) -> Result<Vec<String>, String> {
@@ -66,6 +66,27 @@ pub async fn collect_inbox_relays(
 			}
 		}
 		Err(e) => Err(e.to_string()),
+	}
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn ensure_inbox_relays(
+	user_id: String,
+	state: State<'_, Nostr>,
+) -> Result<Vec<String>, String> {
+	let public_key = PublicKey::parse(user_id).map_err(|e| e.to_string())?;
+	let relays = state.inbox_relays.lock().await;
+
+	match relays.get(&public_key) {
+		Some(relays) => {
+			if relays.is_empty() {
+				Err("404".into())
+			} else {
+				Ok(relays.to_owned())
+			}
+		}
+		None => Err("404".into()),
 	}
 }
 

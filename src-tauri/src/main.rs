@@ -35,8 +35,9 @@ fn main() {
 	let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
 		get_bootstrap_relays,
 		set_bootstrap_relays,
-		collect_inbox_relays,
+		get_inbox_relays,
 		set_inbox_relays,
+		ensure_inbox_relays,
 		connect_inbox_relays,
 		disconnect_inbox_relays,
 		login,

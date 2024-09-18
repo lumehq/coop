@@ -2,28 +2,47 @@ import { commands } from "@/commands";
 import { Frame } from "@/components/frame";
 import { Spinner } from "@/components/spinner";
 import { Plus, X } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { createLazyFileRoute } from "@tanstack/react-router";
 import { message } from "@tauri-apps/plugin-dialog";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
-export const Route = createLazyFileRoute("/$account/relays")({
+export const Route = createLazyFileRoute("/inbox-relays")({
 	component: Screen,
 });
 
 function Screen() {
-	const navigate = Route.useNavigate();
-	const inboxRelays = Route.useLoaderData();
-	const { account } = Route.useParams();
+	const { account, redirect } = Route.useSearch();
+	const { queryClient } = Route.useRouteContext();
+	const {
+		data: relays,
+		error,
+		isError,
+		isLoading,
+	} = useQuery({
+		queryKey: ["relays", account],
+		queryFn: async () => {
+			const res = await commands.getInboxRelays(account);
+
+			if (res.status === "ok") {
+				return res.data;
+			} else {
+				throw new Error(res.error);
+			}
+		},
+		refetchOnWindowFocus: false,
+	});
 
 	const [newRelay, setNewRelay] = useState("");
-	const [relays, setRelays] = useState<string[]>([]);
 	const [isPending, startTransition] = useTransition();
+
+	const navigate = Route.useNavigate();
 
 	const add = () => {
 		try {
 			let url = newRelay;
 
-			if (relays.length >= 3) {
+			if (relays?.length >= 3) {
 				return message("You should keep relay lists small (1 - 3 relays).", {
 					kind: "info",
 				});
@@ -37,7 +56,10 @@ function Screen() {
 			const relay = new URL(url);
 
 			// Update
-			setRelays((prev) => [...prev, relay.toString()]);
+			queryClient.setQueryData(["relays", account], (prev: string[]) => [
+				...prev,
+				relay.toString(),
+			]);
 			setNewRelay("");
 		} catch {
 			message("URL is not valid.", { kind: "error" });
@@ -45,12 +67,14 @@ function Screen() {
 	};
 
 	const remove = (relay: string) => {
-		setRelays((prev) => prev.filter((item) => item !== relay));
+		queryClient.setQueryData(["relays", account], (prev: string[]) =>
+			prev.filter((item) => item !== relay),
+		);
 	};
 
 	const submit = () => {
 		startTransition(async () => {
-			if (!relays.length) {
+			if (!relays?.length) {
 				await message("You need to add at least 1 relay", { kind: "info" });
 				return;
 			}
@@ -59,8 +83,7 @@ function Screen() {
 
 			if (res.status === "ok") {
 				navigate({
-					to: "/",
-					params: { account },
+					to: redirect,
 					replace: true,
 				});
 			} else {
@@ -73,9 +96,21 @@ function Screen() {
 		});
 	};
 
-	useEffect(() => {
-		setRelays(inboxRelays);
-	}, [inboxRelays]);
+	if (isLoading) {
+		return (
+			<div className="size-full flex items-center justify-center">
+				<Spinner />
+			</div>
+		);
+	}
+
+	if (isError) {
+		return (
+			<div className="size-full flex items-center justify-center">
+				<p className="text-sm">{error.message}</p>
+			</div>
+		);
+	}
 
 	return (
 		<div className="size-full flex items-center justify-center">
@@ -151,7 +186,7 @@ function Screen() {
 						<button
 							type="button"
 							onClick={() => submit()}
-							disabled={isPending || !relays.length}
+							disabled={isPending || !relays?.length}
 							className="inline-flex items-center justify-center w-full h-9 text-sm font-semibold text-white bg-blue-500 rounded-lg shrink-0 hover:bg-blue-600 disabled:opacity-50"
 						>
 							{isPending ? <Spinner /> : "Continue"}
