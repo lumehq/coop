@@ -112,6 +112,14 @@ async resetPassword(key: string, password: string) : Promise<Result<null, string
 async getAccounts() : Promise<string[]> {
     return await TAURI_INVOKE("get_accounts");
 },
+async getCurrentAccount() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_current_account") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMetadata(userId: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_metadata", { userId }) };

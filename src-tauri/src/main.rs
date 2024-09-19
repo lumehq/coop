@@ -3,12 +3,12 @@
 
 #[cfg(target_os = "macos")]
 use border::WebviewWindowExt as WebviewWindowExtAlt;
+use commands::tray::setup_tray_icon;
 use nostr_sdk::prelude::*;
 use specta_typescript::Typescript;
-use std::env;
 use std::{
 	collections::HashMap,
-	fs,
+	env, fs,
 	io::{self, BufRead},
 	str::FromStr,
 	time::Duration,
@@ -47,6 +47,7 @@ fn main() {
 		delete_account,
 		reset_password,
 		get_accounts,
+		get_current_account,
 		get_metadata,
 		get_contact_list,
 		get_chats,
@@ -72,6 +73,8 @@ fn main() {
 			builder.mount_events(app);
 
 			let handle = app.handle();
+			let _ = setup_tray_icon(handle);
+
 			#[cfg(not(target_os = "linux"))]
 			let main_window = app.get_webview_window("main").unwrap();
 
@@ -129,7 +132,6 @@ fn main() {
 						if let Some((relay, option)) = line.split_once(',') {
 							match RelayMetadata::from_str(option) {
 								Ok(meta) => {
-									println!("Connecting to relay...: {} - {}", relay, meta);
 									let opts = if meta == RelayMetadata::Read {
 										RelayOptions::new().read(true).write(false)
 									} else {
@@ -138,7 +140,6 @@ fn main() {
 									let _ = client.pool().add_relay(relay, opts).await;
 								}
 								Err(_) => {
-									println!("Connecting to relay...: {}", relay);
 									let _ = client.add_relay(relay).await;
 								}
 							}
@@ -175,8 +176,13 @@ fn main() {
 		.plugin(tauri_plugin_decorum::init())
 		.plugin(tauri_plugin_notification::init())
 		.plugin(tauri_plugin_shell::init())
-		.run(tauri::generate_context!())
-		.expect("error while running tauri application");
+		.build(tauri::generate_context!())
+		.expect("error while running tauri application")
+		.run(|_app_handle, event| {
+			if let tauri::RunEvent::ExitRequested { api, .. } = event {
+				api.prevent_exit();
+			}
+		});
 }
 
 #[cfg(debug_assertions)]

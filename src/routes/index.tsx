@@ -7,6 +7,19 @@ export const Route = createFileRoute("/")({
 		// Check for app updates
 		await checkForAppUpdates(true);
 
+		// Get current account
+		const checkAccount = await commands.getCurrentAccount();
+
+		if (checkAccount.status === "ok") {
+			const currentAccount = checkAccount.data;
+
+			throw redirect({
+				to: "/$account/chats/new",
+				params: { account: currentAccount },
+				replace: true,
+			});
+		}
+
 		// Get all accounts from system
 		const accounts = await commands.getAccounts();
 

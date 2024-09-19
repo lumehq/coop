@@ -15,6 +15,12 @@ pub struct EventPayload {
 	sender: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+struct Account {
+	password: String,
+	nostr_connect: Option<String>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn get_metadata(user_id: String, state: State<'_, Nostr>) -> Result<String, String> {
@@ -37,12 +43,6 @@ pub async fn get_metadata(user_id: String, state: State<'_, Nostr>) -> Result<St
 	}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-struct Account {
-	password: String,
-	nostr_connect: Option<String>,
-}
-
 #[tauri::command]
 #[specta::specta]
 pub fn get_accounts() -> Vec<String> {
@@ -53,6 +53,17 @@ pub fn get_accounts() -> Vec<String> {
 		list.split_whitespace().filter(|v| v.starts_with("npub1")).map(String::from).collect();
 
 	accounts.into_iter().collect()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_current_account(state: State<'_, Nostr>) -> Result<String, String> {
+	let client = &state.client;
+	let signer = client.signer().await.map_err(|e| e.to_string())?;
+	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
+	let bech32 = public_key.to_bech32().map_err(|e| e.to_string())?;
+
+	Ok(bech32)
 }
 
 #[tauri::command]

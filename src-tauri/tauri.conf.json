@@ -1,7 +1,7 @@
 {
 	"productName": "Coop",
 	"version": "0.1.7",
-	"identifier": "nu.lume.coop",
+	"identifier": "su.reya.coop",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
 		"devUrl": "http://localhost:1420",
@@ -29,12 +29,18 @@
 					"$RESOURCE/*"
 				]
 			}
+		},
+		"trayIcon": {
+			"id": "main",
+			"iconPath": "./icons/32x32.png",
+			"iconAsTemplate": true,
+			"menuOnLeftClick": true
 		}
 	},
 	"bundle": {
-		"homepage": "https://lume.nu/coop",
-		"longDescription": "direct message client for desktop",
-		"shortDescription": "nostr client",
+		"homepage": "https://coop.reya.su",
+		"longDescription": "A direct message nostr client for desktop.",
+		"shortDescription": "Nostr NIP-17 client",
 		"targets": "all",
 		"active": true,
 		"category": "SocialNetworking",
