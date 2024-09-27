@@ -16,7 +16,7 @@
 		"@radix-ui/react-progress": "^1.1.0",
 		"@radix-ui/react-scroll-area": "^1.1.0",
 		"@tanstack/react-query": "^5.56.2",
-		"@tanstack/react-router": "^1.57.13",
+		"@tanstack/react-router": "^1.58.11",
 		"@tauri-apps/api": "2.0.0-rc.4",
 		"@tauri-apps/plugin-clipboard-manager": "2.0.0-rc.1",
 		"@tauri-apps/plugin-dialog": "2.0.0-rc.1",
@@ -37,7 +37,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "1.8.3",
-		"@tanstack/router-plugin": "^1.57.13",
+		"@tanstack/router-plugin": "^1.58.10",
 		"@tauri-apps/cli": "2.0.0-rc.13",
 		"@types/react": "npm:types-react@19.0.0-rc.1",
 		"@types/react-dom": "npm:types-react-dom@19.0.0-rc.1",
@@ -45,12 +45,12 @@
 		"autoprefixer": "^10.4.20",
 		"babel-plugin-react-compiler": "0.0.0-experimental-696af53-20240625",
 		"clsx": "^2.1.1",
-		"postcss": "^8.4.45",
+		"postcss": "^8.4.47",
 		"tailwind-gradient-mask-image": "^1.2.0",
 		"tailwind-merge": "^2.5.2",
-		"tailwindcss": "^3.4.11",
+		"tailwindcss": "^3.4.13",
 		"typescript": "^5.6.2",
-		"vite": "^5.4.5",
+		"vite": "^5.4.8",
 		"vite-tsconfig-paths": "^4.3.2"
 	},
 	"overrides": {

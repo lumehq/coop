@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { type } from "@tauri-apps/plugin-os";
 import { LRUCache } from "lru-cache";
-import { StrictMode } from "react";
+import { type ReactNode, StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import "./global.css";
 // Import the generated commands
@@ -24,6 +24,11 @@ const router = createRouter({
 		chatManager,
 		platform,
 	},
+	Wrap: ({ children }: { children: ReactNode }) => {
+		return (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		);
+	},
 });
 
 // Register the router instance for type safety
@@ -39,9 +44,7 @@ if (!rootElement.innerHTML) {
 	const root = ReactDOM.createRoot(rootElement);
 	root.render(
 		<StrictMode>
-			<QueryClientProvider client={queryClient}>
-				<RouterProvider router={router} />
-			</QueryClientProvider>
+			<RouterProvider router={router} />
 		</StrictMode>,
 	);
 }
