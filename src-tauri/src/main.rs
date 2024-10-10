@@ -60,13 +60,7 @@ fn main() {
 		.export(Typescript::default(), "../src/commands.ts")
 		.expect("Failed to export typescript bindings");
 
-	#[cfg(debug_assertions)]
-	let tauri_builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
-
-	#[cfg(not(debug_assertions))]
-	let tauri_builder = tauri::Builder::default();
-
-	tauri_builder
+	tauri::Builder::default()
 		.invoke_handler(builder.invoke_handler())
 		.setup(move |app| {
 			// This is also required if you want to use events

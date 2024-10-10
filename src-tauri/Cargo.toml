@@ -10,41 +10,42 @@ rust-version = "1.70"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "2.0.0-rc", features = [] }
+tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"lmdb",
 ] }
-tauri = { version = "2.0.0-rc", features = [
+
+tauri = { version = "2.0.0", features = [
 	"tray-icon",
 	"macos-private-api",
 	"protocol-asset",
 ] }
-tauri-specta = { version = "2.0.0-rc", features = ["derive", "typescript"] }
-tauri-plugin-devtools = "2.0.0-rc"
 tauri-plugin-prevent-default = "0.4"
-tauri-plugin-os = "2.0.0-rc"
-tauri-plugin-clipboard-manager = "2.0.0-rc"
-tauri-plugin-dialog = "2.0.0-rc"
-tauri-plugin-shell = "2.0.0-rc"
-tauri-plugin-updater = "2.0.0-rc"
-tauri-plugin-process = "2.0.0-rc"
-tauri-plugin-fs = "2.0.0-rc"
-tauri-plugin-notification = "2.0.0-rc"
+tauri-plugin-os = "2.0.0"
+tauri-plugin-clipboard-manager = "2.0.0"
+tauri-plugin-dialog = "2.0.0"
+tauri-plugin-shell = "2.0.0"
+tauri-plugin-updater = "2.0.0"
+tauri-plugin-process = "2.0.0"
+tauri-plugin-fs = "2.0.0"
+tauri-plugin-notification = "2.0.0"
 tauri-plugin-decorum = "1.1.0"
+tauri-specta = { version = "2.0.0-rc", features = ["derive", "typescript"] }
+specta = "^2.0.0-rc.20"
+specta-typescript = "0.0.7"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+itertools = "0.13.0"
+futures = "0.3.30"
+keyring-search = "1.2.0"
 keyring = { version = "3", features = [
 	"apple-native",
 	"windows-native",
 	"linux-native",
 ] }
-keyring-search = "1.2.0"
-itertools = "0.13.0"
-futures = "0.3.30"
-specta = "^2.0.0-rc.20"
-specta-typescript = "0.0.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 border = { git = "https://github.com/ahkohd/tauri-toolkit", branch = "v2" }

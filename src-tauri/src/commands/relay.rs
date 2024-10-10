@@ -142,7 +142,7 @@ pub async fn connect_inbox_relays(
 			let mut relays = Vec::new();
 
 			if let Some(event) = events.into_iter().next() {
-				for tag in &event.tags {
+				for tag in event.tags.iter() {
 					if let Some(TagStandard::Relay(relay)) = tag.as_standardized() {
 						let url = relay.to_string();
 

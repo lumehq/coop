@@ -159,7 +159,7 @@ pub async fn connect_account(uri: String, state: State<'_, Nostr>) -> Result<Str
 			let remote_user = bunker_uri.signer_public_key().unwrap();
 			let remote_npub = remote_user.to_bech32().unwrap();
 
-			match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(120), None).await {
+			match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(120), None) {
 				Ok(signer) => {
 					let mut url = Url::parse(&uri).unwrap();
 					let query: Vec<(String, String)> = url
@@ -268,7 +268,7 @@ pub async fn login(
 			let public_key = uri.signer_public_key().unwrap();
 			let app_keys = Keys::from_str(&account.password).map_err(|e| e.to_string())?;
 
-			match Nip46Signer::new(uri, app_keys, Duration::from_secs(120), None).await {
+			match Nip46Signer::new(uri, app_keys, Duration::from_secs(120), None) {
 				Ok(signer) => {
 					// Update signer
 					client.set_signer(Some(signer.into())).await;
