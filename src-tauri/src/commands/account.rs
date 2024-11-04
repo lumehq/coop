@@ -1,5 +1,6 @@
 use keyring::Entry;
 use keyring_search::{Limit, List, Search};
+use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -23,23 +24,20 @@ struct Account {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_metadata(user_id: String, state: State<'_, Nostr>) -> Result<String, String> {
+pub async fn get_metadata(id: String, state: State<'_, Nostr>) -> Result<String, String> {
 	let client = &state.client;
-	let bootstrap_relays = state.bootstrap_relays.lock().await.clone();
+	let public_key = PublicKey::parse(&id).map_err(|e| e.to_string())?;
 
-	let public_key = PublicKey::parse(&user_id).map_err(|e| e.to_string())?;
 	let filter = Filter::new().author(public_key).kind(Kind::Metadata).limit(1);
 
-	match client.get_events_from(bootstrap_relays, vec![filter], Some(Duration::from_secs(2))).await
-	{
-		Ok(events) => {
-			if let Some(event) = events.first() {
-				Ok(Metadata::from_json(&event.content).unwrap_or(Metadata::new()).as_json())
-			} else {
-				Ok(Metadata::new().as_json())
-			}
-		}
-		Err(e) => Err(e.to_string()),
+	let events = client.database().query(vec![filter]).await.map_err(|e| e.to_string())?;
+
+	match events.first() {
+		Some(event) => match Metadata::from_json(&event.content) {
+			Ok(metadata) => Ok(metadata.as_json()),
+			Err(e) => Err(e.to_string()),
+		},
+		None => Err("Metadata not found".into()),
 	}
 }
 
@@ -60,7 +58,7 @@ pub fn get_accounts() -> Vec<String> {
 pub async fn get_current_account(state: State<'_, Nostr>) -> Result<String, String> {
 	let client = &state.client;
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
-	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
+	let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
 	let bech32 = public_key.to_bech32().map_err(|e| e.to_string())?;
 
 	Ok(bech32)
@@ -89,10 +87,8 @@ pub async fn create_account(
 	let j = serde_json::to_string(&account).map_err(|e| e.to_string())?;
 	let _ = keyring.set_password(&j);
 
-	let signer = NostrSigner::Keys(keys);
-
 	// Update signer
-	client.set_signer(Some(signer)).await;
+	client.set_signer(keys).await;
 
 	let mut metadata =
 		Metadata::new().display_name(name.clone()).name(name.to_lowercase()).about(about);
@@ -156,10 +152,10 @@ pub async fn connect_account(uri: String, state: State<'_, Nostr>) -> Result<Str
 			let app_secret = app_keys.secret_key().to_secret_hex();
 
 			// Get remote user
-			let remote_user = bunker_uri.signer_public_key().unwrap();
+			let remote_user = bunker_uri.remote_signer_public_key().unwrap();
 			let remote_npub = remote_user.to_bech32().unwrap();
 
-			match Nip46Signer::new(bunker_uri, app_keys, Duration::from_secs(120), None) {
+			match NostrConnect::new(bunker_uri, app_keys, Duration::from_secs(120), None) {
 				Ok(signer) => {
 					let mut url = Url::parse(&uri).unwrap();
 					let query: Vec<(String, String)> = url
@@ -177,7 +173,7 @@ pub async fn connect_account(uri: String, state: State<'_, Nostr>) -> Result<Str
 					let _ = keyring.set_password(&j);
 
 					// Update signer
-					let _ = client.set_signer(Some(signer.into())).await;
+					let _ = client.set_signer(signer).await;
 
 					Ok(remote_npub)
 				}
@@ -256,22 +252,22 @@ pub async fn login(
 			let secret_key = ncryptsec.to_secret_key(password).map_err(|_| "Wrong password.")?;
 			let keys = Keys::new(secret_key);
 			let public_key = keys.public_key();
-			let signer = NostrSigner::Keys(keys);
 
 			// Update signer
-			client.set_signer(Some(signer)).await;
+			client.set_signer(keys).await;
 
 			public_key
 		}
 		Some(bunker) => {
 			let uri = NostrConnectURI::parse(bunker).map_err(|e| e.to_string())?;
-			let public_key = uri.signer_public_key().unwrap();
+			let public_key = uri.remote_signer_public_key().unwrap().clone();
 			let app_keys = Keys::from_str(&account.password).map_err(|e| e.to_string())?;
 
-			match Nip46Signer::new(uri, app_keys, Duration::from_secs(120), None) {
+			match NostrConnect::new(uri, app_keys, Duration::from_secs(120), None) {
 				Ok(signer) => {
 					// Update signer
-					client.set_signer(Some(signer.into())).await;
+					client.set_signer(signer).await;
+					// Return public key
 					public_key
 				}
 				Err(e) => return Err(e.to_string()),

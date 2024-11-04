@@ -10,7 +10,7 @@ use crate::Nostr;
 pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
 	let client = &state.client;
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
-	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
+	let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
 
 	let filter = Filter::new().kind(Kind::PrivateDirectMessage).pubkey(public_key);
 
@@ -36,7 +36,7 @@ pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Ve
 	let client = &state.client;
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
 
-	let receiver = signer.public_key().await.map_err(|e| e.to_string())?;
+	let receiver = signer.get_public_key().await.map_err(|e| e.to_string())?;
 	let sender = PublicKey::parse(id).map_err(|e| e.to_string())?;
 
 	let recv_filter =
@@ -64,7 +64,7 @@ pub async fn send_message(
 	let relays = state.inbox_relays.lock().await;
 
 	let signer = client.signer().await.map_err(|e| e.to_string())?;
-	let public_key = signer.public_key().await.map_err(|e| e.to_string())?;
+	let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
 	let receiver = PublicKey::parse(&to).map_err(|e| e.to_string())?;
 
 	// TODO: Add support reply_to

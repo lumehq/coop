@@ -11,7 +11,6 @@ use std::{
 	env, fs,
 	io::{self, BufRead},
 	str::FromStr,
-	time::Duration,
 };
 use tauri::{async_runtime::Mutex, Manager};
 #[cfg(not(target_os = "linux"))]
@@ -24,7 +23,6 @@ mod commands;
 
 pub struct Nostr {
 	client: Client,
-	bootstrap_relays: Mutex<Vec<String>>,
 	inbox_relays: Mutex<HashMap<PublicKey, Vec<String>>>,
 }
 
@@ -63,9 +61,6 @@ fn main() {
 	tauri::Builder::default()
 		.invoke_handler(builder.invoke_handler())
 		.setup(move |app| {
-			// This is also required if you want to use events
-			builder.mount_events(app);
-
 			let handle = app.handle();
 			let _ = setup_tray_icon(handle);
 
@@ -80,24 +75,16 @@ fn main() {
 			#[cfg(target_os = "macos")]
 			main_window.set_traffic_lights_inset(12.0, 18.0).unwrap();
 
-			// Workaround for reset traffic light when theme changed
-			#[cfg(target_os = "macos")]
-			let win_ = main_window.clone();
-			#[cfg(target_os = "macos")]
-			main_window.on_window_event(move |event| {
-				if let tauri::WindowEvent::ThemeChanged(_) = event {
-					win_.set_traffic_lights_inset(12.0, 18.0).unwrap();
-				}
-			});
-
 			// Restore native border
 			#[cfg(target_os = "macos")]
 			main_window.add_border(None);
 
-			let (client, bootstrap_relays) = tauri::async_runtime::block_on(async move {
-				// Create data folder if not exist
+			let client = tauri::async_runtime::block_on(async move {
+				// Get config directory
 				let dir =
 					handle.path().app_config_dir().expect("Error: config directory not found.");
+
+				// Create config directory if not exist
 				let _ = fs::create_dir_all(&dir);
 
 				// Setup database
@@ -105,12 +92,7 @@ fn main() {
 					.expect("Error: cannot create database.");
 
 				// Setup nostr client
-				let opts = Options::new()
-					.autoconnect(true)
-					.timeout(Duration::from_secs(30))
-					.send_timeout(Some(Duration::from_secs(2)))
-					.connection_timeout(Some(Duration::from_secs(10)));
-
+				let opts = Options::new().gossip(true).autoconnect(true);
 				let client = ClientBuilder::default().opts(opts).database(database).build();
 
 				// Add bootstrap relays
@@ -141,22 +123,11 @@ fn main() {
 					}
 				}
 
-				let bootstrap_relays = client
-					.relays()
-					.await
-					.keys()
-					.map(|item| item.to_string())
-					.collect::<Vec<String>>();
-
-				(client, bootstrap_relays)
+				client
 			});
 
 			// Create global state
-			app.manage(Nostr {
-				client,
-				bootstrap_relays: Mutex::new(bootstrap_relays),
-				inbox_relays: Mutex::new(HashMap::new()),
-			});
+			app.manage(Nostr { client, inbox_relays: Mutex::new(HashMap::new()) });
 
 			Ok(())
 		})

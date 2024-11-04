@@ -121,7 +121,7 @@ pub async fn connect_inbox_relays(
 		if let Some(relays) = inbox_relays.get(&public_key) {
 			for url in relays {
 				if let Ok(relay) = client.relay(url).await {
-					if !relay.is_connected().await {
+					if !relay.is_connected() {
 						if let Err(e) = client.connect_relay(url).await {
 							println!("Connect relay failed: {}", e)
 						}
