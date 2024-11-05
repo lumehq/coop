@@ -1,27 +1,13 @@
-import { commands } from "@/commands";
-import { useQuery } from "@tanstack/react-query";
+import { type Metadata, useProfile } from "@/hooks/useProfile";
 import { type ReactNode, createContext, useContext } from "react";
-
-type Metadata = {
-	name?: string;
-	display_name?: string;
-	about?: string;
-	website?: string;
-	picture?: string;
-	banner?: string;
-	nip05?: string;
-	lud06?: string;
-	lud16?: string;
-};
 
 type UserContext = {
 	pubkey: string;
-	isLoading: boolean;
-	isError: boolean;
 	profile: Metadata | undefined;
+	isLoading: boolean;
 };
 
-const UserContext = createContext<UserContext>(null);
+const UserContext = createContext<UserContext | null>(null);
 
 export function UserProvider({
 	pubkey,
@@ -30,37 +16,10 @@ export function UserProvider({
 	pubkey: string;
 	children: ReactNode;
 }) {
-	const {
-		isLoading,
-		isError,
-		data: profile,
-	} = useQuery({
-		queryKey: ["profile", pubkey],
-		queryFn: async () => {
-			try {
-				const normalizePubkey = pubkey
-					.replace("nostr:", "")
-					.replace(/[^\w\s]/gi, "");
-
-				const res = await commands.getMetadata(normalizePubkey);
-
-				if (res.status === "ok") {
-					return JSON.parse(res.data) as Metadata;
-				} else {
-					throw new Error(res.error);
-				}
-			} catch (e) {
-				throw new Error(String(e));
-			}
-		},
-		refetchOnMount: false,
-		refetchOnWindowFocus: false,
-		refetchOnReconnect: false,
-		staleTime: Number.POSITIVE_INFINITY,
-	});
+	const { isLoading, profile } = useProfile(pubkey);
 
 	return (
-		<UserContext.Provider value={{ pubkey, profile, isError, isLoading }}>
+		<UserContext.Provider value={{ pubkey, profile, isLoading }}>
 			{children}
 		</UserContext.Provider>
 	);

@@ -12,6 +12,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 import type { NostrEvent } from "nostr-tools";
 import {
 	type Dispatch,
+	type RefObject,
 	type SetStateAction,
 	useCallback,
 	useRef,
@@ -154,13 +155,12 @@ function List() {
 			if (!group.includes(sender)) return;
 			if (!group.some((item) => receivers.includes(item))) return;
 
-			await queryClient.setQueryData(
-				["chats", id],
-				(prevEvents: NostrEvent[]) => {
-					if (!prevEvents) return [event];
-					return [event, ...prevEvents];
-				},
-			);
+			queryClient.setQueryData(["chats", id], (prevEvents: NostrEvent[]) => {
+				if (!prevEvents) return [event];
+				return [event, ...prevEvents];
+			});
+
+			await queryClient.invalidateQueries({ queryKey: ["chats", id] });
 		});
 
 		return () => {
@@ -189,7 +189,7 @@ function List() {
 				className="relative h-full py-2 [&>div]:!flex [&>div]:flex-col [&>div]:justify-end [&>div]:min-h-full"
 			>
 				<Virtualizer
-					scrollRef={scrollRef}
+					scrollRef={scrollRef as unknown as RefObject<HTMLElement>}
 					ref={ref}
 					shift={true}
 					onScroll={(offset) => {
@@ -218,12 +218,12 @@ function List() {
 								Cannot load message. Please try again later.
 							</div>
 						</div>
-					) : !data.length ? (
+					) : !data?.length ? (
 						<div className="h-20 flex items-center justify-center">
 							<CoopIcon className="size-10 text-neutral-200 dark:text-neutral-800" />
 						</div>
 					) : (
-						data.map((item) => (
+						data?.map((item) => (
 							<div
 								key={item[0]}
 								className="w-full flex flex-col items-center mt-3 gap-3"
@@ -233,8 +233,10 @@ function List() {
 								</div>
 								<div className="w-full">
 									{item[1]
-										.sort((a, b) => a.created_at - b.created_at)
-										.map((item, idx) => renderItem(item, idx))}
+										? item[1]
+												.sort((a, b) => a.created_at - b.created_at)
+												.map((item, idx) => renderItem(item, idx))
+										: null}
 								</div>
 							</div>
 						))

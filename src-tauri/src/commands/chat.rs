@@ -8,89 +8,110 @@ use crate::Nostr;
 #[tauri::command]
 #[specta::specta]
 pub async fn get_chats(state: State<'_, Nostr>) -> Result<Vec<String>, String> {
-	let client = &state.client;
-	let signer = client.signer().await.map_err(|e| e.to_string())?;
-	let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    let client = &state.client;
 
-	let filter = Filter::new().kind(Kind::PrivateDirectMessage).pubkey(public_key);
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
 
-	match client.database().query(vec![filter]).await {
-		Ok(events) => {
-			let ev = events
-				.into_iter()
-				.sorted_by_key(|ev| Reverse(ev.created_at))
-				.filter(|ev| ev.pubkey != public_key)
-				.unique_by(|ev| ev.pubkey)
-				.map(|ev| ev.as_json())
-				.collect::<Vec<_>>();
+    let filter = Filter::new()
+        .kind(Kind::PrivateDirectMessage)
+        .pubkey(public_key);
+    let events = client
+        .database()
+        .query(vec![filter])
+        .await
+        .map_err(|e| e.to_string())?;
 
-			Ok(ev)
-		}
-		Err(e) => Err(e.to_string()),
-	}
+    let data = events
+        .into_iter()
+        .sorted_by_key(|ev| Reverse(ev.created_at))
+        .filter(|ev| ev.pubkey != public_key)
+        .unique_by(|ev| ev.pubkey)
+        .map(|ev| ev.as_json())
+        .collect::<Vec<_>>();
+
+    Ok(data)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_chat_messages(id: String, state: State<'_, Nostr>) -> Result<Vec<String>, String> {
-	let client = &state.client;
-	let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let client = &state.client;
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
 
-	let receiver = signer.get_public_key().await.map_err(|e| e.to_string())?;
-	let sender = PublicKey::parse(id).map_err(|e| e.to_string())?;
+    let receiver = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    let sender = PublicKey::parse(id).map_err(|e| e.to_string())?;
 
-	let recv_filter =
-		Filter::new().kind(Kind::PrivateDirectMessage).author(sender).pubkey(receiver);
-	let sender_filter =
-		Filter::new().kind(Kind::PrivateDirectMessage).author(receiver).pubkey(sender);
+    let recv_filter = Filter::new()
+        .kind(Kind::PrivateDirectMessage)
+        .author(sender)
+        .pubkey(receiver);
+    let sender_filter = Filter::new()
+        .kind(Kind::PrivateDirectMessage)
+        .author(receiver)
+        .pubkey(sender);
 
-	match client.database().query(vec![recv_filter, sender_filter]).await {
-		Ok(events) => {
-			let ev = events.into_iter().map(|ev| ev.as_json()).collect::<Vec<_>>();
-			Ok(ev)
-		}
-		Err(e) => Err(e.to_string()),
-	}
+    match client
+        .database()
+        .query(vec![recv_filter, sender_filter])
+        .await
+    {
+        Ok(events) => {
+            let ev = events
+                .into_iter()
+                .map(|ev| ev.as_json())
+                .collect::<Vec<_>>();
+            Ok(ev)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn send_message(
-	to: String,
-	message: String,
-	state: State<'_, Nostr>,
+    to: String,
+    message: String,
+    state: State<'_, Nostr>,
 ) -> Result<(), String> {
-	let client = &state.client;
-	let relays = state.inbox_relays.lock().await;
+    let client = &state.client;
+    let relays = state.inbox_relays.read().await;
 
-	let signer = client.signer().await.map_err(|e| e.to_string())?;
-	let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
-	let receiver = PublicKey::parse(&to).map_err(|e| e.to_string())?;
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    let receiver = PublicKey::parse(&to).map_err(|e| e.to_string())?;
 
-	// TODO: Add support reply_to
-	let rumor = EventBuilder::private_msg_rumor(receiver, message, None);
+    // TODO: Add support reply_to
+    let rumor = EventBuilder::private_msg_rumor(receiver, message, None);
 
-	// Get inbox relays per member
-	let outbox_urls = match relays.get(&receiver) {
-		Some(relays) => relays,
-		None => return Err("Receiver didn't have inbox relays to receive message.".into()),
-	};
+    // Get inbox relays for receiver
+    let outbox_urls = match relays.get(&receiver) {
+        Some(relays) => relays,
+        None => return Err("Receiver didn't have inbox relays to receive message.".into()),
+    };
 
-	let inbox_urls = match relays.get(&public_key) {
-		Some(relays) => relays,
-		None => return Err("Please config inbox relays to backup your message.".into()),
-	};
+    // Get inbox relays for current user
+    let inbox_urls = match relays.get(&public_key) {
+        Some(relays) => relays,
+        None => return Err("Please config inbox relays to backup your message.".into()),
+    };
 
-	// Send message to [receiver]
-	match client.gift_wrap_to(outbox_urls, &receiver, rumor.clone(), None).await {
-		Ok(_) => {
-			// Send message to [yourself]
-			if let Err(e) = client.gift_wrap_to(inbox_urls, &public_key, rumor, None).await {
-				return Err(e.to_string());
-			}
+    // Send message to [receiver]
+    match client
+        .gift_wrap_to(outbox_urls, &receiver, rumor.clone(), None)
+        .await
+    {
+        Ok(_) => {
+            // Send message to [yourself]
+            if let Err(e) = client
+                .gift_wrap_to(inbox_urls, &public_key, rumor, None)
+                .await
+            {
+                return Err(e.to_string());
+            }
 
-			Ok(())
-		}
-		Err(e) => Err(e.to_string()),
-	}
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }

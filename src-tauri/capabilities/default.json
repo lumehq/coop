@@ -14,11 +14,6 @@
 		"core:resources:default",
 		"core:menu:default",
 		"core:tray:default",
-		"shell:allow-open",
-		"dialog:default",
-		"dialog:allow-open",
-		"dialog:allow-ask",
-		"dialog:allow-message",
 		"core:window:allow-close",
 		"core:window:allow-center",
 		"core:window:allow-minimize",
@@ -27,14 +22,18 @@
 		"core:window:allow-set-focus",
 		"core:window:allow-start-dragging",
 		"core:window:allow-toggle-maximize",
+		"shell:allow-open",
+		"dialog:default",
+		"dialog:allow-open",
+		"dialog:allow-ask",
+		"dialog:allow-message",
 		"decorum:allow-show-snap-overlay",
 		"prevent-default:default",
 		"updater:default",
-		"updater:allow-check",
-		"updater:allow-download-and-install",
 		"clipboard-manager:allow-write-text",
 		"clipboard-manager:allow-read-text",
 		"fs:allow-read-file",
-		"notification:default"
+		"notification:default",
+		"store:default"
 	]
 }

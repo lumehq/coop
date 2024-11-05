@@ -1,3 +1,8 @@
+import type {
+	AsyncStorage,
+	MaybePromise,
+	PersistedQuery,
+} from "@tanstack/query-persist-client-core";
 import { ask, message, open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import {
@@ -5,6 +10,7 @@ import {
 	requestPermission,
 } from "@tauri-apps/plugin-notification";
 import { relaunch } from "@tauri-apps/plugin-process";
+import type { LazyStore } from "@tauri-apps/plugin-store";
 import { check } from "@tauri-apps/plugin-updater";
 import { type ClassValue, clsx } from "clsx";
 import dayjs from "dayjs";
@@ -12,22 +18,6 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import updateLocale from "dayjs/plugin/updateLocale";
 import { type NostrEvent, nip19 } from "nostr-tools";
 import { twMerge } from "tailwind-merge";
-
-dayjs.extend(relativeTime);
-dayjs.extend(updateLocale);
-
-dayjs.updateLocale("en", {
-	relativeTime: {
-		past: "%s",
-		s: "now",
-		m: "1m",
-		mm: "%dm",
-		h: "1h",
-		hh: "%dh",
-		d: "1d",
-		dd: "%dd",
-	},
-});
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -52,6 +42,22 @@ export function npub(pubkey: string, len: number) {
 }
 
 export function ago(time: number) {
+	dayjs.extend(relativeTime);
+	dayjs.extend(updateLocale);
+
+	dayjs.updateLocale("en", {
+		relativeTime: {
+			past: "%s",
+			s: "now",
+			m: "1m",
+			mm: "%dm",
+			h: "1h",
+			hh: "%dh",
+			d: "1d",
+			dd: "%dd",
+		},
+	});
+
 	let formated: string;
 
 	const now = dayjs();
@@ -68,6 +74,22 @@ export function ago(time: number) {
 }
 
 export function time(time: number) {
+	dayjs.extend(relativeTime);
+	dayjs.extend(updateLocale);
+
+	dayjs.updateLocale("en", {
+		relativeTime: {
+			past: "%s",
+			s: "now",
+			m: "1m",
+			mm: "%dm",
+			h: "1h",
+			hh: "%dh",
+			d: "1d",
+			dd: "%dd",
+		},
+	});
+
 	const input = new Date(time * 1000);
 	const formattedTime = input.toLocaleTimeString([], {
 		hour: "2-digit",
@@ -186,4 +208,15 @@ export async function upload() {
 	} catch (e) {
 		return null;
 	}
+}
+
+export function newQueryStorage(
+	store: LazyStore,
+): AsyncStorage<PersistedQuery> {
+	return {
+		getItem: async (key) => await store.get(key),
+		setItem: async (key, value) => await store.set(key, value),
+		removeItem: async (key) =>
+			(await store.delete(key)) as unknown as MaybePromise<void>,
+	};
 }

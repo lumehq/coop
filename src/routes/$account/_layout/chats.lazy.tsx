@@ -20,7 +20,14 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
 import { open } from "@tauri-apps/plugin-shell";
 import { type NostrEvent, nip19 } from "nostr-tools";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+	type RefObject,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	useTransition,
+} from "react";
 import { Virtualizer } from "virtua";
 
 type EventPayload = {
@@ -122,10 +129,12 @@ function ChatList() {
 
 	useEffect(() => {
 		const unlisten = listen<EventPayload>("event", async (data) => {
-			const event: NostrEvent = JSON.parse(data.payload.event);
-			const chats: NostrEvent[] = await queryClient.getQueryData(["chats"]);
+			const chats: NostrEvent[] | undefined = await queryClient.getQueryData([
+				"chats",
+			]);
 
 			if (chats) {
+				const event: NostrEvent = JSON.parse(data.payload.event);
 				const index = chats.findIndex((item) => item.pubkey === event.pubkey);
 
 				if (index === -1) {
@@ -140,11 +149,13 @@ function ChatList() {
 					);
 				} else {
 					const newEvents = [...chats];
+
 					newEvents[index] = {
 						...event,
 					};
 
-					await queryClient.setQueryData(["chats"], newEvents);
+					queryClient.setQueryData(["chats"], newEvents);
+					await queryClient.invalidateQueries({ queryKey: ["chats"] });
 				}
 			}
 		});
@@ -173,14 +184,14 @@ function ChatList() {
 							</div>
 						))}
 					</>
-				) : isSync && !data.length ? (
+				) : isSync && !data?.length ? (
 					<div className="p-2">
 						<div className="px-2 h-12 w-full rounded-lg bg-black/5 dark:bg-white/5 flex items-center justify-center text-sm">
 							No chats.
 						</div>
 					</div>
 				) : (
-					data.map((item) => (
+					data?.map((item) => (
 						<Link
 							key={item.id + item.pubkey}
 							to="/$account/chats/$id"
@@ -410,7 +421,10 @@ function Compose() {
 							ref={scrollRef}
 							className="relative h-full p-2"
 						>
-							<Virtualizer scrollRef={scrollRef} overscan={1}>
+							<Virtualizer
+								scrollRef={scrollRef as unknown as RefObject<HTMLElement>}
+								overscan={1}
+							>
 								{isLoading ? (
 									<div className="h-[400px] flex items-center justify-center">
 										<Spinner className="size-4" />

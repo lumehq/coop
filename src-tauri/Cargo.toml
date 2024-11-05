@@ -1,6 +1,6 @@
 [package]
-name = "coop"
-version = "0.1.0"
+name = "COOP"
+version = "0.2.0"
 description = "direct message client for desktop"
 authors = ["npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445"]
 repository = "https://github.com/lumehq/coop"
@@ -24,6 +24,7 @@ tauri-plugin-updater = "2.0.0"
 tauri-plugin-process = "2.0.0"
 tauri-plugin-fs = "2.0.0"
 tauri-plugin-notification = "2.0.0"
+tauri-plugin-store = "2.1.0"
 tauri-plugin-decorum = "1.1.0"
 tauri-plugin-prevent-default = "^0.4"
 tauri-specta = { version = "2.0.0-rc", features = ["derive", "typescript"] }
@@ -33,16 +34,14 @@ nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
 
 specta = "^2.0.0-rc.20"
 specta-typescript = "0.0.7"
+tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 itertools = "0.13.0"
 futures = "0.3.30"
-keyring-search = "1.2.0"
-keyring = { version = "3", features = [
-	"apple-native",
-	"windows-native",
-	"linux-native",
-] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+keyring-search = { git = "https://github.com/reyamir/keyring-search" }
+tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 border = { git = "https://github.com/ahkohd/tauri-toolkit", branch = "v2" }
