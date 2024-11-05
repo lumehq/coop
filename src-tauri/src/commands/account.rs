@@ -328,6 +328,13 @@ pub async fn login(
         for url in urls.iter() {
             let _ = client.add_relay(url).await;
             let _ = client.connect_relay(url).await;
+
+            // Workaround for https://github.com/rust-nostr/nostr/issues/509
+            // TODO: remove
+            let filter = Filter::new().kind(Kind::TextNote).limit(0);
+            let _ = client
+                .fetch_events_from(vec![url], vec![filter], Some(Duration::from_secs(3)))
+                .await;
         }
 
         let mut inbox_relays = state.inbox_relays.write().await;
@@ -341,34 +348,32 @@ pub async fn login(
         let inbox_relays = state.inbox_relays.read().await;
         let relays = inbox_relays.get(&public_key).unwrap().to_owned();
 
-        let sub_id = SubscriptionId::new(SUBSCRIPTION_ID);
+        let subscription_id = SubscriptionId::new(SUBSCRIPTION_ID);
+
+        // Create a filter for getting new message
         let new_message = Filter::new()
             .kind(Kind::GiftWrap)
             .pubkey(public_key)
             .limit(0);
 
+        // Subscribe for new message
         if let Err(e) = client
-            .subscribe_with_id_to(&relays, sub_id, vec![new_message], None)
+            .subscribe_with_id_to(&relays, subscription_id, vec![new_message], None)
             .await
         {
             println!("Subscribe error: {}", e)
         };
 
-        let filter = Filter::new()
-            .kind(Kind::GiftWrap)
-            .pubkey(public_key)
-            .limit(200);
+        // Create a filter for getting all gift wrapped events send to current user
+        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-        let mut rx = client
-            .stream_events_from(&relays, vec![filter], Some(Duration::from_secs(40)))
-            .await
-            .unwrap();
+        let opts = SubscribeAutoCloseOptions::default().filter(
+            FilterOptions::WaitDurationAfterEOSE(Duration::from_secs(10)),
+        );
 
-        while let Some(event) = rx.next().await {
-            println!("Event: {}", event.as_json());
+        if let Ok(output) = client.subscribe_to(&relays, vec![filter], Some(opts)).await {
+            println!("Output: {:?}", output)
         }
-
-        // handle.emit("synchronized", ()).unwrap();
     });
 
     Ok(public_key.to_hex())

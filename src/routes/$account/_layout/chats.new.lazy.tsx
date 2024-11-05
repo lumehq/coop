@@ -1,9 +1,9 @@
-import { CoopIcon } from '@/icons/coop'
-import { createLazyFileRoute } from '@tanstack/react-router'
+import { CoopIcon } from "@/icons/coop";
+import { createLazyFileRoute } from "@tanstack/react-router";
 
-export const Route = createLazyFileRoute('/$account/_layout/chats/new')({
+export const Route = createLazyFileRoute("/$account/_layout/chats/new")({
   component: Screen,
-})
+});
 
 function Screen() {
   return (
@@ -13,8 +13,8 @@ function Screen() {
     >
       <CoopIcon className="size-10 text-neutral-200 dark:text-neutral-800" />
       <h1 className="text-center font-bold text-neutral-300 dark:text-neutral-700">
-        coop on nostr.
+        let's gathering on nostr.
       </h1>
     </div>
-  )
+  );
 }

@@ -3,39 +3,6 @@
 version = 3
 
 [[package]]
-name = "COOP"
-version = "0.2.0"
-dependencies = [
- "border",
- "futures",
- "itertools 0.13.0",
- "keyring",
- "keyring-search",
- "nostr-connect",
- "nostr-sdk",
- "serde",
- "serde_json",
- "specta",
- "specta-typescript",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-decorum",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-notification",
- "tauri-plugin-os",
- "tauri-plugin-prevent-default",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tauri-specta",
- "tokio",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "Inflector"
 version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1005,6 +972,39 @@ name = "convert_case"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
+
+[[package]]
+name = "coop"
+version = "0.2.0"
+dependencies = [
+ "border",
+ "futures",
+ "itertools 0.13.0",
+ "keyring",
+ "keyring-search",
+ "nostr-connect",
+ "nostr-sdk",
+ "serde",
+ "serde_json",
+ "specta",
+ "specta-typescript",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-decorum",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-notification",
+ "tauri-plugin-os",
+ "tauri-plugin-prevent-default",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tauri-specta",
+ "tokio",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "core-foundation"

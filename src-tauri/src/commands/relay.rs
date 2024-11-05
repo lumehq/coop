@@ -175,6 +175,17 @@ pub async fn connect_inbox_relays(
                 let _ = client.add_relay(&url).await;
                 let _ = client.connect_relay(&url).await;
 
+                // Workaround for https://github.com/rust-nostr/nostr/issues/509
+                // TODO: remove
+                let filter = Filter::new().kind(Kind::TextNote).limit(0);
+                let _ = client
+                    .fetch_events_from(
+                        vec![url.clone()],
+                        vec![filter],
+                        Some(Duration::from_secs(3)),
+                    )
+                    .await;
+
                 relays.push(url)
             }
         }

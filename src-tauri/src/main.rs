@@ -104,51 +104,51 @@ fn main() {
 			main_window.add_border(None);
 
 			// Setup tray menu item
-            let open_i = MenuItem::with_id(app, "open", "Open COOP", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            // Create tray menu
-            let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
-            // Get main tray
-            let tray = app.tray_by_id("main").unwrap();
-            // Set menu
-            tray.set_menu(Some(menu)).unwrap();
-            // Listen to tray events
-            tray.on_menu_event(|handle, event| match event.id().as_ref() {
-                "open" => {
-                    if let Some(window) = handle.get_webview_window("main") {
-                        if window.is_visible().unwrap_or_default() {
-                            let _ = window.set_focus();
-                        } else {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        };
-                    } else {
-                        let window = WebviewWindowBuilder::from_config(
-                            handle,
-                            handle.config().app.windows.first().unwrap(),
-                        )
-                        .unwrap()
-                        .build()
-                        .unwrap();
+			let open_i = MenuItem::with_id(app, "open", "Open COOP", true, None::<&str>)?;
+			let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+			// Create tray menu
+			let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+			// Get main tray
+			let tray = app.tray_by_id("main").unwrap();
+			// Set menu
+			tray.set_menu(Some(menu)).unwrap();
+			// Listen to tray events
+			tray.on_menu_event(|handle, event| match event.id().as_ref() {
+				"open" => {
+					if let Some(window) = handle.get_webview_window("main") {
+						if window.is_visible().unwrap_or_default() {
+							let _ = window.set_focus();
+						} else {
+							let _ = window.show();
+							let _ = window.set_focus();
+						};
+					} else {
+						let window = WebviewWindowBuilder::from_config(
+							handle,
+							handle.config().app.windows.first().unwrap(),
+						)
+						.unwrap()
+						.build()
+						.unwrap();
 
-                        // Set decoration
-                        #[cfg(target_os = "windows")]
-                        window.create_overlay_titlebar().unwrap();
+						// Set decoration
+						#[cfg(target_os = "windows")]
+						window.create_overlay_titlebar().unwrap();
 
-                        // Restore native border
-                        #[cfg(target_os = "macos")]
-                        window.add_border(None);
+						// Restore native border
+						#[cfg(target_os = "macos")]
+						window.add_border(None);
 
-                        // Set a custom inset to the traffic lights
-                        #[cfg(target_os = "macos")]
-                        window.set_traffic_lights_inset(12.0, 18.0).unwrap();
-                    }
-                }
-                "quit" => {
-                    std::process::exit(0);
-                }
-                _ => {}
-            });
+						// Set a custom inset to the traffic lights
+						#[cfg(target_os = "macos")]
+						window.set_traffic_lights_inset(12.0, 18.0).unwrap();
+					}
+				}
+				"quit" => {
+					std::process::exit(0);
+				}
+				_ => {}
+			});
 
 			let client = tauri::async_runtime::block_on(async move {
 				// Get config directory
@@ -163,10 +163,7 @@ fn main() {
 					.expect("Error: cannot create database.");
 
 				// Config
-				let opts = Options::new()
-					.gossip(true)
-					.automatic_authentication(false)
-					.max_avg_latency(Duration::from_millis(500));
+				let opts = Options::new().gossip(true).max_avg_latency(Duration::from_millis(500));
 
 				// Setup nostr client
 				let client = ClientBuilder::default()
@@ -207,6 +204,7 @@ fn main() {
 				// Connect
 				client.connect().await;
 
+				// Return nostr client
 				client
 			});
 
@@ -271,30 +269,13 @@ fn main() {
 				let _ = client
 					.handle_notifications(|notification| async {
 						#[allow(clippy::collapsible_match)]
-						if let RelayPoolNotification::Message { message, relay_url, .. } = notification {
-							if let RelayMessage::Auth { challenge } = message {
-                                match client.auth(challenge, relay_url.clone()).await {
-                                    Ok(..) => {
-                                        if let Ok(relay) = client.relay(relay_url).await {
-                                            if let Err(e) = relay.resubscribe().await {
-                                                println!("Resubscribe error: {}", e)
-                                            }
-
-                                            // Workaround for https://github.com/rust-nostr/nostr/issues/509
-                                            // TODO: remove
-                                            let filter = Filter::new().kind(Kind::TextNote).limit(0);
-                                            let _ = client.fetch_events(vec![filter], Some(Duration::from_secs(1))).await;
-                                        }
-                                    }
-                                    Err(e) => {
-                                    	println!("Auth error: {}", e)
-                                    }
-                                }
-                            } else if let RelayMessage::Event { event, .. } = message {
+						if let RelayPoolNotification::Message { message, .. } = notification {
+							if let RelayMessage::Event { event, subscription_id, .. } = message {
 								if event.kind == Kind::GiftWrap {
 									if let Ok(UnwrappedGift { rumor, sender }) =
 										client.unwrap_gift_wrap(&event).await
 									{
+										let subscription_id = subscription_id.to_string();
 										let mut rumor_clone = rumor.clone();
 
 										// Compute event id if not exist
@@ -312,25 +293,32 @@ fn main() {
 
 										// Save rumor to database to further query
 										if let Err(e) = client.database().save_event(&ev).await {
-											println!("[save event] error: {}", e)
+											println!("Error: {}", e)
 										}
 
-										// Emit new event to frontend
-										if let Err(e) = handle.emit(
-											"event",
-											EventPayload {
-												event: rumor.as_json(),
-												sender: sender.to_hex(),
-											},
-										) {
-											println!("[emit] error: {}", e)
+										if subscription_id == SUBSCRIPTION_ID {
+											// Emit new message to current chat screen
+											if let Err(e) = handle.emit(
+												"event",
+												EventPayload {
+													event: rumor.as_json(),
+													sender: sender.to_hex(),
+												},
+											) {
+												println!("Emit error: {}", e)
+											}
+										} else {
+											// Emit new message to home screen
+											if let Err(e) = handle.emit("synchronized", ()) {
+												println!("Emit error: {}", e)
+											}
 										}
 									}
 								} else if event.kind == Kind::Metadata {
-                                    if let Err(e) = handle.emit("metadata", event.as_json()) {
-                                        println!("Emit error: {}", e)
-                                    }
-                                }
+									if let Err(e) = handle.emit("metadata", event.as_json()) {
+										println!("Emit error: {}", e)
+									}
+								}
 							}
 						}
 						Ok(false)

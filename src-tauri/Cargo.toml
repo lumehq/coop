@@ -1,5 +1,5 @@
 [package]
-name = "COOP"
+name = "coop"
 version = "0.2.0"
 description = "direct message client for desktop"
 authors = ["npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445"]
