@@ -1,5 +1,7 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
 #[cfg(target_os = "macos")]
 use border::WebviewWindowExt as WebviewWindowExtAlt;
@@ -12,13 +14,16 @@ use std::{
     io::{self, BufRead},
     str::FromStr,
 };
-use tauri::{Emitter, Listener, Manager};
+use tauri::{
+    menu::{Menu, MenuItem},
+    Emitter, Listener, Manager, WebviewWindowBuilder,
+};
 #[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 use tauri_specta::{collect_commands, Builder};
 use tokio::{sync::RwLock, time::sleep, time::Duration};
 
-use commands::{account::*, chat::*, relay::*, tray::*};
+use commands::{account::*, chat::*, relay::*};
 
 mod commands;
 
@@ -45,6 +50,8 @@ pub const SUBSCRIPTION_ID: &str = "inbox";
 fn main() {
     #[cfg(target_os = "linux")]
     std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+
+    tracing_subscriber::fmt::init();
 
     let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
         get_bootstrap_relays,
@@ -74,21 +81,12 @@ fn main() {
         .export(Typescript::default(), "../src/commands.ts")
         .expect("Failed to export typescript bindings");
 
-    #[cfg(debug_assertions)]
-    let tauri_builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
-
-    #[cfg(not(debug_assertions))]
-    let tauri_builder = tauri::Builder::default();
-
-    tauri_builder
+    tauri::Builder::default()
 		.invoke_handler(builder.invoke_handler())
 		.setup(move |app| {
 			let handle = app.handle();
 			let handle_clone = handle.clone();
 			let handle_clone_child = handle_clone.clone();
-
-			// Setup tray icon
-			let _ = setup_tray_icon(handle);
 
 			#[cfg(not(target_os = "linux"))]
 			let main_window = app.get_webview_window("main").unwrap();
@@ -105,6 +103,53 @@ fn main() {
 			#[cfg(target_os = "macos")]
 			main_window.add_border(None);
 
+			// Setup tray menu item
+            let open_i = MenuItem::with_id(app, "open", "Open COOP", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            // Create tray menu
+            let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+            // Get main tray
+            let tray = app.tray_by_id("main").unwrap();
+            // Set menu
+            tray.set_menu(Some(menu)).unwrap();
+            // Listen to tray events
+            tray.on_menu_event(|handle, event| match event.id().as_ref() {
+                "open" => {
+                    if let Some(window) = handle.get_webview_window("main") {
+                        if window.is_visible().unwrap_or_default() {
+                            let _ = window.set_focus();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        };
+                    } else {
+                        let window = WebviewWindowBuilder::from_config(
+                            handle,
+                            handle.config().app.windows.first().unwrap(),
+                        )
+                        .unwrap()
+                        .build()
+                        .unwrap();
+
+                        // Set decoration
+                        #[cfg(target_os = "windows")]
+                        window.create_overlay_titlebar().unwrap();
+
+                        // Restore native border
+                        #[cfg(target_os = "macos")]
+                        window.add_border(None);
+
+                        // Set a custom inset to the traffic lights
+                        #[cfg(target_os = "macos")]
+                        window.set_traffic_lights_inset(12.0, 18.0).unwrap();
+                    }
+                }
+                "quit" => {
+                    std::process::exit(0);
+                }
+                _ => {}
+            });
+
 			let client = tauri::async_runtime::block_on(async move {
 				// Get config directory
 				let dir =
@@ -114,11 +159,20 @@ fn main() {
 				let _ = fs::create_dir_all(&dir);
 
 				// Setup database
-				let database = NostrLMDB::open(dir.join("nostr-lmdb")).expect("Error: cannot create database.");
+				let database = NostrLMDB::open(dir.join("nostr"))
+					.expect("Error: cannot create database.");
+
+				// Config
+				let opts = Options::new()
+					.gossip(true)
+					.automatic_authentication(false)
+					.max_avg_latency(Duration::from_millis(500));
 
 				// Setup nostr client
-				let opts = Options::new().gossip(true).automatic_authentication(false).max_avg_latency(Duration::from_millis(500));
-				let client = ClientBuilder::default().opts(opts).database(database).build();
+				let client = ClientBuilder::default()
+					.database(database)
+					.opts(opts)
+					.build();
 
 				// Add bootstrap relays
 				if let Ok(path) = handle
@@ -217,8 +271,26 @@ fn main() {
 				let _ = client
 					.handle_notifications(|notification| async {
 						#[allow(clippy::collapsible_match)]
-						if let RelayPoolNotification::Message { message, .. } = notification {
-							if let RelayMessage::Event { event, .. } = message {
+						if let RelayPoolNotification::Message { message, relay_url, .. } = notification {
+							if let RelayMessage::Auth { challenge } = message {
+                                match client.auth(challenge, relay_url.clone()).await {
+                                    Ok(..) => {
+                                        if let Ok(relay) = client.relay(relay_url).await {
+                                            if let Err(e) = relay.resubscribe().await {
+                                                println!("Resubscribe error: {}", e)
+                                            }
+
+                                            // Workaround for https://github.com/rust-nostr/nostr/issues/509
+                                            // TODO: remove
+                                            let filter = Filter::new().kind(Kind::TextNote).limit(0);
+                                            let _ = client.fetch_events(vec![filter], Some(Duration::from_secs(1))).await;
+                                        }
+                                    }
+                                    Err(e) => {
+                                    	println!("Auth error: {}", e)
+                                    }
+                                }
+                            } else if let RelayMessage::Event { event, .. } = message {
 								if event.kind == Kind::GiftWrap {
 									if let Ok(UnwrappedGift { rumor, sender }) =
 										client.unwrap_gift_wrap(&event).await
