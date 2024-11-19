@@ -1,5 +1,5 @@
 use gpui::*;
-use nostr::state::get_client;
+use nostr::Nostr;
 
 struct HelloWorld {
     text: SharedString,
@@ -19,10 +19,13 @@ impl Render for HelloWorld {
 
 #[tokio::main]
 async fn main() {
-    let _client = get_client().await;
+    let nostr = Nostr::init().await;
 
     App::new().run(|cx: &mut AppContext| {
+        // Set window size
         let bounds = Bounds::centered(None, size(px(860.0), px(650.0)), cx);
+        // Set global state
+        cx.set_global(nostr);
 
         cx.open_window(
             WindowOptions {

@@ -6,14 +6,6 @@ resolver = "2"
 [workspace.dependencies]
 coop = { path = "crates/*" }
 
-# Account
-keyring-search = "1.2.0"
-keyring = { version = "3", features = [
-	"apple-native",
-	"windows-native",
-	"linux-native",
-] }
-
 # UI
 gpui = { git = "https://github.com/zed-industries/zed" }
 components = { package = "ui", git = "https://github.com/longbridgeapp/gpui-component", version = "0.1.0" }
