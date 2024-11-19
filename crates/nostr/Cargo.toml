@@ -1,0 +1,9 @@
+[package]
+name = "nostr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nostr-sdk.workspace = true
+dirs.workspace = true
+tokio.workspace = true

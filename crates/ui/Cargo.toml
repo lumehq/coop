@@ -1,0 +1,14 @@
+[package]
+name = "coop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "coop"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+tokio.workspace = true
+nostr = { version = "0.1.0", path = "../nostr" }
