@@ -1,12 +1,37 @@
 use client::NostrClient;
 use components::theme::{Theme, ThemeColor, ThemeMode};
 use gpui::*;
+use http_client::anyhow;
 use state::AppState;
 use views::app::AppView;
 
 pub mod state;
 pub mod utils;
 pub mod views;
+
+#[derive(rust_embed::RustEmbed)]
+#[folder = "../../assets"]
+struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> Result<Option<std::borrow::Cow<'static, [u8]>>> {
+        Self::get(path)
+            .map(|f| Some(f.data))
+            .ok_or_else(|| anyhow!("could not find asset at path \"{}\"", path))
+    }
+
+    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        Ok(Self::iter()
+            .filter_map(|p| {
+                if p.starts_with(path) {
+                    Some(p.into())
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -15,7 +40,7 @@ async fn main() {
     // Initializ app state
     let app_state = AppState::new();
 
-    App::new().run(move |cx| {
+    App::new().with_assets(Assets).run(move |cx| {
         // Initialize components
         components::init(cx);
 

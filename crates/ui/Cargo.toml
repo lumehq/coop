@@ -17,3 +17,4 @@ keyring-search.workspace = true
 keyring.workspace = true
 
 client = { version = "0.1.0", path = "../client" }
+rust-embed = "8.5.0"
