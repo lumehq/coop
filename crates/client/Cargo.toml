@@ -1,5 +1,5 @@
 [package]
-name = "nostr"
+name = "client"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,3 @@ gpui.workspace = true
 nostr-sdk.workspace = true
 dirs.workspace = true
 tokio.workspace = true
-
-keyring-search = "1.2.0"
-keyring-lib = { version = "1.0.2", features = ["tokio", "derive"] }

@@ -1,31 +1,42 @@
+use client::NostrClient;
+use components::theme::{Theme, ThemeColor, ThemeMode};
 use gpui::*;
-use nostr::Nostr;
+use state::AppState;
+use views::app::AppView;
 
-struct HelloWorld {
-    text: SharedString,
-}
-
-impl Render for HelloWorld {
-    fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
-        div()
-            .bg(rgb(0xffffff))
-            .flex()
-            .size_full()
-            .justify_center()
-            .items_center()
-            .child(format!("Hello, {}!", &self.text))
-    }
-}
+pub mod state;
+pub mod utils;
+pub mod views;
 
 #[tokio::main]
 async fn main() {
-    let nostr = Nostr::init().await;
+    // Initialize nostr client
+    let nostr = NostrClient::init().await;
+    // Initializ app state
+    let app_state = AppState::new();
 
-    App::new().run(|cx: &mut AppContext| {
+    App::new().run(move |cx| {
+        // Initialize components
+        components::init(cx);
+
+        // Set custom theme
+        let mut theme = Theme::from(ThemeColor::dark());
+        // TODO: support light mode
+        theme.mode = ThemeMode::Dark;
+        // TODO: adjust color set
+
+        // Set global theme
+        cx.set_global(theme);
+
+        // Set nostr client as global state
+        cx.set_global(nostr);
+        cx.set_global(app_state);
+
+        // Rerender
+        cx.refresh();
+
         // Set window size
         let bounds = Bounds::centered(None, size(px(860.0), px(650.0)), cx);
-        // Set global state
-        cx.set_global(nostr);
 
         cx.open_window(
             WindowOptions {
@@ -38,11 +49,7 @@ async fn main() {
                 }),
                 ..Default::default()
             },
-            |cx| {
-                cx.new_view(|_cx| HelloWorld {
-                    text: "coop".into(),
-                })
-            },
+            |cx| cx.new_view(AppView::new),
         )
         .unwrap();
     });
