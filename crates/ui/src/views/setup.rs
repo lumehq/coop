@@ -1,3 +1,4 @@
+use ::client::NostrClient;
 use components::{
     input::{InputEvent, TextInput},
     label::Label,
@@ -23,9 +24,13 @@ impl SetupView {
             if let InputEvent::PressEnter = input_event {
                 let content = text_input.read(cx).text().to_string();
 
-                if let Ok(public_key) = PublicKey::parse(content) {
-                    cx.global_mut::<AppState>().accounts.insert(public_key);
-                    cx.notify();
+                if let Ok(keys) = Keys::parse(content) {
+                    let public_key = keys.public_key();
+
+                    if cx.global::<NostrClient>().add_account(keys).is_ok() {
+                        cx.global_mut::<AppState>().accounts.insert(public_key);
+                        cx.notify();
+                    }
                 };
             }
         })

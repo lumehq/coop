@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 pub fn get_all_accounts_from_keyring() -> HashSet<PublicKey> {
     let search = Search::new().expect("Keyring not working.");
-    let results = search.by_service("coop");
+    let results = search.by_service("Coop Safe Storage");
     let list = List::list_credentials(&results, Limit::All);
     let accounts: HashSet<PublicKey> = list
         .split_whitespace()

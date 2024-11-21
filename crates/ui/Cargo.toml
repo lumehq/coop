@@ -13,8 +13,7 @@ gpui.workspace = true
 components.workspace = true
 tokio.workspace = true
 nostr-sdk.workspace = true
+keyring-search.workspace = true
+keyring.workspace = true
 
 client = { version = "0.1.0", path = "../client" }
-
-keyring-search = "1.2.0"
-keyring-lib = { version = "1.0.2", features = ["tokio", "derive"] }

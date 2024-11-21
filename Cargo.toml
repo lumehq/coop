@@ -27,3 +27,9 @@ chrono = "0.4.38"
 tracing = "0.1.40"
 anyhow = "1.0.44"
 smallvec = "1.13.2"
+keyring-search = "1.2.0"
+keyring = { version = "3", features = [
+	"apple-native",
+	"windows-native",
+	"sync-secret-service",
+] }
