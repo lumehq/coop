@@ -8,12 +8,12 @@ use nostr_sdk::prelude::*;
 
 use crate::state::AppState;
 
-pub struct SetupView {
+pub struct Onboarding {
     input: View<TextInput>,
 }
 
-impl SetupView {
-    pub fn new(cx: &mut ViewContext<'_, Self>) -> SetupView {
+impl Onboarding {
+    pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let input = cx.new_view(|cx| {
             let mut input = TextInput::new(cx);
             input.set_size(components::Size::Medium, cx);
@@ -36,11 +36,11 @@ impl SetupView {
         })
         .detach();
 
-        SetupView { input }
+        Self { input }
     }
 }
 
-impl Render for SetupView {
+impl Render for Onboarding {
     fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
         div()
             .size_1_3()

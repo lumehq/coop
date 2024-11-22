@@ -9,6 +9,7 @@ coop = { path = "crates/*" }
 # UI
 gpui = { git = "https://github.com/huacnlee/zed.git", branch = "export-platform-window" }
 components = { package = "ui", git = "https://github.com/longbridgeapp/gpui-component" }
+reqwest_client = { git = "https://github.com/huacnlee/zed.git", branch = "export-platform-window" }
 
 # Nostr
 nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }

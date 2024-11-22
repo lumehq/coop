@@ -1,3 +1,3 @@
 pub mod app;
-pub mod chatspace;
-pub mod setup;
+pub mod chat_space;
+pub mod onboarding;
