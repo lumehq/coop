@@ -4,8 +4,10 @@ use components::{
     theme::ActiveTheme,
 };
 use gpui::*;
+use navigation::Navigation;
 
 pub mod bottom_bar;
+pub mod navigation;
 
 pub struct ChatSpace {
     layout: View<ResizablePanelGroup>,
@@ -13,8 +15,8 @@ pub struct ChatSpace {
 
 impl ChatSpace {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
+        let navigation = cx.new_view(Navigation::new);
         let bottom_bar = cx.new_view(BottomBar::new);
-        // TODO: add chat list view
 
         let layout = cx.new_view(|cx| {
             h_resizable(cx)
@@ -25,15 +27,7 @@ impl ChatSpace {
                             .bg(cx.theme().secondary)
                             .flex()
                             .flex_col()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .w_full()
-                                    .child("Chat List"),
-                            )
+                            .child(navigation.clone())
                             .child(bottom_bar.clone())
                             .into_any_element()
                     }),

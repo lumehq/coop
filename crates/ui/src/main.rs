@@ -15,6 +15,8 @@ actions!(main_menu, [Quit]);
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     // Initialize nostr client
     let nostr = NostrClient::init().await;
     // Initializ app state
