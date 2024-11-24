@@ -22,4 +22,4 @@ reqwest_client.workspace = true
 
 client = { version = "0.1.0", path = "../client" }
 rust-embed = "8.5.0"
-env_logger = "0.11.5"
+tracing-subscriber = { version = "0.3.18", features = ["fmt"] }

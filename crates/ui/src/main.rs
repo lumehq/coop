@@ -15,11 +15,11 @@ actions!(main_menu, [Quit]);
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     // Initialize nostr client
     let nostr = NostrClient::init().await;
-    // Initializ app state
+    // Initialize app state
     let app_state = AppState::new();
 
     App::new()
@@ -31,9 +31,8 @@ async fn main() {
 
             // Set custom theme
             let mut theme = Theme::from(ThemeColor::dark());
-            // TODO: support light mode
+            // Set dark mode by default
             theme.mode = ThemeMode::Dark;
-            // TODO: adjust color set
 
             // Set app state
             cx.set_global(theme);
@@ -43,7 +42,7 @@ async fn main() {
             // Set quit action
             cx.on_action(quit);
 
-            // Rerender
+            // Refresh
             cx.refresh();
 
             // Set window size

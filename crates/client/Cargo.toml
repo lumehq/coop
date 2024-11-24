@@ -8,5 +8,3 @@ gpui.workspace = true
 nostr-sdk.workspace = true
 dirs.workspace = true
 tokio.workspace = true
-keyring-search.workspace = true
-keyring.workspace = true

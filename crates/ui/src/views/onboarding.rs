@@ -4,6 +4,7 @@ use components::{
     label::Label,
 };
 use gpui::*;
+use keyring::Entry;
 use nostr_sdk::prelude::*;
 
 use crate::state::AppState;
@@ -21,17 +22,37 @@ impl Onboarding {
         });
 
         cx.subscribe(&input, move |_, text_input, input_event, cx| {
+            let mut async_cx = cx.to_async();
+            let client = cx.global::<NostrClient>().client;
+            let view_id = cx.parent_view_id();
+
             if let InputEvent::PressEnter = input_event {
                 let content = text_input.read(cx).text().to_string();
 
                 if let Ok(keys) = Keys::parse(content) {
-                    let public_key = keys.public_key();
+                    cx.foreground_executor()
+                        .spawn(async move {
+                            let public_key = keys.public_key();
+                            let secret = keys.secret_key().to_secret_hex();
 
-                    if cx.global::<NostrClient>().add_account(keys).is_ok() {
-                        cx.global_mut::<AppState>().accounts.insert(public_key);
-                        cx.notify();
-                    }
-                };
+                            let entry =
+                                Entry::new("Coop Safe Storage", &public_key.to_bech32().unwrap())
+                                    .unwrap();
+
+                            // Store private key to OS Keyring
+                            let _ = entry.set_password(&secret);
+
+                            // Update signer
+                            client.set_signer(keys).await;
+
+                            // Update view
+                            async_cx.update_global(|app_state: &mut AppState, cx| {
+                                app_state.signer = Some(public_key);
+                                cx.notify(view_id);
+                            })
+                        })
+                        .detach();
+                }
             }
         })
         .detach();

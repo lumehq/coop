@@ -16,7 +16,6 @@ pub struct ChatSpace {
 impl ChatSpace {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let navigation = cx.new_view(Navigation::new);
-        let bottom_bar = cx.new_view(BottomBar::new);
 
         let layout = cx.new_view(|cx| {
             h_resizable(cx)
@@ -28,7 +27,6 @@ impl ChatSpace {
                             .flex()
                             .flex_col()
                             .child(navigation.clone())
-                            .child(bottom_bar.clone())
                             .into_any_element()
                     }),
                     cx,

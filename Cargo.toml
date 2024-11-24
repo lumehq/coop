@@ -12,8 +12,8 @@ components = { package = "ui", git = "https://github.com/longbridgeapp/gpui-comp
 reqwest_client = { git = "https://github.com/huacnlee/zed.git", branch = "export-platform-window" }
 
 # Nostr
-nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
-nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
+nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr", branch = "nip17" }
+nostr-sdk = { git = "https://github.com/rust-nostr/nostr", branch = "nip17", features = [
 	"lmdb",
 	"all-nips",
 ] }

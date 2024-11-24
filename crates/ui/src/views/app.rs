@@ -11,9 +11,9 @@ pub struct AppView {
 
 impl AppView {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> AppView {
-        // Onboarding model
+        // Onboarding
         let onboarding = cx.new_view(Onboarding::new);
-        // Chat Space view
+        // Chat Space
         let chat_space = cx.new_view(ChatSpace::new);
 
         AppView {
@@ -27,7 +27,7 @@ impl Render for AppView {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let mut content = div().size_full().flex().items_center().justify_center();
 
-        if cx.global::<AppState>().accounts.is_empty() {
+        if cx.global::<AppState>().signer.is_none() {
             content = content.child(self.onboarding.clone())
         } else {
             content = content.child(self.chat_space.clone())

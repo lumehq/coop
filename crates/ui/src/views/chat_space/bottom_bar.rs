@@ -74,27 +74,11 @@ impl RenderOnce for Account {
     }
 }
 
-pub struct BottomBar {
-    accounts: Vec<Account>,
-}
+pub struct BottomBar {}
 
 impl BottomBar {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> BottomBar {
-        let state: Vec<PublicKey> = cx
-            .global::<AppState>()
-            .accounts
-            .clone()
-            .into_iter()
-            .collect();
-
-        let win_cx = cx.window_context();
-
-        let accounts = state
-            .into_iter()
-            .map(|pk| Account::new(pk, win_cx))
-            .collect::<Vec<_>>();
-
-        BottomBar { accounts }
+        BottomBar {}
     }
 }
 
@@ -108,6 +92,5 @@ impl Render for BottomBar {
             .items_center()
             .justify_center()
             .gap_1()
-            .children(self.accounts.clone())
     }
 }
