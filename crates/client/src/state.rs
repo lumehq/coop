@@ -23,7 +23,7 @@ pub async fn get_client() -> &'static Client {
             // Add some bootstrap relays
             let _ = client.add_relay("wss://relay.damus.io").await;
             let _ = client.add_relay("wss://relay.primal.net").await;
-            let _ = client.add_relay("wss://nostr.fmt.wiz.biz").await;
+            let _ = client.add_relay("wss://nos.lol").await;
             let _ = client.add_relay("wss://directory.yabu.me").await;
 
             let _ = client.add_discovery_relay("wss://user.kindpag.es/").await;

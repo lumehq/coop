@@ -7,7 +7,7 @@ use gpui::*;
 use keyring::Entry;
 use nostr_sdk::prelude::*;
 
-use crate::state::AppState;
+use crate::{constants::KEYRING_SERVICE, state::AppState};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -36,7 +36,7 @@ impl Onboarding {
                             let secret = keys.secret_key().to_secret_hex();
 
                             let entry =
-                                Entry::new("Coop Safe Storage", &public_key.to_bech32().unwrap())
+                                Entry::new(KEYRING_SERVICE, &public_key.to_bech32().unwrap())
                                     .unwrap();
 
                             // Store private key to OS Keyring

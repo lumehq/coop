@@ -3,6 +3,7 @@ use nostr_sdk::prelude::*;
 
 pub struct AppState {
     pub signer: Option<PublicKey>,
+    // TODO: add more app state
 }
 
 impl Global for AppState {}
