@@ -1,6 +1,5 @@
 use asset::Assets;
 use client::NostrClient;
-use components::theme::{Theme, ThemeColor, ThemeMode};
 use constants::{APP_NAME, KEYRING_SERVICE};
 use gpui::*;
 use keyring::Entry;
@@ -34,13 +33,7 @@ async fn main() {
             // Initialize components
             components::init(cx);
 
-            // Set custom theme
-            let mut theme = Theme::from(ThemeColor::dark());
-            // Set dark mode by default
-            theme.mode = ThemeMode::Dark;
-
-            // Set app state
-            cx.set_global(theme);
+            // Set global state
             cx.set_global(nostr);
             cx.set_global(app_state);
 

@@ -1,4 +1,4 @@
-use components::theme::ActiveTheme;
+use components::theme::{ActiveTheme, Theme};
 use gpui::*;
 
 use super::{chat_space::ChatSpace, onboarding::Onboarding};
@@ -11,8 +11,15 @@ pub struct AppView {
 
 impl AppView {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> AppView {
+        // Sync theme with system
+        cx.observe_window_appearance(|_, cx| {
+            Theme::sync_system_appearance(cx);
+        })
+        .detach();
+
         // Onboarding
         let onboarding = cx.new_view(Onboarding::new);
+
         // Chat Space
         let chat_space = cx.new_view(ChatSpace::new);
 
