@@ -16,7 +16,10 @@ impl NavItem {
 impl RenderOnce for NavItem {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         div()
-            .hover(|this| this.bg(cx.theme().background))
+            .hover(|this| {
+                this.bg(cx.theme().side_bar_accent)
+                    .text_color(cx.theme().side_bar_accent_foreground)
+            })
             .rounded_md()
             .flex()
             .items_center()

@@ -23,7 +23,8 @@ impl ChatSpace {
                     resizable_panel().size(px(260.)).content(move |cx| {
                         div()
                             .size_full()
-                            .bg(cx.theme().secondary)
+                            .bg(cx.theme().side_bar_background)
+                            .text_color(cx.theme().side_bar_foreground)
                             .flex()
                             .flex_col()
                             .child(navigation.clone())

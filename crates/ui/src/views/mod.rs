@@ -1,3 +1,3 @@
 pub mod app;
-pub mod chat_space;
+pub mod block;
 pub mod onboarding;
