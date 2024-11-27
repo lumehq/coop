@@ -3,6 +3,7 @@ use std::sync::Arc;
 use components::{
     dock::{DockArea, DockItem},
     theme::{ActiveTheme, Theme},
+    TitleBar,
 };
 use gpui::*;
 
@@ -71,6 +72,7 @@ impl AppView {
             vec![DockItem::tabs(
                 vec![
                     Arc::new(BlockContainer::panel::<WelcomeBlock>(cx)),
+                    Arc::new(BlockContainer::panel::<WelcomeBlock>(cx)),
                     // TODO: add chat block
                 ],
                 None,
@@ -86,12 +88,17 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let mut content = div().size_full().flex().items_center().justify_center();
+        let mut content = div();
 
         if cx.global::<AppState>().signer.is_none() {
             content = content.child(self.onboarding.clone())
         } else {
-            content = content.child(self.dock_area.clone())
+            content = content
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(TitleBar::new())
+                .child(self.dock_area.clone())
         }
 
         div()

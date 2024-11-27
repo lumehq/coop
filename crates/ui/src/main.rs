@@ -71,7 +71,7 @@ async fn main() {
                 .detach();
 
             // Set window size
-            let bounds = Bounds::centered(None, size(px(860.0), px(650.0)), cx);
+            let bounds = Bounds::centered(None, size(px(900.0), px(680.0)), cx);
 
             cx.open_window(
                 WindowOptions {
@@ -80,7 +80,7 @@ async fn main() {
                     titlebar: Some(TitlebarOptions {
                         title: Some(SharedString::new_static(APP_NAME)),
                         appears_transparent: true,
-                        ..Default::default()
+                        traffic_light_position: Some(point(px(9.0), px(9.0))),
                     }),
                     ..Default::default()
                 },
