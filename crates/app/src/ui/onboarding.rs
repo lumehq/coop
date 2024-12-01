@@ -1,4 +1,3 @@
-use ::client::NostrClient;
 use components::{
     input::{InputEvent, TextInput},
     label::Label,
@@ -7,7 +6,7 @@ use gpui::*;
 use keyring::Entry;
 use nostr_sdk::prelude::*;
 
-use crate::{constants::KEYRING_SERVICE, state::AppState};
+use crate::{constants::KEYRING_SERVICE, get_client, states::user::UserState};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -23,7 +22,6 @@ impl Onboarding {
 
         cx.subscribe(&input, move |_, text_input, input_event, cx| {
             let mut async_cx = cx.to_async();
-            let client = cx.global::<NostrClient>().client;
             let view_id = cx.parent_view_id();
 
             if let InputEvent::PressEnter = input_event {
@@ -32,6 +30,8 @@ impl Onboarding {
                 if let Ok(keys) = Keys::parse(content) {
                     cx.foreground_executor()
                         .spawn(async move {
+                            let client = get_client().await;
+
                             let public_key = keys.public_key();
                             let secret = keys.secret_key().to_secret_hex();
 
@@ -46,8 +46,8 @@ impl Onboarding {
                             client.set_signer(keys).await;
 
                             // Update view
-                            async_cx.update_global(|app_state: &mut AppState, cx| {
-                                app_state.signer = Some(public_key);
+                            async_cx.update_global(|state: &mut UserState, cx| {
+                                state.current_user = Some(public_key);
                                 cx.notify(view_id);
                             })
                         })
@@ -64,11 +64,18 @@ impl Onboarding {
 impl Render for Onboarding {
     fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
         div()
-            .size_1_3()
+            .size_full()
             .flex()
-            .flex_col()
-            .gap_1()
-            .child(Label::new("Private Key").text_sm())
-            .child(self.input.clone())
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .size_1_3()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(Label::new("Private Key").text_sm())
+                    .child(self.input.clone()),
+            )
     }
 }

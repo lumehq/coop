@@ -20,7 +20,9 @@ keyring.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+itertools.workspace = true
+chrono.workspace = true
+dirs.workspace = true
 
-client = { version = "0.1.0", path = "../client" }
-rust-embed = "8.5.0"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
+rust-embed = "8.5.0"

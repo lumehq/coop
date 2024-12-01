@@ -1,3 +1,4 @@
+use chrono::{Local, TimeZone};
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
 
@@ -12,4 +13,17 @@ pub fn get_all_accounts_from_keyring() -> Vec<PublicKey> {
         .collect();
 
     accounts
+}
+
+pub fn ago(time: u64) -> String {
+    let now = Local::now();
+    let input_time = Local.timestamp_opt(time as i64, 0).unwrap();
+    let diff = (now - input_time).num_hours();
+
+    if diff < 24 {
+        let duration = now.signed_duration_since(input_time);
+        format!("{} ago", duration.num_hours())
+    } else {
+        input_time.format("%b %d").to_string()
+    }
 }

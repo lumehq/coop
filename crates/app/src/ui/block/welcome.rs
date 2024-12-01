@@ -1,3 +1,7 @@
+use components::{
+    theme::{ActiveTheme, Colorize},
+    StyledExt,
+};
 use gpui::*;
 
 use super::Block;
@@ -7,14 +11,14 @@ pub struct WelcomeBlock {
 }
 
 impl WelcomeBlock {
+    pub fn view(cx: &mut WindowContext) -> View<Self> {
+        cx.new_view(Self::new)
+    }
+
     fn new(cx: &mut ViewContext<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
         }
-    }
-
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
     }
 }
 
@@ -39,7 +43,15 @@ impl FocusableView for WelcomeBlock {
 }
 
 impl Render for WelcomeBlock {
-    fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        div().child("Welcome")
+    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child("coop on nostr.")
+            .text_color(cx.theme().muted.darken(0.1))
+            .font_black()
+            .text_sm()
     }
 }
