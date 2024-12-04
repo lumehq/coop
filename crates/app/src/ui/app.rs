@@ -1,23 +1,16 @@
 use components::{
-    dock::{DockArea, DockItem, PanelStyle},
+    dock::{DockArea, DockItem},
+    indicator::Indicator,
     theme::{ActiveTheme, Theme},
-    Root, TitleBar,
+    Root, Sizable, TitleBar,
 };
 use gpui::*;
-use itertools::Itertools;
-use nostr_sdk::prelude::*;
-use std::{cmp::Reverse, sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use crate::{
-    get_client,
-    states::{
-        room::{Room, RoomLastMessage, Rooms},
-        user::UserState,
-    },
-};
+use crate::states::account::AccountState;
 
 use super::{
-    block::{welcome::WelcomeBlock, BlockContainer},
+    block::{rooms::Rooms, welcome::WelcomeBlock, BlockContainer},
     onboarding::Onboarding,
 };
 
@@ -33,7 +26,7 @@ pub const DOCK_AREA: DockAreaTab = DockAreaTab {
 
 pub struct AppView {
     onboarding: View<Onboarding>,
-    dock_area: View<DockArea>,
+    dock: Model<Option<View<DockArea>>>,
 }
 
 impl AppView {
@@ -44,75 +37,34 @@ impl AppView {
         })
         .detach();
 
-        // Observe UserState
-        // If current user is present, fetching all gift wrap events
-        cx.observe_global::<UserState>(|_v, cx| {
-            let app_state = cx.global::<UserState>();
-            let view_id = cx.parent_view_id();
-            let mut async_cx = cx.to_async();
-
-            if let Some(public_key) = app_state.current_user {
-                cx.foreground_executor()
-                    .spawn(async move {
-                        let client = get_client().await;
-                        let filter = Filter::new().pubkey(public_key).kind(Kind::GiftWrap);
-
-                        let mut rumors: Vec<UnsignedEvent> = Vec::new();
-
-                        if let Ok(mut rx) = client
-                            .stream_events(vec![filter], Some(Duration::from_secs(30)))
-                            .await
-                        {
-                            while let Some(event) = rx.next().await {
-                                if let Ok(UnwrappedGift { rumor, .. }) =
-                                    client.unwrap_gift_wrap(&event).await
-                                {
-                                    rumors.push(rumor);
-                                };
-                            }
-
-                            let items = rumors
-                                .into_iter()
-                                .sorted_by_key(|ev| Reverse(ev.created_at))
-                                .filter(|ev| ev.pubkey != public_key)
-                                .unique_by(|ev| ev.pubkey)
-                                .map(|item| {
-                                    Room::new(
-                                        vec![item.pubkey, public_key],
-                                        Some(RoomLastMessage {
-                                            content: Some(item.content),
-                                            time: item.created_at,
-                                        }),
-                                    )
-                                })
-                                .collect::<Vec<_>>();
-
-                            _ = async_cx.update_global::<Rooms, _>(|state, cx| {
-                                state.rooms = items;
-                                cx.notify(view_id);
-                            });
-                        }
-                    })
-                    .detach();
-            }
-        })
-        .detach();
-
         // Onboarding
         let onboarding = cx.new_view(Onboarding::new);
 
         // Dock
-        let dock_area = cx.new_view(|cx| {
-            DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx).panel_style(PanelStyle::TabBar)
-        });
+        let dock = cx.new_model(|_| None);
+        let async_dock = dock.clone();
 
-        // Set dock layout
-        Self::init_layout(dock_area.downgrade(), cx);
+        // Observe UserState
+        // If current user is present, fetching all gift wrap events
+        cx.observe_global::<AccountState>(move |_, cx| {
+            if cx.global::<AccountState>().in_use.is_some() {
+                // Setup dock area
+                let dock_area =
+                    cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
-        AppView {
-            onboarding,
-            dock_area,
-        }
+                // Setup dock layout
+                Self::init_layout(dock_area.downgrade(), cx);
+
+                // Update dock model
+                cx.update_model(&async_dock, |a, b| {
+                    *a = Some(dock_area);
+                    b.notify();
+                });
+            }
+        })
+        .detach();
+
+        AppView { onboarding, dock }
     }
 
     fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
@@ -120,7 +72,12 @@ impl AppView {
 
         let left_panels = DockItem::split_with_sizes(
             Axis::Vertical,
-            vec![DockItem::tabs(vec![], None, &dock_area, cx)],
+            vec![DockItem::tabs(
+                vec![Arc::new(BlockContainer::panel::<Rooms>(cx))],
+                None,
+                &dock_area,
+                cx,
+            )],
             vec![None, None],
             &dock_area,
             cx,
@@ -129,7 +86,7 @@ impl AppView {
         _ = dock_area.update(cx, |view, cx| {
             view.set_version(DOCK_AREA.version, cx);
             view.set_left_dock(left_panels, Some(px(260.)), true, cx);
-            view.set_root(dock_item, cx);
+            view.set_center(dock_item, cx);
             view.set_dock_collapsible(
                 Edges {
                     left: false,
@@ -165,17 +122,28 @@ impl Render for AppView {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
+
         let mut content = div();
 
-        if cx.global::<UserState>().current_user.is_none() {
-            content = content.child(self.onboarding.clone())
+        if cx.global::<AccountState>().in_use.is_none() {
+            content = content.size_full().child(self.onboarding.clone())
         } else {
-            content = content
-                .size_full()
-                .flex()
-                .flex_col()
-                .child(TitleBar::new())
-                .child(self.dock_area.clone())
+            #[allow(clippy::collapsible_else_if)]
+            if let Some(dock) = self.dock.read(cx).as_ref() {
+                content = content
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(TitleBar::new())
+                    .child(dock.clone())
+            } else {
+                content = content
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(Indicator::new().small())
+            }
         }
 
         div()
@@ -183,7 +151,7 @@ impl Render for AppView {
             .text_color(cx.theme().foreground)
             .size_full()
             .child(content)
-            .children(modal_layer)
             .child(div().absolute().top_8().children(notification_layer))
+            .children(modal_layer)
     }
 }

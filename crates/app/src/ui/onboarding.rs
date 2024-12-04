@@ -1,3 +1,4 @@
+use async_utility::task::spawn;
 use components::{
     input::{InputEvent, TextInput},
     label::Label,
@@ -6,7 +7,7 @@ use gpui::*;
 use keyring::Entry;
 use nostr_sdk::prelude::*;
 
-use crate::{constants::KEYRING_SERVICE, get_client, states::user::UserState};
+use crate::{constants::KEYRING_SERVICE, get_client, states::account::AccountState};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -21,43 +22,40 @@ impl Onboarding {
         });
 
         cx.subscribe(&input, move |_, text_input, input_event, cx| {
-            let mut async_cx = cx.to_async();
-            let view_id = cx.parent_view_id();
-
             if let InputEvent::PressEnter = input_event {
                 let content = text_input.read(cx).text().to_string();
-
-                if let Ok(keys) = Keys::parse(content) {
-                    cx.foreground_executor()
-                        .spawn(async move {
-                            let client = get_client().await;
-
-                            let public_key = keys.public_key();
-                            let secret = keys.secret_key().to_secret_hex();
-
-                            let entry =
-                                Entry::new(KEYRING_SERVICE, &public_key.to_bech32().unwrap())
-                                    .unwrap();
-
-                            // Store private key to OS Keyring
-                            let _ = entry.set_password(&secret);
-
-                            // Update signer
-                            client.set_signer(keys).await;
-
-                            // Update view
-                            async_cx.update_global(|state: &mut UserState, cx| {
-                                state.current_user = Some(public_key);
-                                cx.notify(view_id);
-                            })
-                        })
-                        .detach();
-                }
+                _ = Self::save_keys(&content, cx);
             }
         })
         .detach();
 
         Self { input }
+    }
+
+    fn save_keys(content: &str, cx: &mut ViewContext<Self>) -> anyhow::Result<(), anyhow::Error> {
+        let keys = Keys::parse(content)?;
+
+        let public_key = keys.public_key();
+        let bech32 = public_key.to_bech32().unwrap();
+        let secret = keys.secret_key().to_secret_hex();
+
+        let entry = Entry::new(KEYRING_SERVICE, &bech32).unwrap();
+
+        // Save secret key to keyring
+        entry.set_password(&secret)?;
+
+        // Update signer
+        spawn(async move {
+            get_client().set_signer(keys).await;
+        });
+
+        // Update view
+        cx.update_global(|state: &mut AccountState, cx| {
+            state.in_use = Some(public_key);
+            cx.notify();
+        });
+
+        Ok(())
     }
 }
 

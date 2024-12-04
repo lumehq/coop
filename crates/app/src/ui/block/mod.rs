@@ -9,6 +9,7 @@ use components::{
 use gpui::*;
 use prelude::FluentBuilder;
 
+pub mod rooms;
 pub mod welcome;
 
 actions!(block, [PanelInfo]);

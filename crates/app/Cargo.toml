@@ -26,3 +26,4 @@ dirs.workspace = true
 
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
 rust-embed = "8.5.0"
+smol = "1"
