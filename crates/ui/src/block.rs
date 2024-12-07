@@ -9,9 +9,6 @@ use components::{
 use gpui::*;
 use prelude::FluentBuilder;
 
-pub mod rooms;
-pub mod welcome;
-
 actions!(block, [PanelInfo]);
 
 pub fn section(title: impl IntoElement, cx: &WindowContext) -> Div {

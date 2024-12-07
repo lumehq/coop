@@ -1,0 +1,9 @@
+[package]
+name = "coop-ui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+gpui.workspace = true
+components.workspace = true

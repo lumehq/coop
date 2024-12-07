@@ -12,13 +12,13 @@ use std::{
 
 use constants::{APP_NAME, FAKE_SIG};
 use states::account::AccountState;
-use ui::app::AppView;
+use views::app::AppView;
 
 pub mod asset;
 pub mod constants;
 pub mod states;
-pub mod ui;
 pub mod utils;
+pub mod views;
 
 actions!(main_menu, [Quit]);
 
@@ -138,6 +138,8 @@ async fn main() {
 
             cx.open_window(opts, |cx| {
                 let app_view = cx.new_view(AppView::new);
+
+                cx.activate(true);
                 cx.new_view(|cx| Root::new(app_view.into(), cx))
             })
             .unwrap();

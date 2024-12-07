@@ -1,16 +1,11 @@
-use components::{
-    theme::{ActiveTheme, Colorize},
-    StyledExt,
-};
+use coop_ui::block::Block;
 use gpui::*;
 
-use super::Block;
-
-pub struct WelcomeBlock {
+pub struct ChatBlock {
     focus_handle: FocusHandle,
 }
 
-impl WelcomeBlock {
+impl ChatBlock {
     pub fn view(cx: &mut WindowContext) -> View<Self> {
         cx.new_view(Self::new)
     }
@@ -22,9 +17,9 @@ impl WelcomeBlock {
     }
 }
 
-impl Block for WelcomeBlock {
+impl Block for ChatBlock {
     fn title() -> &'static str {
-        "Welcome"
+        "Chat"
     }
 
     fn new_view(cx: &mut WindowContext) -> View<impl FocusableView> {
@@ -36,22 +31,19 @@ impl Block for WelcomeBlock {
     }
 }
 
-impl FocusableView for WelcomeBlock {
+impl FocusableView for ChatBlock {
     fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for WelcomeBlock {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+impl Render for ChatBlock {
+    fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .child("coop on nostr.")
-            .text_color(cx.theme().muted.darken(0.1))
-            .font_black()
-            .text_sm()
+            .child("Test")
     }
 }

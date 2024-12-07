@@ -1,3 +1,3 @@
 pub mod app;
-pub mod block;
+pub mod dock;
 pub mod onboarding;

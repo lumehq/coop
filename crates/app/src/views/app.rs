@@ -1,18 +1,27 @@
 use components::{
-    dock::{DockArea, DockItem},
-    indicator::Indicator,
+    dock::{DockArea, DockItem, DockPlacement, PanelStyle},
     theme::{ActiveTheme, Theme},
-    Root, Sizable, TitleBar,
+    Root, TitleBar,
 };
+use coop_ui::block::BlockContainer;
 use gpui::*;
+use nostr_sdk::prelude::*;
+use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::states::account::AccountState;
-
 use super::{
-    block::{rooms::Rooms, welcome::WelcomeBlock, BlockContainer},
+    dock::{left_dock::LeftDock, welcome::WelcomeBlock},
     onboarding::Onboarding,
 };
+use crate::states::account::AccountState;
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct AddPanel {
+    pub title: Option<String>,
+    pub receiver: PublicKey,
+}
+
+impl_actions!(dock, [AddPanel]);
 
 pub struct DockAreaTab {
     id: &'static str,
@@ -26,7 +35,7 @@ pub const DOCK_AREA: DockAreaTab = DockAreaTab {
 
 pub struct AppView {
     onboarding: View<Onboarding>,
-    dock: Model<Option<View<DockArea>>>,
+    dock: View<DockArea>,
 }
 
 impl AppView {
@@ -41,25 +50,14 @@ impl AppView {
         let onboarding = cx.new_view(Onboarding::new);
 
         // Dock
-        let dock = cx.new_model(|_| None);
-        let async_dock = dock.clone();
+        let dock = cx.new_view(|cx| {
+            DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx).panel_style(PanelStyle::TabBar)
+        });
 
-        // Observe UserState
-        // If current user is present, fetching all gift wrap events
-        cx.observe_global::<AccountState>(move |_, cx| {
+        cx.observe_global::<AccountState>(|view, cx| {
+            // TODO: save dock state and load previous state on startup
             if cx.global::<AccountState>().in_use.is_some() {
-                // Setup dock area
-                let dock_area =
-                    cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
-
-                // Setup dock layout
-                Self::init_layout(dock_area.downgrade(), cx);
-
-                // Update dock model
-                cx.update_model(&async_dock, |a, b| {
-                    *a = Some(dock_area);
-                    b.notify();
-                });
+                Self::init_layout(view.dock.downgrade(), cx);
             }
         })
         .detach();
@@ -68,25 +66,13 @@ impl AppView {
     }
 
     fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
-        let dock_item = Self::init_dock_items(&dock_area, cx);
-
-        let left_panels = DockItem::split_with_sizes(
-            Axis::Vertical,
-            vec![DockItem::tabs(
-                vec![Arc::new(BlockContainer::panel::<Rooms>(cx))],
-                None,
-                &dock_area,
-                cx,
-            )],
-            vec![None, None],
-            &dock_area,
-            cx,
-        );
+        let left = DockItem::panel(Arc::new(BlockContainer::panel::<LeftDock>(cx)));
+        let center = Self::init_dock_items(&dock_area, cx);
 
         _ = dock_area.update(cx, |view, cx| {
             view.set_version(DOCK_AREA.version, cx);
-            view.set_left_dock(left_panels, Some(px(260.)), true, cx);
-            view.set_center(dock_item, cx);
+            view.set_left_dock(left, Some(px(260.)), true, cx);
+            view.set_center(center, cx);
             view.set_dock_collapsible(
                 Edges {
                     left: false,
@@ -116,6 +102,15 @@ impl AppView {
             cx,
         )
     }
+
+    fn on_action_add_panel(&mut self, _action: &AddPanel, cx: &mut ViewContext<Self>) {
+        // TODO: add chat panel
+        let panel = Arc::new(BlockContainer::panel::<WelcomeBlock>(cx));
+
+        self.dock.update(cx, |dock_area, cx| {
+            dock_area.add_panel(panel, DockPlacement::Center, cx);
+        });
+    }
 }
 
 impl Render for AppView {
@@ -128,22 +123,13 @@ impl Render for AppView {
         if cx.global::<AccountState>().in_use.is_none() {
             content = content.size_full().child(self.onboarding.clone())
         } else {
-            #[allow(clippy::collapsible_else_if)]
-            if let Some(dock) = self.dock.read(cx).as_ref() {
-                content = content
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .child(TitleBar::new())
-                    .child(dock.clone())
-            } else {
-                content = content
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(Indicator::new().small())
-            }
+            content = content
+                .on_action(cx.listener(Self::on_action_add_panel))
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(TitleBar::new())
+                .child(self.dock.clone())
         }
 
         div()
