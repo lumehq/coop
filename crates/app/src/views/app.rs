@@ -3,14 +3,13 @@ use components::{
     theme::{ActiveTheme, Theme},
     Root, TitleBar,
 };
-use coop_ui::block::BlockContainer;
 use gpui::*;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
 use super::{
-    dock::{left_dock::LeftDock, welcome::WelcomeBlock},
+    dock::{chat::ChatPanel, left_dock::LeftDock, welcome::WelcomePanel},
     onboarding::Onboarding,
 };
 use crate::states::account::AccountState;
@@ -66,7 +65,7 @@ impl AppView {
     }
 
     fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
-        let left = DockItem::panel(Arc::new(BlockContainer::panel::<LeftDock>(cx)));
+        let left = DockItem::panel(Arc::new(LeftDock::new(cx)));
         let center = Self::init_dock_items(&dock_area, cx);
 
         _ = dock_area.update(cx, |view, cx| {
@@ -90,7 +89,7 @@ impl AppView {
             Axis::Vertical,
             vec![DockItem::tabs(
                 vec![
-                    Arc::new(BlockContainer::panel::<WelcomeBlock>(cx)),
+                    Arc::new(WelcomePanel::new(cx)),
                     // TODO: add chat block
                 ],
                 None,
@@ -103,12 +102,11 @@ impl AppView {
         )
     }
 
-    fn on_action_add_panel(&mut self, _action: &AddPanel, cx: &mut ViewContext<Self>) {
-        // TODO: add chat panel
-        let panel = Arc::new(BlockContainer::panel::<WelcomeBlock>(cx));
+    fn on_action_add_panel(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
+        let chat_panel = Arc::new(ChatPanel::new(action.receiver, cx));
 
         self.dock.update(cx, |dock_area, cx| {
-            dock_area.add_panel(panel, DockPlacement::Center, cx);
+            dock_area.add_panel(chat_panel, DockPlacement::Center, cx);
         });
     }
 }

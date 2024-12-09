@@ -1,47 +1,82 @@
-use components::{scroll::ScrollbarAxis, StyledExt};
-use coop_ui::block::Block;
+use components::{
+    button::Button,
+    dock::{DockItemState, Panel, PanelEvent, TitleStyle},
+    popup_menu::PopupMenu,
+    scroll::ScrollbarAxis,
+    StyledExt,
+};
 use gpui::*;
 
 use super::inbox::Inbox;
 
 pub struct LeftDock {
-    inbox: View<Inbox>,
+    // Panel
+    name: SharedString,
+    closeable: bool,
+    zoomable: bool,
     focus_handle: FocusHandle,
+    // Dock
+    inbox: View<Inbox>,
     view_id: EntityId,
 }
 
 impl LeftDock {
-    pub fn view(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::new)
+    pub fn new(cx: &mut WindowContext) -> View<Self> {
+        cx.new_view(Self::view)
     }
 
-    fn new(cx: &mut ViewContext<Self>) -> Self {
+    fn view(cx: &mut ViewContext<Self>) -> Self {
         let inbox = cx.new_view(Inbox::new);
 
         Self {
             inbox,
+            name: "Left Dock".into(),
+            closeable: true,
+            zoomable: true,
             focus_handle: cx.focus_handle(),
             view_id: cx.view().entity_id(),
         }
     }
 }
 
-impl Block for LeftDock {
-    fn title() -> &'static str {
-        "Left Dock"
+impl Panel for LeftDock {
+    fn panel_name(&self) -> &'static str {
+        "ChatPanel"
     }
 
-    fn new_view(cx: &mut WindowContext) -> View<impl FocusableView> {
-        Self::view(cx)
+    fn title(&self, _cx: &WindowContext) -> AnyElement {
+        self.name.clone().into_any_element()
     }
 
-    fn zoomable() -> bool {
-        false
+    fn title_style(&self, _cx: &WindowContext) -> Option<TitleStyle> {
+        None
+    }
+
+    fn closeable(&self, _cx: &WindowContext) -> bool {
+        self.closeable
+    }
+
+    fn zoomable(&self, _cx: &WindowContext) -> bool {
+        self.zoomable
+    }
+
+    fn popup_menu(&self, menu: PopupMenu, _cx: &WindowContext) -> PopupMenu {
+        menu.track_focus(&self.focus_handle)
+    }
+
+    fn toolbar_buttons(&self, _cx: &WindowContext) -> Vec<Button> {
+        vec![]
+    }
+
+    fn dump(&self, _cx: &AppContext) -> DockItemState {
+        DockItemState::new(self)
     }
 }
 
+impl EventEmitter<PanelEvent> for LeftDock {}
+
 impl FocusableView for LeftDock {
-    fn focus_handle(&self, _: &gpui::AppContext) -> gpui::FocusHandle {
+    fn focus_handle(&self, _: &AppContext) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }

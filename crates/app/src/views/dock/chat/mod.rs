@@ -6,32 +6,33 @@ use components::{
     StyledExt,
 };
 use gpui::*;
+use nostr_sdk::*;
 
-pub struct WelcomePanel {
+pub struct ChatPanel {
+    // Panel
     name: SharedString,
     closeable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
+    // Chat Room
+    receiver: PublicKey,
 }
 
-impl WelcomePanel {
-    pub fn new(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::view)
-    }
-
-    fn view(cx: &mut ViewContext<Self>) -> Self {
-        Self {
-            name: "Welcome".into(),
+impl ChatPanel {
+    pub fn new(receiver: PublicKey, cx: &mut WindowContext) -> View<Self> {
+        cx.new_view(|cx| Self {
+            name: "Chat".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-        }
+            receiver,
+        })
     }
 }
 
-impl Panel for WelcomePanel {
+impl Panel for ChatPanel {
     fn panel_name(&self) -> &'static str {
-        "WelcomePanel"
+        "ChatPanel"
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {
@@ -63,22 +64,22 @@ impl Panel for WelcomePanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for WelcomePanel {}
+impl EventEmitter<PanelEvent> for ChatPanel {}
 
-impl FocusableView for WelcomePanel {
+impl FocusableView for ChatPanel {
     fn focus_handle(&self, _: &AppContext) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for WelcomePanel {
+impl Render for ChatPanel {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .child("coop on nostr.")
+            .child(self.receiver.to_hex())
             .text_color(cx.theme().muted.darken(0.1))
             .font_black()
             .text_sm()
