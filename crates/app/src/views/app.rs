@@ -88,10 +88,7 @@ impl AppView {
         DockItem::split_with_sizes(
             Axis::Vertical,
             vec![DockItem::tabs(
-                vec![
-                    Arc::new(WelcomePanel::new(cx)),
-                    // TODO: add chat block
-                ],
+                vec![Arc::new(WelcomePanel::new(cx))],
                 None,
                 dock_area,
                 cx,

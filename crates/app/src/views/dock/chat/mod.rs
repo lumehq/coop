@@ -1,12 +1,15 @@
 use components::{
     button::Button,
+    button_group::ButtonGroup,
     dock::{DockItemState, Panel, PanelEvent, TitleStyle},
+    input::TextInput,
     popup_menu::PopupMenu,
-    theme::{ActiveTheme, Colorize},
-    StyledExt,
+    Sizable,
 };
 use gpui::*;
 use nostr_sdk::*;
+
+pub mod list;
 
 pub struct ChatPanel {
     // Panel
@@ -16,16 +19,24 @@ pub struct ChatPanel {
     focus_handle: FocusHandle,
     // Chat Room
     receiver: PublicKey,
+    input: View<TextInput>,
 }
 
 impl ChatPanel {
     pub fn new(receiver: PublicKey, cx: &mut WindowContext) -> View<Self> {
+        let input = cx.new_view(TextInput::new);
+
+        input.update(cx, |input, _cx| {
+            input.set_placeholder("Message");
+        });
+
         cx.new_view(|cx| Self {
             name: "Chat".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
             receiver,
+            input,
         })
     }
 }
@@ -73,15 +84,34 @@ impl FocusableView for ChatPanel {
 }
 
 impl Render for ChatPanel {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()
-            .items_center()
-            .justify_center()
-            .child(self.receiver.to_hex())
-            .text_color(cx.theme().muted.darken(0.1))
-            .font_black()
-            .text_sm()
+            .flex_col()
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(self.receiver.to_hex()),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .h_11()
+                    .child(self.input.clone())
+                    .child(
+                        ButtonGroup::new("actions")
+                            .large()
+                            .child(Button::new("upload").label("Upload"))
+                            .child(Button::new("send").label("Send")),
+                    ),
+            )
     }
 }

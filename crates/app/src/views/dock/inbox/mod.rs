@@ -35,9 +35,9 @@ impl Inbox {
                             if let Ok(events) = client.database().query(vec![filter]).await {
                                 events
                                     .into_iter()
-                                    .sorted_by_key(|ev| Reverse(ev.created_at))
-                                    .filter(|ev| ev.pubkey != public_key)
-                                    .unique_by(|ev| ev.pubkey)
+                                    .filter(|ev| ev.pubkey != public_key) // Filter messages from current user
+                                    .unique_by(|ev| ev.pubkey) // Get unique list
+                                    .sorted_by_key(|ev| Reverse(ev.created_at)) // Sort by created at
                                     .collect::<Vec<_>>()
                             } else {
                                 Vec::new()
