@@ -1,4 +1,4 @@
-use components::{theme::ActiveTheme, Collapsible, Selectable, StyledExt};
+use coop_ui::{theme::ActiveTheme, Collapsible, Selectable, StyledExt};
 use gpui::*;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;

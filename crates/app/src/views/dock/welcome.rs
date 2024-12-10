@@ -1,4 +1,4 @@
-use components::{
+use coop_ui::{
     button::Button,
     dock::{DockItemState, Panel, PanelEvent, TitleStyle},
     popup_menu::PopupMenu,

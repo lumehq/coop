@@ -1,4 +1,4 @@
-use components::{
+use coop_ui::{
     dock::{DockArea, DockItem, DockPlacement, PanelStyle},
     theme::{ActiveTheme, Theme},
     Root, TitleBar,

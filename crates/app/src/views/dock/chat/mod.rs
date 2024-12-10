@@ -1,4 +1,4 @@
-use components::{
+use coop_ui::{
     button::Button,
     button_group::ButtonGroup,
     dock::{DockItemState, Panel, PanelEvent, TitleStyle},

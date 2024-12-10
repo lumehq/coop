@@ -9,7 +9,6 @@ coop = { path = "crates/*" }
 # UI
 gpui = { git = "https://github.com/zed-industries/zed" }
 reqwest_client = { git = "https://github.com/zed-industries/zed" }
-components = { package = "ui", git = "https://github.com/lumehq/gpui-component" }
 
 # Nostr
 nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
@@ -18,6 +17,7 @@ nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"all-nips",
 ] }
 
+smol = "1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -28,6 +28,7 @@ chrono = "0.4.38"
 tracing = "0.1.40"
 anyhow = "1.0.44"
 smallvec = "1.13.2"
+rust-embed = "8.5.0"
 keyring-search = "1.2.0"
 keyring = { version = "3", features = [
 	"apple-native",

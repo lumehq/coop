@@ -1,5 +1,5 @@
 use asset::Assets;
-use components::Root;
+use coop_ui::Root;
 use dirs::config_dir;
 use gpui::*;
 use nostr_sdk::prelude::*;
@@ -76,7 +76,7 @@ async fn main() {
             AccountState::set_global(cx);
 
             // Initialize components
-            components::init(cx);
+            coop_ui::init(cx);
 
             // Set quit action
             cx.on_action(quit);

@@ -1,5 +1,5 @@
 use async_utility::task::spawn;
-use components::{
+use coop_ui::{
     input::{InputEvent, TextInput},
     label::Label,
 };
@@ -17,7 +17,7 @@ impl Onboarding {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let input = cx.new_view(|cx| {
             let mut input = TextInput::new(cx);
-            input.set_size(components::Size::Medium, cx);
+            input.set_size(coop_ui::Size::Medium, cx);
             input
         });
 

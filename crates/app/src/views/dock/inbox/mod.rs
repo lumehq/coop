@@ -1,5 +1,5 @@
 use chat::{Chat, ChatDelegate};
-use components::{theme::ActiveTheme, v_flex, StyledExt};
+use coop_ui::{theme::ActiveTheme, v_flex, StyledExt};
 use gpui::*;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
