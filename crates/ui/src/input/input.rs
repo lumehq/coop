@@ -145,14 +145,17 @@ pub fn init(cx: &mut AppContext) {
     ]);
 }
 
+type Affixes<T> = Option<Box<dyn Fn(&mut ViewContext<T>) -> AnyElement + 'static>>;
+type Validate = Option<Box<dyn Fn(&str) -> bool + 'static>>;
+
 pub struct TextInput {
     pub(super) focus_handle: FocusHandle,
     pub(super) text: SharedString,
     multi_line: bool,
     pub(super) history: History<Change>,
     pub(super) blink_cursor: Model<BlinkCursor>,
-    pub(super) prefix: Option<Box<dyn Fn(&mut ViewContext<Self>) -> AnyElement + 'static>>,
-    pub(super) suffix: Option<Box<dyn Fn(&mut ViewContext<Self>) -> AnyElement + 'static>>,
+    pub(super) prefix: Affixes<Self>,
+    pub(super) suffix: Affixes<Self>,
     pub(super) loading: bool,
     pub(super) placeholder: SharedString,
     pub(super) selected_range: Range<usize>,
@@ -177,7 +180,7 @@ pub struct TextInput {
     pub(super) size: Size,
     pub(super) rows: usize,
     pattern: Option<regex::Regex>,
-    validate: Option<Box<dyn Fn(&str) -> bool + 'static>>,
+    validate: Validate,
     pub(crate) scroll_handle: ScrollHandle,
     scrollbar_state: Rc<Cell<ScrollbarState>>,
     /// The size of the scrollable content.
@@ -506,13 +509,12 @@ impl TextInput {
         }
 
         let offset = self.previous_boundary(self.cursor_offset());
-        let line = self
-            .text_for_range(self.range_to_utf16(&(0..offset + 1)), &mut None, cx)
+
+        self.text_for_range(self.range_to_utf16(&(0..offset + 1)), &mut None, cx)
             .unwrap_or_default()
             .rfind('\n')
             .map(|i| i + 1)
-            .unwrap_or(0);
-        line
+            .unwrap_or(0)
     }
 
     /// Get end of line
@@ -531,17 +533,15 @@ impl TextInput {
             return offset;
         }
 
-        let line = self
-            .text_for_range(
-                self.range_to_utf16(&(offset..self.text.len())),
-                &mut None,
-                cx,
-            )
-            .unwrap_or_default()
-            .find('\n')
-            .map(|i| i + offset)
-            .unwrap_or(self.text.len());
-        line
+        self.text_for_range(
+            self.range_to_utf16(&(offset..self.text.len())),
+            &mut None,
+            cx,
+        )
+        .unwrap_or_default()
+        .find('\n')
+        .map(|i| i + offset)
+        .unwrap_or(self.text.len())
     }
 
     fn backspace(&mut self, _: &Backspace, cx: &mut ViewContext<Self>) {
@@ -675,7 +675,7 @@ impl TextInput {
         }
 
         let old_text = self
-            .text_for_range(self.range_to_utf16(&range), &mut None, cx)
+            .text_for_range(self.range_to_utf16(range), &mut None, cx)
             .unwrap_or("".to_string());
 
         let new_range = range.start..range.start + new_text.len();
@@ -753,7 +753,7 @@ impl TextInput {
         let mut y_offset = px(0.);
 
         for line in lines.iter() {
-            let line_origin = self.line_origin_with_y_offset(&mut y_offset, &line, line_height);
+            let line_origin = self.line_origin_with_y_offset(&mut y_offset, line, line_height);
             let mut pos = inner_position - line_origin;
             // Ignore the y position in single line mode, only check x position.
             if self.is_single_line() {
@@ -765,7 +765,10 @@ impl TextInput {
                 // Add 1 for place cursor after the character.
                 index += v + 1;
                 break;
-            } else if let Ok(_) = line.index_for_position(point(px(0.), pos.y), line_height) {
+            } else if line
+                .index_for_position(point(px(0.), pos.y), line_height)
+                .is_ok()
+            {
                 // Click in the this line but not in the text, move cursor to the end of the line.
                 // The fallback index is saved in Err from `index_for_position` method.
                 index += index_result.unwrap_err();
@@ -809,7 +812,7 @@ impl TextInput {
         if self.is_multi_line() {
             let p = point(px(0.), *y_offset);
             let height = line_height + line.wrap_boundaries.len() as f32 * line_height;
-            *y_offset = *y_offset + height;
+            *y_offset += height;
             p
         } else {
             point(px(0.), px(0.))
@@ -859,7 +862,7 @@ impl TextInput {
         let prev_chars = prev_text.chars().rev().peekable();
         let next_chars = next_text.chars().peekable();
 
-        for (_, c) in prev_chars.enumerate() {
+        for c in prev_chars {
             if !is_word(c) {
                 break;
             }
@@ -867,7 +870,7 @@ impl TextInput {
             start -= c.len_utf16();
         }
 
-        for (_, c) in next_chars.enumerate() {
+        for c in next_chars {
             if !is_word(c) {
                 break;
             }
@@ -1177,12 +1180,8 @@ impl Render for TextInput {
                     .on_action(cx.listener(Self::delete_to_end_of_line))
                     .on_action(cx.listener(Self::enter))
             })
-            .on_action(cx.listener(Self::up))
-            .on_action(cx.listener(Self::down))
             .on_action(cx.listener(Self::left))
             .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
             .on_action(cx.listener(Self::select_all))
@@ -1206,7 +1205,13 @@ impl Render for TextInput {
             .input_py(self.size)
             .input_h(self.size)
             .cursor_text()
-            .when(self.multi_line, |this| this.h_auto())
+            .when(self.multi_line, |this| {
+                this.on_action(cx.listener(Self::up))
+                    .on_action(cx.listener(Self::down))
+                    .on_action(cx.listener(Self::select_up))
+                    .on_action(cx.listener(Self::select_down))
+                    .h_auto()
+            })
             .when(self.appearance, |this| {
                 this.bg(if self.disabled {
                     cx.theme().muted
@@ -1249,7 +1254,7 @@ impl Render for TextInput {
                             .absolute()
                             .top_0()
                             .left_0()
-                            .right_0()
+                            .right(px(1.))
                             .bottom_0()
                             .child(
                                 Scrollbar::vertical(

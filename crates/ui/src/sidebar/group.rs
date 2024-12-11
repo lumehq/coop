@@ -33,6 +33,7 @@ impl<E: Collapsible + IntoElement> SidebarGroup<E> {
         self
     }
 }
+
 impl<E: Collapsible + IntoElement> Collapsible for SidebarGroup<E> {
     fn is_collapsed(&self) -> bool {
         self.is_collapsed
@@ -43,6 +44,7 @@ impl<E: Collapsible + IntoElement> Collapsible for SidebarGroup<E> {
         self
     }
 }
+
 impl<E: Collapsible + IntoElement> RenderOnce for SidebarGroup<E> {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         v_flex()

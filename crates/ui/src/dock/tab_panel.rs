@@ -456,7 +456,7 @@ impl TabPanel {
         let right_dock_button = self.render_dock_toggle_button(DockPlacement::Right, cx);
 
         if self.panels.len() == 1 && panel_style == PanelStyle::Default {
-            let panel = self.panels.get(0).unwrap();
+            let panel = self.panels.first().unwrap();
             let title_style = panel.title_style(cx);
 
             return h_flex()
@@ -694,6 +694,7 @@ impl TabPanel {
 
         // If target is same tab, and it is only one panel, do nothing.
         if is_same_tab && ix.is_none() {
+            #[allow(clippy::if_same_then_else)]
             if self.will_split_placement.is_none() {
                 return;
             } else if self.panels.len() == 1 {
@@ -708,7 +709,7 @@ impl TabPanel {
         if is_same_tab {
             self.detach_panel(panel.clone(), cx);
         } else {
-            let _ = drag.tab_panel.update(cx, |view, cx| {
+            drag.tab_panel.update(cx, |view, cx| {
                 view.detach_panel(panel.clone(), cx);
                 view.remove_self_if_empty(cx);
             });

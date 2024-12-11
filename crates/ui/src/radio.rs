@@ -4,6 +4,8 @@ use gpui::{
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WindowContext,
 };
 
+type OnClick = Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>;
+
 /// A Radio element.
 ///
 /// This is not included the Radio group implementation, you can manage the group by yourself.
@@ -13,7 +15,7 @@ pub struct Radio {
     label: Option<SharedString>,
     checked: bool,
     disabled: bool,
-    on_click: Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>,
+    on_click: OnClick,
 }
 
 impl Radio {

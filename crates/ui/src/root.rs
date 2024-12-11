@@ -69,7 +69,7 @@ impl ContextModal for WindowContext<'_> {
     }
 
     fn has_active_drawer(&self) -> bool {
-        Root::read(&self).active_drawer.is_some()
+        Root::read(self).active_drawer.is_some()
     }
 
     fn close_drawer(&mut self) {
@@ -87,7 +87,7 @@ impl ContextModal for WindowContext<'_> {
         Root::update(self, move |root, cx| {
             // Only save focus handle if there are no active modals.
             // This is used to restore focus when all modals are closed.
-            if root.active_modals.len() == 0 {
+            if root.active_modals.is_empty() {
                 root.previous_focus_handle = cx.focused();
             }
 
@@ -103,7 +103,7 @@ impl ContextModal for WindowContext<'_> {
     }
 
     fn has_active_modal(&self) -> bool {
-        Root::read(&self).active_modals.len() > 0
+        !Root::read(self).active_modals.is_empty()
     }
 
     fn close_modal(&mut self) {
@@ -145,7 +145,7 @@ impl ContextModal for WindowContext<'_> {
     }
 
     fn notifications(&self) -> Rc<Vec<View<Notification>>> {
-        Rc::new(Root::read(&self).notification.read(&self).notifications())
+        Rc::new(Root::read(self).notification.read(self).notifications())
     }
 }
 impl<V> ContextModal for ViewContext<'_, V> {
@@ -211,16 +211,19 @@ pub struct Root {
     view: AnyView,
 }
 
+type DrawerBuilder = Rc<dyn Fn(Drawer, &mut WindowContext) -> Drawer + 'static>;
+type ModelBuilder = Rc<dyn Fn(Modal, &mut WindowContext) -> Modal + 'static>;
+
 #[derive(Clone)]
 struct ActiveDrawer {
     focus_handle: FocusHandle,
-    builder: Rc<dyn Fn(Drawer, &mut WindowContext) -> Drawer + 'static>,
+    builder: DrawerBuilder,
 }
 
 #[derive(Clone)]
 struct ActiveModal {
     focus_handle: FocusHandle,
-    builder: Rc<dyn Fn(Modal, &mut WindowContext) -> Modal + 'static>,
+    builder: ModelBuilder,
 }
 
 impl Root {

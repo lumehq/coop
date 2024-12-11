@@ -274,6 +274,8 @@ impl Render for ResizablePanelGroup {
     }
 }
 
+type ContentBuilder = Option<Rc<dyn Fn(&mut WindowContext) -> AnyElement>>;
+
 pub struct ResizablePanel {
     group: Option<WeakView<ResizablePanelGroup>>,
     /// Initial size is the size that the panel has when it is created.
@@ -283,7 +285,7 @@ pub struct ResizablePanel {
     /// the size ratio that the panel has relative to its group
     size_ratio: Option<f32>,
     axis: Axis,
-    content_builder: Option<Rc<dyn Fn(&mut WindowContext) -> AnyElement>>,
+    content_builder: ContentBuilder,
     content_view: Option<AnyView>,
     /// The bounds of the resizable panel, when render the bounds will be updated.
     bounds: Bounds<Pixels>,
@@ -435,7 +437,6 @@ impl Element for ResizePanelGroupElement {
         _: &mut Self::RequestLayoutState,
         _: &mut WindowContext,
     ) -> Self::PrepaintState {
-        ()
     }
 
     fn paint(

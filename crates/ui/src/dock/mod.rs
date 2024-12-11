@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 mod dock;
 mod invalid_panel;
 mod panel;
@@ -6,7 +7,7 @@ mod state;
 mod tab_panel;
 
 use anyhow::Result;
-pub use dock::*;
+
 use gpui::{
     actions, canvas, div, prelude::FluentBuilder, AnyElement, AnyView, AppContext, Axis, Bounds,
     Edges, Entity as _, EntityId, EventEmitter, InteractiveElement as _, IntoElement,
@@ -15,10 +16,13 @@ use gpui::{
 };
 use std::sync::Arc;
 
+pub use dock::*;
 pub use panel::*;
 pub use stack_panel::*;
 pub use state::*;
 pub use tab_panel::*;
+
+use crate::theme::ActiveTheme;
 
 pub fn init(cx: &mut AppContext) {
     cx.set_global(PanelRegistry::new());
@@ -232,7 +236,7 @@ impl DockItem {
             }
             Self::Split { view, items, .. } => {
                 // Iter items to add panel to the first tabs
-                for item in items.into_iter() {
+                for item in items.iter_mut() {
                     if let DockItem::Tabs { view, .. } = item {
                         view.update(cx, |tab_panel, cx| {
                             tab_panel.add_panel(panel.clone(), cx);
@@ -636,12 +640,12 @@ impl DockArea {
                 }
 
                 self._subscriptions
-                    .push(cx.subscribe(view, move |_, _, event, cx| match event {
-                        PanelEvent::LayoutChanged => {
+                    .push(cx.subscribe(view, move |_, _, event, cx| {
+                        if let PanelEvent::LayoutChanged = event {
                             let dock_area = cx.view().clone();
                             cx.spawn(|_, mut cx| async move {
                                 let _ = cx.update(|cx| {
-                                    let _ = dock_area.update(cx, |view, cx| {
+                                    dock_area.update(cx, |view, cx| {
                                         view.update_toggle_button_tab_panels(cx)
                                     });
                                 });
@@ -649,7 +653,6 @@ impl DockArea {
                             .detach();
                             cx.emit(DockEvent::LayoutChanged);
                         }
-                        _ => {}
                     }));
             }
             DockItem::Tabs { .. } => {
@@ -673,7 +676,7 @@ impl DockArea {
                 let panel = panel.clone();
                 cx.spawn(|_, mut cx| async move {
                     let _ = cx.update(|cx| {
-                        let _ = dock_area.update(cx, |dock, cx| {
+                        dock_area.update(cx, |dock, cx| {
                             dock.set_zoomed_in(panel, cx);
                             cx.notify();
                         });
@@ -685,7 +688,7 @@ impl DockArea {
                 let dock_area = cx.view().clone();
                 cx.spawn(|_, mut cx| async move {
                     let _ = cx.update(|cx| {
-                        let _ = dock_area.update(cx, |view, cx| view.set_zoomed_out(cx));
+                        dock_area.update(cx, |view, cx| view.set_zoomed_out(cx));
                     });
                 })
                 .detach()
@@ -694,8 +697,7 @@ impl DockArea {
                 let dock_area = cx.view().clone();
                 cx.spawn(|_, mut cx| async move {
                     let _ = cx.update(|cx| {
-                        let _ = dock_area
-                            .update(cx, |view, cx| view.update_toggle_button_tab_panels(cx));
+                        dock_area.update(cx, |view, cx| view.update_toggle_button_tab_panels(cx));
                     });
                 })
                 .detach();
@@ -780,6 +782,8 @@ impl Render for DockArea {
                             // Left dock
                             .when_some(self.left_dock.clone(), |this, dock| {
                                 this.child(div().flex().flex_none().child(dock))
+                                    .bg(cx.theme().sidebar)
+                                    .text_color(cx.theme().sidebar_foreground)
                             })
                             // Center
                             .child(

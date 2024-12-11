@@ -2,6 +2,7 @@ mod blink_cursor;
 mod change;
 mod clear_button;
 mod element;
+#[allow(clippy::module_inception)]
 mod input;
 mod otp_input;
 

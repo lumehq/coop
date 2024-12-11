@@ -21,9 +21,12 @@ use crate::{
 actions!(drawer, [Escape]);
 
 const CONTEXT: &str = "Drawer";
+
 pub fn init(cx: &mut AppContext) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])
 }
+
+type OnClose = Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>;
 
 #[derive(IntoElement)]
 pub struct Drawer {
@@ -31,7 +34,7 @@ pub struct Drawer {
     placement: Placement,
     size: DefiniteLength,
     resizable: bool,
-    on_close: Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>,
+    on_close: OnClose,
     title: Option<AnyElement>,
     footer: Option<AnyElement>,
     content: Div,

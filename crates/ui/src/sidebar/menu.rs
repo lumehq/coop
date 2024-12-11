@@ -58,6 +58,13 @@ impl SidebarMenu {
         self
     }
 }
+
+impl Default for SidebarMenu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Collapsible for SidebarMenu {
     fn is_collapsed(&self) -> bool {
         self.is_collapsed
@@ -84,20 +91,22 @@ impl RenderOnce for SidebarMenu {
     }
 }
 
+type Handler = Rc<dyn Fn(&ClickEvent, &mut WindowContext)>;
+
 /// A sidebar menu item
 #[derive(IntoElement)]
 enum SidebarMenuItem {
     Item {
         icon: Option<Icon>,
         label: SharedString,
-        handler: Rc<dyn Fn(&ClickEvent, &mut WindowContext)>,
+        handler: Handler,
         active: bool,
         is_collapsed: bool,
     },
     Submenu {
         icon: Option<Icon>,
         label: SharedString,
-        handler: Rc<dyn Fn(&ClickEvent, &mut WindowContext)>,
+        handler: Handler,
         items: Vec<SidebarMenuItem>,
         is_open: bool,
         is_collapsed: bool,

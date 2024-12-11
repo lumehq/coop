@@ -13,6 +13,8 @@ const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
 #[cfg(not(target_os = "macos"))]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(12.);
 
+type OnCloseWindow = Option<Rc<Box<dyn Fn(&ClickEvent, &mut WindowContext)>>>;
+
 /// TitleBar used to customize the appearance of the title bar.
 ///
 /// We can put some elements inside the title bar.
@@ -20,7 +22,7 @@ const TITLE_BAR_LEFT_PADDING: Pixels = px(12.);
 pub struct TitleBar {
     base: Stateful<Div>,
     children: Vec<AnyElement>,
-    on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut WindowContext)>>>,
+    on_close_window: OnCloseWindow,
 }
 
 impl TitleBar {
@@ -45,6 +47,12 @@ impl TitleBar {
     }
 }
 
+impl Default for TitleBar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // The Windows control buttons have a fixed width of 35px.
 //
 // We don't need implementation the click event for the control buttons.
@@ -54,9 +62,7 @@ enum ControlIcon {
     Minimize,
     Restore,
     Maximize,
-    Close {
-        on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut WindowContext)>>>,
-    },
+    Close { on_close_window: OnCloseWindow },
 }
 
 impl ControlIcon {
@@ -72,7 +78,7 @@ impl ControlIcon {
         Self::Maximize
     }
 
-    fn close(on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut WindowContext)>>>) -> Self {
+    fn close(on_close_window: OnCloseWindow) -> Self {
         Self::Close { on_close_window }
     }
 
@@ -173,7 +179,7 @@ impl RenderOnce for ControlIcon {
 
 #[derive(IntoElement)]
 struct WindowControls {
-    on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut WindowContext)>>>,
+    on_close_window: OnCloseWindow,
 }
 
 impl RenderOnce for WindowControls {
@@ -230,9 +236,9 @@ impl RenderOnce for TitleBar {
                     .items_center()
                     .justify_between()
                     .h(HEIGHT)
-                    .border_b_1()
-                    .border_color(cx.theme().title_bar_border)
                     .bg(cx.theme().title_bar)
+                    .border_b_1()
+                    .border_color(cx.theme().title_bar_border.opacity(0.7))
                     .when(cx.is_fullscreen(), |this| this.pl(px(12.)))
                     .on_double_click(|_, cx| cx.zoom_window())
                     .child(
@@ -286,13 +292,18 @@ impl Element for TitleBarElement {
         _: Option<&gpui::GlobalElementId>,
         cx: &mut WindowContext,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.flex_grow = 1.0;
-        style.flex_shrink = 1.0;
-        style.size.width = relative(1.).into();
-        style.size.height = relative(1.).into();
+        let style = Style {
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            size: gpui::Size {
+                width: relative(1.).into(),
+                height: relative(1.).into(),
+            },
+            ..Default::default()
+        };
 
         let id = cx.request_layout(style, []);
+
         (id, ())
     }
 

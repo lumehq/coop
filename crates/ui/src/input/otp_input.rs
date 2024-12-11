@@ -127,7 +127,7 @@ impl OtpInput {
             }
             _ => {
                 let c = key.chars().next().unwrap();
-                if !matches!(c, '0'..='9') {
+                if !c.is_ascii_digit() {
                     return;
                 }
                 if ix >= self.length {

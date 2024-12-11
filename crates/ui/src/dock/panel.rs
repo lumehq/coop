@@ -143,19 +143,22 @@ impl PartialEq for dyn PanelView {
     }
 }
 
-pub struct PanelRegistry {
-    pub(super) items: HashMap<
-        String,
-        Arc<
-            dyn Fn(
-                WeakView<DockArea>,
-                &DockItemState,
-                &DockItemInfo,
-                &mut WindowContext,
-            ) -> Box<dyn PanelView>,
-        >,
+type PanelRegistryItem = HashMap<
+    String,
+    Arc<
+        dyn Fn(
+            WeakView<DockArea>,
+            &DockItemState,
+            &DockItemInfo,
+            &mut WindowContext,
+        ) -> Box<dyn PanelView>,
     >,
+>;
+
+pub struct PanelRegistry {
+    pub(super) items: PanelRegistryItem,
 }
+
 impl PanelRegistry {
     pub fn new() -> Self {
         Self {
@@ -163,6 +166,13 @@ impl PanelRegistry {
         }
     }
 }
+
+impl Default for PanelRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Global for PanelRegistry {}
 
 /// Register the Panel init by panel_name to global registry.
@@ -176,7 +186,7 @@ where
         ) -> Box<dyn PanelView>
         + 'static,
 {
-    if let None = cx.try_global::<PanelRegistry>() {
+    if cx.try_global::<PanelRegistry>().is_none() {
         cx.set_global(PanelRegistry::new());
     }
 

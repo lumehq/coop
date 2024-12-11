@@ -106,13 +106,15 @@ impl<E: Collapsible + IntoElement> Sidebar<E> {
     }
 }
 
+type OnClick = Option<Rc<dyn Fn(&ClickEvent, &mut WindowContext)>>;
+
 /// Sidebar collapse button with Icon.
 #[derive(IntoElement)]
 pub struct SidebarToggleButton {
     btn: Button,
     is_collapsed: bool,
     side: Side,
-    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut WindowContext)>>,
+    on_click: OnClick,
 }
 
 impl SidebarToggleButton {
@@ -158,12 +160,10 @@ impl RenderOnce for SidebarToggleButton {
             } else {
                 IconName::PanelRightOpen
             }
+        } else if self.side.is_left() {
+            IconName::PanelLeftClose
         } else {
-            if self.side.is_left() {
-                IconName::PanelLeftClose
-            } else {
-                IconName::PanelRightClose
-            }
+            IconName::PanelRightClose
         };
 
         self.btn

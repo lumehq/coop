@@ -350,17 +350,17 @@ impl<T: Styled> StyleSized<T> for T {
 }
 
 pub trait AxisExt {
-    fn is_horizontal(self) -> bool;
-    fn is_vertical(self) -> bool;
+    fn is_horizontal(&self) -> bool;
+    fn is_vertical(&self) -> bool;
 }
 
 impl AxisExt for Axis {
-    fn is_horizontal(self) -> bool {
-        self == Axis::Horizontal
+    fn is_horizontal(&self) -> bool {
+        self == &Axis::Horizontal
     }
 
-    fn is_vertical(self) -> bool {
-        self == Axis::Vertical
+    fn is_vertical(&self) -> bool {
+        self == &Axis::Vertical
     }
 }
 
@@ -385,17 +385,11 @@ impl Display for Placement {
 
 impl Placement {
     pub fn is_horizontal(&self) -> bool {
-        match self {
-            Placement::Left | Placement::Right => true,
-            _ => false,
-        }
+        matches!(self, Placement::Left | Placement::Right)
     }
 
     pub fn is_vertical(&self) -> bool {
-        match self {
-            Placement::Top | Placement::Bottom => true,
-            _ => false,
-        }
+        matches!(self, Placement::Top | Placement::Bottom)
     }
 
     pub fn axis(&self) -> Axis {

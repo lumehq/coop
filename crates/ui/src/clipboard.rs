@@ -10,11 +10,14 @@ use crate::{
     h_flex, IconName, Sizable as _,
 };
 
+type ContentBuilder = Option<Box<dyn Fn(&mut WindowContext) -> AnyElement>>;
+type CopiedCallback = Option<Rc<dyn Fn(SharedString, &mut WindowContext)>>;
+
 pub struct Clipboard {
     id: ElementId,
     value: SharedString,
-    content_builder: Option<Box<dyn Fn(&mut WindowContext) -> AnyElement>>,
-    copied_callback: Option<Rc<dyn Fn(SharedString, &mut WindowContext)>>,
+    content_builder: ContentBuilder,
+    copied_callback: CopiedCallback,
 }
 
 impl Clipboard {

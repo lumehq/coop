@@ -9,6 +9,7 @@ use crate::{
 pub(crate) struct ClearButton {}
 
 impl ClearButton {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(cx: &mut WindowContext) -> Button {
         Button::new("clean")
             .icon(Icon::new(IconName::CircleX).text_color(cx.theme().muted_foreground))

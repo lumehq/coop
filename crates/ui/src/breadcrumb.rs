@@ -12,11 +12,13 @@ pub struct Breadcrumb {
     items: Vec<BreadcrumbItem>,
 }
 
+type OnClick = Option<Rc<dyn Fn(&ClickEvent, &mut WindowContext)>>;
+
 #[derive(IntoElement)]
 pub struct BreadcrumbItem {
     id: ElementId,
     text: SharedString,
-    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut WindowContext)>>,
+    on_click: OnClick,
     disabled: bool,
     is_last: bool,
 }
@@ -46,6 +48,7 @@ impl BreadcrumbItem {
     }
 
     /// For internal use only.
+    #[allow(clippy::wrong_self_convention)]
     fn is_last(mut self, is_last: bool) -> Self {
         self.is_last = is_last;
         self
@@ -81,6 +84,12 @@ impl Breadcrumb {
     pub fn item(mut self, item: BreadcrumbItem) -> Self {
         self.items.push(item);
         self
+    }
+}
+
+impl Default for Breadcrumb {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

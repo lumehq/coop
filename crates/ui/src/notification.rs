@@ -40,6 +40,8 @@ impl From<(TypeId, ElementId)> for NotificationId {
     }
 }
 
+type OnClick = Option<Arc<dyn Fn(&ClickEvent, &mut WindowContext)>>;
+
 /// A notification element.
 pub struct Notification {
     /// The id is used make the notification unique.
@@ -52,7 +54,7 @@ pub struct Notification {
     message: SharedString,
     icon: Option<Icon>,
     autohide: bool,
-    on_click: Option<Arc<dyn Fn(&ClickEvent, &mut WindowContext)>>,
+    on_click: OnClick,
     closing: bool,
 }
 

@@ -264,7 +264,7 @@ impl PopupMenu {
             // If the actions are listened on the `PanelContent`,
             // it can't receive the actions from the `PopupMenu`, unless we focus on `PanelContent`.
             if let Some(handle) = action_focus_handle.as_ref() {
-                cx.focus(&handle);
+                cx.focus(handle);
             }
 
             cx.dispatch_action(action.boxed_clone());
@@ -367,22 +367,19 @@ impl PopupMenu {
     }
 
     fn confirm(&mut self, _: &Confirm, cx: &mut ViewContext<Self>) {
-        match self.selected_index {
-            Some(index) => {
-                let item = self.menu_items.get(index);
-                match item {
-                    Some(PopupMenuItem::Item { handler, .. }) => {
-                        handler(cx);
-                        self.dismiss(&Dismiss, cx)
-                    }
-                    Some(PopupMenuItem::ElementItem { handler, .. }) => {
-                        handler(cx);
-                        self.dismiss(&Dismiss, cx)
-                    }
-                    _ => {}
+        if let Some(index) = self.selected_index {
+            let item = self.menu_items.get(index);
+            match item {
+                Some(PopupMenuItem::Item { handler, .. }) => {
+                    handler(cx);
+                    self.dismiss(&Dismiss, cx)
                 }
+                Some(PopupMenuItem::ElementItem { handler, .. }) => {
+                    handler(cx);
+                    self.dismiss(&Dismiss, cx)
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -435,7 +432,7 @@ impl PopupMenu {
                 let el = div().text_color(cx.theme().muted_foreground).children(
                     keybinding
                         .keystrokes()
-                        .into_iter()
+                        .iter()
                         .map(|key| key_shortcut(key.clone())),
                 );
 
@@ -443,7 +440,7 @@ impl PopupMenu {
             }
         }
 
-        return None;
+        None
     }
 
     fn render_icon(

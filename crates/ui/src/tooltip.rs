@@ -10,6 +10,7 @@ pub struct Tooltip {
 }
 
 impl Tooltip {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(text: impl Into<SharedString>, cx: &mut WindowContext) -> AnyView {
         cx.new_view(|_| Self { text: text.into() }).into()
     }

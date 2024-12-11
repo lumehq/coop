@@ -5,13 +5,15 @@ use gpui::{
 
 use crate::theme::ActiveTheme as _;
 
+type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut gpui::WindowContext) + 'static>>;
+
 /// A Link element like a `<a>` tag in HTML.
 #[derive(IntoElement)]
 pub struct Link {
     base: Stateful<Div>,
     href: Option<SharedString>,
     disabled: bool,
-    on_click: Option<Box<dyn Fn(&ClickEvent, &mut gpui::WindowContext) + 'static>>,
+    on_click: OnClick,
 }
 
 impl Link {

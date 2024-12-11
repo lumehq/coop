@@ -35,6 +35,12 @@ impl Indicator {
     }
 }
 
+impl Default for Indicator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sizable for Indicator {
     fn with_size(mut self, size: impl Into<Size>) -> Self {
         self.size = size.into();

@@ -6,6 +6,10 @@ use gpui::{
 };
 use smallvec::SmallVec;
 
+type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>>;
+type OnMouseEnter = Option<Box<dyn Fn(&MouseMoveEvent, &mut WindowContext) + 'static>>;
+type Suffix = Option<Box<dyn Fn(&mut WindowContext) -> AnyElement + 'static>>;
+
 #[derive(IntoElement)]
 pub struct ListItem {
     id: ElementId,
@@ -14,9 +18,9 @@ pub struct ListItem {
     selected: bool,
     confirmed: bool,
     check_icon: Option<Icon>,
-    on_click: Option<Box<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>>,
-    on_mouse_enter: Option<Box<dyn Fn(&MouseMoveEvent, &mut WindowContext) + 'static>>,
-    suffix: Option<Box<dyn Fn(&mut WindowContext) -> AnyElement + 'static>>,
+    on_click: OnClick,
+    on_mouse_enter: OnMouseEnter,
+    suffix: Suffix,
     children: SmallVec<[AnyElement; 2]>,
 }
 

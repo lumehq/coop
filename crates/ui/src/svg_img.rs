@@ -184,6 +184,12 @@ impl SvgImg {
     }
 }
 
+impl Default for SvgImg {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IntoElement for SvgImg {
     type Element = Self;
 

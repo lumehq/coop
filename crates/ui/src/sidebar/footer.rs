@@ -23,6 +23,13 @@ impl SidebarFooter {
         }
     }
 }
+
+impl Default for SidebarFooter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Selectable for SidebarFooter {
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
@@ -33,6 +40,7 @@ impl Selectable for SidebarFooter {
         &self.id
     }
 }
+
 impl Collapsible for SidebarFooter {
     fn is_collapsed(&self) -> bool {
         self.is_collapsed
@@ -43,17 +51,21 @@ impl Collapsible for SidebarFooter {
         self
     }
 }
+
 impl ParentElement for SidebarFooter {
     fn extend(&mut self, elements: impl IntoIterator<Item = gpui::AnyElement>) {
         self.base.extend(elements);
     }
 }
+
 impl Styled for SidebarFooter {
     fn style(&mut self) -> &mut gpui::StyleRefinement {
         self.base.style()
     }
 }
+
 impl PopupMenuExt for SidebarFooter {}
+
 impl RenderOnce for SidebarFooter {
     fn render(self, cx: &mut gpui::WindowContext) -> impl gpui::IntoElement {
         h_flex()

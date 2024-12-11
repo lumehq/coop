@@ -8,6 +8,8 @@ use gpui::{
 
 use crate::{h_flex, theme::ActiveTheme as _, v_flex, Icon, IconName, Sizable, Size};
 
+type OnToggleClick = Option<Arc<dyn Fn(&[usize], &mut WindowContext) + Send + Sync>>;
+
 /// An AccordionGroup is a container for multiple Accordion elements.
 #[derive(IntoElement)]
 pub struct Accordion {
@@ -18,7 +20,7 @@ pub struct Accordion {
     bordered: bool,
     disabled: bool,
     children: Vec<AccordionItem>,
-    on_toggle_click: Option<Arc<dyn Fn(&[usize], &mut WindowContext) + Send + Sync>>,
+    on_toggle_click: OnToggleClick,
 }
 
 impl Accordion {
@@ -138,6 +140,8 @@ impl RenderOnce for Accordion {
     }
 }
 
+type OnToggle = Option<Arc<dyn Fn(&bool, &mut WindowContext)>>;
+
 /// An Accordion is a vertically stacked list of items, each of which can be expanded to reveal the content associated with it.
 #[derive(IntoElement)]
 pub struct AccordionItem {
@@ -148,7 +152,7 @@ pub struct AccordionItem {
     size: Size,
     bordered: bool,
     disabled: bool,
-    on_toggle_click: Option<Arc<dyn Fn(&bool, &mut WindowContext)>>,
+    on_toggle_click: OnToggle,
 }
 
 impl AccordionItem {
@@ -201,6 +205,12 @@ impl AccordionItem {
     ) -> Self {
         self.on_toggle_click = Some(Arc::new(on_toggle_click));
         self
+    }
+}
+
+impl Default for AccordionItem {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

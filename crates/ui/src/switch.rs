@@ -6,13 +6,15 @@ use gpui::{
 };
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
+type OnClick = Option<Rc<dyn Fn(&bool, &mut WindowContext)>>;
+
 pub struct Switch {
     id: ElementId,
     checked: bool,
     disabled: bool,
     label: Option<SharedString>,
     label_side: Side,
-    on_click: Option<Rc<dyn Fn(&bool, &mut WindowContext)>>,
+    on_click: OnClick,
     size: Size,
 }
 

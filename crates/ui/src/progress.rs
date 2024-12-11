@@ -25,6 +25,12 @@ impl Progress {
     }
 }
 
+impl Default for Progress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RenderOnce for Progress {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let rounded = px(self.height / 2.);

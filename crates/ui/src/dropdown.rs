@@ -41,7 +41,7 @@ impl DropdownItem for String {
     }
 
     fn value(&self) -> &Self::Value {
-        &self
+        self
     }
 }
 
@@ -53,7 +53,7 @@ impl DropdownItem for SharedString {
     }
 
     fn value(&self) -> &Self::Value {
-        &self
+        self
     }
 }
 
@@ -211,6 +211,8 @@ pub enum DropdownEvent<D: DropdownDelegate + 'static> {
     Confirm(Option<<D::Item as DropdownItem>::Value>),
 }
 
+type Empty = Option<Box<dyn Fn(&WindowContext) -> AnyElement + 'static>>;
+
 /// A Dropdown element.
 pub struct Dropdown<D: DropdownDelegate + 'static> {
     id: ElementId,
@@ -223,7 +225,7 @@ pub struct Dropdown<D: DropdownDelegate + 'static> {
     placeholder: Option<SharedString>,
     title_prefix: Option<SharedString>,
     selected_value: Option<<D::Item as DropdownItem>::Value>,
-    empty: Option<Box<dyn Fn(&WindowContext) -> AnyElement + 'static>>,
+    empty: Empty,
     width: Length,
     menu_width: Length,
     /// Store the bounds of the input

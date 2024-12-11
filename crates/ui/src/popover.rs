@@ -17,9 +17,11 @@ pub fn init(cx: &mut AppContext) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])
 }
 
+type Content<T> = Rc<dyn Fn(&mut ViewContext<T>) -> AnyElement>;
+
 pub struct PopoverContent {
     focus_handle: FocusHandle,
-    content: Rc<dyn Fn(&mut ViewContext<Self>) -> AnyElement>,
+    content: Content<Self>,
     max_width: Option<Pixels>,
 }
 
@@ -62,11 +64,14 @@ impl Render for PopoverContent {
     }
 }
 
+type Trigger = Option<Box<dyn FnOnce(bool, &WindowContext) -> AnyElement + 'static>>;
+type ViewContent<M> = Option<Rc<dyn Fn(&mut WindowContext) -> View<M> + 'static>>;
+
 pub struct Popover<M: ManagedView> {
     id: ElementId,
     anchor: AnchorCorner,
-    trigger: Option<Box<dyn FnOnce(bool, &WindowContext) -> AnyElement + 'static>>,
-    content: Option<Rc<dyn Fn(&mut WindowContext) -> View<M> + 'static>>,
+    trigger: Trigger,
+    content: ViewContent<M>,
     /// Style for trigger element.
     /// This is used for hotfix the trigger element style to support w_full.
     trigger_style: Option<StyleRefinement>,

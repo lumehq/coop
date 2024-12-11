@@ -150,6 +150,8 @@ impl ButtonVariant {
     }
 }
 
+type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>>;
+
 /// A Button element.
 #[derive(IntoElement)]
 pub struct Button {
@@ -167,7 +169,7 @@ pub struct Button {
     size: Size,
     compact: bool,
     tooltip: Option<SharedString>,
-    on_click: Option<Box<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>>,
+    on_click: OnClick,
     pub(crate) stop_propagation: bool,
     loading: bool,
     loading_icon: Option<Icon>,
@@ -509,10 +511,7 @@ impl ButtonVariant {
     }
 
     fn underline(&self, _: &WindowContext) -> bool {
-        match self {
-            ButtonVariant::Link => true,
-            _ => false,
-        }
+        matches!(self, ButtonVariant::Link)
     }
 
     fn shadow(&self, _: &WindowContext) -> bool {
@@ -576,7 +575,11 @@ impl ButtonVariant {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().primary_active,
             ButtonVariant::Secondary | ButtonVariant::Outline | ButtonVariant::Ghost => {
-                cx.theme().secondary_active
+                if cx.theme().mode.is_dark() {
+                    cx.theme().secondary.lighten(0.2).opacity(0.8)
+                } else {
+                    cx.theme().secondary.darken(0.2).opacity(0.8)
+                }
             }
             ButtonVariant::Danger => cx.theme().destructive_active,
             ButtonVariant::Link => cx.theme().transparent,
@@ -605,7 +608,11 @@ impl ButtonVariant {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().primary_active,
             ButtonVariant::Secondary | ButtonVariant::Outline | ButtonVariant::Ghost => {
-                cx.theme().secondary_active
+                if cx.theme().mode.is_dark() {
+                    cx.theme().secondary.lighten(0.2).opacity(0.8)
+                } else {
+                    cx.theme().secondary.darken(0.2).opacity(0.8)
+                }
             }
             ButtonVariant::Danger => cx.theme().destructive_active,
             ButtonVariant::Link => cx.theme().transparent,

@@ -184,7 +184,7 @@ impl StackPanel {
         cx: &mut ViewContext<Self>,
     ) {
         // If the panel is already in the stack, return.
-        if let Some(_) = self.index_of_panel(panel.clone()) {
+        if self.index_of_panel(panel.clone()).is_some() {
             return;
         }
 

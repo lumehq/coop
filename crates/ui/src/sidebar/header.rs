@@ -23,6 +23,13 @@ impl SidebarHeader {
         }
     }
 }
+
+impl Default for SidebarHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Selectable for SidebarHeader {
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
@@ -33,6 +40,7 @@ impl Selectable for SidebarHeader {
         &self.id
     }
 }
+
 impl Collapsible for SidebarHeader {
     fn is_collapsed(&self) -> bool {
         self.is_collapsed
@@ -43,17 +51,21 @@ impl Collapsible for SidebarHeader {
         self
     }
 }
+
 impl ParentElement for SidebarHeader {
     fn extend(&mut self, elements: impl IntoIterator<Item = gpui::AnyElement>) {
         self.base.extend(elements);
     }
 }
+
 impl Styled for SidebarHeader {
     fn style(&mut self) -> &mut gpui::StyleRefinement {
         self.base.style()
     }
 }
+
 impl PopupMenuExt for SidebarHeader {}
+
 impl RenderOnce for SidebarHeader {
     fn render(self, cx: &mut gpui::WindowContext) -> impl gpui::IntoElement {
         h_flex()

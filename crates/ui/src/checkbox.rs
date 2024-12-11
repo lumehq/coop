@@ -5,6 +5,8 @@ use gpui::{
     WindowContext,
 };
 
+type OnClick = Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>;
+
 /// A Checkbox element.
 #[derive(IntoElement)]
 pub struct Checkbox {
@@ -12,7 +14,7 @@ pub struct Checkbox {
     label: Option<SharedString>,
     checked: bool,
     disabled: bool,
-    on_click: Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>,
+    on_click: OnClick,
 }
 
 impl Checkbox {

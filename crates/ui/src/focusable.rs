@@ -30,8 +30,7 @@ pub trait FocusableCycle {
         let target_focus_handle = handles
             .into_iter()
             .skip_while(|handle| Some(handle) != focused_handle.as_ref())
-            .skip(1)
-            .next()
+            .nth(1)
             .unwrap_or(fallback_handle);
 
         target_focus_handle.focus(cx);

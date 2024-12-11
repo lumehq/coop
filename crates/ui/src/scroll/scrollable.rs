@@ -150,11 +150,15 @@ where
         id: Option<&gpui::GlobalElementId>,
         cx: &mut gpui::WindowContext,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.flex_grow = 1.0;
-        style.position = Position::Relative;
-        style.size.width = relative(1.0).into();
-        style.size.height = relative(1.0).into();
+        let style = Style {
+            flex_grow: 1.0,
+            position: Position::Relative,
+            size: Size {
+                width: relative(1.0).into(),
+                height: relative(1.0).into(),
+            },
+            ..Default::default()
+        };
 
         let axis = self.axis;
         let view_id = self.view_id;

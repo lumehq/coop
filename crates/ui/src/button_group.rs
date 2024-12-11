@@ -9,6 +9,8 @@ use crate::{
     Disableable, Sizable, Size,
 };
 
+type OnClick = Option<Box<dyn Fn(&Vec<usize>, &mut WindowContext) + 'static>>;
+
 /// A ButtonGroup element, to wrap multiple buttons in a group.
 #[derive(IntoElement)]
 pub struct ButtonGroup {
@@ -23,7 +25,7 @@ pub struct ButtonGroup {
     variant: Option<ButtonVariant>,
     size: Option<Size>,
 
-    on_click: Option<Box<dyn Fn(&Vec<usize>, &mut WindowContext) + 'static>>,
+    on_click: OnClick,
 }
 
 impl Disableable for ButtonGroup {
@@ -118,7 +120,8 @@ impl RenderOnce for ButtonGroup {
                     .enumerate()
                     .map(|(child_index, child)| {
                         let state = Rc::clone(&state);
-                        let child = if children_len == 1 {
+
+                        if children_len == 1 {
                             child
                         } else if child_index == 0 {
                             // First
@@ -167,9 +170,7 @@ impl RenderOnce for ButtonGroup {
                         .when_some(self.compact, |this, _| this.compact())
                         .on_click(move |_, _| {
                             state.set(Some(child_index));
-                        });
-
-                        child
+                        })
                     }),
             )
             .when_some(

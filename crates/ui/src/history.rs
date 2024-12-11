@@ -124,6 +124,15 @@ where
     }
 }
 
+impl<I> Default for History<I>
+where
+    I: HistoryItem,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +201,6 @@ mod tests {
         let changes = history.undo().unwrap();
         assert_eq!(changes[0].tab_index, 0);
 
-        assert_eq!(history.undo().is_none(), true);
+        assert!(history.undo().is_none());
     }
 }

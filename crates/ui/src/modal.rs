@@ -17,9 +17,12 @@ use crate::{
 actions!(modal, [Escape]);
 
 const CONTEXT: &str = "Modal";
+
 pub fn init(cx: &mut AppContext) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])
 }
+
+type OnClose = Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>;
 
 #[derive(IntoElement)]
 pub struct Modal {
@@ -30,8 +33,7 @@ pub struct Modal {
     width: Pixels,
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
-
-    on_close: Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>,
+    on_close: OnClose,
     show_close: bool,
     overlay: bool,
     keyboard: bool,
