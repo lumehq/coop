@@ -1,5 +1,5 @@
 use coop_ui::{
-    dock::{DockArea, DockItem, DockPlacement, PanelStyle},
+    dock::{DockArea, DockItem, DockPlacement},
     theme::{ActiveTheme, Theme},
     Root, TitleBar,
 };
@@ -12,7 +12,7 @@ use super::{
     dock::{chat::ChatPanel, left_dock::LeftDock, welcome::WelcomePanel},
     onboarding::Onboarding,
 };
-use crate::states::account::AccountState;
+use crate::states::account::AccountRegistry;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel {
@@ -49,13 +49,11 @@ impl AppView {
         let onboarding = cx.new_view(Onboarding::new);
 
         // Dock
-        let dock = cx.new_view(|cx| {
-            DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx).panel_style(PanelStyle::TabBar)
-        });
+        let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
-        cx.observe_global::<AccountState>(|view, cx| {
+        cx.observe_global::<AccountRegistry>(|view, cx| {
             // TODO: save dock state and load previous state on startup
-            if cx.global::<AccountState>().in_use.is_some() {
+            if cx.global::<AccountRegistry>().is_user_logged_in() {
                 Self::init_layout(view.dock.downgrade(), cx);
             }
         })
@@ -115,9 +113,7 @@ impl Render for AppView {
 
         let mut content = div();
 
-        if cx.global::<AccountState>().in_use.is_none() {
-            content = content.size_full().child(self.onboarding.clone())
-        } else {
+        if cx.global::<AccountRegistry>().is_user_logged_in() {
             content = content
                 .on_action(cx.listener(Self::on_action_add_panel))
                 .size_full()
@@ -125,6 +121,8 @@ impl Render for AppView {
                 .flex_col()
                 .child(TitleBar::new())
                 .child(self.dock.clone())
+        } else {
+            content = content.size_full().child(self.onboarding.clone())
         }
 
         div()

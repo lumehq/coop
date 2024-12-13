@@ -29,12 +29,12 @@ impl LeftDock {
         let inbox = cx.new_view(Inbox::new);
 
         Self {
-            inbox,
             name: "Left Dock".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
             view_id: cx.view().entity_id(),
+            inbox,
         }
     }
 }

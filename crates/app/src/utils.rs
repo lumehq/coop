@@ -15,8 +15,8 @@ pub fn get_all_accounts_from_keyring() -> Vec<PublicKey> {
     accounts
 }
 
-pub fn show_npub(public_key: PublicKey, len: usize) -> anyhow::Result<String, anyhow::Error> {
-    let bech32 = public_key.to_bech32()?;
+pub fn show_npub(public_key: PublicKey, len: usize) -> String {
+    let bech32 = public_key.to_bech32().unwrap_or_default();
     let separator = " ... ";
 
     let sep_len = separator.len();
@@ -24,12 +24,12 @@ pub fn show_npub(public_key: PublicKey, len: usize) -> anyhow::Result<String, an
     let front_chars = (chars_to_show + 1) / 2; // ceil
     let back_chars = chars_to_show / 2; // floor
 
-    Ok(format!(
+    format!(
         "{}{}{}",
         &bech32[..front_chars],
         separator,
         &bech32[bech32.len() - back_chars..]
-    ))
+    )
 }
 
 pub fn ago(time: u64) -> String {

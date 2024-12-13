@@ -1,63 +1,49 @@
-use coop_ui::{theme::ActiveTheme, Collapsible, Selectable, StyledExt};
+use coop_ui::{theme::ActiveTheme, Selectable, StyledExt};
 use gpui::*;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
-use serde::Deserialize;
 
 use crate::{
+    get_client,
+    states::signal::SignalRegistry,
     utils::{ago, show_npub},
     views::app::AddPanel,
 };
 
-#[derive(Clone, PartialEq, Eq, Deserialize)]
-pub struct ChatDelegate {
-    title: Option<String>,
+#[derive(IntoElement)]
+struct ChatItem {
+    id: ElementId,
     public_key: PublicKey,
     metadata: Option<Metadata>,
     last_seen: Timestamp,
-}
-
-impl ChatDelegate {
-    pub fn new(
-        title: Option<String>,
-        public_key: PublicKey,
-        metadata: Option<Metadata>,
-        last_seen: Timestamp,
-    ) -> Self {
-        Self {
-            title,
-            public_key,
-            metadata,
-            last_seen,
-        }
-    }
-}
-
-#[derive(IntoElement)]
-pub struct Chat {
-    id: ElementId,
-    pub item: ChatDelegate,
+    title: Option<String>,
     // Interactive
     base: Div,
     selected: bool,
-    is_collapsed: bool,
 }
 
-impl Chat {
-    pub fn new(item: ChatDelegate) -> Self {
-        let id = SharedString::from(item.public_key.to_hex()).into();
+impl ChatItem {
+    pub fn new(
+        public_key: PublicKey,
+        metadata: Option<Metadata>,
+        last_seen: Timestamp,
+        title: Option<String>,
+    ) -> Self {
+        let id = SharedString::from(public_key.to_hex()).into();
 
         Self {
             id,
-            item,
+            public_key,
+            metadata,
+            last_seen,
+            title,
             base: div(),
             selected: false,
-            is_collapsed: false,
         }
     }
 }
 
-impl Selectable for Chat {
+impl Selectable for ChatItem {
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
@@ -68,32 +54,22 @@ impl Selectable for Chat {
     }
 }
 
-impl Collapsible for Chat {
-    fn is_collapsed(&self) -> bool {
-        self.is_collapsed
-    }
-
-    fn collapsed(mut self, collapsed: bool) -> Self {
-        self.is_collapsed = collapsed;
-        self
-    }
-}
-
-impl InteractiveElement for Chat {
+impl InteractiveElement for ChatItem {
     fn interactivity(&mut self) -> &mut gpui::Interactivity {
         self.base.interactivity()
     }
 }
 
-impl RenderOnce for Chat {
+impl RenderOnce for ChatItem {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let ago = ago(self.item.last_seen.as_u64());
+        let ago = ago(self.last_seen.as_u64());
+        let fallback_name = show_npub(self.public_key, 16);
 
         let mut content = div()
             .font_medium()
             .text_color(cx.theme().sidebar_accent_foreground);
 
-        if let Some(metadata) = self.item.metadata.clone() {
+        if let Some(metadata) = self.metadata.clone() {
             content = content
                 .flex()
                 .items_center()
@@ -108,16 +84,14 @@ impl RenderOnce for Chat {
                         )
                     } else {
                         this.flex_shrink_0()
-                            .child(div().size_6().rounded_full().bg(cx.theme().muted))
+                            .child(img("brand/avatar.png").size_6().rounded_full())
                     }
                 })
                 .map(|this| {
                     if let Some(display_name) = metadata.display_name {
                         this.child(display_name)
-                    } else if let Ok(npub) = show_npub(self.item.public_key, 16) {
-                        this.child(npub)
                     } else {
-                        this.child("Anon")
+                        this.child(fallback_name)
                     }
                 })
         } else {
@@ -126,13 +100,12 @@ impl RenderOnce for Chat {
                 .items_center()
                 .gap_2()
                 .child(
-                    div()
+                    img("brand/avatar.png")
                         .flex_shrink_0()
                         .size_6()
-                        .rounded_full()
-                        .bg(cx.theme().muted),
+                        .rounded_full(),
                 )
-                .child("Anon")
+                .child(fallback_name)
         }
 
         self.base
@@ -156,9 +129,95 @@ impl RenderOnce for Chat {
             )
             .on_click(move |_, cx| {
                 cx.dispatch_action(Box::new(AddPanel {
-                    title: self.item.title.clone(),
-                    receiver: self.item.public_key,
+                    title: self.title.clone(),
+                    receiver: self.public_key,
                 }))
             })
+    }
+}
+
+pub struct Chat {
+    title: Option<String>,
+    public_key: PublicKey,
+    metadata: Model<Option<Metadata>>,
+    last_seen: Timestamp,
+}
+
+impl Chat {
+    pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
+        let public_key = event.pubkey;
+        let last_seen = event.created_at;
+
+        let metadata = cx.new_model(|_| None);
+        let async_metadata = metadata.clone();
+
+        let mut async_cx = cx.to_async();
+
+        cx.foreground_executor()
+            .spawn(async move {
+                let client = get_client();
+                let query = async_cx
+                    .background_executor()
+                    .spawn(async move { client.database().metadata(public_key).await })
+                    .await;
+
+                if let Ok(metadata) = query {
+                    _ = async_cx.update_model(&async_metadata, |a, b| {
+                        *a = metadata;
+                        b.notify();
+                    });
+                };
+            })
+            .detach();
+
+        cx.observe_global::<SignalRegistry>(|chat, cx| {
+            chat.load_profile(cx);
+        })
+        .detach();
+
+        Self {
+            public_key,
+            last_seen,
+            metadata,
+            title: None,
+        }
+    }
+
+    fn load_profile(&self, cx: &mut ViewContext<Self>) {
+        let public_key = self.public_key;
+        let async_metadata = self.metadata.clone();
+        let mut async_cx = cx.to_async();
+
+        if cx.global::<SignalRegistry>().contains(self.public_key) {
+            cx.foreground_executor()
+                .spawn(async move {
+                    let client = get_client();
+                    let query = async_cx
+                        .background_executor()
+                        .spawn(async move { client.database().metadata(public_key).await })
+                        .await;
+
+                    if let Ok(metadata) = query {
+                        _ = async_cx.update_model(&async_metadata, |a, b| {
+                            *a = metadata;
+                            b.notify();
+                        });
+                    };
+                })
+                .detach();
+        }
+    }
+}
+
+impl Render for Chat {
+    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        let metadata = self.metadata.read(cx).clone();
+
+        div().child(ChatItem::new(
+            self.public_key,
+            metadata,
+            self.last_seen,
+            self.title.clone(),
+        ))
     }
 }

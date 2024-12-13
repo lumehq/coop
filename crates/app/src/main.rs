@@ -9,9 +9,10 @@ use std::{
     sync::{Arc, OnceLock},
     time::Duration,
 };
+use tokio::sync::mpsc;
 
-use constants::{APP_NAME, FAKE_SIG};
-use states::account::AccountState;
+use constants::{ALL_MESSAGES_SUB_ID, APP_NAME, FAKE_SIG, NEW_MESSAGE_SUB_ID};
+use states::{account::AccountRegistry, chat::ChatRegistry, signal::SignalRegistry};
 use views::app::AppView;
 
 pub mod asset;
@@ -69,11 +70,76 @@ async fn main() {
     // Connect to all relays
     _ = client.connect().await;
 
+    // Channel for metadata signal
+    let (signal_tx, mut signal_rx) = mpsc::channel::<PublicKey>(1000); // TODO: adjust?
+
+    // Channel for new chat
+    let (new_chat_tx, mut new_chat_rx) = mpsc::channel::<Event>(1000); // TODO: adjust?
+
+    // Channel for all chats
+    let (all_chats_tx, mut all_chats_rx) = mpsc::channel::<i32>(1);
+
+    tokio::spawn(async move {
+        let sig = Signature::from_str(FAKE_SIG).unwrap();
+        let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+        let new_message_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+
+        while let Ok(notification) = notifications.recv().await {
+            #[allow(clippy::collapsible_match)]
+            if let RelayPoolNotification::Message { message, .. } = notification {
+                if let RelayMessage::Event {
+                    event,
+                    subscription_id,
+                } = message
+                {
+                    if event.kind == Kind::GiftWrap {
+                        if let Ok(UnwrappedGift { rumor, .. }) =
+                            client.unwrap_gift_wrap(&event).await
+                        {
+                            let mut rumor_clone = rumor.clone();
+
+                            // Compute event id if not exist
+                            rumor_clone.ensure_id();
+
+                            if let Some(id) = rumor_clone.id {
+                                let ev = Event::new(
+                                    id,
+                                    rumor_clone.pubkey,
+                                    rumor_clone.created_at,
+                                    rumor_clone.kind,
+                                    rumor_clone.tags,
+                                    rumor_clone.content,
+                                    sig,
+                                );
+
+                                // Save rumor to database to further query
+                                _ = client.database().save_event(&ev).await;
+
+                                // Send event to channel
+                                if subscription_id == new_message_sub_id {
+                                    _ = new_chat_tx.send(ev).await;
+                                }
+                            }
+                        }
+                    } else if event.kind == Kind::Metadata {
+                        _ = signal_tx.send(event.pubkey).await;
+                    }
+                } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
+                    if all_messages_sub_id == subscription_id {
+                        _ = all_chats_tx.send(1).await;
+                    }
+                }
+            }
+        }
+    });
+
     App::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
         .run(move |cx| {
-            AccountState::set_global(cx);
+            AccountRegistry::set_global(cx);
+            ChatRegistry::set_global(cx);
+            SignalRegistry::set_global(cx);
 
             // Initialize components
             coop_ui::init(cx);
@@ -81,46 +147,32 @@ async fn main() {
             // Set quit action
             cx.on_action(quit);
 
-            // Handle notifications
-            cx.background_executor()
-                .spawn({
-                    let sig = Signature::from_str(FAKE_SIG).unwrap();
-                    async move {
-                        while let Ok(notification) = notifications.recv().await {
-                            #[allow(clippy::collapsible_match)]
-                            if let RelayPoolNotification::Message { message, .. } = notification {
-                                if let RelayMessage::Event { event, .. } = message {
-                                    if event.kind == Kind::GiftWrap {
-                                        if let Ok(UnwrappedGift { rumor, .. }) =
-                                            client.unwrap_gift_wrap(&event).await
-                                        {
-                                            let mut rumor_clone = rumor.clone();
+            cx.spawn(|async_cx| async move {
+                while let Some(public_key) = signal_rx.recv().await {
+                    _ = async_cx.update_global::<SignalRegistry, _>(|state, _cx| {
+                        state.push(public_key);
+                    });
+                }
+            })
+            .detach();
 
-                                            // Compute event id if not exist
-                                            rumor_clone.ensure_id();
+            cx.spawn(|async_cx| async move {
+                while let Some(event) = new_chat_rx.recv().await {
+                    _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
+                        state.push(event, cx);
+                    });
+                }
+            })
+            .detach();
 
-                                            if let Some(id) = rumor_clone.id {
-                                                let ev = Event::new(
-                                                    id,
-                                                    rumor_clone.pubkey,
-                                                    rumor_clone.created_at,
-                                                    rumor_clone.kind,
-                                                    rumor_clone.tags,
-                                                    rumor_clone.content,
-                                                    sig,
-                                                );
-
-                                                // Save rumor to database to further query
-                                                _ = client.database().save_event(&ev).await
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                })
-                .detach();
+            cx.spawn(|async_cx| async move {
+                while let Some(_n) = all_chats_rx.recv().await {
+                    _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
+                        state.load(cx);
+                    });
+                }
+            })
+            .detach();
 
             // Set window size
             let bounds = Bounds::centered(None, size(px(900.0), px(680.0)), cx);

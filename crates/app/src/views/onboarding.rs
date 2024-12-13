@@ -7,7 +7,7 @@ use gpui::*;
 use keyring::Entry;
 use nostr_sdk::prelude::*;
 
-use crate::{constants::KEYRING_SERVICE, get_client, states::account::AccountState};
+use crate::{constants::KEYRING_SERVICE, get_client, states::account::AccountRegistry};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -50,8 +50,8 @@ impl Onboarding {
         });
 
         // Update view
-        cx.update_global(|state: &mut AccountState, cx| {
-            state.in_use = Some(public_key);
+        cx.update_global(|state: &mut AccountRegistry, cx| {
+            state.set_user(Some(public_key));
             cx.notify();
         });
 

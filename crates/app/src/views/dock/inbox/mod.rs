@@ -1,101 +1,59 @@
-use chat::{Chat, ChatDelegate};
-use coop_ui::{theme::ActiveTheme, v_flex, StyledExt};
+use chat::Chat;
+use coop_ui::{theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
 use gpui::*;
-use itertools::Itertools;
-use nostr_sdk::prelude::*;
-use std::{cmp::Reverse, time::Duration};
+use prelude::FluentBuilder;
 
-use crate::{get_client, states::account::AccountState};
+use crate::states::chat::ChatRegistry;
 
 pub mod chat;
 
 pub struct Inbox {
     label: SharedString,
-    chats: Model<Option<Vec<ChatDelegate>>>,
+    chats: Model<Option<Vec<View<Chat>>>>,
+    is_collapsed: bool,
 }
 
 impl Inbox {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let chats = cx.new_model(|_| None);
-        let async_chats = chats.clone();
 
-        if let Some(public_key) = cx.global::<AccountState>().in_use {
-            let client = get_client();
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .pubkey(public_key);
-
-            let mut async_cx = cx.to_async();
-
-            cx.foreground_executor()
-                .spawn(async move {
-                    let events = async_cx
-                        .background_executor()
-                        .spawn(async move {
-                            if let Ok(events) = client.database().query(vec![filter]).await {
-                                events
-                                    .into_iter()
-                                    .filter(|ev| ev.pubkey != public_key) // Filter messages from current user
-                                    .unique_by(|ev| ev.pubkey) // Get unique list
-                                    .sorted_by_key(|ev| Reverse(ev.created_at)) // Sort by created at
-                                    .collect::<Vec<_>>()
-                            } else {
-                                Vec::new()
-                            }
-                        })
-                        .await;
-
-                    // Get all public keys
-                    let public_keys: Vec<PublicKey> =
-                        events.iter().map(|event| event.pubkey).collect();
-
-                    // Calculate total public keys
-                    let total = public_keys.len();
-
-                    // Create subscription for metadata events
-                    let filter = Filter::new()
-                        .kind(Kind::Metadata)
-                        .authors(public_keys)
-                        .limit(total);
-
-                    let mut chats = Vec::new();
-                    let mut stream = async_cx
-                        .background_executor()
-                        .spawn(async move {
-                            client
-                                .stream_events(vec![filter], Some(Duration::from_secs(15)))
-                                .await
-                                .unwrap()
-                        })
-                        .await;
-
-                    while let Some(event) = stream.next().await {
-                        // TODO: generate some random name?
-                        let title = if let Some(tag) = event.tags.find(TagKind::Title) {
-                            tag.content().map(|s| s.to_string())
-                        } else {
-                            None
-                        };
-
-                        let metadata = Metadata::from_json(event.content).ok();
-                        let chat =
-                            ChatDelegate::new(title, event.pubkey, metadata, event.created_at);
-
-                        chats.push(chat);
-                    }
-
-                    _ = async_cx.update_model(&async_chats, |a, b| {
-                        *a = Some(chats);
-                        b.notify();
-                    });
-                })
-                .detach();
-        }
+        cx.observe_global::<ChatRegistry>(|inbox, cx| {
+            inbox.add_chats(cx);
+        })
+        .detach();
 
         Self {
-            label: "Inbox".into(),
             chats,
+            label: "Inbox".into(),
+            is_collapsed: false,
         }
+    }
+
+    fn add_chats(&self, cx: &mut ViewContext<Self>) {
+        let events = cx.global::<ChatRegistry>().get(cx);
+
+        if let Some(events) = events {
+            let chats: Vec<View<Chat>> = events
+                .into_iter()
+                .map(|event| cx.new_view(|cx| Chat::new(event, cx)))
+                .collect();
+
+            cx.update_model(&self.chats, |a, b| {
+                *a = Some(chats);
+                b.notify();
+            });
+        }
+    }
+}
+
+impl Collapsible for Inbox {
+    fn is_collapsed(&self) -> bool {
+        self.is_collapsed
+    }
+
+    fn collapsed(mut self, collapsed: bool) -> Self {
+        self.is_collapsed = collapsed;
+        self
     }
 }
 
@@ -104,25 +62,38 @@ impl Render for Inbox {
         let mut content = div();
 
         if let Some(chats) = self.chats.read(cx).as_ref() {
-            content = content.children(chats.iter().map(move |item| Chat::new(item.clone())))
+            content = content.children(chats.clone())
         }
 
         v_flex()
-            .pt_3()
+            .gap_1()
+            .pt_2()
             .px_2()
-            .gap_2()
             .child(
                 div()
                     .id("inbox")
                     .h_7()
+                    .px_1()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .rounded_md()
                     .text_xs()
                     .font_semibold()
                     .text_color(cx.theme().sidebar_foreground.opacity(0.7))
+                    .hover(|this| this.bg(cx.theme().sidebar_accent.opacity(0.7)))
+                    .on_click(cx.listener(move |view, _event, cx| {
+                        view.is_collapsed = !view.is_collapsed;
+                        cx.notify();
+                    }))
+                    .child(
+                        Icon::new(IconName::ChevronDown)
+                            .size_6()
+                            .when(self.is_collapsed, |this| {
+                                this.rotate(percentage(270. / 360.))
+                            }),
+                    )
                     .child(self.label.clone()),
             )
-            .child(content)
+            .when(!self.is_collapsed, |this| this.child(content))
     }
 }
