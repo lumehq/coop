@@ -49,8 +49,8 @@ impl Onboarding {
             get_client().set_signer(keys).await;
         });
 
-        // Update view
-        cx.update_global(|state: &mut AccountRegistry, cx| {
+        // Update globals state
+        cx.update_global::<AccountRegistry, _>(|state, cx| {
             state.set_user(Some(public_key));
             cx.notify();
         });

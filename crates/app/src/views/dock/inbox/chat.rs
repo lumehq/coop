@@ -170,6 +170,10 @@ impl Chat {
             })
             .detach();
 
+        cx.update_global::<SignalRegistry, _>(|state, _cx| {
+            state.add_to_queue(public_key);
+        });
+
         cx.observe_global::<SignalRegistry>(|chat, cx| {
             chat.load_profile(cx);
         })

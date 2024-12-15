@@ -1,6 +1,7 @@
 use chat::Chat;
 use coop_ui::{theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
 use gpui::*;
+
 use prelude::FluentBuilder;
 
 use crate::states::chat::ChatRegistry;
@@ -10,6 +11,7 @@ pub mod chat;
 pub struct Inbox {
     label: SharedString,
     chats: Model<Option<Vec<View<Chat>>>>,
+    is_loading: bool,
     is_collapsed: bool,
 }
 
@@ -17,19 +19,25 @@ impl Inbox {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let chats = cx.new_model(|_| None);
 
+        // Reload UI if global state changes
         cx.observe_global::<ChatRegistry>(|inbox, cx| {
-            inbox.add_chats(cx);
+            inbox.load(cx);
         })
         .detach();
 
         Self {
             chats,
             label: "Inbox".into(),
+            is_loading: true,
             is_collapsed: false,
         }
     }
 
-    fn add_chats(&self, cx: &mut ViewContext<Self>) {
+    fn load(&mut self, cx: &mut ViewContext<Self>) {
+        // Stop loading indicator;
+        self.set_loading(cx);
+
+        // Read global chat registry
         let events = cx.global::<ChatRegistry>().get(cx);
 
         if let Some(events) = events {
@@ -43,6 +51,11 @@ impl Inbox {
                 b.notify();
             });
         }
+    }
+
+    fn set_loading(&mut self, cx: &mut ViewContext<Self>) {
+        self.is_loading = false;
+        cx.notify();
     }
 }
 
@@ -63,6 +76,11 @@ impl Render for Inbox {
 
         if let Some(chats) = self.chats.read(cx).as_ref() {
             content = content.children(chats.clone())
+        } else {
+            match self.is_loading {
+                true => content = content.child("Loading..."),
+                false => content = content.child("Empty"),
+            }
         }
 
         v_flex()
