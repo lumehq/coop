@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use gpui::{
     div, prelude::FluentBuilder, px, rems, AnchorCorner, AppContext, DefiniteLength, DismissEvent,
     DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, FocusableView,
@@ -7,7 +5,12 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, View, ViewContext, VisualContext as _,
     WeakView, WindowContext,
 };
+use std::sync::Arc;
 
+use super::{
+    ClosePanel, DockArea, DockItemState, DockPlacement, Panel, PanelEvent, PanelStyle, PanelView,
+    StackPanel, ToggleZoom,
+};
 use crate::{
     button::{Button, ButtonVariants as _},
     dock::DockItemInfo,
@@ -16,11 +19,6 @@ use crate::{
     tab::{Tab, TabBar},
     theme::ActiveTheme,
     v_flex, AxisExt, IconName, Placement, Selectable, Sizable,
-};
-
-use super::{
-    ClosePanel, DockArea, DockItemState, DockPlacement, Panel, PanelEvent, PanelStyle, PanelView,
-    StackPanel, ToggleZoom,
 };
 
 #[derive(Clone, Copy)]
@@ -173,6 +171,15 @@ impl TabPanel {
 
     /// Add a panel to the end of the tabs
     pub fn add_panel(&mut self, panel: Arc<dyn PanelView>, cx: &mut ViewContext<Self>) {
+        self.add_panel_with_active(panel, true, cx);
+    }
+
+    fn add_panel_with_active(
+        &mut self,
+        panel: Arc<dyn PanelView>,
+        active: bool,
+        cx: &mut ViewContext<Self>,
+    ) {
         assert_ne!(
             panel.panel_name(cx),
             "StackPanel",
@@ -189,7 +196,9 @@ impl TabPanel {
 
         self.panels.push(panel);
         // set the active panel to the new panel
-        self.set_active_ix(self.panels.len() - 1, cx);
+        if active {
+            self.set_active_ix(self.panels.len() - 1, cx);
+        }
         cx.emit(PanelEvent::LayoutChanged);
         cx.notify();
     }
@@ -543,6 +552,7 @@ impl TabPanel {
             )
             .children(self.panels.iter().enumerate().map(|(ix, panel)| {
                 let mut active = ix == self.active_ix;
+                let disabled = self.is_collapsed;
 
                 // Always not show active tab style, if the panel is collapsed
                 if self.is_collapsed {
@@ -552,31 +562,34 @@ impl TabPanel {
                 Tab::new(("tab", ix), panel.title(cx))
                     .py_2()
                     .selected(active)
-                    .on_click(cx.listener(move |view, _, cx| {
-                        view.set_active_ix(ix, cx);
-                    }))
-                    .when(state.draggable, |this| {
-                        this.on_drag(
-                            DragPanel::new(panel.clone(), view.clone()),
-                            |drag, _, cx| {
-                                cx.stop_propagation();
-                                cx.new_view(|_| drag.clone())
-                            },
-                        )
-                    })
-                    .when(state.droppable, |this| {
-                        this.drag_over::<DragPanel>(|this, _, cx| {
-                            this.rounded_l_none()
-                                .border_l_2()
-                                .border_r_0()
-                                .border_color(cx.theme().drag_border)
+                    .disabled(disabled)
+                    .when(!disabled, |this| {
+                        this.on_click(cx.listener(move |view, _, cx| {
+                            view.set_active_ix(ix, cx);
+                        }))
+                        .when(state.draggable, |this| {
+                            this.on_drag(
+                                DragPanel::new(panel.clone(), view.clone()),
+                                |drag, _, cx| {
+                                    cx.stop_propagation();
+                                    cx.new_view(|_| drag.clone())
+                                },
+                            )
                         })
-                        .on_drop(cx.listener(
-                            move |this, drag: &DragPanel, cx| {
-                                this.will_split_placement = None;
-                                this.on_drop(drag, Some(ix), cx)
-                            },
-                        ))
+                        .when(state.droppable, |this| {
+                            this.drag_over::<DragPanel>(|this, _, cx| {
+                                this.rounded_l_none()
+                                    .border_l_2()
+                                    .border_r_0()
+                                    .border_color(cx.theme().drag_border)
+                            })
+                            .on_drop(cx.listener(
+                                move |this, drag: &DragPanel, cx| {
+                                    this.will_split_placement = None;
+                                    this.on_drop(drag, Some(ix), true, cx)
+                                },
+                            ))
+                        })
                     })
             }))
             .child(
@@ -597,7 +610,7 @@ impl TabPanel {
                                     None
                                 };
 
-                                this.on_drop(drag, ix, cx)
+                                this.on_drop(drag, ix, false, cx)
                             }))
                     }),
             )
@@ -620,6 +633,10 @@ impl TabPanel {
     }
 
     fn render_active_panel(&self, state: TabState, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        if self.is_collapsed {
+            return Empty {}.into_any_element();
+        }
+
         self.active_panel()
             .map(|panel| {
                 div()
@@ -658,7 +675,7 @@ impl TabPanel {
                                     })
                                     .group_drag_over::<DragPanel>("", |this| this.visible())
                                     .on_drop(cx.listener(|this, drag: &DragPanel, cx| {
-                                        this.on_drop(drag, None, cx)
+                                        this.on_drop(drag, None, true, cx)
                                     })),
                             )
                     })
@@ -688,17 +705,28 @@ impl TabPanel {
         cx.notify()
     }
 
-    fn on_drop(&mut self, drag: &DragPanel, ix: Option<usize>, cx: &mut ViewContext<Self>) {
+    /// Handle the drop event when dragging a panel
+    ///
+    /// - `active` - When true, the panel will be active after the drop
+    fn on_drop(
+        &mut self,
+        drag: &DragPanel,
+        ix: Option<usize>,
+        active: bool,
+        cx: &mut ViewContext<Self>,
+    ) {
         let panel = drag.panel.clone();
         let is_same_tab = drag.tab_panel == *cx.view();
 
         // If target is same tab, and it is only one panel, do nothing.
         if is_same_tab && ix.is_none() {
-            #[allow(clippy::if_same_then_else)]
             if self.will_split_placement.is_none() {
                 return;
-            } else if self.panels.len() == 1 {
-                return;
+            } else {
+                #[allow(clippy::collapsible_else_if)]
+                if self.panels.len() == 1 {
+                    return;
+                }
             }
         }
 
@@ -721,7 +749,7 @@ impl TabPanel {
         } else if let Some(ix) = ix {
             self.insert_panel_at(panel, ix, cx)
         } else {
-            self.add_panel(panel, cx)
+            self.add_panel_with_active(panel, active, cx)
         }
 
         self.remove_self_if_empty(cx);

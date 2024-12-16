@@ -138,10 +138,18 @@ impl Dock {
         Self::subscribe_panel_events(dock_area.clone(), &panel, cx);
 
         if !open {
-            if let DockItem::Tabs { view, .. } = panel.clone() {
-                view.update(cx, |panel, cx| {
-                    panel.set_collapsed(true, cx);
-                });
+            match panel.clone() {
+                DockItem::Tabs { view, .. } => {
+                    view.update(cx, |panel, cx| {
+                        panel.set_collapsed(true, cx);
+                    });
+                }
+                DockItem::Split { items, .. } => {
+                    for item in items {
+                        item.set_collapsed(true, cx);
+                    }
+                }
+                _ => {}
             }
         }
 

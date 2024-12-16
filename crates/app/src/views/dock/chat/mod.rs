@@ -7,9 +7,10 @@ use coop_ui::{
     Sizable,
 };
 use gpui::*;
+use messages::Messages;
 use nostr_sdk::*;
 
-pub mod list;
+pub mod messages;
 
 pub struct ChatPanel {
     // Panel
@@ -18,13 +19,14 @@ pub struct ChatPanel {
     zoomable: bool,
     focus_handle: FocusHandle,
     // Chat Room
-    receiver: PublicKey,
+    messages: View<Messages>,
     input: View<TextInput>,
 }
 
 impl ChatPanel {
-    pub fn new(receiver: PublicKey, cx: &mut WindowContext) -> View<Self> {
+    pub fn new(from: PublicKey, cx: &mut WindowContext) -> View<Self> {
         let input = cx.new_view(TextInput::new);
+        let messages = cx.new_view(|cx| Messages::new(from, cx));
 
         input.update(cx, |input, _cx| {
             input.set_placeholder("Message");
@@ -35,7 +37,7 @@ impl ChatPanel {
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            receiver,
+            messages,
             input,
         })
     }
@@ -89,14 +91,7 @@ impl Render for ChatPanel {
             .size_full()
             .flex()
             .flex_col()
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(self.receiver.to_hex()),
-            )
+            .child(self.messages.clone())
             .child(
                 div()
                     .flex_shrink_0()

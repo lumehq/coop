@@ -42,7 +42,6 @@ pub mod skeleton;
 pub mod slider;
 pub mod switch;
 pub mod tab;
-pub mod table;
 pub mod theme;
 pub mod tooltip;
 
@@ -78,5 +77,4 @@ pub fn init(cx: &mut gpui::AppContext) {
     modal::init(cx);
     popover::init(cx);
     popup_menu::init(cx);
-    table::init(cx);
 }

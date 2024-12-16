@@ -17,7 +17,7 @@ use crate::states::account::AccountRegistry;
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel {
     pub title: Option<String>,
-    pub receiver: PublicKey,
+    pub from: PublicKey,
 }
 
 impl_actions!(dock, [AddPanel]);
@@ -98,7 +98,7 @@ impl AppView {
     }
 
     fn on_action_add_panel(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
-        let chat_panel = Arc::new(ChatPanel::new(action.receiver, cx));
+        let chat_panel = Arc::new(ChatPanel::new(action.from, cx));
 
         self.dock.update(cx, |dock_area, cx| {
             dock_area.add_panel(chat_panel, DockPlacement::Center, cx);

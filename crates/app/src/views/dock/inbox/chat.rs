@@ -130,7 +130,7 @@ impl RenderOnce for ChatItem {
             .on_click(move |_, cx| {
                 cx.dispatch_action(Box::new(AddPanel {
                     title: self.title.clone(),
-                    receiver: self.public_key,
+                    from: self.public_key,
                 }))
             })
     }
