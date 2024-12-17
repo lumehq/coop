@@ -5,7 +5,7 @@ use prelude::FluentBuilder;
 
 use crate::{
     get_client,
-    states::signal::SignalRegistry,
+    states::metadata::{MetadataRegistry, Signal},
     utils::{ago, show_npub},
     views::app::AddPanel,
 };
@@ -153,6 +153,55 @@ impl Chat {
 
         let mut async_cx = cx.to_async();
 
+        let client = get_client();
+        let signal = cx.global::<MetadataRegistry>();
+
+        if !signal.contains(public_key) {
+            cx.foreground_executor()
+                .spawn(async move {
+                    let query = async_cx
+                        .background_executor()
+                        .spawn(async move { client.database().metadata(public_key).await })
+                        .await;
+
+                    if let Ok(metadata) = query {
+                        _ = async_cx.update_model(&async_metadata, |a, b| {
+                            *a = metadata;
+                            b.notify();
+                        });
+                    };
+                })
+                .detach();
+        } else {
+            let reqs = signal.reqs.clone();
+
+            cx.foreground_executor()
+                .spawn(async move {
+                    if let Err(e) = reqs.send(Signal::REQ(public_key)).await {
+                        println!("Error: {}", e)
+                    }
+                })
+                .detach();
+
+            cx.observe_global::<MetadataRegistry>(|view, cx| {
+                view.profile(cx);
+            })
+            .detach();
+        };
+
+        Self {
+            public_key,
+            last_seen,
+            metadata,
+            title: None,
+        }
+    }
+
+    fn profile(&self, cx: &mut ViewContext<Self>) {
+        let public_key = self.public_key;
+        let async_metadata = self.metadata.clone();
+        let mut async_cx = cx.to_async();
+
         cx.foreground_executor()
             .spawn(async move {
                 let client = get_client();
@@ -169,47 +218,6 @@ impl Chat {
                 };
             })
             .detach();
-
-        cx.update_global::<SignalRegistry, _>(|state, _cx| {
-            state.add_to_queue(public_key);
-        });
-
-        cx.observe_global::<SignalRegistry>(|chat, cx| {
-            chat.load_profile(cx);
-        })
-        .detach();
-
-        Self {
-            public_key,
-            last_seen,
-            metadata,
-            title: None,
-        }
-    }
-
-    fn load_profile(&self, cx: &mut ViewContext<Self>) {
-        let public_key = self.public_key;
-        let async_metadata = self.metadata.clone();
-        let mut async_cx = cx.to_async();
-
-        if cx.global::<SignalRegistry>().contains(self.public_key) {
-            cx.foreground_executor()
-                .spawn(async move {
-                    let client = get_client();
-                    let query = async_cx
-                        .background_executor()
-                        .spawn(async move { client.database().metadata(public_key).await })
-                        .await;
-
-                    if let Ok(metadata) = query {
-                        _ = async_cx.update_model(&async_metadata, |a, b| {
-                            *a = metadata;
-                            b.notify();
-                        });
-                    };
-                })
-                .detach();
-        }
     }
 }
 

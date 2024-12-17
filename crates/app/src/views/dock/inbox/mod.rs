@@ -1,10 +1,11 @@
 use chat::Chat;
 use coop_ui::{theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
 use gpui::*;
-
+use itertools::Itertools;
 use prelude::FluentBuilder;
+use std::cmp::Reverse;
 
-use crate::states::chat::ChatRegistry;
+use crate::states::{account::AccountRegistry, chat::ChatRegistry};
 
 pub mod chat;
 
@@ -19,7 +20,6 @@ impl Inbox {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let chats = cx.new_model(|_| None);
 
-        // Reload UI if global state changes
         cx.observe_global::<ChatRegistry>(|inbox, cx| {
             inbox.load(cx);
         })
@@ -39,17 +39,22 @@ impl Inbox {
 
         // Read global chat registry
         let events = cx.global::<ChatRegistry>().get(cx);
+        let current_user = cx.global::<AccountRegistry>().get();
 
-        if let Some(events) = events {
-            let chats: Vec<View<Chat>> = events
-                .into_iter()
-                .map(|event| cx.new_view(|cx| Chat::new(event, cx)))
-                .collect();
+        if let Some(public_key) = current_user {
+            if let Some(events) = events {
+                let chats: Vec<View<Chat>> = events
+                    .into_iter()
+                    .filter(|ev| ev.pubkey != public_key)
+                    .sorted_by_key(|ev| Reverse(ev.created_at))
+                    .map(|ev| cx.new_view(|cx| Chat::new(ev, cx)))
+                    .collect();
 
-            cx.update_model(&self.chats, |a, b| {
-                *a = Some(chats);
-                b.notify();
-            });
+                cx.update_model(&self.chats, |a, b| {
+                    *a = Some(chats);
+                    b.notify();
+                });
+            }
         }
     }
 

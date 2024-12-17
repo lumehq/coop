@@ -1,10 +1,12 @@
 use coop_ui::{
+    button::{Button, ButtonVariants},
     dock::{DockArea, DockItem, DockPlacement},
-    theme::{ActiveTheme, Theme},
-    Root, TitleBar,
+    theme::{ActiveTheme, Theme, ThemeMode},
+    IconName, Root, Sizable, TitleBar,
 };
 use gpui::*;
 use nostr_sdk::prelude::*;
+use prelude::FluentBuilder;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -60,6 +62,18 @@ impl AppView {
         .detach();
 
         AppView { onboarding, dock }
+    }
+
+    fn change_theme_mode(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
+        let mode = match cx.theme().mode.is_dark() {
+            true => ThemeMode::Light,
+            false => ThemeMode::Dark,
+        };
+
+        // Change theme
+        Theme::change(mode, cx);
+        // Rerender
+        cx.refresh();
     }
 
     fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
@@ -119,7 +133,33 @@ impl Render for AppView {
                 .size_full()
                 .flex()
                 .flex_col()
-                .child(TitleBar::new())
+                .child(
+                    TitleBar::new()
+                        // Left side
+                        .child(div())
+                        // Right side
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_end()
+                                .px_2()
+                                .gap_2()
+                                .child(
+                                    Button::new("theme-mode")
+                                        .map(|this| {
+                                            if cx.theme().mode.is_dark() {
+                                                this.icon(IconName::Sun)
+                                            } else {
+                                                this.icon(IconName::Moon)
+                                            }
+                                        })
+                                        .small()
+                                        .ghost()
+                                        .on_click(cx.listener(Self::change_theme_mode)),
+                                ),
+                        ),
+                )
                 .child(self.dock.clone())
         } else {
             content = content.size_full().child(self.onboarding.clone())

@@ -178,6 +178,7 @@ pub struct TextInput {
     pub(super) appearance: bool,
     pub(super) cleanable: bool,
     pub(super) size: Size,
+    pub(super) text_size: Size,
     pub(super) rows: usize,
     pattern: Option<regex::Regex>,
     validate: Validate,
@@ -215,6 +216,7 @@ impl TextInput {
             prefix: None,
             suffix: None,
             size: Size::Medium,
+            text_size: Size::Medium,
             pattern: None,
             validate: None,
             rows: 2,
@@ -331,6 +333,12 @@ impl TextInput {
     pub fn set_size(&mut self, size: Size, cx: &mut ViewContext<Self>) {
         self.size = size;
         cx.notify();
+    }
+
+    /// Set the Input size
+    pub fn text_size(mut self, size: Size) -> Self {
+        self.text_size = size;
+        self
     }
 
     /// Set the appearance of the input field.
@@ -1204,6 +1212,7 @@ impl Render for TextInput {
             .line_height(LINE_HEIGHT)
             .input_py(self.size)
             .input_h(self.size)
+            .input_text_size(self.text_size)
             .cursor_text()
             .when(self.multi_line, |this| {
                 this.on_action(cx.listener(Self::up))

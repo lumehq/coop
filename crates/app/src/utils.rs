@@ -41,7 +41,7 @@ pub fn ago(time: u64) -> String {
         "now".to_owned()
     } else if diff < 24 {
         let duration = now.signed_duration_since(input_time);
-        format!("{} ago", duration.num_hours())
+        format!("{} hours ago", duration.num_hours())
     } else {
         input_time.format("%b %d").to_string()
     }

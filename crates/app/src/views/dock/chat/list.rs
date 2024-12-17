@@ -1,16 +1,26 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
 
-use crate::get_client;
+use crate::{get_client, states::chat::ChatRegistry};
 
-pub struct Messages {
+pub struct MessageList {
+    member: PublicKey,
     messages: Model<Option<Events>>,
 }
 
-impl Messages {
+impl MessageList {
     pub fn new(from: PublicKey, cx: &mut ViewContext<'_, Self>) -> Self {
         let messages = cx.new_model(|_| None);
-        let async_messages = messages.clone();
+
+        Self {
+            member: from,
+            messages,
+        }
+    }
+
+    pub fn init(&self, cx: &mut ViewContext<Self>) {
+        let messages = self.messages.clone();
+        let member = self.member;
 
         let mut async_cx = cx.to_async();
 
@@ -20,40 +30,45 @@ impl Messages {
                 let signer = client.signer().await.unwrap();
                 let public_key = signer.get_public_key().await.unwrap();
 
-                let recv_filter = Filter::new()
+                let recv = Filter::new()
                     .kind(Kind::PrivateDirectMessage)
-                    .author(from)
+                    .author(member)
                     .pubkey(public_key);
 
-                let sender_filter = Filter::new()
+                let send = Filter::new()
                     .kind(Kind::PrivateDirectMessage)
                     .author(public_key)
-                    .pubkey(from);
+                    .pubkey(member);
 
                 let events = async_cx
                     .background_executor()
-                    .spawn(async move {
-                        client
-                            .database()
-                            .query(vec![recv_filter, sender_filter])
-                            .await
-                    })
+                    .spawn(async move { client.database().query(vec![recv, send]).await })
                     .await;
 
                 if let Ok(events) = events {
-                    _ = async_cx.update_model(&async_messages, |a, b| {
+                    _ = async_cx.update_model(&messages, |a, b| {
                         *a = Some(events);
                         b.notify();
                     });
                 }
             })
             .detach();
+    }
 
-        Self { messages }
+    pub fn subscribe(&self, cx: &mut ViewContext<Self>) {
+        let receiver = cx.global::<ChatRegistry>().receiver.clone();
+
+        cx.foreground_executor()
+            .spawn(async move {
+                while let Ok(event) = receiver.recv_async().await {
+                    println!("New message: {}", event.as_json())
+                }
+            })
+            .detach();
     }
 }
 
-impl Render for Messages {
+impl Render for MessageList {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let mut content = div().size_full().flex().flex_col().justify_end();
 

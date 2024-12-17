@@ -527,8 +527,8 @@ impl From<ThemeColor> for Theme {
             } else {
                 "FreeMono".into()
             },
-            radius: 4.0,
-            shadow: true,
+            radius: 5.0,
+            shadow: false,
             scrollbar_show: ScrollbarShow::default(),
             colors,
         }

@@ -28,3 +28,4 @@ rust-embed.workspace = true
 smol.workspace = true
 
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
+flume = "0.11.1"

@@ -1,16 +1,15 @@
 use coop_ui::{
     button::Button,
-    button_group::ButtonGroup,
     dock::{DockItemState, Panel, PanelEvent, TitleStyle},
-    input::TextInput,
     popup_menu::PopupMenu,
-    Sizable,
 };
+use form::Form;
 use gpui::*;
-use messages::Messages;
+use list::MessageList;
 use nostr_sdk::*;
 
-pub mod messages;
+pub mod form;
+pub mod list;
 
 pub struct ChatPanel {
     // Panel
@@ -19,17 +18,21 @@ pub struct ChatPanel {
     zoomable: bool,
     focus_handle: FocusHandle,
     // Chat Room
-    messages: View<Messages>,
-    input: View<TextInput>,
+    list: View<MessageList>,
+    form: View<Form>,
 }
 
 impl ChatPanel {
     pub fn new(from: PublicKey, cx: &mut WindowContext) -> View<Self> {
-        let input = cx.new_view(TextInput::new);
-        let messages = cx.new_view(|cx| Messages::new(from, cx));
+        let form = cx.new_view(|cx| Form::new(from, cx));
+        let list = cx.new_view(|cx| {
+            let list = MessageList::new(from, cx);
+            // Load messages from database
+            list.init(cx);
+            // Subscribe for new message
+            list.subscribe(cx);
 
-        input.update(cx, |input, _cx| {
-            input.set_placeholder("Message");
+            list
         });
 
         cx.new_view(|cx| Self {
@@ -37,8 +40,8 @@ impl ChatPanel {
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            messages,
-            input,
+            list,
+            form,
         })
     }
 }
@@ -91,22 +94,7 @@ impl Render for ChatPanel {
             .size_full()
             .flex()
             .flex_col()
-            .child(self.messages.clone())
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .h_11()
-                    .child(self.input.clone())
-                    .child(
-                        ButtonGroup::new("actions")
-                            .large()
-                            .child(Button::new("upload").label("Upload"))
-                            .child(Button::new("send").label("Send")),
-                    ),
-            )
+            .child(self.list.clone())
+            .child(self.form.clone())
     }
 }

@@ -58,6 +58,10 @@ impl AccountRegistry {
         .detach();
     }
 
+    pub fn get(&self) -> Option<PublicKey> {
+        self.public_key
+    }
+
     pub fn set_user(&mut self, public_key: Option<PublicKey>) {
         self.public_key = public_key
     }
