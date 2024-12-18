@@ -1,6 +1,6 @@
 use coop_ui::{
     button::Button,
-    dock::{DockItemState, Panel, PanelEvent, TitleStyle},
+    dock::{Panel, PanelEvent, PanelState, TitleStyle},
     popup_menu::PopupMenu,
     theme::{ActiveTheme, Colorize},
     StyledExt,
@@ -58,8 +58,8 @@ impl Panel for WelcomePanel {
         vec![]
     }
 
-    fn dump(&self, _cx: &AppContext) -> DockItemState {
-        DockItemState::new(self)
+    fn dump(&self, _cx: &AppContext) -> PanelState {
+        PanelState::new(self)
     }
 }
 

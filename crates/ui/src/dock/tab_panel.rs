@@ -8,12 +8,12 @@ use gpui::{
 use std::sync::Arc;
 
 use super::{
-    ClosePanel, DockArea, DockItemState, DockPlacement, Panel, PanelEvent, PanelStyle, PanelView,
+    ClosePanel, DockArea, DockPlacement, Panel, PanelEvent, PanelState, PanelStyle, PanelView,
     StackPanel, ToggleZoom,
 };
 use crate::{
     button::{Button, ButtonVariants as _},
-    dock::DockItemInfo,
+    dock::PanelInfo,
     h_flex,
     popup_menu::{PopupMenu, PopupMenuExt},
     tab::{Tab, TabBar},
@@ -122,11 +122,11 @@ impl Panel for TabPanel {
         }
     }
 
-    fn dump(&self, cx: &AppContext) -> DockItemState {
-        let mut state = DockItemState::new(self);
+    fn dump(&self, cx: &AppContext) -> PanelState {
+        let mut state = PanelState::new(self);
         for panel in self.panels.iter() {
             state.add_child(panel.dump(cx));
-            state.info = DockItemInfo::tabs(self.active_ix);
+            state.info = PanelInfo::tabs(self.active_ix);
         }
         state
     }
@@ -720,13 +720,11 @@ impl TabPanel {
 
         // If target is same tab, and it is only one panel, do nothing.
         if is_same_tab && ix.is_none() {
+            #[allow(clippy::if_same_then_else)]
             if self.will_split_placement.is_none() {
                 return;
-            } else {
-                #[allow(clippy::collapsible_else_if)]
-                if self.panels.len() == 1 {
-                    return;
-                }
+            } else if self.panels.len() == 1 {
+                return;
             }
         }
 
@@ -888,8 +886,11 @@ impl FocusableView for TabPanel {
         }
     }
 }
+
 impl EventEmitter<DismissEvent> for TabPanel {}
+
 impl EventEmitter<PanelEvent> for TabPanel {}
+
 impl Render for TabPanel {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl gpui::IntoElement {
         let focus_handle = self.focus_handle(cx);

@@ -1,6 +1,6 @@
 use coop_ui::{
     button::Button,
-    dock::{DockItemState, Panel, PanelEvent, TitleStyle},
+    dock::{Panel, PanelEvent, PanelState, TitleStyle},
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
     StyledExt,
@@ -68,8 +68,8 @@ impl Panel for LeftDock {
         vec![]
     }
 
-    fn dump(&self, _cx: &AppContext) -> DockItemState {
-        DockItemState::new(self)
+    fn dump(&self, _cx: &AppContext) -> PanelState {
+        PanelState::new(self)
     }
 }
 

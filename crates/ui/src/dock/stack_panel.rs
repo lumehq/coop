@@ -1,7 +1,14 @@
+use gpui::{
+    prelude::FluentBuilder as _, AppContext, Axis, DismissEvent, EventEmitter, FocusHandle,
+    FocusableView, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, View,
+    ViewContext, VisualContext, WeakView,
+};
+use smallvec::SmallVec;
 use std::sync::Arc;
 
+use super::{DockArea, Panel, PanelEvent, PanelState, PanelView, TabPanel};
 use crate::{
-    dock::DockItemInfo,
+    dock::PanelInfo,
     h_flex,
     resizable::{
         h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent,
@@ -10,14 +17,6 @@ use crate::{
     theme::ActiveTheme,
     AxisExt as _, Placement,
 };
-
-use super::{DockArea, DockItemState, Panel, PanelEvent, PanelView, TabPanel};
-use gpui::{
-    prelude::FluentBuilder as _, AppContext, Axis, DismissEvent, EventEmitter, FocusHandle,
-    FocusableView, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, View,
-    ViewContext, VisualContext, WeakView,
-};
-use smallvec::SmallVec;
 
 pub struct StackPanel {
     pub(super) parent: Option<WeakView<StackPanel>>,
@@ -37,12 +36,12 @@ impl Panel for StackPanel {
         "StackPanel".into_any_element()
     }
 
-    fn dump(&self, cx: &AppContext) -> DockItemState {
+    fn dump(&self, cx: &AppContext) -> PanelState {
         let sizes = self.panel_group.read(cx).sizes();
-        let mut state = DockItemState::new(self);
+        let mut state = PanelState::new(self);
         for panel in &self.panels {
             state.add_child(panel.dump(cx));
-            state.info = DockItemInfo::stack(sizes.clone(), self.axis);
+            state.info = PanelInfo::stack(sizes.clone(), self.axis);
         }
 
         state

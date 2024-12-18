@@ -1,7 +1,3 @@
-//! Dock is a fixed container that places at left, bottom, right of the Windows.
-
-use std::sync::Arc;
-
 use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Element, Entity, InteractiveElement as _,
     IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render,
@@ -9,6 +5,7 @@ use gpui::{
     WeakView, WindowContext,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::{
     resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE},
@@ -184,6 +181,16 @@ impl Dock {
                 for item in items {
                     Self::subscribe_panel_events(dock_area.clone(), item, cx);
                 }
+                cx.defer({
+                    let view = view.clone();
+                    move |cx| {
+                        _ = dock_area.update(cx, |this, cx| {
+                            this.subscribe_panel(&view, cx);
+                        });
+                    }
+                });
+            }
+            DockItem::Tiles { view, .. } => {
                 cx.defer({
                     let view = view.clone();
                     move |cx| {
@@ -376,6 +383,8 @@ impl Render for Dock {
                 DockItem::Split { view, .. } => this.child(view.clone()),
                 DockItem::Tabs { view, .. } => this.child(view.clone()),
                 DockItem::Panel { view, .. } => this.child(view.clone().view()),
+                // Not support to render Tiles and Tile into Dock
+                DockItem::Tiles { .. } => this,
             })
             .child(self.render_resize_handle(cx))
             .child(DockElement {
