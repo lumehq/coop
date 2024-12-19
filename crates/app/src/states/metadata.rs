@@ -1,25 +1,15 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
-use tokio::sync::mpsc::Sender;
-
-#[derive(Clone)]
-pub enum Signal {
-    /// Send
-    DONE(PublicKey),
-    /// Receive
-    REQ(PublicKey),
-}
 
 pub struct MetadataRegistry {
     seens: Vec<PublicKey>,
-    pub reqs: Sender<Signal>,
 }
 
 impl Global for MetadataRegistry {}
 
 impl MetadataRegistry {
-    pub fn set_global(cx: &mut AppContext, reqs: Sender<Signal>) {
-        cx.set_global(Self::new(reqs));
+    pub fn set_global(cx: &mut AppContext) {
+        cx.set_global(Self::new());
     }
 
     pub fn contains(&self, public_key: PublicKey) -> bool {
@@ -32,10 +22,7 @@ impl MetadataRegistry {
         }
     }
 
-    fn new(reqs: Sender<Signal>) -> Self {
-        Self {
-            seens: Vec::new(),
-            reqs,
-        }
+    fn new() -> Self {
+        Self { seens: Vec::new() }
     }
 }

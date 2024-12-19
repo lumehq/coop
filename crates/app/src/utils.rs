@@ -1,6 +1,9 @@
-use chrono::{Local, TimeZone};
+use chrono::{Duration, Local, TimeZone};
+use keyring::Entry;
 use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
+
+use crate::constants::KEYRING_SERVICE;
 
 pub fn get_all_accounts_from_keyring() -> Vec<PublicKey> {
     let search = Search::new().expect("Keyring not working.");
@@ -13,6 +16,15 @@ pub fn get_all_accounts_from_keyring() -> Vec<PublicKey> {
         .collect();
 
     accounts
+}
+
+pub fn get_keys_by_account(public_key: PublicKey) -> Result<Keys, anyhow::Error> {
+    let bech32 = public_key.to_bech32()?;
+    let entry = Entry::new(KEYRING_SERVICE, &bech32)?;
+    let password = entry.get_password()?;
+    let keys = Keys::parse(&password)?;
+
+    Ok(keys)
 }
 
 pub fn show_npub(public_key: PublicKey, len: usize) -> String {
@@ -37,12 +49,28 @@ pub fn ago(time: u64) -> String {
     let input_time = Local.timestamp_opt(time as i64, 0).unwrap();
     let diff = (now - input_time).num_hours();
 
-    if diff == 0 {
-        "now".to_owned()
-    } else if diff < 24 {
+    if diff < 24 {
         let duration = now.signed_duration_since(input_time);
-        format!("{} hours ago", duration.num_hours())
+        format_duration(duration)
     } else {
         input_time.format("%b %d").to_string()
+    }
+}
+
+pub fn format_duration(duration: Duration) -> String {
+    if duration.num_seconds() < 60 {
+        "now".to_string()
+    } else if duration.num_minutes() == 1 {
+        "1m".to_string()
+    } else if duration.num_minutes() < 60 {
+        format!("{}m", duration.num_minutes())
+    } else if duration.num_hours() == 1 {
+        "1h".to_string()
+    } else if duration.num_hours() < 24 {
+        format!("{}h", duration.num_hours())
+    } else if duration.num_days() == 1 {
+        "1d".to_string()
+    } else {
+        format!("{}d", duration.num_days())
     }
 }

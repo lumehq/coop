@@ -5,7 +5,7 @@ use prelude::FluentBuilder;
 
 use crate::{
     get_client,
-    states::metadata::{MetadataRegistry, Signal},
+    states::{metadata::MetadataRegistry, signal::SignalRegistry},
     utils::{ago, show_npub},
     views::app::AddPanel,
 };
@@ -138,66 +138,41 @@ impl RenderOnce for ChatItem {
 
 pub struct Chat {
     title: Option<String>,
-    public_key: PublicKey,
     metadata: Model<Option<Metadata>>,
     last_seen: Timestamp,
+    pub(crate) public_key: PublicKey,
 }
 
 impl Chat {
     pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
         let public_key = event.pubkey;
         let last_seen = event.created_at;
+        let title = if let Some(tag) = event.tags.find(TagKind::Title) {
+            tag.content().map(|s| s.to_string())
+        } else {
+            None
+        };
 
         let metadata = cx.new_model(|_| None);
-        let async_metadata = metadata.clone();
 
-        let mut async_cx = cx.to_async();
+        // Request metadata
+        _ = cx.global::<SignalRegistry>().tx.send(public_key);
 
-        let client = get_client();
-        let signal = cx.global::<MetadataRegistry>();
-
-        if !signal.contains(public_key) {
-            cx.foreground_executor()
-                .spawn(async move {
-                    let query = async_cx
-                        .background_executor()
-                        .spawn(async move { client.database().metadata(public_key).await })
-                        .await;
-
-                    if let Ok(metadata) = query {
-                        _ = async_cx.update_model(&async_metadata, |a, b| {
-                            *a = metadata;
-                            b.notify();
-                        });
-                    };
-                })
-                .detach();
-        } else {
-            let reqs = signal.reqs.clone();
-
-            cx.foreground_executor()
-                .spawn(async move {
-                    if let Err(e) = reqs.send(Signal::REQ(public_key)).await {
-                        println!("Error: {}", e)
-                    }
-                })
-                .detach();
-
-            cx.observe_global::<MetadataRegistry>(|view, cx| {
-                view.profile(cx);
-            })
-            .detach();
-        };
+        // Reload when received metadata
+        cx.observe_global::<MetadataRegistry>(|chat, cx| {
+            chat.load_metadata(cx);
+        })
+        .detach();
 
         Self {
             public_key,
             last_seen,
             metadata,
-            title: None,
+            title,
         }
     }
 
-    fn profile(&self, cx: &mut ViewContext<Self>) {
+    pub fn load_metadata(&mut self, cx: &mut ViewContext<Self>) {
         let public_key = self.public_key;
         let async_metadata = self.metadata.clone();
         let mut async_cx = cx.to_async();

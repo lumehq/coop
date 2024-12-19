@@ -1094,7 +1094,6 @@ dependencies = [
  "chrono",
  "coop-ui",
  "dirs 5.0.1",
- "flume",
  "gpui",
  "itertools 0.13.0",
  "keyring",

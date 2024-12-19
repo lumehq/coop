@@ -1,7 +1,7 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
 
-use crate::{get_client, states::chat::ChatRegistry};
+use crate::get_client;
 
 pub struct MessageList {
     member: PublicKey,
@@ -56,6 +56,7 @@ impl MessageList {
     }
 
     pub fn subscribe(&self, cx: &mut ViewContext<Self>) {
+        /*
         let receiver = cx.global::<ChatRegistry>().receiver.clone();
 
         cx.foreground_executor()
@@ -65,6 +66,7 @@ impl MessageList {
                 }
             })
             .detach();
+            */
     }
 }
 
