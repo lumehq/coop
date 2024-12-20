@@ -4,7 +4,6 @@ mod focusable;
 mod icon;
 mod root;
 mod styled;
-mod svg_img;
 mod title_bar;
 
 pub mod accordion;
@@ -44,7 +43,6 @@ pub mod switch;
 pub mod tab;
 pub mod theme;
 pub mod tooltip;
-pub mod virtual_list;
 
 pub use crate::Disableable;
 pub use event::InteractiveElementExt;
@@ -52,11 +50,9 @@ pub use focusable::FocusableCycle;
 pub use root::{ContextModal, Root};
 pub use styled::*;
 pub use title_bar::*;
-pub use virtual_list::{h_virtual_list, v_virtual_list, VirtualList};
 
 pub use colors::*;
 pub use icon::*;
-pub use svg_img::*;
 
 use rust_embed::RustEmbed;
 
