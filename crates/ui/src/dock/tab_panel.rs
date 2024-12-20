@@ -1,5 +1,5 @@
 use gpui::{
-    div, prelude::FluentBuilder, px, rems, AnchorCorner, AppContext, DefiniteLength, DismissEvent,
+    div, prelude::FluentBuilder, px, rems, AppContext, Corner, DefiniteLength, DismissEvent,
     DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, FocusableView,
     InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
     SharedString, StatefulInteractiveElement, Styled, View, ViewContext, VisualContext as _,
@@ -367,7 +367,7 @@ impl TabPanel {
                                 this.separator().menu("Close", Box::new(ClosePanel))
                             })
                     })
-                    .anchor(AnchorCorner::TopRight),
+                    .anchor(Corner::TopRight),
             )
     }
 

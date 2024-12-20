@@ -2,6 +2,7 @@ use coop_ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState, TitleStyle},
     popup_menu::PopupMenu,
+    v_flex,
 };
 use form::Form;
 use gpui::*;
@@ -90,11 +91,9 @@ impl FocusableView for ChatPanel {
 
 impl Render for ChatPanel {
     fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        div()
+        v_flex()
             .size_full()
-            .flex()
-            .flex_col()
-            .child(self.list.clone())
+            .child(div().flex_1().min_h_0().child(self.list.clone()))
             .child(self.form.clone())
     }
 }

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder, px, relative, AnchorCorner, AnyElement,
+    anchored, deferred, div, prelude::FluentBuilder, px, relative, AnyElement, Corner,
     DismissEvent, DispatchPhase, Element, ElementId, Focusable, GlobalElementId,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
     Position, Stateful, Style, View, ViewContext, WindowContext,
@@ -27,7 +27,7 @@ type Menu<M> = Option<Box<dyn Fn(PopupMenu, &mut ViewContext<M>) -> PopupMenu + 
 pub struct ContextMenu {
     id: ElementId,
     menu: Menu<PopupMenu>,
-    anchor: AnchorCorner,
+    anchor: Corner,
 }
 
 impl ContextMenu {
@@ -35,7 +35,7 @@ impl ContextMenu {
         Self {
             id: id.into(),
             menu: None,
-            anchor: AnchorCorner::TopLeft,
+            anchor: Corner::TopLeft,
         }
     }
 

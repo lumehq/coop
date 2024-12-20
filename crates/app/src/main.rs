@@ -102,37 +102,39 @@ async fn main() {
                 } = message
                 {
                     if event.kind == Kind::GiftWrap {
-                        if let Ok(UnwrappedGift { rumor, .. }) =
-                            client.unwrap_gift_wrap(&event).await
-                        {
-                            let mut rumor_clone = rumor.clone();
+                        match client.unwrap_gift_wrap(&event).await {
+                            Ok(UnwrappedGift { rumor, .. }) => {
+                                let mut rumor_clone = rumor.clone();
 
-                            // Compute event id if not exist
-                            rumor_clone.ensure_id();
+                                // Compute event id if not exist
+                                rumor_clone.ensure_id();
 
-                            if let Some(id) = rumor_clone.id {
-                                let ev = Event::new(
-                                    id,
-                                    rumor_clone.pubkey,
-                                    rumor_clone.created_at,
-                                    rumor_clone.kind,
-                                    rumor_clone.tags,
-                                    rumor_clone.content,
-                                    sig,
-                                );
+                                if let Some(id) = rumor_clone.id {
+                                    let ev = Event::new(
+                                        id,
+                                        rumor_clone.pubkey,
+                                        rumor_clone.created_at,
+                                        rumor_clone.kind,
+                                        rumor_clone.tags,
+                                        rumor_clone.content,
+                                        sig,
+                                    );
 
-                                // Save rumor to database to further query
-                                if let Err(e) = client.database().save_event(&ev).await {
-                                    println!("Save error: {}", e);
-                                }
+                                    // Save rumor to database to further query
+                                    if let Err(e) = client.database().save_event(&ev).await {
+                                        println!("Save error: {}", e);
+                                    }
 
-                                // Send event back to channel
-                                if subscription_id == new_message {
-                                    if let Err(e) = signal_tx.send(Signal::RecvEvent(ev)).await {
-                                        println!("Error: {}", e)
+                                    // Send event back to channel
+                                    if subscription_id == new_message {
+                                        if let Err(e) = signal_tx.send(Signal::RecvEvent(ev)).await
+                                        {
+                                            println!("Error: {}", e)
+                                        }
                                     }
                                 }
                             }
+                            Err(e) => println!("Error: {}", e),
                         }
                     } else if event.kind == Kind::Metadata {
                         if let Err(e) = signal_tx.send(Signal::RecvMetadata(event.pubkey)).await {

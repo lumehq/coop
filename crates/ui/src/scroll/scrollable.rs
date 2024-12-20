@@ -1,11 +1,11 @@
-use std::{cell::Cell, rc::Rc};
-
-use super::{Scrollbar, ScrollbarAxis, ScrollbarState};
 use gpui::{
     canvas, div, relative, AnyElement, Div, Element, ElementId, EntityId, GlobalElementId,
     InteractiveElement, IntoElement, ParentElement, Pixels, Position, ScrollHandle, SharedString,
     Size, Stateful, StatefulInteractiveElement, Style, StyleRefinement, Styled, WindowContext,
 };
+use std::{cell::Cell, rc::Rc};
+
+use super::{Scrollbar, ScrollbarAxis, ScrollbarState};
 
 /// A scroll view is a container that allows the user to scroll through a large amount of content.
 pub struct Scrollable<E> {
@@ -121,6 +121,7 @@ where
         }
     }
 }
+
 impl<E> StatefulInteractiveElement for Scrollable<E> where E: Element + StatefulInteractiveElement {}
 
 impl<E> IntoElement for Scrollable<E>
@@ -202,8 +203,8 @@ where
                         ),
                 )
                 .into_any_element();
-            let element_id = element.request_layout(cx);
 
+            let element_id = element.request_layout(cx);
             let layout_id = cx.request_layout(style, vec![element_id]);
 
             (layout_id, element)

@@ -1,7 +1,8 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
+use prelude::FluentBuilder;
 
-use crate::get_client;
+use crate::{get_client, states::chat::ChatRegistry};
 
 pub struct MessageList {
     member: PublicKey,
@@ -56,28 +57,38 @@ impl MessageList {
     }
 
     pub fn subscribe(&self, cx: &mut ViewContext<Self>) {
-        /*
-        let receiver = cx.global::<ChatRegistry>().receiver.clone();
+        let messages = self.messages.clone();
 
-        cx.foreground_executor()
-            .spawn(async move {
-                while let Ok(event) = receiver.recv_async().await {
-                    println!("New message: {}", event.as_json())
+        cx.observe_global::<ChatRegistry>(move |_, cx| {
+            let state = cx.global::<ChatRegistry>();
+            let events = state.new_messages.clone();
+
+            cx.update_model(&messages, |a, b| {
+                if let Some(m) = a {
+                    m.extend(events);
+                    b.notify();
                 }
-            })
-            .detach();
-            */
+            });
+        })
+        .detach();
     }
 }
 
 impl Render for MessageList {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let mut content = div().size_full().flex().flex_col().justify_end();
-
-        if let Some(messages) = self.messages.read(cx).as_ref() {
-            content = content.children(messages.clone().into_iter().map(|m| div().child(m.content)))
-        }
-
-        div().flex_1().child(content)
+        div()
+            .h_full()
+            .flex()
+            .flex_col_reverse()
+            .justify_end()
+            .when_some(self.messages.read(cx).as_ref(), |this, messages| {
+                this.children(messages.clone().into_iter().map(|m| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(m.pubkey.to_hex())
+                        .child(m.content)
+                }))
+            })
     }
 }
