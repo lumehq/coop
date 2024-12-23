@@ -250,13 +250,8 @@ async fn main() {
                             let metadata = async_cx
                                 .background_executor()
                                 .spawn(async move {
-                                    if let Ok(metadata) =
-                                        client.database().metadata(event.pubkey).await
-                                    {
-                                        metadata
-                                    } else {
-                                        None
-                                    }
+                                    (client.database().metadata(event.pubkey).await)
+                                        .unwrap_or_default()
                                 })
                                 .await;
 
