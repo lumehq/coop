@@ -1,8 +1,23 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
+use serde::Deserialize;
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct Room {
+    pub owner: PublicKey,
+    pub members: Vec<PublicKey>,
+    pub last_seen: Timestamp,
+    pub title: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Message {
+    pub event: Event,
+    pub metadata: Option<Metadata>,
+}
 
 pub struct ChatRegistry {
-    pub new_messages: Vec<Event>,
+    pub new_messages: Vec<Message>,
     pub reload: bool,
     pub is_initialized: bool,
 }
@@ -22,8 +37,8 @@ impl ChatRegistry {
         self.reload = true;
     }
 
-    pub fn push(&mut self, event: Event) {
-        self.new_messages.push(event);
+    pub fn push(&mut self, event: Event, metadata: Option<Metadata>) {
+        self.new_messages.push(Message { event, metadata });
     }
 
     fn new() -> Self {

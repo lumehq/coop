@@ -246,15 +246,28 @@ async fn main() {
                                 }
                             }
                         }
+                        Signal::RecvEvent(event) => {
+                            let metadata = async_cx
+                                .background_executor()
+                                .spawn(async move {
+                                    if let Ok(metadata) =
+                                        client.database().metadata(event.pubkey).await
+                                    {
+                                        metadata
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .await;
+
+                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
+                                state.push(event, metadata);
+                            });
+                        }
                         Signal::RecvMetadata(public_key) => {
                             _ = async_cx.update_global::<MetadataRegistry, _>(|state, _cx| {
                                 state.seen(public_key);
                             })
-                        }
-                        Signal::RecvEvent(event) => {
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
-                                state.push(event);
-                            });
                         }
                         _ => {}
                     }

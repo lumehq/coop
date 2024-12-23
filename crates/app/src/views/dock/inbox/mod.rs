@@ -1,8 +1,8 @@
-use chat::Chat;
 use coop_ui::{
     skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt,
 };
 use gpui::*;
+use item::InboxItem;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
@@ -10,12 +10,12 @@ use std::cmp::Reverse;
 
 use crate::{get_client, states::chat::ChatRegistry};
 
-pub mod chat;
+pub mod item;
 
 pub struct Inbox {
     label: SharedString,
     events: Model<Option<Vec<Event>>>,
-    chats: Model<Vec<View<Chat>>>,
+    chats: Model<Vec<View<InboxItem>>>,
     is_loading: bool,
     is_fetching: bool,
     is_collapsed: bool,
@@ -37,8 +37,8 @@ impl Inbox {
                 for message in new_messages.into_iter() {
                     cx.update_model(&inbox.events, |model, b| {
                         if let Some(events) = model {
-                            if !events.iter().any(|ev| ev.pubkey == message.pubkey) {
-                                events.push(message);
+                            if !events.iter().any(|ev| ev.pubkey == message.event.pubkey) {
+                                events.push(message.event);
                                 b.notify();
                             }
                         }
@@ -56,15 +56,14 @@ impl Inbox {
 
             if let Some(events) = events {
                 let views = inbox.chats.read(cx);
-                let public_keys: Vec<PublicKey> =
-                    views.iter().map(|v| v.read(cx).public_key).collect();
+                let public_keys: Vec<PublicKey> = views.iter().map(|v| v.read(cx).sender).collect();
 
                 for event in events
                     .into_iter()
                     .sorted_by_key(|ev| Reverse(ev.created_at))
                 {
                     if !public_keys.contains(&event.pubkey) {
-                        let view = cx.new_view(|cx| Chat::new(event, cx));
+                        let view = cx.new_view(|cx| InboxItem::new(event, cx));
 
                         cx.update_model(&inbox.chats, |a, b| {
                             a.push(view);
@@ -79,7 +78,7 @@ impl Inbox {
         })
         .detach();
 
-        cx.observe_new_views::<Chat>(|chat, cx| {
+        cx.observe_new_views::<InboxItem>(|chat, cx| {
             chat.load_metadata(cx);
         })
         .detach();

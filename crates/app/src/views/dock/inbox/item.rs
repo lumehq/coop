@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use coop_ui::{theme::ActiveTheme, Selectable, StyledExt};
 use gpui::*;
 use nostr_sdk::prelude::*;
@@ -5,45 +7,36 @@ use prelude::FluentBuilder;
 
 use crate::{
     get_client,
-    states::{metadata::MetadataRegistry, signal::SignalRegistry},
+    states::{chat::Room, metadata::MetadataRegistry, signal::SignalRegistry},
     utils::{ago, show_npub},
     views::app::AddPanel,
 };
 
 #[derive(IntoElement)]
-struct ChatItem {
+struct Item {
     id: ElementId,
-    public_key: PublicKey,
+    room: Arc<Room>,
     metadata: Option<Metadata>,
-    last_seen: Timestamp,
-    title: Option<String>,
     // Interactive
     base: Div,
     selected: bool,
 }
 
-impl ChatItem {
-    pub fn new(
-        public_key: PublicKey,
-        metadata: Option<Metadata>,
-        last_seen: Timestamp,
-        title: Option<String>,
-    ) -> Self {
-        let id = SharedString::from(public_key.to_hex()).into();
+impl Item {
+    pub fn new(room: Arc<Room>, metadata: Option<Metadata>) -> Self {
+        let id = SharedString::from(room.owner.to_hex()).into();
 
         Self {
             id,
-            public_key,
+            room,
             metadata,
-            last_seen,
-            title,
             base: div(),
             selected: false,
         }
     }
 }
 
-impl Selectable for ChatItem {
+impl Selectable for Item {
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
@@ -54,16 +47,16 @@ impl Selectable for ChatItem {
     }
 }
 
-impl InteractiveElement for ChatItem {
+impl InteractiveElement for Item {
     fn interactivity(&mut self) -> &mut gpui::Interactivity {
         self.base.interactivity()
     }
 }
 
-impl RenderOnce for ChatItem {
+impl RenderOnce for Item {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let ago = ago(self.last_seen.as_u64());
-        let fallback_name = show_npub(self.public_key, 16);
+        let ago = ago(self.room.last_seen.as_u64());
+        let fallback_name = show_npub(self.room.owner, 16);
 
         let mut content = div()
             .font_medium()
@@ -129,34 +122,41 @@ impl RenderOnce for ChatItem {
             )
             .on_click(move |_, cx| {
                 cx.dispatch_action(Box::new(AddPanel {
-                    title: self.title.clone(),
-                    from: self.public_key,
+                    room: self.room.clone(),
+                    position: coop_ui::dock::DockPlacement::Center,
                 }))
             })
     }
 }
 
-pub struct Chat {
-    title: Option<String>,
+pub struct InboxItem {
+    room: Arc<Room>,
     metadata: Model<Option<Metadata>>,
-    last_seen: Timestamp,
-    pub(crate) public_key: PublicKey,
+    pub(crate) sender: PublicKey,
 }
 
-impl Chat {
+impl InboxItem {
     pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
-        let public_key = event.pubkey;
+        let sender = event.pubkey;
         let last_seen = event.created_at;
+
+        // Get all members from event's tag
+        let mut members: Vec<PublicKey> = event.tags.public_keys().copied().collect();
+        // Add sender to members
+        members.insert(0, sender);
+
+        // Get title from event's tag
         let title = if let Some(tag) = event.tags.find(TagKind::Title) {
             tag.content().map(|s| s.to_string())
         } else {
+            // TODO: create random name?
             None
         };
 
         let metadata = cx.new_model(|_| None);
 
         // Request metadata
-        _ = cx.global::<SignalRegistry>().tx.send(public_key);
+        _ = cx.global::<SignalRegistry>().tx.send(sender);
 
         // Reload when received metadata
         cx.observe_global::<MetadataRegistry>(|chat, cx| {
@@ -164,16 +164,22 @@ impl Chat {
         })
         .detach();
 
-        Self {
-            public_key,
-            last_seen,
-            metadata,
+        let room = Arc::new(Room {
             title,
+            members,
+            last_seen,
+            owner: sender,
+        });
+
+        Self {
+            room,
+            sender,
+            metadata,
         }
     }
 
     pub fn load_metadata(&mut self, cx: &mut ViewContext<Self>) {
-        let public_key = self.public_key;
+        let public_key = self.sender;
         let async_metadata = self.metadata.clone();
         let mut async_cx = cx.to_async();
 
@@ -194,17 +200,17 @@ impl Chat {
             })
             .detach();
     }
+
+    fn render_item(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        let metadata = self.metadata.read(cx).clone();
+        let room = self.room.clone();
+
+        Item::new(room, metadata)
+    }
 }
 
-impl Render for Chat {
+impl Render for InboxItem {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let metadata = self.metadata.read(cx).clone();
-
-        div().child(ChatItem::new(
-            self.public_key,
-            metadata,
-            self.last_seen,
-            self.title.clone(),
-        ))
+        div().child(self.render_item(cx))
     }
 }

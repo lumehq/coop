@@ -5,7 +5,6 @@ use coop_ui::{
     IconName, Root, Sizable, TitleBar,
 };
 use gpui::*;
-use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -14,12 +13,12 @@ use super::{
     dock::{chat::ChatPanel, left_dock::LeftDock, welcome::WelcomePanel},
     onboarding::Onboarding,
 };
-use crate::states::account::AccountRegistry;
+use crate::states::{account::AccountRegistry, chat::Room};
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel {
-    pub title: Option<String>,
-    pub from: PublicKey,
+    pub room: Arc<Room>,
+    pub position: DockPlacement,
 }
 
 impl_actions!(dock, [AddPanel]);
@@ -112,10 +111,10 @@ impl AppView {
     }
 
     fn on_action_add_panel(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
-        let chat_panel = Arc::new(ChatPanel::new(action.from, cx));
+        let chat_panel = Arc::new(ChatPanel::new(&action.room, cx));
 
         self.dock.update(cx, |dock_area, cx| {
-            dock_area.add_panel(chat_panel, DockPlacement::Center, cx);
+            dock_area.add_panel(chat_panel, action.position, cx);
         });
     }
 }

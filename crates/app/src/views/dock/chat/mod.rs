@@ -2,15 +2,14 @@ use coop_ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState, TitleStyle},
     popup_menu::PopupMenu,
-    v_flex,
 };
-use form::Form;
 use gpui::*;
-use list::MessageList;
-use nostr_sdk::*;
+use room::ChatRoom;
+use std::sync::Arc;
 
-pub mod form;
-pub mod list;
+use crate::states::chat::Room;
+
+mod room;
 
 pub struct ChatPanel {
     // Panel
@@ -18,22 +17,20 @@ pub struct ChatPanel {
     closeable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
-    // Chat Room
-    list: View<MessageList>,
-    form: View<Form>,
+    // Room
+    room: View<ChatRoom>,
 }
 
 impl ChatPanel {
-    pub fn new(from: PublicKey, cx: &mut WindowContext) -> View<Self> {
-        let form = cx.new_view(|cx| Form::new(from, cx));
-        let list = cx.new_view(|cx| {
-            let list = MessageList::new(from, cx);
-            // Load messages from database
-            list.init(cx);
-            // Subscribe for new message
-            list.subscribe(cx);
+    pub fn new(room: &Arc<Room>, cx: &mut WindowContext) -> View<Self> {
+        let room = cx.new_view(|cx| {
+            let view = ChatRoom::new(room, cx);
+            // Load messages
+            view.load(cx);
+            // Subscribe for new messages
+            view.subscribe(cx);
 
-            list
+            view
         });
 
         cx.new_view(|cx| Self {
@@ -41,8 +38,7 @@ impl ChatPanel {
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            list,
-            form,
+            room,
         })
     }
 }
@@ -91,9 +87,6 @@ impl FocusableView for ChatPanel {
 
 impl Render for ChatPanel {
     fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .child(div().flex_1().min_h_0().child(self.list.clone()))
-            .child(self.form.clone())
+        div().size_full().child(self.room.clone())
     }
 }
