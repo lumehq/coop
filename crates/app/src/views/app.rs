@@ -53,8 +53,8 @@ impl AppView {
         let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
         cx.observe_global::<AccountRegistry>(|view, cx| {
-            // TODO: save dock state and load previous state on startup
             if cx.global::<AccountRegistry>().is_user_logged_in() {
+                // TODO: save dock state and load previous state on startup
                 Self::init_layout(view.dock.downgrade(), cx);
             }
         })
@@ -71,6 +71,7 @@ impl AppView {
 
         // Change theme
         Theme::change(mode, cx);
+
         // Rerender
         cx.refresh();
     }

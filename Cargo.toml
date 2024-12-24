@@ -35,3 +35,15 @@ keyring = { version = "3", features = [
 	"windows-native",
 	"sync-secret-service",
 ] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+incremental = false
+opt-level = "z"
+strip = true
+rpath = false
+debug = false
+debug-assertions = false
+overflow-checks = false

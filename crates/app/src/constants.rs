@@ -4,3 +4,4 @@ pub const FAKE_SIG: &str = "f9e79d141c004977192d05a86f81ec7c585179c371f7350a5412
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwrap";
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
 pub const METADATA_DELAY: u64 = 150;
+pub const IMAGE_SERVICE: &str = "https://wsrv.nl";

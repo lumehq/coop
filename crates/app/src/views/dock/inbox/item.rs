@@ -6,6 +6,7 @@ use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
 
 use crate::{
+    constants::IMAGE_SERVICE,
     get_client,
     states::{chat::Room, metadata::MetadataRegistry, signal::SignalRegistry},
     utils::{ago, show_npub},
@@ -70,10 +71,13 @@ impl RenderOnce for Item {
                 .map(|this| {
                     if let Some(picture) = metadata.picture {
                         this.flex_shrink_0().child(
-                            img(picture)
-                                .size_6()
-                                .rounded_full()
-                                .object_fit(ObjectFit::Cover),
+                            img(format!(
+                                "{}/?url={}&w=100&h=100&n=-1",
+                                IMAGE_SERVICE, picture
+                            ))
+                            .size_6()
+                            .rounded_full()
+                            .object_fit(ObjectFit::Cover),
                         )
                     } else {
                         this.flex_shrink_0()

@@ -14,66 +14,46 @@ pub mod item;
 
 pub struct Inbox {
     label: SharedString,
-    events: Model<Option<Vec<Event>>>,
-    chats: Model<Vec<View<InboxItem>>>,
+    items: Model<Option<Vec<View<InboxItem>>>>,
     is_loading: bool,
-    is_fetching: bool,
     is_collapsed: bool,
 }
 
 impl Inbox {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
-        let chats = cx.new_model(|_| Vec::new());
-        let events = cx.new_model(|_| None);
+        let items = cx.new_model(|_| None);
 
-        cx.observe_global::<ChatRegistry>(|inbox, cx| {
+        cx.observe_global::<ChatRegistry>(|this, cx| {
             let state = cx.global::<ChatRegistry>();
 
             if state.reload || (state.is_initialized && state.new_messages.is_empty()) {
-                inbox.load(cx);
+                this.load(cx);
             } else {
-                let new_messages = state.new_messages.clone();
+                #[allow(clippy::collapsible_if)]
+                if let Some(items) = this.items.read(cx).as_ref() {
+                    // Get all new messages
+                    let new_messages = state.new_messages.clone();
 
-                for message in new_messages.into_iter() {
-                    cx.update_model(&inbox.events, |model, b| {
-                        if let Some(events) = model {
-                            if !events.iter().any(|ev| ev.pubkey == message.event.pubkey) {
-                                events.push(message.event);
-                                b.notify();
-                            }
+                    // Get all current chats
+                    let current: Vec<PublicKey> = items
+                        .iter()
+                        .map(|item| item.model.read(cx).sender)
+                        .collect();
+
+                    // Create view for only new chats
+                    let new = new_messages
+                        .into_iter()
+                        .filter(|m| current.iter().any(|pk| pk == &m.event.pubkey))
+                        .map(|m| cx.new_view(|cx| InboxItem::new(m.event, cx)))
+                        .collect::<Vec<_>>();
+
+                    cx.update_model(&this.items, |a, b| {
+                        if let Some(items) = a {
+                            items.extend(new);
+                            b.notify();
                         }
                     });
                 }
-            }
-        })
-        .detach();
-
-        cx.observe(&events, |inbox, model, cx| {
-            // Show fetching indicator
-            inbox.set_fetching(cx);
-
-            let events: Option<Vec<Event>> = model.read(cx).clone();
-
-            if let Some(events) = events {
-                let views = inbox.chats.read(cx);
-                let public_keys: Vec<PublicKey> = views.iter().map(|v| v.read(cx).sender).collect();
-
-                for event in events
-                    .into_iter()
-                    .sorted_by_key(|ev| Reverse(ev.created_at))
-                {
-                    if !public_keys.contains(&event.pubkey) {
-                        let view = cx.new_view(|cx| InboxItem::new(event, cx));
-
-                        cx.update_model(&inbox.chats, |a, b| {
-                            a.push(view);
-                            b.notify();
-                        });
-                    }
-                }
-
-                // Hide fetching indicator
-                inbox.set_fetching(cx);
             }
         })
         .detach();
@@ -84,11 +64,9 @@ impl Inbox {
         .detach();
 
         Self {
-            events,
-            chats,
+            items,
             label: "Inbox".into(),
             is_loading: true,
-            is_fetching: false,
             is_collapsed: false,
         }
     }
@@ -97,7 +75,7 @@ impl Inbox {
         // Hide loading indicator
         self.set_loading(cx);
 
-        let async_events = self.events.clone();
+        let async_items = self.items.clone();
         let mut async_cx = cx.to_async();
 
         cx.foreground_executor()
@@ -118,6 +96,7 @@ impl Inbox {
                                 .into_iter()
                                 .filter(|ev| ev.pubkey != public_key) // Filter all messages from current user
                                 .unique_by(|ev| ev.pubkey)
+                                .sorted_by_key(|ev| Reverse(ev.created_at))
                                 .collect::<Vec<_>>()
                         } else {
                             Vec::new()
@@ -125,8 +104,13 @@ impl Inbox {
                     })
                     .await;
 
-                async_cx.update_model(&async_events, |a, b| {
-                    *a = Some(events);
+                let views: Vec<View<InboxItem>> = events
+                    .into_iter()
+                    .map(|ev| async_cx.new_view(|cx| InboxItem::new(ev, cx)).unwrap())
+                    .collect();
+
+                async_cx.update_model(&async_items, |a, b| {
+                    *a = Some(views);
                     b.notify();
                 })
             })
@@ -135,11 +119,6 @@ impl Inbox {
 
     fn set_loading(&mut self, cx: &mut ViewContext<Self>) {
         self.is_loading = false;
-        cx.notify();
-    }
-
-    fn set_fetching(&mut self, cx: &mut ViewContext<Self>) {
-        self.is_fetching = !self.is_fetching;
         cx.notify();
     }
 }
@@ -158,7 +137,6 @@ impl Collapsible for Inbox {
 impl Render for Inbox {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let mut content = div();
-        let chats = self.chats.read(cx);
 
         if self.is_loading {
             content = content.children((0..5).map(|_| {
@@ -171,18 +149,10 @@ impl Render for Inbox {
                     .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
                     .child(Skeleton::new().w_20().h_3().rounded_sm())
             }))
+        } else if let Some(items) = self.items.read(cx).as_ref() {
+            content = content.children(items.clone())
         } else {
-            content = content
-                .children(chats.clone())
-                .when(self.is_fetching, |this| {
-                    this.h_8()
-                        .px_1()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                        .child(Skeleton::new().w_20().h_3().rounded_sm())
-                });
+            // TODO: handle error
         }
 
         v_flex()
