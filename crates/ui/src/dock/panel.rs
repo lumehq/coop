@@ -32,16 +32,11 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
     ///
     /// This is used to identify the panel when deserializing the panel.
     /// Once you have defined a panel name, this must not be changed.
-    fn panel_name(&self) -> &'static str;
+    fn panel_name(&self) -> SharedString;
 
     /// The title of the panel
     fn title(&self, _cx: &WindowContext) -> AnyElement {
         SharedString::from("Untitled").into_any_element()
-    }
-
-    /// The theme of the panel title, default is `None`.
-    fn title_style(&self, _cx: &WindowContext) -> Option<TitleStyle> {
-        None
     }
 
     /// Whether the panel can be closed, default is `true`.
@@ -71,9 +66,8 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
 }
 
 pub trait PanelView: 'static + Send + Sync {
-    fn panel_name(&self, _cx: &AppContext) -> &'static str;
+    fn panel_name(&self, cx: &WindowContext) -> SharedString;
     fn title(&self, _cx: &WindowContext) -> AnyElement;
-    fn title_style(&self, _cx: &WindowContext) -> Option<TitleStyle>;
     fn closeable(&self, cx: &WindowContext) -> bool;
     fn zoomable(&self, cx: &WindowContext) -> bool;
     fn popup_menu(&self, menu: PopupMenu, cx: &WindowContext) -> PopupMenu;
@@ -84,16 +78,12 @@ pub trait PanelView: 'static + Send + Sync {
 }
 
 impl<T: Panel> PanelView for View<T> {
-    fn panel_name(&self, cx: &AppContext) -> &'static str {
+    fn panel_name(&self, cx: &WindowContext) -> SharedString {
         self.read(cx).panel_name()
     }
 
     fn title(&self, cx: &WindowContext) -> AnyElement {
         self.read(cx).title(cx)
-    }
-
-    fn title_style(&self, cx: &WindowContext) -> Option<TitleStyle> {
-        self.read(cx).title_style(cx)
     }
 
     fn closeable(&self, cx: &WindowContext) -> bool {

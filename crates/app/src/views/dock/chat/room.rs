@@ -181,22 +181,20 @@ impl ChatRoom {
         cx.foreground_executor()
             .spawn({
                 let client = get_client();
+                let owner = self.owner;
                 let members = self.members.to_vec();
 
+                let recv = Filter::new()
+                    .kind(Kind::PrivateDirectMessage)
+                    .author(owner)
+                    .pubkeys(members.clone());
+
+                let send = Filter::new()
+                    .kind(Kind::PrivateDirectMessage)
+                    .authors(members)
+                    .pubkey(owner);
+
                 async move {
-                    let signer = client.signer().await.unwrap();
-                    let public_key = signer.get_public_key().await.unwrap();
-
-                    let recv = Filter::new()
-                        .kind(Kind::PrivateDirectMessage)
-                        .authors(members.clone())
-                        .pubkey(public_key);
-
-                    let send = Filter::new()
-                        .kind(Kind::PrivateDirectMessage)
-                        .author(public_key)
-                        .pubkeys(members);
-
                     let events = async_cx
                         .background_executor()
                         .spawn(async move { client.database().query(vec![recv, send]).await })

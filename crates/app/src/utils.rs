@@ -27,6 +27,21 @@ pub fn get_keys_by_account(public_key: PublicKey) -> Result<Keys, anyhow::Error>
     Ok(keys)
 }
 
+pub fn get_room_id(owner: &PublicKey, public_keys: &[PublicKey]) -> String {
+    let hex: Vec<String> = public_keys
+        .iter()
+        .map(|m| {
+            let hex = m.to_hex();
+            let split = &hex[..6];
+
+            split.to_owned()
+        })
+        .collect();
+    let mems = hex.join("-");
+
+    format!("{}-{}", &owner.to_hex()[..6], mems)
+}
+
 pub fn show_npub(public_key: PublicKey, len: usize) -> String {
     let bech32 = public_key.to_bech32().unwrap_or_default();
     let separator = " ... ";

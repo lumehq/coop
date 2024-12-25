@@ -22,8 +22,8 @@ impl InvalidPanel {
     }
 }
 impl Panel for InvalidPanel {
-    fn panel_name(&self) -> &'static str {
-        "InvalidPanel"
+    fn panel_name(&self) -> SharedString {
+        "InvalidPanel".into()
     }
 
     fn dump(&self, _cx: &AppContext) -> super::PanelState {

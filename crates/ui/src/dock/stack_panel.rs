@@ -1,8 +1,5 @@
-use gpui::{
-    prelude::FluentBuilder as _, AppContext, Axis, DismissEvent, EventEmitter, FocusHandle,
-    FocusableView, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, View,
-    ViewContext, VisualContext, WeakView,
-};
+use gpui::*;
+use prelude::FluentBuilder;
 use smallvec::SmallVec;
 use std::sync::Arc;
 
@@ -28,8 +25,8 @@ pub struct StackPanel {
 }
 
 impl Panel for StackPanel {
-    fn panel_name(&self) -> &'static str {
-        "StackPanel"
+    fn panel_name(&self) -> SharedString {
+        "StackPanel".into()
     }
 
     fn title(&self, _cx: &gpui::WindowContext) -> gpui::AnyElement {

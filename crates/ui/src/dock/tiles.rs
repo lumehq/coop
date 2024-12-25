@@ -1,10 +1,4 @@
-use gpui::{
-    canvas, div, point, px, size, AnyElement, AppContext, Bounds, DismissEvent, DragMoveEvent,
-    Entity, EntityId, EventEmitter, FocusHandle, FocusableView, Half, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, Size, StatefulInteractiveElement, Styled, ViewContext, VisualContext, WeakView,
-    WindowContext,
-};
+use gpui::*;
 use std::{
     cell::Cell,
     fmt::{Debug, Formatter},
@@ -92,8 +86,8 @@ pub struct Tiles {
 }
 
 impl Panel for Tiles {
-    fn panel_name(&self) -> &'static str {
-        "Tiles"
+    fn panel_name(&self) -> SharedString {
+        "Tiles".into()
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {

@@ -126,7 +126,7 @@ impl RenderOnce for Item {
             )
             .on_click(move |_, cx| {
                 cx.dispatch_action(Box::new(AddPanel {
-                    room: self.room.clone(),
+                    room: Arc::clone(&self.room),
                     position: coop_ui::dock::DockPlacement::Center,
                 }))
             })
@@ -136,31 +136,15 @@ impl RenderOnce for Item {
 pub struct InboxItem {
     room: Arc<Room>,
     metadata: Model<Option<Metadata>>,
-    pub(crate) sender: PublicKey,
 }
 
 impl InboxItem {
     pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
-        let sender = event.pubkey;
-        let last_seen = event.created_at;
-
-        // Get all members from event's tag
-        let mut members: Vec<PublicKey> = event.tags.public_keys().copied().collect();
-        // Add sender to members
-        members.insert(0, sender);
-
-        // Get title from event's tag
-        let title = if let Some(tag) = event.tags.find(TagKind::Title) {
-            tag.content().map(|s| s.to_string())
-        } else {
-            // TODO: create random name?
-            None
-        };
-
+        let room = Arc::new(Room::new(event));
         let metadata = cx.new_model(|_| None);
 
         // Request metadata
-        _ = cx.global::<SignalRegistry>().tx.send(sender);
+        _ = cx.global::<SignalRegistry>().tx.send(room.owner);
 
         // Reload when received metadata
         cx.observe_global::<MetadataRegistry>(|chat, cx| {
@@ -168,22 +152,11 @@ impl InboxItem {
         })
         .detach();
 
-        let room = Arc::new(Room {
-            title,
-            members,
-            last_seen,
-            owner: sender,
-        });
-
-        Self {
-            room,
-            sender,
-            metadata,
-        }
+        Self { room, metadata }
     }
 
     pub fn load_metadata(&mut self, cx: &mut ViewContext<Self>) {
-        let public_key = self.sender;
+        let public_key = self.room.owner;
         let async_metadata = self.metadata.clone();
         let mut async_cx = cx.to_async();
 
@@ -205,9 +178,13 @@ impl InboxItem {
             .detach();
     }
 
+    pub fn id(&self) -> String {
+        self.room.id.clone().into()
+    }
+
     fn render_item(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let metadata = self.metadata.read(cx).clone();
-        let room = self.room.clone();
+        let room = Arc::clone(&self.room);
 
         Item::new(room, metadata)
     }

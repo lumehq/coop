@@ -8,7 +8,7 @@ use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
 use std::cmp::Reverse;
 
-use crate::{get_client, states::chat::ChatRegistry};
+use crate::{get_client, states::chat::ChatRegistry, utils::get_room_id};
 
 pub mod item;
 
@@ -35,15 +35,18 @@ impl Inbox {
                     let new_messages = state.new_messages.clone();
 
                     // Get all current chats
-                    let current: Vec<PublicKey> = items
-                        .iter()
-                        .map(|item| item.model.read(cx).sender)
-                        .collect();
+                    let current_rooms: Vec<String> =
+                        items.iter().map(|item| item.model.read(cx).id()).collect();
 
-                    // Create view for only new chats
+                    // Create view for new chats only
                     let new = new_messages
                         .into_iter()
-                        .filter(|m| current.iter().any(|pk| pk == &m.event.pubkey))
+                        .filter(|m| {
+                            let keys = m.event.tags.public_keys().copied().collect::<Vec<_>>();
+                            let nid = get_room_id(&m.event.pubkey, &keys);
+
+                            current_rooms.iter().any(|id| id == &nid)
+                        })
                         .map(|m| cx.new_view(|cx| InboxItem::new(m.event, cx)))
                         .collect::<Vec<_>>();
 

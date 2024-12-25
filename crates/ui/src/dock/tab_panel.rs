@@ -71,7 +71,6 @@ pub struct TabPanel {
     /// If this is true, the Panel closeable will follow the active panel's closeable,
     /// otherwise this TabPanel will not able to close
     pub(crate) closeable: bool,
-
     tab_bar_scroll_handle: ScrollHandle,
     is_zoomed: bool,
     is_collapsed: bool,
@@ -80,8 +79,8 @@ pub struct TabPanel {
 }
 
 impl Panel for TabPanel {
-    fn panel_name(&self) -> &'static str {
-        "TabPanel"
+    fn panel_name(&self) -> SharedString {
+        "TabPanel".into()
     }
 
     fn title(&self, cx: &WindowContext) -> gpui::AnyElement {
@@ -180,25 +179,32 @@ impl TabPanel {
         active: bool,
         cx: &mut ViewContext<Self>,
     ) {
-        assert_ne!(
-            panel.panel_name(cx),
-            "StackPanel",
-            "can not allows add `StackPanel` to `TabPanel`"
-        );
-
         if self
             .panels
             .iter()
-            .any(|p| p.view().entity_id() == panel.view().entity_id())
+            .any(|p| p.panel_name(cx) == panel.panel_name(cx))
         {
+            // set the active panel to the matched panel
+            if active {
+                if let Some(ix) = self
+                    .panels
+                    .iter()
+                    .position(|p| p.panel_name(cx) == panel.panel_name(cx))
+                {
+                    self.set_active_ix(ix, cx);
+                }
+            }
+
             return;
         }
 
         self.panels.push(panel);
+
         // set the active panel to the new panel
         if active {
             self.set_active_ix(self.panels.len() - 1, cx);
         }
+
         cx.emit(PanelEvent::LayoutChanged);
         cx.notify();
     }
@@ -466,7 +472,6 @@ impl TabPanel {
 
         if self.panels.len() == 1 && panel_style == PanelStyle::Default {
             let panel = self.panels.first().unwrap();
-            let title_style = panel.title_style(cx);
 
             return h_flex()
                 .justify_between()
@@ -477,9 +482,6 @@ impl TabPanel {
                 .px_3()
                 .when(left_dock_button.is_some(), |this| this.pl_2())
                 .when(right_dock_button.is_some(), |this| this.pr_2())
-                .when_some(title_style, |this, theme| {
-                    this.bg(theme.background).text_color(theme.foreground)
-                })
                 .when(
                     left_dock_button.is_some() || bottom_dock_button.is_some(),
                     |this| {

@@ -1,6 +1,6 @@
 use coop_ui::{
     button::Button,
-    dock::{Panel, PanelEvent, PanelState, TitleStyle},
+    dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
     theme::{ActiveTheme, Colorize},
     StyledExt,
@@ -30,16 +30,12 @@ impl WelcomePanel {
 }
 
 impl Panel for WelcomePanel {
-    fn panel_name(&self) -> &'static str {
-        "WelcomePanel"
+    fn panel_name(&self) -> SharedString {
+        "WelcomePanel".into()
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn title_style(&self, _cx: &WindowContext) -> Option<TitleStyle> {
-        None
     }
 
     fn closeable(&self, _cx: &WindowContext) -> bool {

@@ -1,6 +1,6 @@
 use coop_ui::{
     button::Button,
-    dock::{Panel, PanelEvent, PanelState, TitleStyle},
+    dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
 };
 use gpui::*;
@@ -18,11 +18,13 @@ pub struct ChatPanel {
     zoomable: bool,
     focus_handle: FocusHandle,
     // Room
+    id: SharedString,
     room: View<ChatRoom>,
 }
 
 impl ChatPanel {
     pub fn new(room: &Arc<Room>, cx: &mut WindowContext) -> View<Self> {
+        let id = room.id.clone();
         let room = cx.new_view(|cx| {
             let view = ChatRoom::new(room, cx);
             // Load messages
@@ -38,22 +40,19 @@ impl ChatPanel {
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
+            id,
             room,
         })
     }
 }
 
 impl Panel for ChatPanel {
-    fn panel_name(&self) -> &'static str {
-        "ChatPanel"
+    fn panel_name(&self) -> SharedString {
+        self.id.clone()
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn title_style(&self, _cx: &WindowContext) -> Option<TitleStyle> {
-        None
     }
 
     fn closeable(&self, _cx: &WindowContext) -> bool {

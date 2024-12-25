@@ -1,6 +1,6 @@
 use coop_ui::{
     button::Button,
-    dock::{Panel, PanelEvent, PanelState, TitleStyle},
+    dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
     StyledExt,
@@ -40,16 +40,12 @@ impl LeftDock {
 }
 
 impl Panel for LeftDock {
-    fn panel_name(&self) -> &'static str {
-        "ChatPanel"
+    fn panel_name(&self) -> SharedString {
+        "LeftDock".into()
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn title_style(&self, _cx: &WindowContext) -> Option<TitleStyle> {
-        None
     }
 
     fn closeable(&self, _cx: &WindowContext) -> bool {
