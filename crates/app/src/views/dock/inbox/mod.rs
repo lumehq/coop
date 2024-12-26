@@ -43,9 +43,11 @@ impl Inbox {
                         .into_iter()
                         .filter(|m| {
                             let keys = m.event.tags.public_keys().copied().collect::<Vec<_>>();
-                            let nid = get_room_id(&m.event.pubkey, &keys);
+                            let new_id = get_room_id(&m.event.pubkey, &keys);
 
-                            current_rooms.iter().any(|id| id == &nid)
+                            drop(keys);
+
+                            !current_rooms.iter().any(|id| id == &new_id)
                         })
                         .map(|m| cx.new_view(|cx| InboxItem::new(m.event, cx)))
                         .collect::<Vec<_>>();
@@ -78,6 +80,14 @@ impl Inbox {
         // Hide loading indicator
         self.set_loading(cx);
 
+        let items = self.items.read(cx).as_ref();
+        // Get all current rooms id
+        let current_rooms: Vec<String> = if let Some(items) = items {
+            items.iter().map(|item| item.model.read(cx).id()).collect()
+        } else {
+            Vec::new()
+        };
+
         let async_items = self.items.clone();
         let mut async_cx = cx.to_async();
 
@@ -109,12 +119,25 @@ impl Inbox {
 
                 let views: Vec<View<InboxItem>> = events
                     .into_iter()
+                    .filter(|ev| {
+                        let keys = ev.tags.public_keys().copied().collect::<Vec<_>>();
+                        let new_id = get_room_id(&ev.pubkey, &keys);
+
+                        drop(keys);
+
+                        !current_rooms.iter().any(|id| id == &new_id)
+                    })
                     .map(|ev| async_cx.new_view(|cx| InboxItem::new(ev, cx)).unwrap())
                     .collect();
 
-                async_cx.update_model(&async_items, |a, b| {
-                    *a = Some(views);
-                    b.notify();
+                async_cx.update_model(&async_items, |model, cx| {
+                    if let Some(items) = model {
+                        items.extend(views);
+                    } else {
+                        *model = Some(views);
+                    }
+
+                    cx.notify();
                 })
             })
             .detach();

@@ -14,7 +14,7 @@ pub struct Room {
 }
 
 impl Room {
-    pub fn new(event: Event) -> Self {
+    pub fn new(event: &Event) -> Self {
         let owner = event.pubkey;
         let last_seen = event.created_at;
         // Get all members from event's tag

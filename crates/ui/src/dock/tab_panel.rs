@@ -1,10 +1,5 @@
-use gpui::{
-    div, prelude::FluentBuilder, px, rems, AppContext, Corner, DefiniteLength, DismissEvent,
-    DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, FocusableView,
-    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, View, ViewContext, VisualContext as _,
-    WeakView, WindowContext,
-};
+use gpui::*;
+use prelude::FluentBuilder;
 use std::sync::Arc;
 
 use super::{

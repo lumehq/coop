@@ -1,150 +1,33 @@
-use std::sync::Arc;
-
-use coop_ui::{theme::ActiveTheme, Selectable, StyledExt};
+use coop_ui::{theme::ActiveTheme, StyledExt};
 use gpui::*;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
+use std::sync::Arc;
 
 use crate::{
     constants::IMAGE_SERVICE,
     get_client,
     states::{chat::Room, metadata::MetadataRegistry, signal::SignalRegistry},
-    utils::{ago, show_npub},
+    utils::{ago, get_room_id, show_npub},
     views::app::AddPanel,
 };
 
-#[derive(IntoElement)]
-struct Item {
-    id: ElementId,
-    room: Arc<Room>,
-    metadata: Option<Metadata>,
-    // Interactive
-    base: Div,
-    selected: bool,
-}
-
-impl Item {
-    pub fn new(room: Arc<Room>, metadata: Option<Metadata>) -> Self {
-        let id = SharedString::from(room.owner.to_hex()).into();
-
-        Self {
-            id,
-            room,
-            metadata,
-            base: div(),
-            selected: false,
-        }
-    }
-}
-
-impl Selectable for Item {
-    fn selected(mut self, selected: bool) -> Self {
-        self.selected = selected;
-        self
-    }
-
-    fn element_id(&self) -> &gpui::ElementId {
-        &self.id
-    }
-}
-
-impl InteractiveElement for Item {
-    fn interactivity(&mut self) -> &mut gpui::Interactivity {
-        self.base.interactivity()
-    }
-}
-
-impl RenderOnce for Item {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let ago = ago(self.room.last_seen.as_u64());
-        let fallback_name = show_npub(self.room.owner, 16);
-
-        let mut content = div()
-            .font_medium()
-            .text_color(cx.theme().sidebar_accent_foreground);
-
-        if let Some(metadata) = self.metadata.clone() {
-            content = content
-                .flex()
-                .items_center()
-                .gap_2()
-                .map(|this| {
-                    if let Some(picture) = metadata.picture {
-                        this.flex_shrink_0().child(
-                            img(format!(
-                                "{}/?url={}&w=100&h=100&n=-1",
-                                IMAGE_SERVICE, picture
-                            ))
-                            .size_6()
-                            .rounded_full()
-                            .object_fit(ObjectFit::Cover),
-                        )
-                    } else {
-                        this.flex_shrink_0()
-                            .child(img("brand/avatar.png").size_6().rounded_full())
-                    }
-                })
-                .map(|this| {
-                    if let Some(display_name) = metadata.display_name {
-                        this.child(display_name)
-                    } else {
-                        this.child(fallback_name)
-                    }
-                })
-        } else {
-            content = content
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    img("brand/avatar.png")
-                        .flex_shrink_0()
-                        .size_6()
-                        .rounded_full(),
-                )
-                .child(fallback_name)
-        }
-
-        self.base
-            .id(self.id)
-            .h_8()
-            .px_1()
-            .flex()
-            .items_center()
-            .justify_between()
-            .text_xs()
-            .rounded_md()
-            .hover(|this| {
-                this.bg(cx.theme().sidebar_accent)
-                    .text_color(cx.theme().sidebar_accent_foreground)
-            })
-            .child(content)
-            .child(
-                div()
-                    .child(ago)
-                    .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
-            )
-            .on_click(move |_, cx| {
-                cx.dispatch_action(Box::new(AddPanel {
-                    room: Arc::clone(&self.room),
-                    position: coop_ui::dock::DockPlacement::Center,
-                }))
-            })
-    }
-}
-
 pub struct InboxItem {
-    room: Arc<Room>,
+    id: SharedString,
+    event: Event,
     metadata: Model<Option<Metadata>>,
 }
 
 impl InboxItem {
     pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
-        let room = Arc::new(Room::new(event));
+        let pubkeys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
+        let id = get_room_id(&event.pubkey, &pubkeys).into();
         let metadata = cx.new_model(|_| None);
 
+        drop(pubkeys);
+
         // Request metadata
-        _ = cx.global::<SignalRegistry>().tx.send(room.owner);
+        _ = cx.global::<SignalRegistry>().tx.send(event.pubkey);
 
         // Reload when received metadata
         cx.observe_global::<MetadataRegistry>(|chat, cx| {
@@ -152,11 +35,15 @@ impl InboxItem {
         })
         .detach();
 
-        Self { room, metadata }
+        Self {
+            id,
+            event,
+            metadata,
+        }
     }
 
     pub fn load_metadata(&mut self, cx: &mut ViewContext<Self>) {
-        let public_key = self.room.owner;
+        let public_key = self.event.pubkey;
         let async_metadata = self.metadata.clone();
         let mut async_cx = cx.to_async();
 
@@ -179,19 +66,92 @@ impl InboxItem {
     }
 
     pub fn id(&self) -> String {
-        self.room.id.clone().into()
+        self.id.clone().into()
     }
 
-    fn render_item(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let metadata = self.metadata.read(cx).clone();
-        let room = Arc::clone(&self.room);
+    pub fn action(&self, cx: &mut WindowContext<'_>) {
+        println!("Test");
+        let room = Arc::new(Room::new(&self.event));
 
-        Item::new(room, metadata)
+        cx.dispatch_action(Box::new(AddPanel {
+            room,
+            position: coop_ui::dock::DockPlacement::Center,
+        }))
     }
 }
 
 impl Render for InboxItem {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        div().child(self.render_item(cx))
+        let ago = ago(self.event.created_at.as_u64());
+        let fallback_name = show_npub(self.event.pubkey, 16);
+
+        let mut content = div()
+            .font_medium()
+            .text_color(cx.theme().sidebar_accent_foreground);
+
+        if let Some(metadata) = self.metadata.read(cx).as_ref() {
+            content = content
+                .flex()
+                .items_center()
+                .gap_2()
+                .map(|this| {
+                    if let Some(picture) = metadata.picture.clone() {
+                        this.flex_shrink_0().child(
+                            img(format!(
+                                "{}/?url={}&w=100&h=100&n=-1",
+                                IMAGE_SERVICE, picture
+                            ))
+                            .size_6()
+                            .rounded_full()
+                            .object_fit(ObjectFit::Cover),
+                        )
+                    } else {
+                        this.flex_shrink_0()
+                            .child(img("brand/avatar.png").size_6().rounded_full())
+                    }
+                })
+                .map(|this| {
+                    if let Some(display_name) = metadata.display_name.clone() {
+                        this.child(display_name)
+                    } else {
+                        this.child(fallback_name)
+                    }
+                })
+        } else {
+            content = content
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    img("brand/avatar.png")
+                        .flex_shrink_0()
+                        .size_6()
+                        .rounded_full(),
+                )
+                .child(fallback_name)
+        }
+
+        div()
+            .id(self.id.clone())
+            .h_8()
+            .px_1()
+            .flex()
+            .items_center()
+            .justify_between()
+            .text_xs()
+            .rounded_md()
+            .hover(|this| {
+                this.bg(cx.theme().sidebar_accent)
+                    .text_color(cx.theme().sidebar_accent_foreground)
+            })
+            .child(content)
+            .child(
+                div()
+                    .child(ago)
+                    .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
+            )
+            .on_click(cx.listener(|this, _, cx| {
+                this.action(cx);
+            }))
     }
 }
