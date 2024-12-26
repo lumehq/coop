@@ -1,6 +1,7 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
+use std::sync::{Arc, RwLock};
 
 use crate::utils::get_room_id;
 
@@ -47,7 +48,7 @@ pub struct Message {
 }
 
 pub struct ChatRegistry {
-    pub new_messages: Vec<Message>,
+    pub new_messages: Arc<RwLock<Vec<Message>>>,
     pub reload: bool,
     pub is_initialized: bool,
 }
@@ -68,12 +69,15 @@ impl ChatRegistry {
     }
 
     pub fn push(&mut self, event: Event, metadata: Option<Metadata>) {
-        self.new_messages.push(Message { event, metadata });
+        self.new_messages
+            .write()
+            .unwrap()
+            .push(Message { event, metadata });
     }
 
     fn new() -> Self {
         Self {
-            new_messages: Vec::new(),
+            new_messages: Arc::new(RwLock::new(Vec::new())),
             reload: false,
             is_initialized: false,
         }

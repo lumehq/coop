@@ -25,21 +25,23 @@ impl Inbox {
 
         cx.observe_global::<ChatRegistry>(|this, cx| {
             let state = cx.global::<ChatRegistry>();
+            let empty_messages = state.new_messages.read().unwrap().is_empty();
 
-            if state.reload || (state.is_initialized && state.new_messages.is_empty()) {
+            if state.reload || (state.is_initialized && empty_messages) {
                 this.load(cx);
             } else {
                 #[allow(clippy::collapsible_if)]
                 if let Some(items) = this.items.read(cx).as_ref() {
-                    // Get all new messages
-                    let new_messages = state.new_messages.clone();
-
                     // Get all current chats
                     let current_rooms: Vec<String> =
                         items.iter().map(|item| item.model.read(cx).id()).collect();
 
-                    // Create view for new chats only
-                    let new = new_messages
+                    // Get all new messages
+                    let messages = state
+                        .new_messages
+                        .read()
+                        .unwrap()
+                        .clone()
                         .into_iter()
                         .filter(|m| {
                             let keys = m.event.tags.public_keys().copied().collect::<Vec<_>>();
@@ -49,6 +51,11 @@ impl Inbox {
 
                             !current_rooms.iter().any(|id| id == &new_id)
                         })
+                        .collect::<Vec<_>>();
+
+                    // Create view for new chats only
+                    let new = messages
+                        .into_iter()
                         .map(|m| cx.new_view(|cx| InboxItem::new(m.event, cx)))
                         .collect::<Vec<_>>();
 

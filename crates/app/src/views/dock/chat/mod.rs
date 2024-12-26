@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::states::chat::Room;
 
+mod message;
 mod room;
 
 pub struct ChatPanel {

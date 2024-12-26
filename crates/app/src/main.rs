@@ -250,18 +250,32 @@ async fn main() {
                             let metadata = async_cx
                                 .background_executor()
                                 .spawn(async move {
-                                    (client.database().metadata(event.pubkey).await)
+                                    client
+                                        .database()
+                                        .metadata(event.pubkey)
+                                        .await
                                         .unwrap_or_default()
                                 })
                                 .await;
 
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
+                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _cx| {
                                 state.push(event, metadata);
                             });
                         }
                         Signal::RecvMetadata(public_key) => {
+                            let metadata = async_cx
+                                .background_executor()
+                                .spawn(async move {
+                                    client
+                                        .database()
+                                        .metadata(public_key)
+                                        .await
+                                        .unwrap_or_default()
+                                })
+                                .await;
+
                             _ = async_cx.update_global::<MetadataRegistry, _>(|state, _cx| {
-                                state.seen(public_key);
+                                state.seen(public_key, metadata);
                             })
                         }
                         _ => {}
