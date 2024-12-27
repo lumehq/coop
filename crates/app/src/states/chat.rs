@@ -1,8 +1,10 @@
 use gpui::*;
 use nostr_sdk::prelude::*;
+use rnglib::{Language, RNG};
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
 
+use super::metadata::MetadataRegistry;
 use crate::utils::get_room_id;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -12,24 +14,32 @@ pub struct Room {
     pub members: Vec<PublicKey>,
     pub last_seen: Timestamp,
     pub title: Option<SharedString>,
+    pub metadata: Option<Metadata>,
 }
 
 impl Room {
-    pub fn new(event: &Event) -> Self {
+    pub fn new(event: &Event, cx: &mut WindowContext<'_>) -> Self {
         let owner = event.pubkey;
         let last_seen = event.created_at;
+
         // Get all members from event's tag
         let members: Vec<PublicKey> = event.tags.public_keys().copied().collect();
+
         // Get title from event's tag
         let title = if let Some(tag) = event.tags.find(TagKind::Title) {
             tag.content().map(|s| s.to_owned().into())
         } else {
-            // TODO: create random name?
-            None
+            let rng = RNG::from(&Language::Roman);
+            let name = rng.generate_names(2, true).join("-").to_lowercase();
+
+            Some(name.into())
         };
 
         // Get unique id based on members
         let id = get_room_id(&owner, &members).into();
+
+        // Get metadata for all members if exists
+        let metadata = cx.global::<MetadataRegistry>().get(&owner);
 
         Self {
             id,
@@ -37,6 +47,7 @@ impl Room {
             members,
             last_seen,
             owner,
+            metadata,
         }
     }
 }

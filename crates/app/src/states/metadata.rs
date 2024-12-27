@@ -35,8 +35,8 @@ impl MetadataRegistry {
         }
     }
 
-    pub fn get(&self, public_key: PublicKey) -> Option<Metadata> {
-        self.profiles.read().unwrap().get(&public_key).cloned()
+    pub fn get(&self, public_key: &PublicKey) -> Option<Metadata> {
+        self.profiles.read().unwrap().get(public_key).cloned()
     }
 
     fn new() -> Self {

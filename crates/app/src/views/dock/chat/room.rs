@@ -24,7 +24,7 @@ pub struct Messages {
     items: Vec<RoomMessage>,
 }
 
-pub struct ChatRoom {
+pub struct RoomPanel {
     owner: PublicKey,
     members: Arc<[PublicKey]>,
     // Form
@@ -34,7 +34,7 @@ pub struct ChatRoom {
     messages: Model<Messages>,
 }
 
-impl ChatRoom {
+impl RoomPanel {
     pub fn new(room: &Arc<Room>, cx: &mut ViewContext<'_, Self>) -> Self {
         let members: Arc<[PublicKey]> = room.members.clone().into();
         let owner = room.owner;
@@ -125,7 +125,7 @@ impl ChatRoom {
                                 // Get user's metadata
                                 let metadata = async_cx
                                     .read_global::<MetadataRegistry, _>(|state, _cx| {
-                                        state.get(ev.pubkey)
+                                        state.get(&ev.pubkey)
                                     })
                                     .unwrap();
 
@@ -231,7 +231,7 @@ impl ChatRoom {
     }
 }
 
-impl Render for ChatRoom {
+impl Render for RoomPanel {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
         v_flex()
             .size_full()

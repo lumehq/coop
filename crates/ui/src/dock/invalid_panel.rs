@@ -21,8 +21,9 @@ impl InvalidPanel {
         }
     }
 }
+
 impl Panel for InvalidPanel {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         "InvalidPanel".into()
     }
 
@@ -30,12 +31,15 @@ impl Panel for InvalidPanel {
         self.old_state.clone()
     }
 }
+
 impl EventEmitter<PanelEvent> for InvalidPanel {}
+
 impl FocusableView for InvalidPanel {
     fn focus_handle(&self, _: &AppContext) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
+
 impl Render for InvalidPanel {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl gpui::IntoElement {
         gpui::div()

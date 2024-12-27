@@ -1,16 +1,16 @@
+use gpui::*;
+use nostr_sdk::prelude::*;
+use prelude::FluentBuilder as _;
+
 use crate::theme::ActiveTheme;
 use crate::Selectable;
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    div, px, AnyElement, Div, ElementId, InteractiveElement, IntoElement, ParentElement as _,
-    RenderOnce, Stateful, StatefulInteractiveElement, Styled, WindowContext,
-};
 
 #[derive(IntoElement)]
 pub struct Tab {
     id: ElementId,
     base: Stateful<Div>,
     label: AnyElement,
+    metadata: Option<Metadata>,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     disabled: bool,
@@ -18,12 +18,18 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn new(id: impl Into<ElementId>, label: impl IntoElement) -> Self {
+    pub fn new(
+        id: impl Into<ElementId>,
+        label: impl IntoElement,
+        metadata: Option<Metadata>,
+    ) -> Self {
         let id: ElementId = id.into();
+
         Self {
             id: id.clone(),
             base: div().id(id).gap_1().py_1p5().px_3().h(px(30.)),
             label: label.into_any_element(),
+            metadata,
             disabled: false,
             selected: false,
             prefix: None,
@@ -100,7 +106,28 @@ impl RenderOnce for Tab {
             .when_some(self.prefix, |this, prefix| {
                 this.child(prefix).text_color(text_color)
             })
-            .child(div().text_ellipsis().child(self.label))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_ellipsis()
+                    .text_xs()
+                    .child(div().when_some(self.metadata, |this, metadata| {
+                        if let Some(picture) = metadata.picture {
+                            this.flex_shrink_0().child(
+                                img(format!("https://wsrv.nl/?url={}&w=100&h=100&n=-1", picture))
+                                    .size_4()
+                                    .rounded_full()
+                                    .object_fit(ObjectFit::Cover),
+                            )
+                        } else {
+                            this.flex_shrink_0()
+                                .child(img("brand/avatar.png").size_4().rounded_full())
+                        }
+                    }))
+                    .child(self.label),
+            )
             .when_some(self.suffix, |this, suffix| this.child(suffix))
     }
 }

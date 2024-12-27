@@ -2,6 +2,7 @@ use gpui::{
     AnyElement, AnyView, AppContext, EventEmitter, FocusHandle, FocusableView, Global, Hsla,
     IntoElement, SharedString, View, WeakView, WindowContext,
 };
+use nostr_sdk::prelude::Metadata;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{DockArea, PanelInfo, PanelState};
@@ -31,8 +32,13 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
     /// The name of the panel used to serialize, deserialize and identify the panel.
     ///
     /// This is used to identify the panel when deserializing the panel.
-    /// Once you have defined a panel name, this must not be changed.
-    fn panel_name(&self) -> SharedString;
+    /// Once you have defined a panel id, this must not be changed.
+    fn panel_id(&self) -> SharedString;
+
+    /// The optional metadata of the panel
+    fn panel_metadata(&self) -> Option<Metadata> {
+        None
+    }
 
     /// The title of the panel
     fn title(&self, _cx: &WindowContext) -> AnyElement {
@@ -66,7 +72,8 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
 }
 
 pub trait PanelView: 'static + Send + Sync {
-    fn panel_name(&self, cx: &WindowContext) -> SharedString;
+    fn panel_id(&self, cx: &WindowContext) -> SharedString;
+    fn panel_metadata(&self, cx: &WindowContext) -> Option<Metadata>;
     fn title(&self, _cx: &WindowContext) -> AnyElement;
     fn closeable(&self, cx: &WindowContext) -> bool;
     fn zoomable(&self, cx: &WindowContext) -> bool;
@@ -78,8 +85,12 @@ pub trait PanelView: 'static + Send + Sync {
 }
 
 impl<T: Panel> PanelView for View<T> {
-    fn panel_name(&self, cx: &WindowContext) -> SharedString {
-        self.read(cx).panel_name()
+    fn panel_id(&self, cx: &WindowContext) -> SharedString {
+        self.read(cx).panel_id()
+    }
+
+    fn panel_metadata(&self, cx: &WindowContext) -> Option<Metadata> {
+        self.read(cx).panel_metadata()
     }
 
     fn title(&self, cx: &WindowContext) -> AnyElement {
@@ -166,7 +177,7 @@ impl Default for PanelRegistry {
 impl Global for PanelRegistry {}
 
 /// Register the Panel init by panel_name to global registry.
-pub fn register_panel<F>(cx: &mut AppContext, panel_name: &str, deserialize: F)
+pub fn register_panel<F>(cx: &mut AppContext, panel_id: &str, deserialize: F)
 where
     F: Fn(WeakView<DockArea>, &PanelState, &PanelInfo, &mut WindowContext) -> Box<dyn PanelView>
         + 'static,
@@ -177,5 +188,5 @@ where
 
     cx.global_mut::<PanelRegistry>()
         .items
-        .insert(panel_name.to_string(), Arc::new(deserialize));
+        .insert(panel_id.to_string(), Arc::new(deserialize));
 }

@@ -42,14 +42,18 @@ impl Render for DragPanel {
             .id("drag-panel")
             .cursor_grab()
             .py_1()
-            .px_3()
+            .px_2()
             .w_24()
+            .flex()
+            .items_center()
+            .justify_center()
             .overflow_hidden()
             .whitespace_nowrap()
             .border_1()
             .border_color(cx.theme().border)
             .rounded_md()
             .text_color(cx.theme().tab_foreground)
+            .text_xs()
             .bg(cx.theme().tab_active)
             .opacity(0.75)
             .child(self.panel.title(cx))
@@ -74,7 +78,7 @@ pub struct TabPanel {
 }
 
 impl Panel for TabPanel {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         "TabPanel".into()
     }
 
@@ -177,14 +181,14 @@ impl TabPanel {
         if self
             .panels
             .iter()
-            .any(|p| p.panel_name(cx) == panel.panel_name(cx))
+            .any(|p| p.panel_id(cx) == panel.panel_id(cx))
         {
-            // set the active panel to the matched panel
+            // Set the active panel to the matched panel
             if active {
                 if let Some(ix) = self
                     .panels
                     .iter()
-                    .position(|p| p.panel_name(cx) == panel.panel_name(cx))
+                    .position(|p| p.panel_id(cx) == panel.panel_id(cx))
                 {
                     self.set_active_ix(ix, cx);
                 }
@@ -195,7 +199,7 @@ impl TabPanel {
 
         self.panels.push(panel);
 
-        // set the active panel to the new panel
+        // Set the active panel to the new panel
         if active {
             self.set_active_ix(self.panels.len() - 1, cx);
         }
@@ -459,6 +463,7 @@ impl TabPanel {
         let Some(dock_area) = self.dock_area.upgrade() else {
             return div().into_any_element();
         };
+
         let panel_style = dock_area.read(cx).panel_style;
 
         let left_dock_button = self.render_dock_toggle_button(DockPlacement::Left, cx);
@@ -496,9 +501,37 @@ impl TabPanel {
                         .flex_1()
                         .min_w_16()
                         .overflow_hidden()
-                        .text_ellipsis()
                         .whitespace_nowrap()
-                        .child(panel.title(cx))
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .text_ellipsis()
+                                .text_xs()
+                                .child(div().when_some(
+                                    panel.panel_metadata(cx),
+                                    |this, metadata| {
+                                        if let Some(picture) = metadata.picture {
+                                            this.flex_shrink_0().child(
+                                                img(format!(
+                                                    "https://wsrv.nl/?url={}&w=100&h=100&n=-1",
+                                                    picture
+                                                ))
+                                                .size_4()
+                                                .rounded_full()
+                                                .object_fit(ObjectFit::Cover),
+                                            )
+                                        } else {
+                                            this.flex_shrink_0().child(
+                                                img("brand/avatar.png").size_4().rounded_full(),
+                                            )
+                                        }
+                                    },
+                                ))
+                                .child(panel.title(cx)),
+                        )
                         .when(state.draggable, |this| {
                             this.on_drag(
                                 DragPanel {
@@ -556,7 +589,7 @@ impl TabPanel {
                     active = false;
                 }
 
-                Tab::new(("tab", ix), panel.title(cx))
+                Tab::new(("tab", ix), panel.title(cx), panel.panel_metadata(cx))
                     .py_2()
                     .selected(active)
                     .disabled(disabled)

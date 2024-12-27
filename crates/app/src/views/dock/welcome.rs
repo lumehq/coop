@@ -30,7 +30,7 @@ impl WelcomePanel {
 }
 
 impl Panel for WelcomePanel {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         "WelcomePanel".into()
     }
 

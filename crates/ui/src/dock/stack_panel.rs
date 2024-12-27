@@ -25,7 +25,7 @@ pub struct StackPanel {
 }
 
 impl Panel for StackPanel {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         "StackPanel".into()
     }
 

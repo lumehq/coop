@@ -40,7 +40,7 @@ impl LeftDock {
 }
 
 impl Panel for LeftDock {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         "LeftDock".into()
     }
 

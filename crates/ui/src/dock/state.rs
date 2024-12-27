@@ -169,7 +169,7 @@ impl Default for PanelState {
 impl PanelState {
     pub fn new<P: Panel>(panel: &P) -> Self {
         Self {
-            panel_name: panel.panel_name().to_string(),
+            panel_name: panel.panel_id().to_string(),
             ..Default::default()
         }
     }

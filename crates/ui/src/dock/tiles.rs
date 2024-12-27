@@ -86,7 +86,7 @@ pub struct Tiles {
 }
 
 impl Panel for Tiles {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         "Tiles".into()
     }
 
@@ -111,7 +111,7 @@ impl Panel for Tiles {
             .collect();
 
         let mut state = PanelState::new(self);
-        state.panel_name = self.panel_name().to_string();
+        state.panel_name = self.panel_id().to_string();
         state.children = panels;
         state.info = PanelInfo::Tiles { metas };
         state

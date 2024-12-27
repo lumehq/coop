@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use coop_ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
 };
 use gpui::*;
-use room::ChatRoom;
-use std::sync::Arc;
+use nostr_sdk::prelude::*;
+use room::RoomPanel;
 
 use crate::states::chat::Room;
 
@@ -20,14 +22,18 @@ pub struct ChatPanel {
     focus_handle: FocusHandle,
     // Room
     id: SharedString,
-    room: View<ChatRoom>,
+    room: View<RoomPanel>,
+    metadata: Option<Metadata>,
 }
 
 impl ChatPanel {
     pub fn new(room: &Arc<Room>, cx: &mut WindowContext) -> View<Self> {
         let id = room.id.clone();
+        let title = room.title.clone();
+        let metadata = room.metadata.clone();
+
         let room = cx.new_view(|cx| {
-            let view = ChatRoom::new(room, cx);
+            let view = RoomPanel::new(room, cx);
             // Load messages
             view.load(cx);
             // Subscribe for new messages
@@ -37,19 +43,24 @@ impl ChatPanel {
         });
 
         cx.new_view(|cx| Self {
-            name: "Chat".into(),
+            name: title.unwrap_or("Untitled".into()),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
             id,
             room,
+            metadata,
         })
     }
 }
 
 impl Panel for ChatPanel {
-    fn panel_name(&self) -> SharedString {
+    fn panel_id(&self) -> SharedString {
         self.id.clone()
+    }
+
+    fn panel_metadata(&self) -> Option<Metadata> {
+        self.metadata.clone()
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {
