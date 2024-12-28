@@ -1,8 +1,8 @@
 use coop_ui::{
-    button::{Button, ButtonVariants},
+    button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants},
     dock::{DockArea, DockItem, DockPlacement},
     theme::{ActiveTheme, Theme, ThemeMode},
-    IconName, Root, Sizable, TitleBar,
+    ContextModal, IconName, Root, Sizable, TitleBar,
 };
 use gpui::*;
 use prelude::FluentBuilder;
@@ -10,6 +10,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use super::{
+    account::Account,
     dock::{chat::ChatPanel, left_dock::LeftDock, welcome::WelcomePanel},
     onboarding::Onboarding,
 };
@@ -34,6 +35,7 @@ pub const DOCK_AREA: DockAreaTab = DockAreaTab {
 };
 
 pub struct AppView {
+    account: Model<Option<View<Account>>>,
     onboarding: View<Onboarding>,
     dock: View<DockArea>,
 }
@@ -46,21 +48,36 @@ impl AppView {
         })
         .detach();
 
+        // Account
+        let account = cx.new_model(|_| None);
+        let async_account = account.clone();
+
         // Onboarding
         let onboarding = cx.new_view(Onboarding::new);
 
         // Dock
         let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
-        cx.observe_global::<AccountRegistry>(|view, cx| {
-            if cx.global::<AccountRegistry>().is_user_logged_in() {
-                // TODO: save dock state and load previous state on startup
+        cx.observe_global::<AccountRegistry>(move |view, cx| {
+            if let Some(public_key) = cx.global::<AccountRegistry>().get() {
                 Self::init_layout(view.dock.downgrade(), cx);
+                // TODO: save dock state and load previous state on startup
+
+                let view = cx.new_view(|cx| Account::new(public_key, cx));
+
+                cx.update_model(&async_account, |model, cx| {
+                    *model = Some(view);
+                    cx.notify();
+                });
             }
         })
         .detach();
 
-        AppView { onboarding, dock }
+        AppView {
+            account,
+            onboarding,
+            dock,
+        }
     }
 
     fn change_theme_mode(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
@@ -125,18 +142,45 @@ impl Render for AppView {
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
 
-        let mut content = div();
+        let mut content = div().size_full().flex().flex_col();
 
         if cx.global::<AccountRegistry>().is_user_logged_in() {
             content = content
-                .on_action(cx.listener(Self::on_action_add_panel))
-                .size_full()
-                .flex()
-                .flex_col()
                 .child(
                     TitleBar::new()
                         // Left side
-                        .child(div())
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div().when_some(
+                                        self.account.read(cx).as_ref(),
+                                        |this, account| this.child(account.clone()),
+                                    ),
+                                )
+                                .child(
+                                    Button::new("new")
+                                        .custom(
+                                            ButtonCustomVariant::new(cx)
+                                                .shadow(false)
+                                                .color(cx.theme().primary)
+                                                .border(cx.theme().primary)
+                                                .foreground(cx.theme().primary_foreground)
+                                                .active(cx.theme().primary_active)
+                                                .hover(cx.theme().primary_hover),
+                                        )
+                                        .xsmall()
+                                        .rounded(ButtonRounded::Size(px(24.)))
+                                        .label("Compose")
+                                        .on_click(move |_, cx| {
+                                            cx.open_modal(move |modal, _| {
+                                                modal.title("Compose").child("TODO").min_h(px(300.))
+                                            });
+                                        }),
+                                ),
+                        )
                         // Right side
                         .child(
                             div()
@@ -161,8 +205,11 @@ impl Render for AppView {
                         ),
                 )
                 .child(self.dock.clone())
+                .on_action(cx.listener(Self::on_action_add_panel))
         } else {
-            content = content.size_full().child(self.onboarding.clone())
+            content = content
+                .child(TitleBar::new())
+                .child(self.onboarding.clone())
         }
 
         div()

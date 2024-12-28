@@ -5,7 +5,6 @@ use gpui::{
 };
 
 use crate::{
-    h_flex,
     indicator::Indicator,
     theme::{ActiveTheme, Colorize as _},
     tooltip::Tooltip,
@@ -169,6 +168,7 @@ pub struct Button {
     border_edges: Edges<bool>,
     size: Size,
     compact: bool,
+    reverse: bool,
     tooltip: Option<SharedString>,
     on_click: OnClick,
     pub(crate) stop_propagation: bool,
@@ -200,6 +200,7 @@ impl Button {
             on_click: None,
             stop_propagation: true,
             loading: false,
+            reverse: false,
             compact: false,
             children: Vec::new(),
             loading_icon: None,
@@ -251,6 +252,12 @@ impl Button {
     /// Set the button to compact mode, then padding will be reduced.
     pub fn compact(mut self) -> Self {
         self.compact = true;
+        self
+    }
+
+    /// Set reverse the position between icon and label.
+    pub fn reverse(mut self) -> Self {
+        self.reverse = true;
         self
     }
 
@@ -352,9 +359,9 @@ impl RenderOnce for Button {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
-                        Size::XSmall => this.h_5().px_1(),
-                        Size::Small => this.h_6().px_3().when(self.compact, |this| this.px_1p5()),
-                        _ => this.h_8().px_4().when(self.compact, |this| this.px_2()),
+                        Size::XSmall => this.h_5().px_2().when(self.compact, |this| this.px_0()),
+                        Size::Small => this.h_6().px_3().when(self.compact, |this| this.px_0p5()),
+                        _ => this.h_8().px_4().when(self.compact, |this| this.px_1()),
                     }
                 }
             })
@@ -430,13 +437,15 @@ impl RenderOnce for Button {
                     .shadow_none()
             })
             .child({
-                h_flex()
+                div()
+                    .flex()
+                    .when(self.reverse, |this| this.flex_row_reverse())
                     .id("label")
                     .items_center()
                     .justify_center()
                     .map(|this| match self.size {
                         Size::XSmall => this.gap_1().text_xs(),
-                        Size::Small => this.gap_1().text_sm(),
+                        Size::Small => this.gap_1().text_xs(),
                         _ => this.gap_2().text_base(),
                     })
                     .when(!self.loading, |this| {
