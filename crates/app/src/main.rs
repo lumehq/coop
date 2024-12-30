@@ -178,7 +178,7 @@ async fn main() {
                         .kind(Kind::Metadata)
                         .limit(total);
                     let opts = SubscribeAutoCloseOptions::default()
-                        .filter(FilterOptions::WaitDurationAfterEOSE(Duration::from_secs(2)));
+                        .exit_policy(ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(2)));
 
                     if let Err(e) = client.subscribe(vec![filter], Some(opts)).await {
                         println!("Error: {}", e);

@@ -32,7 +32,7 @@ impl AccountRegistry {
 
                 // Subscription options
                 let opts = SubscribeAutoCloseOptions::default()
-                    .filter(FilterOptions::WaitDurationAfterEOSE(Duration::from_secs(5)));
+                    .exit_policy(ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(5)));
 
                 // Create a filter for getting new message
                 let new_message = Filter::new()
