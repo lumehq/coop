@@ -1,11 +1,10 @@
-use std::{rc::Rc, time::Duration};
-
 use gpui::{
-    actions, anchored, div, hsla, prelude::FluentBuilder, px, relative, Animation,
+    actions, anchored, div, hsla, point, prelude::FluentBuilder, px, relative, Animation,
     AnimationExt as _, AnyElement, AppContext, Bounds, ClickEvent, Div, FocusHandle, Hsla,
     InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point,
     RenderOnce, SharedString, Styled, WindowContext,
 };
+use std::{rc::Rc, time::Duration};
 
 use crate::{
     animation::cubic_bezier,
@@ -37,7 +36,6 @@ pub struct Modal {
     show_close: bool,
     overlay: bool,
     keyboard: bool,
-
     /// This will be change when open the modal, the focus handle is create when open the modal.
     pub(crate) focus_handle: FocusHandle,
     pub(crate) layer_ix: usize,
@@ -164,7 +162,12 @@ impl RenderOnce for Modal {
     fn render(self, cx: &mut WindowContext) -> impl gpui::IntoElement {
         let layer_ix = self.layer_ix;
         let on_close = self.on_close.clone();
-        let view_size = cx.viewport_size();
+        let window_paddings = crate::window_border::window_paddings(cx);
+        let view_size = cx.viewport_size()
+            - gpui::size(
+                window_paddings.left + window_paddings.right,
+                window_paddings.top + window_paddings.bottom,
+            );
         let bounds = Bounds {
             origin: Point::default(),
             size: view_size,
@@ -173,78 +176,83 @@ impl RenderOnce for Modal {
         let y = self.margin_top.unwrap_or(view_size.height / 10.) + offset_top;
         let x = bounds.center().x - self.width / 2.;
 
-        anchored().snap_to_window().child(
-            div()
-                .occlude()
-                .w(view_size.width)
-                .h(view_size.height)
-                .when(self.overlay_visible, |this| {
-                    this.bg(overlay_color(self.overlay, cx))
-                })
-                .when(self.overlay, |this| {
-                    this.on_mouse_down(MouseButton::Left, {
+        anchored()
+            .position(point(window_paddings.left, window_paddings.top))
+            .snap_to_window()
+            .child(
+                div()
+                    .occlude()
+                    .w(view_size.width)
+                    .h(view_size.height)
+                    .when(self.overlay_visible, |this| {
+                        this.bg(overlay_color(self.overlay, cx))
+                    })
+                    .on_mouse_down(MouseButton::Left, {
                         let on_close = self.on_close.clone();
                         move |_, cx| {
                             on_close(&ClickEvent::default(), cx);
                             cx.close_modal();
                         }
                     })
-                })
-                .child(
-                    self.base
-                        .id(SharedString::from(format!("modal-{layer_ix}")))
-                        .key_context(CONTEXT)
-                        .track_focus(&self.focus_handle)
-                        .when(self.keyboard, |this| {
-                            this.on_action({
-                                let on_close = self.on_close.clone();
-                                move |_: &Escape, cx| {
-                                    // FIXME:
-                                    //
-                                    // Here some Modal have no focus_handle, so it will not work will Escape key.
-                                    // But by now, we `cx.close_modal()` going to close the last active model, so the Escape is unexpected to work.
-                                    on_close(&ClickEvent::default(), cx);
-                                    cx.close_modal();
-                                }
+                    .child(
+                        self.base
+                            .id(SharedString::from(format!("modal-{layer_ix}")))
+                            .key_context(CONTEXT)
+                            .track_focus(&self.focus_handle)
+                            .when(self.keyboard, |this| {
+                                this.on_action({
+                                    let on_close = self.on_close.clone();
+                                    move |_: &Escape, cx| {
+                                        // FIXME:
+                                        //
+                                        // Here some Modal have no focus_handle, so it will not work will Escape key.
+                                        // But by now, we `cx.close_modal()` going to close the last active model, so the Escape is unexpected to work.
+                                        on_close(&ClickEvent::default(), cx);
+                                        cx.close_modal();
+                                    }
+                                })
                             })
-                        })
-                        .absolute()
-                        .occlude()
-                        .relative()
-                        .left(x)
-                        .top(y)
-                        .w(self.width)
-                        .when_some(self.max_width, |this, w| this.max_w(w))
-                        .when_some(self.title, |this, title| {
-                            this.child(div().line_height(relative(1.)).child(title))
-                        })
-                        .when(self.show_close, |this| {
-                            this.child(
-                                Button::new(SharedString::from(format!("modal-close-{layer_ix}")))
+                            .absolute()
+                            .occlude()
+                            .relative()
+                            .left(x)
+                            .top(y)
+                            .w(self.width)
+                            .when_some(self.max_width, |this, w| this.max_w(w))
+                            .when_some(self.title, |this, title| {
+                                this.child(div().line_height(relative(1.)).child(title))
+                            })
+                            .when(self.show_close, |this| {
+                                this.child(
+                                    Button::new(SharedString::from(format!(
+                                        "modal-close-{layer_ix}"
+                                    )))
                                     .absolute()
                                     .top_2()
                                     .right_2()
                                     .small()
                                     .ghost()
                                     .icon(IconName::Close)
-                                    .on_click(move |_, cx| {
-                                        on_close(&ClickEvent::default(), cx);
-                                        cx.close_modal();
-                                    }),
-                            )
-                        })
-                        .child(self.content)
-                        .children(self.footer)
-                        .with_animation(
-                            "slide-down",
-                            Animation::new(Duration::from_secs_f64(0.25))
-                                .with_easing(cubic_bezier(0.32, 0.72, 0., 1.)),
-                            move |this, delta| {
-                                let y_offset = px(0.) + delta * px(30.);
-                                this.top(y + y_offset).opacity(delta)
-                            },
-                        ),
-                ),
-        )
+                                    .on_click(
+                                        move |_, cx| {
+                                            on_close(&ClickEvent::default(), cx);
+                                            cx.close_modal();
+                                        },
+                                    ),
+                                )
+                            })
+                            .child(self.content)
+                            .children(self.footer)
+                            .with_animation(
+                                "slide-down",
+                                Animation::new(Duration::from_secs_f64(0.25))
+                                    .with_easing(cubic_bezier(0.32, 0.72, 0., 1.)),
+                                move |this, delta| {
+                                    let y_offset = px(0.) + delta * px(30.);
+                                    this.top(y + y_offset).opacity(delta)
+                                },
+                            ),
+                    ),
+            )
     }
 }

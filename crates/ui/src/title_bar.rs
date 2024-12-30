@@ -1,13 +1,15 @@
+use gpui::{
+    div, prelude::FluentBuilder as _, px, relative, AnyElement, ClickEvent, Div, Element, Hsla,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Stateful,
+    StatefulInteractiveElement as _, Style, Styled, WindowContext,
+};
 use std::rc::Rc;
 
 use crate::{h_flex, theme::ActiveTheme, Icon, IconName, InteractiveElementExt as _, Sizable as _};
-use gpui::{
-    div, prelude::FluentBuilder as _, px, relative, AnyElement, ClickEvent, Div, Element, Hsla,
-    InteractiveElement as _, IntoElement, ParentElement, Pixels, RenderOnce, Stateful,
-    StatefulInteractiveElement as _, Style, Styled, WindowContext,
-};
 
+pub const HEIGHT: Pixels = px(34.);
 pub const TITLE_BAR_HEIGHT: Pixels = px(35.);
+
 #[cfg(target_os = "macos")]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
 #[cfg(not(target_os = "macos"))]
@@ -158,7 +160,11 @@ impl RenderOnce for ControlIcon {
             .items_center()
             .text_color(fg)
             .when(is_linux, |this| {
-                this.on_click(move |_, cx| match icon {
+                this.on_mouse_down(MouseButton::Left, move |_, cx| {
+                    cx.prevent_default();
+                    cx.stop_propagation();
+                })
+                .on_click(move |_, cx| match icon {
                     Self::Minimize => cx.minimize_window(),
                     Self::Restore => cx.zoom_window(),
                     Self::Maximize => cx.zoom_window(),
@@ -225,45 +231,41 @@ impl RenderOnce for TitleBar {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let is_linux = cfg!(target_os = "linux");
 
-        const HEIGHT: Pixels = px(34.);
-
-        div()
-            .flex_shrink_0()
-            .child(
-                self.base
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_between()
-                    .h(HEIGHT)
-                    .bg(cx.theme().title_bar)
-                    .border_b_1()
-                    .border_color(cx.theme().title_bar_border.opacity(0.7))
-                    .when(cx.is_fullscreen(), |this| this.pl(px(12.)))
-                    .on_double_click(|_, cx| cx.zoom_window())
-                    .child(
-                        h_flex()
-                            .h_full()
-                            .justify_between()
-                            .flex_shrink_0()
-                            .flex_1()
-                            .children(self.children),
-                    )
-                    .child(WindowControls {
-                        on_close_window: self.on_close_window,
-                    }),
-            )
-            .when(is_linux, |this| {
-                this.child(
-                    div()
-                        .top_0()
-                        .left_0()
-                        .absolute()
-                        .size_full()
+        div().flex_shrink_0().child(
+            self.base
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_between()
+                .h(HEIGHT)
+                .border_b_1()
+                .border_color(cx.theme().title_bar_border.opacity(0.7))
+                .bg(cx.theme().title_bar)
+                .when(cx.is_fullscreen(), |this| this.pl(px(12.)))
+                .on_double_click(|_, cx| cx.zoom_window())
+                .child(
+                    h_flex()
                         .h_full()
-                        .child(TitleBarElement {}),
+                        .justify_between()
+                        .flex_shrink_0()
+                        .flex_1()
+                        .when(is_linux, |this| {
+                            this.child(
+                                div()
+                                    .top_0()
+                                    .left_0()
+                                    .absolute()
+                                    .size_full()
+                                    .h_full()
+                                    .child(TitleBarElement {}),
+                            )
+                        })
+                        .children(self.children),
                 )
-            })
+                .child(WindowControls {
+                    on_close_window: self.on_close_window,
+                }),
+        )
     }
 }
 

@@ -1,16 +1,6 @@
-use std::cell::Cell;
-use std::ops::Deref;
-use std::rc::Rc;
-
-use gpui::{
-    actions, div, prelude::FluentBuilder, px, Action, AppContext, DismissEvent, EventEmitter,
-    FocusHandle, InteractiveElement, IntoElement, KeyBinding, ParentElement, Pixels, Render,
-    SharedString, View, ViewContext, VisualContext as _, WindowContext,
-};
-use gpui::{
-    anchored, canvas, rems, AnyElement, Bounds, Corner, Edges, FocusableView, Keystroke,
-    ScrollHandle, StatefulInteractiveElement, Styled, WeakView,
-};
+use gpui::*;
+use prelude::FluentBuilder;
+use std::{cell::Cell, ops::Deref, rc::Rc};
 
 use crate::scroll::{Scrollbar, ScrollbarState};
 use crate::StyledExt;
@@ -386,9 +376,10 @@ impl PopupMenu {
     fn select_next(&mut self, _: &SelectNext, cx: &mut ViewContext<Self>) {
         let count = self.clickable_menu_items().count();
         if count > 0 {
+            let last_ix = count.saturating_sub(1);
             let ix = self
                 .selected_index
-                .map(|index| if index == count - 1 { 0 } else { index + 1 })
+                .map(|index| if index == last_ix { 0 } else { index + 1 })
                 .unwrap_or(0);
 
             self.selected_index = Some(ix);
@@ -399,10 +390,18 @@ impl PopupMenu {
     fn select_prev(&mut self, _: &SelectPrev, cx: &mut ViewContext<Self>) {
         let count = self.clickable_menu_items().count();
         if count > 0 {
+            let last_ix = count.saturating_sub(1);
+
             let ix = self
                 .selected_index
-                .map(|index| if index == count - 1 { 0 } else { index - 1 })
-                .unwrap_or(count - 1);
+                .map(|index| {
+                    if index == last_ix {
+                        0
+                    } else {
+                        index.saturating_sub(1)
+                    }
+                })
+                .unwrap_or(last_ix);
             self.selected_index = Some(ix);
             cx.notify();
         }
@@ -473,7 +472,9 @@ impl PopupMenu {
 }
 
 impl FluentBuilder for PopupMenu {}
+
 impl EventEmitter<DismissEvent> for PopupMenu {}
+
 impl FocusableView for PopupMenu {
     fn focus_handle(&self, _: &AppContext) -> FocusHandle {
         self.focus_handle.clone()

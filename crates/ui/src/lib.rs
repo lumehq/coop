@@ -1,11 +1,3 @@
-mod colors;
-mod event;
-mod focusable;
-mod icon;
-mod root;
-mod styled;
-mod title_bar;
-
 pub mod accordion;
 pub mod animation;
 pub mod badge;
@@ -18,7 +10,6 @@ pub mod color_picker;
 pub mod context_menu;
 pub mod divider;
 pub mod dock;
-pub mod drawer;
 pub mod dropdown;
 pub mod history;
 pub mod indicator;
@@ -45,14 +36,24 @@ pub mod theme;
 pub mod tooltip;
 
 pub use crate::Disableable;
+
+pub use colors::*;
 pub use event::InteractiveElementExt;
 pub use focusable::FocusableCycle;
+pub use icon::*;
 pub use root::{ContextModal, Root};
 pub use styled::*;
 pub use title_bar::*;
+pub use window_border::{window_border, WindowBorder};
 
-pub use colors::*;
-pub use icon::*;
+mod colors;
+mod event;
+mod focusable;
+mod icon;
+mod root;
+mod styled;
+mod title_bar;
+mod window_border;
 
 use rust_embed::RustEmbed;
 
@@ -67,7 +68,6 @@ pub struct Assets;
 pub fn init(cx: &mut gpui::AppContext) {
     theme::init(cx);
     dock::init(cx);
-    drawer::init(cx);
     dropdown::init(cx);
     input::init(cx);
     number_input::init(cx);
