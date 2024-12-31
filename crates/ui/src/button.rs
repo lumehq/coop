@@ -8,7 +8,7 @@ use crate::{
     indicator::Indicator,
     theme::{ActiveTheme, Colorize as _},
     tooltip::Tooltip,
-    Disableable, Icon, Selectable, Sizable, Size,
+    Disableable, Icon, Selectable, Sizable, Size, StyledExt,
 };
 
 pub enum ButtonRounded {
@@ -169,6 +169,8 @@ pub struct Button {
     size: Size,
     compact: bool,
     reverse: bool,
+    bold: bool,
+    centered: bool,
     tooltip: Option<SharedString>,
     on_click: OnClick,
     pub(crate) stop_propagation: bool,
@@ -202,6 +204,8 @@ impl Button {
             loading: false,
             reverse: false,
             compact: false,
+            bold: false,
+            centered: true,
             children: Vec::new(),
             loading_icon: None,
         }
@@ -258,6 +262,16 @@ impl Button {
     /// Set reverse the position between icon and label.
     pub fn reverse(mut self) -> Self {
         self.reverse = true;
+        self
+    }
+
+    pub fn not_centered(mut self) -> Self {
+        self.centered = false;
+        self
+    }
+
+    pub fn bold(mut self) -> Self {
+        self.bold = true;
         self
     }
 
@@ -340,7 +354,7 @@ impl RenderOnce for Button {
             .id(self.id)
             .flex()
             .items_center()
-            .justify_center()
+            .when(self.centered, |this| this.justify_center())
             .cursor_pointer()
             .overflow_hidden()
             .when(cx.theme().shadow && normal_style.shadow, |this| {
@@ -359,8 +373,8 @@ impl RenderOnce for Button {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
-                        Size::XSmall => this.h_5().px_2().when(self.compact, |this| this.px_0()),
-                        Size::Small => this.h_6().px_3().when(self.compact, |this| this.px_0p5()),
+                        Size::XSmall => this.h_5().px_1().when(self.compact, |this| this.px_0()),
+                        Size::Small => this.h_6().px_2().when(self.compact, |this| this.px_0p5()),
                         _ => this.h_8().px_4().when(self.compact, |this| this.px_1()),
                     }
                 }
@@ -445,7 +459,7 @@ impl RenderOnce for Button {
                     .justify_center()
                     .map(|this| match self.size {
                         Size::XSmall => this.gap_1().text_xs(),
-                        Size::Small => this.gap_1().text_xs(),
+                        Size::Small => this.gap_2().text_xs(),
                         _ => this.gap_2().text_base(),
                     })
                     .when(!self.loading, |this| {
@@ -461,7 +475,13 @@ impl RenderOnce for Button {
                         )
                     })
                     .when_some(self.label, |this, label| {
-                        this.child(div().flex_none().line_height(relative(1.)).child(label))
+                        this.child(
+                            div()
+                                .flex_none()
+                                .line_height(relative(1.))
+                                .child(label)
+                                .when(self.bold, |this| this.font_semibold()),
+                        )
                     })
                     .children(self.children)
             })

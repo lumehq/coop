@@ -189,9 +189,8 @@ impl Render for Inbox {
         }
 
         v_flex()
-            .gap_1()
-            .pt_2()
             .px_2()
+            .gap_1()
             .child(
                 div()
                     .id("inbox")

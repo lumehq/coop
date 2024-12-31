@@ -1,5 +1,6 @@
 use coop_ui::{
     button::{Button, ButtonVariants},
+    popup_menu::PopupMenuExt,
     Icon, IconName, Sizable,
 };
 use gpui::*;
@@ -11,6 +12,8 @@ use crate::{
     get_client,
     states::{metadata::MetadataRegistry, signal::SignalRegistry},
 };
+
+actions!(account, [ToDo]);
 
 pub struct Account {
     public_key: PublicKey,
@@ -82,6 +85,13 @@ impl Render for Account {
                             .child(img("brand/avatar.png").size_6().rounded_full())
                     }
                 })
+            })
+            .popup_menu(move |this, _cx| {
+                this.menu("Profile", Box::new(ToDo))
+                    .menu("Contacts", Box::new(ToDo))
+                    .menu("Settings", Box::new(ToDo))
+                    .separator()
+                    .menu("Change account", Box::new(ToDo))
             })
     }
 }

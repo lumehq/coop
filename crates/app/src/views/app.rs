@@ -1,8 +1,7 @@
 use coop_ui::{
-    button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants},
     dock::{DockArea, DockItem, DockPlacement},
-    theme::{ActiveTheme, Theme, ThemeMode},
-    ContextModal, IconName, Root, Sizable, TitleBar,
+    theme::Theme,
+    Root, TitleBar,
 };
 use gpui::*;
 use prelude::FluentBuilder;
@@ -11,14 +10,20 @@ use std::sync::Arc;
 
 use super::{
     account::Account,
-    dock::{chat::ChatPanel, left_dock::LeftDock, welcome::WelcomePanel},
+    dock::{chat::ChatPanel, contact::ContactPanel, left_dock::LeftDock, welcome::WelcomePanel},
     onboarding::Onboarding,
 };
 use crate::states::{account::AccountRegistry, chat::Room};
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
+pub enum PanelKind {
+    Room(Arc<Room>),
+    Contact,
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel {
-    pub room: Arc<Room>,
+    pub panel: PanelKind,
     pub position: DockPlacement,
 }
 
@@ -80,19 +85,6 @@ impl AppView {
         }
     }
 
-    fn change_theme_mode(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
-        let mode = match cx.theme().mode.is_dark() {
-            true => ThemeMode::Light,
-            false => ThemeMode::Dark,
-        };
-
-        // Change theme
-        Theme::change(mode, cx);
-
-        // Rerender
-        cx.refresh();
-    }
-
     fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
         let left = DockItem::panel(Arc::new(LeftDock::new(cx)));
         let center = Self::init_dock_items(&dock_area, cx);
@@ -129,11 +121,22 @@ impl AppView {
     }
 
     fn on_action_add_panel(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
-        let chat_panel = Arc::new(ChatPanel::new(&action.room, cx));
+        match &action.panel {
+            PanelKind::Room(room) => {
+                let panel = Arc::new(ChatPanel::new(room, cx));
 
-        self.dock.update(cx, |dock_area, cx| {
-            dock_area.add_panel(chat_panel, action.position, cx);
-        });
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, cx);
+                });
+            }
+            PanelKind::Contact => {
+                let panel = Arc::new(ContactPanel::new(cx));
+
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, cx);
+                });
+            }
+        };
     }
 }
 
@@ -149,59 +152,18 @@ impl Render for AppView {
                 .child(
                     TitleBar::new()
                         // Left side
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child(
-                                    div().when_some(
-                                        self.account.read(cx).as_ref(),
-                                        |this, account| this.child(account.clone()),
-                                    ),
-                                )
-                                .child(
-                                    Button::new("new")
-                                        .custom(
-                                            ButtonCustomVariant::new(cx)
-                                                .shadow(false)
-                                                .color(cx.theme().primary)
-                                                .border(cx.theme().primary)
-                                                .foreground(cx.theme().primary_foreground)
-                                                .active(cx.theme().primary_active)
-                                                .hover(cx.theme().primary_hover),
-                                        )
-                                        .xsmall()
-                                        .rounded(ButtonRounded::Size(px(24.)))
-                                        .label("Compose")
-                                        .on_click(move |_, cx| {
-                                            cx.open_modal(move |modal, _| {
-                                                modal.title("Compose").child("TODO").min_h(px(300.))
-                                            });
-                                        }),
-                                ),
-                        )
+                        .child(div())
                         // Right side
                         .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .justify_end()
+                                .gap_1()
                                 .px_2()
-                                .gap_2()
-                                .child(
-                                    Button::new("theme-mode")
-                                        .map(|this| {
-                                            if cx.theme().mode.is_dark() {
-                                                this.icon(IconName::Sun)
-                                            } else {
-                                                this.icon(IconName::Moon)
-                                            }
-                                        })
-                                        .small()
-                                        .ghost()
-                                        .on_click(cx.listener(Self::change_theme_mode)),
-                                ),
+                                .when_some(self.account.read(cx).as_ref(), |this, account| {
+                                    this.child(account.clone())
+                                }),
                         ),
                 )
                 .child(self.dock.clone())
@@ -213,8 +175,6 @@ impl Render for AppView {
         }
 
         div()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
             .size_full()
             .child(content)
             .child(div().absolute().top_8().children(notification_layer))

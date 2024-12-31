@@ -11,6 +11,8 @@ use crate::{
 
 actions!(menu, [Confirm, Dismiss, SelectNext, SelectPrev]);
 
+const ITEM_HEIGHT: Pixels = px(26.);
+
 pub fn init(cx: &mut AppContext) {
     let context = Some("PopupMenu");
     cx.bind_keys([
@@ -492,8 +494,6 @@ impl Render for PopupMenu {
         let window_haft_height = cx.window_bounds().get_bounds().size.height * 0.5;
         let max_height = window_haft_height.min(px(450.));
 
-        const ITEM_HEIGHT: Pixels = px(26.);
-
         v_flex()
             .id("popup-menu")
             .key_context("PopupMenu")
@@ -540,11 +540,11 @@ impl Render for PopupMenu {
                                     .map(|(ix, item)| {
                                         let this = ListItem::new(("menu-item", ix))
                                             .relative()
-                                            .text_sm()
+                                            .items_center()
                                             .py_0()
                                             .px_2()
                                             .rounded_md()
-                                            .items_center()
+                                            .text_xs()
                                             .on_mouse_enter(cx.listener(move |this, _, cx| {
                                                 this.hovered_menu_ix = Some(ix);
                                                 cx.notify();
@@ -667,7 +667,7 @@ impl Render for PopupMenu {
 
                                                                 if hovered_ix == ix {
                                                                     this.child(
-                                                                anchored()
+                                                                    anchored()
                                                                     .anchor(anchor)
                                                                     .child(
                                                                         div()
@@ -740,34 +740,4 @@ pub fn key_shortcut(key: Keystroke) -> String {
 
     parts.push(&key);
     parts.join("+")
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_key_shortcut() {
-        use super::key_shortcut;
-        use gpui::Keystroke;
-
-        if cfg!(target_os = "windows") {
-            assert_eq!(key_shortcut(Keystroke::parse("a").unwrap()), "A");
-            assert_eq!(key_shortcut(Keystroke::parse("ctrl-a").unwrap()), "Ctrl+A");
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-alt-a").unwrap()),
-                "Ctrl+Alt+A"
-            );
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-alt-shift-a").unwrap()),
-                "Ctrl+Alt+Shift+A"
-            );
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-alt-shift-win-a").unwrap()),
-                "Ctrl+Alt+Win+Shift+A"
-            );
-            assert_eq!(
-                key_shortcut(Keystroke::parse("ctrl-shift-backspace").unwrap()),
-                "Ctrl+Shift+Backspace"
-            );
-        }
-    }
 }

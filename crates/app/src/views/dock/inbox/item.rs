@@ -9,7 +9,7 @@ use crate::{
     get_client,
     states::{chat::Room, metadata::MetadataRegistry, signal::SignalRegistry},
     utils::{ago, get_room_id, show_npub},
-    views::app::AddPanel,
+    views::app::{AddPanel, PanelKind},
 };
 
 pub struct InboxItem {
@@ -73,7 +73,7 @@ impl InboxItem {
         let room = Arc::new(Room::new(&self.event, cx));
 
         cx.dispatch_action(Box::new(AddPanel {
-            room,
+            panel: PanelKind::Room(room),
             position: coop_ui::dock::DockPlacement::Center,
         }))
     }

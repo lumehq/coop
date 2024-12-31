@@ -1,11 +1,13 @@
 use coop_ui::{
-    button::Button,
+    button::{Button, ButtonVariants},
     dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
-    StyledExt,
+    v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
 use gpui::*;
+
+use crate::views::app::{AddPanel, PanelKind};
 
 use super::inbox::Inbox;
 
@@ -79,8 +81,54 @@ impl FocusableView for LeftDock {
 
 impl Render for LeftDock {
     fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
-        div()
-            .child(self.inbox.clone())
+        v_flex()
             .scrollable(self.view_id, ScrollbarAxis::Vertical)
+            .pt_3()
+            .gap_3()
+            .child(
+                v_flex()
+                    .px_2()
+                    .gap_1()
+                    .child(
+                        Button::new("new")
+                            .small()
+                            .ghost()
+                            .not_centered()
+                            .bold()
+                            .icon(Icon::new(IconName::Plus))
+                            .label("Compose")
+                            .on_click(|_, cx| {
+                                cx.open_modal(move |modal, _| modal.title("Compose").child("TODO"));
+                            }),
+                    )
+                    .child(
+                        Button::new("contacts")
+                            .small()
+                            .ghost()
+                            .not_centered()
+                            .bold()
+                            .icon(Icon::new(IconName::Group))
+                            .label("Contacts")
+                            .on_click(|_, cx| {
+                                cx.dispatch_action(Box::new(AddPanel {
+                                    panel: PanelKind::Contact,
+                                    position: coop_ui::dock::DockPlacement::Center,
+                                }))
+                            }),
+                    )
+                    .child(
+                        Button::new("find")
+                            .small()
+                            .ghost()
+                            .not_centered()
+                            .bold()
+                            .icon(Icon::new(IconName::Search))
+                            .label("Find")
+                            .on_click(|_, cx| {
+                                cx.open_modal(move |modal, _| modal.title("Find").child("TODO"));
+                            }),
+                    ),
+            )
+            .child(self.inbox.clone())
     }
 }
