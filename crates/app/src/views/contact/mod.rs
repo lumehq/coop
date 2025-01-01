@@ -4,12 +4,17 @@ use coop_ui::{
     popup_menu::PopupMenu,
 };
 use gpui::*;
+use list::ContactList;
+
+mod list;
 
 pub struct ContactPanel {
     name: SharedString,
     closeable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
+    // Contacts
+    list: View<ContactList>,
 }
 
 impl ContactPanel {
@@ -18,11 +23,14 @@ impl ContactPanel {
     }
 
     fn view(cx: &mut ViewContext<Self>) -> Self {
+        let list = cx.new_view(ContactList::new);
+
         Self {
             name: "Contacts".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
+            list,
         }
     }
 }
@@ -67,6 +75,6 @@ impl FocusableView for ContactPanel {
 
 impl Render for ContactPanel {
     fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        div().size_full().child("TODO")
+        div().size_full().child(self.list.clone())
     }
 }

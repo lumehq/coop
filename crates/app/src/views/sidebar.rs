@@ -7,11 +7,10 @@ use coop_ui::{
 };
 use gpui::*;
 
+use super::inbox::Inbox;
 use crate::views::app::{AddPanel, PanelKind};
 
-use super::inbox::Inbox;
-
-pub struct LeftDock {
+pub struct Sidebar {
     // Panel
     name: SharedString,
     closeable: bool,
@@ -22,7 +21,7 @@ pub struct LeftDock {
     view_id: EntityId,
 }
 
-impl LeftDock {
+impl Sidebar {
     pub fn new(cx: &mut WindowContext) -> View<Self> {
         cx.new_view(Self::view)
     }
@@ -41,9 +40,9 @@ impl LeftDock {
     }
 }
 
-impl Panel for LeftDock {
+impl Panel for Sidebar {
     fn panel_id(&self) -> SharedString {
-        "LeftDock".into()
+        "Sidebar".into()
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {
@@ -71,15 +70,15 @@ impl Panel for LeftDock {
     }
 }
 
-impl EventEmitter<PanelEvent> for LeftDock {}
+impl EventEmitter<PanelEvent> for Sidebar {}
 
-impl FocusableView for LeftDock {
+impl FocusableView for Sidebar {
     fn focus_handle(&self, _: &AppContext) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for LeftDock {
+impl Render for Sidebar {
     fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
         v_flex()
             .scrollable(self.view_id, ScrollbarAxis::Vertical)
@@ -96,9 +95,9 @@ impl Render for LeftDock {
                             .not_centered()
                             .bold()
                             .icon(Icon::new(IconName::Plus))
-                            .label("Compose")
+                            .label("New")
                             .on_click(|_, cx| {
-                                cx.open_modal(move |modal, _| modal.title("Compose").child("TODO"));
+                                cx.open_modal(move |modal, _| modal.child("TODO"));
                             }),
                     )
                     .child(
@@ -114,18 +113,6 @@ impl Render for LeftDock {
                                     panel: PanelKind::Contact,
                                     position: coop_ui::dock::DockPlacement::Center,
                                 }))
-                            }),
-                    )
-                    .child(
-                        Button::new("find")
-                            .small()
-                            .ghost()
-                            .not_centered()
-                            .bold()
-                            .icon(Icon::new(IconName::Search))
-                            .label("Find")
-                            .on_click(|_, cx| {
-                                cx.open_modal(move |modal, _| modal.title("Find").child("TODO"));
                             }),
                     ),
             )

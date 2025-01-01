@@ -45,6 +45,13 @@ impl RenderOnce for RoomMessage {
             .gap_3()
             .w_full()
             .p_2()
+            .border_l_2()
+            .border_color(cx.theme().background)
+            .hover(|this| {
+                this.bg(cx.theme().muted)
+                    .border_color(cx.theme().primary_active)
+                    .text_color(cx.theme().muted_foreground)
+            })
             .child(div().flex_shrink_0().map(|this| {
                 if let Some(metadata) = self.metadata.clone() {
                     if let Some(picture) = metadata.picture {

@@ -1,4 +1,9 @@
-pub mod account;
 pub mod app;
-pub mod dock;
-pub mod onboarding;
+
+mod account;
+mod chat;
+mod contact;
+mod inbox;
+mod onboarding;
+mod sidebar;
+mod welcome;

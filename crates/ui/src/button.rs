@@ -458,8 +458,8 @@ impl RenderOnce for Button {
                     .items_center()
                     .justify_center()
                     .map(|this| match self.size {
-                        Size::XSmall => this.gap_1().text_xs(),
-                        Size::Small => this.gap_2().text_xs(),
+                        Size::XSmall => this.gap_0p5().text_xs(),
+                        Size::Small => this.gap_1().text_xs(),
                         _ => this.gap_2().text_base(),
                     })
                     .when(!self.loading, |this| {

@@ -9,9 +9,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use super::{
-    account::Account,
-    dock::{chat::ChatPanel, contact::ContactPanel, left_dock::LeftDock, welcome::WelcomePanel},
-    onboarding::Onboarding,
+    account::Account, chat::ChatPanel, contact::ContactPanel, onboarding::Onboarding,
+    sidebar::Sidebar, welcome::WelcomePanel,
 };
 use crate::states::{account::AccountRegistry, chat::Room};
 
@@ -86,12 +85,12 @@ impl AppView {
     }
 
     fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
-        let left = DockItem::panel(Arc::new(LeftDock::new(cx)));
+        let left = DockItem::panel(Arc::new(Sidebar::new(cx)));
         let center = Self::init_dock_items(&dock_area, cx);
 
         _ = dock_area.update(cx, |view, cx| {
             view.set_version(DOCK_AREA.version, cx);
-            view.set_left_dock(left, Some(px(260.)), true, cx);
+            view.set_left_dock(left, Some(px(240.)), true, cx);
             view.set_center(center, cx);
             view.set_dock_collapsible(
                 Edges {
