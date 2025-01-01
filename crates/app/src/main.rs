@@ -129,21 +129,21 @@ async fn main() {
                                     if subscription_id == new_message {
                                         if let Err(e) = signal_tx.send(Signal::RecvEvent(ev)).await
                                         {
-                                            println!("Error: {}", e)
+                                            println!("Send error: {}", e)
                                         }
                                     }
                                 }
                             }
-                            Err(e) => println!("Error: {}", e),
+                            Err(e) => println!("Unwrap error: {}", e),
                         }
                     } else if event.kind == Kind::Metadata {
                         if let Err(e) = signal_tx.send(Signal::RecvMetadata(event.pubkey)).await {
-                            println!("Error: {}", e)
+                            println!("Send error: {}", e)
                         }
                     }
                 } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
                     if let Err(e) = signal_tx.send(Signal::RecvEose(subscription_id)).await {
-                        println!("Error: {}", e)
+                        println!("Send error: {}", e)
                     }
                 }
             }
@@ -177,6 +177,7 @@ async fn main() {
                         .authors(authors)
                         .kind(Kind::Metadata)
                         .limit(total);
+
                     let opts = SubscribeAutoCloseOptions::default()
                         .exit_policy(ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(2)));
 
@@ -211,7 +212,7 @@ async fn main() {
             cx.spawn(|async_cx| async move {
                 let accounts = get_all_accounts_from_keyring();
 
-                // Automatically Login if only habe 1 account
+                // Automatically Login if only have 1 account
                 if let Some(account) = accounts.into_iter().next() {
                     if let Ok(keys) = get_keys_by_account(account) {
                         get_client().set_signer(keys).await;
@@ -292,8 +293,8 @@ async fn main() {
                 window_decorations: Some(WindowDecorations::Client),
                 titlebar: Some(TitlebarOptions {
                     title: Some(SharedString::new_static(APP_NAME)),
-                    appears_transparent: true,
                     traffic_light_position: Some(point(px(9.0), px(9.0))),
+                    appears_transparent: true,
                 }),
                 ..Default::default()
             };

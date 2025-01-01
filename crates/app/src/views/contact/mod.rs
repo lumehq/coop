@@ -6,6 +6,7 @@ use coop_ui::{
 use gpui::*;
 use list::ContactList;
 
+mod item;
 mod list;
 
 pub struct ContactPanel {

@@ -1,13 +1,12 @@
+use gpui::*;
+use prelude::FluentBuilder;
 use std::time::Duration;
 
-use gpui::*;
-use nostr_sdk::prelude::*;
-use prelude::FluentBuilder;
-
+use super::item::ContactListItem;
 use crate::get_client;
 
 pub struct ContactList {
-    contacts: Model<Option<Vec<Contact>>>,
+    contacts: Model<Option<Vec<View<ContactListItem>>>>,
 }
 
 impl ContactList {
@@ -27,8 +26,17 @@ impl ContactList {
                         .spawn(async move { client.get_contact_list(Duration::from_secs(3)).await })
                         .await
                     {
+                        let views: Vec<View<ContactListItem>> = contacts
+                            .into_iter()
+                            .map(|contact| {
+                                async_cx
+                                    .new_view(|cx| ContactListItem::new(contact.public_key, cx))
+                                    .unwrap()
+                            })
+                            .collect();
+
                         _ = async_cx.update_model(&async_contacts, |model, cx| {
-                            *model = Some(contacts);
+                            *model = Some(views);
                             cx.notify();
                         });
                     }
@@ -43,7 +51,7 @@ impl ContactList {
 impl Render for ContactList {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         div().when_some(self.contacts.read(cx).as_ref(), |this, contacts| {
-            this.child("Total").child(contacts.len().to_string())
+            this.children(contacts.clone())
         })
     }
 }
