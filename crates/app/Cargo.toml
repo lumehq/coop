@@ -9,7 +9,7 @@ name = "coop"
 path = "src/main.rs"
 
 [dependencies]
-coop-ui = { path = "../ui" }
+ui = { path = "../ui" }
 
 gpui.workspace = true
 reqwest_client.workspace = true

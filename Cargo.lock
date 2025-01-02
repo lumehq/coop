@@ -1199,7 +1199,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "coop-ui",
  "dirs 5.0.1",
  "gpui",
  "itertools 0.13.0",
@@ -1214,28 +1213,7 @@ dependencies = [
  "smol",
  "tokio",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "coop-ui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "gpui",
- "image",
- "itertools 0.13.0",
- "nostr-sdk",
- "once_cell",
- "paste",
- "regex",
- "rust-embed",
- "serde",
- "serde_json",
- "smallvec",
- "smol",
- "unicode-segmentation",
- "uuid",
+ "ui",
 ]
 
 [[package]]
@@ -5939,6 +5917,28 @@ dependencies = [
  "memoffset",
  "tempfile",
  "winapi",
+]
+
+[[package]]
+name = "ui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "gpui",
+ "image",
+ "itertools 0.13.0",
+ "nostr-sdk",
+ "once_cell",
+ "paste",
+ "regex",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "smol",
+ "unicode-segmentation",
+ "uuid",
 ]
 
 [[package]]

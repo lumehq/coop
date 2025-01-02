@@ -1,13 +1,13 @@
-use coop_ui::{
+use gpui::*;
+use itertools::Itertools;
+use nostr_sdk::prelude::*;
+use std::sync::Arc;
+use ui::{
     button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
     theme::ActiveTheme,
     v_flex, Icon, IconName,
 };
-use gpui::*;
-use itertools::Itertools;
-use nostr_sdk::prelude::*;
-use std::sync::Arc;
 
 use super::message::RoomMessage;
 use crate::{
@@ -43,7 +43,7 @@ impl RoomPanel {
         let input = cx.new_view(|cx| {
             TextInput::new(cx)
                 .appearance(false)
-                .text_size(coop_ui::Size::Small)
+                .text_size(ui::Size::Small)
                 .placeholder("Message...")
                 .cleanable()
         });

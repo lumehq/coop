@@ -1,13 +1,19 @@
-use coop_ui::{
+use std::time::Duration;
+
+use gpui::*;
+use item::ContactListItem;
+use prelude::FluentBuilder;
+use ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
+    scroll::ScrollbarAxis,
+    v_flex, StyledExt,
 };
-use gpui::*;
-use list::ContactList;
+
+use crate::get_client;
 
 mod item;
-mod list;
 
 pub struct ContactPanel {
     name: SharedString,
@@ -15,7 +21,8 @@ pub struct ContactPanel {
     zoomable: bool,
     focus_handle: FocusHandle,
     // Contacts
-    list: View<ContactList>,
+    view_id: EntityId,
+    contacts: Model<Option<Vec<View<ContactListItem>>>>,
 }
 
 impl ContactPanel {
@@ -24,14 +31,46 @@ impl ContactPanel {
     }
 
     fn view(cx: &mut ViewContext<Self>) -> Self {
-        let list = cx.new_view(ContactList::new);
+        let contacts = cx.new_model(|_| None);
+        let async_contacts = contacts.clone();
+
+        let mut async_cx = cx.to_async();
+
+        cx.foreground_executor()
+            .spawn({
+                let client = get_client();
+
+                async move {
+                    if let Ok(contacts) = async_cx
+                        .background_executor()
+                        .spawn(async move { client.get_contact_list(Duration::from_secs(3)).await })
+                        .await
+                    {
+                        let views: Vec<View<ContactListItem>> = contacts
+                            .into_iter()
+                            .map(|contact| {
+                                async_cx
+                                    .new_view(|cx| ContactListItem::new(contact.public_key, cx))
+                                    .unwrap()
+                            })
+                            .collect();
+
+                        _ = async_cx.update_model(&async_contacts, |model, cx| {
+                            *model = Some(views);
+                            cx.notify();
+                        });
+                    }
+                }
+            })
+            .detach();
 
         Self {
             name: "Contacts".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            list,
+            view_id: cx.entity_id(),
+            contacts,
         }
     }
 }
@@ -75,7 +114,14 @@ impl FocusableView for ContactPanel {
 }
 
 impl Render for ContactPanel {
-    fn render(&mut self, _cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        div().size_full().child(self.list.clone())
+    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+        v_flex()
+            .scrollable(self.view_id, ScrollbarAxis::Vertical)
+            .w_full()
+            .gap_1()
+            .p_2()
+            .when_some(self.contacts.read(cx).as_ref(), |this, contacts| {
+                this.children(contacts.clone())
+            })
     }
 }

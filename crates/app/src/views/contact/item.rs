@@ -1,7 +1,7 @@
-use coop_ui::StyledExt;
 use gpui::*;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
+use ui::theme::ActiveTheme;
 
 use crate::{
     constants::IMAGE_SERVICE,
@@ -64,7 +64,7 @@ impl ContactListItem {
 impl Render for ContactListItem {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let fallback = show_npub(self.public_key, 16);
-        let mut content = div();
+        let mut content = div().h_10().text_sm();
 
         if let Some(metadata) = self.metadata.read(cx).as_ref() {
             content = content
@@ -73,15 +73,14 @@ impl Render for ContactListItem {
                 .gap_2()
                 .map(|this| {
                     if let Some(picture) = metadata.picture.clone() {
-                        this.flex_shrink_0().child(
+                        this.child(
                             img(format!("{}/?url={}&w=72&h=72&n=-1", IMAGE_SERVICE, picture))
-                                .size_6()
+                                .size_8()
                                 .rounded_full()
                                 .object_fit(ObjectFit::Cover),
                         )
                     } else {
-                        this.flex_shrink_0()
-                            .child(img("brand/avatar.png").size_6().rounded_full())
+                        this.child(img("brand/avatar.png").size_8().rounded_full())
                     }
                 })
                 .map(|this| {
@@ -96,20 +95,18 @@ impl Render for ContactListItem {
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(
-                    img("brand/avatar.png")
-                        .flex_shrink_0()
-                        .size_6()
-                        .rounded_full(),
-                )
+                .child(img("brand/avatar.png").size_8().rounded_full())
                 .child(fallback)
         }
 
         div()
-            .scrollable(
-                cx.view().entity_id(),
-                coop_ui::scroll::ScrollbarAxis::Vertical,
-            )
+            .w_full()
+            .px_2()
+            .rounded_md()
+            .hover(|this| {
+                this.bg(cx.theme().muted)
+                    .text_color(cx.theme().muted_foreground)
+            })
             .child(content)
     }
 }

@@ -1,11 +1,11 @@
-use coop_ui::{
+use gpui::*;
+use ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
     theme::{ActiveTheme, Colorize},
     StyledExt,
 };
-use gpui::*;
 
 pub struct WelcomePanel {
     name: SharedString,

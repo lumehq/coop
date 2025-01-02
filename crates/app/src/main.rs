@@ -1,5 +1,4 @@
 use asset::Assets;
-use coop_ui::Root;
 use dirs::config_dir;
 use gpui::*;
 use nostr_sdk::prelude::*;
@@ -14,6 +13,7 @@ use tokio::{
     sync::{mpsc, Mutex},
     time::sleep,
 };
+use ui::Root;
 
 use constants::{ALL_MESSAGES_SUB_ID, APP_NAME, FAKE_SIG, METADATA_DELAY, NEW_MESSAGE_SUB_ID};
 use states::{
@@ -81,7 +81,7 @@ async fn main() {
     _ = client.connect().await;
 
     // Signal
-    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(10000);
+    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4000); // TODO: adjust?
     let (mta_tx, mut mta_rx) = mpsc::unbounded_channel::<PublicKey>();
 
     // Re use sender
@@ -92,6 +92,7 @@ async fn main() {
     tokio::spawn(async move {
         let sig = Signature::from_str(FAKE_SIG).unwrap();
         let new_message = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+        let all_messages = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
 
         while let Ok(notification) = notifications.recv().await {
             #[allow(clippy::collapsible_match)]
@@ -142,8 +143,10 @@ async fn main() {
                         }
                     }
                 } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
-                    if let Err(e) = signal_tx.send(Signal::RecvEose(subscription_id)).await {
-                        println!("Send error: {}", e)
+                    if subscription_id == all_messages {
+                        if let Err(e) = signal_tx.send(Signal::RecvEose(subscription_id)).await {
+                            println!("Send error: {}", e)
+                        }
                     }
                 }
             }
@@ -203,49 +206,31 @@ async fn main() {
             SignalRegistry::set_global(cx, mta_tx_clone);
 
             // Initialize components
-            coop_ui::init(cx);
+            ui::init(cx);
 
             // Set quit action
             cx.on_action(quit);
 
-            /*
             cx.spawn(|async_cx| async move {
-                let accounts = get_all_accounts_from_keyring();
+                let (tx, rx) = smol::channel::unbounded::<Signal>();
 
-                // Automatically Login if only have 1 account
-                if let Some(account) = accounts.into_iter().next() {
-                    if let Ok(keys) = get_keys_by_account(account) {
-                        get_client().set_signer(keys).await;
-
-                        _ = async_cx.update_global::<AccountRegistry, _>(|state, _| {
-                            state.set_user(Some(account));
-                        });
-                    }
-                }
-            })
-            .detach();
-            */
-
-            cx.spawn(|async_cx| async move {
-                let all_messages = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-                let mut is_initialized = false;
-
-                while let Some(signal) = signal_rx.recv().await {
-                    match signal {
-                        Signal::RecvEose(id) => {
-                            if id == all_messages {
-                                if !is_initialized {
-                                    _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
-                                        state.set_init();
-                                    });
-
-                                    is_initialized = true;
-                                } else {
-                                    _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
-                                        state.set_reload();
-                                    });
-                                }
+                async_cx
+                    .background_executor()
+                    .spawn(async move {
+                        while let Some(signal) = signal_rx.recv().await {
+                            if let Err(e) = tx.send(signal).await {
+                                println!("Send error: {}", e)
                             }
+                        }
+                    })
+                    .detach();
+
+                while let Ok(signal) = rx.recv().await {
+                    match signal {
+                        Signal::RecvEose(_) => {
+                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
+                                state.update();
+                            });
                         }
                         Signal::RecvEvent(event) => {
                             let metadata = async_cx
@@ -277,7 +262,7 @@ async fn main() {
 
                             _ = async_cx.update_global::<MetadataRegistry, _>(|state, _cx| {
                                 state.seen(public_key, metadata);
-                            })
+                            });
                         }
                         _ => {}
                     }

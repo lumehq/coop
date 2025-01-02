@@ -15,6 +15,7 @@ pub struct Room {
     pub last_seen: Timestamp,
     pub title: Option<SharedString>,
     pub metadata: Option<Metadata>,
+    is_initialized: bool,
 }
 
 impl Room {
@@ -48,6 +49,7 @@ impl Room {
             last_seen,
             owner,
             metadata,
+            is_initialized: false,
         }
     }
 }
@@ -71,12 +73,12 @@ impl ChatRegistry {
         cx.set_global(Self::new());
     }
 
-    pub fn set_init(&mut self) {
-        self.is_initialized = true;
-    }
-
-    pub fn set_reload(&mut self) {
-        self.reload = true;
+    pub fn update(&mut self) {
+        if !self.is_initialized {
+            self.is_initialized = true;
+        } else {
+            self.reload = true;
+        }
     }
 
     pub fn push(&mut self, event: Event, metadata: Option<Metadata>) {

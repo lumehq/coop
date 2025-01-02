@@ -1,8 +1,8 @@
-use coop_ui::{theme::ActiveTheme, StyledExt};
 use gpui::*;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
 use std::sync::Arc;
+use ui::{theme::ActiveTheme, StyledExt};
 
 use crate::{
     constants::IMAGE_SERVICE,
@@ -12,22 +12,17 @@ use crate::{
     views::app::{AddPanel, PanelKind},
 };
 
-pub struct InboxItem {
+pub struct InboxListItem {
     id: SharedString,
     event: Event,
     metadata: Model<Option<Metadata>>,
 }
 
-impl InboxItem {
+impl InboxListItem {
     pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
         let pubkeys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
         let id = get_room_id(&event.pubkey, &pubkeys).into();
         let metadata = cx.new_model(|_| None);
-
-        drop(pubkeys);
-
-        // Request metadata
-        _ = cx.global::<SignalRegistry>().tx.send(event.pubkey);
 
         // Reload when received metadata
         cx.observe_global::<MetadataRegistry>(|chat, cx| {
@@ -40,6 +35,10 @@ impl InboxItem {
             event,
             metadata,
         }
+    }
+
+    pub fn request_metadata(&mut self, cx: &mut ViewContext<Self>) {
+        _ = cx.global::<SignalRegistry>().tx.send(self.event.pubkey);
     }
 
     pub fn load_metadata(&mut self, cx: &mut ViewContext<Self>) {
@@ -74,12 +73,12 @@ impl InboxItem {
 
         cx.dispatch_action(Box::new(AddPanel {
             panel: PanelKind::Room(room),
-            position: coop_ui::dock::DockPlacement::Center,
+            position: ui::dock::DockPlacement::Center,
         }))
     }
 }
 
-impl Render for InboxItem {
+impl Render for InboxListItem {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let ago = ago(self.event.created_at.as_u64());
         let fallback_name = show_npub(self.event.pubkey, 16);

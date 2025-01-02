@@ -1,7 +1,7 @@
-use coop_ui::{theme::ActiveTheme, StyledExt};
 use gpui::*;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
+use ui::{theme::ActiveTheme, StyledExt};
 
 use crate::{
     constants::IMAGE_SERVICE,

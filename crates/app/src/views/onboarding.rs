@@ -1,11 +1,11 @@
 use async_utility::task::spawn;
-use coop_ui::{
-    input::{InputEvent, TextInput},
-    label::Label,
-};
 use gpui::*;
 use keyring::Entry;
 use nostr_sdk::prelude::*;
+use ui::{
+    input::{InputEvent, TextInput},
+    label::Label,
+};
 
 use crate::{constants::KEYRING_SERVICE, get_client, states::account::AccountRegistry};
 
@@ -17,7 +17,7 @@ impl Onboarding {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let input = cx.new_view(|cx| {
             let mut input = TextInput::new(cx);
-            input.set_size(coop_ui::Size::Medium, cx);
+            input.set_size(ui::Size::Medium, cx);
             input
         });
 

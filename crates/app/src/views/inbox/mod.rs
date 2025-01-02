@@ -1,20 +1,18 @@
-use coop_ui::{
-    skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt,
-};
 use gpui::*;
-use item::InboxItem;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use prelude::FluentBuilder;
 use std::cmp::Reverse;
+use ui::{skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
 
+use super::inbox::item::InboxListItem;
 use crate::{get_client, states::chat::ChatRegistry, utils::get_room_id};
 
 pub mod item;
 
 pub struct Inbox {
     label: SharedString,
-    items: Model<Option<Vec<View<InboxItem>>>>,
+    items: Model<Option<Vec<View<InboxListItem>>>>,
     is_loading: bool,
     is_collapsed: bool,
 }
@@ -56,7 +54,7 @@ impl Inbox {
                     // Create view for new chats only
                     let new = messages
                         .into_iter()
-                        .map(|m| cx.new_view(|cx| InboxItem::new(m.event, cx)))
+                        .map(|m| cx.new_view(|cx| InboxListItem::new(m.event, cx)))
                         .collect::<Vec<_>>();
 
                     cx.update_model(&this.items, |a, b| {
@@ -70,8 +68,9 @@ impl Inbox {
         })
         .detach();
 
-        cx.observe_new_views::<InboxItem>(|chat, cx| {
-            chat.load_metadata(cx);
+        cx.observe_new_views::<InboxListItem>(|item, cx| {
+            item.request_metadata(cx);
+            item.load_metadata(cx);
         })
         .detach();
 
@@ -124,17 +123,15 @@ impl Inbox {
                     })
                     .await;
 
-                let views: Vec<View<InboxItem>> = events
+                let views: Vec<View<InboxListItem>> = events
                     .into_iter()
                     .filter(|ev| {
                         let keys = ev.tags.public_keys().copied().collect::<Vec<_>>();
                         let new_id = get_room_id(&ev.pubkey, &keys);
 
-                        drop(keys);
-
                         !current_rooms.iter().any(|id| id == &new_id)
                     })
-                    .map(|ev| async_cx.new_view(|cx| InboxItem::new(ev, cx)).unwrap())
+                    .map(|ev| async_cx.new_view(|cx| InboxListItem::new(ev, cx)).unwrap())
                     .collect();
 
                 async_cx.update_model(&async_items, |model, cx| {

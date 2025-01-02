@@ -1,11 +1,11 @@
-use coop_ui::{
+use gpui::*;
+use nostr_sdk::prelude::*;
+use prelude::FluentBuilder;
+use ui::{
     button::{Button, ButtonVariants},
     popup_menu::PopupMenuExt,
     Icon, IconName, Sizable,
 };
-use gpui::*;
-use nostr_sdk::prelude::*;
-use prelude::FluentBuilder;
 
 use crate::{
     constants::IMAGE_SERVICE,

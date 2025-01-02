@@ -1,12 +1,12 @@
-use coop_ui::{
-    dock::{DockArea, DockItem, DockPlacement},
-    theme::Theme,
-    Root, TitleBar,
-};
 use gpui::*;
 use prelude::FluentBuilder;
 use serde::Deserialize;
 use std::sync::Arc;
+use ui::{
+    dock::{DockArea, DockItem, DockPlacement},
+    theme::Theme,
+    Root, TitleBar,
+};
 
 use super::{
     account::Account, chat::ChatPanel, contact::ContactPanel, onboarding::Onboarding,

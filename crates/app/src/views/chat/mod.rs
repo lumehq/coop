@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use coop_ui::{
+use gpui::*;
+use nostr_sdk::prelude::*;
+use room::RoomPanel;
+use ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
 };
-use gpui::*;
-use nostr_sdk::prelude::*;
-use room::RoomPanel;
 
 use crate::states::chat::Room;
 

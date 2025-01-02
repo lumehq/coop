@@ -1,11 +1,11 @@
-use coop_ui::{
+use gpui::*;
+use ui::{
     button::{Button, ButtonVariants},
     dock::{Panel, PanelEvent, PanelState},
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
-use gpui::*;
 
 use super::inbox::Inbox;
 use crate::views::app::{AddPanel, PanelKind};
@@ -93,9 +93,8 @@ impl Render for Sidebar {
                             .small()
                             .ghost()
                             .not_centered()
-                            .bold()
-                            .icon(Icon::new(IconName::Plus))
-                            .label("New")
+                            .icon(Icon::new(IconName::ComposeFill))
+                            .label("New Message")
                             .on_click(|_, cx| {
                                 cx.open_modal(move |modal, _| modal.child("TODO"));
                             }),
@@ -105,13 +104,12 @@ impl Render for Sidebar {
                             .small()
                             .ghost()
                             .not_centered()
-                            .bold()
-                            .icon(Icon::new(IconName::Group))
+                            .icon(Icon::new(IconName::GroupFill))
                             .label("Contacts")
                             .on_click(|_, cx| {
                                 cx.dispatch_action(Box::new(AddPanel {
                                     panel: PanelKind::Contact,
-                                    position: coop_ui::dock::DockPlacement::Center,
+                                    position: ui::dock::DockPlacement::Center,
                                 }))
                             }),
                     ),
