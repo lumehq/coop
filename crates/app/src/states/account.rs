@@ -1,4 +1,3 @@
-use async_utility::task::spawn;
 use gpui::*;
 use nostr_sdk::prelude::*;
 use std::time::Duration;
@@ -41,19 +40,21 @@ impl AccountRegistry {
                     .pubkey(public_key)
                     .limit(0);
 
-                spawn(async move {
-                    // Subscribe for all messages
-                    if client
-                        .subscribe_with_id(all_messages_sub_id, vec![all_messages], Some(opts))
-                        .await
-                        .is_ok()
-                    {
-                        // Subscribe for new message
-                        _ = client
-                            .subscribe_with_id(new_message_sub_id, vec![new_message], None)
+                cx.background_executor()
+                    .spawn(async move {
+                        // Subscribe for all messages
+                        if client
+                            .subscribe_with_id(all_messages_sub_id, vec![all_messages], Some(opts))
                             .await
-                    }
-                });
+                            .is_ok()
+                        {
+                            // Subscribe for new message
+                            _ = client
+                                .subscribe_with_id(new_message_sub_id, vec![new_message], None)
+                                .await
+                        }
+                    })
+                    .detach();
             }
         })
         .detach();

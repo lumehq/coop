@@ -6,9 +6,11 @@ use prelude::FluentBuilder;
 use ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},
+    indicator::Indicator,
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
-    v_flex, StyledExt,
+    theme::ActiveTheme,
+    v_flex, Sizable, StyledExt,
 };
 
 use crate::get_client;
@@ -120,8 +122,25 @@ impl Render for ContactPanel {
             .w_full()
             .gap_1()
             .p_2()
-            .when_some(self.contacts.read(cx).as_ref(), |this, contacts| {
-                this.children(contacts.clone())
+            .map(|this| {
+                if let Some(contacts) = self.contacts.read(cx).as_ref() {
+                    this.children(contacts.clone())
+                } else {
+                    this.w_full()
+                        .h_40()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1p5()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(Indicator::new().small())
+                                .child(div().text_xs().child("Loading")),
+                        )
+                }
             })
     }
 }

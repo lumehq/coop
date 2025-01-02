@@ -64,44 +64,45 @@ impl ContactListItem {
 impl Render for ContactListItem {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let fallback = show_npub(self.public_key, 16);
-        let mut content = div().h_10().text_sm();
+        let mut content = div()
+            .w_full()
+            .h_10()
+            .px_2()
+            .flex()
+            .items_center()
+            .gap_2()
+            .text_sm();
 
         if let Some(metadata) = self.metadata.read(cx).as_ref() {
             content = content
-                .flex()
-                .items_center()
-                .gap_2()
                 .map(|this| {
                     if let Some(picture) = metadata.picture.clone() {
-                        this.child(
-                            img(format!("{}/?url={}&w=72&h=72&n=-1", IMAGE_SERVICE, picture))
-                                .size_8()
-                                .rounded_full()
-                                .object_fit(ObjectFit::Cover),
+                        this.flex_shrink_0().child(
+                            img(format!(
+                                "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
+                                IMAGE_SERVICE, picture
+                            ))
+                            .size_8(),
                         )
                     } else {
-                        this.child(img("brand/avatar.png").size_8().rounded_full())
+                        this.flex_shrink_0()
+                            .child(img("brand/avatar.png").size_8().rounded_full())
                     }
                 })
                 .map(|this| {
                     if let Some(display_name) = metadata.display_name.clone() {
-                        this.child(display_name)
+                        this.flex_1().child(display_name)
                     } else {
-                        this.child(fallback)
+                        this.flex_1().child(fallback)
                     }
                 })
         } else {
             content = content
-                .flex()
-                .items_center()
-                .gap_2()
                 .child(img("brand/avatar.png").size_8().rounded_full())
                 .child(fallback)
         }
 
         div()
-            .w_full()
-            .px_2()
             .rounded_md()
             .hover(|this| {
                 this.bg(cx.theme().muted)

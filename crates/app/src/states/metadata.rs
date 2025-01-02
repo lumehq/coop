@@ -22,7 +22,6 @@ impl MetadataRegistry {
 
         if !seens.contains(&public_key) {
             seens.push(public_key);
-
             drop(seens);
 
             if let Some(metadata) = metadata {

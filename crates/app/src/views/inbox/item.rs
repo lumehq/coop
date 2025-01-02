@@ -95,10 +95,11 @@ impl Render for InboxListItem {
                 .map(|this| {
                     if let Some(picture) = metadata.picture.clone() {
                         this.flex_shrink_0().child(
-                            img(format!("{}/?url={}&w=72&h=72&n=-1", IMAGE_SERVICE, picture))
-                                .size_6()
-                                .rounded_full()
-                                .object_fit(ObjectFit::Cover),
+                            img(format!(
+                                "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
+                                IMAGE_SERVICE, picture
+                            ))
+                            .size_6(),
                         )
                     } else {
                         this.flex_shrink_0()

@@ -84,7 +84,7 @@ async fn main() {
     _ = client.connect().await;
 
     // Signal
-    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4000); // TODO: adjust?
+    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4096); // TODO: adjust?
     let (mta_tx, mut mta_rx) = mpsc::unbounded_channel::<PublicKey>();
 
     // Re use sender

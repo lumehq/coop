@@ -57,12 +57,10 @@ impl RenderOnce for RoomMessage {
                     if let Some(picture) = metadata.picture {
                         this.child(
                             img(format!(
-                                "{}/?url={}&w=100&h=100&n=-1",
+                                "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
                                 IMAGE_SERVICE, picture
                             ))
-                            .size_8()
-                            .rounded_full()
-                            .object_fit(ObjectFit::Cover),
+                            .size_8(),
                         )
                     } else {
                         this.child(img("brand/avatar.png").size_8().rounded_full())

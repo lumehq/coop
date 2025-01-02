@@ -82,7 +82,7 @@ impl Render for Sidebar {
     fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
         v_flex()
             .scrollable(self.view_id, ScrollbarAxis::Vertical)
-            .pt_3()
+            .py_3()
             .gap_3()
             .child(
                 v_flex()

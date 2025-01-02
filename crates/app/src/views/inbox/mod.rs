@@ -45,8 +45,6 @@ impl Inbox {
                             let keys = m.event.tags.public_keys().copied().collect::<Vec<_>>();
                             let new_id = get_room_id(&m.event.pubkey, &keys);
 
-                            drop(keys);
-
                             !current_rooms.iter().any(|id| id == &new_id)
                         })
                         .collect::<Vec<_>>();
