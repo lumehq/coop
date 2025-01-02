@@ -16,8 +16,6 @@ reqwest_client.workspace = true
 
 tokio.workspace = true
 nostr-sdk.workspace = true
-keyring-search.workspace = true
-keyring.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

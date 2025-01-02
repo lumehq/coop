@@ -5,14 +5,12 @@ use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Clone)]
 pub enum Signal {
-    /// Request metadata
-    ReqMetadata(PublicKey),
     /// Receive metadata
-    RecvMetadata(PublicKey),
-    /// Receive EOSE
-    RecvEose(SubscriptionId),
+    Metadata(PublicKey),
     /// Receive event
-    RecvEvent(Event),
+    Event(Event),
+    /// Receive EOSE
+    Eose,
 }
 
 pub struct SignalRegistry {

@@ -1,31 +1,5 @@
 use chrono::{Duration, Local, TimeZone};
-use keyring::Entry;
-use keyring_search::{Limit, List, Search};
 use nostr_sdk::prelude::*;
-
-use crate::constants::KEYRING_SERVICE;
-
-pub fn get_all_accounts_from_keyring() -> Vec<PublicKey> {
-    let search = Search::new().expect("Keyring not working.");
-    let results = search.by_service("Coop Safe Storage");
-    let list = List::list_credentials(&results, Limit::All);
-    let accounts: Vec<PublicKey> = list
-        .split_whitespace()
-        .filter(|v| v.starts_with("npub1") && !v.ends_with("coop"))
-        .filter_map(|i| PublicKey::from_bech32(i).ok())
-        .collect();
-
-    accounts
-}
-
-pub fn get_keys_by_account(public_key: PublicKey) -> Result<Keys, anyhow::Error> {
-    let bech32 = public_key.to_bech32()?;
-    let entry = Entry::new(KEYRING_SERVICE, &bech32)?;
-    let password = entry.get_password()?;
-    let keys = Keys::parse(&password)?;
-
-    Ok(keys)
-}
 
 pub fn get_room_id(owner: &PublicKey, public_keys: &[PublicKey]) -> String {
     let hex: Vec<String> = public_keys

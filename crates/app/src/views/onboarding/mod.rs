@@ -1,6 +1,4 @@
-use async_utility::task::spawn;
 use gpui::*;
-use keyring::Entry;
 use nostr_sdk::prelude::*;
 use ui::{
     input::{InputEvent, TextInput},
@@ -34,26 +32,30 @@ impl Onboarding {
 
     fn save_keys(content: &str, cx: &mut ViewContext<Self>) -> anyhow::Result<(), anyhow::Error> {
         let keys = Keys::parse(content)?;
-
         let public_key = keys.public_key();
-        let bech32 = public_key.to_bech32().unwrap();
+        let bech32 = public_key.to_bech32()?;
         let secret = keys.secret_key().to_secret_hex();
 
-        let entry = Entry::new(KEYRING_SERVICE, &bech32).unwrap();
+        let mut async_cx = cx.to_async();
+        let view_id = cx.entity_id();
 
-        // Save secret key to keyring
-        entry.set_password(&secret)?;
+        cx.foreground_executor()
+            .spawn({
+                let client = get_client();
+                let task = cx.write_credentials(KEYRING_SERVICE, &bech32, secret.as_bytes());
 
-        // Update signer
-        spawn(async move {
-            get_client().set_signer(keys).await;
-        });
-
-        // Update globals state
-        cx.update_global::<AccountRegistry, _>(|state, cx| {
-            state.set_user(Some(public_key));
-            cx.notify();
-        });
+                async move {
+                    if task.await.is_ok() {
+                        _ = client.set_signer(keys).await;
+                        // Update global state
+                        _ = async_cx.update_global::<AccountRegistry, _>(|state, cx| {
+                            state.set_user(Some(public_key));
+                            cx.notify(Some(view_id));
+                        });
+                    }
+                }
+            })
+            .detach();
 
         Ok(())
     }

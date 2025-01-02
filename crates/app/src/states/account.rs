@@ -10,6 +10,7 @@ use crate::{
 
 pub struct AccountRegistry {
     public_key: Option<PublicKey>,
+    pub(crate) is_loading: bool,
 }
 
 impl Global for AccountRegistry {}
@@ -58,6 +59,10 @@ impl AccountRegistry {
         .detach();
     }
 
+    pub fn set_loading(&mut self) {
+        self.is_loading = false
+    }
+
     pub fn get(&self) -> Option<PublicKey> {
         self.public_key
     }
@@ -71,6 +76,9 @@ impl AccountRegistry {
     }
 
     fn new() -> Self {
-        Self { public_key: None }
+        Self {
+            public_key: None,
+            is_loading: true,
+        }
     }
 }

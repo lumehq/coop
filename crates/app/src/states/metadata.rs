@@ -17,10 +17,6 @@ impl MetadataRegistry {
         cx.set_global(Self::new());
     }
 
-    pub fn contains(&self, public_key: PublicKey) -> bool {
-        self.seens.lock().unwrap().contains(&public_key)
-    }
-
     pub fn seen(&mut self, public_key: PublicKey, metadata: Option<Metadata>) {
         let mut seens = self.seens.lock().unwrap();
 

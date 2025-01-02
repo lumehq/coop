@@ -4,8 +4,9 @@ use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
     dock::{DockArea, DockItem, DockPlacement},
+    indicator::Indicator,
     theme::Theme,
-    Root, TitleBar,
+    Root, Sizable, TitleBar,
 };
 
 use super::{
@@ -143,10 +144,20 @@ impl Render for AppView {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
+        let state = cx.global::<AccountRegistry>();
 
         let mut content = div().size_full().flex().flex_col();
 
-        if cx.global::<AccountRegistry>().is_user_logged_in() {
+        if state.is_loading {
+            content = content.child(div()).child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(Indicator::new().small()),
+            )
+        } else if state.is_user_logged_in() {
             content = content
                 .child(
                     TitleBar::new()
