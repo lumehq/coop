@@ -56,6 +56,7 @@ impl Room {
 
 #[derive(Clone, Debug)]
 pub struct Message {
+    pub room_id: SharedString,
     pub event: Event,
     pub metadata: Option<Metadata>,
 }
@@ -82,10 +83,15 @@ impl ChatRegistry {
     }
 
     pub fn push(&mut self, event: Event, metadata: Option<Metadata>) {
-        self.new_messages
-            .write()
-            .unwrap()
-            .push(Message { event, metadata });
+        let pubkeys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
+        let room_id = get_room_id(&event.pubkey, &pubkeys);
+        let message = Message {
+            room_id: room_id.into(),
+            event,
+            metadata,
+        };
+
+        self.new_messages.write().unwrap().push(message);
     }
 
     fn new() -> Self {

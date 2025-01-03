@@ -13,6 +13,7 @@ use super::message::RoomMessage;
 use crate::{
     get_client,
     states::{
+        account::AccountRegistry,
         chat::{ChatRegistry, Room},
         metadata::MetadataRegistry,
     },
@@ -25,6 +26,7 @@ pub struct Messages {
 }
 
 pub struct RoomPanel {
+    id: SharedString,
     owner: PublicKey,
     members: Arc<[PublicKey]>,
     // Form
@@ -36,6 +38,7 @@ pub struct RoomPanel {
 
 impl RoomPanel {
     pub fn new(room: &Arc<Room>, cx: &mut ViewContext<'_, Self>) -> Self {
+        let id = room.id.clone();
         let members: Arc<[PublicKey]> = room.members.clone().into();
         let owner = room.owner;
 
@@ -83,6 +86,7 @@ impl RoomPanel {
         });
 
         Self {
+            id,
             owner,
             members,
             input,
@@ -148,18 +152,19 @@ impl RoomPanel {
     }
 
     pub fn subscribe(&self, cx: &mut ViewContext<Self>) {
+        let room_id = self.id.clone();
         let messages = self.messages.clone();
+        let current_user = cx.global::<AccountRegistry>().get().unwrap();
 
         cx.observe_global::<ChatRegistry>(move |_, cx| {
             let state = cx.global::<ChatRegistry>();
-            // let mut metadata = state.metadata.clone();
+            let new_messages = state.new_messages.read().unwrap().clone();
+            let filter = new_messages
+                .into_iter()
+                .filter(|m| m.room_id == room_id && m.event.pubkey != current_user)
+                .collect::<Vec<_>>();
 
-            // TODO: filter messages
-            let items: Vec<RoomMessage> = state
-                .new_messages
-                .read()
-                .unwrap()
-                .clone()
+            let items: Vec<RoomMessage> = filter
                 .into_iter()
                 .map(|m| {
                     RoomMessage::new(
@@ -171,22 +176,24 @@ impl RoomPanel {
                 })
                 .collect();
 
-            cx.update_model(&messages, |a, b| {
-                a.items.extend(items);
-                a.count = a.items.len();
-                b.notify();
+            cx.update_model(&messages, |model, cx| {
+                model.items.extend(items);
+                model.count = model.items.len();
+                cx.notify();
             });
         })
         .detach();
     }
 
-    // TODO: support chat room
     pub fn send_message(&mut self, cx: &mut ViewContext<Self>) {
         let owner = self.owner;
+        let current_user = cx.global::<AccountRegistry>().get().unwrap();
         let content = self.input.read(cx).text().to_string();
-        let content_clone = content.clone();
+        let content2 = content.clone();
+        let content3 = content2.clone();
 
         let async_input = self.input.clone();
+        let async_messages = self.messages.clone();
         let mut async_cx = cx.to_async();
 
         cx.foreground_executor()
@@ -194,33 +201,46 @@ impl RoomPanel {
                 let client = get_client();
 
                 async move {
-                    let send: anyhow::Result<(), anyhow::Error> = async_cx
+                    // Send message to all members
+                    async_cx
+                        .background_executor()
+                        .spawn(async move { client.send_private_msg(owner, content, vec![]).await })
+                        .detach();
+
+                    // Send a copy to yourself
+                    async_cx
                         .background_executor()
                         .spawn(async move {
-                            let signer = client.signer().await?;
-                            let public_key = signer.get_public_key().await?;
-
-                            // Send message to [owner]
-                            if client
-                                .send_private_msg(owner, content, vec![])
+                            client
+                                .send_private_msg(
+                                    current_user,
+                                    content2,
+                                    vec![Tag::public_key(owner)],
+                                )
                                 .await
-                                .is_ok()
-                            {
-                                // Send a copy to [yourself]
-                                _ = client
-                                    .send_private_msg(
-                                        public_key,
-                                        content_clone,
-                                        vec![Tag::public_key(owner)],
-                                    )
-                                    .await?
-                            }
+                        })
+                        .detach();
 
-                            Ok(())
+                    // Create a new room message
+                    let new_message: anyhow::Result<RoomMessage, anyhow::Error> = async_cx
+                        .background_executor()
+                        .spawn(async move {
+                            let metadata = client.database().metadata(current_user).await?;
+                            let created_at = Timestamp::now();
+                            let message =
+                                RoomMessage::new(current_user, metadata, content3, created_at);
+
+                            Ok(message)
                         })
                         .await;
 
-                    if send.is_ok() {
+                    if let Ok(message) = new_message {
+                        _ = async_cx.update_model(&async_messages, |model, cx| {
+                            model.items.extend(vec![message]);
+                            model.count = model.items.len();
+                            cx.notify();
+                        });
+
                         _ = async_cx.update_view(&async_input, |input, cx| {
                             input.set_text("", cx);
                         });
@@ -248,7 +268,26 @@ impl Render for RoomPanel {
                     .child(
                         Button::new("upload")
                             .icon(Icon::new(IconName::Upload))
-                            .ghost(),
+                            .ghost()
+                            .on_click(|_, cx| {
+                                let paths = cx.prompt_for_paths(PathPromptOptions {
+                                    files: true,
+                                    directories: false,
+                                    multiple: false,
+                                });
+
+                                cx.spawn(move |_async_cx| async move {
+                                    match Flatten::flatten(paths.await.map_err(|e| e.into())) {
+                                        Ok(Some(paths)) => {
+                                            // TODO: upload file to blossom server
+                                            println!("Paths: {:?}", paths)
+                                        }
+                                        Ok(None) => {}
+                                        Err(_) => {}
+                                    }
+                                })
+                                .detach();
+                            }),
                     )
                     .child(
                         div()
