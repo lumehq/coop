@@ -384,7 +384,7 @@ impl RenderOnce for Button {
                 |this| match self.rounded {
                     ButtonRounded::Small => this.rounded_l(px(cx.theme().radius * 0.5)),
                     ButtonRounded::Medium => this.rounded_l(px(cx.theme().radius)),
-                    ButtonRounded::Large => this.rounded_l(px(cx.theme().radius * 2.0)),
+                    ButtonRounded::Large => this.rounded_l(px(cx.theme().radius * 1.6)),
                     ButtonRounded::Size(px) => this.rounded_l(px),
                     ButtonRounded::None => this.rounded_none(),
                 },
@@ -394,7 +394,7 @@ impl RenderOnce for Button {
                 |this| match self.rounded {
                     ButtonRounded::Small => this.rounded_r(px(cx.theme().radius * 0.5)),
                     ButtonRounded::Medium => this.rounded_r(px(cx.theme().radius)),
-                    ButtonRounded::Large => this.rounded_r(px(cx.theme().radius * 2.0)),
+                    ButtonRounded::Large => this.rounded_r(px(cx.theme().radius * 1.6)),
                     ButtonRounded::Size(px) => this.rounded_r(px),
                     ButtonRounded::None => this.rounded_none(),
                 },
@@ -460,7 +460,7 @@ impl RenderOnce for Button {
                     .map(|this| match self.size {
                         Size::XSmall => this.gap_0p5().text_xs(),
                         Size::Small => this.gap_1().text_xs(),
-                        _ => this.gap_2().text_base(),
+                        _ => this.gap_2().text_xs(),
                     })
                     .when(!self.loading, |this| {
                         this.when_some(self.icon, |this, icon| {

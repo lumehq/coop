@@ -1,4 +1,3 @@
-pub mod accordion;
 pub mod animation;
 pub mod badge;
 pub mod breadcrumb;
@@ -35,8 +34,6 @@ pub mod tab;
 pub mod theme;
 pub mod tooltip;
 
-pub use crate::Disableable;
-
 pub use colors::*;
 pub use event::InteractiveElementExt;
 pub use focusable::FocusableCycle;
@@ -45,6 +42,8 @@ pub use root::{ContextModal, Root};
 pub use styled::*;
 pub use title_bar::*;
 pub use window_border::{window_border, WindowBorder};
+
+pub use crate::Disableable;
 
 mod colors;
 mod event;

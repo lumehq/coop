@@ -149,9 +149,6 @@ impl Colorize for Hsla {
 pub struct ThemeColor {
     pub accent: Hsla,
     pub accent_foreground: Hsla,
-    pub accordion: Hsla,
-    pub accordion_active: Hsla,
-    pub accordion_hover: Hsla,
     pub background: Hsla,
     pub border: Hsla,
     pub window_border: Hsla,
@@ -201,14 +198,6 @@ pub struct ThemeColor {
     pub tab_active_foreground: Hsla,
     pub tab_bar: Hsla,
     pub tab_foreground: Hsla,
-    pub table: Hsla,
-    pub table_active: Hsla,
-    pub table_active_border: Hsla,
-    pub table_even: Hsla,
-    pub table_head: Hsla,
-    pub table_head_foreground: Hsla,
-    pub table_hover: Hsla,
-    pub table_row_border: Hsla,
     pub title_bar: Hsla,
     pub title_bar_border: Hsla,
     pub sidebar: Hsla,
@@ -225,9 +214,6 @@ impl ThemeColor {
         Self {
             accent: hsl(240.0, 5.0, 96.0),
             accent_foreground: hsl(240.0, 5.9, 10.0),
-            accordion: hsl(0.0, 0.0, 100.0),
-            accordion_active: hsl(240.0, 5.9, 90.0),
-            accordion_hover: hsl(240.0, 4.8, 95.9).opacity(0.7),
             background: hsl(0.0, 0.0, 100.),
             border: hsl(240.0, 5.9, 90.0),
             window_border: hsl(240.0, 5.9, 78.0),
@@ -277,14 +263,6 @@ impl ThemeColor {
             tab_active_foreground: hsl(240.0, 10., 3.9),
             tab_bar: hsl(240.0, 4.8, 95.9),
             tab_foreground: hsl(240.0, 10., 3.9),
-            table: hsl(0.0, 0.0, 100.),
-            table_active: hsl(211.0, 97.0, 85.0).opacity(0.2),
-            table_active_border: hsl(211.0, 97.0, 85.0),
-            table_even: hsl(240.0, 5.0, 96.0),
-            table_head: hsl(0.0, 0.0, 100.),
-            table_head_foreground: hsl(240.0, 10., 3.9).opacity(0.7),
-            table_hover: hsl(240.0, 4.8, 95.0),
-            table_row_border: hsl(240.0, 7.7, 94.5),
             title_bar: hsl(0.0, 0.0, 98.0),
             title_bar_border: hsl(220.0, 13.0, 91.0),
             sidebar: hsl(0.0, 0.0, 98.0),
@@ -301,9 +279,6 @@ impl ThemeColor {
         Self {
             accent: hsl(240.0, 3.7, 15.9),
             accent_foreground: hsl(0.0, 0.0, 78.0),
-            accordion: hsl(299.0, 2., 11.),
-            accordion_active: hsl(240.0, 3.7, 16.9),
-            accordion_hover: hsl(240.0, 3.7, 15.9).opacity(0.7),
             background: hsl(0.0, 0.0, 8.0),
             border: hsl(240.0, 3.7, 16.9),
             window_border: hsl(240.0, 3.7, 28.0),
@@ -353,14 +328,6 @@ impl ThemeColor {
             tab_active_foreground: hsl(0., 0., 78.),
             tab_bar: hsl(299.0, 0., 5.5),
             tab_foreground: hsl(0., 0., 78.),
-            table: hsl(0.0, 0.0, 8.0),
-            table_active: hsl(240.0, 3.7, 15.0).opacity(0.2),
-            table_active_border: hsl(240.0, 5.9, 35.5),
-            table_even: hsl(240.0, 3.7, 10.0),
-            table_head: hsl(0.0, 0.0, 8.0),
-            table_head_foreground: hsl(0., 0., 78.).opacity(0.7),
-            table_hover: hsl(240.0, 3.7, 15.9).opacity(0.5),
-            table_row_border: hsl(240.0, 3.7, 16.9).opacity(0.5),
             title_bar: hsl(240.0, 0.0, 10.0),
             title_bar_border: hsl(240.0, 3.7, 15.9),
             sidebar: hsl(240.0, 0.0, 10.0),
@@ -433,10 +400,6 @@ impl Theme {
         self.secondary_hover = self.secondary_hover.apply(mask_color);
         self.secondary_active = self.secondary_active.apply(mask_color);
         self.secondary_foreground = self.secondary_foreground.apply(mask_color);
-        // self.destructive = self.destructive.apply(mask_color);
-        // self.destructive_hover = self.destructive_hover.apply(mask_color);
-        // self.destructive_active = self.destructive_active.apply(mask_color);
-        // self.destructive_foreground = self.destructive_foreground.apply(mask_color);
         self.muted = self.muted.apply(mask_color);
         self.muted_foreground = self.muted_foreground.apply(mask_color);
         self.accent = self.accent.apply(mask_color);
@@ -444,7 +407,6 @@ impl Theme {
         self.border = self.border.apply(mask_color);
         self.input = self.input.apply(mask_color);
         self.ring = self.ring.apply(mask_color);
-        // self.selection = self.selection.apply(mask_color);
         self.scrollbar = self.scrollbar.apply(mask_color);
         self.scrollbar_thumb = self.scrollbar_thumb.apply(mask_color);
         self.scrollbar_thumb_hover = self.scrollbar_thumb_hover.apply(mask_color);
@@ -465,21 +427,10 @@ impl Theme {
         self.list_active = self.list_active.apply(mask_color);
         self.list_active_border = self.list_active_border.apply(mask_color);
         self.list_hover = self.list_hover.apply(mask_color);
-        self.table = self.table.apply(mask_color);
-        self.table_even = self.table_even.apply(mask_color);
-        self.table_active = self.table_active.apply(mask_color);
-        self.table_active_border = self.table_active_border.apply(mask_color);
-        self.table_hover = self.table_hover.apply(mask_color);
-        self.table_row_border = self.table_row_border.apply(mask_color);
-        self.table_head = self.table_head.apply(mask_color);
-        self.table_head_foreground = self.table_head_foreground.apply(mask_color);
         self.link = self.link.apply(mask_color);
         self.link_hover = self.link_hover.apply(mask_color);
         self.link_active = self.link_active.apply(mask_color);
         self.skeleton = self.skeleton.apply(mask_color);
-        self.accordion = self.accordion.apply(mask_color);
-        self.accordion_hover = self.accordion_hover.apply(mask_color);
-        self.accordion_active = self.accordion_active.apply(mask_color);
         self.title_bar = self.title_bar.apply(mask_color);
         self.title_bar_border = self.title_bar_border.apply(mask_color);
         self.sidebar = self.sidebar.apply(mask_color);

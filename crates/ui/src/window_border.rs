@@ -1,6 +1,3 @@
-// From:
-// https://github.com/zed-industries/zed/blob/a8afc63a91f6b75528540dcffe73dc8ce0c92ad8/crates/gpui/examples/window_shadow.rs
-
 use gpui::{
     canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, Bounds, CursorStyle,
     Decorations, Edges, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement,

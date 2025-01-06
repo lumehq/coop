@@ -19,7 +19,31 @@ pub struct Room {
 }
 
 impl Room {
-    pub fn new(event: &Event, cx: &mut WindowContext<'_>) -> Self {
+    pub fn new(
+        owner: PublicKey,
+        members: Vec<PublicKey>,
+        last_seen: Timestamp,
+        title: Option<SharedString>,
+        cx: &mut WindowContext<'_>,
+    ) -> Self {
+        // Get unique id based on members
+        let id = get_room_id(&owner, &members).into();
+
+        // Get metadata for all members if exists
+        let metadata = cx.global::<MetadataRegistry>().get(&owner);
+
+        Self {
+            id,
+            title,
+            members,
+            last_seen,
+            owner,
+            metadata,
+            is_initialized: false,
+        }
+    }
+
+    pub fn parse(event: &Event, cx: &mut WindowContext<'_>) -> Self {
         let owner = event.pubkey;
         let last_seen = event.created_at;
 
@@ -36,21 +60,7 @@ impl Room {
             Some(name.into())
         };
 
-        // Get unique id based on members
-        let id = get_room_id(&owner, &members).into();
-
-        // Get metadata for all members if exists
-        let metadata = cx.global::<MetadataRegistry>().get(&owner);
-
-        Self {
-            id,
-            title,
-            members,
-            last_seen,
-            owner,
-            metadata,
-            is_initialized: false,
-        }
+        Self::new(owner, members, last_seen, title, cx)
     }
 }
 

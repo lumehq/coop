@@ -69,7 +69,7 @@ impl InboxListItem {
     }
 
     pub fn action(&self, cx: &mut WindowContext<'_>) {
-        let room = Arc::new(Room::new(&self.event, cx));
+        let room = Arc::new(Room::parse(&self.event, cx));
 
         cx.dispatch_action(Box::new(AddPanel {
             panel: PanelKind::Room(room),
