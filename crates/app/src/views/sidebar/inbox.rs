@@ -165,13 +165,14 @@ pub struct Inbox {
 impl Inbox {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let items = cx.new_model(|_| None);
+        let events = cx.global::<ChatRegistry>().rooms();
 
-        cx.observe_global::<ChatRegistry>(|this, cx| {
-            if cx.global::<ChatRegistry>().is_initialized {
-                this.load(cx)
-            }
-        })
-        .detach();
+        if let Some(events) = events.upgrade() {
+            cx.observe(&events, |this, model, cx| {
+                this.load(model, cx);
+            })
+            .detach();
+        }
 
         Self {
             items,
@@ -181,9 +182,8 @@ impl Inbox {
         }
     }
 
-    pub fn load(&mut self, cx: &mut ViewContext<Self>) {
-        // Get all room's events
-        let events: Vec<Event> = cx.global::<ChatRegistry>().rooms.read(cx).clone();
+    pub fn load(&mut self, model: Model<Vec<Event>>, cx: &mut ViewContext<Self>) {
+        let events = model.read(cx).clone();
 
         cx.spawn(|view, mut async_cx| async move {
             let client = get_client();

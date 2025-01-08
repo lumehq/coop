@@ -107,47 +107,62 @@ async fn main() {
                     subscription_id,
                 } = message
                 {
-                    if event.kind == Kind::GiftWrap {
-                        match client.unwrap_gift_wrap(&event).await {
-                            Ok(UnwrappedGift { mut rumor, sender }) => {
-                                // Request metadata
-                                if let Err(e) = mta_tx.send(sender).await {
-                                    println!("Send error: {}", e)
-                                };
+                    match event.kind {
+                        Kind::GiftWrap => {
+                            match client.unwrap_gift_wrap(&event).await {
+                                Ok(UnwrappedGift { mut rumor, sender }) => {
+                                    // Request metadata
+                                    if let Err(e) = mta_tx.send(sender).await {
+                                        println!("Send error: {}", e)
+                                    };
 
-                                // Compute event id if not exist
-                                rumor.ensure_id();
+                                    // Compute event id if not exist
+                                    rumor.ensure_id();
 
-                                if let Some(id) = rumor.id {
-                                    let ev = Event::new(
-                                        id,
-                                        rumor.pubkey,
-                                        rumor.created_at,
-                                        rumor.kind,
-                                        rumor.tags,
-                                        rumor.content,
-                                        sig,
-                                    );
+                                    if let Some(id) = rumor.id {
+                                        let ev = Event::new(
+                                            id,
+                                            rumor.pubkey,
+                                            rumor.created_at,
+                                            rumor.kind,
+                                            rumor.tags,
+                                            rumor.content,
+                                            sig,
+                                        );
 
-                                    // Save rumor to database to further query
-                                    if let Err(e) = client.database().save_event(&ev).await {
-                                        println!("Save error: {}", e);
-                                    }
+                                        // Save rumor to database to further query
+                                        if let Err(e) = client.database().save_event(&ev).await {
+                                            println!("Save error: {}", e);
+                                        }
 
-                                    // Send event back to channel
-                                    if subscription_id == new_message {
-                                        if let Err(e) = signal_tx.send(Signal::Event(ev)).await {
-                                            println!("Send error: {}", e)
+                                        // Send event back to channel
+                                        if subscription_id == new_message {
+                                            if let Err(e) = signal_tx.send(Signal::Event(ev)).await
+                                            {
+                                                println!("Send error: {}", e)
+                                            }
                                         }
                                     }
                                 }
+                                Err(e) => println!("Unwrap error: {}", e),
                             }
-                            Err(e) => println!("Unwrap error: {}", e),
                         }
-                    } else if event.kind == Kind::Metadata {
-                        if let Err(e) = signal_tx.send(Signal::Metadata(event.pubkey)).await {
-                            println!("Send error: {}", e)
+                        Kind::ContactList => {
+                            let public_keys: Vec<PublicKey> =
+                                event.tags.public_keys().copied().collect();
+
+                            for public_key in public_keys.into_iter() {
+                                if let Err(e) = mta_tx.send(public_key).await {
+                                    println!("Send error: {}", e)
+                                };
+                            }
                         }
+                        Kind::Metadata => {
+                            if let Err(e) = signal_tx.send(Signal::Metadata(event.pubkey)).await {
+                                println!("Send error: {}", e)
+                            }
+                        }
+                        _ => {}
                     }
                 } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
                     if subscription_id == all_messages {
@@ -283,8 +298,8 @@ async fn main() {
                                 })
                                 .await;
 
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _cx| {
-                                state.new_message(event, metadata)
+                            _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
+                                state.new_message(event, metadata, cx)
                             });
                         }
                     }

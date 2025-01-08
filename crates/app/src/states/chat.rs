@@ -1,6 +1,6 @@
 use crate::get_client;
 use crate::utils::get_room_id;
-use gpui::{AppContext, Context, Global, Model, SharedString};
+use gpui::{AppContext, Context, Global, Model, SharedString, WeakModel};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use rnglib::{Language, RNG};
@@ -76,10 +76,11 @@ impl Message {
     }
 }
 
+type Messages = RwLock<HashMap<SharedString, Arc<RwLock<Vec<Message>>>>>;
+
 pub struct ChatRegistry {
-    pub messages: RwLock<HashMap<SharedString, Arc<RwLock<Vec<Message>>>>>,
-    pub rooms: Model<Vec<Event>>,
-    pub is_initialized: bool,
+    messages: Model<Messages>,
+    rooms: Model<Vec<Event>>,
 }
 
 impl Global for ChatRegistry {}
@@ -87,13 +88,9 @@ impl Global for ChatRegistry {}
 impl ChatRegistry {
     pub fn set_global(cx: &mut AppContext) {
         let rooms = cx.new_model(|_| Vec::new());
-        let messages = RwLock::new(HashMap::new());
+        let messages = cx.new_model(|_| RwLock::new(HashMap::new()));
 
-        cx.set_global(Self {
-            messages,
-            rooms,
-            is_initialized: false,
-        });
+        cx.set_global(Self { messages, rooms });
     }
 
     pub fn init(&mut self, cx: &mut AppContext) {
@@ -143,31 +140,36 @@ impl ChatRegistry {
                             model.extend(events);
                             cx.notify();
                         });
-
-                        state.is_initialized = true;
                     });
                 }
             })
             .detach();
     }
 
-    pub fn new_message(&mut self, event: Event, metadata: Option<Metadata>) {
+    pub fn new_message(&mut self, event: Event, metadata: Option<Metadata>, cx: &mut AppContext) {
         // Get room id
         let room_id = SharedString::from(get_room_id(&event.pubkey, &event.tags));
         // Create message
         let message = Message::new(event, metadata);
 
-        self.messages
-            .write()
-            .unwrap()
-            .entry(room_id)
-            .or_insert(Arc::new(RwLock::new(Vec::new())))
-            .write()
-            .unwrap()
-            .push(message)
+        self.messages.update(cx, |this, cx| {
+            this.write()
+                .unwrap()
+                .entry(room_id)
+                .or_insert(Arc::new(RwLock::new(Vec::new())))
+                .write()
+                .unwrap()
+                .push(message);
+
+            cx.notify();
+        });
     }
 
-    pub fn get_messages(&self, id: &SharedString) -> Option<Arc<RwLock<Vec<Message>>>> {
-        self.messages.read().unwrap().get(id).cloned()
+    pub fn messages(&self) -> WeakModel<Messages> {
+        self.messages.downgrade()
+    }
+
+    pub fn rooms(&self) -> WeakModel<Vec<Event>> {
+        self.rooms.downgrade()
     }
 }

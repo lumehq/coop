@@ -191,7 +191,7 @@ impl ContactList {
         }
     }
 
-    pub fn _selected(&self) -> Vec<PublicKey> {
+    pub fn selected(&self) -> Vec<PublicKey> {
         self.selected.clone().into_iter().collect()
     }
 

@@ -166,39 +166,42 @@ impl RoomPanel {
     pub fn subscribe(&self, cx: &mut ViewContext<Self>) {
         let room_id = self.id.clone();
         let messages = self.messages.clone();
+        let state = cx.global::<ChatRegistry>().messages();
 
-        cx.observe_global::<ChatRegistry>(move |_, cx| {
-            let state = cx.global::<ChatRegistry>();
-            let new_messages = state.get_messages(&room_id);
+        if let Some(state) = state.upgrade() {
+            cx.observe(&state, move |_, model, cx| {
+                let new_messages = model.read(cx).read().unwrap().get(&room_id).cloned();
 
-            if let Some(new_messages) = new_messages {
-                let items: Vec<RoomMessage> = new_messages
-                    .read()
-                    .unwrap()
-                    .clone()
-                    .into_iter()
-                    .map(|m| {
-                        RoomMessage::new(
-                            m.event.pubkey,
-                            m.metadata,
-                            m.event.content,
-                            m.event.created_at,
-                        )
-                    })
-                    .collect();
+                if let Some(new_messages) = new_messages {
+                    let items: Vec<RoomMessage> = new_messages
+                        .read()
+                        .unwrap()
+                        .clone()
+                        .into_iter()
+                        .map(|m| {
+                            RoomMessage::new(
+                                m.event.pubkey,
+                                m.metadata,
+                                m.event.content,
+                                m.event.created_at,
+                            )
+                        })
+                        .collect();
 
-                cx.update_model(&messages, |model, cx| {
-                    model.items.extend(items);
-                    model.count = model.items.len();
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+                    cx.update_model(&messages, |model, cx| {
+                        model.items.extend(items);
+                        model.count = model.items.len();
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
     }
 
     fn send_message(&mut self, cx: &mut ViewContext<Self>) {
-        let owner = self.owner;
+        let members = self.members.clone();
+        let members2 = members.clone();
         let content = self.input.read(cx).text().to_string();
         let content2 = content.clone();
         let content3 = content2.clone();
@@ -223,20 +226,40 @@ impl RoomPanel {
                     // Send message to all members
                     async_cx
                         .background_executor()
-                        .spawn(async move { client.send_private_msg(owner, content, vec![]).await })
+                        .spawn(async move {
+                            for member in members.iter() {
+                                let tags: Vec<Tag> = members
+                                    .iter()
+                                    .filter_map(|public_key| {
+                                        if public_key != member {
+                                            Some(Tag::public_key(*public_key))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect();
+
+                                _ = client.send_private_msg(*member, &content, tags).await;
+                            }
+                        })
                         .detach();
 
                     // Send a copy to yourself
                     async_cx
                         .background_executor()
                         .spawn(async move {
-                            client
-                                .send_private_msg(
-                                    current_user,
-                                    content2,
-                                    vec![Tag::public_key(owner)],
-                                )
-                                .await
+                            let tags: Vec<Tag> = members2
+                                .iter()
+                                .filter_map(|public_key| {
+                                    if public_key != &current_user {
+                                        Some(Tag::public_key(*public_key))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+
+                            _ = client.send_private_msg(current_user, content2, tags).await;
                         })
                         .detach();
 

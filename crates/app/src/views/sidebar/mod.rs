@@ -36,7 +36,7 @@ impl Sidebar {
         let inbox = cx.new_view(Inbox::new);
 
         Self {
-            name: "Left Dock".into(),
+            name: "Sidebar".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
@@ -57,9 +57,9 @@ impl Sidebar {
                         .rounded(ButtonRounded::Large)
                         .w_full()
                         .on_click({
-                            let _contact_list = contact_list.clone();
-                            move |_, _cx| {
-                                // TODO: open room
+                            let contact_list = contact_list.clone();
+                            move |_, cx| {
+                                let _selected = contact_list.model.read(cx).selected();
                             }
                         }),
                 ),
