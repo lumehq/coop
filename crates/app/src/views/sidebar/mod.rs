@@ -57,8 +57,8 @@ impl Sidebar {
                         .rounded(ButtonRounded::Large)
                         .w_full()
                         .on_click({
-                            let contact_list = contact_list.clone();
-                            move |_, cx| {
+                            let _contact_list = contact_list.clone();
+                            move |_, _cx| {
                                 // TODO: open room
                             }
                         }),

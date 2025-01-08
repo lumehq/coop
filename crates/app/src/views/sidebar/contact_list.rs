@@ -1,6 +1,4 @@
-use crate::{
-    constants::IMAGE_SERVICE, get_client, states::account::AccountRegistry, utils::show_npub,
-};
+use crate::{constants::IMAGE_SERVICE, get_client, utils::show_npub};
 use gpui::{
     div, img, impl_actions, list, px, Context, ElementId, FocusHandle, InteractiveElement,
     IntoElement, ListAlignment, ListState, Model, ParentElement, Pixels, Render, RenderOnce,
@@ -24,12 +22,12 @@ impl_actions!(contacts, [SelectContact]);
 struct ContactListItem {
     id: ElementId,
     public_key: PublicKey,
-    metadata: Option<Metadata>,
+    metadata: Metadata,
     selected: bool,
 }
 
 impl ContactListItem {
-    pub fn new(public_key: PublicKey, metadata: Option<Metadata>) -> Self {
+    pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
         let id = SharedString::from(public_key.to_hex()).into();
 
         Self {
@@ -55,36 +53,6 @@ impl Selectable for ContactListItem {
 impl RenderOnce for ContactListItem {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let fallback = show_npub(self.public_key, 16);
-        let mut content = div().flex().items_center().gap_2().text_sm();
-
-        if let Some(metadata) = self.metadata {
-            content = content
-                .map(|this| {
-                    if let Some(picture) = metadata.picture {
-                        this.flex_shrink_0().child(
-                            img(format!(
-                                "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
-                                IMAGE_SERVICE, picture
-                            ))
-                            .size_6(),
-                        )
-                    } else {
-                        this.flex_shrink_0()
-                            .child(img("brand/avatar.png").size_6().rounded_full())
-                    }
-                })
-                .map(|this| {
-                    if let Some(display_name) = metadata.display_name {
-                        this.flex_1().child(display_name)
-                    } else {
-                        this.flex_1().child(fallback)
-                    }
-                })
-        } else {
-            content = content
-                .child(img("brand/avatar.png").size_6().rounded_full())
-                .child(fallback)
-        }
 
         div()
             .id(self.id)
@@ -95,7 +63,34 @@ impl RenderOnce for ContactListItem {
             .flex()
             .items_center()
             .justify_between()
-            .child(content)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .text_sm()
+                    .map(|this| {
+                        if let Some(picture) = self.metadata.picture {
+                            this.flex_shrink_0().child(
+                                img(format!(
+                                    "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
+                                    IMAGE_SERVICE, picture
+                                ))
+                                .size_6(),
+                            )
+                        } else {
+                            this.flex_shrink_0()
+                                .child(img("brand/avatar.png").size_6().rounded_full())
+                        }
+                    })
+                    .map(|this| {
+                        if let Some(display_name) = self.metadata.display_name {
+                            this.flex_1().child(display_name)
+                        } else {
+                            this.flex_1().child(fallback)
+                        }
+                    }),
+            )
             .when(self.selected, |this| {
                 this.child(
                     Icon::new(IconName::CircleCheck)
@@ -141,20 +136,24 @@ impl ContactList {
         cx.foreground_executor()
             .spawn({
                 let client = get_client();
-                let current_user = cx.global::<AccountRegistry>().get();
 
                 async move {
-                    if let Some(public_key) = current_user {
-                        if let Ok(profiles) = async_cx
-                            .background_executor()
-                            .spawn(async move { client.database().contacts(public_key).await })
-                            .await
-                        {
-                            _ = async_cx.update_model(&async_contacts, |model, cx| {
-                                *model = profiles;
-                                cx.notify();
-                            });
-                        }
+                    let query: anyhow::Result<BTreeSet<Profile>, anyhow::Error> = async_cx
+                        .background_executor()
+                        .spawn(async move {
+                            let signer = client.signer().await?;
+                            let public_key = signer.get_public_key().await?;
+                            let profiles = client.database().contacts(public_key).await?;
+
+                            Ok(profiles)
+                        })
+                        .await;
+
+                    if let Ok(profiles) = query {
+                        _ = async_cx.update_model(&async_contacts, |model, cx| {
+                            *model = profiles;
+                            cx.notify();
+                        });
                     }
                 }
             })
@@ -166,9 +165,7 @@ impl ContactList {
                 count: profiles.len(),
                 items: profiles
                     .into_iter()
-                    .map(|contact| {
-                        ContactListItem::new(contact.public_key(), Some(contact.metadata()))
-                    })
+                    .map(|contact| ContactListItem::new(contact.public_key(), contact.metadata()))
                     .collect(),
             };
 
@@ -194,7 +191,7 @@ impl ContactList {
         }
     }
 
-    pub fn selected(&self) -> Vec<PublicKey> {
+    pub fn _selected(&self) -> Vec<PublicKey> {
         self.selected.clone().into_iter().collect()
     }
 
@@ -210,7 +207,7 @@ impl ContactList {
                     let public_key = contact.public_key();
                     let metadata = contact.metadata();
 
-                    ContactListItem::new(public_key, Some(metadata))
+                    ContactListItem::new(contact.public_key(), metadata)
                         .selected(self.selected.contains(&public_key))
                 })
                 .collect(),
@@ -238,7 +235,7 @@ impl Render for ContactList {
             .flex()
             .flex_col()
             .gap_1()
-            .child(div().font_semibold().child("Contacts"))
+            .child(div().font_semibold().text_sm().child("Contacts"))
             .child(
                 div()
                     .p_1()

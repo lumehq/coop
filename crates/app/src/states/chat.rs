@@ -97,11 +97,8 @@ impl ChatRegistry {
     }
 
     pub fn init(&mut self, cx: &mut AppContext) {
-        if self.is_initialized {
-            return;
-        }
-
         let async_cx = cx.to_async();
+
         // Get all current room's ids
         let ids: Vec<String> = self
             .rooms
@@ -113,42 +110,43 @@ impl ChatRegistry {
         cx.foreground_executor()
             .spawn(async move {
                 let client = get_client();
-                let signer = client.signer().await.unwrap();
-                let public_key = signer.get_public_key().await.unwrap();
-
-                let filter = Filter::new()
-                    .kind(Kind::PrivateDirectMessage)
-                    .pubkey(public_key);
-
-                let events = async_cx
+                let query: anyhow::Result<Vec<Event>, anyhow::Error> = async_cx
                     .background_executor()
                     .spawn(async move {
-                        if let Ok(events) = client.database().query(vec![filter]).await {
-                            events
-                                .into_iter()
-                                .filter(|ev| ev.pubkey != public_key)
-                                .filter(|ev| {
-                                    let new_id = get_room_id(&ev.pubkey, &ev.tags);
-                                    // Get new events only
-                                    !ids.iter().any(|id| id == &new_id)
-                                }) // Filter all messages from current user
-                                .unique_by(|ev| ev.pubkey)
-                                .sorted_by_key(|ev| Reverse(ev.created_at))
-                                .collect::<Vec<_>>()
-                        } else {
-                            Vec::new()
-                        }
+                        let signer = client.signer().await?;
+                        let public_key = signer.get_public_key().await?;
+
+                        let filter = Filter::new()
+                            .kind(Kind::PrivateDirectMessage)
+                            .pubkey(public_key);
+
+                        let events = client.database().query(vec![filter]).await?;
+                        let result = events
+                            .into_iter()
+                            .filter(|ev| ev.pubkey != public_key)
+                            .filter(|ev| {
+                                let new_id = get_room_id(&ev.pubkey, &ev.tags);
+                                // Get new events only
+                                !ids.iter().any(|id| id == &new_id)
+                            }) // Filter all messages from current user
+                            .unique_by(|ev| ev.pubkey)
+                            .sorted_by_key(|ev| Reverse(ev.created_at))
+                            .collect::<Vec<_>>();
+
+                        Ok(result)
                     })
                     .await;
 
-                _ = async_cx.update_global::<Self, _>(|state, cx| {
-                    state.rooms.update(cx, |model, cx| {
-                        model.extend(events);
-                        cx.notify();
-                    });
+                if let Ok(events) = query {
+                    _ = async_cx.update_global::<Self, _>(|state, cx| {
+                        state.rooms.update(cx, |model, cx| {
+                            model.extend(events);
+                            cx.notify();
+                        });
 
-                    state.is_initialized = true;
-                });
+                        state.is_initialized = true;
+                    });
+                }
             })
             .detach();
     }

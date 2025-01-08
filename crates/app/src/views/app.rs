@@ -2,8 +2,7 @@ use super::{
     account::Account, chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar,
     welcome::WelcomePanel,
 };
-use crate::states::{account::AccountRegistry, chat::Room};
-use gpui::prelude::FluentBuilder;
+use crate::states::{app::AppRegistry, chat::Room};
 use gpui::{
     div, impl_actions, px, Axis, Context, Edges, InteractiveElement, IntoElement, Model,
     ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView, WindowContext,
@@ -64,20 +63,31 @@ impl AppView {
         // Dock
         let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
-        cx.observe_global::<AccountRegistry>(move |view, cx| {
-            if let Some(public_key) = cx.global::<AccountRegistry>().get() {
-                Self::init_layout(view.dock.downgrade(), cx);
-                // TODO: save dock state and load previous state on startup
+        // Get current user from app state
+        let current_user = cx.global::<AppRegistry>().current_user();
 
-                let view = cx.new_view(|cx| Account::new(public_key, cx));
+        if let Some(current_user) = current_user.upgrade() {
+            cx.observe(&current_user, move |view, model, cx| {
+                if let Some(public_key) = model.read(cx).clone().as_ref() {
+                    Self::init_layout(view.dock.downgrade(), cx);
+                    // TODO: save dock state and load previous state on startup
 
-                cx.update_model(&async_account, |model, cx| {
-                    *model = Some(view);
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+                    let view = cx.new_view(|cx| {
+                        let view = Account::new(*public_key, cx);
+                        // Initial load metadata
+                        view.load_metadata(cx);
+
+                        view
+                    });
+
+                    cx.update_model(&async_account, |model, cx| {
+                        *model = Some(view);
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
 
         AppView {
             account,
@@ -138,11 +148,10 @@ impl Render for AppView {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
-        let state = cx.global::<AccountRegistry>();
 
         let mut content = div().size_full().flex().flex_col();
 
-        if state.is_loading {
+        if cx.global::<AppRegistry>().is_loading {
             content = content.child(div()).child(
                 div()
                     .flex_1()
@@ -151,7 +160,7 @@ impl Render for AppView {
                     .justify_center()
                     .child(Indicator::new().small()),
             )
-        } else if state.is_user_logged_in() {
+        } else if let Some(account) = self.account.read(cx).as_ref() {
             content = content
                 .child(
                     TitleBar::new()
@@ -165,9 +174,7 @@ impl Render for AppView {
                                 .justify_end()
                                 .gap_1()
                                 .px_2()
-                                .when_some(self.account.read(cx).as_ref(), |this, account| {
-                                    this.child(account.clone())
-                                }),
+                                .child(account.clone()),
                         ),
                 )
                 .child(self.dock.clone())

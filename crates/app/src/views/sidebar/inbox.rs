@@ -1,10 +1,11 @@
 use crate::{
     constants::IMAGE_SERVICE,
     get_client,
-    states::chat::ChatRegistry,
-    states::chat::Room,
-    utils::get_room_id,
-    utils::{ago, show_npub},
+    states::{
+        app::AppRegistry,
+        chat::{ChatRegistry, Room},
+    },
+    utils::{ago, get_room_id, show_npub},
     views::app::{AddPanel, PanelKind},
 };
 use gpui::prelude::FluentBuilder;
@@ -20,12 +21,21 @@ use ui::{skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, Icon
 struct InboxListItem {
     id: SharedString,
     event: Event,
-    metadata: Option<Metadata>,
+    metadata: Model<Option<Metadata>>,
 }
 
 impl InboxListItem {
-    pub fn new(event: Event, metadata: Option<Metadata>, _cx: &mut ViewContext<'_, Self>) -> Self {
+    pub fn new(event: Event, metadata: Option<Metadata>, cx: &mut ViewContext<'_, Self>) -> Self {
         let id = SharedString::from(get_room_id(&event.pubkey, &event.tags));
+        let metadata = cx.new_model(|_| metadata);
+        let refreshs = cx.global_mut::<AppRegistry>().refreshs();
+
+        if let Some(refreshs) = refreshs.upgrade() {
+            cx.observe(&refreshs, |this, _, cx| {
+                this.load_metadata(cx);
+            })
+            .detach();
+        }
 
         Self {
             id,
@@ -34,8 +44,35 @@ impl InboxListItem {
         }
     }
 
+    pub fn load_metadata(&self, cx: &mut ViewContext<Self>) {
+        let mut async_cx = cx.to_async();
+        let async_metadata = self.metadata.clone();
+
+        cx.foreground_executor()
+            .spawn({
+                let client = get_client();
+                let public_key = self.event.pubkey;
+
+                async move {
+                    let metadata = async_cx
+                        .background_executor()
+                        .spawn(async move { client.database().metadata(public_key).await })
+                        .await;
+
+                    if let Ok(metadata) = metadata {
+                        _ = async_cx.update_model(&async_metadata, |model, cx| {
+                            *model = metadata;
+                            cx.notify();
+                        });
+                    }
+                }
+            })
+            .detach();
+    }
+
     pub fn action(&self, cx: &mut WindowContext<'_>) {
-        let room = Arc::new(Room::parse(&self.event, self.metadata.clone()));
+        let metadata = self.metadata.read(cx).clone();
+        let room = Arc::new(Room::parse(&self.event, metadata));
 
         cx.dispatch_action(Box::new(AddPanel {
             panel: PanelKind::Room(room),
@@ -53,7 +90,7 @@ impl Render for InboxListItem {
             .font_medium()
             .text_color(cx.theme().sidebar_accent_foreground);
 
-        if let Some(metadata) = self.metadata.clone() {
+        if let Some(metadata) = self.metadata.read(cx).as_ref() {
             content = content
                 .flex()
                 .items_center()
@@ -145,9 +182,6 @@ impl Inbox {
     }
 
     pub fn load(&mut self, cx: &mut ViewContext<Self>) {
-        // Hide loading indicator
-        self.set_loading(cx);
-
         // Get all room's events
         let events: Vec<Event> = cx.global::<ChatRegistry>().rooms.read(cx).clone();
 
@@ -179,14 +213,12 @@ impl Inbox {
                     *model = Some(views);
                     cx.notify()
                 });
+
+                this.is_loading = false;
+                cx.notify();
             });
         })
         .detach();
-    }
-
-    fn set_loading(&mut self, cx: &mut ViewContext<Self>) {
-        self.is_loading = false;
-        cx.notify();
     }
 }
 

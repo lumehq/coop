@@ -8,7 +8,7 @@ use gpui::{
     VisualContext, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
 };
 use nostr_sdk::prelude::*;
-use states::{account::AccountRegistry, chat::ChatRegistry};
+use states::{app::AppRegistry, chat::ChatRegistry};
 use std::{
     collections::HashSet,
     fs,
@@ -38,6 +38,8 @@ static CLIENT: OnceLock<Client> = OnceLock::new();
 pub enum Signal {
     /// Receive event
     Event(Event),
+    /// Receive metadata
+    Metadata(PublicKey),
     /// Receive EOSE
     Eose,
 }
@@ -99,7 +101,6 @@ async fn main() {
         let all_messages = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
 
         while let Ok(notification) = notifications.recv().await {
-            #[allow(clippy::collapsible_match)]
             if let RelayPoolNotification::Message { message, .. } = notification {
                 if let RelayMessage::Event {
                     event,
@@ -142,6 +143,10 @@ async fn main() {
                                 }
                             }
                             Err(e) => println!("Unwrap error: {}", e),
+                        }
+                    } else if event.kind == Kind::Metadata {
+                        if let Err(e) = signal_tx.send(Signal::Metadata(event.pubkey)).await {
+                            println!("Send error: {}", e)
                         }
                     }
                 } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
@@ -195,8 +200,8 @@ async fn main() {
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
         .run(move |cx| {
-            // Account state
-            AccountRegistry::set_global(cx);
+            // App state
+            AppRegistry::set_global(cx);
             // Chat state
             ChatRegistry::set_global(cx);
 
@@ -216,20 +221,23 @@ async fn main() {
                             let hex = String::from_utf8(secret).unwrap();
                             let keys = Keys::parse(&hex).unwrap();
 
-                            _ = client.set_signer(keys).await;
+                            // Update signer
+                            async_cx
+                                .background_executor()
+                                .spawn(async move { client.set_signer(keys).await })
+                                .detach();
 
                             // Update global state
-                            _ = async_cx.update_global::<AccountRegistry, _>(|state, _cx| {
-                                state.set_user(Some(public_key));
-                                state.set_loading();
+                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
+                                state.set_user(public_key, cx);
                             });
                         } else {
-                            _ = async_cx.update_global::<AccountRegistry, _>(|state, _| {
+                            _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
                                 state.set_loading();
                             });
                         }
                     } else {
-                        _ = async_cx.update_global::<AccountRegistry, _>(|state, _| {
+                        _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
                             state.set_loading();
                         });
                     }
@@ -256,6 +264,11 @@ async fn main() {
                         Signal::Eose => {
                             _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
                                 state.init(cx);
+                            });
+                        }
+                        Signal::Metadata(public_key) => {
+                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
+                                state.set_refresh(public_key, cx);
                             });
                         }
                         Signal::Event(event) => {

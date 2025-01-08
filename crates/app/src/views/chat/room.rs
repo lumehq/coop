@@ -15,10 +15,7 @@ use ui::{
 use super::message::RoomMessage;
 use crate::{
     get_client,
-    states::{
-        account::AccountRegistry,
-        chat::{ChatRegistry, Room},
-    },
+    states::chat::{ChatRegistry, Room},
 };
 
 #[derive(Clone)]
@@ -202,7 +199,6 @@ impl RoomPanel {
 
     fn send_message(&mut self, cx: &mut ViewContext<Self>) {
         let owner = self.owner;
-        let current_user = cx.global::<AccountRegistry>().get().unwrap();
         let content = self.input.read(cx).text().to_string();
         let content2 = content.clone();
         let content3 = content2.clone();
@@ -216,6 +212,14 @@ impl RoomPanel {
                 let client = get_client();
 
                 async move {
+                    let current_user = async_cx
+                        .background_executor()
+                        .spawn(async move {
+                            let signer = client.signer().await.unwrap();
+                            signer.get_public_key().await.unwrap()
+                        })
+                        .await;
+
                     // Send message to all members
                     async_cx
                         .background_executor()

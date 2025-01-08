@@ -1,14 +1,10 @@
-use gpui::{
-    div, IntoElement,
-    ParentElement, Render, Styled, View, ViewContext, VisualContext,
-};
+use crate::{constants::KEYRING_SERVICE, get_client, states::app::AppRegistry};
+use gpui::{div, IntoElement, ParentElement, Render, Styled, View, ViewContext, VisualContext};
 use nostr_sdk::prelude::*;
 use ui::{
     input::{InputEvent, TextInput},
     label::Label,
 };
-
-use crate::{constants::KEYRING_SERVICE, get_client, states::account::AccountRegistry};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -40,7 +36,6 @@ impl Onboarding {
         let secret = keys.secret_key().to_secret_hex();
 
         let mut async_cx = cx.to_async();
-        let view_id = cx.entity_id();
 
         cx.foreground_executor()
             .spawn({
@@ -50,10 +45,8 @@ impl Onboarding {
                 async move {
                     if task.await.is_ok() {
                         _ = client.set_signer(keys).await;
-                        // Update global state
-                        _ = async_cx.update_global::<AccountRegistry, _>(|state, cx| {
-                            state.set_user(Some(public_key));
-                            cx.notify(Some(view_id));
+                        _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
+                            state.set_user(public_key, cx);
                         });
                     }
                 }
