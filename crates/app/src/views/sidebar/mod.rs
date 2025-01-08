@@ -1,9 +1,10 @@
-use std::sync::Arc;
-
+use crate::views::sidebar::inbox::Inbox;
 use contact_list::ContactList;
-use gpui::*;
-use nostr_sdk::Timestamp;
-use rnglib::{Language, RNG};
+use gpui::{
+    div, AnyElement, AppContext, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
+    IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext,
+    WindowContext,
+};
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock::{Panel, PanelEvent, PanelState},
@@ -12,14 +13,8 @@ use ui::{
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
 
-use crate::states::{account::AccountRegistry, chat::Room};
-
-use super::{
-    app::{AddPanel, PanelKind},
-    inbox::Inbox,
-};
-
 mod contact_list;
+mod inbox;
 
 pub struct Sidebar {
     // Panel
@@ -64,23 +59,7 @@ impl Sidebar {
                         .on_click({
                             let contact_list = contact_list.clone();
                             move |_, cx| {
-                                let members = contact_list.model.read(cx).selected();
-                                let owner = cx.global::<AccountRegistry>().get().unwrap();
-                                let rng = RNG::from(&Language::Roman);
-                                let name = rng.generate_names(2, true).join("-").to_lowercase();
-
-                                let room = Arc::new(Room::new(
-                                    owner,
-                                    members,
-                                    Timestamp::now(),
-                                    Some(name.into()),
-                                    cx,
-                                ));
-
-                                cx.dispatch_action(Box::new(AddPanel {
-                                    panel: PanelKind::Room(room),
-                                    position: ui::dock::DockPlacement::Center,
-                                }))
+                                // TODO: open room
                             }
                         }),
                 ),

@@ -1,4 +1,7 @@
-use gpui::*;
+use gpui::{
+    div, list, px, Context, Flatten, IntoElement, ListAlignment, ListState, Model, ParentElement,
+    PathPromptOptions, Pixels, Render, SharedString, Styled, View, ViewContext, VisualContext,
+};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use std::sync::Arc;
@@ -15,7 +18,6 @@ use crate::{
     states::{
         account::AccountRegistry,
         chat::{ChatRegistry, Room},
-        metadata::MetadataRegistry,
     },
 };
 
@@ -122,21 +124,34 @@ impl RoomPanel {
                         .await;
 
                     if let Ok(events) = events {
-                        let items: Vec<RoomMessage> = events
-                            .into_iter()
-                            .sorted_by_key(|ev| ev.created_at)
-                            .map(|ev| {
-                                // Get user's metadata
-                                let metadata = async_cx
-                                    .read_global::<MetadataRegistry, _>(|state, _cx| {
-                                        state.get(&ev.pubkey)
-                                    })
-                                    .unwrap();
+                        let mut items: Vec<RoomMessage> = Vec::new();
 
-                                // Return message item
-                                RoomMessage::new(ev.pubkey, metadata, ev.content, ev.created_at)
-                            })
-                            .collect();
+                        for event in events.into_iter().sorted_by_key(|ev| ev.created_at) {
+                            let metadata = async_cx
+                                .background_executor()
+                                .spawn(
+                                    async move { client.database().metadata(event.pubkey).await },
+                                )
+                                .await;
+
+                            let message = if let Ok(metadata) = metadata {
+                                RoomMessage::new(
+                                    event.pubkey,
+                                    metadata,
+                                    event.content,
+                                    event.created_at,
+                                )
+                            } else {
+                                RoomMessage::new(
+                                    event.pubkey,
+                                    None,
+                                    event.content,
+                                    event.created_at,
+                                )
+                            };
+
+                            items.push(message);
+                        }
 
                         let total = items.len();
 
@@ -154,38 +169,38 @@ impl RoomPanel {
     pub fn subscribe(&self, cx: &mut ViewContext<Self>) {
         let room_id = self.id.clone();
         let messages = self.messages.clone();
-        let current_user = cx.global::<AccountRegistry>().get().unwrap();
 
         cx.observe_global::<ChatRegistry>(move |_, cx| {
             let state = cx.global::<ChatRegistry>();
-            let new_messages = state.new_messages.read().unwrap().clone();
-            let filter = new_messages
-                .into_iter()
-                .filter(|m| m.room_id == room_id && m.event.pubkey != current_user)
-                .collect::<Vec<_>>();
+            let new_messages = state.get_messages(&room_id);
 
-            let items: Vec<RoomMessage> = filter
-                .into_iter()
-                .map(|m| {
-                    RoomMessage::new(
-                        m.event.pubkey,
-                        m.metadata,
-                        m.event.content,
-                        m.event.created_at,
-                    )
-                })
-                .collect();
+            if let Some(new_messages) = new_messages {
+                let items: Vec<RoomMessage> = new_messages
+                    .read()
+                    .unwrap()
+                    .clone()
+                    .into_iter()
+                    .map(|m| {
+                        RoomMessage::new(
+                            m.event.pubkey,
+                            m.metadata,
+                            m.event.content,
+                            m.event.created_at,
+                        )
+                    })
+                    .collect();
 
-            cx.update_model(&messages, |model, cx| {
-                model.items.extend(items);
-                model.count = model.items.len();
-                cx.notify();
-            });
+                cx.update_model(&messages, |model, cx| {
+                    model.items.extend(items);
+                    model.count = model.items.len();
+                    cx.notify();
+                });
+            }
         })
         .detach();
     }
 
-    pub fn send_message(&mut self, cx: &mut ViewContext<Self>) {
+    fn send_message(&mut self, cx: &mut ViewContext<Self>) {
         let owner = self.owner;
         let current_user = cx.global::<AccountRegistry>().get().unwrap();
         let content = self.input.read(cx).text().to_string();
@@ -252,7 +267,7 @@ impl RoomPanel {
 }
 
 impl Render for RoomPanel {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
             .child(list(self.list.clone()).flex_1())

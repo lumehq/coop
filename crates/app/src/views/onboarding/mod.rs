@@ -1,4 +1,7 @@
-use gpui::*;
+use gpui::{
+    div, IntoElement,
+    ParentElement, Render, Styled, View, ViewContext, VisualContext,
+};
 use nostr_sdk::prelude::*;
 use ui::{
     input::{InputEvent, TextInput},

@@ -1,8 +1,13 @@
 use chrono::{Duration, Local, TimeZone};
 use nostr_sdk::prelude::*;
 
-pub fn get_room_id(owner: &PublicKey, public_keys: &[PublicKey]) -> String {
-    let hex: Vec<String> = public_keys
+pub fn get_room_id(author: &PublicKey, tags: &Tags) -> String {
+    // Get all public keys
+    let mut pubkeys: Vec<PublicKey> = tags.public_keys().copied().collect();
+    // Add author to public keys list
+    pubkeys.insert(0, *author);
+
+    let hex: Vec<String> = pubkeys
         .iter()
         .map(|m| {
             let hex = m.to_hex();
@@ -11,9 +16,8 @@ pub fn get_room_id(owner: &PublicKey, public_keys: &[PublicKey]) -> String {
             split.to_owned()
         })
         .collect();
-    let mems = hex.join("-");
 
-    format!("{}-{}", &owner.to_hex()[..6], mems)
+    hex.join("-")
 }
 
 pub fn show_npub(public_key: PublicKey, len: usize) -> String {

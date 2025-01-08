@@ -1,6 +1,8 @@
-use gpui::*;
+use gpui::{
+    div, img, prelude::FluentBuilder, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, Styled, WindowContext,
+};
 use nostr_sdk::prelude::*;
-use prelude::FluentBuilder;
 use ui::{theme::ActiveTheme, StyledExt};
 
 use crate::{

@@ -1,4 +1,7 @@
-use gpui::*;
+use gpui::{
+    div, AnyElement, AppContext, EventEmitter, FocusHandle, FocusableView, IntoElement,
+    ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext, WindowContext,
+};
 use ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},

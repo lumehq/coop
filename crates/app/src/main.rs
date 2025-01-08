@@ -1,7 +1,14 @@
 use asset::Assets;
+use constants::{
+    ALL_MESSAGES_SUB_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, METADATA_DELAY, NEW_MESSAGE_SUB_ID,
+};
 use dirs::config_dir;
-use gpui::*;
+use gpui::{
+    actions, point, px, size, App, AppContext, Bounds, SharedString, TitlebarOptions,
+    VisualContext, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
+};
 use nostr_sdk::prelude::*;
+use states::{account::AccountRegistry, chat::ChatRegistry};
 use std::{
     collections::HashSet,
     fs,
@@ -13,19 +20,8 @@ use tokio::{
     sync::{mpsc, Mutex},
     time::sleep,
 };
-
-use constants::{
-    ALL_MESSAGES_SUB_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, METADATA_DELAY, NEW_MESSAGE_SUB_ID,
-};
 use ui::Root;
 use views::app::AppView;
-
-use states::{
-    account::AccountRegistry,
-    chat::ChatRegistry,
-    metadata::MetadataRegistry,
-    signal::{Signal, SignalRegistry},
-};
 
 mod asset;
 mod constants;
@@ -37,6 +33,14 @@ actions!(main_menu, [Quit]);
 actions!(app, [ReloadMetadata]);
 
 static CLIENT: OnceLock<Client> = OnceLock::new();
+
+#[derive(Clone)]
+pub enum Signal {
+    /// Receive event
+    Event(Event),
+    /// Receive EOSE
+    Eose,
+}
 
 pub fn initialize_client() {
     // Setup app data folder
@@ -84,14 +88,11 @@ async fn main() {
     _ = client.connect().await;
 
     // Signal
-    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4096); // TODO: adjust?
-    let (mta_tx, mut mta_rx) = mpsc::unbounded_channel::<PublicKey>();
-
-    // Re use sender
-    let mta_tx_clone = mta_tx.clone();
+    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4096);
+    let (mta_tx, mut mta_rx) = mpsc::channel::<PublicKey>(4096);
 
     // Handle notification from Relays
-    // Send notfiy back to GPUI
+    // Send notify back to GPUI
     tokio::spawn(async move {
         let sig = Signature::from_str(FAKE_SIG).unwrap();
         let new_message = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
@@ -107,20 +108,23 @@ async fn main() {
                 {
                     if event.kind == Kind::GiftWrap {
                         match client.unwrap_gift_wrap(&event).await {
-                            Ok(UnwrappedGift { rumor, .. }) => {
-                                let mut rumor_clone = rumor.clone();
+                            Ok(UnwrappedGift { mut rumor, sender }) => {
+                                // Request metadata
+                                if let Err(e) = mta_tx.send(sender).await {
+                                    println!("Send error: {}", e)
+                                };
 
                                 // Compute event id if not exist
-                                rumor_clone.ensure_id();
+                                rumor.ensure_id();
 
-                                if let Some(id) = rumor_clone.id {
+                                if let Some(id) = rumor.id {
                                     let ev = Event::new(
                                         id,
-                                        rumor_clone.pubkey,
-                                        rumor_clone.created_at,
-                                        rumor_clone.kind,
-                                        rumor_clone.tags,
-                                        rumor_clone.content,
+                                        rumor.pubkey,
+                                        rumor.created_at,
+                                        rumor.kind,
+                                        rumor.tags,
+                                        rumor.content,
                                         sig,
                                     );
 
@@ -138,10 +142,6 @@ async fn main() {
                                 }
                             }
                             Err(e) => println!("Unwrap error: {}", e),
-                        }
-                    } else if event.kind == Kind::Metadata {
-                        if let Err(e) = signal_tx.send(Signal::Metadata(event.pubkey)).await {
-                            println!("Send error: {}", e)
                         }
                     }
                 } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
@@ -183,10 +183,7 @@ async fn main() {
                         .kind(Kind::Metadata)
                         .limit(total);
 
-                    let opts = SubscribeAutoCloseOptions::default()
-                        .exit_policy(ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(2)));
-
-                    if let Err(e) = client.subscribe(vec![filter], Some(opts)).await {
+                    if let Err(e) = client.sync(filter, &SyncOptions::default()).await {
                         println!("Error: {}", e);
                     }
                 }
@@ -200,12 +197,8 @@ async fn main() {
         .run(move |cx| {
             // Account state
             AccountRegistry::set_global(cx);
-            // Metadata state
-            MetadataRegistry::set_global(cx);
             // Chat state
             ChatRegistry::set_global(cx);
-            // Signal state
-            SignalRegistry::set_global(cx, mta_tx_clone);
 
             // Initialize components
             ui::init(cx);
@@ -224,6 +217,7 @@ async fn main() {
                             let keys = Keys::parse(&hex).unwrap();
 
                             _ = client.set_signer(keys).await;
+
                             // Update global state
                             _ = async_cx.update_global::<AccountRegistry, _>(|state, _cx| {
                                 state.set_user(Some(public_key));
@@ -260,8 +254,8 @@ async fn main() {
                 while let Ok(signal) = rx.recv().await {
                     match signal {
                         Signal::Eose => {
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, _| {
-                                state.update();
+                            _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
+                                state.init(cx);
                             });
                         }
                         Signal::Event(event) => {
@@ -277,23 +271,7 @@ async fn main() {
                                 .await;
 
                             _ = async_cx.update_global::<ChatRegistry, _>(|state, _cx| {
-                                state.push(event, metadata);
-                            });
-                        }
-                        Signal::Metadata(public_key) => {
-                            let metadata = async_cx
-                                .background_executor()
-                                .spawn(async move {
-                                    client
-                                        .database()
-                                        .metadata(public_key)
-                                        .await
-                                        .unwrap_or_default()
-                                })
-                                .await;
-
-                            _ = async_cx.update_global::<MetadataRegistry, _>(|state, _cx| {
-                                state.seen(public_key, metadata);
+                                state.new_message(event, metadata)
                             });
                         }
                     }

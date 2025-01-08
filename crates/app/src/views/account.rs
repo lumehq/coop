@@ -1,21 +1,21 @@
-use gpui::*;
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    actions, img, Context, IntoElement, Model, ObjectFit, ParentElement, Render, Styled,
+    StyledImage, ViewContext,
+};
 use nostr_sdk::prelude::*;
-use prelude::FluentBuilder;
 use ui::{
     button::{Button, ButtonVariants},
     popup_menu::PopupMenuExt,
     Icon, IconName, Sizable,
 };
 
-use crate::{
-    constants::IMAGE_SERVICE,
-    get_client,
-    states::{metadata::MetadataRegistry, signal::SignalRegistry},
-};
+use crate::{constants::IMAGE_SERVICE, get_client};
 
 actions!(account, [ToDo]);
 
 pub struct Account {
+    #[allow(dead_code)]
     public_key: PublicKey,
     metadata: Model<Option<Metadata>>,
 }
@@ -23,25 +23,8 @@ pub struct Account {
 impl Account {
     pub fn new(public_key: PublicKey, cx: &mut ViewContext<'_, Self>) -> Self {
         let metadata = cx.new_model(|_| None);
+        let async_metadata = metadata.clone();
 
-        // Request metadata
-        _ = cx.global::<SignalRegistry>().tx.send(public_key);
-
-        // Reload when received metadata
-        cx.observe_global::<MetadataRegistry>(|chat, cx| {
-            chat.load_metadata(cx);
-        })
-        .detach();
-
-        Self {
-            public_key,
-            metadata,
-        }
-    }
-
-    pub fn load_metadata(&mut self, cx: &mut ViewContext<Self>) {
-        let public_key = self.public_key;
-        let async_metadata = self.metadata.clone();
         let mut async_cx = cx.to_async();
 
         cx.foreground_executor()
@@ -60,6 +43,11 @@ impl Account {
                 };
             })
             .detach();
+
+        Self {
+            public_key,
+            metadata,
+        }
     }
 }
 

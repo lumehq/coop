@@ -1,5 +1,13 @@
-use gpui::*;
-use prelude::FluentBuilder;
+use super::{
+    account::Account, chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar,
+    welcome::WelcomePanel,
+};
+use crate::states::{account::AccountRegistry, chat::Room};
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, impl_actions, px, Axis, Context, Edges, InteractiveElement, IntoElement, Model,
+    ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView, WindowContext,
+};
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
@@ -9,16 +17,9 @@ use ui::{
     Root, Sizable, TitleBar,
 };
 
-use super::{
-    account::Account, chat::ChatPanel, contact::ContactPanel, onboarding::Onboarding,
-    sidebar::Sidebar, welcome::WelcomePanel,
-};
-use crate::states::{account::AccountRegistry, chat::Room};
-
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
     Room(Arc<Room>),
-    Contact,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -124,13 +125,6 @@ impl AppView {
         match &action.panel {
             PanelKind::Room(room) => {
                 let panel = Arc::new(ChatPanel::new(room, cx));
-
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, cx);
-                });
-            }
-            PanelKind::Contact => {
-                let panel = Arc::new(ContactPanel::new(cx));
 
                 self.dock.update(cx, |dock_area, cx| {
                     dock_area.add_panel(panel, action.position, cx);

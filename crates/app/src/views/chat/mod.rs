@@ -1,8 +1,10 @@
-use std::sync::Arc;
-
-use gpui::*;
+use gpui::{
+    div, AnyElement, AppContext, EventEmitter, FocusHandle, FocusableView, IntoElement,
+    ParentElement, Render, SharedString, Styled, View, VisualContext, WindowContext,
+};
 use nostr_sdk::prelude::*;
 use room::RoomPanel;
+use std::sync::Arc;
 use ui::{
     button::Button,
     dock::{Panel, PanelEvent, PanelState},
@@ -91,7 +93,7 @@ impl Panel for ChatPanel {
 impl EventEmitter<PanelEvent> for ChatPanel {}
 
 impl FocusableView for ChatPanel {
-    fn focus_handle(&self, _: &AppContext) -> gpui::FocusHandle {
+    fn focus_handle(&self, _: &AppContext) -> FocusHandle {
         self.focus_handle.clone()
     }
 }

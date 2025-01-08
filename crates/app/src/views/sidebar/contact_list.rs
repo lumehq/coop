@@ -1,5 +1,6 @@
-use std::collections::{BTreeSet, HashSet};
-
+use crate::{
+    constants::IMAGE_SERVICE, get_client, states::account::AccountRegistry, utils::show_npub,
+};
 use gpui::{
     div, img, impl_actions, list, px, Context, ElementId, FocusHandle, InteractiveElement,
     IntoElement, ListAlignment, ListState, Model, ParentElement, Pixels, Render, RenderOnce,
@@ -7,14 +8,11 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
+use std::collections::{BTreeSet, HashSet};
 use ui::{
     prelude::FluentBuilder,
     theme::{ActiveTheme, Colorize},
     Icon, IconName, Selectable, StyledExt,
-};
-
-use crate::{
-    constants::IMAGE_SERVICE, get_client, states::account::AccountRegistry, utils::show_npub,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]

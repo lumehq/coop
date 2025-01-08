@@ -1,9 +1,8 @@
-use gpui::*;
-use nostr_sdk::prelude::*;
-use prelude::FluentBuilder as _;
-
 use crate::theme::ActiveTheme;
 use crate::Selectable;
+use gpui::prelude::FluentBuilder;
+use gpui::*;
+use nostr_sdk::prelude::*;
 
 #[derive(IntoElement)]
 pub struct Tab {
