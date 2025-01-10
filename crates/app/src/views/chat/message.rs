@@ -15,7 +15,7 @@ pub struct RoomMessage {
     #[allow(dead_code)]
     author: PublicKey,
     fallback: SharedString,
-    metadata: Option<Metadata>,
+    metadata: Metadata,
     content: SharedString,
     created_at: SharedString,
 }
@@ -23,7 +23,7 @@ pub struct RoomMessage {
 impl RoomMessage {
     pub fn new(
         author: PublicKey,
-        metadata: Option<Metadata>,
+        metadata: Metadata,
         content: String,
         created_at: Timestamp,
     ) -> Self {
@@ -55,18 +55,14 @@ impl RenderOnce for RoomMessage {
                     .text_color(cx.theme().muted_foreground)
             })
             .child(div().flex_shrink_0().map(|this| {
-                if let Some(metadata) = self.metadata.clone() {
-                    if let Some(picture) = metadata.picture {
-                        this.child(
-                            img(format!(
-                                "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                                IMAGE_SERVICE, picture
-                            ))
-                            .size_8(),
-                        )
-                    } else {
-                        this.child(img("brand/avatar.png").size_8().rounded_full())
-                    }
+                if let Some(picture) = self.metadata.picture {
+                    this.child(
+                        img(format!(
+                            "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
+                            IMAGE_SERVICE, picture
+                        ))
+                        .size_8(),
+                    )
                 } else {
                     this.child(img("brand/avatar.png").size_8().rounded_full())
                 }
@@ -84,12 +80,8 @@ impl RenderOnce for RoomMessage {
                             .gap_2()
                             .text_xs()
                             .child(div().font_semibold().map(|this| {
-                                if let Some(metadata) = self.metadata {
-                                    if let Some(display_name) = metadata.display_name {
-                                        this.child(display_name)
-                                    } else {
-                                        this.child(self.fallback)
-                                    }
+                                if let Some(display_name) = self.metadata.display_name {
+                                    this.child(display_name)
                                 } else {
                                     this.child(self.fallback)
                                 }

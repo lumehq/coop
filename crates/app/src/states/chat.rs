@@ -1,8 +1,8 @@
-use crate::get_client;
-use crate::utils::get_room_id;
+use crate::{get_client, utils::room_hash};
 use gpui::{AppContext, Context, Global, Model, SharedString, WeakModel};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use profile::cut_public_key;
 use rnglib::{Language, RNG};
 use serde::Deserialize;
 use std::{
@@ -12,54 +12,77 @@ use std::{
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct Member {
+    public_key: PublicKey,
+    metadata: Metadata,
+}
+
+impl Member {
+    pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
+        Self {
+            public_key,
+            metadata,
+        }
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.public_key
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        self.metadata.clone()
+    }
+
+    pub fn name(&self) -> String {
+        if let Some(display_name) = &self.metadata.display_name {
+            if !display_name.is_empty() {
+                return display_name.clone();
+            }
+        }
+
+        if let Some(name) = &self.metadata.name {
+            if !name.is_empty() {
+                return name.clone();
+            }
+        }
+
+        cut_public_key(self.public_key)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct Room {
     pub id: SharedString,
     pub owner: PublicKey,
-    pub members: Vec<PublicKey>,
+    pub members: Vec<Member>,
     pub last_seen: Timestamp,
     pub title: Option<SharedString>,
-    pub metadata: Option<Metadata>,
 }
 
 impl Room {
     pub fn new(
         id: SharedString,
         owner: PublicKey,
-        members: Vec<PublicKey>,
         last_seen: Timestamp,
         title: Option<SharedString>,
-        metadata: Option<Metadata>,
+        members: Vec<Member>,
     ) -> Self {
+        let title = if title.is_none() {
+            let rng = RNG::from(&Language::Roman);
+            let name = rng.generate_names(2, true).join("-").to_lowercase();
+
+            Some(name.into())
+        } else {
+            title
+        };
+
         Self {
             id,
             title,
             members,
             last_seen,
             owner,
-            metadata,
         }
-    }
-
-    pub fn parse(event: &Event, metadata: Option<Metadata>) -> Self {
-        let owner = event.pubkey;
-        let last_seen = event.created_at;
-        let id = SharedString::from(get_room_id(&owner, &event.tags));
-
-        // Get all members from event's tag
-        let mut members: Vec<PublicKey> = event.tags.public_keys().copied().collect();
-        members.push(owner);
-
-        // Get title from event's tag
-        let title = if let Some(tag) = event.tags.find(TagKind::Title) {
-            tag.content().map(|s| s.to_owned().into())
-        } else {
-            let rng = RNG::from(&Language::Roman);
-            let name = rng.generate_names(2, true).join("-").to_lowercase();
-
-            Some(name.into())
-        };
-
-        Self::new(id, owner, members, last_seen, title, metadata)
     }
 }
 
@@ -76,32 +99,32 @@ impl Message {
     }
 }
 
+type Inbox = Vec<Event>;
 type Messages = RwLock<HashMap<SharedString, Arc<RwLock<Vec<Message>>>>>;
 
 pub struct ChatRegistry {
     messages: Model<Messages>,
-    rooms: Model<Vec<Event>>,
+    inbox: Model<Inbox>,
 }
 
 impl Global for ChatRegistry {}
 
 impl ChatRegistry {
     pub fn set_global(cx: &mut AppContext) {
-        let rooms = cx.new_model(|_| Vec::new());
+        let inbox = cx.new_model(|_| Vec::new());
         let messages = cx.new_model(|_| RwLock::new(HashMap::new()));
 
-        cx.set_global(Self { messages, rooms });
+        cx.set_global(Self { inbox, messages });
     }
 
     pub fn init(&mut self, cx: &mut AppContext) {
         let async_cx = cx.to_async();
-
-        // Get all current room's ids
-        let ids: Vec<String> = self
-            .rooms
+        // Get all current room's hashes
+        let hashes: Vec<u64> = self
+            .inbox
             .read(cx)
             .iter()
-            .map(|ev| get_room_id(&ev.pubkey, &ev.tags))
+            .map(|ev| room_hash(&ev.tags))
             .collect();
 
         cx.foreground_executor()
@@ -115,18 +138,19 @@ impl ChatRegistry {
 
                         let filter = Filter::new()
                             .kind(Kind::PrivateDirectMessage)
-                            .pubkey(public_key);
+                            .author(public_key);
 
+                        // Get all DM events from database
                         let events = client.database().query(vec![filter]).await?;
+
+                        // Filter result
+                        // 1. Only new rooms
+                        // 2. Only unique rooms
+                        // 3. Sorted by created_at
                         let result = events
                             .into_iter()
-                            .filter(|ev| ev.pubkey != public_key)
-                            .filter(|ev| {
-                                let new_id = get_room_id(&ev.pubkey, &ev.tags);
-                                // Get new events only
-                                !ids.iter().any(|id| id == &new_id)
-                            }) // Filter all messages from current user
-                            .unique_by(|ev| ev.pubkey)
+                            .filter(|ev| !hashes.iter().any(|h| h == &room_hash(&ev.tags)))
+                            .unique_by(|ev| room_hash(&ev.tags))
                             .sorted_by_key(|ev| Reverse(ev.created_at))
                             .collect::<Vec<_>>();
 
@@ -136,7 +160,7 @@ impl ChatRegistry {
 
                 if let Ok(events) = query {
                     _ = async_cx.update_global::<Self, _>(|state, cx| {
-                        state.rooms.update(cx, |model, cx| {
+                        state.inbox.update(cx, |model, cx| {
                             model.extend(events);
                             cx.notify();
                         });
@@ -148,7 +172,7 @@ impl ChatRegistry {
 
     pub fn new_message(&mut self, event: Event, metadata: Option<Metadata>, cx: &mut AppContext) {
         // Get room id
-        let room_id = SharedString::from(get_room_id(&event.pubkey, &event.tags));
+        let room_id = SharedString::from(room_hash(&event.tags).to_string());
         // Create message
         let message = Message::new(event, metadata);
 
@@ -169,7 +193,7 @@ impl ChatRegistry {
         self.messages.downgrade()
     }
 
-    pub fn rooms(&self) -> WeakModel<Vec<Event>> {
-        self.rooms.downgrade()
+    pub fn inbox(&self) -> WeakModel<Inbox> {
+        self.inbox.downgrade()
     }
 }

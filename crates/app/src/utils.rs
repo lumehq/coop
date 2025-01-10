@@ -1,23 +1,14 @@
 use chrono::{Duration, Local, TimeZone};
 use nostr_sdk::prelude::*;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
-pub fn get_room_id(author: &PublicKey, tags: &Tags) -> String {
-    // Get all public keys
-    let mut pubkeys: Vec<PublicKey> = tags.public_keys().copied().collect();
-    // Add author to public keys list
-    pubkeys.insert(0, *author);
+pub fn room_hash(tags: &Tags) -> u64 {
+    let pubkeys: Vec<PublicKey> = tags.public_keys().copied().collect();
+    let mut hasher = DefaultHasher::new();
+    // Generate unique hash
+    pubkeys.hash(&mut hasher);
 
-    let hex: Vec<String> = pubkeys
-        .iter()
-        .map(|m| {
-            let hex = m.to_hex();
-            let split = &hex[..6];
-
-            split.to_owned()
-        })
-        .collect();
-
-    hex.join("-")
+    hasher.finish()
 }
 
 pub fn show_npub(public_key: PublicKey, len: usize) -> String {

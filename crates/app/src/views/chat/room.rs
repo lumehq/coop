@@ -15,7 +15,7 @@ use ui::{
 use super::message::RoomMessage;
 use crate::{
     get_client,
-    states::chat::{ChatRegistry, Room},
+    states::chat::{ChatRegistry, Member, Room},
 };
 
 #[derive(Clone)]
@@ -27,7 +27,7 @@ pub struct Messages {
 pub struct RoomPanel {
     id: SharedString,
     owner: PublicKey,
-    members: Arc<[PublicKey]>,
+    members: Vec<Member>,
     // Form
     input: View<TextInput>,
     // Messages
@@ -38,7 +38,7 @@ pub struct RoomPanel {
 impl RoomPanel {
     pub fn new(room: &Arc<Room>, cx: &mut ViewContext<'_, Self>) -> Self {
         let id = room.id.clone();
-        let members: Arc<[PublicKey]> = room.members.clone().into();
+        let members = room.members.clone();
         let owner = room.owner;
 
         // Form
@@ -98,20 +98,21 @@ impl RoomPanel {
         let async_messages = self.messages.clone();
         let mut async_cx = cx.to_async();
 
+        let public_keys: Vec<PublicKey> = self.members.iter().map(|m| m.public_key()).collect();
+
         cx.foreground_executor()
             .spawn({
                 let client = get_client();
                 let owner = self.owner;
-                let members = self.members.to_vec();
 
                 let recv = Filter::new()
                     .kind(Kind::PrivateDirectMessage)
                     .author(owner)
-                    .pubkeys(members.clone());
+                    .pubkeys(public_keys.clone());
 
                 let send = Filter::new()
                     .kind(Kind::PrivateDirectMessage)
-                    .authors(members)
+                    .authors(public_keys)
                     .pubkey(owner);
 
                 async move {
@@ -200,8 +201,9 @@ impl RoomPanel {
     }
 
     fn send_message(&mut self, cx: &mut ViewContext<Self>) {
-        let members = self.members.clone();
+        let members: Vec<PublicKey> = self.members.iter().map(|m| m.public_key()).collect();
         let members2 = members.clone();
+
         let content = self.input.read(cx).text().to_string();
         let content2 = content.clone();
         let content3 = content2.clone();
@@ -227,19 +229,21 @@ impl RoomPanel {
                     async_cx
                         .background_executor()
                         .spawn(async move {
-                            for member in members.iter() {
-                                let tags: Vec<Tag> = members
-                                    .iter()
-                                    .filter_map(|public_key| {
-                                        if public_key != member {
-                                            Some(Tag::public_key(*public_key))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect();
+                            let extra_tags: Vec<Tag> = members
+                                .iter()
+                                .filter_map(|m| {
+                                    if m != &current_user {
+                                        Some(Tag::public_key(*m))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
 
-                                _ = client.send_private_msg(*member, &content, tags).await;
+                            for member in members.iter() {
+                                _ = client
+                                    .send_private_msg(*member, &content, extra_tags.clone())
+                                    .await
                             }
                         })
                         .detach();
@@ -248,18 +252,20 @@ impl RoomPanel {
                     async_cx
                         .background_executor()
                         .spawn(async move {
-                            let tags: Vec<Tag> = members2
+                            let extra_tags: Vec<Tag> = members2
                                 .iter()
-                                .filter_map(|public_key| {
-                                    if public_key != &current_user {
-                                        Some(Tag::public_key(*public_key))
+                                .filter_map(|m| {
+                                    if m != &current_user {
+                                        Some(Tag::public_key(*m))
                                     } else {
                                         None
                                     }
                                 })
                                 .collect();
 
-                            _ = client.send_private_msg(current_user, content2, tags).await;
+                            _ = client
+                                .send_private_msg(current_user, content2, extra_tags)
+                                .await;
                         })
                         .detach();
 
