@@ -11,6 +11,11 @@ pub fn room_hash(tags: &Tags) -> u64 {
     hasher.finish()
 }
 
+pub fn shorted_public_key(public_key: PublicKey) -> String {
+    let pk = public_key.to_string();
+    format!("{}:{}", &pk[0..4], &pk[pk.len() - 4..])
+}
+
 pub fn show_npub(public_key: PublicKey, len: usize) -> String {
     let bech32 = public_key.to_bech32().unwrap_or_default();
     let separator = " ... ";

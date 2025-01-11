@@ -277,8 +277,8 @@ async fn main() {
                 while let Ok(signal) = rx.recv().await {
                     match signal {
                         Signal::Eose => {
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
-                                state.init(cx);
+                            _ = async_cx.update_global::<ChatRegistry, _>(|chat, cx| {
+                                chat.init(cx);
                             });
                         }
                         Signal::Metadata(public_key) => {
@@ -290,16 +290,18 @@ async fn main() {
                             let metadata = async_cx
                                 .background_executor()
                                 .spawn(async move {
-                                    client
-                                        .database()
-                                        .metadata(event.pubkey)
-                                        .await
-                                        .unwrap_or_default()
+                                    if let Ok(metadata) =
+                                        client.database().metadata(event.pubkey).await
+                                    {
+                                        metadata.unwrap_or_default()
+                                    } else {
+                                        Metadata::new()
+                                    }
                                 })
                                 .await;
 
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
-                                state.new_message(event, metadata, cx)
+                            _ = async_cx.update_global::<ChatRegistry, _>(|chat, cx| {
+                                chat.receive(event, metadata, cx)
                             });
                         }
                     }

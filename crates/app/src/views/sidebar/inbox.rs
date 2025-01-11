@@ -1,72 +1,35 @@
-use crate::{
-    constants::IMAGE_SERVICE,
-    get_client,
-    states::{
-        app::AppRegistry,
-        chat::{ChatRegistry, Member, Room},
-    },
-    utils::{ago, room_hash},
-    views::app::{AddPanel, PanelKind},
-};
-use gpui::prelude::FluentBuilder;
+use crate::{constants::IMAGE_SERVICE, states::chat::ChatRegistry, utils::ago};
 use gpui::{
-    div, img, percentage, Context, InteractiveElement, IntoElement, Model, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, View, ViewContext, VisualContext,
+    div, img, percentage, prelude::FluentBuilder, InteractiveElement, IntoElement, ParentElement,
+    Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled, ViewContext,
     WindowContext,
 };
-use nostr_sdk::prelude::*;
-use std::sync::Arc;
 use ui::{skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
 
 pub struct Inbox {
     label: SharedString,
-    items: Model<Option<Vec<View<InboxListItem>>>>,
-    is_loading: bool,
     is_collapsed: bool,
 }
 
 impl Inbox {
-    pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
-        let items = cx.new_model(|_| None);
-        let inbox = cx.global::<ChatRegistry>().inbox();
-
-        if let Some(inbox) = inbox.upgrade() {
-            cx.observe(&inbox, |this, model, cx| {
-                this.load(model, cx);
-            })
-            .detach();
-        }
-
+    pub fn new(_cx: &mut ViewContext<'_, Self>) -> Self {
         Self {
-            items,
             label: "Inbox".into(),
-            is_loading: true,
             is_collapsed: false,
         }
     }
 
-    pub fn load(&mut self, model: Model<Vec<Event>>, cx: &mut ViewContext<Self>) {
-        let events = model.read(cx).clone();
-        let views: Vec<View<InboxListItem>> = events
-            .into_iter()
-            .map(|event| {
-                cx.new_view(|cx| {
-                    let view = InboxListItem::new(event, cx);
-                    // Initial metadata
-                    view.load_metadata(cx);
-
-                    view
-                })
-            })
-            .collect();
-
-        self.items.update(cx, |model, cx| {
-            *model = Some(views);
-            cx.notify();
-        });
-
-        self.is_loading = false;
-        cx.notify();
+    fn skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
+        (0..total).map(|_| {
+            div()
+                .h_8()
+                .px_1()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
+                .child(Skeleton::new().w_20().h_3().rounded_sm())
+        })
     }
 }
 
@@ -84,22 +47,35 @@ impl Collapsible for Inbox {
 impl Render for Inbox {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let mut content = div();
+        let weak_model = cx.global::<ChatRegistry>().inbox();
 
-        if self.is_loading {
-            content = content.children((0..5).map(|_| {
-                div()
-                    .h_8()
-                    .px_1()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                    .child(Skeleton::new().w_20().h_3().rounded_sm())
+        if let Some(model) = weak_model.upgrade() {
+            content = content.children(model.read(cx).iter().map(|model| {
+                let room = model.read(cx);
+                let id = room.id.to_string().into();
+                let ago = ago(room.last_seen.as_u64()).into();
+                // Get first member
+                let sender = room.members.first().unwrap();
+                // Compute group name based on member' names
+                let name: SharedString = room
+                    .members
+                    .iter()
+                    .map(|profile| profile.name())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+                    .into();
+
+                InboxListItem::new(
+                    id,
+                    ago,
+                    room.is_group,
+                    name,
+                    sender.metadata().picture,
+                    sender.name(),
+                )
             }))
-        } else if let Some(items) = self.items.read(cx).as_ref() {
-            content = content.children(items.clone())
         } else {
-            // TODO: handle error
+            content = content.children(self.skeleton(5))
         }
 
         v_flex()
@@ -134,110 +110,38 @@ impl Render for Inbox {
     }
 }
 
+#[derive(Clone, IntoElement)]
 struct InboxListItem {
     id: SharedString,
-    created_at: Timestamp,
-    owner: PublicKey,
-    pubkeys: Vec<PublicKey>,
-    members: Model<Vec<Member>>,
+    ago: SharedString,
     is_group: bool,
+    group_name: SharedString,
+    sender_avatar: Option<String>,
+    sender_name: String,
 }
 
 impl InboxListItem {
-    pub fn new(event: Event, cx: &mut ViewContext<'_, Self>) -> Self {
-        let id = room_hash(&event.tags).to_string().into();
-        let created_at = event.created_at;
-        let owner = event.pubkey;
-
-        let pubkeys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
-        let is_group = pubkeys.len() > 1;
-
-        let members = cx.new_model(|_| Vec::new());
-        let refreshs = cx.global_mut::<AppRegistry>().refreshs();
-
-        if let Some(refreshs) = refreshs.upgrade() {
-            cx.observe(&refreshs, |this, _, cx| {
-                this.load_metadata(cx);
-            })
-            .detach();
-        }
-
+    pub fn new(
+        id: SharedString,
+        ago: SharedString,
+        is_group: bool,
+        group_name: SharedString,
+        sender_avatar: Option<String>,
+        sender_name: String,
+    ) -> Self {
         Self {
             id,
-            created_at,
-            owner,
-            pubkeys,
-            members,
+            ago,
             is_group,
+            group_name,
+            sender_avatar,
+            sender_name,
         }
-    }
-
-    pub fn load_metadata(&self, cx: &mut ViewContext<Self>) {
-        let owner = self.owner;
-        let public_keys = self.pubkeys.clone();
-        let async_members = self.members.clone();
-
-        let mut async_cx = cx.to_async();
-
-        cx.foreground_executor()
-            .spawn({
-                let client = get_client();
-
-                async move {
-                    let metadata: anyhow::Result<Vec<Member>, anyhow::Error> = async_cx
-                        .background_executor()
-                        .spawn(async move {
-                            let mut result = Vec::new();
-
-                            for public_key in public_keys.into_iter() {
-                                let metadata = client.database().metadata(public_key).await?;
-                                let profile = Member::new(public_key, metadata.unwrap_or_default());
-
-                                result.push(profile);
-                            }
-
-                            let metadata = client.database().metadata(owner).await?;
-                            let profile = Member::new(owner, metadata.unwrap_or_default());
-
-                            result.push(profile);
-
-                            Ok(result)
-                        })
-                        .await;
-
-                    if let Ok(metadata) = metadata {
-                        _ = async_cx.update_model(&async_members, |model, cx| {
-                            *model = metadata;
-                            cx.notify();
-                        });
-                    }
-                }
-            })
-            .detach();
-    }
-
-    pub fn action(&self, cx: &mut WindowContext<'_>) {
-        let members = self.members.read(cx).clone();
-        let room = Arc::new(Room::new(
-            self.id.clone(),
-            self.owner,
-            self.created_at,
-            None,
-            members,
-        ));
-
-        cx.dispatch_action(Box::new(AddPanel {
-            panel: PanelKind::Room(room),
-            position: ui::dock::DockPlacement::Center,
-        }))
     }
 }
 
-impl Render for InboxListItem {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let ago = ago(self.created_at.as_u64());
-        let members = self.members.read(cx);
-
+impl RenderOnce for InboxListItem {
+    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let mut content = div()
             .font_medium()
             .text_color(cx.theme().sidebar_accent_foreground);
@@ -248,58 +152,33 @@ impl Render for InboxListItem {
                 .items_center()
                 .gap_2()
                 .child(img("brand/avatar.png").size_6().rounded_full())
-                .map(|this| {
-                    let names: Vec<String> = members
-                        .iter()
-                        .filter_map(|m| {
-                            if m.public_key() != self.owner {
-                                Some(m.name())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    this.child(names.join(", "))
-                })
+                .child(self.group_name)
         } else {
-            content = content.flex().items_center().gap_2().map(|this| {
-                if let Some(member) = members.first() {
-                    let mut child = this;
-
-                    // Avatar
-                    if let Some(picture) = member.metadata().picture.clone() {
-                        child = child.child(
-                            img(format!(
-                                "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
-                                IMAGE_SERVICE, picture
-                            ))
-                            .flex_shrink_0()
-                            .size_6()
-                            .rounded_full(),
-                        );
-                    } else {
-                        child = child.child(
-                            img("brand/avatar.png")
-                                .flex_shrink_0()
-                                .size_6()
-                                .rounded_full(),
-                        );
-                    }
-
-                    // Display name
-                    child = child.child(member.name());
-
-                    child
+            content = content.flex().items_center().gap_2().map(|mut this| {
+                // Avatar
+                if let Some(picture) = self.sender_avatar {
+                    this = this.child(
+                        img(format!(
+                            "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
+                            IMAGE_SERVICE, picture
+                        ))
+                        .flex_shrink_0()
+                        .size_6()
+                        .rounded_full(),
+                    );
                 } else {
-                    this.child(
+                    this = this.child(
                         img("brand/avatar.png")
                             .flex_shrink_0()
                             .size_6()
                             .rounded_full(),
-                    )
-                    .child("Unknown")
+                    );
                 }
+
+                // Display name
+                this = this.child(self.sender_name);
+
+                this
             })
         }
 
@@ -319,11 +198,8 @@ impl Render for InboxListItem {
             .child(content)
             .child(
                 div()
-                    .child(ago)
+                    .child(self.ago)
                     .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
             )
-            .on_click(cx.listener(|this, _, cx| {
-                this.action(cx);
-            }))
     }
 }

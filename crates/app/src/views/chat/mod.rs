@@ -1,4 +1,4 @@
-use crate::{get_client, states::chat::Room, utils::room_hash};
+use crate::{get_client, states::chat::room::Room};
 use gpui::{
     div, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
     FocusableView, IntoElement, ListAlignment, ListState, Model, ParentElement, PathPromptOptions,
@@ -40,8 +40,8 @@ pub struct ChatPanel {
 }
 
 impl ChatPanel {
-    pub fn new(room: &Arc<Room>, cx: &mut WindowContext) -> View<Self> {
-        let room = Arc::clone(room);
+    pub fn new(room_id: &u64, cx: &mut WindowContext) -> View<Self> {
+        let room = Arc::new(room);
         let id = room.id.clone();
         let name = room.title.clone().unwrap_or("Untitled".into());
 

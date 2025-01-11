@@ -1,3 +1,4 @@
+use crate::{constants::IMAGE_SERVICE, get_client, states::app::AppRegistry};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     actions, img, Context, IntoElement, Model, ObjectFit, ParentElement, Render, Styled,
@@ -9,9 +10,6 @@ use ui::{
     popup_menu::PopupMenuExt,
     Icon, IconName, Sizable,
 };
-
-use crate::states::app::AppRegistry;
-use crate::{constants::IMAGE_SERVICE, get_client};
 
 actions!(account, [ToDo]);
 
