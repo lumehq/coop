@@ -50,8 +50,8 @@ impl Member {
 pub struct Room {
     pub id: u64,
     pub title: Option<SharedString>,
-    pub owner: PublicKey,
-    pub members: Vec<Member>,
+    pub owner: Member,        // Owner always match current user
+    pub members: Vec<Member>, // Extract from event's tags
     pub last_seen: Timestamp,
     pub is_group: bool,
 }
@@ -61,7 +61,7 @@ impl Room {
         let id = room_hash(&event.tags);
         let last_seen = event.created_at;
 
-        let owner = event.pubkey;
+        let owner = Member::new(event.pubkey, Metadata::default());
         let members: Vec<Member> = event
             .tags
             .public_keys()
@@ -91,6 +91,10 @@ impl Room {
     }
 
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
+        if self.owner.public_key() == public_key {
+            self.owner.update(&metadata);
+        }
+
         for member in self.members.iter_mut() {
             if member.public_key() == public_key {
                 member.update(&metadata);

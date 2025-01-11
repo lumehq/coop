@@ -37,7 +37,7 @@ pub struct ChatPanel {
     focus_handle: FocusHandle,
     // Chat Room
     id: SharedString,
-    owner: PublicKey,
+    owner: Member,
     members: Arc<[Member]>,
     input: View<TextInput>,
     list: ListState,
@@ -48,7 +48,7 @@ impl ChatPanel {
     pub fn new(room: Model<Room>, cx: &mut WindowContext) -> View<Self> {
         let room = room.read(cx);
         let id = room.id.to_string().into();
-        let owner = room.owner;
+        let owner = room.owner.clone();
         let members = room.members.clone().into();
         let name = room.title.clone().unwrap_or("Untitled".into());
 
@@ -117,10 +117,14 @@ impl ChatPanel {
     }
 
     fn load_messages(&self, cx: &mut ViewContext<Self>) {
-        let mut all_keys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
-        all_keys.push(self.owner);
-
         let members = Arc::clone(&self.members);
+        let owner = self.owner.clone();
+
+        // Get all public keys
+        let mut all_keys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
+        all_keys.push(self.owner.public_key());
+
+        // Async
         let async_state = self.state.clone();
         let mut async_cx = cx.to_async();
 
@@ -167,6 +171,8 @@ impl ChatPanel {
                                     members.iter().find(|&m| m.public_key() == ev.pubkey)
                                 {
                                     member.metadata()
+                                } else if ev.pubkey == owner.public_key() {
+                                    owner.metadata()
                                 } else {
                                     Metadata::default()
                                 };
@@ -195,7 +201,68 @@ impl ChatPanel {
             .detach();
     }
 
-    fn send_message(&mut self, cx: &mut ViewContext<Self>) {}
+    fn send_message(&mut self, cx: &mut ViewContext<Self>) {
+        let content = Arc::new(self.input.read(cx).text().to_string());
+        let owner = self.owner.clone();
+
+        let mut members = self.members.to_vec();
+        members.push(owner.clone());
+
+        // Async
+        let async_input = self.input.clone();
+        let async_state = self.state.clone();
+        let mut async_cx = cx.to_async();
+
+        cx.foreground_executor()
+            .spawn(async move {
+                // Send message to all members
+                async_cx
+                    .background_executor()
+                    .spawn({
+                        let client = get_client();
+                        let content = Arc::clone(&content).to_string();
+                        let tags: Vec<Tag> = members
+                            .iter()
+                            .filter_map(|m| {
+                                if m.public_key() != owner.public_key() {
+                                    Some(Tag::public_key(m.public_key()))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                        async move {
+                            // Send message to all members
+                            for member in members.iter() {
+                                _ = client
+                                    .send_private_msg(member.public_key(), &content, tags.clone())
+                                    .await
+                            }
+                        }
+                    })
+                    .detach();
+
+                _ = async_cx.update_model(&async_state, |model, cx| {
+                    let created_at = Timestamp::now();
+                    let message = RoomMessage::new(
+                        owner.public_key(),
+                        owner.metadata(),
+                        content.to_string(),
+                        created_at,
+                    );
+
+                    model.items.extend(vec![message]);
+                    model.count = model.items.len();
+                    cx.notify();
+                });
+
+                _ = async_cx.update_view(&async_input, |input, cx| {
+                    input.set_text("", cx);
+                });
+            })
+            .detach();
+    }
 }
 
 impl Panel for ChatPanel {

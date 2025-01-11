@@ -40,7 +40,8 @@ impl ChatRegistry {
 
         cx.observe_new_models::<Room>(|this, cx| {
             // Get all pubkeys to load metadata
-            let pubkeys: Vec<PublicKey> = this.members.iter().map(|m| m.public_key()).collect();
+            let mut pubkeys: Vec<PublicKey> = this.members.iter().map(|m| m.public_key()).collect();
+            pubkeys.push(this.owner.public_key());
 
             cx.spawn(|weak_model, mut async_cx| async move {
                 let query: Result<Vec<(PublicKey, Metadata)>, Error> = async_cx
