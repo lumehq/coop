@@ -50,6 +50,7 @@ impl Member {
 pub struct Room {
     pub id: u64,
     pub title: Option<SharedString>,
+    pub owner: PublicKey,
     pub members: Vec<Member>,
     pub last_seen: Timestamp,
     pub is_group: bool,
@@ -60,6 +61,7 @@ impl Room {
         let id = room_hash(&event.tags);
         let last_seen = event.created_at;
 
+        let owner = event.pubkey;
         let members: Vec<Member> = event
             .tags
             .public_keys()
@@ -80,6 +82,7 @@ impl Room {
 
         Self {
             id,
+            owner,
             members,
             title,
             last_seen,

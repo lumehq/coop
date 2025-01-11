@@ -1,6 +1,9 @@
 use chrono::{Duration, Local, TimeZone};
 use nostr_sdk::prelude::*;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    collections::HashSet,
+    hash::{DefaultHasher, Hash, Hasher},
+};
 
 pub fn room_hash(tags: &Tags) -> u64 {
     let pubkeys: Vec<PublicKey> = tags.public_keys().copied().collect();
@@ -9,6 +12,16 @@ pub fn room_hash(tags: &Tags) -> u64 {
     pubkeys.hash(&mut hasher);
 
     hasher.finish()
+}
+
+pub fn compare<T>(a: &[T], b: &[T]) -> bool
+where
+    T: Eq + Hash,
+{
+    let a: HashSet<_> = a.iter().collect();
+    let b: HashSet<_> = b.iter().collect();
+
+    a == b
 }
 
 pub fn shorted_public_key(public_key: PublicKey) -> String {

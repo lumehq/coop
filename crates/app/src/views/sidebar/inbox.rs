@@ -1,8 +1,12 @@
-use crate::{constants::IMAGE_SERVICE, states::chat::ChatRegistry, utils::ago};
+use crate::{
+    constants::IMAGE_SERVICE,
+    states::chat::ChatRegistry,
+    utils::ago,
+    views::app::{AddPanel, PanelKind},
+};
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, InteractiveElement, IntoElement, ParentElement,
-    Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled, ViewContext,
-    WindowContext,
+    Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,
 };
 use ui::{skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
 
@@ -19,7 +23,7 @@ impl Inbox {
         }
     }
 
-    fn skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
+    fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
                 .h_8()
@@ -30,6 +34,93 @@ impl Inbox {
                 .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
                 .child(Skeleton::new().w_20().h_3().rounded_sm())
         })
+    }
+
+    fn render_item(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+        let weak_model = cx.global::<ChatRegistry>().inbox();
+
+        if let Some(model) = weak_model.upgrade() {
+            div().children(model.read(cx).iter().map(|model| {
+                let room = model.read(cx);
+                let id = room.id;
+                let room_id: SharedString = id.to_string().into();
+                let ago: SharedString = ago(room.last_seen.as_u64()).into();
+                let is_group = room.is_group;
+                // Get first member
+                let sender = room.members.first().unwrap();
+                // Compute group name based on member' names
+                let name: SharedString = room
+                    .members
+                    .iter()
+                    .map(|profile| profile.name())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+                    .into();
+
+                div()
+                    .id(room_id)
+                    .h_8()
+                    .px_1()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .text_xs()
+                    .rounded_md()
+                    .hover(|this| {
+                        this.bg(cx.theme().sidebar_accent)
+                            .text_color(cx.theme().sidebar_accent_foreground)
+                    })
+                    .child(
+                        div()
+                            .font_medium()
+                            .text_color(cx.theme().sidebar_accent_foreground)
+                            .map(|this| {
+                                if is_group {
+                                    this.flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(img("brand/avatar.png").size_6().rounded_full())
+                                        .child(name)
+                                } else {
+                                    this.flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(
+                                            img(format!(
+                                                "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
+                                                IMAGE_SERVICE,
+                                                sender
+                                                    .metadata()
+                                                    .picture
+                                                    .unwrap_or("brand/avatar.png".into())
+                                            ))
+                                            .flex_shrink_0()
+                                            .size_6()
+                                            .rounded_full(),
+                                        )
+                                        .child(sender.name())
+                                }
+                            }),
+                    )
+                    .child(
+                        div()
+                            .child(ago)
+                            .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
+                    )
+                    .on_click(cx.listener(move |this, _, cx| {
+                        this.action(id, cx);
+                    }))
+            }))
+        } else {
+            div().children(self.render_skeleton(5))
+        }
+    }
+
+    fn action(&self, id: u64, cx: &mut ViewContext<Self>) {
+        cx.dispatch_action(Box::new(AddPanel {
+            panel: PanelKind::Room(id),
+            position: ui::dock::DockPlacement::Center,
+        }))
     }
 }
 
@@ -46,38 +137,6 @@ impl Collapsible for Inbox {
 
 impl Render for Inbox {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let mut content = div();
-        let weak_model = cx.global::<ChatRegistry>().inbox();
-
-        if let Some(model) = weak_model.upgrade() {
-            content = content.children(model.read(cx).iter().map(|model| {
-                let room = model.read(cx);
-                let id = room.id.to_string().into();
-                let ago = ago(room.last_seen.as_u64()).into();
-                // Get first member
-                let sender = room.members.first().unwrap();
-                // Compute group name based on member' names
-                let name: SharedString = room
-                    .members
-                    .iter()
-                    .map(|profile| profile.name())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-                    .into();
-
-                InboxListItem::new(
-                    id,
-                    ago,
-                    room.is_group,
-                    name,
-                    sender.metadata().picture,
-                    sender.name(),
-                )
-            }))
-        } else {
-            content = content.children(self.skeleton(5))
-        }
-
         v_flex()
             .px_2()
             .gap_1()
@@ -106,100 +165,6 @@ impl Render for Inbox {
                     )
                     .child(self.label.clone()),
             )
-            .when(!self.is_collapsed, |this| this.child(content))
-    }
-}
-
-#[derive(Clone, IntoElement)]
-struct InboxListItem {
-    id: SharedString,
-    ago: SharedString,
-    is_group: bool,
-    group_name: SharedString,
-    sender_avatar: Option<String>,
-    sender_name: String,
-}
-
-impl InboxListItem {
-    pub fn new(
-        id: SharedString,
-        ago: SharedString,
-        is_group: bool,
-        group_name: SharedString,
-        sender_avatar: Option<String>,
-        sender_name: String,
-    ) -> Self {
-        Self {
-            id,
-            ago,
-            is_group,
-            group_name,
-            sender_avatar,
-            sender_name,
-        }
-    }
-}
-
-impl RenderOnce for InboxListItem {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let mut content = div()
-            .font_medium()
-            .text_color(cx.theme().sidebar_accent_foreground);
-
-        if self.is_group {
-            content = content
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(img("brand/avatar.png").size_6().rounded_full())
-                .child(self.group_name)
-        } else {
-            content = content.flex().items_center().gap_2().map(|mut this| {
-                // Avatar
-                if let Some(picture) = self.sender_avatar {
-                    this = this.child(
-                        img(format!(
-                            "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
-                            IMAGE_SERVICE, picture
-                        ))
-                        .flex_shrink_0()
-                        .size_6()
-                        .rounded_full(),
-                    );
-                } else {
-                    this = this.child(
-                        img("brand/avatar.png")
-                            .flex_shrink_0()
-                            .size_6()
-                            .rounded_full(),
-                    );
-                }
-
-                // Display name
-                this = this.child(self.sender_name);
-
-                this
-            })
-        }
-
-        div()
-            .id(self.id.clone())
-            .h_8()
-            .px_1()
-            .flex()
-            .items_center()
-            .justify_between()
-            .text_xs()
-            .rounded_md()
-            .hover(|this| {
-                this.bg(cx.theme().sidebar_accent)
-                    .text_color(cx.theme().sidebar_accent_foreground)
-            })
-            .child(content)
-            .child(
-                div()
-                    .child(self.ago)
-                    .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
-            )
+            .when(!self.is_collapsed, |this| this.child(self.render_item(cx)))
     }
 }

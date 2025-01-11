@@ -1,5 +1,8 @@
-use super::{account::Account, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
-use crate::states::app::AppRegistry;
+use super::{
+    account::Account, chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar,
+    welcome::WelcomePanel,
+};
+use crate::states::{app::AppRegistry, chat::ChatRegistry};
 use gpui::{
     div, impl_actions, px, Axis, Context, Edges, InteractiveElement, IntoElement, Model,
     ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView, WindowContext,
@@ -129,17 +132,19 @@ impl AppView {
     }
 
     fn on_action_add_panel(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
-        /*
         match &action.panel {
             PanelKind::Room(id) => {
-                let panel = Arc::new(ChatPanel::new(id, cx));
+                if let Some(weak_room) = cx.global::<ChatRegistry>().room(id, cx) {
+                    if let Some(room) = weak_room.upgrade() {
+                        let panel = Arc::new(ChatPanel::new(room, cx));
 
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, cx);
-                });
+                        self.dock.update(cx, |dock_area, cx| {
+                            dock_area.add_panel(panel, action.position, cx);
+                        });
+                    }
+                }
             }
         };
-        */
     }
 }
 

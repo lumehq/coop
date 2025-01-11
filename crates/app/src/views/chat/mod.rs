@@ -1,4 +1,8 @@
-use crate::{get_client, states::chat::room::Room};
+use crate::{
+    get_client,
+    states::chat::room::{Member, Room},
+    utils::compare,
+};
 use gpui::{
     div, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
     FocusableView, IntoElement, ListAlignment, ListState, Model, ParentElement, PathPromptOptions,
@@ -33,16 +37,19 @@ pub struct ChatPanel {
     focus_handle: FocusHandle,
     // Chat Room
     id: SharedString,
-    room: Arc<Room>,
+    owner: PublicKey,
+    members: Arc<[Member]>,
     input: View<TextInput>,
     list: ListState,
     state: Model<State>,
 }
 
 impl ChatPanel {
-    pub fn new(room_id: &u64, cx: &mut WindowContext) -> View<Self> {
-        let room = Arc::new(room);
-        let id = room.id.clone();
+    pub fn new(room: Model<Room>, cx: &mut WindowContext) -> View<Self> {
+        let room = room.read(cx);
+        let id = room.id.to_string().into();
+        let owner = room.owner;
+        let members = room.members.clone().into();
         let name = room.title.clone().unwrap_or("Untitled".into());
 
         cx.observe_new_views::<Self>(|this, cx| {
@@ -99,8 +106,9 @@ impl ChatPanel {
                 zoomable: true,
                 focus_handle: cx.focus_handle(),
                 id,
+                owner,
+                members,
                 name,
-                room,
                 input,
                 list,
                 state,
@@ -109,11 +117,11 @@ impl ChatPanel {
     }
 
     fn load_messages(&self, cx: &mut ViewContext<Self>) {
-        let members = self.room.members.clone();
-        let async_state = self.state.clone();
-        let id = self.room.id.to_string();
+        let mut all_keys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
+        all_keys.push(self.owner);
 
-        let client = get_client();
+        let members = Arc::clone(&self.members);
+        let async_state = self.state.clone();
         let mut async_cx = cx.to_async();
 
         cx.foreground_executor()
@@ -121,6 +129,7 @@ impl ChatPanel {
                 let events: anyhow::Result<Events, anyhow::Error> = async_cx
                     .background_executor()
                     .spawn({
+                        let client = get_client();
                         let pubkeys = members.iter().map(|m| m.public_key()).collect::<Vec<_>>();
 
                         async move {
@@ -149,14 +158,28 @@ impl ChatPanel {
                     let items: Vec<RoomMessage> = events
                         .into_iter()
                         .sorted_by_key(|ev| ev.created_at)
-                        .map(|ev| {
-                            let metadata = members
-                                .iter()
-                                .find(|&m| m.public_key() == ev.pubkey)
-                                .unwrap()
-                                .metadata();
+                        .filter_map(|ev| {
+                            let mut pubkeys: Vec<_> = ev.tags.public_keys().copied().collect();
+                            pubkeys.push(ev.pubkey);
 
-                            RoomMessage::new(ev.pubkey, metadata, ev.content, ev.created_at)
+                            if compare(&pubkeys, &all_keys) {
+                                let metadata = if let Some(member) =
+                                    members.iter().find(|&m| m.public_key() == ev.pubkey)
+                                {
+                                    member.metadata()
+                                } else {
+                                    Metadata::default()
+                                };
+
+                                Some(RoomMessage::new(
+                                    ev.pubkey,
+                                    metadata,
+                                    ev.content,
+                                    ev.created_at,
+                                ))
+                            } else {
+                                None
+                            }
                         })
                         .collect();
 

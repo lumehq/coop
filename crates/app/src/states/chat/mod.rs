@@ -150,6 +150,14 @@ impl ChatRegistry {
         self.inbox.downgrade()
     }
 
+    pub fn room(&self, id: &u64, cx: &AppContext) -> Option<WeakModel<Room>> {
+        self.inbox
+            .read(cx)
+            .iter()
+            .find(|model| &model.read(cx).id == id)
+            .map(|model| model.downgrade())
+    }
+
     pub fn new_messages(&self) -> WeakModel<NewMessages> {
         self.new_messages.downgrade()
     }
