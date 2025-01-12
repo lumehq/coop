@@ -1,42 +1,38 @@
-use crate::{get_client, utils::room_hash};
-use gpui::{AppContext, Context, Global, Model, SharedString, WeakModel};
+use crate::{
+    get_client,
+    utils::{compare, room_hash},
+};
+use gpui::{AppContext, Context, Global, Model, WeakModel};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::Room;
-use std::{
-    cmp::Reverse,
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::cmp::Reverse;
 
 pub mod room;
 
-#[derive(Clone, Debug)]
-pub struct NewMessage {
-    pub event: Event,
-    pub metadata: Metadata,
+pub struct Inbox {
+    pub(crate) rooms: Vec<Model<Room>>,
+    pub(crate) is_loading: bool,
 }
 
-impl NewMessage {
-    pub fn new(event: Event, metadata: Metadata) -> Self {
-        // TODO: parse event's content
-        Self { event, metadata }
+impl Inbox {
+    pub fn new() -> Self {
+        Self {
+            rooms: vec![],
+            is_loading: true,
+        }
     }
 }
 
-type NewMessages = RwLock<HashMap<SharedString, Arc<RwLock<Vec<NewMessage>>>>>;
-
 pub struct ChatRegistry {
-    inbox: Model<Vec<Model<Room>>>,
-    new_messages: Model<NewMessages>,
+    inbox: Model<Inbox>,
 }
 
 impl Global for ChatRegistry {}
 
 impl ChatRegistry {
     pub fn set_global(cx: &mut AppContext) {
-        let inbox = cx.new_model(|_| Vec::new());
-        let new_messages = cx.new_model(|_| RwLock::new(HashMap::new()));
+        let inbox = cx.new_model(|_| Inbox::new());
 
         cx.observe_new_models::<Room>(|this, cx| {
             // Get all pubkeys to load metadata
@@ -76,10 +72,7 @@ impl ChatRegistry {
         })
         .detach();
 
-        cx.set_global(Self {
-            inbox,
-            new_messages,
-        });
+        cx.set_global(Self { inbox });
     }
 
     pub fn init(&mut self, cx: &mut AppContext) {
@@ -90,6 +83,7 @@ impl ChatRegistry {
         let hashes: Vec<u64> = self
             .inbox
             .read(cx)
+            .rooms
             .iter()
             .map(|room| room.read(cx).id)
             .collect();
@@ -139,7 +133,9 @@ impl ChatRegistry {
                             })
                             .collect();
 
-                        model.extend(items);
+                        model.rooms.extend(items);
+                        model.is_loading = false;
+
                         cx.notify();
                     });
                 }
@@ -147,36 +143,45 @@ impl ChatRegistry {
             .detach();
     }
 
-    pub fn inbox(&self) -> WeakModel<Vec<Model<Room>>> {
+    pub fn inbox(&self) -> WeakModel<Inbox> {
         self.inbox.downgrade()
     }
 
     pub fn room(&self, id: &u64, cx: &AppContext) -> Option<WeakModel<Room>> {
         self.inbox
             .read(cx)
+            .rooms
             .iter()
             .find(|model| &model.read(cx).id == id)
             .map(|model| model.downgrade())
     }
 
-    pub fn new_messages(&self) -> WeakModel<NewMessages> {
-        self.new_messages.downgrade()
-    }
+    pub fn receive(&mut self, event: Event, cx: &mut AppContext) {
+        let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
+        pubkeys.push(event.pubkey);
 
-    pub fn receive(&mut self, event: Event, metadata: Metadata, cx: &mut AppContext) {
-        let entry = room_hash(&event.tags).to_string().into();
-        let message = NewMessage::new(event, metadata);
+        self.inbox.update(cx, |this, cx| {
+            if let Some(room) = this.rooms.iter().find(|room| {
+                let room = room.read(cx);
+                let mut all_keys: Vec<_> = room.members.iter().map(|m| m.public_key()).collect();
+                all_keys.push(room.owner.public_key());
 
-        self.new_messages.update(cx, |this, cx| {
-            this.write()
-                .unwrap()
-                .entry(entry)
-                .or_insert(Arc::new(RwLock::new(Vec::new())))
-                .write()
-                .unwrap()
-                .push(message);
+                compare(&all_keys, &pubkeys)
+            }) {
+                room.update(cx, |this, cx| {
+                    this.new_messages.push(event);
+                    cx.notify();
+                })
+            } else {
+                let room = cx.new_model(|_| Room::new(&event));
 
-            cx.notify();
+                self.inbox.update(cx, |this, cx| {
+                    this.rooms.insert(0, room);
+                    cx.notify();
+                })
+            }
+
+            // cx.notify();
         })
     }
 }

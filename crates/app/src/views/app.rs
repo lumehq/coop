@@ -12,8 +12,9 @@ use std::sync::Arc;
 use ui::{
     dock::{DockArea, DockItem, DockPlacement},
     indicator::Indicator,
+    notification::NotificationType,
     theme::Theme,
-    Root, Sizable, TitleBar,
+    ContextModal, Root, Sizable, TitleBar,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -141,6 +142,11 @@ impl AppView {
                         self.dock.update(cx, |dock_area, cx| {
                             dock_area.add_panel(panel, action.position, cx);
                         });
+                    } else {
+                        cx.push_notification((
+                            NotificationType::Error,
+                            "System error. Cannot open this chat room.",
+                        ));
                     }
                 }
             }

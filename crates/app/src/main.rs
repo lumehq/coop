@@ -287,21 +287,8 @@ async fn main() {
                             });
                         }
                         Signal::Event(event) => {
-                            let metadata = async_cx
-                                .background_executor()
-                                .spawn(async move {
-                                    if let Ok(metadata) =
-                                        client.database().metadata(event.pubkey).await
-                                    {
-                                        metadata.unwrap_or_default()
-                                    } else {
-                                        Metadata::new()
-                                    }
-                                })
-                                .await;
-
-                            _ = async_cx.update_global::<ChatRegistry, _>(|chat, cx| {
-                                chat.receive(event, metadata, cx)
+                            _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
+                                state.receive(event, cx)
                             });
                         }
                     }

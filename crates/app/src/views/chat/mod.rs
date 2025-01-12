@@ -1,12 +1,9 @@
-use crate::{
-    get_client,
-    states::chat::room::{Member, Room},
-    utils::compare,
-};
+use crate::{get_client, states::chat::room::Room, utils::compare};
 use gpui::{
     div, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
     FocusableView, IntoElement, ListAlignment, ListState, Model, ParentElement, PathPromptOptions,
-    Pixels, Render, SharedString, Styled, View, ViewContext, VisualContext, WindowContext,
+    Pixels, Render, SharedString, Styled, View, ViewContext, VisualContext, WeakModel,
+    WindowContext,
 };
 use itertools::Itertools;
 use message::RoomMessage;
@@ -31,25 +28,22 @@ pub struct State {
 
 pub struct ChatPanel {
     // Panel
-    name: SharedString,
     closeable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
     // Chat Room
     id: SharedString,
-    owner: Member,
-    members: Arc<[Member]>,
-    input: View<TextInput>,
-    list: ListState,
+    name: SharedString,
+    room: Model<Room>,
     state: Model<State>,
+    list: ListState,
+    input: View<TextInput>,
 }
 
 impl ChatPanel {
-    pub fn new(room: Model<Room>, cx: &mut WindowContext) -> View<Self> {
-        let room = room.read(cx);
+    pub fn new(model: Model<Room>, cx: &mut WindowContext) -> View<Self> {
+        let room = model.read(cx);
         let id = room.id.to_string().into();
-        let owner = room.owner.clone();
-        let members = room.members.clone().into();
         let name = room.title.clone().unwrap_or("Untitled".into());
 
         cx.observe_new_views::<Self>(|this, cx| {
@@ -67,7 +61,7 @@ impl ChatPanel {
                     .cleanable()
             });
 
-            // Send message when user presses enter on form.
+            // Send message when user presses enter
             cx.subscribe(&input, move |this: &mut ChatPanel, _, input_event, cx| {
                 if let InputEvent::PressEnter = input_event {
                     this.send_message(cx);
@@ -80,6 +74,7 @@ impl ChatPanel {
                 items: vec![],
             });
 
+            // Update list on every state changes
             cx.observe(&state, |this, model, cx| {
                 let items = model.read(cx).items.clone();
 
@@ -97,32 +92,35 @@ impl ChatPanel {
             })
             .detach();
 
-            let list = ListState::new(0, ListAlignment::Bottom, Pixels(256.), move |_, _| {
-                div().into_any_element()
-            });
+            cx.observe(&model, |this, model, cx| {
+                this.load_new_messages(model.downgrade(), cx);
+            })
+            .detach();
 
             Self {
                 closeable: true,
                 zoomable: true,
                 focus_handle: cx.focus_handle(),
+                room: model,
+                list: ListState::new(0, ListAlignment::Bottom, Pixels(256.), move |_, _| {
+                    div().into_any_element()
+                }),
                 id,
-                owner,
-                members,
                 name,
                 input,
-                list,
                 state,
             }
         })
     }
 
     fn load_messages(&self, cx: &mut ViewContext<Self>) {
-        let members = Arc::clone(&self.members);
-        let owner = self.owner.clone();
+        let room = self.room.read(cx);
+        let members = room.members.clone();
+        let owner = room.owner.clone();
 
         // Get all public keys
-        let mut all_keys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
-        all_keys.push(self.owner.public_key());
+        let mut all_keys: Vec<_> = room.members.iter().map(|m| m.public_key()).collect();
+        all_keys.push(room.owner.public_key());
 
         // Async
         let async_state = self.state.clone();
@@ -201,11 +199,38 @@ impl ChatPanel {
             .detach();
     }
 
-    fn send_message(&mut self, cx: &mut ViewContext<Self>) {
-        let content = Arc::new(self.input.read(cx).text().to_string());
-        let owner = self.owner.clone();
+    fn load_new_messages(&self, model: WeakModel<Room>, cx: &mut ViewContext<Self>) {
+        if let Some(model) = model.upgrade() {
+            let room = model.read(cx);
+            let items: Vec<RoomMessage> = room
+                .new_messages
+                .iter()
+                .map(|event| {
+                    let metadata = room.metadata(event.pubkey);
 
-        let mut members = self.members.to_vec();
+                    RoomMessage::new(
+                        event.pubkey,
+                        metadata,
+                        event.content.clone(),
+                        event.created_at,
+                    )
+                })
+                .collect();
+
+            cx.update_model(&self.state, |model, cx| {
+                model.items.extend(items);
+                model.count = model.items.len();
+                cx.notify();
+            });
+        }
+    }
+
+    fn send_message(&mut self, cx: &mut ViewContext<Self>) {
+        let room = self.room.read(cx);
+        let content = Arc::new(self.input.read(cx).text().to_string());
+        let owner = room.owner.clone();
+
+        let mut members = room.members.to_vec();
         members.push(owner.clone());
 
         // Async

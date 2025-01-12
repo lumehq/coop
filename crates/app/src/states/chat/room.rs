@@ -54,6 +54,7 @@ pub struct Room {
     pub members: Vec<Member>, // Extract from event's tags
     pub last_seen: Timestamp,
     pub is_group: bool,
+    pub new_messages: Vec<Event>, // Hold all new messages
 }
 
 impl Room {
@@ -87,6 +88,15 @@ impl Room {
             title,
             last_seen,
             is_group,
+            new_messages: vec![],
+        }
+    }
+
+    pub fn metadata(&self, public_key: PublicKey) -> Metadata {
+        if let Some(member) = self.members.iter().find(|m| m.public_key == public_key) {
+            member.metadata()
+        } else {
+            Metadata::default()
         }
     }
 

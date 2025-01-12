@@ -40,77 +40,87 @@ impl Inbox {
         let weak_model = cx.global::<ChatRegistry>().inbox();
 
         if let Some(model) = weak_model.upgrade() {
-            div().children(model.read(cx).iter().map(|model| {
-                let room = model.read(cx);
-                let id = room.id;
-                let room_id: SharedString = id.to_string().into();
-                let ago: SharedString = ago(room.last_seen.as_u64()).into();
-                let is_group = room.is_group;
-                // Get first member
-                let sender = room.members.first().unwrap();
-                // Compute group name based on member' names
-                let name: SharedString = room
-                    .members
-                    .iter()
-                    .map(|profile| profile.name())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-                    .into();
+            div().map(|this| {
+                let inbox = model.read(cx);
 
-                div()
-                    .id(room_id)
-                    .h_8()
-                    .px_1()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .text_xs()
-                    .rounded_md()
-                    .hover(|this| {
-                        this.bg(cx.theme().sidebar_accent)
-                            .text_color(cx.theme().sidebar_accent_foreground)
-                    })
-                    .child(
+                if inbox.is_loading {
+                    this.children(self.render_skeleton(5))
+                } else {
+                    this.children(inbox.rooms.iter().map(|model| {
+                        let room = model.read(cx);
+                        let id = room.id;
+                        let room_id: SharedString = id.to_string().into();
+                        let ago: SharedString = ago(room.last_seen.as_u64()).into();
+                        let is_group = room.is_group;
+                        // Get first member
+                        let sender = room.members.first().unwrap();
+                        // Compute group name based on member' names
+                        let name: SharedString = room
+                            .members
+                            .iter()
+                            .map(|profile| profile.name())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                            .into();
+
                         div()
-                            .font_medium()
-                            .text_color(cx.theme().sidebar_accent_foreground)
-                            .map(|this| {
-                                if is_group {
-                                    this.flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .child(img("brand/avatar.png").size_6().rounded_full())
-                                        .child(name)
-                                } else {
-                                    this.flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .child(
-                                            img(format!(
-                                                "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
-                                                IMAGE_SERVICE,
-                                                sender
-                                                    .metadata()
-                                                    .picture
-                                                    .unwrap_or("brand/avatar.png".into())
-                                            ))
-                                            .flex_shrink_0()
-                                            .size_6()
-                                            .rounded_full(),
-                                        )
-                                        .child(sender.name())
-                                }
-                            }),
-                    )
-                    .child(
-                        div()
-                            .child(ago)
-                            .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
-                    )
-                    .on_click(cx.listener(move |this, _, cx| {
-                        this.action(id, cx);
+                            .id(room_id)
+                            .h_8()
+                            .px_1()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .text_xs()
+                            .rounded_md()
+                            .hover(|this| {
+                                this.bg(cx.theme().sidebar_accent)
+                                    .text_color(cx.theme().sidebar_accent_foreground)
+                            })
+                            .child(
+                                div()
+                                    .font_medium()
+                                    .text_color(cx.theme().sidebar_accent_foreground)
+                                    .map(|this| {
+                                        if is_group {
+                                            this.flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .child(
+                                                    img("brand/avatar.png").size_6().rounded_full(),
+                                                )
+                                                .child(name)
+                                        } else {
+                                            this.flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .child(
+                                                    img(format!(
+                                                  "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
+                                                  IMAGE_SERVICE,
+                                                  sender
+                                                      .metadata()
+                                                      .picture
+                                                      .unwrap_or("brand/avatar.png".into())
+                                              ))
+                                                    .flex_shrink_0()
+                                                    .size_6()
+                                                    .rounded_full(),
+                                                )
+                                                .child(sender.name())
+                                        }
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .child(ago)
+                                    .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
+                            )
+                            .on_click(cx.listener(move |this, _, cx| {
+                                this.action(id, cx);
+                            }))
                     }))
-            }))
+                }
+            })
         } else {
             div().children(self.render_skeleton(5))
         }
