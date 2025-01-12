@@ -162,10 +162,7 @@ impl ChatRegistry {
 
         self.inbox.update(cx, |this, cx| {
             if let Some(room) = this.rooms.iter().find(|room| {
-                let room = room.read(cx);
-                let mut all_keys: Vec<_> = room.members.iter().map(|m| m.public_key()).collect();
-                all_keys.push(room.owner.public_key());
-
+                let all_keys = room.read(cx).get_all_keys();
                 compare(&all_keys, &pubkeys)
             }) {
                 room.update(cx, |this, cx| {

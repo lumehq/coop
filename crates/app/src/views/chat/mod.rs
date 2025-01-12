@@ -1,12 +1,16 @@
-use crate::{get_client, states::chat::room::Room, utils::compare};
+use crate::{
+    get_client,
+    states::chat::room::Room,
+    utils::{ago, compare},
+};
 use gpui::{
     div, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
     FocusableView, IntoElement, ListAlignment, ListState, Model, ParentElement, PathPromptOptions,
-    Pixels, Render, SharedString, Styled, View, ViewContext, VisualContext, WeakModel,
+    Pixels, Render, SharedString, Styled, View, ViewContext, VisualContext, WeakModel, WeakView,
     WindowContext,
 };
 use itertools::Itertools;
-use message::RoomMessage;
+use message::Message;
 use nostr_sdk::prelude::*;
 use std::sync::Arc;
 use ui::{
@@ -23,7 +27,7 @@ mod message;
 #[derive(Clone)]
 pub struct State {
     count: usize,
-    items: Vec<RoomMessage>,
+    items: Vec<Message>,
 }
 
 pub struct ChatPanel {
@@ -61,18 +65,21 @@ impl ChatPanel {
                     .cleanable()
             });
 
-            // Send message when user presses enter
-            cx.subscribe(&input, move |this: &mut ChatPanel, _, input_event, cx| {
-                if let InputEvent::PressEnter = input_event {
-                    this.send_message(cx);
-                }
-            })
-            .detach();
-
             let state = cx.new_model(|_| State {
                 count: 0,
                 items: vec![],
             });
+
+            // Send message when user presses enter
+            cx.subscribe(
+                &input,
+                move |this: &mut ChatPanel, view, input_event, cx| {
+                    if let InputEvent::PressEnter = input_event {
+                        this.send_message(view.downgrade(), cx);
+                    }
+                },
+            )
+            .detach();
 
             // Update list on every state changes
             cx.observe(&state, |this, model, cx| {
@@ -117,10 +124,8 @@ impl ChatPanel {
         let room = self.room.read(cx);
         let members = room.members.clone();
         let owner = room.owner.clone();
-
         // Get all public keys
-        let mut all_keys: Vec<_> = room.members.iter().map(|m| m.public_key()).collect();
-        all_keys.push(room.owner.public_key());
+        let all_keys = room.get_all_keys();
 
         // Async
         let async_state = self.state.clone();
@@ -157,7 +162,7 @@ impl ChatPanel {
                     .await;
 
                 if let Ok(events) = events {
-                    let items: Vec<RoomMessage> = events
+                    let items: Vec<Message> = events
                         .into_iter()
                         .sorted_by_key(|ev| ev.created_at)
                         .filter_map(|ev| {
@@ -165,21 +170,18 @@ impl ChatPanel {
                             pubkeys.push(ev.pubkey);
 
                             if compare(&pubkeys, &all_keys) {
-                                let metadata = if let Some(member) =
+                                let member = if let Some(member) =
                                     members.iter().find(|&m| m.public_key() == ev.pubkey)
                                 {
-                                    member.metadata()
-                                } else if ev.pubkey == owner.public_key() {
-                                    owner.metadata()
+                                    member.to_owned()
                                 } else {
-                                    Metadata::default()
+                                    owner.clone()
                                 };
 
-                                Some(RoomMessage::new(
-                                    ev.pubkey,
-                                    metadata,
-                                    ev.content,
-                                    ev.created_at,
+                                Some(Message::new(
+                                    member,
+                                    ev.content.into(),
+                                    ago(ev.created_at).into(),
                                 ))
                             } else {
                                 None
@@ -202,18 +204,17 @@ impl ChatPanel {
     fn load_new_messages(&self, model: WeakModel<Room>, cx: &mut ViewContext<Self>) {
         if let Some(model) = model.upgrade() {
             let room = model.read(cx);
-            let items: Vec<RoomMessage> = room
+            let items: Vec<Message> = room
                 .new_messages
                 .iter()
-                .map(|event| {
-                    let metadata = room.metadata(event.pubkey);
-
-                    RoomMessage::new(
-                        event.pubkey,
-                        metadata,
-                        event.content.clone(),
-                        event.created_at,
-                    )
+                .filter_map(|event| {
+                    room.member(&event.pubkey).map(|member| {
+                        Message::new(
+                            member,
+                            event.content.clone().into(),
+                            ago(event.created_at).into(),
+                        )
+                    })
                 })
                 .collect();
 
@@ -225,7 +226,7 @@ impl ChatPanel {
         }
     }
 
-    fn send_message(&mut self, cx: &mut ViewContext<Self>) {
+    fn send_message(&mut self, view: WeakView<TextInput>, cx: &mut ViewContext<Self>) {
         let room = self.room.read(cx);
         let content = Arc::new(self.input.read(cx).text().to_string());
         let owner = room.owner.clone();
@@ -234,7 +235,6 @@ impl ChatPanel {
         members.push(owner.clone());
 
         // Async
-        let async_input = self.input.clone();
         let async_state = self.state.clone();
         let mut async_cx = cx.to_async();
 
@@ -269,12 +269,10 @@ impl ChatPanel {
                     .detach();
 
                 _ = async_cx.update_model(&async_state, |model, cx| {
-                    let created_at = Timestamp::now();
-                    let message = RoomMessage::new(
-                        owner.public_key(),
-                        owner.metadata(),
-                        content.to_string(),
-                        created_at,
+                    let message = Message::new(
+                        owner,
+                        content.to_string().into(),
+                        ago(Timestamp::now()).into(),
                     );
 
                     model.items.extend(vec![message]);
@@ -282,9 +280,11 @@ impl ChatPanel {
                     cx.notify();
                 });
 
-                _ = async_cx.update_view(&async_input, |input, cx| {
-                    input.set_text("", cx);
-                });
+                if let Some(input) = view.upgrade() {
+                    _ = async_cx.update_view(&input, |input, cx| {
+                        input.set_text("", cx);
+                    });
+                }
             })
             .detach();
     }

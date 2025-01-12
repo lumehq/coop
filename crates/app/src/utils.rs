@@ -46,9 +46,9 @@ pub fn show_npub(public_key: PublicKey, len: usize) -> String {
     )
 }
 
-pub fn ago(time: u64) -> String {
+pub fn ago(time: Timestamp) -> String {
     let now = Local::now();
-    let input_time = Local.timestamp_opt(time as i64, 0).unwrap();
+    let input_time = Local.timestamp_opt(time.as_u64() as i64, 0).unwrap();
     let diff = (now - input_time).num_hours();
 
     if diff < 24 {

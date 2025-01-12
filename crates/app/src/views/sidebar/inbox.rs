@@ -1,5 +1,4 @@
 use crate::{
-    constants::IMAGE_SERVICE,
     states::chat::ChatRegistry,
     utils::ago,
     views::app::{AddPanel, PanelKind},
@@ -50,18 +49,7 @@ impl Inbox {
                         let room = model.read(cx);
                         let id = room.id;
                         let room_id: SharedString = id.to_string().into();
-                        let ago: SharedString = ago(room.last_seen.as_u64()).into();
-                        let is_group = room.is_group;
-                        // Get first member
-                        let sender = room.members.first().unwrap();
-                        // Compute group name based on member' names
-                        let name: SharedString = room
-                            .members
-                            .iter()
-                            .map(|profile| profile.name())
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                            .into();
+                        let ago: SharedString = ago(room.last_seen).into();
 
                         div()
                             .id(room_id)
@@ -81,32 +69,27 @@ impl Inbox {
                                     .font_medium()
                                     .text_color(cx.theme().sidebar_accent_foreground)
                                     .map(|this| {
-                                        if is_group {
+                                        if room.is_group {
                                             this.flex()
                                                 .items_center()
                                                 .gap_2()
                                                 .child(
                                                     img("brand/avatar.png").size_6().rounded_full(),
                                                 )
-                                                .child(name)
+                                                .child(room.name())
                                         } else {
-                                            this.flex()
-                                                .items_center()
-                                                .gap_2()
-                                                .child(
-                                                    img(format!(
-                                                  "{}/?url={}&w=72&h=72&fit=cover&mask=circle&n=-1",
-                                                  IMAGE_SERVICE,
-                                                  sender
-                                                      .metadata()
-                                                      .picture
-                                                      .unwrap_or("brand/avatar.png".into())
-                                              ))
-                                                    .flex_shrink_0()
-                                                    .size_6()
-                                                    .rounded_full(),
-                                                )
-                                                .child(sender.name())
+                                            this.when_some(room.members.first(), |this, sender| {
+                                                this.flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        img(sender.avatar())
+                                                            .size_6()
+                                                            .rounded_full()
+                                                            .flex_shrink_0(),
+                                                    )
+                                                    .child(sender.name())
+                                            })
                                         }
                                     }),
                             )

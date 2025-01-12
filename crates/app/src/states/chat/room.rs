@@ -1,4 +1,7 @@
-use crate::utils::{room_hash, shorted_public_key};
+use crate::{
+    constants::IMAGE_SERVICE,
+    utils::{room_hash, shorted_public_key},
+};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 use rnglib::{Language, RNG};
@@ -21,8 +24,15 @@ impl Member {
         self.public_key
     }
 
-    pub fn metadata(&self) -> Metadata {
-        self.metadata.clone()
+    pub fn avatar(&self) -> String {
+        if let Some(picture) = &self.metadata.picture {
+            format!(
+                "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
+                IMAGE_SERVICE, picture
+            )
+        } else {
+            "brands/avatar.png".into()
+        }
     }
 
     pub fn name(&self) -> String {
@@ -92,14 +102,6 @@ impl Room {
         }
     }
 
-    pub fn metadata(&self, public_key: PublicKey) -> Metadata {
-        if let Some(member) = self.members.iter().find(|m| m.public_key == public_key) {
-            member.metadata()
-        } else {
-            Metadata::default()
-        }
-    }
-
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
         if self.owner.public_key() == public_key {
             self.owner.update(&metadata);
@@ -110,5 +112,31 @@ impl Room {
                 member.update(&metadata);
             }
         }
+    }
+
+    pub fn member(&self, public_key: &PublicKey) -> Option<Member> {
+        if &self.owner.public_key() == public_key {
+            Some(self.owner.clone())
+        } else {
+            self.members
+                .iter()
+                .find(|m| &m.public_key() == public_key)
+                .cloned()
+        }
+    }
+
+    pub fn name(&self) -> String {
+        self.members
+            .iter()
+            .map(|profile| profile.name())
+            .collect::<Vec<String>>()
+            .join(", ")
+    }
+
+    pub fn get_all_keys(&self) -> Vec<PublicKey> {
+        let mut pubkeys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
+        pubkeys.push(self.owner.public_key());
+
+        pubkeys
     }
 }
