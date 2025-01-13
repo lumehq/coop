@@ -11,7 +11,7 @@ use crate::{
     dock::PanelInfo,
     h_flex,
     popup_menu::{PopupMenu, PopupMenuExt},
-    tab::{Tab, TabBar},
+    tab::{tab_bar::TabBar, Tab},
     theme::ActiveTheme,
     v_flex, AxisExt, IconName, Placement, Selectable, Sizable,
 };

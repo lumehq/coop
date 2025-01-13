@@ -1,11 +1,10 @@
+use crate::{h_flex, theme::ActiveTheme, Icon, IconName, InteractiveElementExt as _, Sizable as _};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, relative, AnyElement, ClickEvent, Div, Element, Hsla,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Stateful,
-    StatefulInteractiveElement as _, Style, Styled, WindowContext,
+    black, div, prelude::FluentBuilder as _, px, relative, white, AnyElement, ClickEvent, Div,
+    Element, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
+    RenderOnce, Rgba, Stateful, StatefulInteractiveElement as _, Style, Styled, WindowContext,
 };
 use std::rc::Rc;
-
-use crate::{h_flex, theme::ActiveTheme, Icon, IconName, InteractiveElementExt as _, Sizable as _};
 
 pub const HEIGHT: Pixels = px(34.);
 pub const TITLE_BAR_HEIGHT: Pixels = px(35.);
@@ -108,31 +107,42 @@ impl ControlIcon {
 
     fn fg(&self, cx: &WindowContext) -> Hsla {
         if cx.theme().mode.is_dark() {
-            crate::white()
+            white()
         } else {
-            crate::black()
+            black()
         }
     }
 
     fn hover_fg(&self, cx: &WindowContext) -> Hsla {
         if self.is_close() || cx.theme().mode.is_dark() {
-            crate::white()
+            white()
         } else {
-            crate::black()
+            black()
         }
     }
 
-    fn hover_bg(&self, cx: &WindowContext) -> Hsla {
+    fn hover_bg(&self, cx: &WindowContext) -> Rgba {
         if self.is_close() {
-            if cx.theme().mode.is_dark() {
-                crate::red_800()
-            } else {
-                crate::red_600()
+            Rgba {
+                r: 232.0 / 255.0,
+                g: 17.0 / 255.0,
+                b: 32.0 / 255.0,
+                a: 1.0,
             }
         } else if cx.theme().mode.is_dark() {
-            crate::stone_700()
+            Rgba {
+                r: 0.9,
+                g: 0.9,
+                b: 0.9,
+                a: 0.1,
+            }
         } else {
-            crate::stone_200()
+            Rgba {
+                r: 0.1,
+                g: 0.1,
+                b: 0.1,
+                a: 0.2,
+            }
         }
     }
 }
@@ -178,7 +188,7 @@ impl RenderOnce for ControlIcon {
                 })
             })
             .hover(|style| style.bg(hover_bg).text_color(hover_fg))
-            .active(|style| style.bg(hover_bg.opacity(0.7)))
+            .active(|style| style.bg(hover_bg))
             .child(Icon::new(self.icon()).small())
     }
 }

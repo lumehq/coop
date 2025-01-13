@@ -5621,7 +5621,6 @@ dependencies = [
  "once_cell",
  "paste",
  "regex",
- "rust-embed",
  "serde",
  "serde_json",
  "smallvec",

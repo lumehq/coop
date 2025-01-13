@@ -23,7 +23,7 @@ impl BadgeVariant {
             Self::Primary => cx.theme().primary,
             Self::Secondary => cx.theme().secondary,
             Self::Outline => gpui::transparent_black(),
-            Self::Destructive => cx.theme().destructive,
+            Self::Destructive => cx.theme().danger,
             Self::Custom { color, .. } => *color,
         }
     }
@@ -33,7 +33,7 @@ impl BadgeVariant {
             Self::Primary => cx.theme().primary,
             Self::Secondary => cx.theme().secondary,
             Self::Outline => cx.theme().border,
-            Self::Destructive => cx.theme().destructive,
+            Self::Destructive => cx.theme().danger,
             Self::Custom { border, .. } => *border,
         }
     }
@@ -43,7 +43,7 @@ impl BadgeVariant {
             Self::Primary => cx.theme().primary_foreground,
             Self::Secondary => cx.theme().secondary_foreground,
             Self::Outline => cx.theme().foreground,
-            Self::Destructive => cx.theme().destructive_foreground,
+            Self::Destructive => cx.theme().danger_foreground,
             Self::Custom { foreground, .. } => *foreground,
         }
     }

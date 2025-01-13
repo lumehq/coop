@@ -1,13 +1,11 @@
+use super::TextInput;
+use crate::theme::ActiveTheme as _;
 use gpui::{
     fill, point, px, relative, size, Bounds, Corners, Element, ElementId, ElementInputHandler,
     GlobalElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent, PaintQuad, Path, Pixels,
     Point, Style, TextRun, UnderlineStyle, View, WindowContext, WrappedLine,
 };
 use smallvec::SmallVec;
-
-use crate::theme::ActiveTheme as _;
-
-use super::TextInput;
 
 const RIGHT_MARGIN: Pixels = px(5.);
 const CURSOR_INSET: Pixels = px(0.5);
@@ -146,7 +144,7 @@ impl TextElement {
                         ),
                         size(px(1.5), line_height),
                     ),
-                    crate::blue_500(),
+                    cx.theme().primary,
                 ))
             };
         }

@@ -1,13 +1,12 @@
-use gpui::*;
-use prelude::FluentBuilder;
-use std::{cell::Cell, ops::Deref, rc::Rc};
-
 use crate::scroll::{Scrollbar, ScrollbarState};
 use crate::StyledExt;
 use crate::{
     button::Button, h_flex, list::ListItem, popover::Popover, theme::ActiveTheme, v_flex, Icon,
     IconName, Selectable, Sizable as _,
 };
+use gpui::*;
+use prelude::FluentBuilder;
+use std::{cell::Cell, ops::Deref, rc::Rc};
 
 actions!(menu, [Confirm, Dismiss, SelectNext, SelectPrev]);
 

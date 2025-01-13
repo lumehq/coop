@@ -1,13 +1,10 @@
-use gpui::{
-    div, px, Axis, Div, Element, ElementId, EntityId, FocusHandle, Pixels, Styled, WindowContext,
-};
-use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display, Formatter};
-
 use crate::{
     scroll::{Scrollable, ScrollbarAxis},
     theme::ActiveTheme,
 };
+use gpui::{div, px, Axis, Div, Element, ElementId, EntityId, Pixels, Styled, WindowContext};
+use serde::{Deserialize, Serialize};
+use std::fmt::{self, Display, Formatter};
 
 /// Returns a `Div` as horizontal flex layout.
 pub fn h_flex() -> Div {
@@ -38,64 +35,6 @@ pub trait StyledExt: Styled + Sized {
     /// Apply self into a vertical flex layout.
     fn v_flex(self) -> Self {
         self.flex().flex_col()
-    }
-
-    /// Render a border with a width of 1px, color red
-    fn debug_red(self) -> Self {
-        if cfg!(debug_assertions) {
-            self.border_1().border_color(crate::red_500())
-        } else {
-            self
-        }
-    }
-
-    /// Render a border with a width of 1px, color blue
-    fn debug_blue(self) -> Self {
-        if cfg!(debug_assertions) {
-            self.border_1().border_color(crate::blue_500())
-        } else {
-            self
-        }
-    }
-
-    /// Render a border with a width of 1px, color yellow
-    fn debug_yellow(self) -> Self {
-        if cfg!(debug_assertions) {
-            self.border_1().border_color(crate::yellow_500())
-        } else {
-            self
-        }
-    }
-
-    /// Render a border with a width of 1px, color green
-    fn debug_green(self) -> Self {
-        if cfg!(debug_assertions) {
-            self.border_1().border_color(crate::green_500())
-        } else {
-            self
-        }
-    }
-
-    /// Render a border with a width of 1px, color pink
-    fn debug_pink(self) -> Self {
-        if cfg!(debug_assertions) {
-            self.border_1().border_color(crate::pink_500())
-        } else {
-            self
-        }
-    }
-
-    /// Render a 1px blue border, when if the element is focused
-    fn debug_focused(self, focus_handle: &FocusHandle, cx: &WindowContext) -> Self {
-        if cfg!(debug_assertions) {
-            if focus_handle.contains_focused(cx) {
-                self.debug_blue()
-            } else {
-                self
-            }
-        } else {
-            self
-        }
     }
 
     /// Render a border with a width of 1px, color ring color

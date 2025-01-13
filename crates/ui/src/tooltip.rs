@@ -25,7 +25,6 @@ impl Render for Tooltip {
                 .m_3()
                 .bg(cx.theme().popover)
                 .text_color(cx.theme().popover_foreground)
-                .bg(cx.theme().popover)
                 .border_1()
                 .border_color(cx.theme().border)
                 .shadow_md()

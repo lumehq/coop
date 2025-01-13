@@ -856,8 +856,8 @@ impl Render for DockArea {
                                     .h_full()
                                     // Left dock
                                     .when_some(self.left_dock.clone(), |this, dock| {
-                                        this.bg(cx.theme().sidebar)
-                                            .text_color(cx.theme().sidebar_foreground)
+                                        this.bg(cx.theme().muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child(div().flex().flex_none().child(dock))
                                     })
                                     // Center

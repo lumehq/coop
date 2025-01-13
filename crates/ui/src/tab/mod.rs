@@ -4,6 +4,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 use nostr_sdk::prelude::*;
 
+pub mod tab_bar;
+
 #[derive(IntoElement)]
 pub struct Tab {
     id: ElementId,

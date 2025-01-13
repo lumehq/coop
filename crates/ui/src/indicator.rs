@@ -1,10 +1,9 @@
-use std::time::Duration;
-
 use crate::{Icon, IconName, Sizable, Size};
 use gpui::{
     div, ease_in_out, percentage, prelude::FluentBuilder as _, Animation, AnimationExt as _, Hsla,
     IntoElement, ParentElement, RenderOnce, Styled as _, Transformation, WindowContext,
 };
+use std::time::Duration;
 
 #[derive(IntoElement)]
 pub struct Indicator {

@@ -60,44 +60,30 @@ impl Inbox {
                             .justify_between()
                             .text_xs()
                             .rounded_md()
-                            .hover(|this| {
-                                this.bg(cx.theme().sidebar_accent)
-                                    .text_color(cx.theme().sidebar_accent_foreground)
-                            })
-                            .child(
-                                div()
-                                    .font_medium()
-                                    .text_color(cx.theme().sidebar_accent_foreground)
-                                    .map(|this| {
-                                        if room.is_group {
-                                            this.flex()
-                                                .items_center()
-                                                .gap_2()
-                                                .child(
-                                                    img("brand/avatar.png").size_6().rounded_full(),
-                                                )
-                                                .child(room.name())
-                                        } else {
-                                            this.when_some(room.members.first(), |this, sender| {
-                                                this.flex()
-                                                    .items_center()
-                                                    .gap_2()
-                                                    .child(
-                                                        img(sender.avatar())
-                                                            .size_6()
-                                                            .rounded_full()
-                                                            .flex_shrink_0(),
-                                                    )
-                                                    .child(sender.name())
-                                            })
-                                        }
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .child(ago)
-                                    .text_color(cx.theme().sidebar_accent_foreground.opacity(0.7)),
-                            )
+                            .hover(|this| this.bg(cx.theme().list_hover))
+                            .child(div().font_medium().map(|this| {
+                                if room.is_group {
+                                    this.flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(img("brand/avatar.png").size_6().rounded_full())
+                                        .child(room.name())
+                                } else {
+                                    this.when_some(room.members.first(), |this, sender| {
+                                        this.flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .child(
+                                                img(sender.avatar())
+                                                    .size_6()
+                                                    .rounded_full()
+                                                    .flex_shrink_0(),
+                                            )
+                                            .child(sender.name())
+                                    })
+                                }
+                            }))
+                            .child(div().child(ago))
                             .on_click(cx.listener(move |this, _, cx| {
                                 this.action(id, cx);
                             }))
@@ -143,8 +129,7 @@ impl Render for Inbox {
                     .rounded_md()
                     .text_xs()
                     .font_semibold()
-                    .text_color(cx.theme().sidebar_foreground.opacity(0.7))
-                    .hover(|this| this.bg(cx.theme().sidebar_accent.opacity(0.7)))
+                    .hover(|this| this.bg(cx.theme().list_hover))
                     .on_click(cx.listener(move |view, _event, cx| {
                         view.is_collapsed = !view.is_collapsed;
                         cx.notify();

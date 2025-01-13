@@ -1,7 +1,7 @@
 use gpui::{Axis, ViewContext};
-
 mod panel;
 mod resize_handle;
+
 pub use panel::*;
 pub(crate) use resize_handle::*;
 

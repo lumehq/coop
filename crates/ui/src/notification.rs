@@ -1,19 +1,21 @@
-use std::{any::TypeId, collections::VecDeque, sync::Arc, time::Duration};
-
+use crate::{
+    animation::cubic_bezier,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    theme::{
+        colors::{blue, green, red, yellow},
+        scale::ColorScaleStep,
+        ActiveTheme as _,
+    },
+    v_flex, Icon, IconName, Sizable as _, StyledExt,
+};
 use gpui::{
     div, prelude::FluentBuilder, px, Animation, AnimationExt, ClickEvent, DismissEvent, ElementId,
     EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement, Styled, View, ViewContext, VisualContext, WindowContext,
 };
 use smol::Timer;
-
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    theme::ActiveTheme as _,
-    v_flex, Icon, IconName, Sizable as _, StyledExt,
-};
+use std::{any::TypeId, collections::VecDeque, sync::Arc, time::Duration};
 
 pub enum NotificationType {
     Info,
@@ -206,16 +208,16 @@ impl Render for Notification {
         let icon = match self.icon.clone() {
             Some(icon) => icon,
             None => match self.type_ {
-                NotificationType::Info => Icon::new(IconName::Info).text_color(crate::blue_500()),
-                NotificationType::Success => {
-                    Icon::new(IconName::CircleCheck).text_color(crate::green_500())
-                }
-                NotificationType::Warning => {
-                    Icon::new(IconName::TriangleAlert).text_color(crate::yellow_500())
+                NotificationType::Info => {
+                    Icon::new(IconName::Info).text_color(blue().step(cx, ColorScaleStep::FIVE))
                 }
                 NotificationType::Error => {
-                    Icon::new(IconName::CircleX).text_color(crate::red_500())
+                    Icon::new(IconName::CircleX).text_color(red().step(cx, ColorScaleStep::FIVE))
                 }
+                NotificationType::Success => Icon::new(IconName::CircleCheck)
+                    .text_color(green().step(cx, ColorScaleStep::FIVE)),
+                NotificationType::Warning => Icon::new(IconName::TriangleAlert)
+                    .text_color(yellow().step(cx, ColorScaleStep::FIVE)),
             },
         };
 
