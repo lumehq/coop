@@ -105,7 +105,7 @@ impl Element for Switch {
             let on_click = self.on_click.clone();
 
             let (bg, toggle_bg) = match self.checked {
-                true => (theme.primary, theme.background),
+                true => (theme.colors.primary, theme.background),
                 false => (theme.input, theme.background),
             };
 

@@ -1,3 +1,9 @@
+use crate::{
+    modal::Modal,
+    notification::{Notification, NotificationList},
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    window_border,
+};
 use gpui::{
     div, AnyView, FocusHandle, InteractiveElement, IntoElement, ParentElement as _, Render, Styled,
     View, ViewContext, VisualContext as _, WindowContext,
@@ -5,13 +11,6 @@ use gpui::{
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
-};
-
-use crate::{
-    modal::Modal,
-    notification::{Notification, NotificationList},
-    theme::ActiveTheme,
-    window_border,
 };
 
 /// Extension trait for [`WindowContext`] and [`ViewContext`] to add drawer functionality.
@@ -268,8 +267,8 @@ impl Render for Root {
                 .relative()
                 .size_full()
                 .font_family(".SystemUIFont")
-                .bg(cx.theme().background)
-                .text_color(cx.theme().foreground)
+                .bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
+                .text_color(cx.theme().base.step(cx, ColorScaleStep::TWELVE))
                 .child(self.view.clone()),
         )
     }

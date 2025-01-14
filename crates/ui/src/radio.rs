@@ -1,4 +1,8 @@
-use crate::{h_flex, theme::ActiveTheme, IconName};
+use crate::{
+    h_flex,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    IconName,
+};
 use gpui::{
     div, prelude::FluentBuilder, relative, svg, ElementId, InteractiveElement, IntoElement,
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WindowContext,
@@ -53,15 +57,14 @@ impl Radio {
 impl RenderOnce for Radio {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let color = if self.disabled {
-            cx.theme().primary.opacity(0.5)
+            cx.theme().accent.step(cx, ColorScaleStep::FIVE)
         } else {
-            cx.theme().primary
+            cx.theme().accent.step(cx, ColorScaleStep::NINE)
         };
 
         h_flex()
             .id(self.id)
             .gap_x_2()
-            .text_color(cx.theme().foreground)
             .items_center()
             .line_height(relative(1.))
             .child(
@@ -80,9 +83,6 @@ impl RenderOnce for Radio {
                             .left_px()
                             .size_3()
                             .text_color(color)
-                            .when(self.checked, |this| {
-                                this.text_color(cx.theme().primary_foreground)
-                            })
                             .map(|this| match self.checked {
                                 true => this.path(IconName::Check.path()),
                                 false => this,

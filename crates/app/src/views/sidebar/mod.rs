@@ -115,7 +115,7 @@ impl Render for Sidebar {
             .child(
                 v_flex()
                     .px_2()
-                    .gap_1()
+                    .gap_0p5()
                     .child(
                         Button::new("compose")
                             .small()

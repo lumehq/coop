@@ -1,4 +1,4 @@
-use crate::theme::ActiveTheme;
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
     div, prelude::FluentBuilder, px, relative, IntoElement, ParentElement, RenderOnce, Styled,
     WindowContext,
@@ -44,7 +44,7 @@ impl RenderOnce for Progress {
             .relative()
             .h(px(self.height))
             .rounded(rounded)
-            .bg(cx.theme().progress_bar.opacity(0.2))
+            .bg(cx.theme().accent.step(cx, ColorScaleStep::THREE))
             .child(
                 div()
                     .absolute()
@@ -52,7 +52,7 @@ impl RenderOnce for Progress {
                     .left_0()
                     .h_full()
                     .w(relative_w)
-                    .bg(cx.theme().progress_bar)
+                    .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
                     .map(|this| match self.value {
                         v if v >= 100. => this.rounded(rounded),
                         _ => this.rounded_l(rounded),

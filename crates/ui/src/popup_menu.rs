@@ -1,11 +1,19 @@
-use crate::scroll::{Scrollbar, ScrollbarState};
-use crate::StyledExt;
 use crate::{
-    button::Button, h_flex, list::ListItem, popover::Popover, theme::ActiveTheme, v_flex, Icon,
-    IconName, Selectable, Sizable as _,
+    button::Button,
+    h_flex,
+    list::ListItem,
+    popover::Popover,
+    scroll::{Scrollbar, ScrollbarState},
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    v_flex, Icon, IconName, Selectable, Sizable as _, StyledExt,
 };
-use gpui::*;
-use prelude::FluentBuilder;
+use gpui::{
+    actions, anchored, canvas, div, prelude::FluentBuilder, px, rems, Action, AnyElement,
+    AppContext, Bounds, Corner, DismissEvent, Edges, EventEmitter, FocusHandle, FocusableView,
+    InteractiveElement, IntoElement, KeyBinding, Keystroke, ParentElement, Pixels, Render,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, View, ViewContext,
+    VisualContext as _, WeakView, WindowContext,
+};
 use std::{cell::Cell, ops::Deref, rc::Rc};
 
 actions!(menu, [Confirm, Dismiss, SelectNext, SelectPrev]);
@@ -48,6 +56,7 @@ pub trait PopupMenuExt: Styled + Selectable + IntoElement + 'static {
             .content(move |cx| PopupMenu::build(cx, |menu, cx| f(menu, cx)))
     }
 }
+
 impl PopupMenuExt for Button {}
 
 enum PopupMenuItem {
@@ -429,12 +438,14 @@ impl PopupMenu {
     ) -> Option<impl IntoElement> {
         if let Some(action) = action {
             if let Some(keybinding) = cx.bindings_for_action(action.deref()).first() {
-                let el = div().text_color(cx.theme().muted_foreground).children(
-                    keybinding
-                        .keystrokes()
-                        .iter()
-                        .map(|key| key_shortcut(key.clone())),
-                );
+                let el = div()
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .children(
+                        keybinding
+                            .keystrokes()
+                            .iter()
+                            .map(|key| key_shortcut(key.clone())),
+                    );
 
                 return Some(el);
             }
@@ -503,7 +514,6 @@ impl Render for PopupMenu {
             .on_action(cx.listener(Self::dismiss))
             .on_mouse_down_out(cx.listener(|this, _, cx| this.dismiss(&Dismiss, cx)))
             .popover_style(cx)
-            .text_color(cx.theme().popover_foreground)
             .relative()
             .p_1()
             .child(
@@ -557,7 +567,10 @@ impl Render for PopupMenu {
                                                         .h(px(1.))
                                                         .mx_neg_1()
                                                         .my_0p5()
-                                                        .bg(cx.theme().muted),
+                                                        .bg(cx
+                                                            .theme()
+                                                            .base
+                                                            .step(cx, ColorScaleStep::TWO)),
                                                 )
                                             }
                                             PopupMenuItem::ElementItem { render, .. } => this

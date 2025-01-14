@@ -1,17 +1,16 @@
-use gpui::{
-    actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement,
-    AppContext, Bounds, ClickEvent, DismissEvent, ElementId, EventEmitter, FocusHandle,
-    FocusableView, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement, Pixels,
-    Render, SharedString, StatefulInteractiveElement, Styled, Task, View, ViewContext,
-    VisualContext, WeakView, WindowContext,
-};
-
 use crate::{
     h_flex,
     input::ClearButton,
     list::{self, List, ListDelegate, ListItem},
     theme::ActiveTheme,
     v_flex, Disableable, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
+};
+use gpui::{
+    actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement,
+    AppContext, Bounds, ClickEvent, DismissEvent, ElementId, EventEmitter, FocusHandle,
+    FocusableView, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement, Pixels,
+    Render, SharedString, StatefulInteractiveElement, Styled, Task, View, ViewContext,
+    VisualContext, WeakView, WindowContext,
 };
 
 actions!(dropdown, [Up, Down, Enter, Escape]);

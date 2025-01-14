@@ -1,18 +1,16 @@
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
-    div, px, AnyView, IntoElement, ParentElement, Render, SharedString, Styled, ViewContext,
+    div, px, IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext,
     VisualContext, WindowContext,
 };
-
-use crate::theme::ActiveTheme;
 
 pub struct Tooltip {
     text: SharedString,
 }
 
 impl Tooltip {
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(text: impl Into<SharedString>, cx: &mut WindowContext) -> AnyView {
-        cx.new_view(|_| Self { text: text.into() }).into()
+    pub fn new(text: impl Into<SharedString>, cx: &mut WindowContext) -> View<Self> {
+        cx.new_view(|_| Self { text: text.into() })
     }
 }
 
@@ -23,10 +21,8 @@ impl Render for Tooltip {
             div()
                 .font_family(".SystemUIFont")
                 .m_3()
-                .bg(cx.theme().popover)
-                .text_color(cx.theme().popover_foreground)
-                .border_1()
-                .border_color(cx.theme().border)
+                .bg(cx.theme().base.step(cx, ColorScaleStep::TWELVE))
+                .text_color(cx.theme().base.step(cx, ColorScaleStep::ONE))
                 .shadow_md()
                 .rounded(px(6.))
                 .py_0p5()

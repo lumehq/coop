@@ -1,15 +1,12 @@
-use std::rc::Rc;
-
+use super::resize_handle;
+use crate::{h_flex, v_flex, AxisExt};
 use gpui::{
     canvas, div, prelude::FluentBuilder, px, relative, Along, AnyElement, AnyView, Axis, Bounds,
     Element, Entity, EntityId, EventEmitter, IntoElement, IsZero, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, StatefulInteractiveElement as _, Style, Styled, View,
     ViewContext, VisualContext as _, WeakView, WindowContext,
 };
-
-use crate::{h_flex, v_flex, AxisExt};
-
-use super::resize_handle;
+use std::rc::Rc;
 
 pub(crate) const PANEL_MIN_SIZE: Pixels = px(100.);
 
@@ -237,7 +234,9 @@ impl ResizablePanelGroup {
         }
     }
 }
+
 impl EventEmitter<ResizablePanelEvent> for ResizablePanelGroup {}
+
 impl Render for ResizablePanelGroup {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let view = cx.view().clone();

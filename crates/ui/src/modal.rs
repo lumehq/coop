@@ -47,7 +47,7 @@ pub(crate) fn overlay_color(overlay: bool, cx: &WindowContext) -> Hsla {
         return hsla(0., 0., 0., 0.);
     }
 
-    if cx.theme().mode.is_dark() {
+    if cx.theme().appearance.is_dark() {
         hsla(0., 1., 1., 0.06)
     } else {
         hsla(0., 0., 0., 0.06)

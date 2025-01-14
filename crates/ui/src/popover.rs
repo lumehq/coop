@@ -1,3 +1,4 @@
+use crate::{Selectable, StyledExt as _};
 use gpui::{
     actions, anchored, deferred, div, prelude::FluentBuilder as _, px, AnyElement, AppContext,
     Bounds, Corner, DismissEvent, DispatchPhase, Element, ElementId, EventEmitter, FocusHandle,
@@ -6,8 +7,6 @@ use gpui::{
     Style, StyleRefinement, Styled, View, ViewContext, VisualContext, WindowContext,
 };
 use std::{cell::RefCell, rc::Rc};
-
-use crate::{Selectable, StyledExt as _};
 
 const CONTEXT: &str = "Popover";
 
@@ -44,6 +43,7 @@ impl PopoverContent {
         self
     }
 }
+
 impl EventEmitter<DismissEvent> for PopoverContent {}
 
 impl FocusableView for PopoverContent {

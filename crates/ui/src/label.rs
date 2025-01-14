@@ -1,9 +1,8 @@
+use crate::{h_flex, theme::ActiveTheme};
 use gpui::{
     div, prelude::FluentBuilder, rems, Div, IntoElement, ParentElement, RenderOnce, SharedString,
     Styled, WindowContext,
 };
-
-use crate::{h_flex, theme::ActiveTheme};
 
 const MASKED: &str = "•";
 

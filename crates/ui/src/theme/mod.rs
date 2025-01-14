@@ -1,9 +1,10 @@
 use crate::scroll::ScrollbarShow;
-use colors::hsl;
+use colors::{default_color_scales, hsl};
 use gpui::{
     blue, hsla, transparent_black, AppContext, Global, Hsla, ModelContext, SharedString,
     ViewContext, WindowAppearance, WindowContext,
 };
+use scale::ColorScaleSet;
 use std::ops::{Deref, DerefMut};
 
 pub mod colors;
@@ -11,11 +12,11 @@ pub mod scale;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ThemeColors {
+    pub background: Hsla,
     pub border: Hsla,
     pub window_border: Hsla,
     pub accent: Hsla,
     pub accent_foreground: Hsla,
-    pub background: Hsla,
     pub card: Hsla,
     pub card_foreground: Hsla,
     pub danger: Hsla,
@@ -68,9 +69,9 @@ pub struct ThemeColors {
 impl ThemeColors {
     pub fn light() -> Self {
         Self {
+            background: hsl(0.0, 0.0, 100.),
             accent: hsl(240.0, 5.0, 96.0),
             accent_foreground: hsl(240.0, 5.9, 10.0),
-            background: hsl(0.0, 0.0, 100.),
             border: hsl(240.0, 5.9, 90.0),
             window_border: hsl(240.0, 5.9, 78.0),
             card: hsl(0.0, 0.0, 100.0),
@@ -125,9 +126,9 @@ impl ThemeColors {
 
     pub fn dark() -> Self {
         Self {
+            background: hsl(0.0, 0.0, 8.0),
             accent: hsl(240.0, 3.7, 15.9),
             accent_foreground: hsl(0.0, 0.0, 78.0),
-            background: hsl(0.0, 0.0, 8.0),
             border: hsl(240.0, 3.7, 16.9),
             window_border: hsl(240.0, 3.7, 28.0),
             card: hsl(0.0, 0.0, 8.0),
@@ -291,10 +292,14 @@ pub fn init(cx: &mut AppContext) {
     Theme::sync_system_appearance(cx)
 }
 
-#[derive(Debug, Clone)]
 pub struct Theme {
     pub colors: ThemeColors,
-    pub mode: ThemeMode,
+    /// Base colors.
+    pub base: ColorScaleSet,
+    /// Accent colors.
+    pub accent: ColorScaleSet,
+    /// Window appearances.
+    pub appearance: Appearance,
     pub font_family: SharedString,
     pub font_size: f32,
     pub radius: f32,
@@ -331,78 +336,26 @@ impl Theme {
         cx.global_mut::<Theme>()
     }
 
-    /// Apply a mask color to the theme.
-    pub fn apply_color(&mut self, mask_color: Hsla) {
-        self.title_bar = self.title_bar.apply(mask_color);
-        self.title_bar_border = self.title_bar_border.apply(mask_color);
-        self.background = self.background.apply(mask_color);
-        self.foreground = self.foreground.apply(mask_color);
-        self.card = self.card.apply(mask_color);
-        self.card_foreground = self.card_foreground.apply(mask_color);
-        self.popover = self.popover.apply(mask_color);
-        self.popover_foreground = self.popover_foreground.apply(mask_color);
-        self.primary = self.primary.apply(mask_color);
-        self.primary_hover = self.primary_hover.apply(mask_color);
-        self.primary_active = self.primary_active.apply(mask_color);
-        self.primary_foreground = self.primary_foreground.apply(mask_color);
-        self.secondary = self.secondary.apply(mask_color);
-        self.secondary_hover = self.secondary_hover.apply(mask_color);
-        self.secondary_active = self.secondary_active.apply(mask_color);
-        self.secondary_foreground = self.secondary_foreground.apply(mask_color);
-        self.muted = self.muted.apply(mask_color);
-        self.muted_foreground = self.muted_foreground.apply(mask_color);
-        self.accent = self.accent.apply(mask_color);
-        self.accent_foreground = self.accent_foreground.apply(mask_color);
-        self.border = self.border.apply(mask_color);
-        self.input = self.input.apply(mask_color);
-        self.ring = self.ring.apply(mask_color);
-        self.scrollbar = self.scrollbar.apply(mask_color);
-        self.scrollbar_thumb = self.scrollbar_thumb.apply(mask_color);
-        self.scrollbar_thumb_hover = self.scrollbar_thumb_hover.apply(mask_color);
-        self.drag_border = self.drag_border.apply(mask_color);
-        self.drop_target = self.drop_target.apply(mask_color);
-        self.tab_bar = self.tab_bar.apply(mask_color);
-        self.tab = self.tab.apply(mask_color);
-        self.tab_active = self.tab_active.apply(mask_color);
-        self.tab_foreground = self.tab_foreground.apply(mask_color);
-        self.tab_active_foreground = self.tab_active_foreground.apply(mask_color);
-        self.progress_bar = self.progress_bar.apply(mask_color);
-        self.slider_bar = self.slider_bar.apply(mask_color);
-        self.slider_thumb = self.slider_thumb.apply(mask_color);
-        self.list = self.list.apply(mask_color);
-        self.list_even = self.list_even.apply(mask_color);
-        self.list_head = self.list_head.apply(mask_color);
-        self.list_active = self.list_active.apply(mask_color);
-        self.list_active_border = self.list_active_border.apply(mask_color);
-        self.list_hover = self.list_hover.apply(mask_color);
-        self.link = self.link.apply(mask_color);
-        self.link_hover = self.link_hover.apply(mask_color);
-        self.link_active = self.link_active.apply(mask_color);
-        self.skeleton = self.skeleton.apply(mask_color);
-        self.title_bar = self.title_bar.apply(mask_color);
-        self.title_bar_border = self.title_bar_border.apply(mask_color);
-    }
-
     /// Sync the theme with the system appearance
     pub fn sync_system_appearance(cx: &mut AppContext) {
         match cx.window_appearance() {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => {
-                Self::change(ThemeMode::Dark, cx)
+                Self::change(Appearance::Dark, cx)
             }
             WindowAppearance::Light | WindowAppearance::VibrantLight => {
-                Self::change(ThemeMode::Light, cx)
+                Self::change(Appearance::Light, cx)
             }
         }
     }
 
-    pub fn change(mode: ThemeMode, cx: &mut AppContext) {
+    pub fn change(mode: Appearance, cx: &mut AppContext) {
         let colors = match mode {
-            ThemeMode::Light => ThemeColors::light(),
-            ThemeMode::Dark => ThemeColors::dark(),
+            Appearance::Light => ThemeColors::light(),
+            Appearance::Dark => ThemeColors::dark(),
         };
 
         let mut theme = Theme::from(colors);
-        theme.mode = mode;
+        theme.appearance = mode;
 
         cx.set_global(theme);
         cx.refresh();
@@ -411,8 +364,12 @@ impl Theme {
 
 impl From<ThemeColors> for Theme {
     fn from(colors: ThemeColors) -> Self {
+        let color_scales = default_color_scales();
+
         Theme {
-            mode: ThemeMode::default(),
+            base: color_scales.gray,
+            accent: color_scales.yellow,
+            appearance: Appearance::default(),
             transparent: Hsla::transparent_black(),
             font_size: 16.0,
             font_family: if cfg!(target_os = "macos") {
@@ -431,13 +388,13 @@ impl From<ThemeColors> for Theme {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Eq)]
-pub enum ThemeMode {
+pub enum Appearance {
     #[default]
     Light,
     Dark,
 }
 
-impl ThemeMode {
+impl Appearance {
     pub fn is_dark(&self) -> bool {
         matches!(self, Self::Dark)
     }

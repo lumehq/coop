@@ -23,7 +23,6 @@ pub mod radio;
 pub mod resizable;
 pub mod scroll;
 pub mod skeleton;
-pub mod slider;
 pub mod switch;
 pub mod tab;
 pub mod theme;

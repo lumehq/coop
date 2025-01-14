@@ -65,11 +65,11 @@ impl RenderOnce for Checkbox {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let (color, icon_color) = if self.disabled {
             (
-                cx.theme().primary.opacity(0.5),
+                cx.theme().colors.primary.opacity(0.5),
                 cx.theme().primary_foreground.opacity(0.5),
             )
         } else {
-            (cx.theme().primary, cx.theme().primary_foreground)
+            (cx.theme().colors.primary, cx.theme().primary_foreground)
         };
 
         h_flex()

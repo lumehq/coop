@@ -1,6 +1,6 @@
 use crate::{constants::IMAGE_SERVICE, get_client, utils::show_npub};
 use gpui::{
-    div, img, impl_actions, list, px, Context, ElementId, FocusHandle, InteractiveElement,
+    div, img, impl_internal_actions, list, px, Context, ElementId, FocusHandle, InteractiveElement,
     IntoElement, ListAlignment, ListState, Model, ParentElement, Pixels, Render, RenderOnce,
     SharedString, StatefulInteractiveElement, Styled, ViewContext, WindowContext,
 };
@@ -16,7 +16,7 @@ use ui::{
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 struct SelectContact(PublicKey);
 
-impl_actions!(contacts, [SelectContact]);
+impl_internal_actions!(contacts, [SelectContact]);
 
 #[derive(Clone, IntoElement)]
 struct ContactListItem {
@@ -95,7 +95,7 @@ impl RenderOnce for ContactListItem {
                 this.child(
                     Icon::new(IconName::CircleCheck)
                         .size_4()
-                        .text_color(cx.theme().primary),
+                        .text_color(cx.theme().colors.primary),
                 )
             })
             .hover(|this| {

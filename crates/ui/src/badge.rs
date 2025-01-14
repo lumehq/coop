@@ -20,7 +20,7 @@ pub enum BadgeVariant {
 impl BadgeVariant {
     fn bg(&self, cx: &gpui::WindowContext) -> Hsla {
         match self {
-            Self::Primary => cx.theme().primary,
+            Self::Primary => cx.theme().colors.primary,
             Self::Secondary => cx.theme().secondary,
             Self::Outline => gpui::transparent_black(),
             Self::Destructive => cx.theme().danger,
@@ -30,7 +30,7 @@ impl BadgeVariant {
 
     fn border(&self, cx: &gpui::WindowContext) -> Hsla {
         match self {
-            Self::Primary => cx.theme().primary,
+            Self::Primary => cx.theme().colors.primary,
             Self::Secondary => cx.theme().secondary,
             Self::Outline => cx.theme().border,
             Self::Destructive => cx.theme().danger,

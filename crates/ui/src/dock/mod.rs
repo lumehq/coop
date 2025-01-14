@@ -23,7 +23,7 @@ pub use state::*;
 pub use tab_panel::*;
 pub use tiles::*;
 
-use crate::theme::ActiveTheme;
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 
 pub fn init(cx: &mut AppContext) {
     cx.set_global(PanelRegistry::new());
@@ -856,8 +856,7 @@ impl Render for DockArea {
                                     .h_full()
                                     // Left dock
                                     .when_some(self.left_dock.clone(), |this, dock| {
-                                        this.bg(cx.theme().muted)
-                                            .text_color(cx.theme().muted_foreground)
+                                        this.bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
                                             .child(div().flex().flex_none().child(dock))
                                     })
                                     // Center

@@ -1,13 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
-
+use crate::popup_menu::PopupMenu;
 use gpui::{
     anchored, deferred, div, prelude::FluentBuilder, px, relative, AnyElement, Corner,
     DismissEvent, DispatchPhase, Element, ElementId, Focusable, GlobalElementId,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
     Position, Stateful, Style, View, ViewContext, WindowContext,
 };
-
-use crate::popup_menu::PopupMenu;
+use std::{cell::RefCell, rc::Rc};
 
 pub trait ContextMenuExt: ParentElement + Sized {
     fn context_menu(

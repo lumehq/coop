@@ -1,6 +1,6 @@
 use crate::{
     indicator::Indicator,
-    theme::{ActiveTheme, Colorize as _},
+    theme::{scale::ColorScaleStep, ActiveTheme, Colorize as _},
     tooltip::Tooltip,
     Disableable, Icon, Selectable, Sizable, Size, StyledExt,
 };
@@ -76,11 +76,11 @@ pub trait ButtonVariants: Sized {
 impl ButtonCustomVariant {
     pub fn new(cx: &WindowContext) -> Self {
         Self {
-            color: cx.theme().secondary,
-            foreground: cx.theme().secondary_foreground,
-            border: cx.theme().border,
-            hover: cx.theme().secondary_hover,
-            active: cx.theme().secondary_active,
+            color: cx.theme().accent.step(cx, ColorScaleStep::NINE),
+            foreground: cx.theme().accent.step(cx, ColorScaleStep::ONE),
+            border: cx.theme().accent.step(cx, ColorScaleStep::TEN),
+            hover: cx.theme().accent.step(cx, ColorScaleStep::TEN),
+            active: cx.theme().accent.step(cx, ColorScaleStep::ELEVEN),
             shadow: true,
         }
     }
@@ -120,7 +120,6 @@ impl ButtonCustomVariant {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonVariant {
     Primary,
-    Secondary,
     Danger,
     Outline,
     Ghost,
@@ -131,7 +130,7 @@ pub enum ButtonVariant {
 
 impl Default for ButtonVariant {
     fn default() -> Self {
-        Self::Secondary
+        Self::Primary
     }
 }
 
@@ -160,21 +159,20 @@ pub struct Button {
     label: Option<SharedString>,
     children: Vec<AnyElement>,
     disabled: bool,
-    pub(crate) selected: bool,
     variant: ButtonVariant,
     rounded: ButtonRounded,
     border_corners: Corners<bool>,
     border_edges: Edges<bool>,
     size: Size,
-    compact: bool,
     reverse: bool,
     bold: bool,
     centered: bool,
     tooltip: Option<SharedString>,
     on_click: OnClick,
-    pub(crate) stop_propagation: bool,
     loading: bool,
     loading_icon: Option<Icon>,
+    pub(crate) selected: bool,
+    pub(crate) stop_propagation: bool,
 }
 
 impl From<Button> for AnyElement {
@@ -202,7 +200,6 @@ impl Button {
             stop_propagation: true,
             loading: false,
             reverse: false,
-            compact: false,
             bold: false,
             centered: true,
             children: Vec::new(),
@@ -249,12 +246,6 @@ impl Button {
     /// Set true to show the loading indicator.
     pub fn loading(mut self, loading: bool) -> Self {
         self.loading = loading;
-        self
-    }
-
-    /// Set the button to compact mode, then padding will be reduced.
-    pub fn compact(mut self) -> Self {
-        self.compact = true;
         self
     }
 
@@ -372,9 +363,9 @@ impl RenderOnce for Button {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
-                        Size::XSmall => this.h_5().px_1().when(self.compact, |this| this.px_0()),
-                        Size::Small => this.h_6().px_2().when(self.compact, |this| this.px_0p5()),
-                        _ => this.h_8().px_4().when(self.compact, |this| this.px_1()),
+                        Size::XSmall => this.h_6().px_0p5(),
+                        Size::Small => this.h_8().px_2(),
+                        _ => this.h_10().px_4(),
                     }
                 }
             })
@@ -486,7 +477,7 @@ impl RenderOnce for Button {
             })
             .when(self.loading, |this| this.bg(normal_style.bg.opacity(0.8)))
             .when_some(self.tooltip.clone(), |this, tooltip| {
-                this.tooltip(move |cx| Tooltip::new(tooltip.clone(), cx))
+                this.tooltip(move |cx| Tooltip::new(tooltip.clone(), cx).into())
             })
     }
 }
@@ -502,34 +493,25 @@ struct ButtonVariantStyle {
 impl ButtonVariant {
     fn bg_color(&self, cx: &WindowContext) -> Hsla {
         match self {
-            ButtonVariant::Primary => cx.theme().primary,
-            ButtonVariant::Secondary => cx.theme().secondary,
+            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::NINE),
             ButtonVariant::Danger => cx.theme().danger,
-            ButtonVariant::Outline
-            | ButtonVariant::Ghost
-            | ButtonVariant::Link
-            | ButtonVariant::Text => cx.theme().transparent,
             ButtonVariant::Custom(colors) => colors.color,
+            _ => cx.theme().transparent,
         }
     }
 
     fn text_color(&self, cx: &WindowContext) -> Hsla {
         match self {
-            ButtonVariant::Primary => cx.theme().primary_foreground,
-            ButtonVariant::Secondary | ButtonVariant::Outline | ButtonVariant::Ghost => {
-                cx.theme().secondary_foreground
-            }
-            ButtonVariant::Danger => cx.theme().danger_foreground,
-            ButtonVariant::Link => cx.theme().link,
-            ButtonVariant::Text => cx.theme().foreground,
+            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::ONE),
+            ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
             ButtonVariant::Custom(colors) => colors.foreground,
+            _ => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
         }
     }
 
     fn border_color(&self, cx: &WindowContext) -> Hsla {
         match self {
-            ButtonVariant::Primary => cx.theme().primary,
-            ButtonVariant::Secondary => cx.theme().border,
+            ButtonVariant::Primary => cx.theme().colors.primary,
             ButtonVariant::Danger => cx.theme().danger,
             ButtonVariant::Outline => cx.theme().border,
             ButtonVariant::Ghost | ButtonVariant::Link | ButtonVariant::Text => {
@@ -545,7 +527,7 @@ impl ButtonVariant {
 
     fn shadow(&self, _: &WindowContext) -> bool {
         match self {
-            ButtonVariant::Primary | ButtonVariant::Secondary | ButtonVariant::Danger => true,
+            ButtonVariant::Primary | ButtonVariant::Danger => true,
             ButtonVariant::Custom(c) => c.shadow,
             _ => false,
         }
@@ -569,16 +551,10 @@ impl ButtonVariant {
 
     fn hovered(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Primary => cx.theme().primary_hover,
-            ButtonVariant::Secondary | ButtonVariant::Outline => cx.theme().secondary_hover,
+            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
+            ButtonVariant::Outline => cx.theme().secondary_hover,
             ButtonVariant::Danger => cx.theme().danger_hover,
-            ButtonVariant::Ghost => {
-                if cx.theme().mode.is_dark() {
-                    cx.theme().secondary.lighten(0.1).opacity(0.8)
-                } else {
-                    cx.theme().secondary.darken(0.1).opacity(0.8)
-                }
-            }
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ButtonVariant::Link => cx.theme().transparent,
             ButtonVariant::Text => cx.theme().transparent,
             ButtonVariant::Custom(colors) => colors.hover,
@@ -603,9 +579,9 @@ impl ButtonVariant {
     fn active(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().primary_active,
-            ButtonVariant::Secondary | ButtonVariant::Outline => cx.theme().secondary_active,
+            ButtonVariant::Outline => cx.theme().secondary_active,
             ButtonVariant::Ghost => {
-                if cx.theme().mode.is_dark() {
+                if cx.theme().appearance.is_dark() {
                     cx.theme().secondary.lighten(0.2).opacity(0.8)
                 } else {
                     cx.theme().secondary.darken(0.2).opacity(0.8)
@@ -637,9 +613,9 @@ impl ButtonVariant {
     fn selected(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().primary_active,
-            ButtonVariant::Secondary | ButtonVariant::Outline => cx.theme().secondary_active,
+            ButtonVariant::Outline => cx.theme().secondary_active,
             ButtonVariant::Ghost => {
-                if cx.theme().mode.is_dark() {
+                if cx.theme().appearance.is_dark() {
                     cx.theme().secondary.lighten(0.2).opacity(0.8)
                 } else {
                     cx.theme().secondary.darken(0.2).opacity(0.8)
@@ -674,9 +650,8 @@ impl ButtonVariant {
             | ButtonVariant::Ghost
             | ButtonVariant::Outline
             | ButtonVariant::Text => cx.theme().transparent,
-            ButtonVariant::Primary => cx.theme().primary.opacity(0.15),
+            ButtonVariant::Primary => cx.theme().colors.primary.opacity(0.15),
             ButtonVariant::Danger => cx.theme().danger.opacity(0.15),
-            ButtonVariant::Secondary => cx.theme().secondary.opacity(1.5),
             ButtonVariant::Custom(style) => style.color.opacity(0.15),
         };
         let fg = match self {

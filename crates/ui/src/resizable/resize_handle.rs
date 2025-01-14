@@ -1,10 +1,12 @@
+use crate::{
+    theme::{scale::ColorScaleStep, ActiveTheme as _},
+    AxisExt as _,
+};
 use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Div, ElementId, InteractiveElement, IntoElement,
     ParentElement as _, Pixels, RenderOnce, Stateful, StatefulInteractiveElement, Styled as _,
     WindowContext,
 };
-
-use crate::{theme::ActiveTheme as _, AxisExt as _};
 
 pub(crate) const HANDLE_PADDING: Pixels = px(4.);
 pub(crate) const HANDLE_SIZE: Pixels = px(1.);
@@ -34,6 +36,7 @@ impl InteractiveElement for ResizeHandle {
         self.base.interactivity()
     }
 }
+
 impl StatefulInteractiveElement for ResizeHandle {}
 
 impl RenderOnce for ResizeHandle {
@@ -62,7 +65,7 @@ impl RenderOnce for ResizeHandle {
             })
             .child(
                 div()
-                    .bg(cx.theme().border)
+                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
                     .when(self.axis.is_horizontal(), |this| {
                         this.h_full().w(HANDLE_SIZE)
                     })

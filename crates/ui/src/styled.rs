@@ -1,6 +1,6 @@
 use crate::{
     scroll::{Scrollable, ScrollbarAxis},
-    theme::ActiveTheme,
+    theme::{scale::ColorScaleStep, ActiveTheme},
 };
 use gpui::{div, px, Axis, Div, Element, ElementId, EntityId, Pixels, Styled, WindowContext};
 use serde::{Deserialize, Serialize};
@@ -64,9 +64,9 @@ pub trait StyledExt: Styled + Sized {
 
     /// Set as Popover style
     fn popover_style(self, cx: &mut WindowContext) -> Self {
-        self.bg(cx.theme().popover)
+        self.bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::FOUR))
             .shadow_lg()
             .rounded_lg()
     }

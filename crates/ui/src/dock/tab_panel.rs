@@ -1,7 +1,3 @@
-use gpui::*;
-use prelude::FluentBuilder;
-use std::sync::Arc;
-
 use super::{
     ClosePanel, DockArea, DockPlacement, Panel, PanelEvent, PanelState, PanelStyle, PanelView,
     StackPanel, ToggleZoom,
@@ -12,9 +8,17 @@ use crate::{
     h_flex,
     popup_menu::{PopupMenu, PopupMenuExt},
     tab::{tab_bar::TabBar, Tab},
-    theme::ActiveTheme,
+    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, AxisExt, IconName, Placement, Selectable, Sizable,
 };
+use gpui::{
+    div, img, prelude::FluentBuilder, px, rems, AppContext, Corner, DefiniteLength, DismissEvent,
+    DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, FocusableView,
+    InteractiveElement as _, IntoElement, ObjectFit, ParentElement, Pixels, Render, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, View, ViewContext,
+    VisualContext as _, WeakView, WindowContext,
+};
+use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 struct TabState {
@@ -49,13 +53,11 @@ impl Render for DragPanel {
             .justify_center()
             .overflow_hidden()
             .whitespace_nowrap()
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded_md()
-            .text_color(cx.theme().tab_foreground)
+            .rounded(px(cx.theme().radius))
             .text_xs()
-            .bg(cx.theme().tab_active)
-            .opacity(0.75)
+            .border_1()
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+            .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
             .child(self.panel.title(cx))
     }
 }
@@ -572,8 +574,8 @@ impl TabPanel {
                             .border_r_1()
                             .border_b_1()
                             .h_full()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().tab_bar)
+                            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                            .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
                             .px_2()
                             .children(left_dock_button)
                             .children(bottom_dock_button),
@@ -611,7 +613,7 @@ impl TabPanel {
                                 this.rounded_l_none()
                                     .border_l_2()
                                     .border_r_0()
-                                    .border_color(cx.theme().drag_border)
+                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::TWO))
                             })
                             .on_drop(cx.listener(
                                 move |this, drag: &DragPanel, cx| {
@@ -630,8 +632,11 @@ impl TabPanel {
                     .flex_grow()
                     .min_w_16()
                     .when(state.droppable, |this| {
-                        this.drag_over::<DragPanel>(|this, _, cx| this.bg(cx.theme().drop_target))
-                            .on_drop(cx.listener(move |this, drag: &DragPanel, cx| {
+                        this.drag_over::<DragPanel>(|this, _, cx| {
+                            this.bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                        })
+                        .on_drop(cx.listener(
+                            move |this, drag: &DragPanel, cx| {
                                 this.will_split_placement = None;
 
                                 let ix = if drag.tab_panel == view {
@@ -641,7 +646,8 @@ impl TabPanel {
                                 };
 
                                 this.on_drop(drag, ix, false, cx)
-                            }))
+                            },
+                        ))
                     }),
             )
             .suffix(
@@ -652,8 +658,8 @@ impl TabPanel {
                     .border_l_1()
                     .border_b_1()
                     .h_full()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().tab_bar)
+                    .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                    .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
                     .px_2()
                     .gap_1()
                     .child(self.render_toolbar(state, cx))

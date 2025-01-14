@@ -4,7 +4,7 @@ use super::{
 };
 use crate::states::{app::AppRegistry, chat::ChatRegistry};
 use gpui::{
-    div, impl_actions, px, Axis, Context, Edges, InteractiveElement, IntoElement, Model,
+    div, impl_internal_actions, px, Axis, Context, Edges, InteractiveElement, IntoElement, Model,
     ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView, WindowContext,
 };
 use serde::Deserialize;
@@ -28,7 +28,7 @@ pub struct AddPanel {
     pub position: DockPlacement,
 }
 
-impl_actions!(dock, [AddPanel]);
+impl_internal_actions!(dock, [AddPanel]);
 
 pub struct DockAreaTab {
     id: &'static str,

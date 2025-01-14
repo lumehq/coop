@@ -167,7 +167,6 @@ impl RenderOnce for ButtonGroup {
                         .stop_propagation(false)
                         .when_some(self.size, |this, size| this.with_size(size))
                         .when_some(self.variant, |this, variant| this.with_variant(variant))
-                        .when_some(self.compact, |this, _| this.compact())
                         .on_click(move |_, _| {
                             state.set(Some(child_index));
                         })

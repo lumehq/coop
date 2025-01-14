@@ -1,18 +1,16 @@
+use crate::theme::ActiveTheme;
 use gpui::{
     canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, Bounds, CursorStyle,
     Decorations, Edges, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement,
     Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, WindowContext,
 };
 
-use crate::theme::ActiveTheme;
-
+pub(crate) const BORDER_SIZE: Pixels = Pixels(1.0);
+pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
 #[cfg(not(target_os = "linux"))]
 pub(crate) const SHADOW_SIZE: Pixels = Pixels(0.0);
 #[cfg(target_os = "linux")]
 pub(crate) const SHADOW_SIZE: Pixels = Pixels(12.0);
-
-pub(crate) const BORDER_SIZE: Pixels = Pixels(1.0);
-pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {

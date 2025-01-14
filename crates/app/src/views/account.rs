@@ -66,10 +66,9 @@ impl Account {
 impl Render for Account {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         Button::new("account")
-            .small()
-            .compact()
-            .reverse()
             .ghost()
+            .xsmall()
+            .reverse()
             .icon(Icon::new(IconName::ChevronDownSmall))
             .map(|this| {
                 if let Some(metadata) = self.metadata.read(cx).as_ref() {

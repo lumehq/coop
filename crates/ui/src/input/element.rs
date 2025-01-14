@@ -144,7 +144,7 @@ impl TextElement {
                         ),
                         size(px(1.5), line_height),
                     ),
-                    cx.theme().primary,
+                    cx.theme().colors.primary,
                 ))
             };
         }

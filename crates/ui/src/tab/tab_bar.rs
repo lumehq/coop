@@ -1,11 +1,12 @@
-use crate::h_flex;
-use crate::theme::ActiveTheme;
-use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    div, AnyElement, Div, ElementId, IntoElement, ParentElement, RenderOnce, ScrollHandle,
-    StatefulInteractiveElement as _, Styled, WindowContext,
+use crate::{
+    h_flex,
+    theme::{scale::ColorScaleStep, ActiveTheme},
 };
-use gpui::{px, InteractiveElement};
+use gpui::{
+    div, prelude::FluentBuilder as _, px, AnyElement, Div, ElementId, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, ScrollHandle, StatefulInteractiveElement as _, Styled,
+    WindowContext,
+};
 use smallvec::SmallVec;
 
 #[derive(IntoElement)]
@@ -70,8 +71,7 @@ impl RenderOnce for TabBar {
             .flex()
             .flex_none()
             .items_center()
-            .bg(cx.theme().tab_bar)
-            .text_color(cx.theme().tab_foreground)
+            .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
             .child(
                 div()
                     .id("border-b")
@@ -79,7 +79,7 @@ impl RenderOnce for TabBar {
                     .bottom_0()
                     .size_full()
                     .border_b_1()
-                    .border_color(cx.theme().border),
+                    .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
             )
             .when_some(self.prefix, |this, prefix| this.child(prefix))
             .child(

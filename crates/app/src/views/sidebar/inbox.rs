@@ -4,10 +4,14 @@ use crate::{
     views::app::{AddPanel, PanelKind},
 };
 use gpui::{
-    div, img, percentage, prelude::FluentBuilder, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,
+    div, img, percentage, prelude::FluentBuilder, px, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,
 };
-use ui::{skeleton::Skeleton, theme::ActiveTheme, v_flex, Collapsible, Icon, IconName, StyledExt};
+use ui::{
+    skeleton::Skeleton,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    v_flex, Collapsible, Icon, IconName, StyledExt,
+};
 
 pub struct Inbox {
     label: SharedString,
@@ -59,8 +63,8 @@ impl Inbox {
                             .items_center()
                             .justify_between()
                             .text_xs()
-                            .rounded_md()
-                            .hover(|this| this.bg(cx.theme().list_hover))
+                            .rounded(px(cx.theme().radius))
+                            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
                             .child(div().font_medium().map(|this| {
                                 if room.is_group {
                                     this.flex()
@@ -83,7 +87,11 @@ impl Inbox {
                                     })
                                 }
                             }))
-                            .child(div().child(ago))
+                            .child(
+                                div()
+                                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                                    .child(ago),
+                            )
                             .on_click(cx.listener(move |this, _, cx| {
                                 this.action(id, cx);
                             }))
@@ -126,10 +134,10 @@ impl Render for Inbox {
                     .px_1()
                     .flex()
                     .items_center()
-                    .rounded_md()
+                    .rounded(px(cx.theme().radius))
                     .text_xs()
                     .font_semibold()
-                    .hover(|this| this.bg(cx.theme().list_hover))
+                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
                     .on_click(cx.listener(move |view, _event, cx| {
                         view.is_collapsed = !view.is_collapsed;
                         cx.notify();
