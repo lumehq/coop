@@ -5,6 +5,19 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
 };
 
+use crate::{constants::NIP96_SERVER, get_client};
+
+pub async fn nip96_upload(file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
+    let client = get_client();
+    let signer = client.signer().await?;
+    let server_url = Url::parse(NIP96_SERVER)?;
+
+    let config: ServerConfig = nip96::get_server_config(server_url, None).await?;
+    let url = nip96::upload_data(&signer, &config, file, None, None).await?;
+
+    Ok(url)
+}
+
 pub fn room_hash(tags: &Tags) -> u64 {
     let pubkeys: Vec<PublicKey> = tags.public_keys().copied().collect();
     let mut hasher = DefaultHasher::new();

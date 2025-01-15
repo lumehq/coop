@@ -1,18 +1,21 @@
 use crate::{
     get_client,
     states::chat::room::Room,
-    utils::{ago, compare},
+    utils::{ago, compare, nip96_upload},
 };
+use async_utility::task::spawn;
 use gpui::{
-    div, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
-    FocusableView, IntoElement, ListAlignment, ListState, Model, ParentElement, PathPromptOptions,
-    Pixels, Render, SharedString, Styled, View, ViewContext, VisualContext, WeakModel, WeakView,
-    WindowContext,
+    div, img, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
+    FocusableView, InteractiveElement, IntoElement, ListAlignment, ListState, Model, ObjectFit,
+    ParentElement, PathPromptOptions, Pixels, Render, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, View, ViewContext, VisualContext, WeakModel, WeakView, WindowContext,
 };
 use itertools::Itertools;
 use message::Message;
 use nostr_sdk::prelude::*;
+use smol::fs;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::{
@@ -21,6 +24,7 @@ use ui::{
     },
     input::{InputEvent, TextInput},
     popup_menu::PopupMenu,
+    prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, Icon, IconName,
 };
@@ -44,7 +48,11 @@ pub struct ChatPanel {
     room: Model<Room>,
     state: Model<State>,
     list: ListState,
+    // New Message
     input: View<TextInput>,
+    // Media
+    attaches: Model<Option<Vec<Url>>>,
+    is_uploading: bool,
 }
 
 impl ChatPanel {
@@ -68,6 +76,7 @@ impl ChatPanel {
                     .cleanable()
             });
 
+            // List
             let state = cx.new_model(|_| State {
                 count: 0,
                 items: vec![],
@@ -107,6 +116,8 @@ impl ChatPanel {
             })
             .detach();
 
+            let attaches = cx.new_model(|_| None);
+
             Self {
                 closeable: true,
                 zoomable: true,
@@ -115,10 +126,12 @@ impl ChatPanel {
                 list: ListState::new(0, ListAlignment::Bottom, Pixels(256.), move |_, _| {
                     div().into_any_element()
                 }),
+                is_uploading: false,
                 id,
                 name,
                 input,
                 state,
+                attaches,
             }
         })
     }
@@ -291,6 +304,52 @@ impl ChatPanel {
             })
             .detach();
     }
+
+    fn upload(&mut self, cx: &mut ViewContext<Self>) {
+        let attaches = self.attaches.clone();
+
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+        });
+
+        cx.spawn(move |_, mut async_cx| async move {
+            match Flatten::flatten(paths.await.map_err(|e| e.into())) {
+                Ok(Some(mut paths)) => {
+                    let path = paths.pop().unwrap();
+
+                    if let Ok(file_data) = fs::read(path).await {
+                        let (tx, rx) = oneshot::channel::<Url>();
+
+                        spawn(async move {
+                            if let Ok(url) = nip96_upload(file_data).await {
+                                _ = tx.send(url);
+                            }
+                        });
+
+                        if let Ok(url) = rx.await {
+                            _ = async_cx.update_model(&attaches, |model, cx| {
+                                if let Some(model) = model.as_mut() {
+                                    model.push(url);
+                                } else {
+                                    *model = Some(vec![url]);
+                                }
+                                cx.notify();
+                            });
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(_) => {}
+            }
+        })
+        .detach();
+    }
+
+    fn remove(&mut self, cx: &mut ViewContext<Self>) {
+        // TODO
+    }
 }
 
 impl Panel for ChatPanel {
@@ -343,44 +402,56 @@ impl Render for ChatPanel {
             .child(
                 div()
                     .flex_shrink_0()
-                    .w_full()
-                    .h_12()
                     .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .child(
-                        Button::new("upload")
-                            .icon(Icon::new(IconName::Upload))
-                            .ghost()
-                            .on_click(|_, cx| {
-                                let paths = cx.prompt_for_paths(PathPromptOptions {
-                                    files: true,
-                                    directories: false,
-                                    multiple: false,
-                                });
+                    .flex_col()
+                    .gap_1()
+                    .when_some(self.attaches.read(cx).as_ref(), |this, attaches| {
+                        this.flex()
+                            .items_center()
+                            .gap_1p5()
+                            .px_2()
+                            .children(attaches.iter().map(|url| {
+                                let path: SharedString = url.to_string().into();
 
-                                cx.spawn(move |_async_cx| async move {
-                                    match Flatten::flatten(paths.await.map_err(|e| e.into())) {
-                                        Ok(Some(paths)) => {
-                                            // TODO: upload file to blossom server
-                                            println!("Paths: {:?}", paths)
-                                        }
-                                        Ok(None) => {}
-                                        Err(_) => {}
-                                    }
-                                })
-                                .detach();
-                            }),
-                    )
+                                div()
+                                    .id(path.clone())
+                                    .child(
+                                        img(path)
+                                            .h_16()
+                                            .rounded(px(cx.theme().radius))
+                                            .object_fit(ObjectFit::ScaleDown),
+                                    )
+                                    .on_click(cx.listener(move |this, _, cx| {
+                                        this.remove(cx);
+                                    }))
+                            }))
+                    })
                     .child(
                         div()
-                            .flex_1()
+                            .w_full()
+                            .h_12()
                             .flex()
-                            .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
-                            .rounded(px(cx.theme().radius))
+                            .items_center()
+                            .gap_2()
                             .px_2()
-                            .child(self.input.clone()),
+                            .child(
+                                Button::new("upload")
+                                    .icon(Icon::new(IconName::Upload))
+                                    .ghost()
+                                    .on_click(cx.listener(move |this, _, cx| {
+                                        this.upload(cx);
+                                    }))
+                                    .loading(self.is_uploading),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
+                                    .rounded(px(cx.theme().radius))
+                                    .px_2()
+                                    .child(self.input.clone()),
+                            ),
                     ),
             )
     }

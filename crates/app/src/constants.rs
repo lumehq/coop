@@ -5,3 +5,4 @@ pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwrap";
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
 pub const METADATA_DELAY: u64 = 200;
 pub const IMAGE_SERVICE: &str = "https://wsrv.nl";
+pub const NIP96_SERVER: &str = "https://nostrcheck.me";
