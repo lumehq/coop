@@ -1,10 +1,14 @@
 use super::{
-    ClosePanel, DockArea, DockPlacement, Panel, PanelEvent, PanelState, PanelStyle, PanelView,
-    StackPanel, ToggleZoom,
+    panel::PanelView, stack_panel::StackPanel, ClosePanel, DockArea, PanelEvent, PanelStyle,
+    ToggleZoom,
 };
 use crate::{
     button::{Button, ButtonVariants as _},
-    dock::PanelInfo,
+    dock_area::{
+        dock::DockPlacement,
+        panel::Panel,
+        state::{PanelInfo, PanelState},
+    },
     h_flex,
     popup_menu::{PopupMenu, PopupMenuExt},
     tab::{tab_bar::TabBar, Tab},
@@ -613,7 +617,7 @@ impl TabPanel {
                                 this.rounded_l_none()
                                     .border_l_2()
                                     .border_r_0()
-                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
                             })
                             .on_drop(cx.listener(
                                 move |this, drag: &DragPanel, cx| {
@@ -688,7 +692,7 @@ impl TabPanel {
                                 div()
                                     .invisible()
                                     .absolute()
-                                    .bg(cx.theme().drop_target)
+                                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
                                     .map(|this| match self.will_split_placement {
                                         Some(placement) => {
                                             let size = DefiniteLength::Fraction(0.35);

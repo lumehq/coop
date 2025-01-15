@@ -15,10 +15,13 @@ use nostr_sdk::prelude::*;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonVariants},
-    dock::{Panel, PanelEvent, PanelState},
+    dock_area::{
+        panel::{Panel, PanelEvent},
+        state::PanelState,
+    },
     input::{InputEvent, TextInput},
     popup_menu::PopupMenu,
-    theme::ActiveTheme,
+    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, Icon, IconName,
 };
 
@@ -374,7 +377,7 @@ impl Render for ChatPanel {
                         div()
                             .flex_1()
                             .flex()
-                            .bg(cx.theme().muted)
+                            .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
                             .rounded(px(cx.theme().radius))
                             .px_2()
                             .child(self.input.clone()),

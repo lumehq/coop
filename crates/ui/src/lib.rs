@@ -1,17 +1,15 @@
 pub mod animation;
-pub mod badge;
 pub mod button;
 pub mod button_group;
 pub mod checkbox;
 pub mod clipboard;
 pub mod context_menu;
 pub mod divider;
-pub mod dock;
+pub mod dock_area;
 pub mod dropdown;
 pub mod history;
 pub mod indicator;
 pub mod input;
-pub mod label;
 pub mod list;
 pub mod modal;
 pub mod notification;
@@ -51,7 +49,7 @@ mod window_border;
 /// You can initialize the UI module at your application's entry point.
 pub fn init(cx: &mut gpui::AppContext) {
     theme::init(cx);
-    dock::init(cx);
+    dock_area::init(cx);
     dropdown::init(cx);
     input::init(cx);
     list::init(cx);

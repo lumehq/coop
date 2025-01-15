@@ -3,7 +3,10 @@ use gpui::{
     div, img, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
     WindowContext,
 };
-use ui::{theme::ActiveTheme, StyledExt};
+use ui::{
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    StyledExt,
+};
 
 #[derive(Clone, Debug, IntoElement)]
 pub struct Message {
@@ -32,9 +35,8 @@ impl RenderOnce for Message {
             .border_l_2()
             .border_color(cx.theme().background)
             .hover(|this| {
-                this.bg(cx.theme().muted)
-                    .border_color(cx.theme().primary_active)
-                    .text_color(cx.theme().muted_foreground)
+                this.bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                    .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE))
             })
             .child(
                 img(self.member.avatar())
@@ -58,15 +60,10 @@ impl RenderOnce for Message {
                             .child(
                                 div()
                                     .child(self.ago)
-                                    .text_color(cx.theme().muted_foreground),
+                                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN)),
                             ),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().foreground)
-                            .child(self.content),
-                    ),
+                    .child(div().text_sm().child(self.content)),
             )
     }
 }

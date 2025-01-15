@@ -2,7 +2,7 @@ use crate::{
     h_flex,
     input::ClearButton,
     list::{self, List, ListDelegate, ListItem},
-    theme::ActiveTheme,
+    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, Disableable, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
 };
 use gpui::{
@@ -197,7 +197,7 @@ where
             h_flex()
                 .justify_center()
                 .py_6()
-                .text_color(cx.theme().muted_foreground.opacity(0.6))
+                .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                 .child(Icon::new(IconName::Inbox).size(px(28.)))
                 .into_any_element()
         }
@@ -525,16 +525,18 @@ where
                 .when_some(self.title_prefix.clone(), |this, prefix| this.child(prefix))
                 .child(title.clone())
         } else {
-            div().text_color(cx.theme().accent_foreground).child(
-                self.placeholder
-                    .clone()
-                    .unwrap_or_else(|| "Please select".into()),
-            )
+            div()
+                .text_color(cx.theme().accent.step(cx, ColorScaleStep::ELEVEN))
+                .child(
+                    self.placeholder
+                        .clone()
+                        .unwrap_or_else(|| "Please select".into()),
+                )
         };
 
         title.when(self.disabled, |this| {
             this.cursor_not_allowed()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
         })
     }
 }
@@ -602,7 +604,7 @@ where
                     .justify_between()
                     .bg(cx.theme().background)
                     .border_1()
-                    .border_color(cx.theme().input)
+                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FOUR))
                     .rounded(px(cx.theme().radius))
                     .when(cx.theme().shadow, |this| this.shadow_sm())
                     .map(|this| {
@@ -660,8 +662,10 @@ where
                                     Icon::new(icon)
                                         .xsmall()
                                         .text_color(match self.disabled {
-                                            true => cx.theme().muted_foreground.opacity(0.5),
-                                            false => cx.theme().muted_foreground,
+                                            true => cx.theme().base.step(cx, ColorScaleStep::TEN),
+                                            false => {
+                                                cx.theme().base.step(cx, ColorScaleStep::ELEVEN)
+                                            }
                                         })
                                         .when(self.disabled, |this| this.cursor_not_allowed()),
                                 )
@@ -692,7 +696,9 @@ where
                                         .mt_1p5()
                                         .bg(cx.theme().background)
                                         .border_1()
-                                        .border_color(cx.theme().border)
+                                        .border_color(
+                                            cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                                        )
                                         .rounded(px(cx.theme().radius))
                                         .shadow_md()
                                         .on_mouse_down_out(|_, cx| {

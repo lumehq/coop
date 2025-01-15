@@ -1,19 +1,25 @@
-use gpui::*;
-use prelude::FluentBuilder;
-use smallvec::SmallVec;
-use std::sync::Arc;
-
-use super::{DockArea, Panel, PanelEvent, PanelState, PanelView, TabPanel};
+use super::{DockArea, PanelEvent};
 use crate::{
-    dock::PanelInfo,
+    dock_area::{
+        panel::{Panel, PanelView},
+        state::{PanelInfo, PanelState},
+        tab_panel::TabPanel,
+    },
     h_flex,
     resizable::{
         h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent,
         ResizablePanelGroup,
     },
-    theme::ActiveTheme,
+    theme::{scale::ColorScaleStep, ActiveTheme},
     AxisExt as _, Placement,
 };
+use gpui::{
+    prelude::FluentBuilder, AppContext, Axis, DismissEvent, EventEmitter, FocusHandle,
+    FocusableView, IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Subscription,
+    View, ViewContext, VisualContext as _, WeakView,
+};
+use smallvec::SmallVec;
+use std::sync::Arc;
 
 pub struct StackPanel {
     pub(super) parent: Option<WeakView<StackPanel>>,
@@ -362,14 +368,17 @@ impl FocusableView for StackPanel {
         self.focus_handle.clone()
     }
 }
+
 impl EventEmitter<PanelEvent> for StackPanel {}
+
 impl EventEmitter<DismissEvent> for StackPanel {}
+
 impl Render for StackPanel {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         h_flex()
             .size_full()
             .overflow_hidden()
-            .bg(cx.theme().tab_bar)
+            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
             .child(self.panel_group.clone())
     }
 }

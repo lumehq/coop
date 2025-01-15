@@ -1,3 +1,10 @@
+use super::{DockArea, DockItem};
+use crate::{
+    dock_area::{panel::PanelView, tab_panel::TabPanel},
+    resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE},
+    theme::{scale::ColorScaleStep, ActiveTheme as _},
+    AxisExt as _, StyledExt,
+};
 use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Element, Entity, InteractiveElement as _,
     IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render,
@@ -6,14 +13,6 @@ use gpui::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
-use crate::{
-    resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE},
-    theme::ActiveTheme as _,
-    AxisExt as _, StyledExt,
-};
-
-use super::{DockArea, DockItem, PanelView, TabPanel};
 
 #[derive(Clone, Render)]
 struct ResizePanel;
@@ -190,16 +189,6 @@ impl Dock {
                     }
                 });
             }
-            DockItem::Tiles { view, .. } => {
-                cx.defer({
-                    let view = view.clone();
-                    move |cx| {
-                        _ = dock_area.update(cx, |this, cx| {
-                            this.subscribe_panel(&view, cx);
-                        });
-                    }
-                });
-            }
             DockItem::Panel { .. } => {
                 // Not supported
             }
@@ -285,7 +274,7 @@ impl Dock {
             })
             .child(
                 div()
-                    .bg(cx.theme().border)
+                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
                     .when(axis.is_horizontal(), |this| this.h_full().w(HANDLE_SIZE))
                     .when(axis.is_vertical(), |this| this.w_full().h(HANDLE_SIZE)),
             )
@@ -383,8 +372,6 @@ impl Render for Dock {
                 DockItem::Split { view, .. } => this.child(view.clone()),
                 DockItem::Tabs { view, .. } => this.child(view.clone()),
                 DockItem::Panel { view, .. } => this.child(view.clone().view()),
-                // Not support to render Tiles and Tile into Dock
-                DockItem::Tiles { .. } => this,
             })
             .child(self.render_resize_handle(cx))
             .child(DockElement {
@@ -416,7 +403,7 @@ impl Element for DockElement {
     fn request_layout(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
-        cx: &mut gpui::WindowContext,
+        cx: &mut WindowContext,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
         (cx.request_layout(Style::default(), None), ())
     }
@@ -426,7 +413,7 @@ impl Element for DockElement {
         _: Option<&gpui::GlobalElementId>,
         _: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
-        _: &mut gpui::WindowContext,
+        _: &mut WindowContext,
     ) -> Self::PrepaintState {
     }
 
@@ -436,7 +423,7 @@ impl Element for DockElement {
         _: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        cx: &mut gpui::WindowContext,
+        cx: &mut WindowContext,
     ) {
         cx.on_mouse_event({
             let view = self.view.clone();

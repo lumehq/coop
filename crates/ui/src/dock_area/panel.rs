@@ -1,12 +1,15 @@
+use super::DockArea;
+use crate::{
+    button::Button,
+    dock_area::state::{PanelInfo, PanelState},
+    popup_menu::PopupMenu,
+};
 use gpui::{
     AnyElement, AnyView, AppContext, EventEmitter, FocusHandle, FocusableView, Global, Hsla,
     IntoElement, SharedString, View, WeakView, WindowContext,
 };
 use nostr_sdk::prelude::Metadata;
 use std::{collections::HashMap, sync::Arc};
-
-use super::{DockArea, PanelInfo, PanelState};
-use crate::{button::Button, popup_menu::PopupMenu};
 
 pub enum PanelEvent {
     ZoomIn,

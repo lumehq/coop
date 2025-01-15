@@ -1,4 +1,8 @@
-use crate::{h_flex, theme::ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable as _};
+use crate::{
+    h_flex,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    Disableable, Icon, IconName, Selectable, Sizable as _,
+};
 use gpui::{
     div, prelude::FluentBuilder as _, AnyElement, ClickEvent, Div, ElementId, InteractiveElement,
     IntoElement, MouseButton, MouseMoveEvent, ParentElement, RenderOnce, Stateful,
@@ -123,7 +127,7 @@ impl RenderOnce for ListItem {
         let is_active = self.selected || self.confirmed;
 
         self.base
-            .text_color(cx.theme().foreground)
+            .text_color(cx.theme().base.step(cx, ColorScaleStep::TWELVE))
             .relative()
             .items_center()
             .justify_between()
@@ -138,9 +142,11 @@ impl RenderOnce for ListItem {
                     this
                 }
             })
-            .when(is_active, |this| this.bg(cx.theme().list_active))
+            .when(is_active, |this| {
+                this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+            })
             .when(!is_active && !self.disabled, |this| {
-                this.hover(|this| this.bg(cx.theme().list_hover))
+                this.hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::TWO)))
             })
             // Mouse enter
             .when_some(self.on_mouse_enter, |this, on_mouse_enter| {
@@ -158,14 +164,16 @@ impl RenderOnce for ListItem {
                     .gap_x_1()
                     .child(div().w_full().children(self.children))
                     .when_some(self.check_icon, |this, icon| {
-                        this.child(
-                            div().w_5().items_center().justify_center().when(
-                                self.confirmed,
-                                |this| {
-                                    this.child(icon.small().text_color(cx.theme().muted_foreground))
-                                },
-                            ),
-                        )
+                        this.child(div().w_5().items_center().justify_center().when(
+                            self.confirmed,
+                            |this| {
+                                this.child(
+                                    icon.small().text_color(
+                                        cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                                    ),
+                                )
+                            },
+                        ))
                     }),
             )
             .when_some(self.suffix, |this, suffix| this.child(suffix(cx)))

@@ -1,21 +1,17 @@
-use std::time::Duration;
-use std::{cell::Cell, rc::Rc};
-
-use crate::Icon;
 use crate::{
     input::{InputEvent, TextInput},
     scroll::{Scrollbar, ScrollbarState},
-    theme::ActiveTheme,
-    v_flex, IconName, Size,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    v_flex, Icon, IconName, Size,
 };
 use gpui::{
-    actions, div, prelude::FluentBuilder, uniform_list, AnyElement, AppContext, Entity,
+    actions, div, prelude::FluentBuilder, px, uniform_list, AnyElement, AppContext, Entity,
     FocusHandle, FocusableView, InteractiveElement, IntoElement, KeyBinding, Length,
-    ListSizingBehavior, MouseButton, ParentElement, Render, SharedString, Styled, Task,
-    UniformListScrollHandle, View, ViewContext, VisualContext, WindowContext,
+    ListSizingBehavior, MouseButton, ParentElement, Render, ScrollStrategy, SharedString, Styled,
+    Task, UniformListScrollHandle, View, ViewContext, VisualContext, WindowContext,
 };
-use gpui::{px, ScrollStrategy};
 use smol::Timer;
+use std::{cell::Cell, rc::Rc, time::Duration};
 
 actions!(list, [Cancel, Confirm, SelectPrev, SelectNext]);
 
@@ -105,7 +101,10 @@ where
         let query_input = cx.new_view(|cx| {
             TextInput::new(cx)
                 .appearance(false)
-                .prefix(|cx| Icon::new(IconName::Search).text_color(cx.theme().muted_foreground))
+                .prefix(|cx| {
+                    Icon::new(IconName::Search)
+                        .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                })
                 .placeholder("Search...")
                 .cleanable()
         });
@@ -326,9 +325,9 @@ where
                             .left(px(0.))
                             .right(px(0.))
                             .bottom(px(0.))
-                            .bg(cx.theme().list_active)
+                            .bg(cx.theme().accent.step(cx, ColorScaleStep::SIX))
                             .border_1()
-                            .border_color(cx.theme().list_active_border),
+                            .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE)),
                     )
                 })
             })
@@ -341,7 +340,7 @@ where
                         .right(px(0.))
                         .bottom(px(0.))
                         .border_1()
-                        .border_color(cx.theme().list_active_border),
+                        .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE)),
                 )
             })
             .on_mouse_down(
@@ -418,7 +417,7 @@ where
                             _ => this.py_1().px_2(),
                         })
                         .border_b_1()
-                        .border_color(cx.theme().border)
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
                         .child(input),
                 )
             })

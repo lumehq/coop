@@ -1,10 +1,13 @@
+use super::PanelEvent;
+use crate::{
+    dock_area::panel::Panel,
+    dock_area::state::PanelState,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+};
 use gpui::{
     AppContext, EventEmitter, FocusHandle, FocusableView, ParentElement as _, Render, SharedString,
     Styled as _, WindowContext,
 };
-
-use super::{Panel, PanelEvent, PanelState};
-use crate::theme::ActiveTheme;
 
 pub(crate) struct InvalidPanel {
     name: SharedString,
@@ -27,7 +30,7 @@ impl Panel for InvalidPanel {
         "InvalidPanel".into()
     }
 
-    fn dump(&self, _cx: &AppContext) -> super::PanelState {
+    fn dump(&self, _cx: &AppContext) -> PanelState {
         self.old_state.clone()
     }
 }
@@ -49,7 +52,7 @@ impl Render for InvalidPanel {
             .flex_col()
             .items_center()
             .justify_center()
-            .text_color(cx.theme().muted_foreground)
+            .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
             .child(format!(
                 "The `{}` panel type is not registered in PanelRegistry.",
                 self.name.clone()

@@ -23,18 +23,15 @@ use gpui::{
 // - Press Up,Down to move cursor up, down line if multi-line
 // - Move cursor to skip line eof empty chars.
 
-use super::blink_cursor::BlinkCursor;
-use super::change::Change;
-use super::element::TextElement;
-use super::ClearButton;
+use super::{blink_cursor::BlinkCursor, change::Change, element::TextElement, ClearButton};
 
-use crate::history::History;
-use crate::indicator::Indicator;
-use crate::scroll::{Scrollbar, ScrollbarAxis, ScrollbarState};
-use crate::theme::ActiveTheme;
-use crate::Size;
-use crate::StyledExt;
-use crate::{Sizable, StyleSized};
+use crate::{
+    history::History,
+    indicator::Indicator,
+    scroll::{Scrollbar, ScrollbarAxis, ScrollbarState},
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    Sizable, Size, StyleSized, StyledExt,
+};
 
 actions!(
     input,
@@ -55,7 +52,9 @@ actions!(
         SelectAll,
         Home,
         End,
-        SelectToHome,
+        SelectToStartOfLine,
+        SelectToEndOfLine,
+        SelectToStart,
         SelectToEnd,
         ShowCharacterPalette,
         Copy,
@@ -65,6 +64,8 @@ actions!(
         Redo,
         MoveToStartOfLine,
         MoveToEndOfLine,
+        MoveToStart,
+        MoveToEnd,
         TextChanged,
     ]
 );
@@ -98,16 +99,16 @@ pub fn init(cx: &mut AppContext) {
         KeyBinding::new("shift-down", SelectDown, Some(CONTEXT)),
         KeyBinding::new("home", Home, Some(CONTEXT)),
         KeyBinding::new("end", End, Some(CONTEXT)),
-        KeyBinding::new("shift-home", SelectToHome, Some(CONTEXT)),
-        KeyBinding::new("shift-end", SelectToEnd, Some(CONTEXT)),
+        KeyBinding::new("shift-home", SelectToStartOfLine, Some(CONTEXT)),
+        KeyBinding::new("shift-end", SelectToEndOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
-        KeyBinding::new("ctrl-shift-a", SelectToHome, Some(CONTEXT)),
+        KeyBinding::new("ctrl-shift-a", SelectToStartOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
-        KeyBinding::new("ctrl-shift-e", SelectToEnd, Some(CONTEXT)),
+        KeyBinding::new("ctrl-shift-e", SelectToEndOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
-        KeyBinding::new("shift-cmd-left", SelectToHome, Some(CONTEXT)),
+        KeyBinding::new("shift-cmd-left", SelectToStartOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
-        KeyBinding::new("shift-cmd-right", SelectToEnd, Some(CONTEXT)),
+        KeyBinding::new("shift-cmd-right", SelectToEndOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
@@ -138,6 +139,14 @@ pub fn init(cx: &mut AppContext) {
         KeyBinding::new("cmd-z", Undo, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-shift-z", Redo, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-up", MoveToStart, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-down", MoveToEnd, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-shift-up", SelectToStart, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-shift-down", SelectToEnd, Some(CONTEXT)),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-z", Undo, Some(CONTEXT)),
         #[cfg(not(target_os = "macos"))]
@@ -145,7 +154,8 @@ pub fn init(cx: &mut AppContext) {
     ]);
 }
 
-type Affixes<T> = Option<Box<dyn Fn(&mut ViewContext<T>) -> AnyElement + 'static>>;
+type TextInputPrefix<T> = Option<Box<dyn Fn(&mut ViewContext<T>) -> AnyElement + 'static>>;
+type TextInputSuffix<T> = Option<Box<dyn Fn(&mut ViewContext<T>) -> AnyElement + 'static>>;
 type Validate = Option<Box<dyn Fn(&str) -> bool + 'static>>;
 
 pub struct TextInput {
@@ -154,8 +164,8 @@ pub struct TextInput {
     multi_line: bool,
     pub(super) history: History<Change>,
     pub(super) blink_cursor: Model<BlinkCursor>,
-    pub(super) prefix: Affixes<Self>,
-    pub(super) suffix: Affixes<Self>,
+    pub(super) prefix: TextInputPrefix<Self>,
+    pub(super) suffix: TextInputSuffix<Self>,
     pub(super) loading: bool,
     pub(super) placeholder: SharedString,
     pub(super) selected_range: Range<usize>,
@@ -186,6 +196,8 @@ pub struct TextInput {
     scrollbar_state: Rc<Cell<ScrollbarState>>,
     /// The size of the scrollable content.
     pub(crate) scroll_size: gpui::Size<Pixels>,
+    /// To remember the horizontal column (x-coordinate) of the cursor position.
+    preferred_x_offset: Option<Pixels>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -228,6 +240,7 @@ impl TextInput {
             scroll_handle: ScrollHandle::new(),
             scrollbar_state: Rc::new(Cell::new(ScrollbarState::default())),
             scroll_size: gpui::size(px(0.), px(0.)),
+            preferred_x_offset: None,
         };
 
         // Observe the blink cursor to repaint the view when it changes.
@@ -256,6 +269,133 @@ impl TextInput {
     pub fn multi_line(mut self) -> Self {
         self.multi_line = true;
         self
+    }
+
+    /// Called after moving the cursor. Updates preferred_x_offset if we know where the cursor now is.
+    fn update_preferred_x_offset(&mut self, _cx: &mut ViewContext<Self>) {
+        if let (Some(lines), Some(bounds)) = (&self.last_layout, &self.last_bounds) {
+            let offset = self.cursor_offset();
+            let line_height = self.last_line_height;
+
+            // Find which line and sub-line the cursor is on and its position
+            let (_line_index, _sub_line_index, cursor_pos) =
+                self.line_and_position_for_offset(offset, lines, line_height);
+
+            if let Some(pos) = cursor_pos {
+                // Adjust by scroll offset
+                let scroll_offset = bounds.origin;
+                self.preferred_x_offset = Some(pos.x + scroll_offset.x);
+            }
+        }
+    }
+
+    /// Find which line and sub-line the given offset belongs to, along with the position within that sub-line.
+    fn line_and_position_for_offset(
+        &self,
+        offset: usize,
+        lines: &[WrappedLine],
+        line_height: Pixels,
+    ) -> (usize, usize, Option<Point<Pixels>>) {
+        let mut prev_lines_offset = 0;
+        let mut y_offset = px(0.);
+        for (line_index, line) in lines.iter().enumerate() {
+            let local_offset = offset.saturating_sub(prev_lines_offset);
+            if let Some(pos) = line.position_for_index(local_offset, line_height) {
+                let sub_line_index = (pos.y.0 / line_height.0) as usize;
+                let adjusted_pos = point(pos.x, pos.y + y_offset);
+                return (line_index, sub_line_index, Some(adjusted_pos));
+            }
+
+            y_offset += line.size(line_height).height;
+            prev_lines_offset += line.len() + 1;
+        }
+        (0, 0, None)
+    }
+
+    /// Move the cursor vertically by one line (up or down) while preserving the column if possible.
+    /// direction: -1 for up, +1 for down
+    fn move_vertical(&mut self, direction: i32, cx: &mut ViewContext<Self>) {
+        if self.is_single_line() {
+            return;
+        }
+
+        let (Some(lines), Some(bounds)) = (&self.last_layout, &self.last_bounds) else {
+            return;
+        };
+
+        let offset = self.cursor_offset();
+        let line_height = self.last_line_height;
+        let (current_line_index, current_sub_line, current_pos) =
+            self.line_and_position_for_offset(offset, lines, line_height);
+
+        let Some(current_pos) = current_pos else {
+            return;
+        };
+
+        let current_x = self
+            .preferred_x_offset
+            .unwrap_or_else(|| current_pos.x + bounds.origin.x);
+
+        let mut new_line_index = current_line_index;
+        let mut new_sub_line = current_sub_line as i32;
+
+        new_sub_line += direction;
+
+        // Handle moving above the first line
+        if direction == -1 && new_line_index == 0 && new_sub_line < 0 {
+            // Move cursor to the beginning of the text
+            self.move_to(0, cx);
+            return;
+        }
+
+        if new_sub_line < 0 {
+            if new_line_index > 0 {
+                new_line_index -= 1;
+                new_sub_line = lines[new_line_index].wrap_boundaries.len() as i32;
+            } else {
+                new_sub_line = 0;
+            }
+        } else {
+            let max_sub_line = lines[new_line_index].wrap_boundaries.len() as i32;
+            if new_sub_line > max_sub_line {
+                if new_line_index < lines.len() - 1 {
+                    new_line_index += 1;
+                    new_sub_line = 0;
+                } else {
+                    new_sub_line = max_sub_line;
+                }
+            }
+        }
+
+        // If after adjustment, still at the same position, do not proceed
+        if new_line_index == current_line_index && new_sub_line == current_sub_line as i32 {
+            return;
+        }
+
+        let target_line = &lines[new_line_index];
+        let line_x = current_x - bounds.origin.x;
+        let target_sub_line = new_sub_line as usize;
+
+        let approx_pos = point(line_x, px(target_sub_line as f32 * line_height.0));
+        let index_res = target_line.index_for_position(approx_pos, line_height);
+
+        let new_local_index = match index_res {
+            Ok(i) => i + 1,
+            Err(i) => i,
+        };
+
+        let mut prev_lines_offset = 0;
+        for (i, l) in lines.iter().enumerate() {
+            if i == new_line_index {
+                break;
+            }
+            prev_lines_offset += l.len() + 1;
+        }
+
+        let new_offset = (prev_lines_offset + new_local_index).min(self.text.len());
+        self.selected_range = new_offset..new_offset;
+        self.pause_blink_cursor(cx);
+        cx.notify();
     }
 
     #[inline]
@@ -444,9 +584,7 @@ impl TextInput {
             return;
         }
         self.pause_blink_cursor(cx);
-
-        let offset = self.start_of_line(cx).saturating_sub(1);
-        self.move_to(offset, cx);
+        self.move_vertical(-1, cx);
     }
 
     fn down(&mut self, _: &Down, cx: &mut ViewContext<Self>) {
@@ -454,9 +592,7 @@ impl TextInput {
             return;
         }
         self.pause_blink_cursor(cx);
-
-        let offset = (self.end_of_line(cx) + 1).min(self.text.len());
-        self.move_to(offset, cx);
+        self.move_vertical(1, cx);
     }
 
     fn select_left(&mut self, _: &SelectLeft, cx: &mut ViewContext<Self>) {
@@ -500,12 +636,30 @@ impl TextInput {
         self.move_to(offset, cx);
     }
 
-    fn select_to_home(&mut self, _: &SelectToHome, cx: &mut ViewContext<Self>) {
+    fn move_to_start(&mut self, _: &MoveToStart, cx: &mut ViewContext<Self>) {
+        self.move_to(0, cx);
+    }
+
+    fn move_to_end(&mut self, _: &MoveToEnd, cx: &mut ViewContext<Self>) {
+        let end = self.text.len();
+        self.move_to(end, cx);
+    }
+
+    fn select_to_start(&mut self, _: &SelectToStart, cx: &mut ViewContext<Self>) {
+        self.select_to(0, cx);
+    }
+
+    fn select_to_end(&mut self, _: &SelectToEnd, cx: &mut ViewContext<Self>) {
+        let end = self.text.len();
+        self.select_to(end, cx);
+    }
+
+    fn select_to_start_of_line(&mut self, _: &SelectToStartOfLine, cx: &mut ViewContext<Self>) {
         let offset = self.start_of_line(cx);
         self.select_to(offset, cx);
     }
 
-    fn select_to_end(&mut self, _: &SelectToEnd, cx: &mut ViewContext<Self>) {
+    fn select_to_end_of_line(&mut self, _: &SelectToEndOfLine, cx: &mut ViewContext<Self>) {
         let offset = self.end_of_line(cx);
         self.select_to(offset, cx);
     }
@@ -594,10 +748,15 @@ impl TextInput {
 
     fn enter(&mut self, _: &Enter, cx: &mut ViewContext<Self>) {
         if self.is_multi_line() {
+            let is_eof = self.selected_range.end == self.text.len();
             self.replace_text_in_range(None, "\n", cx);
+
             // Move cursor to the start of the next line
-            // TODO: To be test this line is valid
-            self.move_to(self.next_boundary(self.cursor_offset()) - 1, cx);
+            let mut new_offset = self.next_boundary(self.cursor_offset()) - 1;
+            if is_eof {
+                new_offset += 1;
+            }
+            self.move_to(new_offset, cx);
         }
 
         cx.emit(InputEvent::PressEnter);
@@ -721,6 +880,7 @@ impl TextInput {
     fn move_to(&mut self, offset: usize, cx: &mut ViewContext<Self>) {
         self.selected_range = offset..offset;
         self.pause_blink_cursor(cx);
+        self.update_preferred_x_offset(cx);
         cx.notify()
     }
 
@@ -848,7 +1008,9 @@ impl TextInput {
                 self.selected_range.end = word_range.end;
             }
         }
-
+        if self.selected_range.is_empty() {
+            self.update_preferred_x_offset(cx);
+        }
         cx.notify()
     }
 
@@ -1084,6 +1246,7 @@ impl ViewInputHandler for TextInput {
         self.text = pending_text;
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        self.update_preferred_x_offset(cx);
         cx.emit(InputEvent::Change(self.text.clone()));
         cx.notify();
     }
@@ -1192,11 +1355,21 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::right))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
+            .when(self.multi_line, |this| {
+                this.on_action(cx.listener(Self::up))
+                    .on_action(cx.listener(Self::down))
+                    .on_action(cx.listener(Self::select_up))
+                    .on_action(cx.listener(Self::select_down))
+            })
             .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::select_to_home))
-            .on_action(cx.listener(Self::select_to_end))
+            .on_action(cx.listener(Self::select_to_start_of_line))
+            .on_action(cx.listener(Self::select_to_end_of_line))
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
+            .on_action(cx.listener(Self::move_to_start))
+            .on_action(cx.listener(Self::move_to_end))
+            .on_action(cx.listener(Self::select_to_start))
+            .on_action(cx.listener(Self::select_to_end))
             .on_action(cx.listener(Self::show_character_palette))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::paste))
@@ -1214,21 +1387,13 @@ impl Render for TextInput {
             .input_h(self.size)
             .input_text_size(self.text_size)
             .cursor_text()
-            .when(self.multi_line, |this| {
-                this.on_action(cx.listener(Self::up))
-                    .on_action(cx.listener(Self::down))
-                    .on_action(cx.listener(Self::select_up))
-                    .on_action(cx.listener(Self::select_down))
-                    .h_auto()
-            })
+            .when(self.multi_line, |this| this.h_auto())
             .when(self.appearance, |this| {
                 this.bg(if self.disabled {
-                    cx.theme().muted
+                    cx.theme().base.step(cx, ColorScaleStep::FOUR)
                 } else {
                     cx.theme().background
                 })
-                .border_color(cx.theme().input)
-                .border_1()
                 .rounded(px(cx.theme().radius))
                 .when(cx.theme().shadow, |this| this.shadow_sm())
                 .when(focused, |this| this.outline(cx))
@@ -1246,7 +1411,7 @@ impl Render for TextInput {
                     .child(TextElement::new(cx.view().clone())),
             )
             .when(self.loading, |this| {
-                this.child(Indicator::new().color(cx.theme().muted_foreground))
+                this.child(Indicator::new().color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN)))
             })
             .when(
                 self.cleanable && !self.loading && !self.text.is_empty() && self.is_single_line(),

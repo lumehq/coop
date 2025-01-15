@@ -8,6 +8,7 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,
 };
 use ui::{
+    dock_area::dock::DockPlacement,
     skeleton::Skeleton,
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, Collapsible, Icon, IconName, StyledExt,
@@ -106,7 +107,7 @@ impl Inbox {
     fn action(&self, id: u64, cx: &mut ViewContext<Self>) {
         cx.dispatch_action(Box::new(AddPanel {
             panel: PanelKind::Room(id),
-            position: ui::dock::DockPlacement::Center,
+            position: DockPlacement::Center,
         }))
     }
 }

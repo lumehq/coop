@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::collections::{BTreeSet, HashSet};
 use ui::{
     prelude::FluentBuilder,
-    theme::{ActiveTheme, Colorize},
+    theme::{scale::ColorScaleStep, ActiveTheme},
     Icon, IconName, Selectable, StyledExt,
 };
 
@@ -95,12 +95,12 @@ impl RenderOnce for ContactListItem {
                 this.child(
                     Icon::new(IconName::CircleCheck)
                         .size_4()
-                        .text_color(cx.theme().colors.primary),
+                        .text_color(cx.theme().accent.step(cx, ColorScaleStep::NINE)),
                 )
             })
             .hover(|this| {
-                this.bg(cx.theme().muted.darken(0.1))
-                    .text_color(cx.theme().muted_foreground.darken(0.1))
+                this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
             })
             .on_click(move |_, cx| {
                 cx.dispatch_action(Box::new(SelectContact(self.public_key)));
@@ -239,8 +239,8 @@ impl Render for ContactList {
             .child(
                 div()
                     .p_1()
-                    .bg(cx.theme().muted)
-                    .text_color(cx.theme().muted_foreground)
+                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .rounded_lg()
                     .child(list(self.list.clone()).h(px(300.))),
             )

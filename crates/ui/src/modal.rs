@@ -1,3 +1,9 @@
+use crate::{
+    animation::cubic_bezier,
+    button::{Button, ButtonVariants as _},
+    theme::{scale::ColorScaleStep, ActiveTheme as _},
+    v_flex, ContextModal, IconName, Sizable as _,
+};
 use gpui::{
     actions, anchored, div, hsla, point, prelude::FluentBuilder, px, relative, Animation,
     AnimationExt as _, AnyElement, AppContext, Bounds, ClickEvent, Div, FocusHandle, Hsla,
@@ -5,13 +11,6 @@ use gpui::{
     RenderOnce, SharedString, Styled, WindowContext,
 };
 use std::{rc::Rc, time::Duration};
-
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonVariants as _},
-    theme::ActiveTheme as _,
-    v_flex, ContextModal, IconName, Sizable as _,
-};
 
 actions!(modal, [Escape]);
 
@@ -59,7 +58,7 @@ impl Modal {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().border)
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
             .rounded_lg()
             .shadow_xl()
             .min_h_48()

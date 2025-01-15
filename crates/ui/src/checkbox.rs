@@ -1,4 +1,8 @@
-use crate::{h_flex, theme::ActiveTheme, v_flex, Disableable, IconName, Selectable};
+use crate::{
+    h_flex,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    v_flex, Disableable, IconName, Selectable,
+};
 use gpui::{
     div, prelude::FluentBuilder as _, relative, svg, ElementId, InteractiveElement, IntoElement,
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _,
@@ -65,11 +69,14 @@ impl RenderOnce for Checkbox {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let (color, icon_color) = if self.disabled {
             (
-                cx.theme().colors.primary.opacity(0.5),
-                cx.theme().primary_foreground.opacity(0.5),
+                cx.theme().base.step(cx, ColorScaleStep::THREE),
+                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
             )
         } else {
-            (cx.theme().colors.primary, cx.theme().primary_foreground)
+            (
+                cx.theme().accent.step(cx, ColorScaleStep::NINE),
+                cx.theme().accent.step(cx, ColorScaleStep::ONE),
+            )
         };
 
         h_flex()
@@ -104,21 +111,22 @@ impl RenderOnce for Checkbox {
             )
             .map(|this| {
                 if let Some(label) = self.label {
-                    this.text_color(cx.theme().foreground).child(
-                        div()
-                            .w_full()
-                            .overflow_x_hidden()
-                            .text_ellipsis()
-                            .line_height(relative(1.))
-                            .child(label),
-                    )
+                    this.text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                        .child(
+                            div()
+                                .w_full()
+                                .overflow_x_hidden()
+                                .text_ellipsis()
+                                .line_height(relative(1.))
+                                .child(label),
+                        )
                 } else {
                     this
                 }
             })
             .when(self.disabled, |this| {
                 this.cursor_not_allowed()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::TEN))
             })
             .when_some(
                 self.on_click.filter(|_| !self.disabled),

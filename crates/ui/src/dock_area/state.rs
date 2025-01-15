@@ -1,3 +1,5 @@
+use super::{invalid_panel::InvalidPanel, Dock, DockArea, DockItem, PanelRegistry};
+use crate::dock_area::{dock::DockPlacement, panel::Panel};
 use gpui::{
     point, px, size, AppContext, Axis, Bounds, Pixels, View, VisualContext as _, WeakView,
     WindowContext,
@@ -5,15 +7,11 @@ use gpui::{
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    invalid_panel::InvalidPanel, Dock, DockArea, DockItem, DockPlacement, Panel, PanelRegistry,
-};
-
 /// Used to serialize and deserialize the DockArea
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DockAreaState {
     /// The version is used to mark this persisted state is compatible with the current version
-    /// For example, some times we many totally changed the structure of the Panel,
+    /// For example, sometimes we many totally changed the structure of the Panel,
     /// then we can compare the version to decide whether we can use the state or ignore.
     #[serde(default)]
     pub version: Option<usize>,
@@ -106,8 +104,6 @@ pub enum PanelInfo {
     Tabs { active_index: usize },
     #[serde(rename = "panel")]
     Panel(serde_json::Value),
-    #[serde(rename = "tiles")]
-    Tiles { metas: Vec<TileMeta> },
 }
 
 impl PanelInfo {
@@ -124,10 +120,6 @@ impl PanelInfo {
 
     pub fn panel(info: serde_json::Value) -> Self {
         Self::Panel(info)
-    }
-
-    pub fn tiles(metas: Vec<TileMeta>) -> Self {
-        Self::Tiles { metas }
     }
 
     pub fn axis(&self) -> Option<Axis> {
@@ -232,7 +224,6 @@ impl PanelState {
 
                 DockItem::tabs(vec![view.into()], None, &dock_area, cx)
             }
-            PanelInfo::Tiles { metas } => DockItem::tiles(items, metas, &dock_area, cx),
         }
     }
 }

@@ -7,7 +7,10 @@ use gpui::{
 };
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
-    dock::{Panel, PanelEvent, PanelState},
+    dock_area::{
+        panel::{Panel, PanelEvent},
+        state::PanelState,
+    },
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,

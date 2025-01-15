@@ -39,7 +39,7 @@ pub trait StyledExt: Styled + Sized {
 
     /// Render a border with a width of 1px, color ring color
     fn outline(self, cx: &WindowContext) -> Self {
-        self.border_color(cx.theme().ring)
+        self.border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE))
     }
 
     /// Wraps the element in a ScrollView.

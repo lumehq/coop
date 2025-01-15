@@ -1,12 +1,13 @@
-#[allow(clippy::module_inception)]
-mod dock;
-mod invalid_panel;
-mod panel;
-mod stack_panel;
-mod state;
-mod tab_panel;
-mod tiles;
-
+use crate::{
+    dock_area::{
+        dock::{Dock, DockPlacement},
+        panel::{Panel, PanelEvent, PanelStyle, PanelView},
+        stack_panel::StackPanel,
+        state::{DockAreaState, DockState},
+        tab_panel::TabPanel,
+    },
+    theme::{scale::ColorScaleStep, ActiveTheme},
+};
 use anyhow::Result;
 use gpui::{
     actions, canvas, div, prelude::FluentBuilder, AnyElement, AnyView, AppContext, Axis, Bounds,
@@ -14,16 +15,15 @@ use gpui::{
     ParentElement as _, Pixels, Render, SharedString, Styled, Subscription, View, ViewContext,
     VisualContext, WeakView, WindowContext,
 };
+use panel::PanelRegistry;
 use std::sync::Arc;
 
-pub use dock::*;
-pub use panel::*;
-pub use stack_panel::*;
-pub use state::*;
-pub use tab_panel::*;
-pub use tiles::*;
-
-use crate::theme::{scale::ColorScaleStep, ActiveTheme};
+pub mod dock;
+pub mod invalid_panel;
+pub mod panel;
+pub mod stack_panel;
+pub mod state;
+pub mod tab_panel;
 
 pub fn init(cx: &mut AppContext) {
     cx.set_global(PanelRegistry::new());
@@ -88,11 +88,6 @@ pub enum DockItem {
     },
     /// Panel layout
     Panel { view: Arc<dyn PanelView> },
-    /// Tiles layout
-    Tiles {
-        items: Vec<TileItem>,
-        view: View<Tiles>,
-    },
 }
 
 impl DockItem {
@@ -159,51 +154,6 @@ impl DockItem {
         Self::Panel { view: panel }
     }
 
-    /// Create DockItem with tiles layout
-    ///
-    /// This items and metas should have the same length.
-    pub fn tiles(
-        items: Vec<DockItem>,
-        metas: Vec<impl Into<TileMeta> + Copy>,
-        dock_area: &WeakView<DockArea>,
-        cx: &mut WindowContext,
-    ) -> Self {
-        assert!(items.len() == metas.len());
-
-        let tile_panel = cx.new_view(|cx| {
-            let mut tiles = Tiles::new(cx);
-            for (ix, item) in items.clone().into_iter().enumerate() {
-                match item {
-                    DockItem::Tabs { view, .. } => {
-                        let meta: TileMeta = metas[ix].into();
-                        let tile_item =
-                            TileItem::new(Arc::new(view), meta.bounds).z_index(meta.z_index);
-                        tiles.add_item(tile_item, dock_area, cx);
-                    }
-                    _ => {
-                        // Ignore non-tabs items
-                    }
-                }
-            }
-            tiles
-        });
-
-        cx.defer({
-            let tile_panel = tile_panel.clone();
-            let dock_area = dock_area.clone();
-            move |cx| {
-                _ = dock_area.update(cx, |this, cx| {
-                    this.subscribe_panel(&tile_panel, cx);
-                });
-            }
-        });
-
-        Self::Tiles {
-            items: tile_panel.read(cx).panels.clone(),
-            view: tile_panel,
-        }
-    }
-
     /// Create DockItem with tabs layout, items are displayed as tabs.
     ///
     /// The `active_ix` is the index of the active tab, if `None` the first tab is active.
@@ -256,7 +206,6 @@ impl DockItem {
         match self {
             Self::Split { view, .. } => Arc::new(view.clone()),
             Self::Tabs { view, .. } => Arc::new(view.clone()),
-            Self::Tiles { view, .. } => Arc::new(view.clone()),
             Self::Panel { view, .. } => view.clone(),
         }
     }
@@ -269,14 +218,6 @@ impl DockItem {
             }
             Self::Tabs { items, .. } => items.iter().find(|item| *item == &panel).cloned(),
             Self::Panel { view } => Some(view.clone()),
-            Self::Tiles { items, .. } => items.iter().find_map(|item| {
-                #[allow(clippy::op_ref)]
-                if &item.panel == &panel {
-                    Some(item.panel.clone())
-                } else {
-                    None
-                }
-            }),
         }
     }
 
@@ -312,7 +253,6 @@ impl DockItem {
                     stack_panel.add_panel(new_item.view(), None, dock_area.clone(), cx);
                 });
             }
-            Self::Tiles { .. } => {}
             Self::Panel { .. } => {}
         }
     }
@@ -330,7 +270,6 @@ impl DockItem {
                     item.set_collapsed(collapsed, cx);
                 }
             }
-            DockItem::Tiles { .. } => {}
             DockItem::Panel { .. } => {}
         }
     }
@@ -340,7 +279,6 @@ impl DockItem {
         match self {
             DockItem::Tabs { view, .. } => Some(view.clone()),
             DockItem::Split { view, .. } => view.read(cx).left_top_tab_panel(true, cx),
-            DockItem::Tiles { .. } => None,
             DockItem::Panel { .. } => None,
         }
     }
@@ -350,7 +288,6 @@ impl DockItem {
         match self {
             DockItem::Tabs { view, .. } => Some(view.clone()),
             DockItem::Split { view, .. } => view.read(cx).right_top_tab_panel(true, cx),
-            DockItem::Tiles { .. } => None,
             DockItem::Panel { .. } => None,
         }
     }
@@ -403,13 +340,7 @@ impl DockArea {
         cx.notify();
     }
 
-    // FIXME: Remove this method after 2025-01-01
-    #[deprecated(note = "Use `set_center` instead")]
-    pub fn set_root(&mut self, item: DockItem, cx: &mut ViewContext<Self>) {
-        self.set_center(item, cx);
-    }
-
-    /// The the DockItem as the center of the dock area.
+    /// The DockItem as the center of the dock area.
     ///
     /// This is used to render at the Center of the DockArea.
     pub fn set_center(&mut self, item: DockItem, cx: &mut ViewContext<Self>) {
@@ -722,9 +653,6 @@ impl DockArea {
             DockItem::Tabs { .. } => {
                 // We subscribe to the tab panel event in StackPanel's insert_panel
             }
-            DockItem::Tiles { .. } => {
-                // We subscribe to the tab panel event in Tiles's [`add_item`](Tiles::add_item)
-            }
             DockItem::Panel { .. } => {
                 // Not supported
             }
@@ -794,7 +722,6 @@ impl DockArea {
         match &self.items {
             DockItem::Split { view, .. } => view.clone().into_any_element(),
             DockItem::Tabs { view, .. } => view.clone().into_any_element(),
-            DockItem::Tiles { view, .. } => view.clone().into_any_element(),
             DockItem::Panel { view, .. } => view.clone().view().into_any_element(),
         }
     }
@@ -842,49 +769,41 @@ impl Render for DockArea {
                 if let Some(zoom_view) = self.zoom_view.clone() {
                     this.child(zoom_view)
                 } else {
-                    match &self.items {
-                        DockItem::Tiles { view, .. } => {
-                            // render tiles
-                            this.child(view.clone())
-                        }
-                        _ => {
-                            // render dock
-                            this.child(
+                    // render dock
+                    this.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .h_full()
+                            // Left dock
+                            .when_some(self.left_dock.clone(), |this, dock| {
+                                this.bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
+                                    .child(div().flex().flex_none().child(dock))
+                            })
+                            // Center
+                            .child(
                                 div()
                                     .flex()
-                                    .flex_row()
-                                    .h_full()
-                                    // Left dock
-                                    .when_some(self.left_dock.clone(), |this, dock| {
-                                        this.bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
-                                            .child(div().flex().flex_none().child(dock))
-                                    })
-                                    // Center
+                                    .flex_1()
+                                    .flex_col()
+                                    .overflow_hidden()
+                                    // Top center
                                     .child(
                                         div()
-                                            .flex()
                                             .flex_1()
-                                            .flex_col()
                                             .overflow_hidden()
-                                            // Top center
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .overflow_hidden()
-                                                    .child(self.render_items(cx)),
-                                            )
-                                            // Bottom Dock
-                                            .when_some(self.bottom_dock.clone(), |this, dock| {
-                                                this.child(dock)
-                                            }),
+                                            .child(self.render_items(cx)),
                                     )
-                                    // Right Dock
-                                    .when_some(self.right_dock.clone(), |this, dock| {
-                                        this.child(div().flex().flex_none().child(dock))
+                                    // Bottom Dock
+                                    .when_some(self.bottom_dock.clone(), |this, dock| {
+                                        this.child(dock)
                                     }),
                             )
-                        }
-                    }
+                            // Right Dock
+                            .when_some(self.right_dock.clone(), |this, dock| {
+                                this.child(div().flex().flex_none().child(dock))
+                            }),
+                    )
                 }
             })
     }

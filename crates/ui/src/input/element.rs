@@ -1,5 +1,5 @@
 use super::TextInput;
-use crate::theme::ActiveTheme as _;
+use crate::theme::{scale::ColorScaleStep, ActiveTheme as _};
 use gpui::{
     fill, point, px, relative, size, Bounds, Corners, Element, ElementId, ElementInputHandler,
     GlobalElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent, PaintQuad, Path, Pixels,
@@ -144,7 +144,7 @@ impl TextElement {
                         ),
                         size(px(1.5), line_height),
                     ),
-                    cx.theme().colors.primary,
+                    cx.theme().accent.step(cx, ColorScaleStep::NINE),
                 ))
             };
         }
@@ -357,14 +357,17 @@ impl Element for TextElement {
         let mut bounds = bounds;
 
         let (display_text, text_color) = if text.is_empty() {
-            (placeholder, cx.theme().muted_foreground)
+            (
+                placeholder,
+                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+            )
         } else if input.masked {
             (
                 "*".repeat(text.chars().count()).into(),
-                cx.theme().foreground,
+                cx.theme().base.step(cx, ColorScaleStep::TWELVE),
             )
         } else {
-            (text, cx.theme().foreground)
+            (text, cx.theme().base.step(cx, ColorScaleStep::TWELVE))
         };
 
         let run = TextRun {
@@ -480,7 +483,7 @@ impl Element for TextElement {
 
         // Paint selections
         if let Some(path) = prepaint.selection_path.take() {
-            cx.paint_path(path, cx.theme().selection);
+            cx.paint_path(path, cx.theme().accent.step(cx, ColorScaleStep::FIVE));
         }
 
         // Paint multi line text

@@ -1,9 +1,8 @@
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce,
     SharedString, Styled,
 };
-
-use crate::theme::ActiveTheme;
 
 /// A divider that can be either vertical or horizontal.
 #[derive(IntoElement)]
@@ -52,8 +51,6 @@ impl Styled for Divider {
 
 impl RenderOnce for Divider {
     fn render(self, cx: &mut gpui::WindowContext) -> impl IntoElement {
-        let theme = cx.theme();
-
         self.base
             .flex()
             .flex_shrink_0()
@@ -66,7 +63,9 @@ impl RenderOnce for Divider {
                         Axis::Vertical => this.w(px(1.)).h_full(),
                         Axis::Horizontal => this.h(px(1.)).w_full(),
                     })
-                    .bg(self.color.unwrap_or(cx.theme().border)),
+                    .bg(self
+                        .color
+                        .unwrap_or(cx.theme().base.step(cx, ColorScaleStep::THREE))),
             )
             .when_some(self.label, |this, label| {
                 this.child(
@@ -76,7 +75,6 @@ impl RenderOnce for Divider {
                         .mx_auto()
                         .text_xs()
                         .bg(cx.theme().background)
-                        .text_color(theme.muted_foreground)
                         .child(label),
                 )
             })

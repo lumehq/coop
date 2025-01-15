@@ -2,7 +2,7 @@ use gpui::*;
 use serde::{Deserialize, Serialize};
 use std::{cell::Cell, rc::Rc, time::Instant};
 
-use crate::theme::ActiveTheme;
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 
 /// Scrollbar show mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, Default)]
@@ -294,7 +294,7 @@ impl Scrollbar {
         (
             cx.theme().scrollbar_thumb_hover,
             cx.theme().scrollbar,
-            cx.theme().border,
+            cx.theme().base.step(cx, ColorScaleStep::THREE),
             THUMB_INSET - px(1.),
             THUMB_RADIUS,
         )
@@ -304,7 +304,7 @@ impl Scrollbar {
         (
             cx.theme().scrollbar_thumb_hover,
             cx.theme().scrollbar,
-            cx.theme().border,
+            cx.theme().base.step(cx, ColorScaleStep::THREE),
             THUMB_INSET - px(1.),
             THUMB_RADIUS,
         )

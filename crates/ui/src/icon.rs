@@ -1,4 +1,7 @@
-use crate::{theme::ActiveTheme, Sizable, Size};
+use crate::{
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    Sizable, Size,
+};
 use gpui::{
     prelude::FluentBuilder as _, svg, AnyElement, Hsla, IntoElement, Radians, Render, RenderOnce,
     SharedString, StyleRefinement, Styled, Svg, Transformation, View, VisualContext, WindowContext,
@@ -313,7 +316,9 @@ impl From<Icon> for AnyElement {
 
 impl Render for Icon {
     fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        let text_color = self.text_color.unwrap_or_else(|| cx.theme().foreground);
+        let text_color = self
+            .text_color
+            .unwrap_or_else(|| cx.theme().base.step(cx, ColorScaleStep::ELEVEN));
 
         svg()
             .flex_none()

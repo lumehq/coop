@@ -1,10 +1,7 @@
 use crate::{constants::KEYRING_SERVICE, get_client, states::app::AppRegistry};
 use gpui::{div, IntoElement, ParentElement, Render, Styled, View, ViewContext, VisualContext};
 use nostr_sdk::prelude::*;
-use ui::{
-    input::{InputEvent, TextInput},
-    label::Label,
-};
+use ui::input::{InputEvent, TextInput};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -70,7 +67,7 @@ impl Render for Onboarding {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(Label::new("Private Key").text_sm())
+                    .child(div().child("Private Key").text_sm())
                     .child(self.input.clone()),
             )
     }

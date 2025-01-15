@@ -10,7 +10,7 @@ use gpui::{
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
-    dock::{DockArea, DockItem, DockPlacement},
+    dock_area::{dock::DockPlacement, DockArea, DockItem},
     indicator::Indicator,
     notification::NotificationType,
     theme::Theme,

@@ -4,9 +4,12 @@ use gpui::{
 };
 use ui::{
     button::Button,
-    dock::{Panel, PanelEvent, PanelState},
+    dock_area::{
+        panel::{Panel, PanelEvent},
+        state::PanelState,
+    },
     popup_menu::PopupMenu,
-    theme::{ActiveTheme, Colorize},
+    theme::{scale::ColorScaleStep, ActiveTheme},
     StyledExt,
 };
 
@@ -78,7 +81,7 @@ impl Render for WelcomePanel {
             .items_center()
             .justify_center()
             .child("coop on nostr.")
-            .text_color(cx.theme().muted.darken(0.1))
+            .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
             .font_black()
             .text_sm()
     }
