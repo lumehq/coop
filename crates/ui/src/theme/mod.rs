@@ -18,6 +18,7 @@ pub struct ThemeColors {
     pub scrollbar_thumb: Hsla,
     pub scrollbar_thumb_hover: Hsla,
     pub window_border: Hsla,
+    pub danger: Hsla,
 }
 
 impl ThemeColors {
@@ -29,6 +30,7 @@ impl ThemeColors {
             scrollbar: hsl(0., 0., 97.).opacity(0.75),
             scrollbar_thumb: hsl(0., 0., 69.).opacity(0.9),
             scrollbar_thumb_hover: hsl(0., 0., 59.),
+            danger: hsl(0.0, 84.2, 60.2),
         }
     }
 
@@ -40,6 +42,7 @@ impl ThemeColors {
             scrollbar: hsl(240., 1., 15.).opacity(0.75),
             scrollbar_thumb: hsl(0., 0., 48.).opacity(0.9),
             scrollbar_thumb_hover: hsl(0., 0., 68.),
+            danger: hsl(0.0, 62.8, 30.6),
         }
     }
 }
@@ -74,6 +77,19 @@ impl ActiveTheme for WindowContext<'_> {
 
 pub fn init(cx: &mut AppContext) {
     Theme::sync_system_appearance(cx)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Eq)]
+pub enum Appearance {
+    #[default]
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    pub fn is_dark(&self) -> bool {
+        matches!(self, Self::Dark)
+    }
 }
 
 pub struct Theme {
@@ -132,27 +148,24 @@ impl Theme {
     }
 
     pub fn change(mode: Appearance, cx: &mut AppContext) {
-        let colors = match mode {
-            Appearance::Light => ThemeColors::light(),
-            Appearance::Dark => ThemeColors::dark(),
-        };
-
-        let mut theme = Theme::from(colors);
-        theme.appearance = mode;
+        let theme = Theme::new(mode);
 
         cx.set_global(theme);
         cx.refresh();
     }
 }
 
-impl From<ThemeColors> for Theme {
-    fn from(colors: ThemeColors) -> Self {
+impl Theme {
+    fn new(appearance: Appearance) -> Self {
         let color_scales = default_color_scales();
+        let colors = match appearance {
+            Appearance::Light => ThemeColors::light(),
+            Appearance::Dark => ThemeColors::dark(),
+        };
 
         Theme {
             base: color_scales.gray,
             accent: color_scales.yellow,
-            appearance: Appearance::default(),
             font_size: 16.0,
             font_family: if cfg!(target_os = "macos") {
                 ".SystemUIFont".into()
@@ -164,20 +177,8 @@ impl From<ThemeColors> for Theme {
             radius: 6.0,
             shadow: false,
             scrollbar_show: ScrollbarShow::default(),
+            appearance,
             colors,
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Eq)]
-pub enum Appearance {
-    #[default]
-    Light,
-    Dark,
-}
-
-impl Appearance {
-    pub fn is_dark(&self) -> bool {
-        matches!(self, Self::Dark)
     }
 }

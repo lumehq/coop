@@ -35,7 +35,7 @@ impl RenderOnce for Message {
             .border_l_2()
             .border_color(cx.theme().background)
             .hover(|this| {
-                this.bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                this.bg(cx.theme().accent.step(cx, ColorScaleStep::TWO))
                     .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE))
             })
             .child(

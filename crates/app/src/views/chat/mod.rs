@@ -1,11 +1,12 @@
 use crate::{
+    constants::IMAGE_SERVICE,
     get_client,
     states::chat::room::Room,
     utils::{ago, compare, nip96_upload},
 };
 use async_utility::task::spawn;
 use gpui::{
-    div, img, list, px, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
+    div, img, list, px, white, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
     FocusableView, InteractiveElement, IntoElement, ListAlignment, ListState, Model, ObjectFit,
     ParentElement, PathPromptOptions, Pixels, Render, SharedString, StatefulInteractiveElement,
     Styled, StyledImage, View, ViewContext, VisualContext, WeakModel, WeakView, WindowContext,
@@ -14,7 +15,6 @@ use itertools::Itertools;
 use message::Message;
 use nostr_sdk::prelude::*;
 use smol::fs;
-use std::sync::Arc;
 use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonVariants},
@@ -244,11 +244,21 @@ impl ChatPanel {
 
     fn send_message(&mut self, view: WeakView<TextInput>, cx: &mut ViewContext<Self>) {
         let room = self.room.read(cx);
-        let content = Arc::new(self.input.read(cx).text().to_string());
         let owner = room.owner.clone();
+        let members = room.members.to_vec();
 
-        let mut members = room.members.to_vec();
-        members.push(owner.clone());
+        // Get message
+        let mut content = self.input.read(cx).text().to_string();
+        // Get all attaches and merge with message
+        if let Some(attaches) = self.attaches.read(cx).as_ref() {
+            let merged = attaches
+                .iter()
+                .map(|url| url.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            content = format!("{}\n{}", content, merged)
+        }
 
         // Async
         let async_state = self.state.clone();
@@ -261,7 +271,7 @@ impl ChatPanel {
                     .background_executor()
                     .spawn({
                         let client = get_client();
-                        let content = Arc::clone(&content).to_string();
+                        let content = content.clone().to_string();
                         let tags: Vec<Tag> = members
                             .iter()
                             .filter_map(|m| {
@@ -307,14 +317,18 @@ impl ChatPanel {
 
     fn upload(&mut self, cx: &mut ViewContext<Self>) {
         let attaches = self.attaches.clone();
-
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
         });
 
-        cx.spawn(move |_, mut async_cx| async move {
+        // Show loading spinner
+        self.is_uploading = true;
+        cx.notify();
+
+        // TODO: support multiple upload
+        cx.spawn(move |this, mut async_cx| async move {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
                     let path = paths.pop().unwrap();
@@ -329,6 +343,15 @@ impl ChatPanel {
                         });
 
                         if let Ok(url) = rx.await {
+                            // Stop loading spinner
+                            if let Some(view) = this.upgrade() {
+                                _ = async_cx.update_view(&view, |this, cx| {
+                                    this.is_uploading = false;
+                                    cx.notify();
+                                });
+                            }
+
+                            // Update attaches model
                             _ = async_cx.update_model(&attaches, |model, cx| {
                                 if let Some(model) = model.as_mut() {
                                     model.push(url);
@@ -347,8 +370,14 @@ impl ChatPanel {
         .detach();
     }
 
-    fn remove(&mut self, cx: &mut ViewContext<Self>) {
-        // TODO
+    fn remove(&mut self, url: &Url, cx: &mut ViewContext<Self>) {
+        self.attaches.update(cx, |model, cx| {
+            if let Some(urls) = model.as_mut() {
+                let ix = urls.iter().position(|x| x == url).unwrap();
+                urls.remove(ix);
+                cx.notify();
+            }
+        });
     }
 }
 
@@ -400,59 +429,78 @@ impl Render for ChatPanel {
             .size_full()
             .child(list(self.list.clone()).flex_1())
             .child(
-                div()
-                    .flex_shrink_0()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .when_some(self.attaches.read(cx).as_ref(), |this, attaches| {
-                        this.flex()
-                            .items_center()
-                            .gap_1p5()
-                            .px_2()
-                            .children(attaches.iter().map(|url| {
+                div().flex_shrink_0().p_2().child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .when_some(self.attaches.read(cx).as_ref(), |this, attaches| {
+                            this.gap_1p5().children(attaches.iter().map(|url| {
+                                let url = url.clone();
                                 let path: SharedString = url.to_string().into();
 
                                 div()
                                     .id(path.clone())
+                                    .relative()
+                                    .w_16()
                                     .child(
-                                        img(path)
-                                            .h_16()
-                                            .rounded(px(cx.theme().radius))
-                                            .object_fit(ObjectFit::ScaleDown),
+                                        img(format!(
+                                            "{}/?url={}&w=128&h=128&fit=cover&n=-1",
+                                            IMAGE_SERVICE, path
+                                        ))
+                                        .size_16()
+                                        .shadow_lg()
+                                        .rounded(px(cx.theme().radius))
+                                        .object_fit(ObjectFit::ScaleDown),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top_neg_2()
+                                            .right_neg_2()
+                                            .size_4()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded_full()
+                                            .bg(cx.theme().danger)
+                                            .child(
+                                                Icon::new(IconName::Close)
+                                                    .size_2()
+                                                    .text_color(white()),
+                                            ),
                                     )
                                     .on_click(cx.listener(move |this, _, cx| {
-                                        this.remove(cx);
+                                        this.remove(&url, cx);
                                     }))
                             }))
-                    })
-                    .child(
-                        div()
-                            .w_full()
-                            .h_12()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .child(
-                                Button::new("upload")
-                                    .icon(Icon::new(IconName::Upload))
-                                    .ghost()
-                                    .on_click(cx.listener(move |this, _, cx| {
-                                        this.upload(cx);
-                                    }))
-                                    .loading(self.is_uploading),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
-                                    .rounded(px(cx.theme().radius))
-                                    .px_2()
-                                    .child(self.input.clone()),
-                            ),
-                    ),
+                        })
+                        .child(
+                            div()
+                                .w_full()
+                                .h_9()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    Button::new("upload")
+                                        .icon(Icon::new(IconName::Upload))
+                                        .ghost()
+                                        .on_click(cx.listener(move |this, _, cx| {
+                                            this.upload(cx);
+                                        }))
+                                        .loading(self.is_uploading),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .flex()
+                                        .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
+                                        .rounded(px(cx.theme().radius))
+                                        .px_2()
+                                        .child(self.input.clone()),
+                                ),
+                        ),
+                ),
             )
     }
 }
