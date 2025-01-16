@@ -8,7 +8,6 @@ use gpui::{
     AnyElement, AnyView, AppContext, EventEmitter, FocusHandle, FocusableView, Global, Hsla,
     IntoElement, SharedString, View, WeakView, WindowContext,
 };
-use nostr_sdk::prelude::Metadata;
 use std::{collections::HashMap, sync::Arc};
 
 pub enum PanelEvent {
@@ -38,8 +37,8 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
     /// Once you have defined a panel id, this must not be changed.
     fn panel_id(&self) -> SharedString;
 
-    /// The optional metadata of the panel
-    fn panel_metadata(&self) -> Option<Metadata> {
+    /// The optional facepile of the panel
+    fn panel_facepile(&self, _cx: &WindowContext) -> Option<Vec<String>> {
         None
     }
 
@@ -76,7 +75,7 @@ pub trait Panel: EventEmitter<PanelEvent> + FocusableView {
 
 pub trait PanelView: 'static + Send + Sync {
     fn panel_id(&self, cx: &WindowContext) -> SharedString;
-    fn panel_metadata(&self, cx: &WindowContext) -> Option<Metadata>;
+    fn panel_facepile(&self, cx: &WindowContext) -> Option<Vec<String>>;
     fn title(&self, _cx: &WindowContext) -> AnyElement;
     fn closeable(&self, cx: &WindowContext) -> bool;
     fn zoomable(&self, cx: &WindowContext) -> bool;
@@ -92,8 +91,8 @@ impl<T: Panel> PanelView for View<T> {
         self.read(cx).panel_id()
     }
 
-    fn panel_metadata(&self, cx: &WindowContext) -> Option<Metadata> {
-        self.read(cx).panel_metadata()
+    fn panel_facepile(&self, cx: &WindowContext) -> Option<Vec<String>> {
+        self.read(cx).panel_facepile(cx)
     }
 
     fn title(&self, cx: &WindowContext) -> AnyElement {

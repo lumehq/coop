@@ -3,7 +3,6 @@ use crate::theme::ActiveTheme;
 use crate::Selectable;
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use nostr_sdk::prelude::*;
 
 pub mod tab_bar;
 
@@ -12,7 +11,7 @@ pub struct Tab {
     id: ElementId,
     base: Stateful<Div>,
     label: AnyElement,
-    metadata: Option<Metadata>,
+    facepill: Option<Vec<String>>,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     disabled: bool,
@@ -23,7 +22,7 @@ impl Tab {
     pub fn new(
         id: impl Into<ElementId>,
         label: impl IntoElement,
-        metadata: Option<Metadata>,
+        facepill: Option<Vec<String>>,
     ) -> Self {
         let id: ElementId = id.into();
 
@@ -31,11 +30,11 @@ impl Tab {
             id: id.clone(),
             base: div().id(id),
             label: label.into_any_element(),
-            metadata,
             disabled: false,
             selected: false,
             prefix: None,
             suffix: None,
+            facepill,
         }
     }
 
@@ -143,19 +142,25 @@ impl RenderOnce for Tab {
                     .gap_1()
                     .text_ellipsis()
                     .text_xs()
-                    .child(div().when_some(self.metadata, |this, metadata| {
-                        if let Some(picture) = metadata.picture {
-                            this.flex_shrink_0().child(
-                                img(format!("https://wsrv.nl/?url={}&w=100&h=100&n=-1", picture))
-                                    .size_4()
-                                    .rounded_full()
-                                    .object_fit(ObjectFit::Cover),
-                            )
-                        } else {
-                            this.flex_shrink_0()
-                                .child(img("brand/avatar.png").size_4().rounded_full())
-                        }
-                    }))
+                    .when_some(self.facepill, |this, facepill| {
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_row_reverse()
+                                .items_center()
+                                .justify_start()
+                                .children(facepill.into_iter().enumerate().rev().map(
+                                    |(ix, face)| {
+                                        div().when(ix > 0, |div| div.ml_neg_1()).child(
+                                            img(face)
+                                                .size_4()
+                                                .rounded_full()
+                                                .object_fit(ObjectFit::Cover),
+                                        )
+                                    },
+                                )),
+                        )
+                    })
                     .child(self.label),
             )
             .when_some(self.suffix, |this, suffix| this.child(suffix))

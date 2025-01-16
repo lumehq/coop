@@ -386,8 +386,15 @@ impl Panel for ChatPanel {
         self.id.clone()
     }
 
-    fn panel_metadata(&self) -> Option<Metadata> {
-        None
+    fn panel_facepile(&self, cx: &WindowContext) -> Option<Vec<String>> {
+        Some(
+            self.room
+                .read(cx)
+                .members
+                .iter()
+                .map(|member| member.avatar())
+                .collect(),
+        )
     }
 
     fn title(&self, _cx: &WindowContext) -> AnyElement {

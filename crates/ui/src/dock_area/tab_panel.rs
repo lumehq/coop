@@ -516,26 +516,25 @@ impl TabPanel {
                                 .gap_1()
                                 .text_ellipsis()
                                 .text_xs()
-                                .child(div().when_some(
-                                    panel.panel_metadata(cx),
-                                    |this, metadata| {
-                                        if let Some(picture) = metadata.picture {
-                                            this.flex_shrink_0().child(
-                                                img(format!(
-                                                    "https://wsrv.nl/?url={}&w=100&h=100&n=-1",
-                                                    picture
-                                                ))
-                                                .size_4()
-                                                .rounded_full()
-                                                .object_fit(ObjectFit::Cover),
-                                            )
-                                        } else {
-                                            this.flex_shrink_0().child(
-                                                img("brand/avatar.png").size_4().rounded_full(),
-                                            )
-                                        }
-                                    },
-                                ))
+                                .when_some(panel.panel_facepile(cx), |this, facepill| {
+                                    this.child(
+                                        div()
+                                            .flex()
+                                            .flex_row_reverse()
+                                            .items_center()
+                                            .justify_start()
+                                            .children(facepill.into_iter().enumerate().rev().map(
+                                                |(ix, face)| {
+                                                    div().when(ix > 0, |div| div.ml_neg_1()).child(
+                                                        img(face)
+                                                            .size_4()
+                                                            .rounded_full()
+                                                            .object_fit(ObjectFit::Cover),
+                                                    )
+                                                },
+                                            )),
+                                    )
+                                })
                                 .child(panel.title(cx)),
                         )
                         .when(state.draggable, |this| {
@@ -595,7 +594,7 @@ impl TabPanel {
                     active = false;
                 }
 
-                Tab::new(("tab", ix), panel.title(cx), panel.panel_metadata(cx))
+                Tab::new(("tab", ix), panel.title(cx), panel.panel_facepile(cx))
                     .py_2()
                     .selected(active)
                     .disabled(disabled)

@@ -1,6 +1,5 @@
-use std::time::Duration;
-
 use gpui::{ModelContext, Timer};
+use std::time::Duration;
 
 static INTERVAL: Duration = Duration::from_millis(500);
 static PAUSE_DELAY: Duration = Duration::from_millis(300);
@@ -72,6 +71,7 @@ impl BlinkCursor {
 
         // delay 500ms to start the blinking
         let epoch = self.next_epoch();
+
         cx.spawn(|this, mut cx| async move {
             Timer::after(PAUSE_DELAY).await;
 

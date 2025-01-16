@@ -5629,7 +5629,6 @@ dependencies = [
  "gpui",
  "image",
  "itertools 0.13.0",
- "nostr-sdk",
  "once_cell",
  "paste",
  "regex",
