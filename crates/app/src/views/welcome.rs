@@ -1,5 +1,5 @@
 use gpui::{
-    div, AnyElement, AppContext, EventEmitter, FocusHandle, FocusableView, IntoElement,
+    div, svg, AnyElement, AppContext, EventEmitter, FocusHandle, FocusableView, IntoElement,
     ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext, WindowContext,
 };
 use ui::{
@@ -80,9 +80,25 @@ impl Render for WelcomePanel {
             .flex()
             .items_center()
             .justify_center()
-            .child("coop on nostr.")
-            .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
-            .font_black()
-            .text_sm()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        svg()
+                            .path("brand/coop.svg")
+                            .size_12()
+                            .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                    )
+                    .child(
+                        div()
+                            .child("coop on nostr.")
+                            .text_color(cx.theme().base.step(cx, ColorScaleStep::FOUR))
+                            .font_black()
+                            .text_sm(),
+                    ),
+            )
     }
 }

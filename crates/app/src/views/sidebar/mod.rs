@@ -1,7 +1,7 @@
 use crate::views::sidebar::inbox::Inbox;
-use contact_list::ContactList;
+use compose::Compose;
 use gpui::{
-    div, AnyElement, AppContext, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
+    AnyElement, AppContext, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
     IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext,
     WindowContext,
 };
@@ -16,7 +16,7 @@ use ui::{
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
 
-mod contact_list;
+mod compose;
 mod inbox;
 
 pub struct Sidebar {
@@ -49,24 +49,27 @@ impl Sidebar {
     }
 
     fn show_compose(&mut self, cx: &mut ViewContext<Self>) {
-        let contact_list = cx.new_view(ContactList::new);
+        let compose = cx.new_view(Compose::new);
 
-        cx.open_modal(move |modal, _cx| {
-            modal.child(contact_list.clone()).footer(
-                div().flex().gap_2().child(
+        cx.open_modal(move |modal, cx| {
+            let selected = compose.model.read(cx).selected(cx);
+            let label = if selected.len() > 1 {
+                "Create Group DM"
+            } else {
+                "Create DM"
+            };
+
+            modal
+                .title("Direct Messages")
+                .child(compose.clone())
+                .footer(
                     Button::new("create")
-                        .label("Create DM")
+                        .label(label)
                         .primary()
+                        .bold()
                         .rounded(ButtonRounded::Large)
-                        .w_full()
-                        .on_click({
-                            let contact_list = contact_list.clone();
-                            move |_, cx| {
-                                let _selected = contact_list.model.read(cx).selected();
-                            }
-                        }),
-                ),
-            )
+                        .w_full(),
+                )
         })
     }
 }
@@ -116,26 +119,15 @@ impl Render for Sidebar {
             .py_3()
             .gap_3()
             .child(
-                v_flex()
-                    .px_2()
-                    .gap_0p5()
-                    .child(
-                        Button::new("compose")
-                            .small()
-                            .ghost()
-                            .not_centered()
-                            .icon(Icon::new(IconName::ComposeFill))
-                            .label("New Message")
-                            .on_click(cx.listener(|this, _, cx| this.show_compose(cx))),
-                    )
-                    .child(
-                        Button::new("contacts")
-                            .small()
-                            .ghost()
-                            .not_centered()
-                            .icon(Icon::new(IconName::GroupFill))
-                            .label("Contacts"),
-                    ),
+                v_flex().px_2().gap_0p5().child(
+                    Button::new("compose")
+                        .small()
+                        .ghost()
+                        .not_centered()
+                        .icon(Icon::new(IconName::ComposeFill))
+                        .label("New Message")
+                        .on_click(cx.listener(|this, _, cx| this.show_compose(cx))),
+                ),
             )
             .child(self.inbox.clone())
     }

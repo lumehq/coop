@@ -31,7 +31,7 @@ impl Member {
                 IMAGE_SERVICE, picture
             )
         } else {
-            "brands/avatar.png".into()
+            "brand/avatar.png".into()
         }
     }
 

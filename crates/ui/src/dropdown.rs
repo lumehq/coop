@@ -72,7 +72,7 @@ pub trait DropdownDelegate: Sized {
         Self::Item: DropdownItem<Value = V>,
         V: PartialEq,
     {
-        (0..self.len()).find(|&i| self.get(i).map_or(false, |item| item.value() == value))
+        (0..self.len()).find(|&i| self.get(i).is_some_and(|item| item.value() == value))
     }
 
     fn can_search(&self) -> bool {
@@ -125,9 +125,7 @@ where
     }
 
     fn render_item(&self, ix: usize, cx: &mut gpui::ViewContext<List<Self>>) -> Option<Self::Item> {
-        let selected = self
-            .selected_index
-            .map_or(false, |selected_index| selected_index == ix);
+        let selected = self.selected_index == Some(ix);
         let size = self
             .dropdown
             .upgrade()

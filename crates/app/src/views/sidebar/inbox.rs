@@ -1,6 +1,6 @@
 use crate::{
     states::chat::ChatRegistry,
-    utils::ago,
+    utils::message_ago,
     views::app::{AddPanel, PanelKind},
 };
 use gpui::{
@@ -22,7 +22,7 @@ pub struct Inbox {
 impl Inbox {
     pub fn new(_cx: &mut ViewContext<'_, Self>) -> Self {
         Self {
-            label: "Inbox".into(),
+            label: "Direct Messages".into(),
             is_collapsed: false,
         }
     }
@@ -54,7 +54,7 @@ impl Inbox {
                         let room = model.read(cx);
                         let id = room.id;
                         let room_id: SharedString = id.to_string().into();
-                        let ago: SharedString = ago(room.last_seen).into();
+                        let ago: SharedString = message_ago(room.last_seen).into();
 
                         div()
                             .id(room_id)

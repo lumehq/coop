@@ -2,7 +2,7 @@ use crate::{
     constants::IMAGE_SERVICE,
     get_client,
     states::chat::room::Room,
-    utils::{ago, compare, nip96_upload},
+    utils::{compare, message_time, nip96_upload},
 };
 use async_utility::task::spawn;
 use gpui::{
@@ -197,7 +197,7 @@ impl ChatPanel {
                                 Some(Message::new(
                                     member,
                                     ev.content.into(),
-                                    ago(ev.created_at).into(),
+                                    message_time(ev.created_at).into(),
                                 ))
                             } else {
                                 None
@@ -228,7 +228,7 @@ impl ChatPanel {
                         Message::new(
                             member,
                             event.content.clone().into(),
-                            ago(event.created_at).into(),
+                            message_time(event.created_at).into(),
                         )
                     })
                 })
@@ -298,7 +298,7 @@ impl ChatPanel {
                     let message = Message::new(
                         owner,
                         content.to_string().into(),
-                        ago(Timestamp::now()).into(),
+                        message_time(Timestamp::now()).into(),
                     );
 
                     model.items.extend(vec![message]);

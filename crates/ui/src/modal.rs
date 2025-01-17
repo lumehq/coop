@@ -2,7 +2,7 @@ use crate::{
     animation::cubic_bezier,
     button::{Button, ButtonVariants as _},
     theme::{scale::ColorScaleStep, ActiveTheme as _},
-    v_flex, ContextModal, IconName, Sizable as _,
+    v_flex, ContextModal, IconName, Sizable as _, StyledExt,
 };
 use gpui::{
     actions, anchored, div, hsla, point, prelude::FluentBuilder, px, relative, Animation,
@@ -219,7 +219,13 @@ impl RenderOnce for Modal {
                             .w(self.width)
                             .when_some(self.max_width, |this, w| this.max_w(w))
                             .when_some(self.title, |this, title| {
-                                this.child(div().line_height(relative(1.)).child(title))
+                                this.child(
+                                    div()
+                                        .text_sm()
+                                        .font_semibold()
+                                        .line_height(relative(1.))
+                                        .child(title),
+                                )
                             })
                             .when(self.show_close, |this| {
                                 this.child(

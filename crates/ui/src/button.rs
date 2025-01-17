@@ -353,7 +353,7 @@ impl RenderOnce for Button {
                         Size::Size(size) => this.px(size * 0.2),
                         Size::XSmall => this.h_6().px_0p5(),
                         Size::Small => this.h_8().px_2(),
-                        _ => this.h_10().px_4(),
+                        _ => this.h_9().px_3(),
                     }
                 }
             })
@@ -487,7 +487,7 @@ impl ButtonVariant {
 
     fn text_color(&self, cx: &WindowContext) -> Hsla {
         match self {
-            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::ONE),
+            ButtonVariant::Primary => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
             ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
             ButtonVariant::Custom(colors) => colors.foreground,
             _ => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
