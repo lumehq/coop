@@ -228,7 +228,7 @@ impl Render for Notification {
             .relative()
             .w_96()
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
             .bg(cx.theme().background)
             .rounded_md()
             .shadow_md()

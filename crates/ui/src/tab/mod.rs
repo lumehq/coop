@@ -118,7 +118,7 @@ impl RenderOnce for Tab {
             .border_x_1()
             .border_color(cx.theme().transparent)
             .when(self.selected, |this| {
-                this.border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                this.border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
             })
             .when(!self.selected, |this| {
                 this.child(
@@ -128,7 +128,7 @@ impl RenderOnce for Tab {
                         .bottom_0()
                         .size_full()
                         .border_b_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE)),
                 )
             })
             .when_some(self.prefix, |this, prefix| {

@@ -501,7 +501,7 @@ impl Render for ChatPanel {
                                     div()
                                         .flex_1()
                                         .flex()
-                                        .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
+                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
                                         .rounded(px(cx.theme().radius))
                                         .px_2()
                                         .child(self.input.clone()),

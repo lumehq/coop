@@ -79,7 +79,7 @@ impl RenderOnce for TabBar {
                     .bottom_0()
                     .size_full()
                     .border_b_1()
-                    .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE)),
             )
             .when_some(self.prefix, |this, prefix| this.child(prefix))
             .child(

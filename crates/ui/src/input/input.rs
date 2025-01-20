@@ -1390,9 +1390,9 @@ impl Render for TextInput {
             .when(self.multi_line, |this| this.h_auto())
             .when(self.appearance, |this| {
                 this.bg(if self.disabled {
-                    cx.theme().base.step(cx, ColorScaleStep::FOUR)
+                    cx.theme().transparent
                 } else {
-                    cx.theme().background
+                    cx.theme().base.step(cx, ColorScaleStep::THREE)
                 })
                 .rounded(px(cx.theme().radius))
                 .when(cx.theme().shadow, |this| this.shadow_sm())

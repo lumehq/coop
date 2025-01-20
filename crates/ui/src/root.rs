@@ -239,7 +239,7 @@ impl Root {
 
                 // Keep only have one overlay, we only render the first modal with overlay.
                 if has_overlay {
-                    modal.overlay_visible = false;
+                    modal.overlay = false;
                 }
                 if modal.has_overlay() {
                     has_overlay = true;

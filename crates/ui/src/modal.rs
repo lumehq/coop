@@ -5,8 +5,8 @@ use crate::{
     v_flex, ContextModal, IconName, Sizable as _, StyledExt,
 };
 use gpui::{
-    actions, anchored, div, hsla, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, AppContext, Bounds, ClickEvent, Div, FocusHandle, Hsla,
+    actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
+    AnimationExt as _, AnyElement, AppContext, Bounds, ClickEvent, Div, FocusHandle,
     InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point,
     RenderOnce, SharedString, Styled, WindowContext,
 };
@@ -33,24 +33,11 @@ pub struct Modal {
     margin_top: Option<Pixels>,
     on_close: OnClose,
     show_close: bool,
-    overlay: bool,
     keyboard: bool,
     /// This will be change when open the modal, the focus handle is create when open the modal.
     pub(crate) focus_handle: FocusHandle,
     pub(crate) layer_ix: usize,
-    pub(crate) overlay_visible: bool,
-}
-
-pub(crate) fn overlay_color(overlay: bool, cx: &WindowContext) -> Hsla {
-    if !overlay {
-        return hsla(0., 0., 0., 0.);
-    }
-
-    if cx.theme().appearance.is_dark() {
-        hsla(0., 1., 1., 0.06)
-    } else {
-        hsla(0., 0., 0., 0.06)
-    }
+    pub(crate) overlay: bool,
 }
 
 impl Modal {
@@ -58,12 +45,10 @@ impl Modal {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
             .rounded_lg()
             .shadow_xl()
-            .min_h_48()
-            .p_4()
-            .gap_4();
+            .min_h_48();
 
         Self {
             base,
@@ -77,7 +62,6 @@ impl Modal {
             overlay: true,
             keyboard: true,
             layer_ix: 0,
-            overlay_visible: true,
             on_close: Rc::new(|_, _| {}),
             show_close: true,
         }
@@ -171,8 +155,8 @@ impl RenderOnce for Modal {
             origin: Point::default(),
             size: view_size,
         };
-        let offset_top = px(layer_ix as f32 * 16.);
-        let y = self.margin_top.unwrap_or(view_size.height / 10.) + offset_top;
+        let offset_top = px(layer_ix as f32 * 2.);
+        let y = self.margin_top.unwrap_or(view_size.height / 16.) + offset_top;
         let x = bounds.center().x - self.width / 2.;
 
         anchored()
@@ -183,8 +167,8 @@ impl RenderOnce for Modal {
                     .occlude()
                     .w(view_size.width)
                     .h(view_size.height)
-                    .when(self.overlay_visible, |this| {
-                        this.bg(overlay_color(self.overlay, cx))
+                    .when(self.overlay, |this| {
+                        this.bg(cx.theme().base.step_alpha(cx, ColorScaleStep::EIGHT))
                     })
                     .on_mouse_down(MouseButton::Left, {
                         let on_close = self.on_close.clone();
@@ -221,6 +205,10 @@ impl RenderOnce for Modal {
                             .when_some(self.title, |this, title| {
                                 this.child(
                                     div()
+                                        .flex()
+                                        .items_center()
+                                        .h_10()
+                                        .px_2()
                                         .text_sm()
                                         .font_semibold()
                                         .line_height(relative(1.))

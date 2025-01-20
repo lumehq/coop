@@ -345,15 +345,16 @@ impl RenderOnce for Button {
                         Size::Size(px) => this.size(px),
                         Size::XSmall => this.size_5(),
                         Size::Small => this.size_6(),
-                        Size::Large | Size::Medium => this.size_8(),
+                        Size::Medium => this.size_8(),
+                        Size::Large => this.size_9(),
                     }
                 } else {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
                         Size::XSmall => this.h_6().px_0p5(),
-                        Size::Small => this.h_8().px_2(),
-                        _ => this.h_9().px_3(),
+                        Size::Small => this.h_7().px_2(),
+                        _ => this.h_8().px_3(),
                     }
                 }
             })
@@ -487,7 +488,14 @@ impl ButtonVariant {
 
     fn text_color(&self, cx: &WindowContext) -> Hsla {
         match self {
-            ButtonVariant::Primary => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
+            ButtonVariant::Primary => match cx.theme().accent.name().to_string().as_str() {
+                "Sky" => cx.theme().base.darken(cx),
+                "Mint" => cx.theme().base.darken(cx),
+                "Lime" => cx.theme().base.darken(cx),
+                "Amber" => cx.theme().base.darken(cx),
+                "Yellow" => cx.theme().base.darken(cx),
+                _ => cx.theme().accent.step(cx, ColorScaleStep::ONE),
+            },
             ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
             ButtonVariant::Custom(colors) => colors.foreground,
             _ => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
@@ -535,7 +543,7 @@ impl ButtonVariant {
     fn hovered(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::FOUR),
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::THREE),
             ButtonVariant::Link => cx.theme().transparent,
             ButtonVariant::Text => cx.theme().transparent,
             ButtonVariant::Custom(colors) => colors.hover,
@@ -560,7 +568,7 @@ impl ButtonVariant {
     fn active(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::FOUR),
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::THREE),
             ButtonVariant::Link => cx.theme().transparent,
             ButtonVariant::Text => cx.theme().transparent,
             ButtonVariant::Custom(colors) => colors.active,
@@ -588,7 +596,7 @@ impl ButtonVariant {
     fn selected(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::FOUR),
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::THREE),
             ButtonVariant::Link => cx.theme().transparent,
             ButtonVariant::Text => cx.theme().transparent,
             ButtonVariant::Custom(colors) => colors.active,
@@ -618,7 +626,7 @@ impl ButtonVariant {
             ButtonVariant::Link | ButtonVariant::Ghost | ButtonVariant::Text => {
                 cx.theme().transparent
             }
-            _ => cx.theme().base.step(cx, ColorScaleStep::FOUR),
+            _ => cx.theme().base.step(cx, ColorScaleStep::THREE),
         };
 
         let fg = cx.theme().base.step(cx, ColorScaleStep::ELEVEN);

@@ -68,7 +68,27 @@ pub struct Room {
 }
 
 impl Room {
-    pub fn new(event: &Event) -> Self {
+    pub fn new(
+        id: u64,
+        owner: Member,
+        members: Vec<Member>,
+        title: Option<SharedString>,
+        last_seen: Timestamp,
+    ) -> Self {
+        let is_group = members.len() > 1;
+
+        Self {
+            id,
+            owner,
+            members,
+            title,
+            last_seen,
+            is_group,
+            new_messages: vec![],
+        }
+    }
+
+    pub fn parse(event: &Event) -> Room {
         let id = room_hash(&event.tags);
         let last_seen = event.created_at;
 
@@ -89,17 +109,7 @@ impl Room {
             Some(name.into())
         };
 
-        let is_group = members.len() > 1;
-
-        Self {
-            id,
-            owner,
-            members,
-            title,
-            last_seen,
-            is_group,
-            new_messages: vec![],
-        }
+        Self::new(id, owner, members, title, last_seen)
     }
 
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {

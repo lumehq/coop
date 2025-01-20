@@ -1,7 +1,7 @@
 use crate::views::sidebar::inbox::Inbox;
 use compose::Compose;
 use gpui::{
-    AnyElement, AppContext, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
+    div, px, AnyElement, AppContext, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
     IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext,
     WindowContext,
 };
@@ -13,6 +13,7 @@ use ui::{
     },
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
+    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
 
@@ -61,14 +62,21 @@ impl Sidebar {
 
             modal
                 .title("Direct Messages")
+                .width(px(420.))
                 .child(compose.clone())
                 .footer(
-                    Button::new("create")
-                        .label(label)
-                        .primary()
-                        .bold()
-                        .rounded(ButtonRounded::Large)
-                        .w_full(),
+                    div()
+                        .p_2()
+                        .border_t_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .child(
+                            Button::new("create")
+                                .label(label)
+                                .primary()
+                                .bold()
+                                .rounded(ButtonRounded::Large)
+                                .w_full(),
+                        ),
                 )
         })
     }
@@ -125,7 +133,7 @@ impl Render for Sidebar {
                         .ghost()
                         .not_centered()
                         .icon(Icon::new(IconName::ComposeFill))
-                        .label("New Message")
+                        .label("Compose")
                         .on_click(cx.listener(|this, _, cx| this.show_compose(cx))),
                 ),
             )

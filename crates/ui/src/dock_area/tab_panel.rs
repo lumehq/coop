@@ -60,7 +60,7 @@ impl Render for DragPanel {
             .rounded(px(cx.theme().radius))
             .text_xs()
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
             .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
             .child(self.panel.title(cx))
     }
@@ -577,7 +577,7 @@ impl TabPanel {
                             .border_r_1()
                             .border_b_1()
                             .h_full()
-                            .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                             .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
                             .px_2()
                             .children(left_dock_button)
@@ -616,7 +616,7 @@ impl TabPanel {
                                 this.rounded_l_none()
                                     .border_l_2()
                                     .border_r_0()
-                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                             })
                             .on_drop(cx.listener(
                                 move |this, drag: &DragPanel, cx| {
@@ -661,7 +661,7 @@ impl TabPanel {
                     .border_l_1()
                     .border_b_1()
                     .h_full()
-                    .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                     .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
                     .px_2()
                     .gap_1()

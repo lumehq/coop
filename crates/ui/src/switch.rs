@@ -113,7 +113,7 @@ impl Element for Switch {
                     theme.accent.step(cx, ColorScaleStep::NINE),
                     theme.background,
                 ),
-                false => (theme.base.step(cx, ColorScaleStep::FOUR), theme.background),
+                false => (theme.base.step(cx, ColorScaleStep::THREE), theme.background),
             };
 
             let (bg, toggle_bg) = match self.disabled {

@@ -126,7 +126,7 @@ impl ChatRegistry {
                                 let id = room_hash(&ev.tags);
                                 // Filter all seen events
                                 if !hashes.iter().any(|h| h == &id) {
-                                    Some(cx.new_model(|_| Room::new(&ev)))
+                                    Some(cx.new_model(|_| Room::parse(&ev)))
                                 } else {
                                     None
                                 }
@@ -170,7 +170,7 @@ impl ChatRegistry {
                     cx.notify();
                 })
             } else {
-                let room = cx.new_model(|_| Room::new(&event));
+                let room = cx.new_model(|_| Room::parse(&event));
 
                 self.inbox.update(cx, |this, cx| {
                     this.rooms.insert(0, room);

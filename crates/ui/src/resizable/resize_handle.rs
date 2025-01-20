@@ -65,7 +65,7 @@ impl RenderOnce for ResizeHandle {
             })
             .child(
                 div()
-                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                    .bg(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                     .when(self.axis.is_horizontal(), |this| {
                         this.h_full().w(HANDLE_SIZE)
                     })

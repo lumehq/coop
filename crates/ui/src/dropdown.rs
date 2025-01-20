@@ -602,7 +602,7 @@ where
                     .justify_between()
                     .bg(cx.theme().background)
                     .border_1()
-                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FOUR))
+                    .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
                     .rounded(px(cx.theme().radius))
                     .when(cx.theme().shadow, |this| this.shadow_sm())
                     .map(|this| {
@@ -695,7 +695,7 @@ where
                                         .bg(cx.theme().background)
                                         .border_1()
                                         .border_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                                            cx.theme().base.step(cx, ColorScaleStep::SEVEN),
                                         )
                                         .rounded(px(cx.theme().radius))
                                         .shadow_md()

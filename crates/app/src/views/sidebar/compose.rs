@@ -6,13 +6,14 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 use ui::{
+    button::{Button, ButtonRounded},
     indicator::Indicator,
-    input::TextInput,
+    input::{InputEvent, TextInput},
     prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    Icon, IconName, Sizable, StyledExt,
+    Icon, IconName, Sizable, Size, StyledExt,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -21,23 +22,47 @@ struct SelectContact(PublicKey);
 impl_internal_actions!(contacts, [SelectContact]);
 
 pub struct Compose {
-    input: View<TextInput>,
+    title_input: View<TextInput>,
+    message_input: View<TextInput>,
+    user_input: View<TextInput>,
     contacts: Model<Option<Vec<Member>>>,
     selected: Model<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
+    is_loading: bool,
 }
 
 impl Compose {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
         let contacts = cx.new_model(|_| None);
         let selected = cx.new_model(|_| HashSet::new());
-        let input = cx.new_view(|cx| {
+
+        let user_input = cx.new_view(|cx| {
+            TextInput::new(cx)
+                .text_size(ui::Size::Small)
+                .small()
+                .placeholder("npub1...")
+        });
+
+        let title_input = cx.new_view(|cx| {
             TextInput::new(cx)
                 .appearance(false)
-                .text_size(ui::Size::Small)
-                .placeholder("npub1...")
-                .cleanable()
+                .text_size(Size::XSmall)
+                .placeholder("Family...")
         });
+
+        let message_input = cx.new_view(|cx| {
+            TextInput::new(cx)
+                .appearance(false)
+                .text_size(Size::XSmall)
+                .placeholder("Hello...")
+        });
+
+        cx.subscribe(&user_input, move |this, _, input_event, cx| {
+            if let InputEvent::PressEnter = input_event {
+                this.add(cx);
+            }
+        })
+        .detach();
 
         cx.spawn(|this, mut async_cx| {
             let client = get_client();
@@ -75,15 +100,73 @@ impl Compose {
         .detach();
 
         Self {
-            input,
+            title_input,
+            message_input,
+            user_input,
             contacts,
             selected,
+            is_loading: false,
             focus_handle: cx.focus_handle(),
         }
     }
 
     pub fn selected<'a>(&self, cx: &'a WindowContext) -> Vec<&'a PublicKey> {
         self.selected.read(cx).iter().collect()
+    }
+
+    fn add(&mut self, cx: &mut ViewContext<Self>) {
+        let content = self.user_input.read(cx).text().to_string();
+        let input = self.user_input.downgrade();
+
+        // Show loading spinner
+        self.is_loading = true;
+        cx.notify();
+
+        if let Ok(public_key) = PublicKey::parse(&content) {
+            cx.spawn(|this, mut async_cx| async move {
+                let query: anyhow::Result<Metadata, anyhow::Error> = async_cx
+                    .background_executor()
+                    .spawn(async move {
+                        let client = get_client();
+                        let metadata = client
+                            .fetch_metadata(public_key, Duration::from_secs(3))
+                            .await?;
+
+                        Ok(metadata)
+                    })
+                    .await;
+
+                if let Ok(metadata) = query {
+                    if let Some(view) = this.upgrade() {
+                        _ = async_cx.update_view(&view, |this, cx| {
+                            this.contacts.update(cx, |this, cx| {
+                                if let Some(members) = this {
+                                    members.insert(0, Member::new(public_key, metadata));
+                                }
+                                cx.notify();
+                            });
+
+                            this.selected.update(cx, |this, cx| {
+                                this.insert(public_key);
+                                cx.notify();
+                            });
+
+                            this.is_loading = false;
+                            cx.notify();
+                        });
+                    }
+
+                    if let Some(input) = input.upgrade() {
+                        _ = async_cx.update_view(&input, |input, cx| {
+                            input.set_text("", cx);
+                        });
+                    }
+                }
+            })
+            .detach();
+        } else {
+            // Handle error
+        }
     }
 
     fn on_action_select(&mut self, action: &SelectContact, cx: &mut ViewContext<Self>) {
@@ -95,8 +178,6 @@ impl Compose {
             };
             cx.notify();
         });
-
-        // TODO
     }
 }
 
@@ -110,33 +191,66 @@ impl Render for Compose {
             .on_action(cx.listener(Self::on_action_select))
             .flex()
             .flex_col()
-            .gap_3()
+            .gap_1()
+            .child(
+                div()
+                    .px_2()
+                    .text_xs()
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .child(msg),
+            )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_2()
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                            .child(msg),
+                            .h_10()
+                            .px_2()
+                            .border_b_1()
+                            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(div().text_xs().font_semibold().child("Title:"))
+                            .child(self.title_input.clone()),
                     )
                     .child(
                         div()
-                            .bg(cx.theme().base.step(cx, ColorScaleStep::FOUR))
-                            .rounded(px(cx.theme().radius))
+                            .h_10()
                             .px_2()
-                            .child(self.input.clone()),
+                            .border_b_1()
+                            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(div().text_xs().font_semibold().child("Message:"))
+                            .child(self.message_input.clone()),
                     ),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .child(div().text_xs().font_semibold().child("Contacts"))
-                    .child(div().map(|this| {
+                    .gap_2()
+                    .child(div().px_2().text_xs().font_semibold().child("To:"))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_2()
+                            .child(
+                                Button::new("add")
+                                    .icon(IconName::Plus)
+                                    .small()
+                                    .rounded(ButtonRounded::Size(px(9999.)))
+                                    .loading(self.is_loading)
+                                    .on_click(cx.listener(|this, _, cx| this.add(cx))),
+                            )
+                            .child(self.user_input.clone()),
+                    )
+                    .map(|this| {
                         if let Some(contacts) = self.contacts.read(cx).clone() {
                             this.child(
                                 uniform_list(
@@ -155,9 +269,8 @@ impl Render for Compose {
                                                 div()
                                                     .id(ix)
                                                     .w_full()
-                                                    .h_10()
-                                                    .px_1p5()
-                                                    .rounded(px(cx.theme().radius))
+                                                    .h_9()
+                                                    .px_2()
                                                     .flex()
                                                     .items_center()
                                                     .justify_between()
@@ -166,10 +279,10 @@ impl Render for Compose {
                                                             .flex()
                                                             .items_center()
                                                             .gap_2()
-                                                            .text_sm()
+                                                            .text_xs()
                                                             .child(
                                                                 div().flex_shrink_0().child(
-                                                                    img(item.avatar()).size_8(),
+                                                                    img(item.avatar()).size_6(),
                                                                 ),
                                                             )
                                                             .child(item.name()),
@@ -177,7 +290,7 @@ impl Render for Compose {
                                                     .when(is_select, |this| {
                                                         this.child(
                                                             Icon::new(IconName::CircleCheck)
-                                                                .size_4()
+                                                                .size_3()
                                                                 .text_color(cx.theme().base.step(
                                                                     cx,
                                                                     ColorScaleStep::TWELVE,
@@ -188,13 +301,7 @@ impl Render for Compose {
                                                         this.bg(cx
                                                             .theme()
                                                             .base
-                                                            .step(cx, ColorScaleStep::FOUR))
-                                                            .text_color(
-                                                                cx.theme().base.step(
-                                                                    cx,
-                                                                    ColorScaleStep::ELEVEN,
-                                                                ),
-                                                            )
+                                                            .step(cx, ColorScaleStep::THREE))
                                                     })
                                                     .on_click(move |_, cx| {
                                                         cx.dispatch_action(Box::new(
@@ -207,7 +314,7 @@ impl Render for Compose {
                                         items
                                     },
                                 )
-                                .h(px(320.)),
+                                .h(px(300.)),
                             )
                         } else {
                             this.flex()
@@ -216,7 +323,7 @@ impl Render for Compose {
                                 .h_16()
                                 .child(Indicator::new().small())
                         }
-                    })),
+                    }),
             )
     }
 }

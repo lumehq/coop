@@ -11,7 +11,7 @@ pub mod colors;
 pub mod scale;
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ThemeColors {
+pub struct SystemColors {
     pub background: Hsla,
     pub transparent: Hsla,
     pub scrollbar: Hsla,
@@ -21,7 +21,7 @@ pub struct ThemeColors {
     pub danger: Hsla,
 }
 
-impl ThemeColors {
+impl SystemColors {
     pub fn light() -> Self {
         Self {
             background: hsl(0.0, 0.0, 100.),
@@ -93,7 +93,7 @@ impl Appearance {
 }
 
 pub struct Theme {
-    colors: ThemeColors,
+    colors: SystemColors,
     /// Base colors.
     pub base: ColorScaleSet,
     /// Accent colors.
@@ -109,7 +109,7 @@ pub struct Theme {
 }
 
 impl Deref for Theme {
-    type Target = ThemeColors;
+    type Target = SystemColors;
 
     fn deref(&self) -> &Self::Target {
         &self.colors
@@ -159,8 +159,8 @@ impl Theme {
     fn new(appearance: Appearance) -> Self {
         let color_scales = default_color_scales();
         let colors = match appearance {
-            Appearance::Light => ThemeColors::light(),
-            Appearance::Dark => ThemeColors::dark(),
+            Appearance::Light => SystemColors::light(),
+            Appearance::Dark => SystemColors::dark(),
         };
 
         Theme {
@@ -174,7 +174,7 @@ impl Theme {
             } else {
                 "FreeMono".into()
             },
-            radius: 6.0,
+            radius: 5.0,
             shadow: false,
             scrollbar_show: ScrollbarShow::default(),
             appearance,
