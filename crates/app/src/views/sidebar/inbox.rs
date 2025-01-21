@@ -22,7 +22,7 @@ pub struct Inbox {
 impl Inbox {
     pub fn new(_cx: &mut ViewContext<'_, Self>) -> Self {
         Self {
-            label: "Direct Messages".into(),
+            label: "Inbox".into(),
             is_collapsed: false,
         }
     }
@@ -138,11 +138,6 @@ impl Render for Inbox {
                     .rounded(px(cx.theme().radius))
                     .text_xs()
                     .font_semibold()
-                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                    .on_click(cx.listener(move |view, _event, cx| {
-                        view.is_collapsed = !view.is_collapsed;
-                        cx.notify();
-                    }))
                     .child(
                         Icon::new(IconName::ChevronDown)
                             .size_6()
@@ -150,7 +145,12 @@ impl Render for Inbox {
                                 this.rotate(percentage(270. / 360.))
                             }),
                     )
-                    .child(self.label.clone()),
+                    .child(self.label.clone())
+                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                    .on_click(cx.listener(move |view, _event, cx| {
+                        view.is_collapsed = !view.is_collapsed;
+                        cx.notify();
+                    })),
             )
             .when(!self.is_collapsed, |this| this.child(self.render_item(cx)))
     }

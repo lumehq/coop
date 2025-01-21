@@ -156,6 +156,17 @@ impl ChatRegistry {
             .map(|model| model.downgrade())
     }
 
+    pub fn new_room(&mut self, room: Room, cx: &mut AppContext) {
+        let room = cx.new_model(|_| room);
+
+        self.inbox.update(cx, |this, cx| {
+            if !this.rooms.iter().any(|r| r.read(cx) == room.read(cx)) {
+                this.rooms.insert(0, room);
+                cx.notify();
+            }
+        })
+    }
+
     pub fn receive(&mut self, event: Event, cx: &mut AppContext) {
         let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
         pubkeys.push(event.pubkey);

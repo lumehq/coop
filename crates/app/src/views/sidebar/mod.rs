@@ -1,9 +1,9 @@
-use crate::views::sidebar::inbox::Inbox;
+use crate::{states::chat::ChatRegistry, views::sidebar::inbox::Inbox};
 use compose::Compose;
 use gpui::{
-    div, px, AnyElement, AppContext, Entity, EntityId, EventEmitter, FocusHandle, FocusableView,
-    IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext,
-    WindowContext,
+    div, px, AnyElement, AppContext, BorrowAppContext, Entity, EntityId, EventEmitter, FocusHandle,
+    FocusableView, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, View, ViewContext, VisualContext, WindowContext,
 };
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -53,12 +53,7 @@ impl Sidebar {
         let compose = cx.new_view(Compose::new);
 
         cx.open_modal(move |modal, cx| {
-            let selected = compose.model.read(cx).selected(cx);
-            let label = if selected.len() > 1 {
-                "Create Group DM"
-            } else {
-                "Create DM"
-            };
+            let label = compose.read(cx).label(cx);
 
             modal
                 .title("Direct Messages")
@@ -75,7 +70,16 @@ impl Sidebar {
                                 .primary()
                                 .bold()
                                 .rounded(ButtonRounded::Large)
-                                .w_full(),
+                                .w_full()
+                                .on_click(cx.listener_for(&compose, |this, _, cx| {
+                                    if let Some(room) = this.room(cx) {
+                                        cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                            this.new_room(room, cx);
+                                        });
+
+                                        cx.close_modal();
+                                    }
+                                })),
                         ),
                 )
         })
@@ -127,13 +131,33 @@ impl Render for Sidebar {
             .py_3()
             .gap_3()
             .child(
-                v_flex().px_2().gap_0p5().child(
-                    Button::new("compose")
-                        .small()
-                        .ghost()
-                        .not_centered()
-                        .icon(Icon::new(IconName::ComposeFill))
-                        .label("Compose")
+                v_flex().px_2().gap_1().child(
+                    div()
+                        .id("new")
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_1()
+                        .h_7()
+                        .text_xs()
+                        .font_semibold()
+                        .rounded(px(cx.theme().radius))
+                        .child(
+                            div()
+                                .size_6()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+                                .child(
+                                    Icon::new(IconName::ComposeFill)
+                                        .small()
+                                        .text_color(cx.theme().base.darken(cx)),
+                                ),
+                        )
+                        .child("New Message")
+                        .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
                         .on_click(cx.listener(|this, _, cx| this.show_compose(cx))),
                 ),
             )

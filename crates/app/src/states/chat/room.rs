@@ -1,10 +1,9 @@
 use crate::{
     constants::IMAGE_SERVICE,
-    utils::{room_hash, shorted_public_key},
+    utils::{compare, random_name, room_hash, shorted_public_key},
 };
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
-use rnglib::{Language, RNG};
 
 #[derive(Debug, Clone)]
 pub struct Member {
@@ -67,6 +66,18 @@ pub struct Room {
     pub new_messages: Vec<Event>, // Hold all new messages
 }
 
+impl PartialEq for Room {
+    fn eq(&self, other: &Self) -> bool {
+        let mut pubkeys: Vec<PublicKey> = self.members.iter().map(|m| m.public_key()).collect();
+        pubkeys.push(self.owner.public_key());
+
+        let mut pubkeys2: Vec<PublicKey> = other.members.iter().map(|m| m.public_key()).collect();
+        pubkeys2.push(other.owner.public_key());
+
+        compare(&pubkeys, &pubkeys2)
+    }
+}
+
 impl Room {
     pub fn new(
         id: u64,
@@ -76,6 +87,11 @@ impl Room {
         last_seen: Timestamp,
     ) -> Self {
         let is_group = members.len() > 1;
+        let title = if title.is_none() {
+            Some(random_name(2).into())
+        } else {
+            title
+        };
 
         Self {
             id,
@@ -103,10 +119,7 @@ impl Room {
         let title = if let Some(tag) = event.tags.find(TagKind::Title) {
             tag.content().map(|s| s.to_owned().into())
         } else {
-            let rng = RNG::from(&Language::Roman);
-            let name = rng.generate_names(2, true).join("-").to_lowercase();
-
-            Some(name.into())
+            None
         };
 
         Self::new(id, owner, members, title, last_seen)
@@ -136,11 +149,23 @@ impl Room {
     }
 
     pub fn name(&self) -> String {
-        self.members
-            .iter()
-            .map(|profile| profile.name())
-            .collect::<Vec<String>>()
-            .join(", ")
+        if self.members.len() <= 2 {
+            self.members
+                .iter()
+                .map(|profile| profile.name())
+                .collect::<Vec<String>>()
+                .join(", ")
+        } else {
+            let name = self
+                .members
+                .iter()
+                .take(2)
+                .map(|profile| profile.name())
+                .collect::<Vec<String>>()
+                .join(", ");
+
+            format!("{}, +{}", name, self.members.len() - 2)
+        }
     }
 
     pub fn get_all_keys(&self) -> Vec<PublicKey> {

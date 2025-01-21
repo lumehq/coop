@@ -1,6 +1,7 @@
 use crate::{constants::NIP96_SERVER, get_client};
 use chrono::{Datelike, Local, TimeZone};
 use nostr_sdk::prelude::*;
+use rnglib::{Language, RNG};
 use std::{
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
@@ -24,6 +25,11 @@ pub fn room_hash(tags: &Tags) -> u64 {
     pubkeys.hash(&mut hasher);
 
     hasher.finish()
+}
+
+pub fn random_name(length: usize) -> String {
+    let rng = RNG::from(&Language::Roman);
+    rng.generate_names(length, true).join("-").to_lowercase()
 }
 
 pub fn compare<T>(a: &[T], b: &[T]) -> bool

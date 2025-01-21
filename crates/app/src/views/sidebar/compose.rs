@@ -1,8 +1,15 @@
-use crate::{get_client, states::chat::room::Member};
+use crate::{
+    get_client,
+    states::{
+        app::AppRegistry,
+        chat::room::{Member, Room},
+    },
+    utils::{random_name, room_hash},
+};
 use gpui::{
     div, img, impl_internal_actions, px, uniform_list, Context, FocusHandle, InteractiveElement,
-    IntoElement, Model, ParentElement, Render, StatefulInteractiveElement, Styled, View,
-    ViewContext, VisualContext, WindowContext,
+    IntoElement, Model, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    View, ViewContext, VisualContext, WindowContext,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -44,17 +51,19 @@ impl Compose {
         });
 
         let title_input = cx.new_view(|cx| {
-            TextInput::new(cx)
-                .appearance(false)
-                .text_size(Size::XSmall)
-                .placeholder("Family...")
+            let name = random_name(2);
+            let mut input = TextInput::new(cx).appearance(false).text_size(Size::XSmall);
+
+            input.set_placeholder("Family... . (Optional)");
+            input.set_text(name, cx);
+            input
         });
 
         let message_input = cx.new_view(|cx| {
             TextInput::new(cx)
                 .appearance(false)
                 .text_size(Size::XSmall)
-                .placeholder("Hello...")
+                .placeholder("Hello... (Optional)")
         });
 
         cx.subscribe(&user_input, move |this, _, input_event, cx| {
@@ -110,8 +119,51 @@ impl Compose {
         }
     }
 
-    pub fn selected<'a>(&self, cx: &'a WindowContext) -> Vec<&'a PublicKey> {
-        self.selected.read(cx).iter().collect()
+    pub fn room(&self, cx: &WindowContext) -> Option<Room> {
+        let weak_user = cx.global::<AppRegistry>().current_user();
+
+        if let Some(user) = weak_user.upgrade() {
+            let public_key = user.read(cx).unwrap();
+
+            // Convert selected pubkeys into nostr tags
+            let tags: Vec<Tag> = self
+                .selected
+                .read(cx)
+                .iter()
+                .map(|pk| Tag::public_key(*pk))
+                .collect();
+            let tags = Tags::new(tags);
+
+            // Convert selected pubkeys into members
+            let members: Vec<Member> = self
+                .selected
+                .read(cx)
+                .clone()
+                .into_iter()
+                .map(|pk| Member::new(pk, Metadata::new()))
+                .collect();
+
+            // Get room's id
+            let id = room_hash(&tags);
+
+            // Get room's owner (current user)
+            let owner = Member::new(public_key, Metadata::new());
+
+            // Get room's title
+            let title = self.title_input.read(cx).text().to_string().into();
+
+            Some(Room::new(id, owner, members, Some(title), Timestamp::now()))
+        } else {
+            None
+        }
+    }
+
+    pub fn label(&self, cx: &WindowContext) -> SharedString {
+        if self.selected.read(cx).len() > 1 {
+            "Create Group DM".into()
+        } else {
+            "Create DM".into()
+        }
     }
 
     fn add(&mut self, cx: &mut ViewContext<Self>) {
