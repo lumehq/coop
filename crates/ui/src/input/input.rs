@@ -1389,16 +1389,12 @@ impl Render for TextInput {
             .cursor_text()
             .when(self.multi_line, |this| this.h_auto())
             .when(self.appearance, |this| {
-                this.bg(if self.disabled {
-                    cx.theme().transparent
-                } else {
-                    cx.theme().base.step(cx, ColorScaleStep::THREE)
-                })
-                .rounded(px(cx.theme().radius))
-                .when(cx.theme().shadow, |this| this.shadow_sm())
-                .when(focused, |this| this.outline(cx))
-                .when(prefix.is_none(), |this| this.input_pl(self.size))
-                .when(suffix.is_none(), |this| this.input_pr(self.size))
+                this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                    .rounded(px(cx.theme().radius))
+                    .when(cx.theme().shadow, |this| this.shadow_sm())
+                    .when(focused, |this| this.outline(cx))
+                    .when(prefix.is_none(), |this| this.input_pl(self.size))
+                    .when(suffix.is_none(), |this| this.input_pr(self.size))
             })
             .children(prefix)
             .gap_1()

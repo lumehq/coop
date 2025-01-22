@@ -274,7 +274,7 @@ impl Dock {
             })
             .child(
                 div()
-                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                    .bg(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                     .when(axis.is_horizontal(), |this| this.h_full().w(HANDLE_SIZE))
                     .when(axis.is_vertical(), |this| this.w_full().h(HANDLE_SIZE)),
             )

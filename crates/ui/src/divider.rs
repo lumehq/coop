@@ -65,7 +65,7 @@ impl RenderOnce for Divider {
                     })
                     .bg(self
                         .color
-                        .unwrap_or(cx.theme().base.step(cx, ColorScaleStep::THREE))),
+                        .unwrap_or(cx.theme().base.step(cx, ColorScaleStep::FIVE))),
             )
             .when_some(self.label, |this, label| {
                 this.child(

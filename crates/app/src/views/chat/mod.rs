@@ -17,7 +17,7 @@ use nostr_sdk::prelude::*;
 use smol::fs;
 use tokio::sync::oneshot;
 use ui::{
-    button::{Button, ButtonVariants},
+    button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{
         panel::{Panel, PanelEvent},
         state::PanelState,
@@ -26,7 +26,7 @@ use ui::{
     popup_menu::PopupMenu,
     prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, Icon, IconName,
+    v_flex, ContextModal, Icon, IconName, Sizable,
 };
 
 mod message;
@@ -73,7 +73,6 @@ impl ChatPanel {
                     .appearance(false)
                     .text_size(ui::Size::Small)
                     .placeholder("Message...")
-                    .cleanable()
             });
 
             // List
@@ -235,7 +234,18 @@ impl ChatPanel {
                 .collect();
 
             cx.update_model(&self.state, |model, cx| {
-                model.items.extend(items);
+                let messages: Vec<Message> = items
+                    .into_iter()
+                    .filter_map(|new| {
+                        if !model.items.iter().any(|old| old == &new) {
+                            Some(new)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                model.items.extend(messages);
                 model.count = model.items.len();
                 cx.notify();
             });
@@ -245,10 +255,17 @@ impl ChatPanel {
     fn send_message(&mut self, view: WeakView<TextInput>, cx: &mut ViewContext<Self>) {
         let room = self.room.read(cx);
         let owner = room.owner.clone();
-        let members = room.members.to_vec();
+        let mut members = room.members.to_vec();
+        members.push(owner.clone());
 
         // Get message
         let mut content = self.input.read(cx).text().to_string();
+
+        if content.is_empty() {
+            cx.push_notification("Message cannot be empty");
+            return;
+        }
+
         // Get all attaches and merge with message
         if let Some(attaches) = self.attaches.read(cx).as_ref() {
             let merged = attaches
@@ -260,59 +277,68 @@ impl ChatPanel {
             content = format!("{}\n{}", content, merged)
         }
 
-        // Async
-        let async_state = self.state.clone();
-        let mut async_cx = cx.to_async();
+        // Update input state
+        if let Some(input) = view.upgrade() {
+            cx.update_view(&input, |input, cx| {
+                input.set_loading(true, cx);
+                input.set_disabled(true, cx);
+            });
+        }
 
-        cx.foreground_executor()
-            .spawn(async move {
-                // Send message to all members
-                async_cx
-                    .background_executor()
-                    .spawn({
-                        let client = get_client();
-                        let content = content.clone().to_string();
-                        let tags: Vec<Tag> = members
-                            .iter()
-                            .filter_map(|m| {
-                                if m.public_key() != owner.public_key() {
-                                    Some(Tag::public_key(m.public_key()))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-
-                        async move {
-                            // Send message to all members
-                            for member in members.iter() {
-                                _ = client
-                                    .send_private_msg(member.public_key(), &content, tags.clone())
-                                    .await
+        cx.spawn(|this, mut async_cx| async move {
+            // Send message to all members
+            async_cx
+                .background_executor()
+                .spawn({
+                    let client = get_client();
+                    let content = content.clone().to_string();
+                    let tags: Vec<Tag> = members
+                        .iter()
+                        .filter_map(|m| {
+                            if m.public_key() != owner.public_key() {
+                                Some(Tag::public_key(m.public_key()))
+                            } else {
+                                None
                             }
+                        })
+                        .collect();
+
+                    async move {
+                        // Send message to all members
+                        for member in members.iter() {
+                            _ = client
+                                .send_private_msg(member.public_key(), &content, tags.clone())
+                                .await
                         }
+                    }
+                })
+                .detach();
+
+            if let Some(view) = this.upgrade() {
+                _ = async_cx.update_view(&view, |this, cx| {
+                    cx.update_model(&this.state, |model, cx| {
+                        let message = Message::new(
+                            owner,
+                            content.to_string().into(),
+                            message_time(Timestamp::now()).into(),
+                        );
+
+                        model.items.extend(vec![message]);
+                        model.count = model.items.len();
+                        cx.notify();
                     })
-                    .detach();
-
-                _ = async_cx.update_model(&async_state, |model, cx| {
-                    let message = Message::new(
-                        owner,
-                        content.to_string().into(),
-                        message_time(Timestamp::now()).into(),
-                    );
-
-                    model.items.extend(vec![message]);
-                    model.count = model.items.len();
-                    cx.notify();
                 });
+            }
 
-                if let Some(input) = view.upgrade() {
-                    _ = async_cx.update_view(&input, |input, cx| {
-                        input.set_text("", cx);
-                    });
-                }
-            })
-            .detach();
+            if let Some(input) = view.upgrade() {
+                _ = async_cx.update_view(&input, |input, cx| {
+                    input.set_loading(false, cx);
+                    input.set_disabled(false, cx);
+                    input.set_text("", cx);
+                });
+            }
+        })
+        .detach();
     }
 
     fn upload(&mut self, cx: &mut ViewContext<Self>) {
@@ -501,10 +527,23 @@ impl Render for ChatPanel {
                                     div()
                                         .flex_1()
                                         .flex()
+                                        .items_center()
                                         .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
                                         .rounded(px(cx.theme().radius))
-                                        .px_2()
-                                        .child(self.input.clone()),
+                                        .pl_2()
+                                        .pr_1()
+                                        .child(self.input.clone())
+                                        .child(
+                                            Button::new("send")
+                                                .ghost()
+                                                .xsmall()
+                                                .bold()
+                                                .rounded(ButtonRounded::Medium)
+                                                .label("SEND")
+                                                .on_click(cx.listener(|this, _, cx| {
+                                                    this.send_message(this.input.downgrade(), cx)
+                                                })),
+                                        ),
                                 ),
                         ),
                 ),

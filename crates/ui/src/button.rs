@@ -497,6 +497,7 @@ impl ButtonVariant {
                 _ => cx.theme().accent.step(cx, ColorScaleStep::ONE),
             },
             ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
             ButtonVariant::Custom(colors) => colors.foreground,
             _ => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
         }
@@ -543,13 +544,14 @@ impl ButtonVariant {
     fn hovered(&self, cx: &WindowContext) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::THREE),
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ButtonVariant::Link => cx.theme().transparent,
             ButtonVariant::Text => cx.theme().transparent,
             ButtonVariant::Custom(colors) => colors.hover,
         };
         let border = self.border_color(cx);
         let fg = match self {
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
             ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::TEN),
             _ => self.text_color(cx),
         };

@@ -15,6 +15,16 @@ pub struct Message {
     ago: SharedString,
 }
 
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        let content = self.content == other.content;
+        let member = self.member == other.member;
+        let ago = self.ago == other.ago;
+
+        content && member && ago
+    }
+}
+
 impl Message {
     pub fn new(member: Member, content: SharedString, ago: SharedString) -> Self {
         Self {

@@ -11,6 +11,12 @@ pub struct Member {
     metadata: Metadata,
 }
 
+impl PartialEq for Member {
+    fn eq(&self, other: &Self) -> bool {
+        self.public_key() == other.public_key()
+    }
+}
+
 impl Member {
     pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
         Self {

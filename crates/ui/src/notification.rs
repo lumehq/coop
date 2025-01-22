@@ -200,8 +200,11 @@ impl Notification {
         .detach()
     }
 }
+
 impl EventEmitter<DismissEvent> for Notification {}
+
 impl FluentBuilder for Notification {}
+
 impl Render for Notification {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let closing = self.closing;
@@ -209,15 +212,15 @@ impl Render for Notification {
             Some(icon) => icon,
             None => match self.type_ {
                 NotificationType::Info => {
-                    Icon::new(IconName::Info).text_color(blue().step(cx, ColorScaleStep::FIVE))
+                    Icon::new(IconName::Info).text_color(blue().step(cx, ColorScaleStep::NINE))
                 }
                 NotificationType::Error => {
-                    Icon::new(IconName::CircleX).text_color(red().step(cx, ColorScaleStep::FIVE))
+                    Icon::new(IconName::CircleX).text_color(red().step(cx, ColorScaleStep::NINE))
                 }
                 NotificationType::Success => Icon::new(IconName::CircleCheck)
-                    .text_color(green().step(cx, ColorScaleStep::FIVE)),
+                    .text_color(green().step(cx, ColorScaleStep::NINE)),
                 NotificationType::Warning => Icon::new(IconName::TriangleAlert)
-                    .text_color(yellow().step(cx, ColorScaleStep::FIVE)),
+                    .text_color(yellow().step(cx, ColorScaleStep::NINE)),
             },
         };
 
@@ -226,16 +229,15 @@ impl Render for Notification {
             .group("")
             .occlude()
             .relative()
-            .w_96()
+            .w_72()
             .border_1()
             .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
             .bg(cx.theme().background)
-            .rounded_md()
+            .rounded(px(cx.theme().radius))
             .shadow_md()
-            .py_2()
-            .px_4()
+            .p_2()
             .gap_3()
-            .child(div().absolute().top_3().left_4().child(icon))
+            .child(div().absolute().top_3().left_2().child(icon))
             .child(
                 v_flex()
                     .pl_6()
