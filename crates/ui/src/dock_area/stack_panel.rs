@@ -10,7 +10,6 @@ use crate::{
         h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent,
         ResizablePanelGroup,
     },
-    theme::{scale::ColorScaleStep, ActiveTheme},
     AxisExt as _, Placement,
 };
 use gpui::{
@@ -374,11 +373,10 @@ impl EventEmitter<PanelEvent> for StackPanel {}
 impl EventEmitter<DismissEvent> for StackPanel {}
 
 impl Render for StackPanel {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
         h_flex()
             .size_full()
             .overflow_hidden()
-            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
             .child(self.panel_group.clone())
     }
 }

@@ -1,7 +1,4 @@
-use crate::{
-    h_flex,
-    theme::{scale::ColorScaleStep, ActiveTheme},
-};
+use crate::h_flex;
 use gpui::{
     div, prelude::FluentBuilder as _, px, AnyElement, Div, ElementId, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, ScrollHandle, StatefulInteractiveElement as _, Styled,
@@ -63,29 +60,21 @@ impl Styled for TabBar {
 }
 
 impl RenderOnce for TabBar {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _cx: &mut WindowContext) -> impl IntoElement {
         self.base
             .id(self.id)
             .group("tab-bar")
             .relative()
+            .px_1()
             .flex()
             .flex_none()
             .items_center()
-            .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
-            .child(
-                div()
-                    .id("border-b")
-                    .absolute()
-                    .bottom_0()
-                    .size_full()
-                    .border_b_1()
-                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE)),
-            )
             .when_some(self.prefix, |this, prefix| this.child(prefix))
             .child(
                 h_flex()
                     .id("tabs")
                     .flex_grow()
+                    .gap_1()
                     .overflow_x_scroll()
                     .track_scroll(&self.scroll_handle)
                     .children(self.children),

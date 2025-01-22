@@ -84,22 +84,26 @@ impl Styled for Tab {
 
 impl RenderOnce for Tab {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let (text_color, bg_color) = match (self.selected, self.disabled) {
+        let (text_color, bg_color, hover_bg_color) = match (self.selected, self.disabled) {
             (true, false) => (
-                cx.theme().base.step(cx, ColorScaleStep::TWELVE),
-                cx.theme().background,
+                cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
+                cx.theme().accent.step(cx, ColorScaleStep::THREE),
+                cx.theme().accent.step(cx, ColorScaleStep::FOUR),
             ),
             (false, false) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                cx.theme().base.step(cx, ColorScaleStep::ONE),
                 cx.theme().base.step(cx, ColorScaleStep::TWO),
             ),
             // disabled
             (true, true) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                cx.theme().base.step(cx, ColorScaleStep::ONE),
                 cx.theme().base.step(cx, ColorScaleStep::TWO),
             ),
             (false, true) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                cx.theme().base.step(cx, ColorScaleStep::ONE),
                 cx.theme().base.step(cx, ColorScaleStep::TWO),
             ),
         };
@@ -115,22 +119,8 @@ impl RenderOnce for Tab {
             .text_sm()
             .text_color(text_color)
             .bg(bg_color)
-            .border_x_1()
-            .border_color(cx.theme().transparent)
-            .when(self.selected, |this| {
-                this.border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-            })
-            .when(!self.selected, |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .bottom_0()
-                        .size_full()
-                        .border_b_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE)),
-                )
-            })
+            .rounded(px(cx.theme().radius))
+            .hover(|this| this.bg(hover_bg_color))
             .when_some(self.prefix, |this, prefix| {
                 this.child(prefix).text_color(text_color)
             })

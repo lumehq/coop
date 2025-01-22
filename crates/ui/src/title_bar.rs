@@ -251,8 +251,6 @@ impl RenderOnce for TitleBar {
                 .items_center()
                 .justify_between()
                 .h(HEIGHT)
-                .border_b_1()
-                .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                 .bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
                 .when(cx.is_fullscreen(), |this| this.pl(px(12.)))
                 .on_double_click(|_, cx| cx.zoom_window())

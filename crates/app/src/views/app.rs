@@ -4,17 +4,17 @@ use super::{
 };
 use crate::states::{app::AppRegistry, chat::ChatRegistry};
 use gpui::{
-    div, impl_internal_actions, px, Axis, Context, Edges, InteractiveElement, IntoElement, Model,
-    ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView, WindowContext,
+    div, impl_internal_actions, px, svg, Axis, Context, Edges, InteractiveElement, IntoElement,
+    Model, ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView,
+    WindowContext,
 };
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
     dock_area::{dock::DockPlacement, DockArea, DockItem},
-    indicator::Indicator,
     notification::NotificationType,
-    theme::Theme,
-    ContextModal, Root, Sizable, TitleBar,
+    theme::{scale::ColorScaleStep, ActiveTheme, Theme},
+    ContextModal, Root, TitleBar,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -163,12 +163,12 @@ impl Render for AppView {
 
         if cx.global::<AppRegistry>().is_loading {
             content = content.child(div()).child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(Indicator::new().small()),
+                div().flex_1().flex().items_center().justify_center().child(
+                    svg()
+                        .path("brand/coop.svg")
+                        .size_12()
+                        .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                ),
             )
         } else if let Some(account) = self.account.read(cx).as_ref() {
             content = content

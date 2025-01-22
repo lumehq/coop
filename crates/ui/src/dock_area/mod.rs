@@ -1,12 +1,9 @@
-use crate::{
-    dock_area::{
-        dock::{Dock, DockPlacement},
-        panel::{Panel, PanelEvent, PanelStyle, PanelView},
-        stack_panel::StackPanel,
-        state::{DockAreaState, DockState},
-        tab_panel::TabPanel,
-    },
-    theme::{scale::ColorScaleStep, ActiveTheme},
+use crate::dock_area::{
+    dock::{Dock, DockPlacement},
+    panel::{Panel, PanelEvent, PanelStyle, PanelView},
+    stack_panel::StackPanel,
+    state::{DockAreaState, DockState},
+    tab_panel::TabPanel,
 };
 use anyhow::Result;
 use gpui::{
@@ -777,8 +774,7 @@ impl Render for DockArea {
                             .h_full()
                             // Left dock
                             .when_some(self.left_dock.clone(), |this, dock| {
-                                this.bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
-                                    .child(div().flex().flex_none().child(dock))
+                                this.child(div().flex().flex_none().child(dock))
                             })
                             // Center
                             .child(

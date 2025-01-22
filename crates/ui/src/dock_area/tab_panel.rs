@@ -574,11 +574,7 @@ impl TabPanel {
                             .top_0()
                             // Right -1 for avoid border overlap with the first tab
                             .right(-px(1.))
-                            .border_r_1()
-                            .border_b_1()
                             .h_full()
-                            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                            .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
                             .px_2()
                             .children(left_dock_button)
                             .children(bottom_dock_button),
@@ -658,11 +654,7 @@ impl TabPanel {
                     .items_center()
                     .top_0()
                     .right_0()
-                    .border_l_1()
-                    .border_b_1()
                     .h_full()
-                    .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                    .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
                     .px_2()
                     .gap_1()
                     .child(self.render_toolbar(state, cx))
@@ -681,10 +673,23 @@ impl TabPanel {
                 div()
                     .id("tab-content")
                     .group("")
-                    .overflow_y_scroll()
-                    .overflow_x_hidden()
+                    .overflow_hidden()
                     .flex_1()
-                    .child(panel.view())
+                    .p_1()
+                    .child(
+                        div()
+                            .size_full()
+                            .rounded_lg()
+                            .shadow_sm()
+                            .border_1()
+                            .border_color(cx.theme().background)
+                            .when(cx.theme().appearance.is_dark(), |this| {
+                                this.border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                            })
+                            .bg(cx.theme().background)
+                            .overflow_hidden()
+                            .child(panel.view()),
+                    )
                     .when(state.droppable, |this| {
                         this.on_drag_move(cx.listener(Self::on_panel_drag_move))
                             .child(
@@ -950,7 +955,6 @@ impl Render for TabPanel {
             .on_action(cx.listener(Self::on_action_close_panel))
             .size_full()
             .overflow_hidden()
-            .bg(cx.theme().background)
             .child(self.render_title_bar(state, cx))
             .child(self.render_active_panel(state, cx))
     }
