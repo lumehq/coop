@@ -86,25 +86,25 @@ impl RenderOnce for Tab {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         let (text_color, bg_color, hover_bg_color) = match (self.selected, self.disabled) {
             (true, false) => (
-                cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
-                cx.theme().accent.step(cx, ColorScaleStep::THREE),
-                cx.theme().accent.step(cx, ColorScaleStep::FOUR),
+                cx.theme().base.step(cx, ColorScaleStep::TWELVE),
+                cx.theme().base.step(cx, ColorScaleStep::THREE),
+                cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
             (false, false) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                 cx.theme().base.step(cx, ColorScaleStep::ONE),
-                cx.theme().base.step(cx, ColorScaleStep::TWO),
+                cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
             // disabled
             (true, true) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                 cx.theme().base.step(cx, ColorScaleStep::ONE),
-                cx.theme().base.step(cx, ColorScaleStep::TWO),
+                cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
             (false, true) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                 cx.theme().base.step(cx, ColorScaleStep::ONE),
-                cx.theme().base.step(cx, ColorScaleStep::TWO),
+                cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
         };
 

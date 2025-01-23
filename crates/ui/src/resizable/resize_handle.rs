@@ -8,8 +8,8 @@ use gpui::{
     WindowContext,
 };
 
-pub(crate) const HANDLE_PADDING: Pixels = px(4.);
-pub(crate) const HANDLE_SIZE: Pixels = px(1.);
+pub(crate) const HANDLE_PADDING: Pixels = px(8.);
+pub(crate) const HANDLE_SIZE: Pixels = px(2.);
 
 #[derive(IntoElement)]
 pub(crate) struct ResizeHandle {
@@ -41,8 +41,6 @@ impl StatefulInteractiveElement for ResizeHandle {}
 
 impl RenderOnce for ResizeHandle {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let neg_offset = -HANDLE_PADDING;
-
         self.base
             .occlude()
             .absolute()
@@ -50,22 +48,23 @@ impl RenderOnce for ResizeHandle {
             .when(self.axis.is_horizontal(), |this| {
                 this.cursor_col_resize()
                     .top_0()
-                    .left(neg_offset)
-                    .h_full()
+                    .left(px(-1.))
                     .w(HANDLE_SIZE)
-                    .px(HANDLE_PADDING)
+                    .h_full()
+                    .py_10()
             })
             .when(self.axis.is_vertical(), |this| {
                 this.cursor_row_resize()
-                    .top(neg_offset)
+                    .top(px(-1.))
                     .left_0()
                     .w_full()
                     .h(HANDLE_SIZE)
-                    .py(HANDLE_PADDING)
+                    .px_10()
             })
             .child(
                 div()
-                    .bg(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                    .rounded_full()
+                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::SIX)))
                     .when(self.axis.is_horizontal(), |this| {
                         this.h_full().w(HANDLE_SIZE)
                     })

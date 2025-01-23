@@ -59,9 +59,9 @@ impl Render for DragPanel {
             .whitespace_nowrap()
             .rounded(px(cx.theme().radius))
             .text_xs()
-            .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
-            .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+            .shadow_lg()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().accent.step(cx, ColorScaleStep::TWELVE))
             .child(self.panel.title(cx))
     }
 }
@@ -471,7 +471,6 @@ impl TabPanel {
         };
 
         let panel_style = dock_area.read(cx).panel_style;
-
         let left_dock_button = self.render_dock_toggle_button(DockPlacement::Left, cx);
         let bottom_dock_button = self.render_dock_toggle_button(DockPlacement::Bottom, cx);
         let right_dock_button = self.render_dock_toggle_button(DockPlacement::Right, cx);
@@ -681,11 +680,7 @@ impl TabPanel {
                             .size_full()
                             .rounded_lg()
                             .shadow_sm()
-                            .border_1()
-                            .border_color(cx.theme().background)
-                            .when(cx.theme().appearance.is_dark(), |this| {
-                                this.border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                            })
+                            .when(cx.theme().appearance.is_dark(), |this| this.shadow_lg())
                             .bg(cx.theme().background)
                             .overflow_hidden()
                             .child(panel.view()),
@@ -696,7 +691,20 @@ impl TabPanel {
                                 div()
                                     .invisible()
                                     .absolute()
-                                    .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                                    .p_1()
+                                    .child(
+                                        div()
+                                            .rounded_lg()
+                                            .border_1()
+                                            .border_color(
+                                                cx.theme().accent.step(cx, ColorScaleStep::FOUR),
+                                            )
+                                            .bg(cx
+                                                .theme()
+                                                .accent
+                                                .step_alpha(cx, ColorScaleStep::THREE))
+                                            .size_full(),
+                                    )
                                     .map(|this| match self.will_split_placement {
                                         Some(placement) => {
                                             let size = DefiniteLength::Fraction(0.35);

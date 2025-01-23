@@ -254,15 +254,15 @@ impl Dock {
                     .right(px(1.))
                     .h_full()
                     .w(HANDLE_SIZE)
-                    .pl(HANDLE_PADDING)
+                    .py_10()
             })
             .when(self.placement.is_right(), |this| {
                 this.cursor_col_resize()
                     .top_0()
-                    .left(neg_offset)
+                    .left(px(1.))
                     .h_full()
                     .w(HANDLE_SIZE)
-                    .px(HANDLE_PADDING)
+                    .py_10()
             })
             .when(self.placement.is_bottom(), |this| {
                 this.cursor_row_resize()
@@ -274,6 +274,7 @@ impl Dock {
             })
             .child(
                 div()
+                    .rounded_full()
                     .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::SIX)))
                     .when(axis.is_horizontal(), |this| this.h_full().w(HANDLE_SIZE))
                     .when(axis.is_vertical(), |this| this.w_full().h(HANDLE_SIZE)),

@@ -111,6 +111,7 @@ impl DockItem {
         cx: &mut WindowContext,
     ) -> Self {
         let mut items = items;
+
         let stack_panel = cx.new_view(|cx| {
             let mut stack_panel = StackPanel::new(axis, cx);
             for (i, item) in items.iter_mut().enumerate() {
@@ -623,7 +624,6 @@ impl DockArea {
     }
 
     /// Subscribe event on the panels
-    #[allow(clippy::only_used_in_recursion)]
     fn subscribe_item(&mut self, item: &DockItem, cx: &mut ViewContext<Self>) {
         match item {
             DockItem::Split { items, view, .. } => {
@@ -744,7 +744,9 @@ impl DockArea {
             .map(|view| view.entity_id());
     }
 }
+
 impl EventEmitter<DockEvent> for DockArea {}
+
 impl Render for DockArea {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let view = cx.view().clone();

@@ -59,9 +59,10 @@ impl RenderOnce for Divider {
             .child(
                 div()
                     .absolute()
+                    .rounded_full()
                     .map(|this| match self.axis {
-                        Axis::Vertical => this.w(px(1.)).h_full(),
-                        Axis::Horizontal => this.h(px(1.)).w_full(),
+                        Axis::Vertical => this.w(px(2.)).h_full(),
+                        Axis::Horizontal => this.h(px(2.)).w_full(),
                     })
                     .bg(self
                         .color

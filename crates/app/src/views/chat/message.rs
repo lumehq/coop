@@ -1,6 +1,6 @@
 use crate::states::chat::room::Member;
 use gpui::{
-    div, img, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
+    div, img, px, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
     WindowContext,
 };
 use ui::{
@@ -38,16 +38,25 @@ impl Message {
 impl RenderOnce for Message {
     fn render(self, cx: &mut WindowContext) -> impl IntoElement {
         div()
+            .group(&self.ago)
+            .relative()
             .flex()
             .gap_3()
             .w_full()
             .p_2()
-            .border_l_2()
-            .border_color(cx.theme().background)
-            .hover(|this| {
-                this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE))
-                    .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE))
-            })
+            .hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().transparent)
+                    .group_hover(&self.ago, |this| {
+                        this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+                    }),
+            )
             .child(
                 img(self.member.avatar())
                     .size_8()
