@@ -1,12 +1,15 @@
 use asset::Assets;
-use constants::{
-    ALL_MESSAGES_SUB_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, METADATA_DELAY, NEW_MESSAGE_SUB_ID,
+use common::constants::{
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, METADATA_DELAY,
+    NEW_MESSAGE_SUB_ID,
 };
 use dirs::config_dir;
 use gpui::{
     actions, point, px, size, App, AppContext, Bounds, SharedString, TitlebarOptions,
-    VisualContext, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
+    VisualContext, WindowBounds, WindowKind, WindowOptions,
 };
+#[cfg(target_os = "linux")]
+use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::prelude::*;
 use states::{app::AppRegistry, chat::ChatRegistry};
 use std::{
@@ -24,9 +27,7 @@ use ui::Root;
 use views::app::AppView;
 
 mod asset;
-mod constants;
 mod states;
-mod utils;
 mod views;
 
 actions!(main_menu, [Quit]);
@@ -38,8 +39,6 @@ static CLIENT: OnceLock<Client> = OnceLock::new();
 pub enum Signal {
     /// Receive event
     Event(Event),
-    /// Receive metadata
-    Metadata(PublicKey),
     /// Receive EOSE
     Eose,
 }
@@ -157,11 +156,6 @@ async fn main() {
                                 };
                             }
                         }
-                        Kind::Metadata => {
-                            if let Err(e) = signal_tx.send(Signal::Metadata(event.pubkey)).await {
-                                println!("Send error: {}", e)
-                            }
-                        }
                         _ => {}
                     }
                 } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
@@ -226,40 +220,6 @@ async fn main() {
             // Set quit action
             cx.on_action(quit);
 
-            cx.spawn(|async_cx| {
-                let task = cx.read_credentials(KEYRING_SERVICE);
-
-                async move {
-                    if let Ok(res) = task.await {
-                        if let Some((npub, secret)) = res {
-                            let public_key = PublicKey::from_bech32(&npub).unwrap();
-                            let hex = String::from_utf8(secret).unwrap();
-                            let keys = Keys::parse(&hex).unwrap();
-
-                            // Update signer
-                            async_cx
-                                .background_executor()
-                                .spawn(async move { client.set_signer(keys).await })
-                                .detach();
-
-                            // Update global state
-                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
-                                state.set_user(public_key, cx);
-                            });
-                        } else {
-                            _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
-                                state.set_loading();
-                            });
-                        }
-                    } else {
-                        _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
-                            state.set_loading();
-                        });
-                    }
-                }
-            })
-            .detach();
-
             cx.spawn(|async_cx| async move {
                 let (tx, rx) = smol::channel::unbounded::<Signal>();
 
@@ -281,11 +241,6 @@ async fn main() {
                                 chat.init(cx);
                             });
                         }
-                        Signal::Metadata(public_key) => {
-                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
-                                state.set_refresh(public_key, cx);
-                            });
-                        }
                         Signal::Event(event) => {
                             _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
                                 state.receive(event, cx)
@@ -296,8 +251,33 @@ async fn main() {
             })
             .detach();
 
-            // Set window size
-            let bounds = Bounds::centered(None, size(px(900.0), px(680.0)), cx);
+            cx.spawn(|async_cx| {
+                let task = cx.read_credentials(KEYRING_SERVICE);
+
+                async move {
+                    if let Ok(Some((npub, secret))) = task.await {
+                        let public_key = PublicKey::from_bech32(&npub).expect("Something wrong.");
+                        let hex = String::from_utf8(secret).expect("Something wrong.");
+                        let keys = Keys::parse(&hex).expect("Something wrong.");
+
+                        // Update signer
+                        async_cx
+                            .background_executor()
+                            .spawn(async move { client.set_signer(keys).await })
+                            .detach();
+
+                        // Update global state
+                        _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
+                            state.set_user(public_key, cx);
+                        });
+                    } else {
+                        _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
+                            state.is_loading = false;
+                        });
+                    }
+                }
+            })
+            .detach();
 
             let opts = WindowOptions {
                 #[cfg(not(target_os = "linux"))]
@@ -306,8 +286,11 @@ async fn main() {
                     traffic_light_position: Some(point(px(9.0), px(9.0))),
                     appears_transparent: true,
                 }),
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_decorations: Some(WindowDecorations::Client),
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                    None,
+                    size(px(900.0), px(680.0)),
+                    cx,
+                ))),
                 #[cfg(target_os = "linux")]
                 window_background: WindowBackgroundAppearance::Transparent,
                 #[cfg(target_os = "linux")]
@@ -317,11 +300,11 @@ async fn main() {
             };
 
             cx.open_window(opts, |cx| {
-                let app_view = cx.new_view(AppView::new);
-
-                cx.set_window_title("Coop");
+                cx.set_window_title(APP_NAME);
+                cx.set_app_id(APP_ID);
                 cx.activate(true);
-                cx.new_view(|cx| Root::new(app_view.into(), cx))
+
+                cx.new_view(|cx| Root::new(cx.new_view(AppView::new).into(), cx))
             })
             .expect("System error");
         });

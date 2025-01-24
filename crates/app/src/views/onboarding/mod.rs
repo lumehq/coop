@@ -1,7 +1,9 @@
-use crate::{constants::KEYRING_SERVICE, get_client, states::app::AppRegistry};
+use common::constants::KEYRING_SERVICE;
 use gpui::{div, IntoElement, ParentElement, Render, Styled, View, ViewContext, VisualContext};
 use nostr_sdk::prelude::*;
 use ui::input::{InputEvent, TextInput};
+
+use crate::{get_client, states::app::AppRegistry};
 
 pub struct Onboarding {
     input: View<TextInput>,

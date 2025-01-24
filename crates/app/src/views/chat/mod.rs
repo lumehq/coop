@@ -1,10 +1,8 @@
-use crate::{
+use async_utility::task::spawn;
+use common::{
     constants::IMAGE_SERVICE,
-    get_client,
-    states::chat::room::Room,
     utils::{compare, message_time, nip96_upload},
 };
-use async_utility::task::spawn;
 use gpui::{
     div, img, list, px, white, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
     FocusableView, InteractiveElement, IntoElement, ListAlignment, ListState, Model, ObjectFit,
@@ -28,6 +26,8 @@ use ui::{
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Icon, IconName, Sizable,
 };
+
+use crate::{get_client, states::chat::room::Room};
 
 mod message;
 
@@ -363,7 +363,9 @@ impl ChatPanel {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         spawn(async move {
-                            if let Ok(url) = nip96_upload(file_data).await {
+                            let client = get_client();
+
+                            if let Ok(url) = nip96_upload(client, file_data).await {
                                 _ = tx.send(url);
                             }
                         });

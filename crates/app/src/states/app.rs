@@ -1,7 +1,5 @@
-use crate::{
-    constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID},
-    get_client,
-};
+use crate::get_client;
+use common::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID};
 use gpui::*;
 use nostr_sdk::prelude::*;
 use std::time::Duration;
@@ -81,10 +79,6 @@ impl AppRegistry {
         .detach();
     }
 
-    pub fn set_loading(&mut self) {
-        self.is_loading = false
-    }
-
     pub fn set_user(&mut self, public_key: PublicKey, cx: &mut AppContext) {
         self.user.update(cx, |model, cx| {
             *model = Some(public_key);
@@ -92,13 +86,6 @@ impl AppRegistry {
         });
 
         self.is_loading = false;
-    }
-
-    pub fn set_refresh(&mut self, public_key: PublicKey, cx: &mut AppContext) {
-        self.refreshs.update(cx, |this, cx| {
-            this.push(public_key);
-            cx.notify();
-        })
     }
 
     pub fn current_user(&self) -> WeakModel<Option<PublicKey>> {

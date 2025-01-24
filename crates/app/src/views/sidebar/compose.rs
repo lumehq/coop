@@ -4,8 +4,8 @@ use crate::{
         app::AppRegistry,
         chat::room::{Member, Room},
     },
-    utils::{random_name, room_hash},
 };
+use common::utils::{random_name, room_hash};
 use gpui::{
     div, img, impl_internal_actions, px, uniform_list, Context, FocusHandle, InteractiveElement,
     IntoElement, Model, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,

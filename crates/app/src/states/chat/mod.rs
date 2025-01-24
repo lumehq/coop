@@ -1,12 +1,11 @@
-use crate::{
-    get_client,
-    utils::{compare, room_hash},
-};
+use common::utils::{compare, room_hash};
 use gpui::{AppContext, Context, Global, Model, WeakModel};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::Room;
 use std::cmp::Reverse;
+
+use crate::get_client;
 
 pub mod room;
 

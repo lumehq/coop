@@ -1,4 +1,5 @@
-use crate::{constants::IMAGE_SERVICE, get_client, states::app::AppRegistry};
+use crate::{get_client, states::app::AppRegistry};
+use common::constants::IMAGE_SERVICE;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     actions, img, Context, IntoElement, Model, ObjectFit, ParentElement, Render, Styled,

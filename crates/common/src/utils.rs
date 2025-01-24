@@ -1,4 +1,4 @@
-use crate::{constants::NIP96_SERVER, get_client};
+use crate::constants::NIP96_SERVER;
 use chrono::{Datelike, Local, TimeZone};
 use nostr_sdk::prelude::*;
 use rnglib::{Language, RNG};
@@ -7,8 +7,7 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
 };
 
-pub async fn nip96_upload(file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
-    let client = get_client();
+pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
     let signer = client.signer().await?;
     let server_url = Url::parse(NIP96_SERVER)?;
 

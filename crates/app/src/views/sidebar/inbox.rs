@@ -1,8 +1,8 @@
 use crate::{
     states::chat::ChatRegistry,
-    utils::message_ago,
     views::app::{AddPanel, PanelKind},
 };
+use common::utils::message_ago;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,

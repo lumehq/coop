@@ -1,0 +1,14 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+gpui.workspace = true
+nostr-sdk.workspace = true
+anyhow.workspace = true
+itertools.workspace = true
+chrono.workspace = true
+
+random_name_generator = "0.3.6"
