@@ -3,7 +3,6 @@ use common::constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, METADATA_DELAY,
     NEW_MESSAGE_SUB_ID,
 };
-use dirs::config_dir;
 use gpui::{
     actions, point, px, size, App, AppContext, Bounds, SharedString, TitlebarOptions,
     VisualContext, WindowBounds, WindowKind, WindowOptions,
@@ -11,14 +10,9 @@ use gpui::{
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::prelude::*;
+use state::{get_client, initialize_client};
 use states::{app::AppRegistry, chat::ChatRegistry};
-use std::{
-    collections::HashSet,
-    fs,
-    str::FromStr,
-    sync::{Arc, OnceLock},
-    time::Duration,
-};
+use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Mutex},
     time::sleep,
@@ -31,9 +25,6 @@ mod states;
 mod views;
 
 actions!(main_menu, [Quit]);
-actions!(app, [ReloadMetadata]);
-
-static CLIENT: OnceLock<Client> = OnceLock::new();
 
 #[derive(Clone)]
 pub enum Signal {
@@ -41,29 +32,6 @@ pub enum Signal {
     Event(Event),
     /// Receive EOSE
     Eose,
-}
-
-pub fn initialize_client() {
-    // Setup app data folder
-    let config_dir = config_dir().expect("Config directory not found");
-    let _ = fs::create_dir_all(config_dir.join("Coop/"));
-
-    // Setup database
-    let lmdb = NostrLMDB::open(config_dir.join("Coop/nostr")).expect("Database is NOT initialized");
-
-    // Client options
-    let opts = Options::new()
-        .gossip(true)
-        .max_avg_latency(Duration::from_secs(2));
-
-    // Setup Nostr Client
-    let client = ClientBuilder::default().database(lmdb).opts(opts).build();
-
-    CLIENT.set(client).expect("Client is already initialized!");
-}
-
-pub fn get_client() -> &'static Client {
-    CLIENT.get().expect("Client is NOT initialized!")
 }
 
 #[tokio::main]

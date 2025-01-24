@@ -1,0 +1,10 @@
+[package]
+name = "state"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+nostr-sdk.workspace = true
+tokio.workspace = true
+dirs.workspace = true
