@@ -1,10 +1,3 @@
-use crate::{
-    get_client,
-    states::{
-        app::AppRegistry,
-        chat::room::{Member, Room},
-    },
-};
 use common::utils::{random_name, room_hash};
 use gpui::{
     div, img, impl_internal_actions, px, uniform_list, Context, FocusHandle, InteractiveElement,
@@ -12,7 +5,9 @@ use gpui::{
     View, ViewContext, VisualContext, WindowContext,
 };
 use nostr_sdk::prelude::*;
+use registry::{app::AppRegistry, contact::Contact, room::Room};
 use serde::Deserialize;
+use state::get_client;
 use std::{collections::HashSet, time::Duration};
 use ui::{
     button::{Button, ButtonRounded},
@@ -32,7 +27,7 @@ pub struct Compose {
     title_input: View<TextInput>,
     message_input: View<TextInput>,
     user_input: View<TextInput>,
-    contacts: Model<Option<Vec<Member>>>,
+    contacts: Model<Option<Vec<Contact>>>,
     selected: Model<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
     is_loading: bool,
@@ -77,15 +72,15 @@ impl Compose {
             let client = get_client();
 
             async move {
-                let query: anyhow::Result<Vec<Member>, anyhow::Error> = async_cx
+                let query: anyhow::Result<Vec<Contact>, anyhow::Error> = async_cx
                     .background_executor()
                     .spawn(async move {
                         let signer = client.signer().await?;
                         let public_key = signer.get_public_key().await?;
                         let profiles = client.database().contacts(public_key).await?;
-                        let members: Vec<Member> = profiles
+                        let members: Vec<Contact> = profiles
                             .into_iter()
-                            .map(|profile| Member::new(profile.public_key(), profile.metadata()))
+                            .map(|profile| Contact::new(profile.public_key(), profile.metadata()))
                             .collect();
 
                         Ok(members)
@@ -120,11 +115,9 @@ impl Compose {
     }
 
     pub fn room(&self, cx: &WindowContext) -> Option<Room> {
-        let weak_user = cx.global::<AppRegistry>().current_user();
+        let current_user = cx.global::<AppRegistry>().current_user(cx);
 
-        if let Some(user) = weak_user.upgrade() {
-            let public_key = user.read(cx).unwrap();
-
+        if let Some(current_user) = current_user {
             // Convert selected pubkeys into nostr tags
             let tags: Vec<Tag> = self
                 .selected
@@ -135,19 +128,19 @@ impl Compose {
             let tags = Tags::new(tags);
 
             // Convert selected pubkeys into members
-            let members: Vec<Member> = self
+            let members: Vec<Contact> = self
                 .selected
                 .read(cx)
                 .clone()
                 .into_iter()
-                .map(|pk| Member::new(pk, Metadata::new()))
+                .map(|pk| Contact::new(pk, Metadata::new()))
                 .collect();
 
             // Get room's id
             let id = room_hash(&tags);
 
             // Get room's owner (current user)
-            let owner = Member::new(public_key, Metadata::new());
+            let owner = Contact::new(current_user.public_key(), Metadata::new());
 
             // Get room's title
             let title = self.title_input.read(cx).text().to_string().into();
@@ -193,7 +186,7 @@ impl Compose {
                         _ = async_cx.update_view(&view, |this, cx| {
                             this.contacts.update(cx, |this, cx| {
                                 if let Some(members) = this {
-                                    members.insert(0, Member::new(public_key, metadata));
+                                    members.insert(0, Contact::new(public_key, metadata));
                                 }
                                 cx.notify();
                             });

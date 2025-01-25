@@ -1,10 +1,11 @@
-use crate::{states::chat::ChatRegistry, views::sidebar::inbox::Inbox};
+use crate::views::sidebar::inbox::Inbox;
 use compose::Compose;
 use gpui::{
     div, px, AnyElement, AppContext, BorrowAppContext, Entity, EntityId, EventEmitter, FocusHandle,
     FocusableView, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, View, ViewContext, VisualContext, WindowContext,
 };
+use registry::chat::ChatRegistry;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{

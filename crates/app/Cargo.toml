@@ -12,6 +12,7 @@ path = "src/main.rs"
 ui = { path = "../ui" }
 common = { path = "../common" }
 state = { path = "../state" }
+registry = { path = "../registry" }
 
 gpui.workspace = true
 reqwest_client.workspace = true

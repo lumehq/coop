@@ -669,9 +669,8 @@ impl TabPanel {
 
         self.active_panel()
             .map(|panel| {
-                div()
+                v_flex()
                     .id("tab-content")
-                    .group("")
                     .overflow_hidden()
                     .flex_1()
                     .p_1()

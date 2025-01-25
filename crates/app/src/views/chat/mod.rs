@@ -12,7 +12,9 @@ use gpui::{
 use itertools::Itertools;
 use message::Message;
 use nostr_sdk::prelude::*;
+use registry::room::Room;
 use smol::fs;
+use state::get_client;
 use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -26,8 +28,6 @@ use ui::{
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Icon, IconName, Sizable,
 };
-
-use crate::{get_client, states::chat::room::Room};
 
 mod message;
 

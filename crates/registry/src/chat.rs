@@ -2,16 +2,14 @@ use common::utils::{compare, room_hash};
 use gpui::{AppContext, Context, Global, Model, WeakModel};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use room::Room;
+use state::get_client;
 use std::cmp::Reverse;
 
-use crate::get_client;
-
-pub mod room;
+use crate::room::Room;
 
 pub struct Inbox {
-    pub(crate) rooms: Vec<Model<Room>>,
-    pub(crate) is_loading: bool,
+    pub rooms: Vec<Model<Room>>,
+    pub is_loading: bool,
 }
 
 impl Inbox {
@@ -23,6 +21,12 @@ impl Inbox {
     }
 }
 
+impl Default for Inbox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct ChatRegistry {
     inbox: Model<Inbox>,
 }
@@ -31,12 +35,11 @@ impl Global for ChatRegistry {}
 
 impl ChatRegistry {
     pub fn set_global(cx: &mut AppContext) {
-        let inbox = cx.new_model(|_| Inbox::new());
+        let inbox = cx.new_model(|_| Inbox::default());
 
         cx.observe_new_models::<Room>(|this, cx| {
             // Get all pubkeys to load metadata
-            let mut pubkeys: Vec<PublicKey> = this.members.iter().map(|m| m.public_key()).collect();
-            pubkeys.push(this.owner.public_key());
+            let pubkeys = this.get_all_keys();
 
             cx.spawn(|weak_model, mut async_cx| async move {
                 let query: Result<Vec<(PublicKey, Metadata)>, Error> = async_cx

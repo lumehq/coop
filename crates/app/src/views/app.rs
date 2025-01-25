@@ -1,20 +1,20 @@
-use super::{
-    account::Account, chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar,
-    welcome::WelcomePanel,
-};
-use crate::states::{app::AppRegistry, chat::ChatRegistry};
+use super::{chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
 use gpui::{
-    div, impl_internal_actions, px, svg, Axis, Context, Edges, InteractiveElement, IntoElement,
-    Model, ParentElement, Render, Styled, View, ViewContext, VisualContext, WeakView,
-    WindowContext,
+    actions, div, img, impl_internal_actions, px, svg, Axis, Edges, InteractiveElement,
+    IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, View, ViewContext,
+    VisualContext, WeakView, WindowContext,
 };
+use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
+    button::{Button, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
     notification::NotificationType,
-    theme::{scale::ColorScaleStep, ActiveTheme, Theme},
-    ContextModal, Root, TitleBar,
+    popup_menu::PopupMenuExt,
+    prelude::FluentBuilder,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -28,7 +28,10 @@ pub struct AddPanel {
     pub position: DockPlacement,
 }
 
+// Dock actions
 impl_internal_actions!(dock, [AddPanel]);
+// Account actions
+actions!(account, [OpenProfile, OpenContacts, OpenSettings, Logout]);
 
 pub struct DockAreaTab {
     id: &'static str,
@@ -41,98 +44,31 @@ pub const DOCK_AREA: DockAreaTab = DockAreaTab {
 };
 
 pub struct AppView {
-    account: Model<Option<View<Account>>>,
     onboarding: View<Onboarding>,
     dock: View<DockArea>,
 }
 
 impl AppView {
     pub fn new(cx: &mut ViewContext<'_, Self>) -> AppView {
-        // Sync theme with system
-        cx.observe_window_appearance(|_, cx| {
-            Theme::sync_system_appearance(cx);
-        })
-        .detach();
-
-        // Account
-        let account = cx.new_model(|_| None);
-        let async_account = account.clone();
-
-        // Onboarding
         let onboarding = cx.new_view(Onboarding::new);
-
-        // Dock
         let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
         // Get current user from app state
-        let current_user = cx.global::<AppRegistry>().current_user();
+        let weak_user = cx.global::<AppRegistry>().user();
 
-        if let Some(current_user) = current_user.upgrade() {
-            cx.observe(&current_user, move |view, model, cx| {
-                if let Some(public_key) = model.read(cx).clone().as_ref() {
-                    Self::init_layout(view.dock.downgrade(), cx);
-                    // TODO: save dock state and load previous state on startup
-
-                    let view = cx.new_view(|cx| {
-                        let view = Account::new(*public_key, cx);
-                        // Initial load metadata
-                        view.load_metadata(cx);
-
-                        view
-                    });
-
-                    cx.update_model(&async_account, |model, cx| {
-                        *model = Some(view);
-                        cx.notify();
-                    });
+        if let Some(user) = weak_user.upgrade() {
+            cx.observe(&user, move |view, this, cx| {
+                if this.read(cx).is_some() {
+                    Self::render_dock(view.dock.downgrade(), cx);
                 }
             })
             .detach();
         }
 
-        AppView {
-            account,
-            onboarding,
-            dock,
-        }
+        AppView { onboarding, dock }
     }
 
-    fn init_layout(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
-        let left = DockItem::panel(Arc::new(Sidebar::new(cx)));
-        let center = Self::init_dock_items(&dock_area, cx);
-
-        _ = dock_area.update(cx, |view, cx| {
-            view.set_version(DOCK_AREA.version, cx);
-            view.set_left_dock(left, Some(px(240.)), true, cx);
-            view.set_center(center, cx);
-            view.set_dock_collapsible(
-                Edges {
-                    left: false,
-                    ..Default::default()
-                },
-                cx,
-            );
-            // TODO: support right dock?
-            // TODO: support bottom dock?
-        });
-    }
-
-    fn init_dock_items(dock_area: &WeakView<DockArea>, cx: &mut WindowContext) -> DockItem {
-        DockItem::split_with_sizes(
-            Axis::Vertical,
-            vec![DockItem::tabs(
-                vec![Arc::new(WelcomePanel::new(cx))],
-                None,
-                dock_area,
-                cx,
-            )],
-            vec![None],
-            dock_area,
-            cx,
-        )
-    }
-
-    fn on_action_add_panel(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
+    fn on_panel_action(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
         match &action.panel {
             PanelKind::Room(id) => {
                 if let Some(weak_room) = cx.global::<ChatRegistry>().room(id, cx) {
@@ -152,53 +88,109 @@ impl AppView {
             }
         };
     }
+
+    fn render_account(&self, account: Contact) -> impl IntoElement {
+        Button::new("account")
+            .ghost()
+            .xsmall()
+            .reverse()
+            .icon(Icon::new(IconName::ChevronDownSmall))
+            .child(
+                img(account.avatar())
+                    .size_5()
+                    .rounded_full()
+                    .object_fit(ObjectFit::Cover),
+            )
+            .popup_menu(move |this, _cx| {
+                this.menu("Profile", Box::new(OpenProfile))
+                    .menu("Contacts", Box::new(OpenContacts))
+                    .menu("Settings", Box::new(OpenSettings))
+                    .separator()
+                    .menu("Change account", Box::new(Logout))
+            })
+    }
+
+    fn render_dock(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
+        let left = DockItem::panel(Arc::new(Sidebar::new(cx)));
+        let center = DockItem::split_with_sizes(
+            Axis::Vertical,
+            vec![DockItem::tabs(
+                vec![Arc::new(WelcomePanel::new(cx))],
+                None,
+                &dock_area,
+                cx,
+            )],
+            vec![None],
+            &dock_area,
+            cx,
+        );
+
+        _ = dock_area.update(cx, |view, cx| {
+            view.set_version(DOCK_AREA.version, cx);
+            view.set_left_dock(left, Some(px(240.)), true, cx);
+            view.set_center(center, cx);
+            view.set_dock_collapsible(
+                Edges {
+                    left: false,
+                    ..Default::default()
+                },
+                cx,
+            );
+            // TODO: support right dock?
+            // TODO: support bottom dock?
+        });
+    }
 }
 
 impl Render for AppView {
     fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
-
-        let mut content = div().size_full().flex().flex_col();
-
-        if cx.global::<AppRegistry>().is_loading {
-            content = content.child(div()).child(
-                div().flex_1().flex().items_center().justify_center().child(
-                    svg()
-                        .path("brand/coop.svg")
-                        .size_12()
-                        .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
-                ),
-            )
-        } else if let Some(account) = self.account.read(cx).as_ref() {
-            content = content
-                .child(
-                    TitleBar::new()
-                        // Left side
-                        .child(div())
-                        // Right side
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_end()
-                                .gap_1()
-                                .px_2()
-                                .child(account.clone()),
-                        ),
-                )
-                .child(self.dock.clone())
-                .on_action(cx.listener(Self::on_action_add_panel))
-        } else {
-            content = content
-                .child(TitleBar::new())
-                .child(self.onboarding.clone())
-        }
+        let state = cx.global::<AppRegistry>();
 
         div()
             .size_full()
-            .child(content)
+            .flex()
+            .flex_col()
+            // Main
+            .map(|this| {
+                if state.is_loading {
+                    this
+                        // Placeholder
+                        .child(div())
+                        .child(
+                            div().flex_1().flex().items_center().justify_center().child(
+                                svg()
+                                    .path("brand/coop.svg")
+                                    .size_12()
+                                    .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                            ),
+                        )
+                } else if let Some(contact) = state.current_user(cx) {
+                    this.child(
+                        TitleBar::new()
+                            // Left side
+                            .child(div())
+                            // Right side
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .gap_1()
+                                    .px_2()
+                                    .child(self.render_account(contact)),
+                            ),
+                    )
+                    .child(self.dock.clone())
+                    .on_action(cx.listener(Self::on_panel_action))
+                } else {
+                    this.child(TitleBar::new()).child(self.onboarding.clone())
+                }
+            })
+            // Notification
             .child(div().absolute().top_8().children(notification_layer))
+            // Modal
             .children(modal_layer)
     }
 }

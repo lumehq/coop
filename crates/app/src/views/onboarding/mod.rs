@@ -1,9 +1,9 @@
 use common::constants::KEYRING_SERVICE;
 use gpui::{div, IntoElement, ParentElement, Render, Styled, View, ViewContext, VisualContext};
 use nostr_sdk::prelude::*;
+use registry::{app::AppRegistry, contact::Contact};
+use state::get_client;
 use ui::input::{InputEvent, TextInput};
-
-use crate::{get_client, states::app::AppRegistry};
 
 pub struct Onboarding {
     input: View<TextInput>,
@@ -43,10 +43,28 @@ impl Onboarding {
 
                 async move {
                     if task.await.is_ok() {
-                        _ = client.set_signer(keys).await;
-                        _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
-                            state.set_user(public_key, cx);
-                        });
+                        let query: anyhow::Result<Metadata, anyhow::Error> = async_cx
+                            .background_executor()
+                            .spawn(async move {
+                                // Update signer
+                                _ = client.set_signer(keys).await;
+
+                                // Get metadata
+                                if let Some(metadata) =
+                                    client.database().metadata(public_key).await?
+                                {
+                                    Ok(metadata)
+                                } else {
+                                    Ok(Metadata::new())
+                                }
+                            })
+                            .await;
+
+                        if let Ok(metadata) = query {
+                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
+                                state.set_user(Contact::new(public_key, metadata), cx);
+                            });
+                        }
                     }
                 }
             })

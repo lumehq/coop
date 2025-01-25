@@ -1,72 +1,15 @@
-use common::{
-    constants::IMAGE_SERVICE,
-    utils::{compare, random_name, room_hash, shorted_public_key},
-};
+use common::utils::{compare, random_name, room_hash};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
-#[derive(Debug, Clone)]
-pub struct Member {
-    public_key: PublicKey,
-    metadata: Metadata,
-}
-
-impl PartialEq for Member {
-    fn eq(&self, other: &Self) -> bool {
-        self.public_key() == other.public_key()
-    }
-}
-
-impl Member {
-    pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
-        Self {
-            public_key,
-            metadata,
-        }
-    }
-
-    pub fn public_key(&self) -> PublicKey {
-        self.public_key
-    }
-
-    pub fn avatar(&self) -> String {
-        if let Some(picture) = &self.metadata.picture {
-            format!(
-                "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                IMAGE_SERVICE, picture
-            )
-        } else {
-            "brand/avatar.png".into()
-        }
-    }
-
-    pub fn name(&self) -> String {
-        if let Some(display_name) = &self.metadata.display_name {
-            if !display_name.is_empty() {
-                return display_name.clone();
-            }
-        }
-
-        if let Some(name) = &self.metadata.name {
-            if !name.is_empty() {
-                return name.clone();
-            }
-        }
-
-        shorted_public_key(self.public_key)
-    }
-
-    pub fn update(&mut self, metadata: &Metadata) {
-        self.metadata = metadata.clone()
-    }
-}
+use crate::contact::Contact;
 
 #[derive(Debug)]
 pub struct Room {
     pub id: u64,
     pub title: Option<SharedString>,
-    pub owner: Member,        // Owner always match current user
-    pub members: Vec<Member>, // Extract from event's tags
+    pub owner: Contact,        // Owner always match current user
+    pub members: Vec<Contact>, // Extract from event's tags
     pub last_seen: Timestamp,
     pub is_group: bool,
     pub new_messages: Vec<Event>, // Hold all new messages
@@ -87,8 +30,8 @@ impl PartialEq for Room {
 impl Room {
     pub fn new(
         id: u64,
-        owner: Member,
-        members: Vec<Member>,
+        owner: Contact,
+        members: Vec<Contact>,
         title: Option<SharedString>,
         last_seen: Timestamp,
     ) -> Self {
@@ -110,16 +53,17 @@ impl Room {
         }
     }
 
+    /// Convert nostr event to room
     pub fn parse(event: &Event) -> Room {
         let id = room_hash(&event.tags);
         let last_seen = event.created_at;
 
-        let owner = Member::new(event.pubkey, Metadata::default());
-        let members: Vec<Member> = event
+        let owner = Contact::new(event.pubkey, Metadata::default());
+        let members: Vec<Contact> = event
             .tags
             .public_keys()
             .copied()
-            .map(|public_key| Member::new(public_key, Metadata::default()))
+            .map(|public_key| Contact::new(public_key, Metadata::default()))
             .collect();
 
         let title = if let Some(tag) = event.tags.find(TagKind::Title) {
@@ -131,19 +75,21 @@ impl Room {
         Self::new(id, owner, members, title, last_seen)
     }
 
+    /// Set contact's metadata by public key
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
         if self.owner.public_key() == public_key {
-            self.owner.update(&metadata);
+            self.owner.metadata(&metadata);
         }
 
         for member in self.members.iter_mut() {
             if member.public_key() == public_key {
-                member.update(&metadata);
+                member.metadata(&metadata);
             }
         }
     }
 
-    pub fn member(&self, public_key: &PublicKey) -> Option<Member> {
+    /// Get room's member by public key
+    pub fn member(&self, public_key: &PublicKey) -> Option<Contact> {
         if &self.owner.public_key() == public_key {
             Some(self.owner.clone())
         } else {
@@ -154,6 +100,7 @@ impl Room {
         }
     }
 
+    /// Get room's display name
     pub fn name(&self) -> String {
         if self.members.len() <= 2 {
             self.members
@@ -174,6 +121,7 @@ impl Room {
         }
     }
 
+    /// Get all public keys from room's contacts
     pub fn get_all_keys(&self) -> Vec<PublicKey> {
         let mut pubkeys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
         pubkeys.push(self.owner.public_key());

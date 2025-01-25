@@ -1,8 +1,8 @@
-use crate::states::chat::room::Member;
 use gpui::{
     div, img, px, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
     WindowContext,
 };
+use registry::contact::Contact;
 use ui::{
     theme::{scale::ColorScaleStep, ActiveTheme},
     StyledExt,
@@ -10,7 +10,7 @@ use ui::{
 
 #[derive(Clone, Debug, IntoElement)]
 pub struct Message {
-    member: Member,
+    member: Contact,
     content: SharedString,
     ago: SharedString,
 }
@@ -26,7 +26,7 @@ impl PartialEq for Message {
 }
 
 impl Message {
-    pub fn new(member: Member, content: SharedString, ago: SharedString) -> Self {
+    pub fn new(member: Contact, content: SharedString, ago: SharedString) -> Self {
         Self {
             member,
             content,

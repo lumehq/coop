@@ -1,7 +1,7 @@
 use crate::{
     modal::Modal,
     notification::{Notification, NotificationList},
-    theme::{scale::ColorScaleStep, ActiveTheme},
+    theme::{scale::ColorScaleStep, ActiveTheme, Theme},
     window_border,
 };
 use gpui::{
@@ -162,6 +162,11 @@ struct ActiveModal {
 
 impl Root {
     pub fn new(view: AnyView, cx: &mut ViewContext<Self>) -> Self {
+        cx.observe_window_appearance(|_, cx| {
+            Theme::sync_system_appearance(cx);
+        })
+        .detach();
+
         Self {
             previous_focus_handle: None,
             active_modals: Vec::new(),

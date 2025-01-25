@@ -10,8 +10,8 @@ use gpui::{
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::prelude::*;
+use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use state::{get_client, initialize_client};
-use states::{app::AppRegistry, chat::ChatRegistry};
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Mutex},
@@ -21,7 +21,6 @@ use ui::Root;
 use views::app::AppView;
 
 mod asset;
-mod states;
 mod views;
 
 actions!(main_menu, [Quit]);
@@ -188,6 +187,7 @@ async fn main() {
             // Set quit action
             cx.on_action(quit);
 
+            // Spawn a thread to handle Nostr events
             cx.spawn(|async_cx| async move {
                 let (tx, rx) = smol::channel::unbounded::<Signal>();
 
@@ -219,25 +219,40 @@ async fn main() {
             })
             .detach();
 
+            // Spawn a thread to update Nostr signer
             cx.spawn(|async_cx| {
                 let task = cx.read_credentials(KEYRING_SERVICE);
 
                 async move {
                     if let Ok(Some((npub, secret))) = task.await {
-                        let public_key = PublicKey::from_bech32(&npub).expect("Something wrong.");
-                        let hex = String::from_utf8(secret).expect("Something wrong.");
-                        let keys = Keys::parse(&hex).expect("Something wrong.");
+                        let public_key =
+                            PublicKey::from_bech32(&npub).expect("Public Key isn't valid.");
 
-                        // Update signer
-                        async_cx
+                        let query: anyhow::Result<Metadata, anyhow::Error> = async_cx
                             .background_executor()
-                            .spawn(async move { client.set_signer(keys).await })
-                            .detach();
+                            .spawn(async move {
+                                let hex = String::from_utf8(secret)?;
+                                let keys = Keys::parse(&hex)?;
 
-                        // Update global state
-                        _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
-                            state.set_user(public_key, cx);
-                        });
+                                // Update signer
+                                _ = client.set_signer(keys).await;
+
+                                // Get metadata
+                                if let Some(metadata) =
+                                    client.database().metadata(public_key).await?
+                                {
+                                    Ok(metadata)
+                                } else {
+                                    Ok(Metadata::new())
+                                }
+                            })
+                            .await;
+
+                        if let Ok(metadata) = query {
+                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
+                                state.set_user(Contact::new(public_key, metadata), cx);
+                            });
+                        }
                     } else {
                         _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
                             state.is_loading = false;
