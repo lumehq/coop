@@ -1,11 +1,11 @@
+use crate::room::Room;
+use anyhow::Error;
 use common::utils::{compare, room_hash};
-use gpui::{AppContext, Context, Global, Model, WeakModel};
+use gpui::{AppContext, AsyncAppContext, Context, Global, Model, ModelContext, Task, WeakModel};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::cmp::Reverse;
-
-use crate::room::Room;
 
 pub struct Inbox {
     pub rooms: Vec<Model<Room>>,
@@ -18,6 +18,37 @@ impl Inbox {
             rooms: vec![],
             is_loading: true,
         }
+    }
+
+    pub fn current_rooms(&self, cx: &ModelContext<Self>) -> Vec<u64> {
+        self.rooms.iter().map(|room| room.read(cx).id).collect()
+    }
+
+    pub fn load(&mut self, cx: AsyncAppContext) -> Task<Result<Vec<Event>, Error>> {
+        cx.background_executor().spawn(async move {
+            let client = get_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .author(public_key);
+
+            // Get all DM events from database
+            let events = client.database().query(vec![filter]).await?;
+
+            // Filter result
+            // - Get unique rooms only
+            // - Sorted by created_at
+            let result = events
+                .into_iter()
+                .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
+                .unique_by(|ev| room_hash(&ev.tags))
+                .sorted_by_key(|ev| Reverse(ev.created_at))
+                .collect::<Vec<_>>();
+
+            Ok(result)
+        })
     }
 }
 
@@ -77,72 +108,38 @@ impl ChatRegistry {
         cx.set_global(Self { inbox });
     }
 
-    pub fn init(&mut self, cx: &mut AppContext) {
-        let mut async_cx = cx.to_async();
-        let async_inbox = self.inbox.clone();
+    pub fn load(&mut self, cx: &mut AppContext) {
+        self.inbox.update(cx, |this, cx| {
+            let task = this.load(cx.to_async());
 
-        // Get all current room's id
-        let hashes: Vec<u64> = self
-            .inbox
-            .read(cx)
-            .rooms
-            .iter()
-            .map(|room| room.read(cx).id)
-            .collect();
+            cx.spawn(|this, mut async_cx| async move {
+                if let Some(inbox) = this.upgrade() {
+                    if let Ok(events) = task.await {
+                        _ = async_cx.update_model(&inbox, |this, cx| {
+                            let current_rooms = this.current_rooms(cx);
+                            let items: Vec<Model<Room>> = events
+                                .into_iter()
+                                .filter_map(|ev| {
+                                    let id = room_hash(&ev.tags);
+                                    // Filter all seen events
+                                    if !current_rooms.iter().any(|h| h == &id) {
+                                        Some(cx.new_model(|_| Room::parse(&ev)))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
 
-        cx.foreground_executor()
-            .spawn(async move {
-                let client = get_client();
-                let query: anyhow::Result<Vec<Event>, anyhow::Error> = async_cx
-                    .background_executor()
-                    .spawn(async move {
-                        let signer = client.signer().await?;
-                        let public_key = signer.get_public_key().await?;
+                            this.rooms.extend(items);
+                            this.is_loading = false;
 
-                        let filter = Filter::new()
-                            .kind(Kind::PrivateDirectMessage)
-                            .author(public_key);
-
-                        // Get all DM events from database
-                        let events = client.database().query(vec![filter]).await?;
-
-                        // Filter result
-                        // - Only unique rooms
-                        // - Sorted by created_at
-                        let result = events
-                            .into_iter()
-                            .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
-                            .unique_by(|ev| room_hash(&ev.tags))
-                            .sorted_by_key(|ev| Reverse(ev.created_at))
-                            .collect::<Vec<_>>();
-
-                        Ok(result)
-                    })
-                    .await;
-
-                if let Ok(events) = query {
-                    _ = async_cx.update_model(&async_inbox, |model, cx| {
-                        let items: Vec<Model<Room>> = events
-                            .into_iter()
-                            .filter_map(|ev| {
-                                let id = room_hash(&ev.tags);
-                                // Filter all seen events
-                                if !hashes.iter().any(|h| h == &id) {
-                                    Some(cx.new_model(|_| Room::parse(&ev)))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-
-                        model.rooms.extend(items);
-                        model.is_loading = false;
-
-                        cx.notify();
-                    });
+                            cx.notify();
+                        });
+                    }
                 }
             })
             .detach();
+        });
     }
 
     pub fn inbox(&self) -> WeakModel<Inbox> {

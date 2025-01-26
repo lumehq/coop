@@ -9,6 +9,7 @@ use gpui::{
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
+use log::warn;
 use nostr_sdk::prelude::*;
 use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use state::{get_client, initialize_client};
@@ -42,7 +43,6 @@ async fn main() {
 
     // Get client
     let client = get_client();
-    let mut notifications = client.notifications();
 
     // Add some bootstrap relays
     _ = client.add_relay("wss://relay.damus.io/").await;
@@ -57,120 +57,15 @@ async fn main() {
 
     // Signal
     let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4096);
-    let (mta_tx, mut mta_rx) = mpsc::channel::<PublicKey>(4096);
+    let (mta_tx, mta_rx) = mpsc::channel::<PublicKey>(4096);
 
-    // Handle notification from Relays
+    // Handle notifications from relays
     // Send notify back to GPUI
-    tokio::spawn(async move {
-        let sig = Signature::from_str(FAKE_SIG).unwrap();
-        let new_message = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-        let all_messages = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-
-        while let Ok(notification) = notifications.recv().await {
-            if let RelayPoolNotification::Message { message, .. } = notification {
-                if let RelayMessage::Event {
-                    event,
-                    subscription_id,
-                } = message
-                {
-                    match event.kind {
-                        Kind::GiftWrap => {
-                            match client.unwrap_gift_wrap(&event).await {
-                                Ok(UnwrappedGift { mut rumor, sender }) => {
-                                    // Request metadata
-                                    if let Err(e) = mta_tx.send(sender).await {
-                                        println!("Send error: {}", e)
-                                    };
-
-                                    // Compute event id if not exist
-                                    rumor.ensure_id();
-
-                                    if let Some(id) = rumor.id {
-                                        let ev = Event::new(
-                                            id,
-                                            rumor.pubkey,
-                                            rumor.created_at,
-                                            rumor.kind,
-                                            rumor.tags,
-                                            rumor.content,
-                                            sig,
-                                        );
-
-                                        // Save rumor to database to further query
-                                        if let Err(e) = client.database().save_event(&ev).await {
-                                            println!("Save error: {}", e);
-                                        }
-
-                                        // Send event back to channel
-                                        if subscription_id == new_message {
-                                            if let Err(e) = signal_tx.send(Signal::Event(ev)).await
-                                            {
-                                                println!("Send error: {}", e)
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => println!("Unwrap error: {}", e),
-                            }
-                        }
-                        Kind::ContactList => {
-                            let public_keys: Vec<PublicKey> =
-                                event.tags.public_keys().copied().collect();
-
-                            for public_key in public_keys.into_iter() {
-                                if let Err(e) = mta_tx.send(public_key).await {
-                                    println!("Send error: {}", e)
-                                };
-                            }
-                        }
-                        _ => {}
-                    }
-                } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
-                    if subscription_id == all_messages {
-                        if let Err(e) = signal_tx.send(Signal::Eose).await {
-                            println!("Send error: {}", e)
-                        }
-                    }
-                }
-            }
-        }
-    });
+    tokio::spawn(async move { handle_notifications(client, signal_tx, mta_tx).await });
 
     // Handle metadata request
     // Merge all requests into single subscription
-    tokio::spawn(async move {
-        let queue: Arc<Mutex<HashSet<PublicKey>>> = Arc::new(Mutex::new(HashSet::new()));
-        let queue_clone = queue.clone();
-
-        let (tx, mut rx) = mpsc::channel::<PublicKey>(200);
-
-        tokio::spawn(async move {
-            while let Some(public_key) = mta_rx.recv().await {
-                queue_clone.lock().await.insert(public_key);
-                _ = tx.send(public_key).await;
-            }
-        });
-
-        tokio::spawn(async move {
-            while rx.recv().await.is_some() {
-                sleep(Duration::from_millis(METADATA_DELAY)).await;
-
-                let authors: Vec<PublicKey> = queue.lock().await.drain().collect();
-                let total = authors.len();
-
-                if total > 0 {
-                    let filter = Filter::new()
-                        .authors(authors)
-                        .kind(Kind::Metadata)
-                        .limit(total);
-
-                    if let Err(e) = client.sync(filter, &SyncOptions::default()).await {
-                        println!("Error: {}", e);
-                    }
-                }
-            }
-        });
-    });
+    tokio::spawn(async move { handle_metadata(client, mta_rx).await });
 
     App::new()
         .with_assets(Assets)
@@ -189,14 +84,14 @@ async fn main() {
 
             // Spawn a thread to handle Nostr events
             cx.spawn(|async_cx| async move {
-                let (tx, rx) = smol::channel::unbounded::<Signal>();
+                let (tx, rx) = smol::channel::bounded::<Signal>(4096);
 
                 async_cx
                     .background_executor()
                     .spawn(async move {
                         while let Some(signal) = signal_rx.recv().await {
                             if let Err(e) = tx.send(signal).await {
-                                println!("Send error: {}", e)
+                                warn!("Send error: {}", e)
                             }
                         }
                     })
@@ -206,7 +101,7 @@ async fn main() {
                     match signal {
                         Signal::Eose => {
                             _ = async_cx.update_global::<ChatRegistry, _>(|chat, cx| {
-                                chat.init(cx);
+                                chat.load(cx);
                             });
                         }
                         Signal::Event(event) => {
@@ -291,6 +186,119 @@ async fn main() {
             })
             .expect("System error");
         });
+}
+
+async fn handle_notifications(
+    client: &Client,
+    signal_tx: mpsc::Sender<Signal>,
+    mta_tx: mpsc::Sender<PublicKey>,
+) {
+    let mut notifications = client.notifications();
+    let sig = Signature::from_str(FAKE_SIG).unwrap();
+    let new_message = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+    let all_messages = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+
+    while let Ok(notification) = notifications.recv().await {
+        if let RelayPoolNotification::Message { message, .. } = notification {
+            if let RelayMessage::Event {
+                event,
+                subscription_id,
+            } = message
+            {
+                match event.kind {
+                    Kind::GiftWrap => {
+                        match client.unwrap_gift_wrap(&event).await {
+                            Ok(UnwrappedGift { mut rumor, sender }) => {
+                                // Request metadata
+                                if let Err(e) = mta_tx.send(sender).await {
+                                    warn!("Send error: {}", e)
+                                };
+
+                                // Compute event id if not exist
+                                rumor.ensure_id();
+
+                                if let Some(id) = rumor.id {
+                                    let ev = Event::new(
+                                        id,
+                                        rumor.pubkey,
+                                        rumor.created_at,
+                                        rumor.kind,
+                                        rumor.tags,
+                                        rumor.content,
+                                        sig,
+                                    );
+
+                                    // Save rumor to database to further query
+                                    if let Err(e) = client.database().save_event(&ev).await {
+                                        warn!("Save error: {}", e);
+                                    }
+
+                                    // Send event back to channel
+                                    if subscription_id == new_message {
+                                        if let Err(e) = signal_tx.send(Signal::Event(ev)).await {
+                                            warn!("Send error: {}", e)
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => warn!("Unwrap error: {}", e),
+                        }
+                    }
+                    Kind::ContactList => {
+                        let public_keys: Vec<PublicKey> =
+                            event.tags.public_keys().copied().collect();
+
+                        for public_key in public_keys.into_iter() {
+                            if let Err(e) = mta_tx.send(public_key).await {
+                                warn!("Send error: {}", e)
+                            };
+                        }
+                    }
+                    _ => {}
+                }
+            } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
+                if subscription_id == all_messages {
+                    if let Err(e) = signal_tx.send(Signal::Eose).await {
+                        warn!("Send error: {}", e)
+                    };
+                }
+            }
+        }
+    }
+}
+
+async fn handle_metadata(client: &'static Client, mut mta_rx: mpsc::Receiver<PublicKey>) {
+    let queue: Arc<Mutex<HashSet<PublicKey>>> = Arc::new(Mutex::new(HashSet::new()));
+    let queue_clone = Arc::clone(&queue);
+
+    let (tx, mut rx) = mpsc::channel::<PublicKey>(200);
+
+    tokio::spawn(async move {
+        while let Some(public_key) = mta_rx.recv().await {
+            queue_clone.lock().await.insert(public_key);
+            _ = tx.send(public_key).await;
+        }
+    });
+
+    tokio::spawn(async move {
+        while rx.recv().await.is_some() {
+            sleep(Duration::from_millis(METADATA_DELAY)).await;
+
+            let authors: Vec<PublicKey> = queue.lock().await.drain().collect();
+            let total = authors.len();
+
+            if total > 0 {
+                let filter = Filter::new()
+                    .authors(authors)
+                    .kind(Kind::Metadata)
+                    .limit(total);
+
+                if let Err(e) = client.sync(filter, &SyncOptions::default()).await {
+                    warn!("Error: {}", e);
+                }
+            }
+        }
+    });
 }
 
 fn quit(_: &Quit, cx: &mut AppContext) {

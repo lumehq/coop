@@ -1,11 +1,12 @@
 use super::{chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
 use gpui::{
-    actions, div, img, impl_internal_actions, px, svg, Axis, Edges, InteractiveElement,
-    IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, View, ViewContext,
-    VisualContext, WeakView, WindowContext,
+    actions, div, img, impl_internal_actions, px, svg, Axis, BorrowAppContext, Edges,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, View,
+    ViewContext, VisualContext, WeakView, WindowContext,
 };
 use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use serde::Deserialize;
+use state::get_client;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonVariants},
@@ -68,48 +69,6 @@ impl AppView {
         AppView { onboarding, dock }
     }
 
-    fn on_panel_action(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
-        match &action.panel {
-            PanelKind::Room(id) => {
-                if let Some(weak_room) = cx.global::<ChatRegistry>().room(id, cx) {
-                    if let Some(room) = weak_room.upgrade() {
-                        let panel = Arc::new(ChatPanel::new(room, cx));
-
-                        self.dock.update(cx, |dock_area, cx| {
-                            dock_area.add_panel(panel, action.position, cx);
-                        });
-                    } else {
-                        cx.push_notification((
-                            NotificationType::Error,
-                            "System error. Cannot open this chat room.",
-                        ));
-                    }
-                }
-            }
-        };
-    }
-
-    fn render_account(&self, account: Contact) -> impl IntoElement {
-        Button::new("account")
-            .ghost()
-            .xsmall()
-            .reverse()
-            .icon(Icon::new(IconName::ChevronDownSmall))
-            .child(
-                img(account.avatar())
-                    .size_5()
-                    .rounded_full()
-                    .object_fit(ObjectFit::Cover),
-            )
-            .popup_menu(move |this, _cx| {
-                this.menu("Profile", Box::new(OpenProfile))
-                    .menu("Contacts", Box::new(OpenContacts))
-                    .menu("Settings", Box::new(OpenSettings))
-                    .separator()
-                    .menu("Change account", Box::new(Logout))
-            })
-    }
-
     fn render_dock(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
         let left = DockItem::panel(Arc::new(Sidebar::new(cx)));
         let center = DockItem::split_with_sizes(
@@ -138,6 +97,70 @@ impl AppView {
             );
             // TODO: support right dock?
             // TODO: support bottom dock?
+        });
+    }
+
+    fn render_account(&self, account: Contact) -> impl IntoElement {
+        Button::new("account")
+            .ghost()
+            .xsmall()
+            .reverse()
+            .icon(Icon::new(IconName::ChevronDownSmall))
+            .child(
+                img(account.avatar())
+                    .size_5()
+                    .rounded_full()
+                    .object_fit(ObjectFit::Cover),
+            )
+            .popup_menu(move |this, _cx| {
+                this.menu("Profile", Box::new(OpenProfile))
+                    .menu("Contacts", Box::new(OpenContacts))
+                    .menu("Settings", Box::new(OpenSettings))
+                    .separator()
+                    .menu("Change account", Box::new(Logout))
+            })
+    }
+
+    fn on_panel_action(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
+        match &action.panel {
+            PanelKind::Room(id) => {
+                if let Some(weak_room) = cx.global::<ChatRegistry>().room(id, cx) {
+                    if let Some(room) = weak_room.upgrade() {
+                        let panel = Arc::new(ChatPanel::new(room, cx));
+
+                        self.dock.update(cx, |dock_area, cx| {
+                            dock_area.add_panel(panel, action.position, cx);
+                        });
+                    } else {
+                        cx.push_notification((
+                            NotificationType::Error,
+                            "System error. Cannot open this chat room.",
+                        ));
+                    }
+                }
+            }
+        };
+    }
+
+    fn on_profile_action(&mut self, _action: &OpenProfile, cx: &mut ViewContext<Self>) {
+        // TODO
+    }
+
+    fn on_contacts_action(&mut self, _action: &OpenContacts, cx: &mut ViewContext<Self>) {
+        // TODO
+    }
+
+    fn on_settings_action(&mut self, _action: &OpenSettings, cx: &mut ViewContext<Self>) {
+        // TODO
+    }
+
+    fn on_logout_action(&mut self, _action: &Logout, cx: &mut ViewContext<Self>) {
+        cx.update_global::<AppRegistry, _>(|this, cx| {
+            this.logout(cx);
+            // Reset nostr client
+            cx.background_executor()
+                .spawn(async move { get_client().reset().await })
+                .detach();
         });
     }
 }
@@ -183,7 +206,12 @@ impl Render for AppView {
                             ),
                     )
                     .child(self.dock.clone())
+                    // Listener
                     .on_action(cx.listener(Self::on_panel_action))
+                    .on_action(cx.listener(Self::on_logout_action))
+                    .on_action(cx.listener(Self::on_profile_action))
+                    .on_action(cx.listener(Self::on_contacts_action))
+                    .on_action(cx.listener(Self::on_settings_action))
                 } else {
                     this.child(TitleBar::new()).child(self.onboarding.clone())
                 }

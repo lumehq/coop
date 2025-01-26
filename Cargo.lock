@@ -1089,6 +1089,7 @@ dependencies = [
  "dirs 5.0.1",
  "gpui",
  "itertools 0.13.0",
+ "log",
  "nostr-sdk",
  "registry",
  "reqwest_client",

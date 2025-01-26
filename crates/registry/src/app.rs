@@ -15,8 +15,8 @@ impl Global for AppRegistry {}
 
 impl AppRegistry {
     pub fn set_global(cx: &mut AppContext) {
-        let is_loading = true;
         let user: Model<Option<Contact>> = cx.new_model(|_| None);
+        let is_loading = true;
 
         cx.observe(&user, |this, cx| {
             if let Some(contact) = this.read(cx).as_ref() {
@@ -80,6 +80,10 @@ impl AppRegistry {
         self.user.downgrade()
     }
 
+    pub fn current_user(&self, cx: &WindowContext) -> Option<Contact> {
+        self.user.read(cx).clone()
+    }
+
     pub fn set_user(&mut self, contact: Contact, cx: &mut AppContext) {
         self.user.update(cx, |this, cx| {
             *this = Some(contact);
@@ -89,7 +93,10 @@ impl AppRegistry {
         self.is_loading = false;
     }
 
-    pub fn current_user(&self, cx: &WindowContext) -> Option<Contact> {
-        self.user.read(cx).clone()
+    pub fn logout(&mut self, cx: &mut AppContext) {
+        self.user.update(cx, |this, cx| {
+            *this = None;
+            cx.notify();
+        });
     }
 }
