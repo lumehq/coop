@@ -182,7 +182,7 @@ async fn main() {
                 cx.set_app_id(APP_ID);
                 cx.activate(true);
 
-                cx.new_view(|cx| Root::new(cx.new_view(AppView::new).into(), cx))
+                cx.new(|cx| Root::new(cx.new(AppView::new).into(), cx))
             })
             .expect("System error");
         });

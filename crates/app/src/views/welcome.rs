@@ -1,6 +1,6 @@
 use gpui::{
-    div, svg, AnyElement, AppContext, EventEmitter, FocusHandle, FocusableView, IntoElement,
-    ParentElement, Render, SharedString, Styled, View, ViewContext, VisualContext, WindowContext,
+    div, svg, AnyElement, AppContext, EventEmitter, FocusHandle, Focusable, IntoElement,
+    ParentElement, Render, SharedString, Styled, VisualContext,
 };
 use ui::{
     button::Button,
@@ -21,11 +21,11 @@ pub struct WelcomePanel {
 }
 
 impl WelcomePanel {
-    pub fn new(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::view)
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(Self::view)
     }
 
-    fn view(cx: &mut ViewContext<Self>) -> Self {
+    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             name: "Welcome".into(),
             closeable: true,
@@ -40,41 +40,41 @@ impl Panel for WelcomePanel {
         "WelcomePanel".into()
     }
 
-    fn title(&self, _cx: &WindowContext) -> AnyElement {
+    fn title(&self, _window: &Window, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _cx: &WindowContext) -> bool {
+    fn closeable(&self, _window: &Window, _cx: &App) -> bool {
         self.closeable
     }
 
-    fn zoomable(&self, _cx: &WindowContext) -> bool {
+    fn zoomable(&self, _window: &Window, _cx: &App) -> bool {
         self.zoomable
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _cx: &WindowContext) -> PopupMenu {
+    fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
 
-    fn toolbar_buttons(&self, _cx: &WindowContext) -> Vec<Button> {
+    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
     }
 
-    fn dump(&self, _cx: &AppContext) -> PanelState {
+    fn dump(&self, _cx: &App) -> PanelState {
         PanelState::new(self)
     }
 }
 
 impl EventEmitter<PanelEvent> for WelcomePanel {}
 
-impl FocusableView for WelcomePanel {
-    fn focus_handle(&self, _: &AppContext) -> gpui::FocusHandle {
+impl Focusable for WelcomePanel {
+    fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for WelcomePanel {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut gpui::Window, &mut gpui::Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()

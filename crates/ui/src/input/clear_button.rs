@@ -3,13 +3,13 @@ use crate::{
     theme::{scale::ColorScaleStep, ActiveTheme as _},
     Icon, IconName, Sizable as _,
 };
-use gpui::{Styled, WindowContext};
+use gpui::{App, Styled, Window};
 
 pub(crate) struct ClearButton {}
 
 impl ClearButton {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(cx: &mut WindowContext) -> Button {
+    pub fn new(window: &mut Window, cx: &mut App) -> Button {
         Button::new("clean")
             .icon(
                 Icon::new(IconName::CircleX)

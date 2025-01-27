@@ -4,9 +4,9 @@ use crate::{
     Icon, IconName, InteractiveElementExt as _, Sizable as _,
 };
 use gpui::{
-    black, div, prelude::FluentBuilder as _, px, relative, white, AnyElement, ClickEvent, Div,
+    black, div, prelude::FluentBuilder as _, px, relative, white, AnyElement, App, ClickEvent, Div,
     Element, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
-    RenderOnce, Rgba, Stateful, StatefulInteractiveElement as _, Style, Styled, WindowContext,
+    RenderOnce, Rgba, Stateful, StatefulInteractiveElement as _, Style, Styled, Window,
 };
 use std::rc::Rc;
 
@@ -17,7 +17,7 @@ const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
 #[cfg(not(target_os = "macos"))]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(12.);
 
-type OnCloseWindow = Option<Rc<Box<dyn Fn(&ClickEvent, &mut WindowContext)>>>;
+type OnCloseWindow = Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>;
 
 /// TitleBar used to customize the appearance of the title bar.
 ///
@@ -38,11 +38,11 @@ impl TitleBar {
         }
     }
 
-    /// Add custom for close window event, default is None, then click X button will call `cx.remove_window()`.
+    /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.
     /// Linux only, this will do nothing on other platforms.
     pub fn on_close_window(
         mut self,
-        f: impl Fn(&ClickEvent, &mut WindowContext) + 'static,
+        f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         if cfg!(target_os = "linux") {
             self.on_close_window = Some(Rc::new(Box::new(f)));
@@ -108,7 +108,7 @@ impl Control {
         matches!(self, Self::Close { .. })
     }
 
-    fn fg(&self, cx: &WindowContext) -> Hsla {
+    fn fg(&self, _window: &Window, cx: &App) -> Hsla {
         if cx.theme().appearance.is_dark() {
             white()
         } else {
@@ -116,7 +116,7 @@ impl Control {
         }
     }
 
-    fn hover_fg(&self, cx: &WindowContext) -> Hsla {
+    fn hover_fg(&self, _window: &Window, cx: &App) -> Hsla {
         if self.is_close() || cx.theme().appearance.is_dark() {
             white()
         } else {
@@ -124,7 +124,7 @@ impl Control {
         }
     }
 
-    fn hover_bg(&self, cx: &WindowContext) -> Rgba {
+    fn hover_bg(&self, _window: &Window, cx: &App) -> Rgba {
         if self.is_close() {
             Rgba {
                 r: 232.0 / 255.0,
@@ -151,10 +151,10 @@ impl Control {
 }
 
 impl RenderOnce for Control {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
-        let fg = self.fg(cx);
-        let hover_fg = self.hover_fg(cx);
-        let hover_bg = self.hover_bg(cx);
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let fg = self.fg(window, cx);
+        let hover_fg = self.hover_fg(window, cx);
+        let hover_bg = self.hover_bg(window, cx);
         let icon = self.clone();
         let is_linux = cfg!(target_os = "linux");
         let on_close_window = match &icon {
@@ -173,19 +173,19 @@ impl RenderOnce for Control {
             .items_center()
             .text_color(fg)
             .when(is_linux, |this| {
-                this.on_mouse_down(MouseButton::Left, move |_, cx| {
-                    cx.prevent_default();
+                this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    window.prevent_default();
                     cx.stop_propagation();
                 })
-                .on_click(move |_, cx| match icon {
-                    Self::Minimize => cx.minimize_window(),
-                    Self::Restore => cx.zoom_window(),
-                    Self::Maximize => cx.zoom_window(),
+                .on_click(move |_, window, cx| match icon {
+                    Self::Minimize => window.minimize_window(),
+                    Self::Restore => window.zoom_window(),
+                    Self::Maximize => window.zoom_window(),
                     Self::Close { .. } => {
                         if let Some(f) = on_close_window.clone() {
-                            f(&ClickEvent::default(), cx);
+                            f(&ClickEvent::default(), window, cx);
                         } else {
-                            cx.remove_window();
+                            window.remove_window();
                         }
                     }
                 })
@@ -202,7 +202,7 @@ struct WindowControls {
 }
 
 impl RenderOnce for WindowControls {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         if cfg!(target_os = "macos") {
             return div().id("window-controls");
         }
@@ -218,7 +218,7 @@ impl RenderOnce for WindowControls {
                     .content_stretch()
                     .h_full()
                     .child(Control::minimize())
-                    .child(if cx.is_maximized() {
+                    .child(if window.is_maximized() {
                         Control::restore()
                     } else {
                         Control::maximize()
@@ -241,7 +241,7 @@ impl ParentElement for TitleBar {
 }
 
 impl RenderOnce for TitleBar {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let is_linux = cfg!(target_os = "linux");
 
         div().flex_shrink_0().child(
@@ -252,8 +252,8 @@ impl RenderOnce for TitleBar {
                 .justify_between()
                 .h(HEIGHT)
                 .bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
-                .when(cx.is_fullscreen(), |this| this.pl(px(12.)))
-                .on_double_click(|_, cx| cx.zoom_window())
+                .when(window.is_fullscreen(), |this| this.pl(px(12.)))
+                .on_double_click(|_, window, _cx| window.zoom_window())
                 .child(
                     h_flex()
                         .h_full()
@@ -302,7 +302,8 @@ impl Element for TitleBarElement {
     fn request_layout(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
         let style = Style {
             flex_grow: 1.0,
@@ -314,7 +315,7 @@ impl Element for TitleBarElement {
             ..Default::default()
         };
 
-        let id = cx.request_layout(style, []);
+        let id = window.request_layout(style, [], cx);
 
         (id, ())
     }
@@ -324,7 +325,8 @@ impl Element for TitleBarElement {
         _: Option<&gpui::GlobalElementId>,
         _: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
-        _: &mut WindowContext,
+        _window: &mut Window,
+        _cx: &mut App,
     ) -> Self::PrepaintState {
     }
 
@@ -334,20 +336,25 @@ impl Element for TitleBarElement {
         bounds: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        _cx: &mut App,
     ) {
         use gpui::{MouseButton, MouseMoveEvent, MouseUpEvent};
 
-        cx.on_mouse_event(move |ev: &MouseMoveEvent, _, cx: &mut WindowContext| {
-            if bounds.contains(&ev.position) && ev.pressed_button == Some(MouseButton::Left) {
-                cx.start_window_move();
-            }
-        });
+        window.on_mouse_event(
+            move |ev: &MouseMoveEvent, _, window: &mut Window, _cx: &mut App| {
+                if bounds.contains(&ev.position) && ev.pressed_button == Some(MouseButton::Left) {
+                    window.start_window_move();
+                }
+            },
+        );
 
-        cx.on_mouse_event(move |ev: &MouseUpEvent, _, cx: &mut WindowContext| {
-            if ev.button == MouseButton::Left {
-                cx.show_window_menu(ev.position);
-            }
-        });
+        window.on_mouse_event(
+            move |ev: &MouseUpEvent, _, window: &mut Window, _cx: &mut App| {
+                if ev.button == MouseButton::Left {
+                    window.show_window_menu(ev.position);
+                }
+            },
+        );
     }
 }

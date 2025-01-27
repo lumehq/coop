@@ -4,11 +4,11 @@ use crate::{
     IconName,
 };
 use gpui::{
-    div, prelude::FluentBuilder, relative, svg, ElementId, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WindowContext,
+    div, prelude::FluentBuilder, relative, svg, App, ElementId, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
-type OnClick = Option<Box<dyn Fn(&bool, &mut WindowContext) + 'static>>;
+type OnClick = Option<Box<dyn Fn(&bool, &mut Window, &mut App) + 'static>>;
 
 /// A Radio element.
 ///
@@ -48,14 +48,14 @@ impl Radio {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&bool, &mut WindowContext) + 'static) -> Self {
+    pub fn on_click(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
 }
 
 impl RenderOnce for Radio {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let color = if self.disabled {
             cx.theme().accent.step(cx, ColorScaleStep::FIVE)
         } else {
@@ -102,8 +102,8 @@ impl RenderOnce for Radio {
             .when_some(
                 self.on_click.filter(|_| !self.disabled),
                 |this, on_click| {
-                    this.on_click(move |_event, cx| {
-                        on_click(&!self.checked, cx);
+                    this.on_click(move |_event, window, cx| {
+                        on_click(&!self.checked, window, cx);
                     })
                 },
             )

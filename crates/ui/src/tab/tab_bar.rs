@@ -1,8 +1,8 @@
 use crate::h_flex;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyElement, Div, ElementId, InteractiveElement,
+    div, prelude::FluentBuilder as _, px, AnyElement, App, Div, ElementId, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, ScrollHandle, StatefulInteractiveElement as _, Styled,
-    WindowContext,
+    Window,
 };
 use smallvec::SmallVec;
 
@@ -60,7 +60,7 @@ impl Styled for TabBar {
 }
 
 impl RenderOnce for TabBar {
-    fn render(self, _cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         self.base
             .id(self.id)
             .group("tab-bar")

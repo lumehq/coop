@@ -1,14 +1,26 @@
 use crate::scroll::ScrollbarShow;
 use colors::{default_color_scales, hsl};
-use gpui::{
-    AppContext, Global, Hsla, ModelContext, SharedString, ViewContext, WindowAppearance,
-    WindowContext,
-};
+use gpui::{App, Global, Hsla, SharedString, Window, WindowAppearance};
 use scale::ColorScaleSet;
 use std::ops::{Deref, DerefMut};
 
 pub mod colors;
 pub mod scale;
+
+pub fn init(cx: &mut App) {
+    Theme::sync_system_appearance(None, cx)
+}
+
+pub trait ActiveTheme {
+    fn theme(&self) -> &Theme;
+}
+
+impl ActiveTheme for App {
+    #[inline]
+    fn theme(&self) -> &Theme {
+        Theme::global(self)
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemColors {
@@ -45,38 +57,6 @@ impl SystemColors {
             danger: hsl(0.0, 62.8, 30.6),
         }
     }
-}
-
-pub trait ActiveTheme {
-    fn theme(&self) -> &Theme;
-}
-
-impl ActiveTheme for AppContext {
-    fn theme(&self) -> &Theme {
-        Theme::global(self)
-    }
-}
-
-impl<V> ActiveTheme for ViewContext<'_, V> {
-    fn theme(&self) -> &Theme {
-        self.deref().theme()
-    }
-}
-
-impl<V> ActiveTheme for ModelContext<'_, V> {
-    fn theme(&self) -> &Theme {
-        self.deref().theme()
-    }
-}
-
-impl ActiveTheme for WindowContext<'_> {
-    fn theme(&self) -> &Theme {
-        self.deref().theme()
-    }
-}
-
-pub fn init(cx: &mut AppContext) {
-    Theme::sync_system_appearance(cx)
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Eq)]
@@ -126,32 +106,34 @@ impl Global for Theme {}
 
 impl Theme {
     /// Returns the global theme reference
-    pub fn global(cx: &AppContext) -> &Theme {
+    pub fn global(cx: &App) -> &Theme {
         cx.global::<Theme>()
     }
 
     /// Returns the global theme mutable reference
-    pub fn global_mut(cx: &mut AppContext) -> &mut Theme {
+    pub fn global_mut(cx: &mut App) -> &mut Theme {
         cx.global_mut::<Theme>()
     }
 
     /// Sync the theme with the system appearance
-    pub fn sync_system_appearance(cx: &mut AppContext) {
+    pub fn sync_system_appearance(window: Option<&mut Window>, cx: &mut App) {
         match cx.window_appearance() {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => {
-                Self::change(Appearance::Dark, cx)
+                Self::change(Appearance::Dark, window, cx)
             }
             WindowAppearance::Light | WindowAppearance::VibrantLight => {
-                Self::change(Appearance::Light, cx)
+                Self::change(Appearance::Light, window, cx)
             }
         }
     }
 
-    pub fn change(mode: Appearance, cx: &mut AppContext) {
+    pub fn change(mode: Appearance, window: Option<&mut Window>, cx: &mut App) {
         let theme = Theme::new(mode);
-
         cx.set_global(theme);
-        cx.refresh();
+
+        if let Some(window) = window {
+            window.refresh();
+        }
     }
 }
 

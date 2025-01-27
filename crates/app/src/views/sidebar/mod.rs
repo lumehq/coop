@@ -2,8 +2,8 @@ use crate::views::sidebar::inbox::Inbox;
 use compose::Compose;
 use gpui::{
     div, px, AnyElement, AppContext, BorrowAppContext, Entity, EntityId, EventEmitter, FocusHandle,
-    FocusableView, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, View, ViewContext, VisualContext, WindowContext,
+    Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, VisualContext,
 };
 use registry::chat::ChatRegistry;
 use ui::{
@@ -28,30 +28,30 @@ pub struct Sidebar {
     zoomable: bool,
     focus_handle: FocusHandle,
     // Dock
-    inbox: View<Inbox>,
+    inbox: Entity<Inbox>,
     view_id: EntityId,
 }
 
 impl Sidebar {
-    pub fn new(cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(Self::view)
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(Self::view)
     }
 
-    fn view(cx: &mut ViewContext<Self>) -> Self {
-        let inbox = cx.new_view(Inbox::new);
+    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let inbox = cx.new(Inbox::new);
 
         Self {
             name: "Sidebar".into(),
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            view_id: cx.view().entity_id(),
+            view_id: cx.model().entity_id(),
             inbox,
         }
     }
 
-    fn show_compose(&mut self, cx: &mut ViewContext<Self>) {
-        let compose = cx.new_view(Compose::new);
+    fn show_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let compose = cx.new(Compose::new);
 
         cx.open_modal(move |modal, cx| {
             let label = compose.read(cx).label(cx);
@@ -92,41 +92,41 @@ impl Panel for Sidebar {
         "Sidebar".into()
     }
 
-    fn title(&self, _cx: &WindowContext) -> AnyElement {
+    fn title(&self, _window: &Window, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _cx: &WindowContext) -> bool {
+    fn closeable(&self, _window: &Window, _cx: &App) -> bool {
         self.closeable
     }
 
-    fn zoomable(&self, _cx: &WindowContext) -> bool {
+    fn zoomable(&self, _window: &Window, _cx: &App) -> bool {
         self.zoomable
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _cx: &WindowContext) -> PopupMenu {
+    fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
 
-    fn toolbar_buttons(&self, _cx: &WindowContext) -> Vec<Button> {
+    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
     }
 
-    fn dump(&self, _cx: &AppContext) -> PanelState {
+    fn dump(&self, _cx: &App) -> PanelState {
         PanelState::new(self)
     }
 }
 
 impl EventEmitter<PanelEvent> for Sidebar {}
 
-impl FocusableView for Sidebar {
-    fn focus_handle(&self, _: &AppContext) -> gpui::FocusHandle {
+impl Focusable for Sidebar {
+    fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for Sidebar {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .scrollable(self.view_id, ScrollbarAxis::Vertical)
             .py_3()
@@ -159,7 +159,7 @@ impl Render for Sidebar {
                         )
                         .child("New Message")
                         .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                        .on_click(cx.listener(|this, _, cx| this.show_compose(cx))),
+                        .on_click(cx.listener(|this, _, window, cx| this.show_compose(cx))),
                 ),
             )
             .child(self.inbox.clone())

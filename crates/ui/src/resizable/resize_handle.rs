@@ -3,9 +3,9 @@ use crate::{
     AxisExt as _,
 };
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Axis, Div, ElementId, InteractiveElement, IntoElement,
-    ParentElement as _, Pixels, RenderOnce, Stateful, StatefulInteractiveElement, Styled as _,
-    WindowContext,
+    div, prelude::FluentBuilder as _, px, App, Axis, Div, ElementId, InteractiveElement,
+    IntoElement, ParentElement as _, Pixels, RenderOnce, Stateful, StatefulInteractiveElement,
+    Styled as _, Window,
 };
 
 pub(crate) const HANDLE_PADDING: Pixels = px(8.);
@@ -40,7 +40,7 @@ impl InteractiveElement for ResizeHandle {
 impl StatefulInteractiveElement for ResizeHandle {}
 
 impl RenderOnce for ResizeHandle {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         self.base
             .occlude()
             .absolute()

@@ -290,7 +290,7 @@ impl Scrollbar {
         self
     }
 
-    fn style_for_active(cx: &AppContext) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
+    fn style_for_active(cx: &App) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
         (
             cx.theme().scrollbar_thumb_hover,
             cx.theme().scrollbar,
@@ -300,7 +300,7 @@ impl Scrollbar {
         )
     }
 
-    fn style_for_hovered_thumb(cx: &AppContext) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
+    fn style_for_hovered_thumb(cx: &App) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
         (
             cx.theme().scrollbar_thumb_hover,
             cx.theme().scrollbar,
@@ -310,7 +310,7 @@ impl Scrollbar {
         )
     }
 
-    fn style_for_hovered_bar(cx: &AppContext) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
+    fn style_for_hovered_bar(cx: &App) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
         let (inset, radius) = if cx.theme().scrollbar_show.is_hover() {
             (THUMB_INSET, THUMB_RADIUS - px(1.))
         } else {
@@ -326,7 +326,7 @@ impl Scrollbar {
         )
     }
 
-    fn style_for_idle(_: &AppContext) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
+    fn style_for_idle(_: &App) -> (Hsla, Hsla, Hsla, Pixels, Pixels) {
         (
             gpui::transparent_black(),
             gpui::transparent_black(),
@@ -379,20 +379,17 @@ impl Element for Scrollbar {
     fn request_layout(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
-        cx: &mut gpui::WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        let style = Style {
-            position: Position::Absolute,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            size: Size {
-                width: relative(1.).into(),
-                height: relative(1.).into(),
-            },
-            ..Default::default()
-        };
+        let mut style = Style::default();
+        style.position = Position::Absolute;
+        style.flex_grow = 1.0;
+        style.flex_shrink = 1.0;
+        style.size.width = relative(1.).into();
+        style.size.height = relative(1.).into();
 
-        (cx.request_layout(style, None), ())
+        (window.request_layout(style, None, cx), ())
     }
 
     fn prepaint(
@@ -400,10 +397,11 @@ impl Element for Scrollbar {
         _: Option<&gpui::GlobalElementId>,
         bounds: Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
-        cx: &mut gpui::WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> Self::PrepaintState {
-        let hitbox = cx.with_content_mask(Some(ContentMask { bounds }), |cx| {
-            cx.insert_hitbox(bounds, false)
+        let hitbox = window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            window.insert_hitbox(bounds, false)
         });
 
         let mut states = vec![];
@@ -507,7 +505,7 @@ impl Element for Scrollbar {
                                     idle_state.0 = cx.theme().scrollbar_thumb.opacity(opacity);
                                 };
 
-                                cx.request_animation_frame();
+                                window.request_animation_frame();
                             }
                         }
                     }
@@ -550,8 +548,8 @@ impl Element for Scrollbar {
                 )
             };
 
-            let bar_hitbox = cx.with_content_mask(Some(ContentMask { bounds }), |cx| {
-                cx.insert_hitbox(bounds, false)
+            let bar_hitbox = window.with_content_mask(Some(ContentMask { bounds }), |window| {
+                window.insert_hitbox(bounds, false)
             });
 
             states.push(AxisPrepaintState {
@@ -580,7 +578,8 @@ impl Element for Scrollbar {
         _: Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
-        cx: &mut gpui::WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
         let hitbox_bounds = prepaint.hitbox.bounds;
         let is_visible = self.state.get().is_scrollbar_visible();
@@ -597,9 +596,9 @@ impl Element for Scrollbar {
             let margin_end = state.margin_end;
             let is_vertical = axis.is_vertical();
 
-            cx.set_cursor_style(CursorStyle::default(), &state.bar_hitbox);
+            window.set_cursor_style(CursorStyle::default(), &state.bar_hitbox);
 
-            cx.paint_layer(hitbox_bounds, |cx| {
+            window.paint_layer(hitbox_bounds, |cx| {
                 cx.paint_quad(fill(state.bounds, state.bg));
 
                 cx.paint_quad(PaintQuad {
@@ -627,12 +626,12 @@ impl Element for Scrollbar {
                 cx.paint_quad(fill(state.thumb_fill_bounds, state.thumb_bg).corner_radii(radius));
             });
 
-            cx.on_mouse_event({
+            window.on_mouse_event({
                 let state = self.state.clone();
                 let view_id = self.view_id;
                 let scroll_handle = self.scroll_handle.clone();
 
-                move |event: &ScrollWheelEvent, phase, cx| {
+                move |event: &ScrollWheelEvent, phase, _, cx| {
                     if phase.bubble()
                         && hitbox_bounds.contains(&event.position)
                         && scroll_handle.offset() != state.get().last_scroll_offset
@@ -642,7 +641,7 @@ impl Element for Scrollbar {
                                 .get()
                                 .with_last_scroll(scroll_handle.offset(), Some(Instant::now())),
                         );
-                        cx.notify(Some(view_id));
+                        cx.notify(view_id);
                     }
                 }
             });
@@ -650,12 +649,12 @@ impl Element for Scrollbar {
             let safe_range = (-scroll_area_size + container_size)..px(0.);
 
             if is_hover_to_show || is_visible {
-                cx.on_mouse_event({
+                window.on_mouse_event({
                     let state = self.state.clone();
                     let view_id = self.view_id;
                     let scroll_handle = self.scroll_handle.clone();
 
-                    move |event: &MouseDownEvent, phase, cx| {
+                    move |event: &MouseDownEvent, phase, _, cx| {
                         if phase.bubble() && bounds.contains(&event.position) {
                             cx.stop_propagation();
 
@@ -665,7 +664,7 @@ impl Element for Scrollbar {
 
                                 state.set(state.get().with_drag_pos(axis, pos));
 
-                                cx.notify(Some(view_id));
+                                cx.notify(view_id);
                             } else {
                                 // click on the scrollbar, jump to the position
                                 // Set the thumb bar center to the click position
@@ -698,34 +697,34 @@ impl Element for Scrollbar {
                 });
             }
 
-            cx.on_mouse_event({
+            window.on_mouse_event({
                 let scroll_handle = self.scroll_handle.clone();
                 let state = self.state.clone();
                 let view_id = self.view_id;
 
-                move |event: &MouseMoveEvent, _, cx| {
+                move |event: &MouseMoveEvent, _, _, cx| {
                     // Update hovered state for scrollbar
                     if bounds.contains(&event.position) {
                         if state.get().hovered_axis != Some(axis) {
                             state.set(state.get().with_hovered(Some(axis)));
-                            cx.notify(Some(view_id));
+                            cx.notify(view_id);
                         }
                     } else if state.get().hovered_axis == Some(axis)
                         && state.get().hovered_axis.is_some()
                     {
                         state.set(state.get().with_hovered(None));
-                        cx.notify(Some(view_id));
+                        cx.notify(view_id);
                     }
 
                     // Update hovered state for scrollbar thumb
                     if thumb_bounds.contains(&event.position) {
                         if state.get().hovered_on_thumb != Some(axis) {
                             state.set(state.get().with_hovered_on_thumb(Some(axis)));
-                            cx.notify(Some(view_id));
+                            cx.notify(view_id);
                         }
                     } else if state.get().hovered_on_thumb == Some(axis) {
                         state.set(state.get().with_hovered_on_thumb(None));
-                        cx.notify(Some(view_id));
+                        cx.notify(view_id);
                     }
 
                     // Move thumb position on dragging
@@ -757,20 +756,24 @@ impl Element for Scrollbar {
                             )
                         };
 
-                        scroll_handle.set_offset(offset);
-                        cx.notify(Some(view_id));
+                        if (scroll_handle.offset().y - offset.y).abs() > px(1.)
+                            || (scroll_handle.offset().x - offset.x).abs() > px(1.)
+                        {
+                            scroll_handle.set_offset(offset);
+                            cx.notify(view_id);
+                        }
                     }
                 }
             });
 
-            cx.on_mouse_event({
+            window.on_mouse_event({
                 let view_id = self.view_id;
                 let state = self.state.clone();
 
-                move |_event: &MouseUpEvent, phase, cx| {
+                move |_event: &MouseUpEvent, phase, _, cx| {
                     if phase.bubble() {
                         state.set(state.get().with_unset_drag_pos());
-                        cx.notify(Some(view_id));
+                        cx.notify(view_id);
                     }
                 }
             });

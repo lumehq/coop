@@ -1,14 +1,14 @@
 use crate::room::Room;
 use anyhow::Error;
 use common::utils::{compare, room_hash};
-use gpui::{AppContext, AsyncAppContext, Context, Global, Model, ModelContext, Task, WeakModel};
+use gpui::{AppContext, Entity, Global, Task, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::cmp::Reverse;
 
 pub struct Inbox {
-    pub rooms: Vec<Model<Room>>,
+    pub rooms: Vec<Entity<Room>>,
     pub is_loading: bool,
 }
 
@@ -59,14 +59,14 @@ impl Default for Inbox {
 }
 
 pub struct ChatRegistry {
-    inbox: Model<Inbox>,
+    inbox: Entity<Inbox>,
 }
 
 impl Global for ChatRegistry {}
 
 impl ChatRegistry {
     pub fn set_global(cx: &mut AppContext) {
-        let inbox = cx.new_model(|_| Inbox::default());
+        let inbox = cx.new(|_| Inbox::default());
 
         cx.observe_new_models::<Room>(|this, cx| {
             // Get all pubkeys to load metadata
@@ -117,13 +117,13 @@ impl ChatRegistry {
                     if let Ok(events) = task.await {
                         _ = async_cx.update_model(&inbox, |this, cx| {
                             let current_rooms = this.current_rooms(cx);
-                            let items: Vec<Model<Room>> = events
+                            let items: Vec<Entity<Room>> = events
                                 .into_iter()
                                 .filter_map(|ev| {
                                     let id = room_hash(&ev.tags);
                                     // Filter all seen events
                                     if !current_rooms.iter().any(|h| h == &id) {
-                                        Some(cx.new_model(|_| Room::parse(&ev)))
+                                        Some(cx.new(|_| Room::parse(&ev)))
                                     } else {
                                         None
                                     }
@@ -142,11 +142,11 @@ impl ChatRegistry {
         });
     }
 
-    pub fn inbox(&self) -> WeakModel<Inbox> {
+    pub fn inbox(&self) -> WeakEntity<Inbox> {
         self.inbox.downgrade()
     }
 
-    pub fn room(&self, id: &u64, cx: &AppContext) -> Option<WeakModel<Room>> {
+    pub fn room(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
         self.inbox
             .read(cx)
             .rooms
@@ -156,7 +156,7 @@ impl ChatRegistry {
     }
 
     pub fn new_room(&mut self, room: Room, cx: &mut AppContext) {
-        let room = cx.new_model(|_| room);
+        let room = cx.new(|_| room);
 
         self.inbox.update(cx, |this, cx| {
             if !this.rooms.iter().any(|r| r.read(cx) == room.read(cx)) {
@@ -180,7 +180,7 @@ impl ChatRegistry {
                     cx.notify();
                 })
             } else {
-                let room = cx.new_model(|_| Room::parse(&event));
+                let room = cx.new(|_| Room::parse(&event));
 
                 self.inbox.update(cx, |this, cx| {
                     this.rooms.insert(0, room);

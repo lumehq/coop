@@ -1,7 +1,7 @@
 use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
-    div, prelude::FluentBuilder, px, relative, IntoElement, ParentElement, RenderOnce, Styled,
-    WindowContext,
+    div, prelude::FluentBuilder, px, relative, App, IntoElement, ParentElement, RenderOnce, Styled,
+    Window,
 };
 
 /// A Progress bar element.
@@ -32,7 +32,7 @@ impl Default for Progress {
 }
 
 impl RenderOnce for Progress {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let rounded = px(self.height / 2.);
         let relative_w = relative(match self.value {
             v if v < 0. => 0.,

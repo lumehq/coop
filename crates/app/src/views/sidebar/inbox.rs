@@ -2,7 +2,7 @@ use crate::views::app::{AddPanel, PanelKind};
 use common::utils::message_ago;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
 };
 use registry::chat::ChatRegistry;
 use ui::{
@@ -18,7 +18,7 @@ pub struct Inbox {
 }
 
 impl Inbox {
-    pub fn new(_cx: &mut ViewContext<'_, Self>) -> Self {
+    pub fn new(_window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         Self {
             label: "Inbox".into(),
             is_collapsed: false,
@@ -38,7 +38,7 @@ impl Inbox {
         })
     }
 
-    fn render_item(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render_item(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let weak_model = cx.global::<ChatRegistry>().inbox();
 
         if let Some(model) = weak_model.upgrade() {
@@ -91,7 +91,7 @@ impl Inbox {
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                                     .child(ago),
                             )
-                            .on_click(cx.listener(move |this, _, cx| {
+                            .on_click(cx.listener(move |this, _, window, cx| {
                                 this.action(id, cx);
                             }))
                     }))
@@ -102,7 +102,7 @@ impl Inbox {
         }
     }
 
-    fn action(&self, id: u64, cx: &mut ViewContext<Self>) {
+    fn action(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         cx.dispatch_action(Box::new(AddPanel {
             panel: PanelKind::Room(id),
             position: DockPlacement::Center,
@@ -122,7 +122,7 @@ impl Collapsible for Inbox {
 }
 
 impl Render for Inbox {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .px_2()
             .gap_1()

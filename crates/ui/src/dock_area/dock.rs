@@ -8,8 +8,7 @@ use crate::{
 use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Element, Entity, InteractiveElement as _,
     IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render,
-    StatefulInteractiveElement, Style, Styled as _, View, ViewContext, VisualContext as _,
-    WeakView, WindowContext,
+    StatefulInteractiveElement, Style, Styled as _,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -56,7 +55,7 @@ impl DockPlacement {
 /// This is unlike Panel, it can't be move or add any other panel.
 pub struct Dock {
     pub(super) placement: DockPlacement,
-    dock_area: WeakView<DockArea>,
+    dock_area: WeakEntity<DockArea>,
     pub(crate) panel: DockItem,
     /// The size is means the width or height of the Dock, if the placement is left or right, the size is width, otherwise the size is height.
     pub(super) size: Pixels,
@@ -71,11 +70,12 @@ pub struct Dock {
 
 impl Dock {
     pub(crate) fn new(
-        dock_area: WeakView<DockArea>,
+        dock_area: WeakEntity<DockArea>,
         placement: DockPlacement,
-        cx: &mut ViewContext<Self>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) -> Self {
-        let panel = cx.new_view(|cx| {
+        let panel = cx.new(|cx| {
             let mut tab = TabPanel::new(None, dock_area.clone(), cx);
             tab.closeable = false;
             tab
@@ -100,22 +100,39 @@ impl Dock {
         }
     }
 
-    pub fn left(dock_area: WeakView<DockArea>, cx: &mut ViewContext<Self>) -> Self {
+    pub fn left(
+        dock_area: WeakEntity<DockArea>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self::new(dock_area, DockPlacement::Left, cx)
     }
 
-    pub fn bottom(dock_area: WeakView<DockArea>, cx: &mut ViewContext<Self>) -> Self {
+    pub fn bottom(
+        dock_area: WeakEntity<DockArea>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self::new(dock_area, DockPlacement::Bottom, cx)
     }
 
-    pub fn right(dock_area: WeakView<DockArea>, cx: &mut ViewContext<Self>) -> Self {
+    pub fn right(
+        dock_area: WeakEntity<DockArea>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self::new(dock_area, DockPlacement::Right, cx)
     }
 
     /// Update the Dock to be collapsible or not.
     ///
     /// And if the Dock is not collapsible, it will be open.
-    pub fn set_collapsible(&mut self, collapsible: bool, cx: &mut ViewContext<Self>) {
+    pub fn set_collapsible(
+        &mut self,
+        collapsible: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.collapsible = collapsible;
         if !collapsible {
             self.open = true
@@ -124,12 +141,13 @@ impl Dock {
     }
 
     pub(super) fn from_state(
-        dock_area: WeakView<DockArea>,
+        dock_area: WeakEntity<DockArea>,
         placement: DockPlacement,
         size: Pixels,
         panel: DockItem,
         open: bool,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> Self {
         Self::subscribe_panel_events(dock_area.clone(), &panel, cx);
 
@@ -161,9 +179,10 @@ impl Dock {
     }
 
     fn subscribe_panel_events(
-        dock_area: WeakView<DockArea>,
+        dock_area: WeakEntity<DockArea>,
         panel: &DockItem,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
         match panel {
             DockItem::Tabs { view, .. } => {
@@ -195,7 +214,7 @@ impl Dock {
         }
     }
 
-    pub fn set_panel(&mut self, panel: DockItem, cx: &mut ViewContext<Self>) {
+    pub fn set_panel(&mut self, panel: DockItem, window: &mut Window, cx: &mut Context<Self>) {
         self.panel = panel;
         cx.notify();
     }
@@ -204,7 +223,7 @@ impl Dock {
         self.open
     }
 
-    pub fn toggle_open(&mut self, cx: &mut ViewContext<Self>) {
+    pub fn toggle_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_open(!self.open, cx);
     }
 
@@ -216,13 +235,13 @@ impl Dock {
     }
 
     /// Set the size of the Dock.
-    pub fn set_size(&mut self, size: Pixels, cx: &mut ViewContext<Self>) {
+    pub fn set_size(&mut self, size: Pixels, window: &mut Window, cx: &mut Context<Self>) {
         self.size = size.max(PANEL_MIN_SIZE);
         cx.notify();
     }
 
     /// Set the open state of the Dock.
-    pub fn set_open(&mut self, open: bool, cx: &mut ViewContext<Self>) {
+    pub fn set_open(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.open = open;
         let item = self.panel.clone();
         cx.defer(move |_, cx| {
@@ -232,15 +251,24 @@ impl Dock {
     }
 
     /// Add item to the Dock.
-    pub fn add_panel(&mut self, panel: Arc<dyn PanelView>, cx: &mut ViewContext<Self>) {
+    pub fn add_panel(
+        &mut self,
+        panel: Arc<dyn PanelView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.panel.add_panel(panel, &self.dock_area, cx);
         cx.notify();
     }
 
-    fn render_resize_handle(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render_resize_handle(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let axis = self.placement.axis();
         let neg_offset = -HANDLE_PADDING;
-        let view = cx.view().clone();
+        let view = cx.model().clone();
 
         div()
             .id("resize-handle")
@@ -284,10 +312,15 @@ impl Dock {
                 view.update(cx, |view, _| {
                     view.is_resizing = true;
                 });
-                cx.new_view(|_| info.clone())
+                cx.new(|_| info.clone())
             })
     }
-    fn resize(&mut self, mouse_position: Point<Pixels>, cx: &mut ViewContext<Self>) {
+    fn resize(
+        &mut self,
+        mouse_position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.is_resizing {
             return;
         }
@@ -303,7 +336,7 @@ impl Dock {
 
         // Get the size of the left dock if it's open and not the current dock
         if let Some(left_dock) = &dock_area.left_dock {
-            if left_dock.entity_id() != cx.view().entity_id() {
+            if left_dock.entity_id() != cx.model().entity_id() {
                 let left_dock_read = left_dock.read(cx);
                 if left_dock_read.is_open() {
                     left_dock_size = left_dock_read.size;
@@ -313,7 +346,7 @@ impl Dock {
 
         // Get the size of the right dock if it's open and not the current dock
         if let Some(right_dock) = &dock_area.right_dock {
-            if right_dock.entity_id() != cx.view().entity_id() {
+            if right_dock.entity_id() != cx.model().entity_id() {
                 let right_dock_read = right_dock.read(cx);
                 if right_dock_read.is_open() {
                     right_dock_size = right_dock_read.size;
@@ -346,13 +379,13 @@ impl Dock {
         cx.notify();
     }
 
-    fn done_resizing(&mut self, _: &mut ViewContext<Self>) {
+    fn done_resizing(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
         self.is_resizing = false;
     }
 }
 
 impl Render for Dock {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         if !self.open && !self.placement.is_bottom() {
             return div();
         }
@@ -376,13 +409,13 @@ impl Render for Dock {
             })
             .child(self.render_resize_handle(cx))
             .child(DockElement {
-                view: cx.view().clone(),
+                view: cx.model().clone(),
             })
     }
 }
 
 struct DockElement {
-    view: View<Dock>,
+    view: Entity<Dock>,
 }
 
 impl IntoElement for DockElement {
@@ -404,9 +437,10 @@ impl Element for DockElement {
     fn request_layout(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        (cx.request_layout(Style::default(), None), ())
+        (window.request_layout(cx, Style::default(), None), ())
     }
 
     fn prepaint(
@@ -414,7 +448,8 @@ impl Element for DockElement {
         _: Option<&gpui::GlobalElementId>,
         _: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
-        _: &mut WindowContext,
+        _window: &mut Window,
+        _cx: &mut App,
     ) -> Self::PrepaintState {
     }
 
@@ -424,9 +459,10 @@ impl Element for DockElement {
         _: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        cx: &mut WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
-        cx.on_mouse_event({
+        window.on_mouse_event({
             let view = self.view.clone();
             move |e: &MouseMoveEvent, phase, cx| {
                 if phase.bubble() {
@@ -436,7 +472,7 @@ impl Element for DockElement {
         });
 
         // When any mouse up, stop dragging
-        cx.on_mouse_event({
+        window.on_mouse_event({
             let view = self.view.clone();
             move |_: &MouseUpEvent, phase, cx| {
                 if phase.bubble() {

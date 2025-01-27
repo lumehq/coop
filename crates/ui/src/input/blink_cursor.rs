@@ -1,4 +1,4 @@
-use gpui::{ModelContext, Timer};
+use gpui::{Context, Timer};
 use std::time::Duration;
 
 static INTERVAL: Duration = Duration::from_millis(500);
@@ -26,11 +26,11 @@ impl BlinkCursor {
     }
 
     /// Start the blinking
-    pub fn start(&mut self, cx: &mut ModelContext<Self>) {
+    pub fn start(&mut self, cx: &mut Context<Self>) {
         self.blink(self.epoch, cx);
     }
 
-    pub fn stop(&mut self, cx: &mut ModelContext<Self>) {
+    pub fn stop(&mut self, cx: &mut Context<Self>) {
         self.epoch = 0;
         cx.notify();
     }
@@ -40,7 +40,7 @@ impl BlinkCursor {
         self.epoch
     }
 
-    fn blink(&mut self, epoch: usize, cx: &mut ModelContext<Self>) {
+    fn blink(&mut self, epoch: usize, cx: &mut Context<Self>) {
         if self.paused || epoch != self.epoch {
             return;
         }
@@ -65,13 +65,12 @@ impl BlinkCursor {
     }
 
     /// Pause the blinking, and delay 500ms to resume the blinking.
-    pub fn pause(&mut self, cx: &mut ModelContext<Self>) {
+    pub fn pause(&mut self, cx: &mut Context<Self>) {
         self.paused = true;
         cx.notify();
 
         // delay 500ms to start the blinking
         let epoch = self.next_epoch();
-
         cx.spawn(|this, mut cx| async move {
             Timer::after(PAUSE_DELAY).await;
 

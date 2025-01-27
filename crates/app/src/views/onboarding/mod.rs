@@ -1,17 +1,17 @@
 use common::constants::KEYRING_SERVICE;
-use gpui::{div, IntoElement, ParentElement, Render, Styled, View, ViewContext, VisualContext};
+use gpui::{div, IntoElement, ParentElement, Render, Styled, VisualContext};
 use nostr_sdk::prelude::*;
 use registry::{app::AppRegistry, contact::Contact};
 use state::get_client;
 use ui::input::{InputEvent, TextInput};
 
 pub struct Onboarding {
-    input: View<TextInput>,
+    input: Entity<TextInput>,
 }
 
 impl Onboarding {
-    pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
-        let input = cx.new_view(|cx| {
+    pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+        let input = cx.new(|cx| {
             let mut input = TextInput::new(cx);
             input.set_size(ui::Size::Medium, cx);
             input
@@ -28,7 +28,7 @@ impl Onboarding {
         Self { input }
     }
 
-    fn save_keys(content: &str, cx: &mut ViewContext<Self>) -> anyhow::Result<(), anyhow::Error> {
+    fn save_keys(content: &str, window: &mut Window, cx: &mut Context<Self>) -> anyhow::Result<(), anyhow::Error> {
         let keys = Keys::parse(content)?;
         let public_key = keys.public_key();
         let bech32 = public_key.to_bech32()?;
@@ -75,7 +75,7 @@ impl Onboarding {
 }
 
 impl Render for Onboarding {
-    fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()

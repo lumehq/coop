@@ -6,17 +6,17 @@ use crate::{
     v_flex, Disableable, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
 };
 use gpui::{
-    actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement,
-    AppContext, Bounds, ClickEvent, DismissEvent, ElementId, EventEmitter, FocusHandle,
-    FocusableView, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement, Pixels,
-    Render, SharedString, StatefulInteractiveElement, Styled, Task, View, ViewContext,
-    VisualContext, WeakView, WindowContext,
+    actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App,
+    AppContext, Bounds, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement,
+    Pixels, Render, SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 
 actions!(dropdown, [Up, Down, Enter, Escape]);
 
 const CONTEXT: &str = "Dropdown";
-pub fn init(cx: &mut AppContext) {
+
+pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("up", Up, Some(CONTEXT)),
         KeyBinding::new("down", Down, Some(CONTEXT)),
@@ -79,7 +79,12 @@ pub trait DropdownDelegate: Sized {
         false
     }
 
-    fn perform_search(&mut self, _query: &str, _cx: &mut ViewContext<Dropdown<Self>>) -> Task<()> {
+    fn perform_search(
+        &mut self,
+        _query: &str,
+        _window: &mut Window,
+        cx: &mut Context<Dropdown<Self>>,
+    ) -> Task<()> {
         Task::ready(())
     }
 }
@@ -106,7 +111,7 @@ impl<T: DropdownItem> DropdownDelegate for Vec<T> {
 
 struct DropdownListDelegate<D: DropdownDelegate + 'static> {
     delegate: D,
-    dropdown: WeakView<Dropdown<D>>,
+    dropdown: WeakEntity<Dropdown<D>>,
     selected_index: Option<usize>,
 }
 
@@ -116,15 +121,20 @@ where
 {
     type Item = ListItem;
 
-    fn items_count(&self, _: &AppContext) -> usize {
+    fn items_count(&self, _: &App) -> usize {
         self.delegate.len()
     }
 
-    fn confirmed_index(&self, _: &AppContext) -> Option<usize> {
+    fn confirmed_index(&self, _: &App) -> Option<usize> {
         self.selected_index
     }
 
-    fn render_item(&self, ix: usize, cx: &mut gpui::ViewContext<List<Self>>) -> Option<Self::Item> {
+    fn render_item(
+        &self,
+        ix: usize,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<List<Self>>,
+    ) -> Option<Self::Item> {
         let selected = self.selected_index == Some(ix);
         let size = self
             .dropdown
@@ -145,17 +155,17 @@ where
         }
     }
 
-    fn cancel(&mut self, cx: &mut ViewContext<List<Self>>) {
+    fn cancel(&mut self, window: &mut Window, cx: &mut Context<List<Self>>) {
         let dropdown = self.dropdown.clone();
-        cx.defer(move |_, cx| {
+        cx.defer_in(window, move |_, window, cx| {
             _ = dropdown.update(cx, |this, cx| {
                 this.open = false;
-                this.focus(cx);
+                this.focus(window, cx);
             });
         });
     }
 
-    fn confirm(&mut self, ix: Option<usize>, cx: &mut ViewContext<List<Self>>) {
+    fn confirm(&mut self, ix: Option<usize>, window: &mut Window, cx: &mut Context<List<Self>>) {
         self.selected_index = ix;
 
         let selected_value = self
@@ -164,33 +174,43 @@ where
             .map(|item| item.value().clone());
         let dropdown = self.dropdown.clone();
 
-        cx.defer(move |_, cx| {
+        cx.defer_in(window, move |_, window, cx| {
             _ = dropdown.update(cx, |this, cx| {
                 cx.emit(DropdownEvent::Confirm(selected_value.clone()));
                 this.selected_value = selected_value;
                 this.open = false;
-                this.focus(cx);
+                this.focus(window, cx);
             });
         });
     }
 
-    fn perform_search(&mut self, query: &str, cx: &mut ViewContext<List<Self>>) -> Task<()> {
+    fn perform_search(
+        &mut self,
+        query: &str,
+        window: &mut Window,
+        cx: &mut Context<List<Self>>,
+    ) -> Task<()> {
         self.dropdown.upgrade().map_or(Task::ready(()), |dropdown| {
-            dropdown.update(cx, |_, cx| self.delegate.perform_search(query, cx))
+            dropdown.update(cx, |_, cx| self.delegate.perform_search(query, window, cx))
         })
     }
 
-    fn set_selected_index(&mut self, ix: Option<usize>, _: &mut ViewContext<List<Self>>) {
+    fn set_selected_index(
+        &mut self,
+        ix: Option<usize>,
+        _: &mut Window,
+        _: &mut Context<List<Self>>,
+    ) {
         self.selected_index = ix;
     }
 
-    fn render_empty(&self, cx: &mut ViewContext<List<Self>>) -> impl IntoElement {
+    fn render_empty(&self, window: &mut Window, cx: &mut Context<List<Self>>) -> impl IntoElement {
         if let Some(empty) = self
             .dropdown
             .upgrade()
             .and_then(|dropdown| dropdown.read(cx).empty.as_ref())
         {
-            empty(cx).into_any_element()
+            empty(window, cx).into_any_element()
         } else {
             h_flex()
                 .justify_center()
@@ -206,13 +226,11 @@ pub enum DropdownEvent<D: DropdownDelegate + 'static> {
     Confirm(Option<<D::Item as DropdownItem>::Value>),
 }
 
-type Empty = Option<Box<dyn Fn(&WindowContext) -> AnyElement + 'static>>;
-
 /// A Dropdown element.
 pub struct Dropdown<D: DropdownDelegate + 'static> {
     id: ElementId,
     focus_handle: FocusHandle,
-    list: View<List<DropdownListDelegate<D>>>,
+    list: Entity<List<DropdownListDelegate<D>>>,
     size: Size,
     icon: Option<IconName>,
     open: bool,
@@ -220,7 +238,7 @@ pub struct Dropdown<D: DropdownDelegate + 'static> {
     placeholder: Option<SharedString>,
     title_prefix: Option<SharedString>,
     selected_value: Option<<D::Item as DropdownItem>::Value>,
-    empty: Empty,
+    empty: Option<Box<dyn Fn(&Window, &App) -> AnyElement + 'static>>,
     width: Length,
     menu_width: Length,
     /// Store the bounds of the input
@@ -272,7 +290,12 @@ impl<T: DropdownItem + Clone> DropdownDelegate for SearchableVec<T> {
         true
     }
 
-    fn perform_search(&mut self, query: &str, _cx: &mut ViewContext<Dropdown<Self>>) -> Task<()> {
+    fn perform_search(
+        &mut self,
+        query: &str,
+        _window: &mut Window,
+        cx: &mut Context<Dropdown<Self>>,
+    ) -> Task<()> {
         self.matched_items = self
             .items
             .iter()
@@ -301,27 +324,30 @@ where
         id: impl Into<ElementId>,
         delegate: D,
         selected_index: Option<usize>,
-        cx: &mut ViewContext<Self>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) -> Self {
         let focus_handle = cx.focus_handle();
         let delegate = DropdownListDelegate {
             delegate,
-            dropdown: cx.view().downgrade(),
+            dropdown: cx.model().downgrade(),
             selected_index,
         };
 
         let searchable = delegate.delegate.can_search();
 
-        let list = cx.new_view(|cx| {
-            let mut list = List::new(delegate, cx).max_h(rems(20.));
+        let list = cx.new(|cx| {
+            let mut list = List::new(delegate, window, cx).max_h(rems(20.));
             if !searchable {
                 list = list.no_query();
             }
             list
         });
 
-        cx.on_blur(&list.focus_handle(cx), Self::on_blur).detach();
-        cx.on_blur(&focus_handle, Self::on_blur).detach();
+        cx.on_blur(&list.focus_handle(cx), window, Self::on_blur)
+            .detach();
+
+        cx.on_blur(&focus_handle, window, Self::on_blur).detach();
 
         let mut this = Self {
             id: id.into(),
@@ -340,7 +366,7 @@ where
             bounds: Bounds::default(),
             disabled: false,
         };
-        this.set_selected_index(selected_index, cx);
+        this.set_selected_index(selected_index, window, cx);
         this
     }
 
@@ -397,42 +423,44 @@ where
     pub fn empty<E, F>(mut self, f: F) -> Self
     where
         E: IntoElement,
-        F: Fn(&WindowContext) -> E + 'static,
+        F: Fn(&Window, &App) -> E + 'static,
     {
-        self.empty = Some(Box::new(move |cx| f(cx).into_any_element()));
+        self.empty = Some(Box::new(move |window, cx| f(window, cx).into_any_element()));
         self
     }
 
     pub fn set_selected_index(
         &mut self,
         selected_index: Option<usize>,
-        cx: &mut ViewContext<Self>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) {
         self.list.update(cx, |list, cx| {
-            list.set_selected_index(selected_index, cx);
+            list.set_selected_index(selected_index, window, cx);
         });
-        self.update_selected_value(cx);
+        self.update_selected_value(window, cx);
     }
 
     pub fn set_selected_value(
         &mut self,
         selected_value: &<D::Item as DropdownItem>::Value,
-        cx: &mut ViewContext<Self>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) where
         <<D as DropdownDelegate>::Item as DropdownItem>::Value: PartialEq,
     {
         let delegate = self.list.read(cx).delegate();
         let selected_index = delegate.delegate.position(selected_value);
-        self.set_selected_index(selected_index, cx);
+        self.set_selected_index(selected_index, window, cx);
     }
 
-    pub fn selected_index(&self, cx: &WindowContext) -> Option<usize> {
+    pub fn selected_index(&self, window: &Window, cx: &App) -> Option<usize> {
         self.list.read(cx).selected_index()
     }
 
-    fn update_selected_value(&mut self, cx: &WindowContext) {
+    fn update_selected_value(&mut self, window: &Window, cx: &App) {
         self.selected_value = self
-            .selected_index(cx)
+            .selected_index(window, cx)
             .and_then(|ix| self.list.read(cx).delegate().delegate.get(ix))
             .map(|item| item.value().clone());
     }
@@ -441,13 +469,13 @@ where
         self.selected_value.as_ref()
     }
 
-    pub fn focus(&self, cx: &mut WindowContext) {
-        self.focus_handle.focus(cx);
+    pub fn focus(&self, window: &mut Window, _: &mut App) {
+        self.focus_handle.focus(window);
     }
 
-    fn on_blur(&mut self, cx: &mut ViewContext<Self>) {
+    fn on_blur(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // When the dropdown and dropdown menu are both not focused, close the dropdown menu.
-        if self.list.focus_handle(cx).is_focused(cx) || self.focus_handle.is_focused(cx) {
+        if self.list.focus_handle(cx).is_focused(window) || self.focus_handle.is_focused(window) {
             return;
         }
 
@@ -455,24 +483,24 @@ where
         cx.notify();
     }
 
-    fn up(&mut self, _: &Up, cx: &mut ViewContext<Self>) {
+    fn up(&mut self, _: &Up, window: &mut Window, cx: &mut Context<Self>) {
         if !self.open {
             return;
         }
-        self.list.focus_handle(cx).focus(cx);
-        cx.dispatch_action(Box::new(list::SelectPrev));
+        self.list.focus_handle(cx).focus(window);
+        cx.dispatch_action(&list::SelectPrev);
     }
 
-    fn down(&mut self, _: &Down, cx: &mut ViewContext<Self>) {
+    fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
         if !self.open {
             self.open = true;
         }
 
-        self.list.focus_handle(cx).focus(cx);
-        cx.dispatch_action(Box::new(list::SelectNext));
+        self.list.focus_handle(cx).focus(window);
+        cx.dispatch_action(&list::SelectNext);
     }
 
-    fn enter(&mut self, _: &Enter, cx: &mut ViewContext<Self>) {
+    fn enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<Self>) {
         // Propagate the event to the parent view, for example to the Modal to support ENTER to confirm.
         cx.propagate();
 
@@ -480,22 +508,22 @@ where
             self.open = true;
             cx.notify();
         } else {
-            self.list.focus_handle(cx).focus(cx);
-            cx.dispatch_action(Box::new(list::Confirm));
+            self.list.focus_handle(cx).focus(window);
+            cx.dispatch_action(&list::Confirm);
         }
     }
 
-    fn toggle_menu(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
+    fn toggle_menu(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         cx.stop_propagation();
 
         self.open = !self.open;
         if self.open {
-            self.list.focus_handle(cx).focus(cx);
+            self.list.focus_handle(cx).focus(window);
         }
         cx.notify();
     }
 
-    fn escape(&mut self, _: &Escape, cx: &mut ViewContext<Self>) {
+    fn escape(&mut self, _: &Escape, window: &mut Window, cx: &mut Context<Self>) {
         // Propagate the event to the parent view, for example to the Modal to support ESC to close.
         cx.propagate();
 
@@ -503,13 +531,13 @@ where
         cx.notify();
     }
 
-    fn clean(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
-        self.set_selected_index(None, cx);
+    fn clean(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_selected_index(None, window, cx);
         cx.emit(DropdownEvent::Confirm(None));
     }
 
-    fn display_title(&self, cx: &WindowContext) -> impl IntoElement {
-        let title = if let Some(selected_index) = &self.selected_index(cx) {
+    fn display_title(&self, window: &Window, cx: &App) -> impl IntoElement {
+        let title = if let Some(selected_index) = &self.selected_index(window, cx) {
             let title = self
                 .list
                 .read(cx)
@@ -551,11 +579,11 @@ where
 
 impl<D> EventEmitter<DropdownEvent<D>> for Dropdown<D> where D: DropdownDelegate + 'static {}
 impl<D> EventEmitter<DismissEvent> for Dropdown<D> where D: DropdownDelegate + 'static {}
-impl<D> FocusableView for Dropdown<D>
+impl<D> Focusable for Dropdown<D>
 where
     D: DropdownDelegate + 'static,
 {
-    fn focus_handle(&self, cx: &AppContext) -> FocusHandle {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
         if self.open {
             self.list.focus_handle(cx)
         } else {
@@ -568,10 +596,10 @@ impl<D> Render for Dropdown<D>
 where
     D: DropdownDelegate + 'static,
 {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let is_focused = self.focus_handle.is_focused(cx);
-        let show_clean = self.cleanable && self.selected_index(cx).is_some();
-        let view = cx.view().clone();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let is_focused = self.focus_handle.is_focused(window);
+        let show_clean = self.cleanable && self.selected_index(window, cx).is_some();
+        let view = cx.model().clone();
         let bounds = self.bounds;
         let allow_open = !(self.open || self.disabled);
         let outline_visible = self.open || is_focused && !self.disabled;
@@ -579,7 +607,7 @@ where
         // If the size has change, set size to self.list, to change the QueryInput size.
         if self.list.read(cx).size != self.size {
             self.list
-                .update(cx, |this, cx| this.set_size(self.size, cx))
+                .update(cx, |this, cx| this.set_size(self.size, window, cx))
         }
 
         div()
@@ -618,7 +646,7 @@ where
                         Length::Definite(l) => this.flex_none().w(l),
                         Length::Auto => this.w_full(),
                     })
-                    .when(outline_visible, |this| this.outline(cx))
+                    .when(outline_visible, |this| this.outline(window, cx))
                     .input_size(self.size)
                     .when(allow_open, |this| {
                         this.on_click(cx.listener(Self::toggle_menu))
@@ -633,10 +661,10 @@ where
                                 div()
                                     .w_full()
                                     .overflow_hidden()
-                                    .child(self.display_title(cx)),
+                                    .child(self.display_title(window, cx)),
                             )
                             .when(show_clean, |this| {
-                                this.child(ClearButton::new(cx).map(|this| {
+                                this.child(ClearButton::new(window, cx).map(|this| {
                                     if self.disabled {
                                         this.disabled(true)
                                     } else {
@@ -671,8 +699,8 @@ where
                     )
                     .child(
                         canvas(
-                            move |bounds, cx| view.update(cx, |r, _| r.bounds = bounds),
-                            |_, _, _| {},
+                            move |bounds, _, cx| view.update(cx, |r, _| r.bounds = bounds),
+                            |_, _, _, _| {},
                         )
                         .absolute()
                         .size_full(),
@@ -699,13 +727,13 @@ where
                                         )
                                         .rounded(px(cx.theme().radius))
                                         .shadow_md()
-                                        .on_mouse_down_out(|_, cx| {
-                                            cx.dispatch_action(Box::new(Escape));
+                                        .on_mouse_down_out(|_, _, cx| {
+                                            cx.dispatch_action(&Escape);
                                         })
                                         .child(self.list.clone()),
                                 )
-                                .on_mouse_down_out(cx.listener(|this, _, cx| {
-                                    this.escape(&Escape, cx);
+                                .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                                    this.escape(&Escape, window, cx);
                                 })),
                         ),
                     )

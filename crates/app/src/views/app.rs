@@ -1,8 +1,8 @@
 use super::{chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
 use gpui::{
     actions, div, img, impl_internal_actions, px, svg, Axis, BorrowAppContext, Edges,
-    InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, View,
-    ViewContext, VisualContext, WeakView, WindowContext,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage,
+    VisualContext,
 };
 use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use serde::Deserialize;
@@ -45,14 +45,14 @@ pub const DOCK_AREA: DockAreaTab = DockAreaTab {
 };
 
 pub struct AppView {
-    onboarding: View<Onboarding>,
-    dock: View<DockArea>,
+    onboarding: Entity<Onboarding>,
+    dock: Entity<DockArea>,
 }
 
 impl AppView {
-    pub fn new(cx: &mut ViewContext<'_, Self>) -> AppView {
-        let onboarding = cx.new_view(Onboarding::new);
-        let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
+    pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> AppView {
+        let onboarding = cx.new(Onboarding::new);
+        let dock = cx.new(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
 
         // Get current user from app state
         let weak_user = cx.global::<AppRegistry>().user();
@@ -69,7 +69,7 @@ impl AppView {
         AppView { onboarding, dock }
     }
 
-    fn render_dock(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
+    fn render_dock(dock_area: WeakEntity<DockArea>, window: &mut Window, cx: &mut App) {
         let left = DockItem::panel(Arc::new(Sidebar::new(cx)));
         let center = DockItem::split_with_sizes(
             Axis::Vertical,
@@ -121,7 +121,7 @@ impl AppView {
             })
     }
 
-    fn on_panel_action(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
+    fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
         match &action.panel {
             PanelKind::Room(id) => {
                 if let Some(weak_room) = cx.global::<ChatRegistry>().room(id, cx) {
@@ -142,19 +142,19 @@ impl AppView {
         };
     }
 
-    fn on_profile_action(&mut self, _action: &OpenProfile, cx: &mut ViewContext<Self>) {
+    fn on_profile_action(&mut self, _action: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
         // TODO
     }
 
-    fn on_contacts_action(&mut self, _action: &OpenContacts, cx: &mut ViewContext<Self>) {
+    fn on_contacts_action(&mut self, _action: &OpenContacts, window: &mut Window, cx: &mut Context<Self>) {
         // TODO
     }
 
-    fn on_settings_action(&mut self, _action: &OpenSettings, cx: &mut ViewContext<Self>) {
+    fn on_settings_action(&mut self, _action: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
         // TODO
     }
 
-    fn on_logout_action(&mut self, _action: &Logout, cx: &mut ViewContext<Self>) {
+    fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<AppRegistry, _>(|this, cx| {
             this.logout(cx);
             // Reset nostr client
@@ -166,7 +166,7 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(cx);
         let notification_layer = Root::render_notification_layer(cx);
         let state = cx.global::<AppRegistry>();

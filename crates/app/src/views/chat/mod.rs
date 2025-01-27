@@ -5,9 +5,9 @@ use common::{
 };
 use gpui::{
     div, img, list, px, white, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
-    FocusableView, InteractiveElement, IntoElement, ListAlignment, ListState, Model, ObjectFit,
+    Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, Model, ObjectFit,
     ParentElement, PathPromptOptions, Pixels, Render, SharedString, StatefulInteractiveElement,
-    Styled, StyledImage, View, ViewContext, VisualContext, WeakModel, WeakView, WindowContext,
+    Styled, StyledImage, VisualContext, WeakModel,
 };
 use itertools::Itertools;
 use message::Message;
@@ -45,18 +45,18 @@ pub struct ChatPanel {
     // Chat Room
     id: SharedString,
     name: SharedString,
-    room: Model<Room>,
-    state: Model<State>,
+    room: Entity<Room>,
+    state: Entity<State>,
     list: ListState,
     // New Message
-    input: View<TextInput>,
+    input: Entity<TextInput>,
     // Media
-    attaches: Model<Option<Vec<Url>>>,
+    attaches: Entity<Option<Vec<Url>>>,
     is_uploading: bool,
 }
 
 impl ChatPanel {
-    pub fn new(model: Model<Room>, cx: &mut WindowContext) -> View<Self> {
+    pub fn new(model: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let room = model.read(cx);
         let id = room.id.to_string().into();
         let name = room.title.clone().unwrap_or("Untitled".into());
@@ -66,9 +66,9 @@ impl ChatPanel {
         })
         .detach();
 
-        cx.new_view(|cx| {
+        cx.new(|cx| {
             // Form
-            let input = cx.new_view(|cx| {
+            let input = cx.new(|cx| {
                 TextInput::new(cx)
                     .appearance(false)
                     .text_size(ui::Size::Small)
@@ -76,7 +76,7 @@ impl ChatPanel {
             });
 
             // List
-            let state = cx.new_model(|_| State {
+            let state = cx.new(|_| State {
                 count: 0,
                 items: vec![],
             });
@@ -115,7 +115,7 @@ impl ChatPanel {
             })
             .detach();
 
-            let attaches = cx.new_model(|_| None);
+            let attaches = cx.new(|_| None);
 
             Self {
                 closeable: true,
@@ -135,7 +135,7 @@ impl ChatPanel {
         })
     }
 
-    fn load_messages(&self, cx: &mut ViewContext<Self>) {
+    fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
         let members = room.members.clone();
         let owner = room.owner.clone();
@@ -216,7 +216,7 @@ impl ChatPanel {
             .detach();
     }
 
-    fn load_new_messages(&self, model: WeakModel<Room>, cx: &mut ViewContext<Self>) {
+    fn load_new_messages(&self, model: WeakEntity<Room>, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(model) = model.upgrade() {
             let room = model.read(cx);
             let items: Vec<Message> = room
@@ -252,7 +252,7 @@ impl ChatPanel {
         }
     }
 
-    fn send_message(&mut self, view: WeakView<TextInput>, cx: &mut ViewContext<Self>) {
+    fn send_message(&mut self, view: WeakEntity<TextInput>, window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
         let owner = room.owner.clone();
         let mut members = room.members.to_vec();
@@ -341,7 +341,7 @@ impl ChatPanel {
         .detach();
     }
 
-    fn upload(&mut self, cx: &mut ViewContext<Self>) {
+    fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let attaches = self.attaches.clone();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -398,7 +398,7 @@ impl ChatPanel {
         .detach();
     }
 
-    fn remove(&mut self, url: &Url, cx: &mut ViewContext<Self>) {
+    fn remove(&mut self, url: &Url, window: &mut Window, cx: &mut Context<Self>) {
         self.attaches.update(cx, |model, cx| {
             if let Some(urls) = model.as_mut() {
                 let ix = urls.iter().position(|x| x == url).unwrap();
@@ -414,7 +414,7 @@ impl Panel for ChatPanel {
         self.id.clone()
     }
 
-    fn panel_facepile(&self, cx: &WindowContext) -> Option<Vec<String>> {
+    fn panel_facepile(&self, window: &Window, cx: &App) -> Option<Vec<String>> {
         Some(
             self.room
                 .read(cx)
@@ -425,41 +425,41 @@ impl Panel for ChatPanel {
         )
     }
 
-    fn title(&self, _cx: &WindowContext) -> AnyElement {
+    fn title(&self, _window: &Window, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _cx: &WindowContext) -> bool {
+    fn closeable(&self, _window: &Window, _cx: &App) -> bool {
         self.closeable
     }
 
-    fn zoomable(&self, _cx: &WindowContext) -> bool {
+    fn zoomable(&self, _window: &Window, _cx: &App) -> bool {
         self.zoomable
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _cx: &WindowContext) -> PopupMenu {
+    fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
 
-    fn toolbar_buttons(&self, _cx: &WindowContext) -> Vec<Button> {
+    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
     }
 
-    fn dump(&self, _cx: &AppContext) -> PanelState {
+    fn dump(&self, _cx: &App) -> PanelState {
         PanelState::new(self)
     }
 }
 
 impl EventEmitter<PanelEvent> for ChatPanel {}
 
-impl FocusableView for ChatPanel {
-    fn focus_handle(&self, _: &AppContext) -> FocusHandle {
+impl Focusable for ChatPanel {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
 impl Render for ChatPanel {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
             .child(list(self.list.clone()).flex_1())
@@ -504,7 +504,7 @@ impl Render for ChatPanel {
                                                     .text_color(white()),
                                             ),
                                     )
-                                    .on_click(cx.listener(move |this, _, cx| {
+                                    .on_click(cx.listener(move |this, _, window, cx| {
                                         this.remove(&url, cx);
                                     }))
                             }))
@@ -520,7 +520,7 @@ impl Render for ChatPanel {
                                     Button::new("upload")
                                         .icon(Icon::new(IconName::Upload))
                                         .ghost()
-                                        .on_click(cx.listener(move |this, _, cx| {
+                                        .on_click(cx.listener(move |this, _, window, cx| {
                                             this.upload(cx);
                                         }))
                                         .loading(self.is_uploading),
@@ -542,7 +542,7 @@ impl Render for ChatPanel {
                                                 .bold()
                                                 .rounded(ButtonRounded::Medium)
                                                 .label("SEND")
-                                                .on_click(cx.listener(|this, _, cx| {
+                                                .on_click(cx.listener(|this, _, window, cx| {
                                                     this.send_message(this.input.downgrade(), cx)
                                                 })),
                                         ),

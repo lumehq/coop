@@ -1,7 +1,7 @@
 use gpui::{
-    canvas, div, relative, AnyElement, Div, Element, ElementId, EntityId, GlobalElementId,
+    canvas, div, relative, AnyElement, App, Div, Element, ElementId, EntityId, GlobalElementId,
     InteractiveElement, IntoElement, ParentElement, Pixels, Position, ScrollHandle, SharedString,
-    Size, Stateful, StatefulInteractiveElement, Style, StyleRefinement, Styled, WindowContext,
+    Size, Stateful, StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -58,14 +58,18 @@ where
     fn with_element_state<R>(
         &mut self,
         id: &GlobalElementId,
-        cx: &mut WindowContext,
-        f: impl FnOnce(&mut Self, &mut ScrollViewState, &mut WindowContext) -> R,
+        window: &mut Window,
+        cx: &mut App,
+        f: impl FnOnce(&mut Self, &mut ScrollViewState, &mut Window, &mut App) -> R,
     ) -> R {
-        cx.with_optional_element_state::<ScrollViewState, _>(Some(id), |element_state, cx| {
-            let mut element_state = element_state.unwrap().unwrap_or_default();
-            let result = f(self, &mut element_state, cx);
-            (result, Some(element_state))
-        })
+        window.with_optional_element_state::<ScrollViewState, _>(
+            Some(id),
+            |element_state, window| {
+                let mut element_state = element_state.unwrap().unwrap_or_default();
+                let result = f(self, &mut element_state, window, cx);
+                (result, Some(element_state))
+            },
+        )
     }
 }
 
@@ -149,17 +153,14 @@ where
     fn request_layout(
         &mut self,
         id: Option<&gpui::GlobalElementId>,
-        cx: &mut gpui::WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        let style = Style {
-            flex_grow: 1.0,
-            position: Position::Relative,
-            size: Size {
-                width: relative(1.0).into(),
-                height: relative(1.0).into(),
-            },
-            ..Default::default()
-        };
+        let mut style = Style::default();
+        style.flex_grow = 1.0;
+        style.position = Position::Relative;
+        style.size.width = relative(1.0).into();
+        style.size.height = relative(1.0).into();
 
         let axis = self.axis;
         let view_id = self.view_id;
@@ -167,7 +168,7 @@ where
         let scroll_id = self.id.clone();
         let content = self.element.take().map(|c| c.into_any_element());
 
-        self.with_element_state(id.unwrap(), cx, |_, element_state, cx| {
+        self.with_element_state(id.unwrap(), window, cx, |_, element_state, window, cx| {
             let handle = element_state.handle.clone();
             let state = element_state.state.clone();
             let scroll_size = element_state.scroll_size.clone();
@@ -185,7 +186,7 @@ where
                         .size_full()
                         .child(div().children(content).child({
                             let scroll_size = element_state.scroll_size.clone();
-                            canvas(move |b, _| scroll_size.set(b.size), |_, _, _| {})
+                            canvas(move |b, _, _| scroll_size.set(b.size), |_, _, _, _| {})
                                 .absolute()
                                 .size_full()
                         })),
@@ -203,9 +204,9 @@ where
                         ),
                 )
                 .into_any_element();
+            let element_id = element.request_layout(window, cx);
 
-            let element_id = element.request_layout(cx);
-            let layout_id = cx.request_layout(style, vec![element_id]);
+            let layout_id = window.request_layout(style, vec![element_id], cx);
 
             (layout_id, element)
         })
@@ -216,9 +217,10 @@ where
         _: Option<&gpui::GlobalElementId>,
         _: gpui::Bounds<Pixels>,
         element: &mut Self::RequestLayoutState,
-        cx: &mut gpui::WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) -> Self::PrepaintState {
-        element.prepaint(cx);
+        element.prepaint(window, cx);
         // do nothing
         ScrollViewState::default()
     }
@@ -229,8 +231,9 @@ where
         _: gpui::Bounds<Pixels>,
         element: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        cx: &mut gpui::WindowContext,
+        window: &mut Window,
+        cx: &mut App,
     ) {
-        element.paint(cx)
+        element.paint(window, cx)
     }
 }

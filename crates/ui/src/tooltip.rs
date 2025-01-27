@@ -1,7 +1,7 @@
 use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
-    div, px, IntoElement, ParentElement, Render, SharedString, Styled, View, ViewContext,
-    VisualContext, WindowContext,
+    div, px, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window,
 };
 
 pub struct Tooltip {
@@ -9,13 +9,13 @@ pub struct Tooltip {
 }
 
 impl Tooltip {
-    pub fn new(text: impl Into<SharedString>, cx: &mut WindowContext) -> View<Self> {
-        cx.new_view(|_| Self { text: text.into() })
+    pub fn new(text: impl Into<SharedString>, _window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|_| Self { text: text.into() })
     }
 }
 
 impl Render for Tooltip {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div().child(
             // Wrap in a child, to ensure the left margin is applied to the tooltip
             div()
