@@ -49,7 +49,6 @@ mod window_border;
 /// You can initialize the UI module at your application's entry point.
 pub fn init(cx: &mut gpui::App) {
     theme::init(cx);
-    dock_area::init(cx);
     dropdown::init(cx);
     input::init(cx);
     list::init(cx);

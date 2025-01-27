@@ -1,7 +1,7 @@
 use crate::room::Room;
 use anyhow::Error;
 use common::utils::{compare, room_hash};
-use gpui::{AppContext, Entity, Global, Task, WeakEntity};
+use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
@@ -20,11 +20,11 @@ impl Inbox {
         }
     }
 
-    pub fn current_rooms(&self, cx: &ModelContext<Self>) -> Vec<u64> {
+    pub fn current_rooms(&self, cx: &Context<Self>) -> Vec<u64> {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
-    pub fn load(&mut self, cx: AsyncAppContext) -> Task<Result<Vec<Event>, Error>> {
+    pub fn load(&mut self, cx: AsyncApp) -> Task<Result<Vec<Event>, Error>> {
         cx.background_executor().spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
@@ -65,10 +65,10 @@ pub struct ChatRegistry {
 impl Global for ChatRegistry {}
 
 impl ChatRegistry {
-    pub fn set_global(cx: &mut AppContext) {
+    pub fn set_global(cx: &mut App) {
         let inbox = cx.new(|_| Inbox::default());
 
-        cx.observe_new_models::<Room>(|this, cx| {
+        cx.observe_new::<Room>(|this, _window, cx| {
             // Get all pubkeys to load metadata
             let pubkeys = this.get_all_keys();
 
@@ -92,7 +92,7 @@ impl ChatRegistry {
 
                 if let Ok(profiles) = query {
                     if let Some(model) = weak_model.upgrade() {
-                        _ = async_cx.update_model(&model, |model, cx| {
+                        _ = async_cx.update_entity(&model, |model, cx| {
                             for profile in profiles.into_iter() {
                                 model.set_metadata(profile.0, profile.1);
                             }
@@ -108,14 +108,14 @@ impl ChatRegistry {
         cx.set_global(Self { inbox });
     }
 
-    pub fn load(&mut self, cx: &mut AppContext) {
+    pub fn load(&mut self, cx: &mut App) {
         self.inbox.update(cx, |this, cx| {
             let task = this.load(cx.to_async());
 
             cx.spawn(|this, mut async_cx| async move {
                 if let Some(inbox) = this.upgrade() {
                     if let Ok(events) = task.await {
-                        _ = async_cx.update_model(&inbox, |this, cx| {
+                        _ = async_cx.update_entity(&inbox, |this, cx| {
                             let current_rooms = this.current_rooms(cx);
                             let items: Vec<Entity<Room>> = events
                                 .into_iter()
@@ -155,7 +155,7 @@ impl ChatRegistry {
             .map(|model| model.downgrade())
     }
 
-    pub fn new_room(&mut self, room: Room, cx: &mut AppContext) {
+    pub fn new_room(&mut self, room: Room, cx: &mut App) {
         let room = cx.new(|_| room);
 
         self.inbox.update(cx, |this, cx| {
@@ -166,7 +166,7 @@ impl ChatRegistry {
         })
     }
 
-    pub fn receive(&mut self, event: Event, cx: &mut AppContext) {
+    pub fn receive(&mut self, event: Event, cx: &mut App) {
         let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
         pubkeys.push(event.pubkey);
 

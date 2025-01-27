@@ -1,6 +1,6 @@
 use gpui::{
-    div, svg, AnyElement, AppContext, EventEmitter, FocusHandle, Focusable, IntoElement,
-    ParentElement, Render, SharedString, Styled, VisualContext,
+    div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
 use ui::{
     button::Button,
@@ -22,10 +22,10 @@ pub struct WelcomePanel {
 
 impl WelcomePanel {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(Self::view)
+        cx.new(|cx| Self::view(window, cx))
     }
 
-    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             name: "Welcome".into(),
             closeable: true,
@@ -40,19 +40,19 @@ impl Panel for WelcomePanel {
         "WelcomePanel".into()
     }
 
-    fn title(&self, _window: &Window, _cx: &App) -> AnyElement {
+    fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _window: &Window, _cx: &App) -> bool {
+    fn closeable(&self, _cx: &App) -> bool {
         self.closeable
     }
 
-    fn zoomable(&self, _window: &Window, _cx: &App) -> bool {
+    fn zoomable(&self, _cx: &App) -> bool {
         self.zoomable
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
+    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
 
@@ -74,7 +74,7 @@ impl Focusable for WelcomePanel {
 }
 
 impl Render for WelcomePanel {
-    fn render(&mut self, window: &mut gpui::Window, &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()

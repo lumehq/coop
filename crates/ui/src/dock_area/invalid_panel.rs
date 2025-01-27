@@ -5,8 +5,8 @@ use crate::{
     theme::{scale::ColorScaleStep, ActiveTheme},
 };
 use gpui::{
-    AppContext, EventEmitter, FocusHandle, Focusable, ParentElement as _, Render, SharedString,
-    Styled as _,
+    App, Context, EventEmitter, FocusHandle, Focusable, ParentElement as _, Render, SharedString,
+    Styled as _, Window,
 };
 
 pub(crate) struct InvalidPanel {
@@ -16,7 +16,7 @@ pub(crate) struct InvalidPanel {
 }
 
 impl InvalidPanel {
-    pub(crate) fn new(name: &str, state: PanelState, window: &mut Window, cx: &mut App) -> Self {
+    pub(crate) fn new(name: &str, state: PanelState, _window: &mut Window, cx: &mut App) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
             name: SharedString::from(name.to_owned()),
@@ -44,7 +44,11 @@ impl Focusable for InvalidPanel {
 }
 
 impl Render for InvalidPanel {
-    fn render(&mut self, window: &mut gpui::Window, &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> impl gpui::IntoElement {
         gpui::div()
             .size_full()
             .my_6()

@@ -4,8 +4,8 @@ use common::constants::{
     NEW_MESSAGE_SUB_ID,
 };
 use gpui::{
-    actions, point, px, size, App, AppContext, Bounds, SharedString, TitlebarOptions,
-    VisualContext, WindowBounds, WindowKind, WindowOptions,
+    actions, point, px, size, App, AppContext, Application, Bounds, SharedString, TitlebarOptions,
+    WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
@@ -67,7 +67,7 @@ async fn main() {
     // Merge all requests into single subscription
     tokio::spawn(async move { handle_metadata(client, mta_rx).await });
 
-    App::new()
+    Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
         .run(move |cx| {
@@ -177,12 +177,11 @@ async fn main() {
                 ..Default::default()
             };
 
-            cx.open_window(opts, |cx| {
-                cx.set_window_title(APP_NAME);
-                cx.set_app_id(APP_ID);
+            cx.open_window(opts, |window, cx| {
+                window.set_window_title(APP_NAME);
+                window.set_app_id(APP_ID);
                 cx.activate(true);
-
-                cx.new(|cx| Root::new(cx.new(AppView::new).into(), cx))
+                cx.new(|cx| Root::new(cx.new(|cx| AppView::new(window, cx)).into(), window, cx))
             })
             .expect("System error");
         });
@@ -301,6 +300,6 @@ async fn handle_metadata(client: &'static Client, mut mta_rx: mpsc::Receiver<Pub
     });
 }
 
-fn quit(_: &Quit, cx: &mut AppContext) {
+fn quit(_: &Quit, cx: &mut App) {
     cx.quit();
 }

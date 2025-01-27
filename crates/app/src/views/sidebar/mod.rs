@@ -1,9 +1,9 @@
 use crate::views::sidebar::inbox::Inbox;
 use compose::Compose;
 use gpui::{
-    div, px, AnyElement, AppContext, BorrowAppContext, Entity, EntityId, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, VisualContext,
+    div, px, AnyElement, App, AppContext, BorrowAppContext, Context, Entity, EntityId,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use registry::chat::ChatRegistry;
 use ui::{
@@ -34,11 +34,11 @@ pub struct Sidebar {
 
 impl Sidebar {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(Self::view)
+        cx.new(|cx| Self::view(window, cx))
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let inbox = cx.new(Inbox::new);
+        let inbox = cx.new(|cx| Inbox::new(window, cx));
 
         Self {
             name: "Sidebar".into(),
@@ -51,10 +51,10 @@ impl Sidebar {
     }
 
     fn show_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let compose = cx.new(Compose::new);
+        let compose = cx.new(|cx| Compose::new(window, cx));
 
-        cx.open_modal(move |modal, cx| {
-            let label = compose.read(cx).label(cx);
+        window.open_modal(cx, move |modal, window, cx| {
+            let label = compose.read(cx).label(window, cx);
 
             modal
                 .title("Direct Messages")
@@ -72,13 +72,13 @@ impl Sidebar {
                                 .bold()
                                 .rounded(ButtonRounded::Large)
                                 .w_full()
-                                .on_click(cx.listener_for(&compose, |this, _, cx| {
-                                    if let Some(room) = this.room(cx) {
+                                .on_click(window.listener_for(&compose, |this, _, window, cx| {
+                                    if let Some(room) = this.room(window, cx) {
                                         cx.update_global::<ChatRegistry, _>(|this, cx| {
                                             this.new_room(room, cx);
                                         });
 
-                                        cx.close_modal();
+                                        window.close_modal(cx);
                                     }
                                 })),
                         ),
@@ -92,19 +92,19 @@ impl Panel for Sidebar {
         "Sidebar".into()
     }
 
-    fn title(&self, _window: &Window, _cx: &App) -> AnyElement {
+    fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _window: &Window, _cx: &App) -> bool {
+    fn closeable(&self, _cx: &App) -> bool {
         self.closeable
     }
 
-    fn zoomable(&self, _window: &Window, _cx: &App) -> bool {
+    fn zoomable(&self, _cx: &App) -> bool {
         self.zoomable
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
+    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
 
@@ -126,7 +126,7 @@ impl Focusable for Sidebar {
 }
 
 impl Render for Sidebar {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .scrollable(self.view_id, ScrollbarAxis::Vertical)
             .py_3()
@@ -159,7 +159,7 @@ impl Render for Sidebar {
                         )
                         .child("New Message")
                         .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                        .on_click(cx.listener(|this, _, window, cx| this.show_compose(cx))),
+                        .on_click(cx.listener(|this, _, window, cx| this.show_compose(window, cx))),
                 ),
             )
             .child(self.inbox.clone())

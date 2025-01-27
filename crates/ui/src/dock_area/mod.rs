@@ -131,10 +131,10 @@ impl DockItem {
             stack_panel
         });
 
-        cx.defer({
+        window.defer(cx, {
             let stack_panel = stack_panel.clone();
             let dock_area = dock_area.clone();
-            move |cx| {
+            move |window, cx| {
                 _ = dock_area.update(cx, |this, cx| {
                     this.subscribe_panel(&stack_panel, window, cx);
                 });

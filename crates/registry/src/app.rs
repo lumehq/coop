@@ -1,5 +1,5 @@
 use common::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID};
-use gpui::{AppContext, Context, Global, Model, WeakModel};
+use gpui::{App, AppContext, Entity, Global, WeakEntity, Window};
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::time::Duration;
@@ -14,7 +14,7 @@ pub struct AppRegistry {
 impl Global for AppRegistry {}
 
 impl AppRegistry {
-    pub fn set_global(cx: &mut AppContext) {
+    pub fn set_global(cx: &mut App) {
         let user: Entity<Option<Contact>> = cx.new(|_| None);
         let is_loading = true;
 
@@ -80,11 +80,11 @@ impl AppRegistry {
         self.user.downgrade()
     }
 
-    pub fn current_user(&self, window: &Window, cx: &App) -> Option<Contact> {
+    pub fn current_user(&self, _window: &Window, cx: &App) -> Option<Contact> {
         self.user.read(cx).clone()
     }
 
-    pub fn set_user(&mut self, contact: Contact, cx: &mut AppContext) {
+    pub fn set_user(&mut self, contact: Contact, cx: &mut App) {
         self.user.update(cx, |this, cx| {
             *this = Some(contact);
             cx.notify();
@@ -93,7 +93,7 @@ impl AppRegistry {
         self.is_loading = false;
     }
 
-    pub fn logout(&mut self, cx: &mut AppContext) {
+    pub fn logout(&mut self, cx: &mut App) {
         self.user.update(cx, |this, cx| {
             *this = None;
             cx.notify();

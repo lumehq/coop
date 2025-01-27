@@ -4,10 +4,10 @@ use common::{
     utils::{compare, message_time, nip96_upload},
 };
 use gpui::{
-    div, img, list, px, white, AnyElement, AppContext, Context, EventEmitter, Flatten, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, Model, ObjectFit,
+    div, img, list, px, white, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
     ParentElement, PathPromptOptions, Pixels, Render, SharedString, StatefulInteractiveElement,
-    Styled, StyledImage, VisualContext, WeakModel,
+    Styled, StyledImage, WeakEntity, Window,
 };
 use itertools::Itertools;
 use message::Message;
@@ -61,15 +61,17 @@ impl ChatPanel {
         let id = room.id.to_string().into();
         let name = room.title.clone().unwrap_or("Untitled".into());
 
-        cx.observe_new_views::<Self>(|this, cx| {
-            this.load_messages(cx);
-        })
-        .detach();
-
         cx.new(|cx| {
+            cx.observe_new::<Self>(|this, window, cx| {
+                if let Some(window) = window {
+                    this.load_messages(window, cx);
+                }
+            })
+            .detach();
+
             // Form
             let input = cx.new(|cx| {
-                TextInput::new(cx)
+                TextInput::new(window, cx)
                     .appearance(false)
                     .text_size(ui::Size::Small)
                     .placeholder("Message...")
@@ -82,11 +84,12 @@ impl ChatPanel {
             });
 
             // Send message when user presses enter
-            cx.subscribe(
+            cx.subscribe_in(
                 &input,
-                move |this: &mut ChatPanel, view, input_event, cx| {
+                window,
+                move |this: &mut ChatPanel, view, input_event, window, cx| {
                     if let InputEvent::PressEnter = input_event {
-                        this.send_message(view.downgrade(), cx);
+                        this.send_message(view.downgrade(), window, cx);
                     }
                 },
             )
@@ -100,7 +103,7 @@ impl ChatPanel {
                     items.len(),
                     ListAlignment::Bottom,
                     Pixels(256.),
-                    move |idx, _cx| {
+                    move |idx, _window, _cx| {
                         let item = items.get(idx).unwrap().clone();
                         div().child(item).into_any_element()
                     },
@@ -110,8 +113,8 @@ impl ChatPanel {
             })
             .detach();
 
-            cx.observe(&model, |this, model, cx| {
-                this.load_new_messages(model.downgrade(), cx);
+            cx.observe_in(&model, window, |this, model, window, cx| {
+                this.load_new_messages(model.downgrade(), window, cx);
             })
             .detach();
 
@@ -122,7 +125,7 @@ impl ChatPanel {
                 zoomable: true,
                 focus_handle: cx.focus_handle(),
                 room: model,
-                list: ListState::new(0, ListAlignment::Bottom, Pixels(256.), move |_, _| {
+                list: ListState::new(0, ListAlignment::Bottom, Pixels(256.), move |_, _, _| {
                     div().into_any_element()
                 }),
                 is_uploading: false,
@@ -206,7 +209,7 @@ impl ChatPanel {
 
                     let total = items.len();
 
-                    _ = async_cx.update_model(&async_state, |a, b| {
+                    _ = async_cx.update_entity(&async_state, |a, b| {
                         a.items = items;
                         a.count = total;
                         b.notify();
@@ -216,7 +219,12 @@ impl ChatPanel {
             .detach();
     }
 
-    fn load_new_messages(&self, model: WeakEntity<Room>, window: &mut Window, cx: &mut Context<Self>) {
+    fn load_new_messages(
+        &self,
+        model: WeakEntity<Room>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(model) = model.upgrade() {
             let room = model.read(cx);
             let items: Vec<Message> = room
@@ -233,7 +241,7 @@ impl ChatPanel {
                 })
                 .collect();
 
-            cx.update_model(&self.state, |model, cx| {
+            cx.update_entity(&self.state, |model, cx| {
                 let messages: Vec<Message> = items
                     .into_iter()
                     .filter_map(|new| {
@@ -252,7 +260,12 @@ impl ChatPanel {
         }
     }
 
-    fn send_message(&mut self, view: WeakEntity<TextInput>, window: &mut Window, cx: &mut Context<Self>) {
+    fn send_message(
+        &mut self,
+        view: WeakEntity<TextInput>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let room = self.room.read(cx);
         let owner = room.owner.clone();
         let mut members = room.members.to_vec();
@@ -262,7 +275,7 @@ impl ChatPanel {
         let mut content = self.input.read(cx).text().to_string();
 
         if content.is_empty() {
-            cx.push_notification("Message cannot be empty");
+            window.push_notification("Message cannot be empty", cx);
             return;
         }
 
@@ -279,12 +292,13 @@ impl ChatPanel {
 
         // Update input state
         if let Some(input) = view.upgrade() {
-            cx.update_view(&input, |input, cx| {
-                input.set_loading(true, cx);
-                input.set_disabled(true, cx);
+            cx.update_entity(&input, |input, cx| {
+                input.set_loading(true, window, cx);
+                input.set_disabled(true, window, cx);
             });
         }
 
+        /*
         cx.spawn(|this, mut async_cx| async move {
             // Send message to all members
             async_cx
@@ -315,8 +329,8 @@ impl ChatPanel {
                 .detach();
 
             if let Some(view) = this.upgrade() {
-                _ = async_cx.update_view(&view, |this, cx| {
-                    cx.update_model(&this.state, |model, cx| {
+                _ = async_cx.update_entity(&view, |this, cx| {
+                    cx.update_entity(&this.state, |model, cx| {
                         let message = Message::new(
                             owner,
                             content.to_string().into(),
@@ -331,14 +345,15 @@ impl ChatPanel {
             }
 
             if let Some(input) = view.upgrade() {
-                _ = async_cx.update_view(&input, |input, cx| {
-                    input.set_loading(false, cx);
-                    input.set_disabled(false, cx);
-                    input.set_text("", cx);
+                _ = async_cx.update_entity(&input, |input, cx| {
+                    input.set_loading(false, window, cx);
+                    input.set_disabled(false, window, cx);
+                    input.set_text("", window, cx);
                 });
             }
         })
         .detach();
+        */
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -373,14 +388,14 @@ impl ChatPanel {
                         if let Ok(url) = rx.await {
                             // Stop loading spinner
                             if let Some(view) = this.upgrade() {
-                                _ = async_cx.update_view(&view, |this, cx| {
+                                _ = async_cx.update_entity(&view, |this, cx| {
                                     this.is_uploading = false;
                                     cx.notify();
                                 });
                             }
 
                             // Update attaches model
-                            _ = async_cx.update_model(&attaches, |model, cx| {
+                            _ = async_cx.update_entity(&attaches, |model, cx| {
                                 if let Some(model) = model.as_mut() {
                                     model.push(url);
                                 } else {
@@ -414,7 +429,7 @@ impl Panel for ChatPanel {
         self.id.clone()
     }
 
-    fn panel_facepile(&self, window: &Window, cx: &App) -> Option<Vec<String>> {
+    fn panel_facepile(&self, cx: &App) -> Option<Vec<String>> {
         Some(
             self.room
                 .read(cx)
@@ -425,19 +440,19 @@ impl Panel for ChatPanel {
         )
     }
 
-    fn title(&self, _window: &Window, _cx: &App) -> AnyElement {
+    fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _window: &Window, _cx: &App) -> bool {
+    fn closeable(&self, _cx: &App) -> bool {
         self.closeable
     }
 
-    fn zoomable(&self, _window: &Window, _cx: &App) -> bool {
+    fn zoomable(&self, _cx: &App) -> bool {
         self.zoomable
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _window: &Window, _cx: &App) -> PopupMenu {
+    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
 
@@ -505,7 +520,7 @@ impl Render for ChatPanel {
                                             ),
                                     )
                                     .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.remove(&url, cx);
+                                        this.remove(&url, window, cx);
                                     }))
                             }))
                         })
@@ -521,7 +536,7 @@ impl Render for ChatPanel {
                                         .icon(Icon::new(IconName::Upload))
                                         .ghost()
                                         .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.upload(cx);
+                                            this.upload(window, cx);
                                         }))
                                         .loading(self.is_uploading),
                                 )
@@ -543,7 +558,11 @@ impl Render for ChatPanel {
                                                 .rounded(ButtonRounded::Medium)
                                                 .label("SEND")
                                                 .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.send_message(this.input.downgrade(), cx)
+                                                    this.send_message(
+                                                        this.input.downgrade(),
+                                                        window,
+                                                        cx,
+                                                    )
                                                 })),
                                         ),
                                 ),

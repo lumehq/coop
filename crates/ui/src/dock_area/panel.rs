@@ -1,12 +1,8 @@
-use super::DockArea;
-use crate::{
-    button::Button,
-    dock_area::state::{PanelInfo, PanelState},
-    popup_menu::PopupMenu,
-};
+use super::{state::PanelInfo, DockArea};
+use crate::{button::Button, dock_area::state::PanelState, popup_menu::PopupMenu};
 use gpui::{
     AnyElement, AnyView, App, Entity, EventEmitter, FocusHandle, Focusable, Global, Hsla,
-    IntoElement, SharedString, WeakEntity, Window,
+    IntoElement, Render, SharedString, WeakEntity, Window,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -30,7 +26,7 @@ pub struct TitleStyle {
     pub foreground: Hsla,
 }
 
-pub trait Panel: EventEmitter<PanelEvent> + Focusable {
+pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
     /// The name of the panel used to serialize, deserialize and identify the panel.
     ///
     /// This is used to identify the panel when deserializing the panel.
@@ -44,7 +40,7 @@ pub trait Panel: EventEmitter<PanelEvent> + Focusable {
 
     /// The title of the panel
     fn title(&self, _cx: &App) -> AnyElement {
-        SharedString::from("Untitled").into_any_element()
+        SharedString::from("Unamed").into_any_element()
     }
 
     /// Whether the panel can be closed, default is `true`.
@@ -80,7 +76,7 @@ pub trait PanelView: 'static + Send + Sync {
     fn closeable(&self, cx: &App) -> bool;
     fn zoomable(&self, cx: &App) -> bool;
     fn popup_menu(&self, menu: PopupMenu, cx: &App) -> PopupMenu;
-    fn toolbar_buttons(&self, window: &mut Window, cx: &mut App) -> Vec<Button>;
+    fn toolbar_buttons(&self, window: &Window, cx: &App) -> Vec<Button>;
     fn view(&self) -> AnyView;
     fn focus_handle(&self, cx: &App) -> FocusHandle;
     fn dump(&self, cx: &App) -> PanelState;
@@ -111,7 +107,7 @@ impl<T: Panel> PanelView for Entity<T> {
         self.read(cx).popup_menu(menu, cx)
     }
 
-    fn toolbar_buttons(&self, window: &mut Window, cx: &mut App) -> Vec<Button> {
+    fn toolbar_buttons(&self, window: &Window, cx: &App) -> Vec<Button> {
         self.read(cx).toolbar_buttons(window, cx)
     }
 
@@ -169,16 +165,10 @@ impl PanelRegistry {
     }
 }
 
-impl Default for PanelRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Global for PanelRegistry {}
 
 /// Register the Panel init by panel_name to global registry.
-pub fn register_panel<F>(cx: &mut App, panel_id: &str, deserialize: F)
+pub fn register_panel<F>(cx: &mut App, panel_name: &str, deserialize: F)
 where
     F: Fn(
             WeakEntity<DockArea>,
@@ -189,11 +179,11 @@ where
         ) -> Box<dyn PanelView>
         + 'static,
 {
-    if cx.try_global::<PanelRegistry>().is_none() {
+    if let None = cx.try_global::<PanelRegistry>() {
         cx.set_global(PanelRegistry::new());
     }
 
     cx.global_mut::<PanelRegistry>()
         .items
-        .insert(panel_id.to_string(), Arc::new(deserialize));
+        .insert(panel_name.to_string(), Arc::new(deserialize));
 }
