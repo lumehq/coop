@@ -252,7 +252,7 @@ impl Icon {
     }
 
     /// Create a new view for the icon
-    pub fn view(self, window: &mut Window, cx: &mut App) -> Entity<Icon> {
+    pub fn view(self, _window: &mut Window, cx: &mut App) -> Entity<Icon> {
         cx.new(|_| self)
     }
 
@@ -293,7 +293,7 @@ impl Sizable for Icon {
 }
 
 impl RenderOnce for Icon {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let text_color = self.text_color.unwrap_or_else(|| window.text_style().color);
 
         self.base
@@ -318,7 +318,7 @@ impl From<Icon> for AnyElement {
 impl Render for Icon {
     fn render(
         &mut self,
-        window: &mut gpui::Window,
+        _window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let text_color = self

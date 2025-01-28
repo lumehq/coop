@@ -8,10 +8,7 @@ use gpui::{
 use registry::chat::ChatRegistry;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
-    dock_area::{
-        panel::{Panel, PanelEvent},
-        state::PanelState,
-    },
+    dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
     theme::{scale::ColorScaleStep, ActiveTheme},
@@ -110,10 +107,6 @@ impl Panel for Sidebar {
 
     fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
-    }
-
-    fn dump(&self, _cx: &App) -> PanelState {
-        PanelState::new(self)
     }
 }
 

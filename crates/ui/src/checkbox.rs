@@ -66,7 +66,7 @@ impl Selectable for Checkbox {
 }
 
 impl RenderOnce for Checkbox {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (color, icon_color) = if self.disabled {
             (
                 cx.theme().base.step(cx, ColorScaleStep::THREE),

@@ -263,7 +263,7 @@ impl Dock {
 
     fn render_resize_handle(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let axis = self.placement.axis();

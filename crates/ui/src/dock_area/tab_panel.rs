@@ -4,11 +4,7 @@ use super::{
 };
 use crate::{
     button::{Button, ButtonVariants as _},
-    dock_area::{
-        dock::DockPlacement,
-        panel::Panel,
-        state::{PanelInfo, PanelState},
-    },
+    dock_area::{dock::DockPlacement, panel::Panel},
     h_flex,
     popup_menu::{PopupMenu, PopupMenuExt},
     tab::{tab_bar::TabBar, Tab},
@@ -44,7 +40,7 @@ impl DragPanel {
 }
 
 impl Render for DragPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("drag-panel")
             .cursor_grab()
@@ -123,14 +119,6 @@ impl Panel for TabPanel {
         } else {
             vec![]
         }
-    }
-
-    fn dump(&self, cx: &App) -> PanelState {
-        let mut state = PanelState::new(self);
-        for panel in self.panels.iter() {
-            state.add_child(panel.dump(cx));
-        }
-        state
     }
 }
 
@@ -308,7 +296,7 @@ impl TabPanel {
     pub(super) fn set_collapsed(
         &mut self,
         collapsed: bool,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.is_collapsed = collapsed;
@@ -413,7 +401,7 @@ impl TabPanel {
     fn render_dock_toggle_button(
         &self,
         placement: DockPlacement,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
         if self.is_zoomed {
@@ -699,7 +687,7 @@ impl TabPanel {
     fn render_active_panel(
         &self,
         state: TabState,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         if self.is_collapsed {
@@ -778,7 +766,7 @@ impl TabPanel {
     fn on_panel_drag_move(
         &mut self,
         drag: &DragMoveEvent<DragPanel>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let bounds = drag.bounds;
@@ -831,7 +819,7 @@ impl TabPanel {
         if is_same_tab {
             self.detach_panel(panel.clone(), window, cx);
         } else {
-            let _ = drag.tab_panel.update(cx, |view, cx| {
+            drag.tab_panel.update(cx, |view, cx| {
                 view.detach_panel(panel.clone(), window, cx);
                 view.remove_self_if_empty(window, cx);
             });
@@ -977,8 +965,8 @@ impl TabPanel {
 
     fn on_action_toggle_zoom(
         &mut self,
-        _: &ToggleZoom,
-        window: &mut Window,
+        _action: &ToggleZoom,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if !self.zoomable(cx) {

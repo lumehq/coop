@@ -268,7 +268,7 @@ impl PopupMenu {
             // If the actions are listened on the `PanelContent`,
             // it can't receive the actions from the `PopupMenu`, unless we focus on `PanelContent`.
             if let Some(handle) = action_focus_handle.as_ref() {
-                window.focus(&handle);
+                window.focus(handle);
             }
 
             cx.dispatch_action(action.as_ref());
@@ -373,22 +373,19 @@ impl PopupMenu {
     }
 
     fn confirm(&mut self, _: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
-        match self.selected_index {
-            Some(index) => {
-                let item = self.menu_items.get(index);
-                match item {
-                    Some(PopupMenuItem::Item { handler, .. }) => {
-                        handler(window, cx);
-                        self.dismiss(&Dismiss, window, cx)
-                    }
-                    Some(PopupMenuItem::ElementItem { handler, .. }) => {
-                        handler(window, cx);
-                        self.dismiss(&Dismiss, window, cx)
-                    }
-                    _ => {}
+        if let Some(index) = self.selected_index {
+            let item = self.menu_items.get(index);
+            match item {
+                Some(PopupMenuItem::Item { handler, .. }) => {
+                    handler(window, cx);
+                    self.dismiss(&Dismiss, window, cx)
                 }
+                Some(PopupMenuItem::ElementItem { handler, .. }) => {
+                    handler(window, cx);
+                    self.dismiss(&Dismiss, window, cx)
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -426,12 +423,15 @@ impl PopupMenu {
         }
     }
 
+    // TODO: fix this
+    #[allow(clippy::only_used_in_recursion)]
     fn dismiss(&mut self, _: &Dismiss, window: &mut Window, cx: &mut Context<Self>) {
         if self.active_submenu().is_some() {
             return;
         }
 
         cx.emit(DismissEvent);
+
         // Dismiss parent menu, when this menu is dismissed
         if let Some(parent_menu) = self.parent_menu.clone().and_then(|menu| menu.upgrade()) {
             parent_menu.update(cx, |view, cx| {
@@ -453,7 +453,7 @@ impl PopupMenu {
                     .children(
                         keybinding
                             .keystrokes()
-                            .into_iter()
+                            .iter()
                             .map(|key| key_shortcut(key.clone())),
                     );
 
@@ -461,7 +461,7 @@ impl PopupMenu {
             }
         }
 
-        return None;
+        None
     }
 
     fn render_icon(
@@ -568,7 +568,7 @@ impl Render for PopupMenu {
                                             .rounded_md()
                                             .text_xs()
                                             .on_mouse_enter(cx.listener(
-                                                move |this, _, window, cx| {
+                                                move |this, _, _window, cx| {
                                                     this.hovered_menu_ix = Some(ix);
                                                     cx.notify();
                                                 },

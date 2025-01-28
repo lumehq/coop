@@ -28,7 +28,7 @@ pub struct ResizablePanelGroup {
 }
 
 impl ResizablePanelGroup {
-    pub(super) fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(super) fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
         Self {
             axis: Axis::Horizontal,
             sizes: Vec::new(),
@@ -103,7 +103,7 @@ impl ResizablePanelGroup {
     pub fn add_child(
         &mut self,
         panel: ResizablePanel,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let mut panel = panel;
@@ -117,7 +117,7 @@ impl ResizablePanelGroup {
         &mut self,
         panel: ResizablePanel,
         ix: usize,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let mut panel = panel;
@@ -127,6 +127,7 @@ impl ResizablePanelGroup {
         self.sizes
             .insert(ix, panel.initial_size.unwrap_or_default());
         self.panels.insert(ix, cx.new(|_| panel));
+
         cx.notify()
     }
 
@@ -135,7 +136,7 @@ impl ResizablePanelGroup {
         &mut self,
         panel: ResizablePanel,
         ix: usize,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let mut panel = panel;
@@ -153,13 +154,13 @@ impl ResizablePanelGroup {
         cx.notify()
     }
 
-    pub fn remove_child(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn remove_child(&mut self, ix: usize, _window: &mut Window, cx: &mut Context<Self>) {
         self.sizes.remove(ix);
         self.panels.remove(ix);
         cx.notify()
     }
 
-    pub(crate) fn remove_all_children(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn remove_all_children(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.sizes.clear();
         self.panels.clear();
         cx.notify()
@@ -185,12 +186,12 @@ impl ResizablePanelGroup {
         )
     }
 
-    fn done_resizing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn done_resizing(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.emit(ResizablePanelEvent::Resized);
         self.resizing_panel_ix = None;
     }
 
-    fn sync_real_panel_sizes(&mut self, window: &Window, cx: &App) {
+    fn sync_real_panel_sizes(&mut self, _window: &Window, cx: &App) {
         for (i, panel) in self.panels.iter().enumerate() {
             self.sizes[i] = panel.read(cx).bounds.size.along(self.axis)
         }
@@ -359,7 +360,12 @@ impl ResizablePanel {
     }
 
     /// Save the real panel size, and update group sizes
-    fn update_size(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+    fn update_size(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let new_size = bounds.size.along(self.axis);
         self.bounds = bounds;
         self.size = Some(new_size);

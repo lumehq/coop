@@ -4,10 +4,7 @@ use gpui::{
 };
 use ui::{
     button::Button,
-    dock_area::{
-        panel::{Panel, PanelEvent},
-        state::PanelState,
-    },
+    dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
     theme::{scale::ColorScaleStep, ActiveTheme},
     StyledExt,
@@ -58,10 +55,6 @@ impl Panel for WelcomePanel {
 
     fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
-    }
-
-    fn dump(&self, _cx: &App) -> PanelState {
-        PanelState::new(self)
     }
 }
 

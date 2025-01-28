@@ -134,7 +134,7 @@ impl TextElement {
                 }
             }
 
-            bounds.origin = bounds.origin + scroll_offset;
+            bounds.origin += scroll_offset;
 
             if input.show_cursor(window, cx) {
                 // cursor blink
@@ -298,10 +298,7 @@ impl IntoElement for TextElement {
 
 /// A debug function to print points as SVG path.
 #[allow(unused)]
-fn print_points_as_svg_path(
-    line_corners: &Vec<Corners<Point<Pixels>>>,
-    points: &Vec<Point<Pixels>>,
-) {
+fn print_points_as_svg_path(line_corners: &Vec<Corners<Point<Pixels>>>, points: &[Point<Pixels>]) {
     for corners in line_corners {
         println!(
             "tl: ({}, {}), tr: ({}, {}), bl: ({}, {}), br: ({}, {})",
@@ -316,7 +313,7 @@ fn print_points_as_svg_path(
         );
     }
 
-    if points.len() > 0 {
+    if !points.is_empty() {
         println!("M{},{}", points[0].x.0 as i32, points[0].y.0 as i32);
         for p in points.iter().skip(1) {
             println!("L{},{}", p.x.0 as i32, p.y.0 as i32);

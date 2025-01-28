@@ -1,9 +1,8 @@
 use crate::{
     h_flex,
-    input::ClearButton,
     list::{self, List, ListDelegate, ListItem},
     theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, Disableable, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
+    v_flex, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
 };
 use gpui::{
     actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App,
@@ -83,7 +82,7 @@ pub trait DropdownDelegate: Sized {
         &mut self,
         _query: &str,
         _window: &mut Window,
-        cx: &mut Context<Dropdown<Self>>,
+        _cx: &mut Context<Dropdown<Self>>,
     ) -> Task<()> {
         Task::ready(())
     }
@@ -132,7 +131,7 @@ where
     fn render_item(
         &self,
         ix: usize,
-        window: &mut gpui::Window,
+        _window: &mut gpui::Window,
         cx: &mut gpui::Context<List<Self>>,
     ) -> Option<Self::Item> {
         let selected = self.selected_index == Some(ix);
@@ -234,7 +233,6 @@ pub struct Dropdown<D: DropdownDelegate + 'static> {
     size: Size,
     icon: Option<IconName>,
     open: bool,
-    cleanable: bool,
     placeholder: Option<SharedString>,
     title_prefix: Option<SharedString>,
     selected_value: Option<<D::Item as DropdownItem>::Value>,
@@ -294,7 +292,7 @@ impl<T: DropdownItem + Clone> DropdownDelegate for SearchableVec<T> {
         &mut self,
         query: &str,
         _window: &mut Window,
-        cx: &mut Context<Dropdown<Self>>,
+        _cx: &mut Context<Dropdown<Self>>,
     ) -> Task<()> {
         self.matched_items = self
             .items
@@ -358,7 +356,6 @@ where
             icon: None,
             selected_value: None,
             open: false,
-            cleanable: false,
             title_prefix: None,
             empty: None,
             width: Length::Auto,
@@ -401,12 +398,6 @@ where
     /// You should set the label is `Country: `
     pub fn title_prefix(mut self, prefix: impl Into<SharedString>) -> Self {
         self.title_prefix = Some(prefix.into());
-        self
-    }
-
-    /// Set true to show the clear button when the input field is not empty.
-    pub fn cleanable(mut self) -> Self {
-        self.cleanable = true;
         self
     }
 
@@ -454,7 +445,7 @@ where
         self.set_selected_index(selected_index, window, cx);
     }
 
-    pub fn selected_index(&self, window: &Window, cx: &App) -> Option<usize> {
+    pub fn selected_index(&self, _window: &Window, cx: &App) -> Option<usize> {
         self.list.read(cx).selected_index()
     }
 
@@ -523,7 +514,7 @@ where
         cx.notify();
     }
 
-    fn escape(&mut self, _: &Escape, window: &mut Window, cx: &mut Context<Self>) {
+    fn escape(&mut self, _: &Escape, _window: &mut Window, cx: &mut Context<Self>) {
         // Propagate the event to the parent view, for example to the Modal to support ESC to close.
         cx.propagate();
 
@@ -598,7 +589,6 @@ where
 {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let is_focused = self.focus_handle.is_focused(window);
-        let show_clean = self.cleanable && self.selected_index(window, cx).is_some();
         let view = cx.model().clone();
         let bounds = self.bounds;
         let allow_open = !(self.open || self.disabled);
@@ -663,16 +653,7 @@ where
                                     .overflow_hidden()
                                     .child(self.display_title(window, cx)),
                             )
-                            .when(show_clean, |this| {
-                                this.child(ClearButton::new(window, cx).map(|this| {
-                                    if self.disabled {
-                                        this.disabled(true)
-                                    } else {
-                                        this.on_click(cx.listener(Self::clean))
-                                    }
-                                }))
-                            })
-                            .when(!show_clean, |this| {
+                            .map(|this| {
                                 let icon = match self.icon.clone() {
                                     Some(icon) => icon,
                                     None => {

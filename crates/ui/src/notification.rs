@@ -181,12 +181,12 @@ impl Notification {
         self
     }
 
-    fn dismiss(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn dismiss(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         self.closing = true;
         cx.notify();
 
         // Dismiss the notification after 0.15s to show the animation.
-        cx.spawn(|view, mut cx| async move {
+        cx.spawn(|view, cx| async move {
             Timer::after(Duration::from_secs_f32(0.15)).await;
             cx.update(|cx| {
                 if let Some(view) = view.upgrade() {
@@ -206,7 +206,7 @@ impl EventEmitter<DismissEvent> for Notification {}
 impl FluentBuilder for Notification {}
 
 impl Render for Notification {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let closing = self.closing;
         let icon = match self.icon.clone() {
             Some(icon) => icon,
@@ -297,7 +297,7 @@ pub struct NotificationList {
 }
 
 impl NotificationList {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
         Self {
             notifications: VecDeque::new(),
             expanded: false,
@@ -341,7 +341,7 @@ impl NotificationList {
         cx.notify();
     }
 
-    pub fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn clear(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.notifications.clear();
         cx.notify();
     }

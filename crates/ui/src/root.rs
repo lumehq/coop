@@ -25,11 +25,12 @@ pub trait ContextModal: Sized {
     /// Closes all active Modals.
     fn close_all_modals(&mut self, cx: &mut App);
 
+    /// Returns number of notifications.
+    fn notifications(&mut self, cx: &mut App) -> Rc<Vec<Entity<Notification>>>;
+
     /// Pushes a notification to the notification list.
     fn push_notification(&mut self, note: impl Into<Notification>, cx: &mut App);
     fn clear_notifications(&mut self, cx: &mut App);
-    /// Returns number of notifications.
-    fn notifications(&mut self, cx: &mut App) -> Rc<Vec<Entity<Notification>>>;
 }
 
 impl ContextModal for Window {
@@ -40,7 +41,7 @@ impl ContextModal for Window {
         Root::update(self, cx, move |root, window, cx| {
             // Only save focus handle if there are no active modals.
             // This is used to restore focus when all modals are closed.
-            if root.active_modals.len() == 0 {
+            if root.active_modals.is_empty() {
                 root.previous_focus_handle = window.focused(cx);
             }
 
@@ -56,7 +57,7 @@ impl ContextModal for Window {
     }
 
     fn has_active_modal(&mut self, cx: &mut App) -> bool {
-        Root::read(self, cx).active_modals.len() > 0
+        !Root::read(self, cx).active_modals.is_empty()
     }
 
     fn close_modal(&mut self, cx: &mut App) {
@@ -171,7 +172,6 @@ pub struct Root {
     previous_focus_handle: Option<FocusHandle>,
     active_modals: Vec<ActiveModal>,
     pub notification: Entity<NotificationList>,
-    drawer_size: Option<DefiniteLength>,
     view: AnyView,
 }
 
@@ -187,7 +187,6 @@ impl Root {
             previous_focus_handle: None,
             active_modals: Vec::new(),
             notification: cx.new(|cx| NotificationList::new(window, cx)),
-            drawer_size: None,
             view,
         }
     }
@@ -202,7 +201,7 @@ impl Root {
     }
 
     pub fn read<'a>(window: &'a mut Window, cx: &'a mut App) -> &'a Self {
-        &window
+        window
             .root_model::<Root>()
             .expect("The window root view should be of type `ui::Root`.")
             .unwrap()

@@ -156,11 +156,16 @@ where
         window: &mut Window,
         cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.flex_grow = 1.0;
-        style.position = Position::Relative;
-        style.size.width = relative(1.0).into();
-        style.size.height = relative(1.0).into();
+        let style = Style {
+            position: Position::Relative,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            size: Size {
+                width: relative(1.).into(),
+                height: relative(1.).into(),
+            },
+            ..Default::default()
+        };
 
         let axis = self.axis;
         let view_id = self.view_id;

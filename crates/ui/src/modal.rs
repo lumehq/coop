@@ -6,9 +6,9 @@ use crate::{
 };
 use gpui::{
     actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, App, AppContext, Bounds, ClickEvent, Div, FocusHandle,
-    InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point,
-    RenderOnce, SharedString, Styled, Window,
+    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement,
+    IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
+    Styled, Window,
 };
 use std::{rc::Rc, time::Duration};
 

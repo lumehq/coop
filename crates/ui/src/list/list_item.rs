@@ -139,7 +139,7 @@ impl RenderOnce for ListItem {
             .when_some(self.on_click, |this, on_click| {
                 if !self.disabled {
                     this.cursor_pointer()
-                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
                             cx.stop_propagation();
                         })
                         .on_click(on_click)

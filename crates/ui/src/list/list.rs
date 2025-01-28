@@ -121,7 +121,7 @@ where
         let query_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .appearance(false)
-                .prefix(|window, cx| {
+                .prefix(|_window, cx| {
                     Icon::new(IconName::Search)
                         .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                 })
@@ -220,13 +220,13 @@ where
     }
 
     /// Get the query_input text
-    pub fn query(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<SharedString> {
+    pub fn query(&self, _window: &mut Window, cx: &mut Context<Self>) -> Option<SharedString> {
         self.query_input.as_ref().map(|input| input.read(cx).text())
     }
 
     fn render_scrollbar(
         &self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
         if !self.enable_scrollbar {
@@ -240,7 +240,7 @@ where
         ))
     }
 
-    fn scroll_to_selected_item(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn scroll_to_selected_item(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
         if let Some(ix) = self.selected_index {
             self.vertical_scroll_handle
                 .scroll_to_item(ix, ScrollStrategy::Top);
@@ -405,7 +405,7 @@ where
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, _, window, cx| {
+                cx.listener(move |this, _, _window, cx| {
                     this.right_clicked_index = Some(ix);
                     cx.notify();
                 }),
@@ -507,7 +507,7 @@ where
             })
             // Click out to cancel right clicked row
             .when(self.right_clicked_index.is_some(), |this| {
-                this.on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                this.on_mouse_down_out(cx.listener(|this, _, _window, cx| {
                     this.right_clicked_index = None;
                     cx.notify();
                 }))

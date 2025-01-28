@@ -3,6 +3,14 @@
 //! Based on the `Input` example from the `gpui` crate.
 //! https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/input.rs
 
+use super::{blink_cursor::BlinkCursor, change::Change, element::TextElement};
+use crate::{
+    history::History,
+    indicator::Indicator,
+    scroll::{Scrollbar, ScrollbarAxis, ScrollbarState},
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    Sizable, Size, StyleSized, StyledExt,
+};
 use gpui::{
     actions, div, point, prelude::FluentBuilder as _, px, AnyElement, App, AppContext, Bounds,
     ClickEvent, ClipboardItem, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle,
@@ -13,20 +21,6 @@ use gpui::{
 use smallvec::SmallVec;
 use std::{cell::Cell, ops::Range, rc::Rc};
 use unicode_segmentation::*;
-
-// TODO:
-// - Press Up,Down to move cursor up, down line if multi-line
-// - Move cursor to skip line eof empty chars.
-
-use super::{blink_cursor::BlinkCursor, change::Change, element::TextElement, ClearButton};
-
-use crate::{
-    history::History,
-    indicator::Indicator,
-    scroll::{Scrollbar, ScrollbarAxis, ScrollbarState},
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    Sizable, Size, StyleSized, StyledExt,
-};
 
 actions!(
     input,
@@ -725,18 +719,16 @@ impl TextInput {
             return offset;
         }
 
-        let line = self
-            .text_for_range(
-                self.range_to_utf16(&(offset..self.text.len())),
-                &mut None,
-                window,
-                cx,
-            )
-            .unwrap_or_default()
-            .find('\n')
-            .map(|i| i + offset)
-            .unwrap_or(self.text.len());
-        line
+        self.text_for_range(
+            self.range_to_utf16(&(offset..self.text.len())),
+            &mut None,
+            window,
+            cx,
+        )
+        .unwrap_or_default()
+        .find('\n')
+        .map(|i| i + offset)
+        .unwrap_or(self.text.len())
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
@@ -1505,10 +1497,6 @@ impl Render for TextInput {
             .when(self.loading, |this| {
                 this.child(Indicator::new().color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN)))
             })
-            .when(
-                self.cleanable && !self.loading && !self.text.is_empty() && self.is_single_line(),
-                |this| this.child(ClearButton::new(window, cx).on_click(cx.listener(Self::clean))),
-            )
             .children(suffix)
             .when(self.is_multi_line(), |this| {
                 let entity_id = cx.model().entity_id();

@@ -2,7 +2,6 @@ use super::{DockArea, PanelEvent};
 use crate::{
     dock_area::{
         panel::{Panel, PanelView},
-        state::{PanelInfo, PanelState},
         tab_panel::TabPanel,
     },
     h_flex,
@@ -36,17 +35,6 @@ impl Panel for StackPanel {
 
     fn title(&self, _cx: &App) -> gpui::AnyElement {
         "StackPanel".into_any_element()
-    }
-
-    fn dump(&self, cx: &App) -> PanelState {
-        let sizes = self.panel_group.read(cx).sizes();
-        let mut state = PanelState::new(self);
-        for panel in &self.panels {
-            state.add_child(panel.dump(cx));
-            state.info = PanelInfo::stack(sizes.clone(), self.axis);
-        }
-
-        state
     }
 }
 
@@ -400,7 +388,7 @@ impl EventEmitter<PanelEvent> for StackPanel {}
 impl EventEmitter<DismissEvent> for StackPanel {}
 
 impl Render for StackPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .size_full()
             .overflow_hidden()

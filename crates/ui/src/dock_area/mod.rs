@@ -2,28 +2,19 @@ use crate::dock_area::{
     dock::{Dock, DockPlacement},
     panel::{Panel, PanelEvent, PanelStyle, PanelView},
     stack_panel::StackPanel,
-    state::{DockAreaState, DockState},
     tab_panel::TabPanel,
 };
-use anyhow::Result;
 use gpui::{
     actions, canvas, div, prelude::FluentBuilder, AnyElement, AnyView, App, AppContext, Axis,
     Bounds, Context, Edges, Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, Styled, Subscription, WeakEntity, Window,
 };
-use panel::PanelRegistry;
 use std::sync::Arc;
 
 pub mod dock;
-pub mod invalid_panel;
 pub mod panel;
 pub mod stack_panel;
-pub mod state;
 pub mod tab_panel;
-
-pub fn init(cx: &mut App) {
-    cx.set_global(PanelRegistry::new());
-}
 
 actions!(dock, [ToggleZoom, ClosePanel]);
 
@@ -591,64 +582,6 @@ impl DockArea {
         }
     }
 
-    /// Load the state of the DockArea from the DockAreaState.
-    ///
-    /// See also [DockeArea::dump].
-    pub fn load(
-        &mut self,
-        state: DockAreaState,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Result<()> {
-        self.version = state.version;
-        let weak_self = cx.model().downgrade();
-
-        if let Some(left_dock_state) = state.left_dock {
-            self.left_dock = Some(left_dock_state.to_dock(weak_self.clone(), window, cx));
-        }
-
-        if let Some(right_dock_state) = state.right_dock {
-            self.right_dock = Some(right_dock_state.to_dock(weak_self.clone(), window, cx));
-        }
-
-        if let Some(bottom_dock_state) = state.bottom_dock {
-            self.bottom_dock = Some(bottom_dock_state.to_dock(weak_self.clone(), window, cx));
-        }
-
-        self.items = state.center.to_item(weak_self, window, cx);
-        self.update_toggle_button_tab_panels(window, cx);
-        Ok(())
-    }
-
-    /// Dump the dock panels layout to PanelState.
-    ///
-    /// See also [DockArea::load].
-    pub fn dump(&self, cx: &App) -> DockAreaState {
-        let root = self.items.view();
-        let center = root.dump(cx);
-
-        let left_dock = self
-            .left_dock
-            .as_ref()
-            .map(|dock| DockState::new(dock.clone(), cx));
-        let right_dock = self
-            .right_dock
-            .as_ref()
-            .map(|dock| DockState::new(dock.clone(), cx));
-        let bottom_dock = self
-            .bottom_dock
-            .as_ref()
-            .map(|dock| DockState::new(dock.clone(), cx));
-
-        DockAreaState {
-            version: self.version,
-            center,
-            left_dock,
-            right_dock,
-            bottom_dock,
-        }
-    }
-
     /// Subscribe event on the panels
     fn subscribe_item(&mut self, item: &DockItem, window: &mut Window, cx: &mut Context<Self>) {
         match item {
@@ -660,8 +593,8 @@ impl DockArea {
                 self._subscriptions.push(cx.subscribe_in(
                     view,
                     window,
-                    move |_, _, event, window, cx| match event {
-                        PanelEvent::LayoutChanged => {
+                    move |_, _, event, window, cx| {
+                        if let PanelEvent::LayoutChanged = event {
                             cx.spawn_in(window, |view, mut window| async move {
                                 _ = view.update_in(&mut window, |view, window, cx| {
                                     view.update_toggle_button_tab_panels(window, cx)
@@ -670,7 +603,6 @@ impl DockArea {
                             .detach();
                             cx.emit(DockEvent::LayoutChanged);
                         }
-                        _ => {}
                     },
                 ));
             }
@@ -742,12 +674,12 @@ impl DockArea {
         cx.notify();
     }
 
-    pub fn set_zoomed_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_zoomed_out(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.zoom_view = None;
         cx.notify();
     }
 
-    fn render_items(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_items(&self, _window: &mut Window, _cx: &mut Context<Self>) -> AnyElement {
         match &self.items {
             DockItem::Split { view, .. } => view.clone().into_any_element(),
             DockItem::Tabs { view, .. } => view.clone().into_any_element(),
@@ -755,7 +687,11 @@ impl DockArea {
         }
     }
 
-    pub fn update_toggle_button_tab_panels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn update_toggle_button_tab_panels(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Left toggle button
         self.toggle_button_panels.left = self
             .items

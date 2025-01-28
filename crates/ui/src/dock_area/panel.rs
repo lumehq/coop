@@ -1,10 +1,8 @@
-use super::{state::PanelInfo, DockArea};
-use crate::{button::Button, dock_area::state::PanelState, popup_menu::PopupMenu};
+use crate::{button::Button, popup_menu::PopupMenu};
 use gpui::{
-    AnyElement, AnyView, App, Entity, EventEmitter, FocusHandle, Focusable, Global, Hsla,
-    IntoElement, Render, SharedString, WeakEntity, Window,
+    AnyElement, AnyView, App, Entity, EventEmitter, FocusHandle, Focusable, Hsla, IntoElement,
+    Render, SharedString, Window,
 };
-use std::{collections::HashMap, sync::Arc};
 
 pub enum PanelEvent {
     ZoomIn,
@@ -62,11 +60,6 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
     fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
     }
-
-    /// Dump the panel, used to serialize the panel.
-    fn dump(&self, cx: &App) -> PanelState {
-        PanelState::new(self)
-    }
 }
 
 pub trait PanelView: 'static + Send + Sync {
@@ -79,7 +72,6 @@ pub trait PanelView: 'static + Send + Sync {
     fn toolbar_buttons(&self, window: &Window, cx: &App) -> Vec<Button>;
     fn view(&self) -> AnyView;
     fn focus_handle(&self, cx: &App) -> FocusHandle;
-    fn dump(&self, cx: &App) -> PanelState;
 }
 
 impl<T: Panel> PanelView for Entity<T> {
@@ -118,10 +110,6 @@ impl<T: Panel> PanelView for Entity<T> {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.read(cx).focus_handle(cx)
     }
-
-    fn dump(&self, cx: &App) -> PanelState {
-        self.read(cx).dump(cx)
-    }
 }
 
 impl From<&dyn PanelView> for AnyView {
@@ -140,50 +128,4 @@ impl PartialEq for dyn PanelView {
     fn eq(&self, other: &Self) -> bool {
         self.view() == other.view()
     }
-}
-
-pub struct PanelRegistry {
-    pub(super) items: HashMap<
-        String,
-        Arc<
-            dyn Fn(
-                WeakEntity<DockArea>,
-                &PanelState,
-                &PanelInfo,
-                &mut Window,
-                &mut App,
-            ) -> Box<dyn PanelView>,
-        >,
-    >,
-}
-
-impl PanelRegistry {
-    pub fn new() -> Self {
-        Self {
-            items: HashMap::new(),
-        }
-    }
-}
-
-impl Global for PanelRegistry {}
-
-/// Register the Panel init by panel_name to global registry.
-pub fn register_panel<F>(cx: &mut App, panel_name: &str, deserialize: F)
-where
-    F: Fn(
-            WeakEntity<DockArea>,
-            &PanelState,
-            &PanelInfo,
-            &mut Window,
-            &mut App,
-        ) -> Box<dyn PanelView>
-        + 'static,
-{
-    if let None = cx.try_global::<PanelRegistry>() {
-        cx.set_global(PanelRegistry::new());
-    }
-
-    cx.global_mut::<PanelRegistry>()
-        .items
-        .insert(panel_name.to_string(), Arc::new(deserialize));
 }

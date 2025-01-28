@@ -3,7 +3,7 @@ use gpui::{
     anchored, deferred, div, prelude::FluentBuilder, px, relative, AnyElement, App, Context,
     Corner, DismissEvent, DispatchPhase, Element, ElementId, Entity, Focusable, FocusableWrapper,
     GlobalElementId, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, Position, Stateful, Style, Window,
+    Pixels, Point, Position, Size, Stateful, Style, Window,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -103,15 +103,17 @@ impl Element for ContextMenu {
         window: &mut Window,
         cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        // Set the layout style relative to the table view to get same size.
-        style.position = Position::Absolute;
-        style.flex_grow = 1.0;
-        style.flex_shrink = 1.0;
-        style.size.width = relative(1.).into();
-        style.size.height = relative(1.).into();
-
         let anchor = self.anchor;
+        let style = Style {
+            position: Position::Absolute,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            size: Size {
+                width: relative(1.).into(),
+                height: relative(1.).into(),
+            },
+            ..Default::default()
+        };
 
         self.with_element_state(
             id.unwrap(),

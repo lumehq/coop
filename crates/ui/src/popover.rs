@@ -23,7 +23,7 @@ pub struct PopoverContent {
 }
 
 impl PopoverContent {
-    pub fn new<B>(window: &mut Window, cx: &mut App, content: B) -> Self
+    pub fn new<B>(_window: &mut Window, cx: &mut App, content: B) -> Self
     where
         B: Fn(&mut Window, &mut Context<Self>) -> AnyElement + 'static,
     {

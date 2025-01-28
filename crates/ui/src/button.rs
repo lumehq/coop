@@ -64,7 +64,7 @@ pub trait ButtonVariants: Sized {
 }
 
 impl ButtonCustomVariant {
-    pub fn new(window: &Window, cx: &App) -> Self {
+    pub fn new(_window: &Window, cx: &App) -> Self {
         Self {
             color: cx.theme().accent.step(cx, ColorScaleStep::NINE),
             foreground: cx.theme().accent.step(cx, ColorScaleStep::ONE),
@@ -481,7 +481,7 @@ struct ButtonVariantStyle {
 }
 
 impl ButtonVariant {
-    fn bg_color(&self, window: &Window, cx: &App) -> Hsla {
+    fn bg_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::NINE),
             ButtonVariant::Custom(colors) => colors.color,
@@ -489,7 +489,7 @@ impl ButtonVariant {
         }
     }
 
-    fn text_color(&self, window: &Window, cx: &App) -> Hsla {
+    fn text_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => match cx.theme().accent.name().to_string().as_str() {
                 "Sky" => cx.theme().base.darken(cx),
@@ -506,7 +506,7 @@ impl ButtonVariant {
         }
     }
 
-    fn border_color(&self, window: &Window, cx: &App) -> Hsla {
+    fn border_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::NINE),
             ButtonVariant::Ghost | ButtonVariant::Link | ButtonVariant::Text => {

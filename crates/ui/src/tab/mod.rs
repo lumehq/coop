@@ -83,7 +83,7 @@ impl Styled for Tab {
 }
 
 impl RenderOnce for Tab {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (text_color, bg_color, hover_bg_color) = match (self.selected, self.disabled) {
             (true, false) => (
                 cx.theme().base.step(cx, ColorScaleStep::TWELVE),

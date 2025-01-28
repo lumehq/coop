@@ -18,10 +18,7 @@ use state::get_client;
 use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
-    dock_area::{
-        panel::{Panel, PanelEvent},
-        state::PanelState,
-    },
+    dock_area::panel::{Panel, PanelEvent},
     input::{InputEvent, TextInput},
     popup_menu::PopupMenu,
     prelude::FluentBuilder,
@@ -458,10 +455,6 @@ impl Panel for ChatPanel {
 
     fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
         vec![]
-    }
-
-    fn dump(&self, _cx: &App) -> PanelState {
-        PanelState::new(self)
     }
 }
 
