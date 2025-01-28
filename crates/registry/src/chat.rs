@@ -1,14 +1,14 @@
 use crate::room::Room;
 use anyhow::Error;
 use common::utils::{compare, room_hash};
-use gpui::{AppContext, AsyncAppContext, Context, Global, Model, ModelContext, Task, WeakModel};
+use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::cmp::Reverse;
 
 pub struct Inbox {
-    pub rooms: Vec<Model<Room>>,
+    pub rooms: Vec<Entity<Room>>,
     pub is_loading: bool,
 }
 
@@ -20,11 +20,11 @@ impl Inbox {
         }
     }
 
-    pub fn current_rooms(&self, cx: &ModelContext<Self>) -> Vec<u64> {
+    pub fn current_rooms(&self, cx: &Context<Self>) -> Vec<u64> {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
-    pub fn load(&mut self, cx: AsyncAppContext) -> Task<Result<Vec<Event>, Error>> {
+    pub fn load(&mut self, cx: AsyncApp) -> Task<Result<Vec<Event>, Error>> {
         cx.background_executor().spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
@@ -59,16 +59,16 @@ impl Default for Inbox {
 }
 
 pub struct ChatRegistry {
-    inbox: Model<Inbox>,
+    inbox: Entity<Inbox>,
 }
 
 impl Global for ChatRegistry {}
 
 impl ChatRegistry {
-    pub fn set_global(cx: &mut AppContext) {
-        let inbox = cx.new_model(|_| Inbox::default());
+    pub fn set_global(cx: &mut App) {
+        let inbox = cx.new(|_| Inbox::default());
 
-        cx.observe_new_models::<Room>(|this, cx| {
+        cx.observe_new::<Room>(|this, _window, cx| {
             // Get all pubkeys to load metadata
             let pubkeys = this.get_all_keys();
 
@@ -92,7 +92,7 @@ impl ChatRegistry {
 
                 if let Ok(profiles) = query {
                     if let Some(model) = weak_model.upgrade() {
-                        _ = async_cx.update_model(&model, |model, cx| {
+                        _ = async_cx.update_entity(&model, |model, cx| {
                             for profile in profiles.into_iter() {
                                 model.set_metadata(profile.0, profile.1);
                             }
@@ -108,22 +108,22 @@ impl ChatRegistry {
         cx.set_global(Self { inbox });
     }
 
-    pub fn load(&mut self, cx: &mut AppContext) {
+    pub fn load(&mut self, cx: &mut App) {
         self.inbox.update(cx, |this, cx| {
             let task = this.load(cx.to_async());
 
             cx.spawn(|this, mut async_cx| async move {
                 if let Some(inbox) = this.upgrade() {
                     if let Ok(events) = task.await {
-                        _ = async_cx.update_model(&inbox, |this, cx| {
+                        _ = async_cx.update_entity(&inbox, |this, cx| {
                             let current_rooms = this.current_rooms(cx);
-                            let items: Vec<Model<Room>> = events
+                            let items: Vec<Entity<Room>> = events
                                 .into_iter()
                                 .filter_map(|ev| {
                                     let id = room_hash(&ev.tags);
                                     // Filter all seen events
                                     if !current_rooms.iter().any(|h| h == &id) {
-                                        Some(cx.new_model(|_| Room::parse(&ev)))
+                                        Some(cx.new(|_| Room::parse(&ev)))
                                     } else {
                                         None
                                     }
@@ -142,11 +142,11 @@ impl ChatRegistry {
         });
     }
 
-    pub fn inbox(&self) -> WeakModel<Inbox> {
+    pub fn inbox(&self) -> WeakEntity<Inbox> {
         self.inbox.downgrade()
     }
 
-    pub fn room(&self, id: &u64, cx: &AppContext) -> Option<WeakModel<Room>> {
+    pub fn room(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
         self.inbox
             .read(cx)
             .rooms
@@ -155,8 +155,8 @@ impl ChatRegistry {
             .map(|model| model.downgrade())
     }
 
-    pub fn new_room(&mut self, room: Room, cx: &mut AppContext) {
-        let room = cx.new_model(|_| room);
+    pub fn new_room(&mut self, room: Room, cx: &mut App) {
+        let room = cx.new(|_| room);
 
         self.inbox.update(cx, |this, cx| {
             if !this.rooms.iter().any(|r| r.read(cx) == room.read(cx)) {
@@ -166,7 +166,7 @@ impl ChatRegistry {
         })
     }
 
-    pub fn receive(&mut self, event: Event, cx: &mut AppContext) {
+    pub fn receive(&mut self, event: Event, cx: &mut App) {
         let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
         pubkeys.push(event.pubkey);
 
@@ -180,7 +180,7 @@ impl ChatRegistry {
                     cx.notify();
                 })
             } else {
-                let room = cx.new_model(|_| Room::parse(&event));
+                let room = cx.new(|_| Room::parse(&event));
 
                 self.inbox.update(cx, |this, cx| {
                     this.rooms.insert(0, room);

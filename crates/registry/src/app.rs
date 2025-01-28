@@ -1,5 +1,5 @@
 use common::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID};
-use gpui::{AppContext, Context, Global, Model, WeakModel, WindowContext};
+use gpui::{App, AppContext, Entity, Global, WeakEntity, Window};
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::time::Duration;
@@ -7,15 +7,15 @@ use std::time::Duration;
 use crate::contact::Contact;
 
 pub struct AppRegistry {
-    user: Model<Option<Contact>>,
+    user: Entity<Option<Contact>>,
     pub is_loading: bool,
 }
 
 impl Global for AppRegistry {}
 
 impl AppRegistry {
-    pub fn set_global(cx: &mut AppContext) {
-        let user: Model<Option<Contact>> = cx.new_model(|_| None);
+    pub fn set_global(cx: &mut App) {
+        let user: Entity<Option<Contact>> = cx.new(|_| None);
         let is_loading = true;
 
         cx.observe(&user, |this, cx| {
@@ -76,15 +76,15 @@ impl AppRegistry {
         cx.set_global(Self { user, is_loading });
     }
 
-    pub fn user(&self) -> WeakModel<Option<Contact>> {
+    pub fn user(&self) -> WeakEntity<Option<Contact>> {
         self.user.downgrade()
     }
 
-    pub fn current_user(&self, cx: &WindowContext) -> Option<Contact> {
+    pub fn current_user(&self, _window: &Window, cx: &App) -> Option<Contact> {
         self.user.read(cx).clone()
     }
 
-    pub fn set_user(&mut self, contact: Contact, cx: &mut AppContext) {
+    pub fn set_user(&mut self, contact: Contact, cx: &mut App) {
         self.user.update(cx, |this, cx| {
             *this = Some(contact);
             cx.notify();
@@ -93,7 +93,7 @@ impl AppRegistry {
         self.is_loading = false;
     }
 
-    pub fn logout(&mut self, cx: &mut AppContext) {
+    pub fn logout(&mut self, cx: &mut App) {
         self.user.update(cx, |this, cx| {
             *this = None;
             cx.notify();

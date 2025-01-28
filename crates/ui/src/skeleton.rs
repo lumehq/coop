@@ -31,7 +31,7 @@ impl Styled for Skeleton {
 }
 
 impl RenderOnce for Skeleton {
-    fn render(self, cx: &mut gpui::WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut gpui::Window, cx: &mut gpui::App) -> impl IntoElement {
         div().child(
             self.base
                 .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))

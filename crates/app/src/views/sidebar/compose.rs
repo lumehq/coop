@@ -1,8 +1,8 @@
 use common::utils::{random_name, room_hash};
 use gpui::{
-    div, img, impl_internal_actions, px, uniform_list, Context, FocusHandle, InteractiveElement,
-    IntoElement, Model, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    View, ViewContext, VisualContext, WindowContext,
+    div, img, impl_internal_actions, px, uniform_list, App, AppContext, Context, Entity,
+    FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use registry::{app::AppRegistry, contact::Contact, room::Room};
@@ -24,48 +24,54 @@ struct SelectContact(PublicKey);
 impl_internal_actions!(contacts, [SelectContact]);
 
 pub struct Compose {
-    title_input: View<TextInput>,
-    message_input: View<TextInput>,
-    user_input: View<TextInput>,
-    contacts: Model<Option<Vec<Contact>>>,
-    selected: Model<HashSet<PublicKey>>,
+    title_input: Entity<TextInput>,
+    message_input: Entity<TextInput>,
+    user_input: Entity<TextInput>,
+    contacts: Entity<Option<Vec<Contact>>>,
+    selected: Entity<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
     is_loading: bool,
 }
 
 impl Compose {
-    pub fn new(cx: &mut ViewContext<'_, Self>) -> Self {
-        let contacts = cx.new_model(|_| None);
-        let selected = cx.new_model(|_| HashSet::new());
+    pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+        let contacts = cx.new(|_| None);
+        let selected = cx.new(|_| HashSet::new());
 
-        let user_input = cx.new_view(|cx| {
-            TextInput::new(cx)
+        let user_input = cx.new(|cx| {
+            TextInput::new(window, cx)
                 .text_size(ui::Size::Small)
                 .small()
                 .placeholder("npub1...")
         });
 
-        let title_input = cx.new_view(|cx| {
+        let title_input = cx.new(|cx| {
             let name = random_name(2);
-            let mut input = TextInput::new(cx).appearance(false).text_size(Size::XSmall);
+            let mut input = TextInput::new(window, cx)
+                .appearance(false)
+                .text_size(Size::XSmall);
 
             input.set_placeholder("Family... . (Optional)");
-            input.set_text(name, cx);
+            input.set_text(name, window, cx);
             input
         });
 
-        let message_input = cx.new_view(|cx| {
-            TextInput::new(cx)
+        let message_input = cx.new(|cx| {
+            TextInput::new(window, cx)
                 .appearance(false)
                 .text_size(Size::XSmall)
                 .placeholder("Hello... (Optional)")
         });
 
-        cx.subscribe(&user_input, move |this, _, input_event, cx| {
-            if let InputEvent::PressEnter = input_event {
-                this.add(cx);
-            }
-        })
+        cx.subscribe_in(
+            &user_input,
+            window,
+            move |this, _, input_event, window, cx| {
+                if let InputEvent::PressEnter = input_event {
+                    this.add(window, cx);
+                }
+            },
+        )
         .detach();
 
         cx.spawn(|this, mut async_cx| {
@@ -89,7 +95,7 @@ impl Compose {
 
                 if let Ok(contacts) = query {
                     if let Some(view) = this.upgrade() {
-                        _ = async_cx.update_view(&view, |this, cx| {
+                        _ = async_cx.update_entity(&view, |this, cx| {
                             this.contacts.update(cx, |this, cx| {
                                 *this = Some(contacts);
                                 cx.notify();
@@ -114,8 +120,8 @@ impl Compose {
         }
     }
 
-    pub fn room(&self, cx: &WindowContext) -> Option<Room> {
-        let current_user = cx.global::<AppRegistry>().current_user(cx);
+    pub fn room(&self, window: &Window, cx: &App) -> Option<Room> {
+        let current_user = cx.global::<AppRegistry>().current_user(window, cx);
 
         if let Some(current_user) = current_user {
             // Convert selected pubkeys into nostr tags
@@ -151,7 +157,7 @@ impl Compose {
         }
     }
 
-    pub fn label(&self, cx: &WindowContext) -> SharedString {
+    pub fn label(&self, window: &Window, cx: &App) -> SharedString {
         if self.selected.read(cx).len() > 1 {
             "Create Group DM".into()
         } else {
@@ -159,7 +165,7 @@ impl Compose {
         }
     }
 
-    fn add(&mut self, cx: &mut ViewContext<Self>) {
+    fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let content = self.user_input.read(cx).text().to_string();
         let input = self.user_input.downgrade();
 
@@ -183,7 +189,7 @@ impl Compose {
 
                 if let Ok(metadata) = query {
                     if let Some(view) = this.upgrade() {
-                        _ = async_cx.update_view(&view, |this, cx| {
+                        _ = async_cx.update_entity(&view, |this, cx| {
                             this.contacts.update(cx, |this, cx| {
                                 if let Some(members) = this {
                                     members.insert(0, Contact::new(public_key, metadata));
@@ -202,8 +208,8 @@ impl Compose {
                     }
 
                     if let Some(input) = input.upgrade() {
-                        _ = async_cx.update_view(&input, |input, cx| {
-                            input.set_text("", cx);
+                        _ = async_cx.update_entity(&input, |input, cx| {
+                            // input.set_text("", window, cx);
                         });
                     }
                 }
@@ -214,7 +220,12 @@ impl Compose {
         }
     }
 
-    fn on_action_select(&mut self, action: &SelectContact, cx: &mut ViewContext<Self>) {
+    fn on_action_select(
+        &mut self,
+        action: &SelectContact,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.selected.update(cx, |this, cx| {
             if this.contains(&action.0) {
                 this.remove(&action.0);
@@ -227,7 +238,7 @@ impl Compose {
 }
 
 impl Render for Compose {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let msg =
             "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
 
@@ -291,7 +302,9 @@ impl Render for Compose {
                                     .small()
                                     .rounded(ButtonRounded::Size(px(9999.)))
                                     .loading(self.is_loading)
-                                    .on_click(cx.listener(|this, _, cx| this.add(cx))),
+                                    .on_click(
+                                        cx.listener(|this, _, window, cx| this.add(window, cx)),
+                                    ),
                             )
                             .child(self.user_input.clone()),
                     )
@@ -299,10 +312,10 @@ impl Render for Compose {
                         if let Some(contacts) = self.contacts.read(cx).clone() {
                             this.child(
                                 uniform_list(
-                                    cx.view().clone(),
+                                    cx.model().clone(),
                                     "contacts",
                                     contacts.len(),
-                                    move |this, range, cx| {
+                                    move |this, range, window, cx| {
                                         let selected = this.selected.read(cx);
                                         let mut items = Vec::new();
 
@@ -348,9 +361,9 @@ impl Render for Compose {
                                                             .base
                                                             .step(cx, ColorScaleStep::THREE))
                                                     })
-                                                    .on_click(move |_, cx| {
-                                                        cx.dispatch_action(Box::new(
-                                                            SelectContact(item.public_key()),
+                                                    .on_click(move |_, window, cx| {
+                                                        cx.dispatch_action(&SelectContact(
+                                                            item.public_key(),
                                                         ));
                                                     }),
                                             );

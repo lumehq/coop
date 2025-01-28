@@ -10,9 +10,9 @@ use crate::{
     v_flex, Icon, IconName, Sizable as _, StyledExt,
 };
 use gpui::{
-    div, prelude::FluentBuilder, px, Animation, AnimationExt, ClickEvent, DismissEvent, ElementId,
-    EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement, Styled, View, ViewContext, VisualContext, WindowContext,
+    div, prelude::FluentBuilder, px, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
+    DismissEvent, ElementId, Entity, EventEmitter, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use smol::Timer;
 use std::{any::TypeId, collections::VecDeque, sync::Arc, time::Duration};
@@ -42,7 +42,7 @@ impl From<(TypeId, ElementId)> for NotificationId {
     }
 }
 
-type OnClick = Option<Arc<dyn Fn(&ClickEvent, &mut WindowContext)>>;
+type OnClick = Option<Arc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>;
 
 /// A notification element.
 pub struct Notification {
@@ -175,18 +175,18 @@ impl Notification {
     /// Set the click callback of the notification.
     pub fn on_click(
         mut self,
-        on_click: impl Fn(&ClickEvent, &mut WindowContext) + 'static,
+        on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Arc::new(on_click));
         self
     }
 
-    fn dismiss(&mut self, _: &ClickEvent, cx: &mut ViewContext<Self>) {
+    fn dismiss(&mut self, _: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
         self.closing = true;
         cx.notify();
 
         // Dismiss the notification after 0.15s to show the animation.
-        cx.spawn(|view, mut cx| async move {
+        cx.spawn(|view, cx| async move {
             Timer::after(Duration::from_secs_f32(0.15)).await;
             cx.update(|cx| {
                 if let Some(view) = view.upgrade() {
@@ -206,7 +206,7 @@ impl EventEmitter<DismissEvent> for Notification {}
 impl FluentBuilder for Notification {}
 
 impl Render for Notification {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let closing = self.closing;
         let icon = match self.icon.clone() {
             Some(icon) => icon,
@@ -250,9 +250,9 @@ impl Render for Notification {
             )
             .when_some(self.on_click.clone(), |this, on_click| {
                 this.cursor_pointer()
-                    .on_click(cx.listener(move |view, event, cx| {
-                        view.dismiss(event, cx);
-                        on_click(event, cx);
+                    .on_click(cx.listener(move |view, event, window, cx| {
+                        view.dismiss(event, window, cx);
+                        on_click(event, window, cx);
                     }))
             })
             .when(!self.autohide, |this| {
@@ -292,19 +292,24 @@ impl Render for Notification {
 /// A list of notifications.
 pub struct NotificationList {
     /// Notifications that will be auto hidden.
-    pub(crate) notifications: VecDeque<View<Notification>>,
+    pub(crate) notifications: VecDeque<Entity<Notification>>,
     expanded: bool,
 }
 
 impl NotificationList {
-    pub fn new(_cx: &mut ViewContext<Self>) -> Self {
+    pub fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
         Self {
             notifications: VecDeque::new(),
             expanded: false,
         }
     }
 
-    pub fn push(&mut self, notification: impl Into<Notification>, cx: &mut ViewContext<Self>) {
+    pub fn push(
+        &mut self,
+        notification: impl Into<Notification>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let notification = notification.into();
         let id = notification.id.clone();
         let autohide = notification.autohide;
@@ -312,7 +317,8 @@ impl NotificationList {
         // Remove the notification by id, for keep unique.
         self.notifications.retain(|note| note.read(cx).id != id);
 
-        let notification = cx.new_view(|_| notification);
+        let notification = cx.new(|_| notification);
+
         cx.subscribe(&notification, move |view, _, _: &DismissEvent, cx| {
             view.notifications.retain(|note| id != note.read(cx).id);
         })
@@ -320,13 +326,13 @@ impl NotificationList {
 
         self.notifications.push_back(notification.clone());
         if autohide {
-            // Sleep for 5 seconds to autohide the notification
-            cx.spawn(|_, mut cx| async move {
-                Timer::after(Duration::from_secs(5)).await;
+            // Sleep for 3 seconds to autohide the notification
+            cx.spawn_in(window, |_, mut cx| async move {
+                Timer::after(Duration::from_secs(3)).await;
 
-                if let Err(err) = notification
-                    .update(&mut cx, |note, cx| note.dismiss(&ClickEvent::default(), cx))
-                {
+                if let Err(err) = notification.update_in(&mut cx, |note, window, cx| {
+                    note.dismiss(&ClickEvent::default(), window, cx)
+                }) {
                     println!("failed to auto hide notification: {:?}", err);
                 }
             })
@@ -335,19 +341,23 @@ impl NotificationList {
         cx.notify();
     }
 
-    pub fn clear(&mut self, cx: &mut ViewContext<Self>) {
+    pub fn clear(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.notifications.clear();
         cx.notify();
     }
 
-    pub fn notifications(&self) -> Vec<View<Notification>> {
+    pub fn notifications(&self) -> Vec<Entity<Notification>> {
         self.notifications.iter().cloned().collect()
     }
 }
 
 impl Render for NotificationList {
-    fn render(&mut self, cx: &mut gpui::ViewContext<Self>) -> impl IntoElement {
-        let size = cx.viewport_size();
+    fn render(
+        &mut self,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
+        let size = window.viewport_size();
         let items = self.notifications.iter().rev().take(10).rev().cloned();
 
         div()
@@ -364,9 +374,9 @@ impl Render for NotificationList {
                     .relative()
                     .right_0()
                     .h(size.height - px(8.))
-                    .on_hover(cx.listener(|view, hovered, cx| {
+                    .on_hover(cx.listener(|view, hovered, _window, cx| {
                         view.expanded = *hovered;
-                        cx.notify()
+                        cx.notify();
                     }))
                     .gap_3()
                     .children(items),

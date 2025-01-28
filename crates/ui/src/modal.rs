@@ -6,9 +6,9 @@ use crate::{
 };
 use gpui::{
     actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, AppContext, Bounds, ClickEvent, Div, FocusHandle,
-    InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point,
-    RenderOnce, SharedString, Styled, WindowContext,
+    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement,
+    IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
+    Styled, Window,
 };
 use std::{rc::Rc, time::Duration};
 
@@ -16,11 +16,9 @@ actions!(modal, [Escape]);
 
 const CONTEXT: &str = "Modal";
 
-pub fn init(cx: &mut AppContext) {
+pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])
 }
-
-type OnClose = Rc<dyn Fn(&ClickEvent, &mut WindowContext) + 'static>;
 
 #[derive(IntoElement)]
 pub struct Modal {
@@ -31,7 +29,7 @@ pub struct Modal {
     width: Pixels,
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
-    on_close: OnClose,
+    on_close: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
     show_close: bool,
     keyboard: bool,
     /// This will be change when open the modal, the focus handle is create when open the modal.
@@ -41,7 +39,7 @@ pub struct Modal {
 }
 
 impl Modal {
-    pub fn new(cx: &mut WindowContext) -> Self {
+    pub fn new(window: &mut Window, cx: &mut App) -> Self {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
@@ -62,7 +60,7 @@ impl Modal {
             overlay: true,
             keyboard: true,
             layer_ix: 0,
-            on_close: Rc::new(|_, _| {}),
+            on_close: Rc::new(|_, _, _| {}),
             show_close: true,
         }
     }
@@ -82,7 +80,7 @@ impl Modal {
     /// Sets the callback for when the modal is closed.
     pub fn on_close(
         mut self,
-        on_close: impl Fn(&ClickEvent, &mut WindowContext) + 'static,
+        on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_close = Rc::new(on_close);
         self
@@ -142,11 +140,11 @@ impl Styled for Modal {
 }
 
 impl RenderOnce for Modal {
-    fn render(self, cx: &mut WindowContext) -> impl gpui::IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl gpui::IntoElement {
         let layer_ix = self.layer_ix;
         let on_close = self.on_close.clone();
-        let window_paddings = crate::window_border::window_paddings(cx);
-        let view_size = cx.viewport_size()
+        let window_paddings = crate::window_border::window_paddings(window, cx);
+        let view_size = window.viewport_size()
             - gpui::size(
                 window_paddings.left + window_paddings.right,
                 window_paddings.top + window_paddings.bottom,
@@ -172,9 +170,9 @@ impl RenderOnce for Modal {
                     })
                     .on_mouse_down(MouseButton::Left, {
                         let on_close = self.on_close.clone();
-                        move |_, cx| {
-                            on_close(&ClickEvent::default(), cx);
-                            cx.close_modal();
+                        move |_, window, cx| {
+                            on_close(&ClickEvent::default(), window, cx);
+                            window.close_modal(cx);
                         }
                     })
                     .child(
@@ -185,13 +183,13 @@ impl RenderOnce for Modal {
                             .when(self.keyboard, |this| {
                                 this.on_action({
                                     let on_close = self.on_close.clone();
-                                    move |_: &Escape, cx| {
+                                    move |_: &Escape, window, cx| {
                                         // FIXME:
                                         //
                                         // Here some Modal have no focus_handle, so it will not work will Escape key.
                                         // But by now, we `cx.close_modal()` going to close the last active model, so the Escape is unexpected to work.
-                                        on_close(&ClickEvent::default(), cx);
-                                        cx.close_modal();
+                                        on_close(&ClickEvent::default(), window, cx);
+                                        window.close_modal(cx);
                                     }
                                 })
                             })
@@ -227,9 +225,9 @@ impl RenderOnce for Modal {
                                     .ghost()
                                     .icon(IconName::Close)
                                     .on_click(
-                                        move |_, cx| {
-                                            on_close(&ClickEvent::default(), cx);
-                                            cx.close_modal();
+                                        move |_, window, cx| {
+                                            on_close(&ClickEvent::default(), window, cx);
+                                            window.close_modal(cx);
                                         },
                                     ),
                                 )

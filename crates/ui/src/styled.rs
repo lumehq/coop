@@ -2,7 +2,7 @@ use crate::{
     scroll::{Scrollable, ScrollbarAxis},
     theme::{scale::ColorScaleStep, ActiveTheme},
 };
-use gpui::{div, px, Axis, Div, Element, ElementId, EntityId, Pixels, Styled, WindowContext};
+use gpui::{div, px, App, Axis, Div, Element, ElementId, EntityId, Pixels, Styled, Window};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
@@ -38,7 +38,7 @@ pub trait StyledExt: Styled + Sized {
     }
 
     /// Render a border with a width of 1px, color ring color
-    fn outline(self, cx: &WindowContext) -> Self {
+    fn outline(self, _window: &Window, cx: &App) -> Self {
         self.border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE))
     }
 
@@ -63,7 +63,7 @@ pub trait StyledExt: Styled + Sized {
     font_weight!(font_black, BLACK);
 
     /// Set as Popover style
-    fn popover_style(self, cx: &mut WindowContext) -> Self {
+    fn popover_style(self, cx: &mut App) -> Self {
         self.bg(cx.theme().background)
             .border_1()
             .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))

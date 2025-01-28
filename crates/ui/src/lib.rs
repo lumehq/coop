@@ -47,9 +47,8 @@ mod window_border;
 ///
 /// This must be called before using any of the UI components.
 /// You can initialize the UI module at your application's entry point.
-pub fn init(cx: &mut gpui::AppContext) {
+pub fn init(cx: &mut gpui::App) {
     theme::init(cx);
-    dock_area::init(cx);
     dropdown::init(cx);
     input::init(cx);
     list::init(cx);

@@ -1,8 +1,8 @@
 use crate::views::app::{AddPanel, PanelKind};
 use common::utils::message_ago;
 use gpui::{
-    div, img, percentage, prelude::FluentBuilder, px, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, ViewContext,
+    div, img, percentage, prelude::FluentBuilder, px, Context, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use registry::chat::ChatRegistry;
 use ui::{
@@ -18,7 +18,7 @@ pub struct Inbox {
 }
 
 impl Inbox {
-    pub fn new(_cx: &mut ViewContext<'_, Self>) -> Self {
+    pub fn new(_window: &mut Window, _cx: &mut Context<'_, Self>) -> Self {
         Self {
             label: "Inbox".into(),
             is_collapsed: false,
@@ -38,7 +38,7 @@ impl Inbox {
         })
     }
 
-    fn render_item(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render_item(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let weak_model = cx.global::<ChatRegistry>().inbox();
 
         if let Some(model) = weak_model.upgrade() {
@@ -91,8 +91,8 @@ impl Inbox {
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                                     .child(ago),
                             )
-                            .on_click(cx.listener(move |this, _, cx| {
-                                this.action(id, cx);
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.action(id, window, cx);
                             }))
                     }))
                 }
@@ -102,11 +102,13 @@ impl Inbox {
         }
     }
 
-    fn action(&self, id: u64, cx: &mut ViewContext<Self>) {
-        cx.dispatch_action(Box::new(AddPanel {
+    fn action(&self, id: u64, _window: &mut Window, cx: &mut Context<Self>) {
+        let action = AddPanel {
             panel: PanelKind::Room(id),
             position: DockPlacement::Center,
-        }))
+        };
+
+        cx.dispatch_action(&action)
     }
 }
 
@@ -122,7 +124,7 @@ impl Collapsible for Inbox {
 }
 
 impl Render for Inbox {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .px_2()
             .gap_1()
@@ -145,11 +147,13 @@ impl Render for Inbox {
                     )
                     .child(self.label.clone())
                     .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                    .on_click(cx.listener(move |view, _event, cx| {
+                    .on_click(cx.listener(move |view, _event, _window, cx| {
                         view.is_collapsed = !view.is_collapsed;
                         cx.notify();
                     })),
             )
-            .when(!self.is_collapsed, |this| this.child(self.render_item(cx)))
+            .when(!self.is_collapsed, |this| {
+                this.child(self.render_item(window, cx))
+            })
     }
 }

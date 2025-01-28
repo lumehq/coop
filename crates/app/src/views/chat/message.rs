@@ -1,6 +1,6 @@
 use gpui::{
-    div, img, px, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
-    WindowContext,
+    div, img, px, App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    Styled, Window,
 };
 use registry::contact::Contact;
 use ui::{
@@ -36,7 +36,7 @@ impl Message {
 }
 
 impl RenderOnce for Message {
-    fn render(self, cx: &mut WindowContext) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
             .group(&self.ago)
             .relative()

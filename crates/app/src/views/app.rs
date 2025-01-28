@@ -1,8 +1,8 @@
 use super::{chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
 use gpui::{
-    actions, div, img, impl_internal_actions, px, svg, Axis, BorrowAppContext, Edges,
-    InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, View,
-    ViewContext, VisualContext, WeakView, WindowContext,
+    actions, div, img, impl_internal_actions, px, svg, App, AppContext, Axis, BorrowAppContext,
+    Context, Edges, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render,
+    Styled, StyledImage, WeakEntity, Window,
 };
 use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use serde::Deserialize;
@@ -45,22 +45,22 @@ pub const DOCK_AREA: DockAreaTab = DockAreaTab {
 };
 
 pub struct AppView {
-    onboarding: View<Onboarding>,
-    dock: View<DockArea>,
+    onboarding: Entity<Onboarding>,
+    dock: Entity<DockArea>,
 }
 
 impl AppView {
-    pub fn new(cx: &mut ViewContext<'_, Self>) -> AppView {
-        let onboarding = cx.new_view(Onboarding::new);
-        let dock = cx.new_view(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), cx));
+    pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> AppView {
+        let onboarding = cx.new(|cx| Onboarding::new(window, cx));
+        let dock = cx.new(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), window, cx));
 
         // Get current user from app state
         let weak_user = cx.global::<AppRegistry>().user();
 
         if let Some(user) = weak_user.upgrade() {
-            cx.observe(&user, move |view, this, cx| {
+            cx.observe_in(&user, window, |view, this, window, cx| {
                 if this.read(cx).is_some() {
-                    Self::render_dock(view.dock.downgrade(), cx);
+                    Self::render_dock(view.dock.downgrade(), window, cx);
                 }
             })
             .detach();
@@ -69,30 +69,33 @@ impl AppView {
         AppView { onboarding, dock }
     }
 
-    fn render_dock(dock_area: WeakView<DockArea>, cx: &mut WindowContext) {
-        let left = DockItem::panel(Arc::new(Sidebar::new(cx)));
+    fn render_dock(dock_area: WeakEntity<DockArea>, window: &mut Window, cx: &mut App) {
+        let left = DockItem::panel(Arc::new(Sidebar::new(window, cx)));
         let center = DockItem::split_with_sizes(
             Axis::Vertical,
             vec![DockItem::tabs(
-                vec![Arc::new(WelcomePanel::new(cx))],
+                vec![Arc::new(WelcomePanel::new(window, cx))],
                 None,
                 &dock_area,
+                window,
                 cx,
             )],
             vec![None],
             &dock_area,
+            window,
             cx,
         );
 
         _ = dock_area.update(cx, |view, cx| {
-            view.set_version(DOCK_AREA.version, cx);
-            view.set_left_dock(left, Some(px(240.)), true, cx);
-            view.set_center(center, cx);
+            view.set_version(DOCK_AREA.version, window, cx);
+            view.set_left_dock(left, Some(px(240.)), true, window, cx);
+            view.set_center(center, window, cx);
             view.set_dock_collapsible(
                 Edges {
                     left: false,
                     ..Default::default()
                 },
+                window,
                 cx,
             );
             // TODO: support right dock?
@@ -112,7 +115,7 @@ impl AppView {
                     .rounded_full()
                     .object_fit(ObjectFit::Cover),
             )
-            .popup_menu(move |this, _cx| {
+            .popup_menu(move |this, _, _cx| {
                 this.menu("Profile", Box::new(OpenProfile))
                     .menu("Contacts", Box::new(OpenContacts))
                     .menu("Settings", Box::new(OpenSettings))
@@ -121,40 +124,58 @@ impl AppView {
             })
     }
 
-    fn on_panel_action(&mut self, action: &AddPanel, cx: &mut ViewContext<Self>) {
+    fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
         match &action.panel {
             PanelKind::Room(id) => {
                 if let Some(weak_room) = cx.global::<ChatRegistry>().room(id, cx) {
                     if let Some(room) = weak_room.upgrade() {
-                        let panel = Arc::new(ChatPanel::new(room, cx));
+                        let panel = Arc::new(ChatPanel::new(room, window, cx));
 
                         self.dock.update(cx, |dock_area, cx| {
-                            dock_area.add_panel(panel, action.position, cx);
+                            dock_area.add_panel(panel, action.position, window, cx);
                         });
                     } else {
-                        cx.push_notification((
-                            NotificationType::Error,
-                            "System error. Cannot open this chat room.",
-                        ));
+                        window.push_notification(
+                            (
+                                NotificationType::Error,
+                                "System error. Cannot open this chat room.",
+                            ),
+                            cx,
+                        );
                     }
                 }
             }
         };
     }
 
-    fn on_profile_action(&mut self, _action: &OpenProfile, cx: &mut ViewContext<Self>) {
+    fn on_profile_action(
+        &mut self,
+        _action: &OpenProfile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // TODO
     }
 
-    fn on_contacts_action(&mut self, _action: &OpenContacts, cx: &mut ViewContext<Self>) {
+    fn on_contacts_action(
+        &mut self,
+        _action: &OpenContacts,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // TODO
     }
 
-    fn on_settings_action(&mut self, _action: &OpenSettings, cx: &mut ViewContext<Self>) {
+    fn on_settings_action(
+        &mut self,
+        _action: &OpenSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // TODO
     }
 
-    fn on_logout_action(&mut self, _action: &Logout, cx: &mut ViewContext<Self>) {
+    fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<AppRegistry, _>(|this, cx| {
             this.logout(cx);
             // Reset nostr client
@@ -166,9 +187,9 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, cx: &mut ViewContext<Self>) -> impl IntoElement {
-        let modal_layer = Root::render_modal_layer(cx);
-        let notification_layer = Root::render_notification_layer(cx);
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let modal_layer = Root::render_modal_layer(window, cx);
+        let notification_layer = Root::render_notification_layer(window, cx);
         let state = cx.global::<AppRegistry>();
 
         div()
@@ -189,7 +210,7 @@ impl Render for AppView {
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                             ),
                         )
-                } else if let Some(contact) = state.current_user(cx) {
+                } else if let Some(contact) = state.current_user(window, cx) {
                     this.child(
                         TitleBar::new()
                             // Left side

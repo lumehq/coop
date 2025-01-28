@@ -1,4 +1,4 @@
-use gpui::{FocusHandle, ViewContext};
+use gpui::{Context, FocusHandle, Window};
 
 /// A trait for views that can cycle focus between its children.
 ///
@@ -8,18 +8,18 @@ use gpui::{FocusHandle, ViewContext};
 /// should be cycled, and the cycle will follow the order of the list.
 pub trait FocusableCycle {
     /// Returns a list of focus handles that should be cycled.
-    fn cycle_focus_handles(&self, cx: &mut ViewContext<Self>) -> Vec<FocusHandle>
+    fn cycle_focus_handles(&self, window: &mut Window, cx: &mut Context<Self>) -> Vec<FocusHandle>
     where
         Self: Sized;
 
     /// Cycles focus between the focus handles returned by `cycle_focus_handles`.
     /// If `is_next` is `true`, it will cycle to the next focus handle, otherwise it will cycle to prev.
-    fn cycle_focus(&self, is_next: bool, cx: &mut ViewContext<Self>)
+    fn cycle_focus(&self, is_next: bool, window: &mut Window, cx: &mut Context<Self>)
     where
         Self: Sized,
     {
-        let focused_handle = cx.focused();
-        let handles = self.cycle_focus_handles(cx);
+        let focused_handle = window.focused(cx);
+        let handles = self.cycle_focus_handles(window, cx);
         let handles = if is_next {
             handles
         } else {
@@ -33,7 +33,7 @@ pub trait FocusableCycle {
             .nth(1)
             .unwrap_or(fallback_handle);
 
-        target_focus_handle.focus(cx);
+        target_focus_handle.focus(window);
         cx.stop_propagation();
     }
 }
