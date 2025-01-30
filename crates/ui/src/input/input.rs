@@ -1492,14 +1492,14 @@ impl Render for TextInput {
                     .id("TextElement")
                     .flex_grow()
                     .overflow_x_hidden()
-                    .child(TextElement::new(cx.model().clone())),
+                    .child(TextElement::new(cx.entity().clone())),
             )
             .when(self.loading, |this| {
                 this.child(Indicator::new().color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN)))
             })
             .children(suffix)
             .when(self.is_multi_line(), |this| {
-                let entity_id = cx.model().entity_id();
+                let entity_id = cx.entity().entity_id();
                 if self.last_layout.is_some() {
                     let scroll_size = self.scroll_size;
 

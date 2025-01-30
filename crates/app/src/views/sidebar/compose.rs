@@ -312,7 +312,7 @@ impl Render for Compose {
                         if let Some(contacts) = self.contacts.read(cx).clone() {
                             this.child(
                                 uniform_list(
-                                    cx.model().clone(),
+                                    cx.entity().clone(),
                                     "contacts",
                                     contacts.len(),
                                     move |this, range, window, cx| {

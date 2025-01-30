@@ -60,12 +60,12 @@ impl AppRegistry {
 
                         // Subscribe for all messages
                         _ = client
-                            .subscribe_with_id(all_messages_sub_id, vec![all_messages], Some(opts))
+                            .subscribe_with_id(all_messages_sub_id, all_messages, Some(opts))
                             .await;
 
                         // Subscribe for new message
                         _ = client
-                            .subscribe_with_id(new_message_sub_id, vec![new_message], None)
+                            .subscribe_with_id(new_message_sub_id, new_message, None)
                             .await;
                     })
                     .detach();

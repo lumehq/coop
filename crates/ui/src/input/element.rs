@@ -271,12 +271,14 @@ impl TextElement {
 
         // print_points_as_svg_path(&line_corners, &points);
 
-        let first_p = *points.first().unwrap();
-        let mut path = gpui::Path::new(bounds.origin + first_p);
+        let first_p = *points.get(0).unwrap();
+        let mut builder = gpui::PathBuilder::fill();
+        builder.move_to(bounds.origin + first_p);
         for p in points.iter().skip(1) {
-            path.line_to(bounds.origin + *p);
+            builder.line_to(bounds.origin + *p);
         }
-        Some(path)
+
+        builder.build().ok()
     }
 }
 
@@ -423,7 +425,7 @@ impl Element for TextElement {
 
         let lines = window
             .text_system()
-            .shape_text(display_text, font_size, &runs, wrap_width)
+            .shape_text(display_text, font_size, &runs, wrap_width, None)
             .unwrap();
 
         // `position_for_index` for example

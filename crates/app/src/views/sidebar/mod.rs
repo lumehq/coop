@@ -42,7 +42,7 @@ impl Sidebar {
             closeable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            view_id: cx.model().entity_id(),
+            view_id: cx.entity().entity_id(),
             inbox,
         }
     }

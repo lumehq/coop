@@ -35,7 +35,7 @@ impl Inbox {
                 .author(public_key);
 
             // Get all DM events from database
-            let events = client.database().query(vec![filter]).await?;
+            let events = client.database().query(filter).await?;
 
             // Filter result
             // - Get unique rooms only

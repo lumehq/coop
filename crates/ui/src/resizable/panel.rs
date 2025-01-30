@@ -108,7 +108,7 @@ impl ResizablePanelGroup {
     ) {
         let mut panel = panel;
         panel.axis = self.axis;
-        panel.group = Some(cx.model().downgrade());
+        panel.group = Some(cx.entity().downgrade());
         self.sizes.push(panel.initial_size.unwrap_or_default());
         self.panels.push(cx.new(|_| panel));
     }
@@ -122,7 +122,7 @@ impl ResizablePanelGroup {
     ) {
         let mut panel = panel;
         panel.axis = self.axis;
-        panel.group = Some(cx.model().downgrade());
+        panel.group = Some(cx.entity().downgrade());
 
         self.sizes
             .insert(ix, panel.initial_size.unwrap_or_default());
@@ -148,7 +148,7 @@ impl ResizablePanelGroup {
         panel.initial_size = old_panel_initial_size;
         panel.size_ratio = old_panel_size_ratio;
         panel.axis = self.axis;
-        panel.group = Some(cx.model().downgrade());
+        panel.group = Some(cx.entity().downgrade());
         self.sizes[ix] = panel.initial_size.unwrap_or_default();
         self.panels[ix] = cx.new(|_| panel);
         cx.notify()
@@ -172,7 +172,7 @@ impl ResizablePanelGroup {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
         resize_handle(("resizable-handle", ix), self.axis).on_drag(
             DragPanel((cx.entity_id(), ix, self.axis)),
             move |drag_panel, _, _window, cx| {
@@ -273,7 +273,7 @@ impl EventEmitter<ResizablePanelEvent> for ResizablePanelGroup {}
 
 impl Render for ResizablePanelGroup {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
         let container = if self.axis.is_horizontal() {
             h_flex()
         } else {
@@ -301,7 +301,7 @@ impl Render for ResizablePanelGroup {
                 .size_full()
             })
             .child(ResizePanelGroupElement {
-                view: cx.model().clone(),
+                view: cx.entity().clone(),
                 axis: self.axis,
             })
     }
@@ -370,7 +370,7 @@ impl ResizablePanel {
         self.bounds = bounds;
         self.size = Some(new_size);
 
-        let panel_view = cx.model().clone();
+        let panel_view = cx.entity().clone();
         if let Some(group) = self.group.as_ref() {
             _ = group.update(cx, |view, _| {
                 if let Some(ix) = view
@@ -390,7 +390,7 @@ impl FluentBuilder for ResizablePanel {}
 
 impl Render for ResizablePanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
         let total_size = self
             .group
             .as_ref()

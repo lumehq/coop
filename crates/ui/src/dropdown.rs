@@ -328,7 +328,7 @@ where
         let focus_handle = cx.focus_handle();
         let delegate = DropdownListDelegate {
             delegate,
-            dropdown: cx.model().downgrade(),
+            dropdown: cx.entity().downgrade(),
             selected_index,
         };
 
@@ -589,7 +589,7 @@ where
 {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let is_focused = self.focus_handle.is_focused(window);
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
         let bounds = self.bounds;
         let allow_open = !(self.open || self.disabled);
         let outline_visible = self.open || is_focused && !self.disabled;

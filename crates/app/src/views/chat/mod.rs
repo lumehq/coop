@@ -169,9 +169,11 @@ impl ChatPanel {
                                 .pubkey(author);
 
                             // Get all DM events in database
-                            let query = client.database().query(vec![recv, send]).await?;
+                            let recv_events = client.database().query(recv).await?;
+                            let send_events = client.database().query(send).await?;
+                            let events = recv_events.merge(send_events);
 
-                            Ok(query)
+                            Ok(events)
                         }
                     })
                     .await;

@@ -355,7 +355,7 @@ impl DockArea {
         cx: &mut Context<Self>,
     ) {
         self.subscribe_item(&panel, window, cx);
-        let weak_self = cx.model().downgrade();
+        let weak_self = cx.entity().downgrade();
         self.left_dock = Some(cx.new(|cx| {
             let mut dock = Dock::left(weak_self.clone(), window, cx);
             if let Some(size) = size {
@@ -377,7 +377,7 @@ impl DockArea {
         cx: &mut Context<Self>,
     ) {
         self.subscribe_item(&panel, window, cx);
-        let weak_self = cx.model().downgrade();
+        let weak_self = cx.entity().downgrade();
         self.bottom_dock = Some(cx.new(|cx| {
             let mut dock = Dock::bottom(weak_self.clone(), window, cx);
             if let Some(size) = size {
@@ -399,7 +399,7 @@ impl DockArea {
         cx: &mut Context<Self>,
     ) {
         self.subscribe_item(&panel, window, cx);
-        let weak_self = cx.model().downgrade();
+        let weak_self = cx.entity().downgrade();
         self.right_dock = Some(cx.new(|cx| {
             let mut dock = Dock::right(weak_self.clone(), window, cx);
             if let Some(size) = size {
@@ -534,7 +534,7 @@ impl DockArea {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let weak_self = cx.model().downgrade();
+        let weak_self = cx.entity().downgrade();
         match placement {
             DockPlacement::Left => {
                 if let Some(dock) = self.left_dock.as_ref() {
@@ -577,7 +577,7 @@ impl DockArea {
             }
             DockPlacement::Center => {
                 self.items
-                    .add_panel(panel, &cx.model().downgrade(), window, cx);
+                    .add_panel(panel, &cx.entity().downgrade(), window, cx);
             }
         }
     }
@@ -717,7 +717,7 @@ impl EventEmitter<DockEvent> for DockArea {}
 
 impl Render for DockArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
 
         div()
             .id("dock-area")

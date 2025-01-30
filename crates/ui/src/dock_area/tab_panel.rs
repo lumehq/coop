@@ -284,7 +284,7 @@ impl TabPanel {
             return;
         }
 
-        let tab_view = cx.model().clone();
+        let tab_view = cx.entity().clone();
 
         if let Some(stack_panel) = self.stack_panel.as_ref() {
             _ = stack_panel.update(cx, |view, cx| {
@@ -353,7 +353,7 @@ impl TabPanel {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_zoomed = self.is_zoomed && state.zoomable;
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
         let build_popup_menu = move |this, cx: &App| view.read(cx).popup_menu(this, cx);
 
         // TODO: Do not show MenuButton if there is no menu items
@@ -413,7 +413,7 @@ impl TabPanel {
             return None;
         }
 
-        let view_entity_id = cx.model().entity_id();
+        let view_entity_id = cx.entity().entity_id();
         let toggle_button_panels = dock_area.toggle_button_panels;
 
         // Check if current TabPanel's entity_id matches the one stored in DockArea for this placement
@@ -486,7 +486,7 @@ impl TabPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let view = cx.model().clone();
+        let view = cx.entity().clone();
 
         let Some(dock_area) = self.dock_area.upgrade() else {
             return div().into_any_element();
@@ -800,7 +800,7 @@ impl TabPanel {
         cx: &mut Context<Self>,
     ) {
         let panel = drag.panel.clone();
-        let is_same_tab = drag.tab_panel == cx.model();
+        let is_same_tab = drag.tab_panel == cx.entity();
 
         // If target is same tab, and it is only one panel, do nothing.
         if is_same_tab && ix.is_none() {
@@ -863,7 +863,7 @@ impl TabPanel {
 
         let ix = stack_panel
             .read(cx)
-            .index_of_panel(Arc::new(cx.model().clone()))
+            .index_of_panel(Arc::new(cx.entity().clone()))
             .unwrap_or_default();
 
         if parent_axis.is_vertical() && placement.is_vertical() {
@@ -892,10 +892,10 @@ impl TabPanel {
             });
         } else {
             // 1. Create new StackPanel with new axis
-            // 2. Move cx.model() from parent StackPanel to the new StackPanel
+            // 2. Move cx.entity() from parent StackPanel to the new StackPanel
             // 3. Add the new TabPanel to the new StackPanel at the correct index
             // 4. Add new StackPanel to the parent StackPanel at the correct index
-            let tab_panel = cx.model().clone();
+            let tab_panel = cx.entity().clone();
 
             // Try to use the old stack panel, not just create a new one, to avoid too many nested stack panels
             let new_stack_panel = if stack_panel.read(cx).panels_len() <= 1 {

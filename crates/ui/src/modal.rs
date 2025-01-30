@@ -39,7 +39,7 @@ pub struct Modal {
 }
 
 impl Modal {
-    pub fn new(window: &mut Window, cx: &mut App) -> Self {
+    pub fn new(_window: &mut Window, cx: &mut App) -> Self {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
