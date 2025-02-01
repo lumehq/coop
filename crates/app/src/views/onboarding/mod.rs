@@ -1,9 +1,6 @@
-use common::constants::KEYRING_SERVICE;
-use gpui::{
-    div, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window,
-};
+use common::{constants::KEYRING_SERVICE, profile::NostrProfile};
+use gpui::{div, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
 use nostr_sdk::prelude::*;
-use registry::{app::AppRegistry, contact::Contact};
 use state::get_client;
 use ui::input::{InputEvent, TextInput};
 
@@ -71,9 +68,7 @@ impl Onboarding {
                             .await;
 
                         if let Ok(metadata) = query {
-                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
-                                state.set_user(Contact::new(public_key, metadata), cx);
-                            });
+                            //
                         }
                     }
                 }

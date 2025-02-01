@@ -12,9 +12,11 @@ path = "src/main.rs"
 ui = { path = "../ui" }
 common = { path = "../common" }
 state = { path = "../state" }
-registry = { path = "../registry" }
+app_state = { path = "../app_state" }
+chat = { path = "../chat" }
 
 gpui.workspace = true
+gpui_tokio.workspace = true
 reqwest_client.workspace = true
 
 tokio.workspace = true

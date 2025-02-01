@@ -1,25 +1,26 @@
+use app_state::registry::AppRegistry;
 use asset::Assets;
-use common::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, METADATA_DELAY,
-    NEW_MESSAGE_SUB_ID,
+use async_utility::task::spawn;
+use chat::registry::ChatRegistry;
+use common::{
+    constants::{
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
+    },
+    profile::NostrProfile,
 };
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, Bounds, SharedString, TitlebarOptions,
-    WindowBounds, WindowKind, WindowOptions,
+    actions, point, px, size, App, AppContext, Application, BorrowAppContext, Bounds, SharedString,
+    TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
-use log::warn;
+use log::{error, info};
 use nostr_sdk::prelude::*;
-use registry::{app::AppRegistry, chat::ChatRegistry, contact::Contact};
 use state::{get_client, initialize_client};
-use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
-use tokio::{
-    sync::{mpsc, Mutex},
-    time::sleep,
-};
+use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
+use tokio::sync::mpsc;
 use ui::Root;
-use views::app::AppView;
+use views::{app::AppView, onboarding::Onboarding, startup::Startup};
 
 mod asset;
 mod views;
@@ -34,55 +35,132 @@ pub enum Signal {
     Eose,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    // Log
     tracing_subscriber::fmt::init();
 
-    // Initialize client
+    // Initialize nostr client
     initialize_client();
 
     // Get client
     let client = get_client();
+    let (signal_tx, mut signal_rx) = tokio::sync::mpsc::channel::<Signal>(4096);
 
-    // Add some bootstrap relays
-    _ = client.add_relay("wss://relay.damus.io/").await;
-    _ = client.add_relay("wss://relay.primal.net/").await;
-    _ = client.add_relay("wss://nos.lol/").await;
+    spawn(async move {
+        // Add some bootstrap relays
+        _ = client.add_relay("wss://relay.damus.io/").await;
+        _ = client.add_relay("wss://relay.primal.net/").await;
+        _ = client.add_relay("wss://nos.lol/").await;
 
-    _ = client.add_discovery_relay("wss://user.kindpag.es/").await;
-    _ = client.add_discovery_relay("wss://directory.yabu.me/").await;
+        _ = client.add_discovery_relay("wss://user.kindpag.es/").await;
+        _ = client.add_discovery_relay("wss://directory.yabu.me/").await;
 
-    // Connect to all relays
-    _ = client.connect().await;
+        // Connect to all relays
+        _ = client.connect().await
+    });
 
-    // Signal
-    let (signal_tx, mut signal_rx) = mpsc::channel::<Signal>(4096);
-    let (mta_tx, mta_rx) = mpsc::channel::<PublicKey>(4096);
+    spawn(async move {
+        let (batch_tx, mut batch_rx) = mpsc::channel::<Box<Event>>(20);
 
-    // Handle notifications from relays
-    // Send notify back to GPUI
-    tokio::spawn(async move {
-        let mut notifications = client.notifications();
+        async fn sync_metadata(client: &Client, buffer: &HashSet<PublicKey>) {
+            let filter = Filter::new()
+                .authors(buffer.iter().copied())
+                .kind(Kind::Metadata)
+                .limit(buffer.len());
+
+            if let Err(e) = client.sync(filter, &SyncOptions::default()).await {
+                error!("NEG error: {e}");
+            }
+        }
+
+        async fn process_batch(client: &Client, events: &[Box<Event>]) {
+            let sig = Signature::from_str(FAKE_SIG).unwrap();
+            let mut buffer: HashSet<PublicKey> = HashSet::with_capacity(100);
+
+            for event in events.iter() {
+                if let Ok(UnwrappedGift { mut rumor, sender }) =
+                    client.unwrap_gift_wrap(event).await
+                {
+                    let pubkeys: HashSet<PublicKey> = event.tags.public_keys().copied().collect();
+                    buffer.extend(pubkeys);
+                    buffer.insert(sender);
+
+                    // Create event's ID is not exist
+                    rumor.ensure_id();
+
+                    // Save event to database
+                    if let Some(id) = rumor.id {
+                        let ev = Event::new(
+                            id,
+                            rumor.pubkey,
+                            rumor.created_at,
+                            rumor.kind,
+                            rumor.tags,
+                            rumor.content,
+                            sig,
+                        );
+
+                        if let Err(e) = client.database().save_event(&ev).await {
+                            error!("Save error: {}", e);
+                        }
+                    }
+                }
+            }
+
+            sync_metadata(client, &buffer).await;
+        }
+
+        // Spawn a thread to handle batch process
+        spawn(async move {
+            const BATCH_SIZE: usize = 20;
+            const BATCH_TIMEOUT: Duration = Duration::from_millis(200);
+
+            let mut batch = Vec::with_capacity(20);
+            let mut timeout = Box::pin(tokio::time::sleep(BATCH_TIMEOUT));
+
+            loop {
+                tokio::select! {
+                    event = batch_rx.recv() => {
+                        if let Some(event) = event {
+                            batch.push(event);
+
+                            if batch.len() == BATCH_SIZE {
+                                process_batch(client, &batch).await;
+                                batch.clear();
+                                timeout = Box::pin(tokio::time::sleep(BATCH_TIMEOUT));
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    _ = &mut timeout => {
+                        if !batch.is_empty() {
+                            process_batch(client, &batch).await;
+                            batch.clear();
+                        }
+                        timeout = Box::pin(tokio::time::sleep(BATCH_TIMEOUT));
+                    }
+                }
+            }
+        });
+
+        let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+        let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
         let sig = Signature::from_str(FAKE_SIG).unwrap();
-        let new_message = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-        let all_messages = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+        let mut notifications = client.notifications();
 
         while let Ok(notification) = notifications.recv().await {
             if let RelayPoolNotification::Message { message, .. } = notification {
-                if let RelayMessage::Event {
-                    event,
-                    subscription_id,
-                } = message
-                {
-                    match event.kind {
+                match message {
+                    RelayMessage::Event {
+                        event,
+                        subscription_id,
+                    } => match event.kind {
                         Kind::GiftWrap => {
-                            match client.unwrap_gift_wrap(&event).await {
-                                Ok(UnwrappedGift { mut rumor, sender }) => {
-                                    // Request metadata
-                                    if let Err(e) = mta_tx.send(sender).await {
-                                        warn!("Send error: {}", e)
-                                    };
-
+                            if subscription_id == new_id {
+                                if let Ok(UnwrappedGift { mut rumor, .. }) =
+                                    client.unwrap_gift_wrap(&event).await
+                                {
                                     // Compute event id if not exist
                                     rumor.ensure_id();
 
@@ -99,55 +177,47 @@ async fn main() {
 
                                         // Save rumor to database to further query
                                         if let Err(e) = client.database().save_event(&ev).await {
-                                            warn!("Save error: {}", e);
+                                            error!("Save error: {}", e);
                                         }
 
-                                        // Send event back to channel
-                                        if subscription_id == new_message {
-                                            if let Err(e) = signal_tx.send(Signal::Event(ev)).await
-                                            {
-                                                warn!("Send error: {}", e)
-                                            }
+                                        // Send new event to GPUI
+                                        if let Err(e) = signal_tx.send(Signal::Event(ev)).await {
+                                            error!("Send error: {}", e)
                                         }
                                     }
                                 }
-                                Err(e) => warn!("Unwrap error: {}", e),
+                            }
+
+                            if let Err(e) = batch_tx.send(event).await {
+                                error!("Failed to add to batch: {}", e);
                             }
                         }
                         Kind::ContactList => {
-                            let public_keys: Vec<PublicKey> =
+                            let public_keys: HashSet<_> =
                                 event.tags.public_keys().copied().collect();
 
-                            for public_key in public_keys.into_iter() {
-                                if let Err(e) = mta_tx.send(public_key).await {
-                                    warn!("Send error: {}", e)
-                                };
-                            }
+                            sync_metadata(client, &public_keys).await;
                         }
                         _ => {}
+                    },
+                    RelayMessage::EndOfStoredEvents(subscription_id) => {
+                        if subscription_id == all_id {
+                            if let Err(e) = signal_tx.send(Signal::Eose).await {
+                                error!("Failed to send eose: {}", e)
+                            };
+                        }
                     }
-                } else if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
-                    if subscription_id == all_messages {
-                        if let Err(e) = signal_tx.send(Signal::Eose).await {
-                            warn!("Send error: {}", e)
-                        };
-                    }
+                    _ => {}
                 }
             }
         }
     });
 
-    // Handle metadata request
-    // Merge all requests into single subscription
-    tokio::spawn(async move { handle_metadata(client, mta_rx).await });
-
     Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
         .run(move |cx| {
-            // App state
-            AppRegistry::set_global(cx);
-            // Chat state
+            // Initialize chat global state
             ChatRegistry::set_global(cx);
 
             // Initialize components
@@ -155,81 +225,6 @@ async fn main() {
 
             // Set quit action
             cx.on_action(quit);
-
-            // Spawn a thread to handle Nostr events
-            cx.spawn(|async_cx| async move {
-                let (tx, rx) = smol::channel::bounded::<Signal>(4096);
-
-                async_cx
-                    .background_executor()
-                    .spawn(async move {
-                        while let Some(signal) = signal_rx.recv().await {
-                            if let Err(e) = tx.send(signal).await {
-                                warn!("Send error: {}", e)
-                            }
-                        }
-                    })
-                    .detach();
-
-                while let Ok(signal) = rx.recv().await {
-                    match signal {
-                        Signal::Eose => {
-                            _ = async_cx.update_global::<ChatRegistry, _>(|chat, cx| {
-                                chat.load(cx);
-                            });
-                        }
-                        Signal::Event(event) => {
-                            _ = async_cx.update_global::<ChatRegistry, _>(|state, cx| {
-                                state.receive(event, cx)
-                            });
-                        }
-                    }
-                }
-            })
-            .detach();
-
-            // Spawn a thread to update Nostr signer
-            cx.spawn(|async_cx| {
-                let task = cx.read_credentials(KEYRING_SERVICE);
-
-                async move {
-                    if let Ok(Some((npub, secret))) = task.await {
-                        let public_key =
-                            PublicKey::from_bech32(&npub).expect("Public Key isn't valid.");
-
-                        let query: anyhow::Result<Metadata, anyhow::Error> = async_cx
-                            .background_executor()
-                            .spawn(async move {
-                                let hex = String::from_utf8(secret)?;
-                                let keys = Keys::parse(&hex)?;
-
-                                // Update signer
-                                _ = client.set_signer(keys).await;
-
-                                // Get metadata
-                                if let Some(metadata) =
-                                    client.database().metadata(public_key).await?
-                                {
-                                    Ok(metadata)
-                                } else {
-                                    Ok(Metadata::new())
-                                }
-                            })
-                            .await;
-
-                        if let Ok(metadata) = query {
-                            _ = async_cx.update_global::<AppRegistry, _>(|state, cx| {
-                                state.set_user(Contact::new(public_key, metadata), cx);
-                            });
-                        }
-                    } else {
-                        _ = async_cx.update_global::<AppRegistry, _>(|state, _| {
-                            state.is_loading = false;
-                        });
-                    }
-                }
-            })
-            .detach();
 
             let opts = WindowOptions {
                 #[cfg(not(target_os = "linux"))]
@@ -251,50 +246,122 @@ async fn main() {
                 ..Default::default()
             };
 
-            cx.open_window(opts, |window, cx| {
-                window.set_window_title(APP_NAME);
-                window.set_app_id(APP_ID);
-                cx.activate(true);
-                cx.new(|cx| Root::new(cx.new(|cx| AppView::new(window, cx)).into(), window, cx))
+            let window = cx
+                .open_window(opts, |window, cx| {
+                    cx.activate(true);
+                    window.set_window_title(APP_NAME);
+                    window.set_app_id(APP_ID);
+
+                    let root = cx.new(|cx| {
+                        Root::new(cx.new(|cx| Startup::new(window, cx)).into(), window, cx)
+                    });
+
+                    let weak_root = root.downgrade();
+                    let window_handle = window.window_handle();
+                    let task = cx.read_credentials(KEYRING_SERVICE);
+
+                    // Initialize app global state
+                    AppRegistry::set_global(weak_root, cx);
+
+                    cx.spawn(|mut cx| async move {
+                        if let Ok(Some((npub, secret))) = task.await {
+                            let (tx, mut rx) = tokio::sync::mpsc::channel::<NostrProfile>(1);
+
+                            cx.background_executor()
+                                .spawn(async move {
+                                    let public_key = PublicKey::from_bech32(&npub).unwrap();
+                                    let secret_hex = String::from_utf8(secret).unwrap();
+                                    let keys = Keys::parse(&secret_hex).unwrap();
+
+                                    // Update nostr signer
+                                    _ = client.set_signer(keys).await;
+
+                                    // Get user's metadata
+                                    let metadata = if let Ok(Some(metadata)) =
+                                        client.database().metadata(public_key).await
+                                    {
+                                        metadata
+                                    } else {
+                                        Metadata::new()
+                                    };
+
+                                    if tx
+                                        .send(NostrProfile::new(public_key, metadata))
+                                        .await
+                                        .is_ok()
+                                    {
+                                        info!("Found account");
+                                    }
+                                })
+                                .detach();
+
+                            while let Some(profile) = rx.recv().await {
+                                cx.update_window(window_handle, |_, window, cx| {
+                                    cx.update_global::<AppRegistry, _>(|this, cx| {
+                                        this.set_user(Some(profile.clone()));
+
+                                        if let Some(root) = this.root() {
+                                            cx.update_entity(&root, |this: &mut Root, cx| {
+                                                this.set_view(
+                                                    cx.new(|cx| AppView::new(profile, window, cx))
+                                                        .into(),
+                                                    cx,
+                                                );
+                                            });
+                                        }
+                                    });
+                                })
+                                .unwrap();
+                            }
+                        } else {
+                            cx.update_window(window_handle, |_, window, cx| {
+                                cx.update_global::<AppRegistry, _>(|this, cx| {
+                                    if let Some(root) = this.root() {
+                                        cx.update_entity(&root, |this: &mut Root, cx| {
+                                            this.set_view(
+                                                cx.new(|cx| Onboarding::new(window, cx)).into(),
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                });
+                            })
+                            .unwrap();
+                        }
+                    })
+                    .detach();
+
+                    root
+                })
+                .expect("System error. Please re-open the app.");
+
+            // Listen for messages from the Nostr thread
+            cx.spawn(|mut cx| async move {
+                while let Some(signal) = signal_rx.recv().await {
+                    match signal {
+                        Signal::Eose => {
+                            cx.update_window(*window.deref(), |_this, _window, cx| {
+                                cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                    this.load(cx);
+                                });
+                            })
+                            .unwrap();
+                        }
+                        Signal::Event(event) => {
+                            cx.update_window(*window.deref(), |_this, _window, cx| {
+                                cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                    this.new_room_message(event, cx);
+                                });
+                            })
+                            .unwrap();
+                        }
+                    }
+                }
             })
-            .expect("System error");
+            .detach();
         });
 }
 
-async fn handle_metadata(client: &'static Client, mut mta_rx: mpsc::Receiver<PublicKey>) {
-    let queue: Arc<Mutex<HashSet<PublicKey>>> = Arc::new(Mutex::new(HashSet::new()));
-    let queue_clone = Arc::clone(&queue);
-
-    let (tx, mut rx) = mpsc::channel::<PublicKey>(200);
-
-    tokio::spawn(async move {
-        while let Some(public_key) = mta_rx.recv().await {
-            queue_clone.lock().await.insert(public_key);
-            _ = tx.send(public_key).await;
-        }
-    });
-
-    tokio::spawn(async move {
-        while rx.recv().await.is_some() {
-            sleep(Duration::from_millis(METADATA_DELAY)).await;
-
-            let authors: Vec<PublicKey> = queue.lock().await.drain().collect();
-            let total = authors.len();
-
-            if total > 0 {
-                let filter = Filter::new()
-                    .authors(authors)
-                    .kind(Kind::Metadata)
-                    .limit(total);
-
-                if let Err(e) = client.sync(filter, &SyncOptions::default()).await {
-                    warn!("Error: {}", e);
-                }
-            }
-        }
-    });
-}
-
 fn quit(_: &Quit, cx: &mut App) {
-    cx.quit();
+    cx.shutdown();
 }

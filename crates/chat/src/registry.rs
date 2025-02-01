@@ -1,62 +1,10 @@
-use crate::room::Room;
 use anyhow::Error;
 use common::utils::{compare, room_hash};
-use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task, WeakEntity};
-use itertools::Itertools;
+use gpui::{App, AppContext, Entity, Global, WeakEntity};
 use nostr_sdk::prelude::*;
 use state::get_client;
-use std::cmp::Reverse;
 
-pub struct Inbox {
-    pub rooms: Vec<Entity<Room>>,
-    pub is_loading: bool,
-}
-
-impl Inbox {
-    pub fn new() -> Self {
-        Self {
-            rooms: vec![],
-            is_loading: true,
-        }
-    }
-
-    pub fn current_rooms(&self, cx: &Context<Self>) -> Vec<u64> {
-        self.rooms.iter().map(|room| room.read(cx).id).collect()
-    }
-
-    pub fn load(&mut self, cx: AsyncApp) -> Task<Result<Vec<Event>, Error>> {
-        cx.background_executor().spawn(async move {
-            let client = get_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .author(public_key);
-
-            // Get all DM events from database
-            let events = client.database().query(filter).await?;
-
-            // Filter result
-            // - Get unique rooms only
-            // - Sorted by created_at
-            let result = events
-                .into_iter()
-                .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
-                .unique_by(|ev| room_hash(&ev.tags))
-                .sorted_by_key(|ev| Reverse(ev.created_at))
-                .collect::<Vec<_>>();
-
-            Ok(result)
-        })
-    }
-}
-
-impl Default for Inbox {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use crate::{inbox::Inbox, room::Room};
 
 pub struct ChatRegistry {
     inbox: Entity<Inbox>,
@@ -70,7 +18,7 @@ impl ChatRegistry {
 
         cx.observe_new::<Room>(|this, _window, cx| {
             // Get all pubkeys to load metadata
-            let pubkeys = this.get_all_keys();
+            let pubkeys = this.get_pubkeys();
 
             cx.spawn(|weak_model, mut async_cx| async move {
                 let query: Result<Vec<(PublicKey, Metadata)>, Error> = async_cx
@@ -116,7 +64,7 @@ impl ChatRegistry {
                 if let Some(inbox) = this.upgrade() {
                     if let Ok(events) = task.await {
                         _ = async_cx.update_entity(&inbox, |this, cx| {
-                            let current_rooms = this.current_rooms(cx);
+                            let current_rooms = this.get_room_ids(cx);
                             let items: Vec<Entity<Room>> = events
                                 .into_iter()
                                 .filter_map(|ev| {
@@ -146,7 +94,7 @@ impl ChatRegistry {
         self.inbox.downgrade()
     }
 
-    pub fn room(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
+    pub fn get_room(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
         self.inbox
             .read(cx)
             .rooms
@@ -166,13 +114,13 @@ impl ChatRegistry {
         })
     }
 
-    pub fn receive(&mut self, event: Event, cx: &mut App) {
+    pub fn new_room_message(&mut self, event: Event, cx: &mut App) {
         let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
         pubkeys.push(event.pubkey);
 
         self.inbox.update(cx, |this, cx| {
             if let Some(room) = this.rooms.iter().find(|room| {
-                let all_keys = room.read(cx).get_all_keys();
+                let all_keys = room.read(cx).get_pubkeys();
                 compare(&all_keys, &pubkeys)
             }) {
                 room.update(cx, |this, cx| {
@@ -188,7 +136,7 @@ impl ChatRegistry {
                 })
             }
 
-            // cx.notify();
+            cx.notify();
         })
     }
 }

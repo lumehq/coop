@@ -1,4 +1,5 @@
 use async_utility::task::spawn;
+use chat::room::Room;
 use common::{
     constants::IMAGE_SERVICE,
     utils::{compare, message_time, nip96_upload},
@@ -12,7 +13,6 @@ use gpui::{
 use itertools::Itertools;
 use message::Message;
 use nostr_sdk::prelude::*;
-use registry::room::Room;
 use smol::fs;
 use state::get_client;
 use tokio::sync::oneshot;
@@ -140,7 +140,7 @@ impl ChatPanel {
         let members = room.members.clone();
         let owner = room.owner.clone();
         // Get all public keys
-        let all_keys = room.get_all_keys();
+        let all_keys = room.get_pubkeys();
 
         // Async
         let async_state = self.state.clone();

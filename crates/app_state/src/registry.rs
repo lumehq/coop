@@ -1,38 +1,29 @@
-use common::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID};
-use gpui::{App, AppContext, Entity, Global, WeakEntity, Window};
+use common::{
+    constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID},
+    profile::NostrProfile,
+};
+use gpui::{App, Entity, Global, WeakEntity};
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::time::Duration;
-
-use crate::contact::Contact;
+use ui::Root;
 
 pub struct AppRegistry {
-    user: Entity<Option<Contact>>,
-    pub is_loading: bool,
+    root: WeakEntity<Root>,
+    user: Option<NostrProfile>,
 }
 
 impl Global for AppRegistry {}
 
 impl AppRegistry {
-    pub fn set_global(cx: &mut App) {
-        let user: Entity<Option<Contact>> = cx.new(|_| None);
-        let is_loading = true;
-
-        cx.observe(&user, |this, cx| {
-            if let Some(contact) = this.read(cx).as_ref() {
+    pub fn set_global(root: WeakEntity<Root>, cx: &mut App) {
+        cx.observe_global::<Self>(|cx| {
+            if let Some(profile) = cx.global::<Self>().user() {
                 let client = get_client();
-                let public_key = contact.public_key();
+                let public_key = profile.public_key();
 
                 cx.background_executor()
                     .spawn(async move {
-                        let subscription = Filter::new()
-                            .kind(Kind::Metadata)
-                            .author(public_key)
-                            .limit(1);
-
-                        // Get metadata
-                        _ = client.sync(subscription, &SyncOptions::default()).await;
-
                         let subscription = Filter::new()
                             .kind(Kind::ContactList)
                             .author(public_key)
@@ -73,30 +64,18 @@ impl AppRegistry {
         })
         .detach();
 
-        cx.set_global(Self { user, is_loading });
+        cx.set_global(Self { root, user: None });
     }
 
-    pub fn user(&self) -> WeakEntity<Option<Contact>> {
-        self.user.downgrade()
+    pub fn set_user(&mut self, profile: Option<NostrProfile>) {
+        self.user = profile;
     }
 
-    pub fn current_user(&self, _window: &Window, cx: &App) -> Option<Contact> {
-        self.user.read(cx).clone()
+    pub fn user(&self) -> Option<NostrProfile> {
+        self.user.clone()
     }
 
-    pub fn set_user(&mut self, contact: Contact, cx: &mut App) {
-        self.user.update(cx, |this, cx| {
-            *this = Some(contact);
-            cx.notify();
-        });
-
-        self.is_loading = false;
-    }
-
-    pub fn logout(&mut self, cx: &mut App) {
-        self.user.update(cx, |this, cx| {
-            *this = None;
-            cx.notify();
-        });
+    pub fn root(&self) -> Option<Entity<Root>> {
+        self.root.upgrade()
     }
 }

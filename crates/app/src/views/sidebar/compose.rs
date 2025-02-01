@@ -1,11 +1,15 @@
-use common::utils::{random_name, room_hash};
+use app_state::registry::AppRegistry;
+use chat::room::Room;
+use common::{
+    profile::NostrProfile,
+    utils::{random_name, room_hash},
+};
 use gpui::{
     div, img, impl_internal_actions, px, uniform_list, App, AppContext, Context, Entity,
     FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use nostr_sdk::prelude::*;
-use registry::{app::AppRegistry, contact::Contact, room::Room};
 use serde::Deserialize;
 use state::get_client;
 use std::{collections::HashSet, time::Duration};
@@ -27,7 +31,7 @@ pub struct Compose {
     title_input: Entity<TextInput>,
     message_input: Entity<TextInput>,
     user_input: Entity<TextInput>,
-    contacts: Entity<Option<Vec<Contact>>>,
+    contacts: Entity<Option<Vec<NostrProfile>>>,
     selected: Entity<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
     is_loading: bool,
@@ -78,15 +82,17 @@ impl Compose {
             let client = get_client();
 
             async move {
-                let query: anyhow::Result<Vec<Contact>, anyhow::Error> = async_cx
+                let query: anyhow::Result<Vec<NostrProfile>, anyhow::Error> = async_cx
                     .background_executor()
                     .spawn(async move {
                         let signer = client.signer().await?;
                         let public_key = signer.get_public_key().await?;
                         let profiles = client.database().contacts(public_key).await?;
-                        let members: Vec<Contact> = profiles
+                        let members: Vec<NostrProfile> = profiles
                             .into_iter()
-                            .map(|profile| Contact::new(profile.public_key(), profile.metadata()))
+                            .map(|profile| {
+                                NostrProfile::new(profile.public_key(), profile.metadata())
+                            })
                             .collect();
 
                         Ok(members)
@@ -120,10 +126,8 @@ impl Compose {
         }
     }
 
-    pub fn room(&self, window: &Window, cx: &App) -> Option<Room> {
-        let current_user = cx.global::<AppRegistry>().current_user(window, cx);
-
-        if let Some(current_user) = current_user {
+    pub fn room(&self, _window: &Window, cx: &App) -> Option<Room> {
+        if let Some(current_user) = cx.global::<AppRegistry>().user() {
             // Convert selected pubkeys into nostr tags
             let tags: Vec<Tag> = self
                 .selected
@@ -134,19 +138,19 @@ impl Compose {
             let tags = Tags::new(tags);
 
             // Convert selected pubkeys into members
-            let members: Vec<Contact> = self
+            let members: Vec<NostrProfile> = self
                 .selected
                 .read(cx)
                 .clone()
                 .into_iter()
-                .map(|pk| Contact::new(pk, Metadata::new()))
+                .map(|pk| NostrProfile::new(pk, Metadata::new()))
                 .collect();
 
             // Get room's id
             let id = room_hash(&tags);
 
             // Get room's owner (current user)
-            let owner = Contact::new(current_user.public_key(), Metadata::new());
+            let owner = NostrProfile::new(current_user.public_key(), Metadata::new());
 
             // Get room's title
             let title = self.title_input.read(cx).text().to_string().into();
@@ -192,7 +196,7 @@ impl Compose {
                         _ = async_cx.update_entity(&view, |this, cx| {
                             this.contacts.update(cx, |this, cx| {
                                 if let Some(members) = this {
-                                    members.insert(0, Contact::new(public_key, metadata));
+                                    members.insert(0, NostrProfile::new(public_key, metadata));
                                 }
                                 cx.notify();
                             });

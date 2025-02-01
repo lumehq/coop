@@ -1,10 +1,11 @@
 use crate::views::app::{AddPanel, PanelKind};
+use chat::registry::ChatRegistry;
 use common::utils::message_ago;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, Context, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use registry::chat::ChatRegistry;
+use std::sync::Arc;
 use ui::{
     dock_area::dock::DockPlacement,
     skeleton::Skeleton,

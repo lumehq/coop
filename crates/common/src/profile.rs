@@ -1,19 +1,19 @@
-use common::{constants::IMAGE_SERVICE, utils::shorted_public_key};
+use crate::{constants::IMAGE_SERVICE, utils::shorted_public_key};
 use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone)]
-pub struct Contact {
+pub struct NostrProfile {
     public_key: PublicKey,
     metadata: Metadata,
 }
 
-impl PartialEq for Contact {
+impl PartialEq for NostrProfile {
     fn eq(&self, other: &Self) -> bool {
         self.public_key() == other.public_key()
     }
 }
 
-impl Contact {
+impl NostrProfile {
     pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
         Self {
             public_key,
@@ -43,8 +43,7 @@ impl Contact {
         }
     }
 
-    /// Get contact's name
-    /// Fallback to public key as shorted format
+    /// Get contact's name, fallback to public key as shorted format
     pub fn name(&self) -> String {
         if let Some(display_name) = &self.metadata.display_name {
             if !display_name.is_empty() {
