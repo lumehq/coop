@@ -5,7 +5,6 @@ use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, Context, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use std::sync::Arc;
 use ui::{
     dock_area::dock::DockPlacement,
     skeleton::Skeleton,
@@ -103,13 +102,14 @@ impl Inbox {
         }
     }
 
-    fn action(&self, id: u64, _window: &mut Window, cx: &mut Context<Self>) {
-        let action = AddPanel {
-            panel: PanelKind::Room(id),
-            position: DockPlacement::Center,
-        };
-
-        cx.dispatch_action(&action)
+    fn action(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        window.dispatch_action(
+            Box::new(AddPanel {
+                panel: PanelKind::Room(id),
+                position: DockPlacement::Center,
+            }),
+            cx,
+        );
     }
 }
 

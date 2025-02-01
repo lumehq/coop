@@ -1,4 +1,4 @@
-use common::{constants::KEYRING_SERVICE, profile::NostrProfile};
+use common::constants::KEYRING_SERVICE;
 use gpui::{div, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
 use nostr_sdk::prelude::*;
 use state::get_client;
@@ -33,7 +33,7 @@ impl Onboarding {
 
     fn save_keys(
         content: &str,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<(), anyhow::Error> {
         let keys = Keys::parse(content)?;
@@ -41,7 +41,7 @@ impl Onboarding {
         let bech32 = public_key.to_bech32()?;
         let secret = keys.secret_key().to_secret_hex();
 
-        let mut async_cx = cx.to_async();
+        let async_cx = cx.to_async();
 
         cx.foreground_executor()
             .spawn({
@@ -67,7 +67,7 @@ impl Onboarding {
                             })
                             .await;
 
-                        if let Ok(metadata) = query {
+                        if let Ok(_metadata) = query {
                             //
                         }
                     }
@@ -80,7 +80,7 @@ impl Onboarding {
 }
 
 impl Render for Onboarding {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()

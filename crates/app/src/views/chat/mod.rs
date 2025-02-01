@@ -135,7 +135,7 @@ impl ChatPanel {
         })
     }
 
-    fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
+    fn load_messages(&self, _window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
         let members = room.members.clone();
         let owner = room.owner.clone();
@@ -221,7 +221,7 @@ impl ChatPanel {
     fn load_new_messages(
         &self,
         model: WeakEntity<Room>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(model) = model.upgrade() {
@@ -265,6 +265,7 @@ impl ChatPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let window_handle = window.window_handle();
         let room = self.room.read(cx);
         let owner = room.owner.clone();
         let mut members = room.members.to_vec();
@@ -297,11 +298,9 @@ impl ChatPanel {
             });
         }
 
-        /*
-        cx.spawn(|this, mut async_cx| async move {
+        cx.spawn(|this, mut cx| async move {
             // Send message to all members
-            async_cx
-                .background_executor()
+            cx.background_executor()
                 .spawn({
                     let client = get_client();
                     let content = content.clone().to_string();
@@ -328,7 +327,7 @@ impl ChatPanel {
                 .detach();
 
             if let Some(view) = this.upgrade() {
-                _ = async_cx.update_entity(&view, |this, cx| {
+                _ = cx.update_entity(&view, |this, cx| {
                     cx.update_entity(&this.state, |model, cx| {
                         let message = Message::new(
                             owner,
@@ -339,23 +338,26 @@ impl ChatPanel {
                         model.items.extend(vec![message]);
                         model.count = model.items.len();
                         cx.notify();
-                    })
+                    });
+                    cx.notify();
                 });
             }
 
             if let Some(input) = view.upgrade() {
-                _ = async_cx.update_entity(&input, |input, cx| {
-                    input.set_loading(false, window, cx);
-                    input.set_disabled(false, window, cx);
-                    input.set_text("", window, cx);
-                });
+                cx.update_window(window_handle, |_, window, cx| {
+                    cx.update_entity(&input, |input, cx| {
+                        input.set_loading(false, window, cx);
+                        input.set_disabled(false, window, cx);
+                        input.set_text("", window, cx);
+                    });
+                })
+                .unwrap()
             }
         })
         .detach();
-        */
     }
 
-    fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn upload(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let attaches = self.attaches.clone();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -412,7 +414,7 @@ impl ChatPanel {
         .detach();
     }
 
-    fn remove(&mut self, url: &Url, window: &mut Window, cx: &mut Context<Self>) {
+    fn remove(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
         self.attaches.update(cx, |model, cx| {
             if let Some(urls) = model.as_mut() {
                 let ix = urls.iter().position(|x| x == url).unwrap();
@@ -469,7 +471,7 @@ impl Focusable for ChatPanel {
 }
 
 impl Render for ChatPanel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
             .child(list(self.list.clone()).flex_1())

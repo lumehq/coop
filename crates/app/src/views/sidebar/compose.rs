@@ -78,38 +78,33 @@ impl Compose {
         )
         .detach();
 
-        cx.spawn(|this, mut async_cx| {
-            let client = get_client();
+        cx.spawn(|this, mut async_cx| async move {
+            let query: anyhow::Result<Vec<NostrProfile>, anyhow::Error> = async_cx
+                .background_executor()
+                .spawn(async move {
+                    let client = get_client();
+                    let signer = client.signer().await?;
+                    let public_key = signer.get_public_key().await?;
+                    let profiles = client.database().contacts(public_key).await?;
+                    let members: Vec<NostrProfile> = profiles
+                        .into_iter()
+                        .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
+                        .collect();
 
-            async move {
-                let query: anyhow::Result<Vec<NostrProfile>, anyhow::Error> = async_cx
-                    .background_executor()
-                    .spawn(async move {
-                        let signer = client.signer().await?;
-                        let public_key = signer.get_public_key().await?;
-                        let profiles = client.database().contacts(public_key).await?;
-                        let members: Vec<NostrProfile> = profiles
-                            .into_iter()
-                            .map(|profile| {
-                                NostrProfile::new(profile.public_key(), profile.metadata())
-                            })
-                            .collect();
+                    Ok(members)
+                })
+                .await;
 
-                        Ok(members)
-                    })
-                    .await;
-
-                if let Ok(contacts) = query {
-                    if let Some(view) = this.upgrade() {
-                        _ = async_cx.update_entity(&view, |this, cx| {
-                            this.contacts.update(cx, |this, cx| {
-                                *this = Some(contacts);
-                                cx.notify();
-                            });
-
+            if let Ok(contacts) = query {
+                if let Some(view) = this.upgrade() {
+                    _ = async_cx.update_entity(&view, |this, cx| {
+                        this.contacts.update(cx, |this, cx| {
+                            *this = Some(contacts);
                             cx.notify();
                         });
-                    }
+
+                        cx.notify();
+                    });
                 }
             }
         })
@@ -161,7 +156,7 @@ impl Compose {
         }
     }
 
-    pub fn label(&self, window: &Window, cx: &App) -> SharedString {
+    pub fn label(&self, _window: &Window, cx: &App) -> SharedString {
         if self.selected.read(cx).len() > 1 {
             "Create Group DM".into()
         } else {
@@ -170,12 +165,12 @@ impl Compose {
     }
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let window_handle = window.window_handle();
         let content = self.user_input.read(cx).text().to_string();
         let input = self.user_input.downgrade();
 
         // Show loading spinner
-        self.is_loading = true;
-        cx.notify();
+        self.set_loading(true, cx);
 
         if let Ok(public_key) = PublicKey::parse(&content) {
             cx.spawn(|this, mut async_cx| async move {
@@ -206,14 +201,15 @@ impl Compose {
                                 cx.notify();
                             });
 
-                            this.is_loading = false;
-                            cx.notify();
+                            this.set_loading(false, cx);
                         });
                     }
 
                     if let Some(input) = input.upgrade() {
-                        _ = async_cx.update_entity(&input, |input, cx| {
-                            // input.set_text("", window, cx);
+                        _ = async_cx.update_window(window_handle, |_, window, cx| {
+                            cx.update_entity(&input, |this, cx| {
+                                this.set_text("", window, cx);
+                            })
                         });
                     }
                 }
@@ -224,10 +220,15 @@ impl Compose {
         }
     }
 
+    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.is_loading = status;
+        cx.notify();
+    }
+
     fn on_action_select(
         &mut self,
         action: &SelectContact,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.selected.update(cx, |this, cx| {
@@ -242,7 +243,7 @@ impl Compose {
 }
 
 impl Render for Compose {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let msg =
             "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
 
@@ -319,7 +320,7 @@ impl Render for Compose {
                                     cx.entity().clone(),
                                     "contacts",
                                     contacts.len(),
-                                    move |this, range, window, cx| {
+                                    move |this, range, _window, cx| {
                                         let selected = this.selected.read(cx);
                                         let mut items = Vec::new();
 
@@ -366,9 +367,12 @@ impl Render for Compose {
                                                             .step(cx, ColorScaleStep::THREE))
                                                     })
                                                     .on_click(move |_, window, cx| {
-                                                        cx.dispatch_action(&SelectContact(
-                                                            item.public_key(),
-                                                        ));
+                                                        window.dispatch_action(
+                                                            Box::new(SelectContact(
+                                                                item.public_key(),
+                                                            )),
+                                                            cx,
+                                                        );
                                                     }),
                                             );
                                         }

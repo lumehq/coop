@@ -1,4 +1,4 @@
-use super::{chat::ChatPanel, sidebar::Sidebar, welcome::WelcomePanel};
+use super::{chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
 use app_state::registry::AppRegistry;
 use chat::registry::ChatRegistry;
 use common::profile::NostrProfile;
@@ -116,7 +116,6 @@ impl AppView {
                 if let Some(weak_room) = cx.global::<ChatRegistry>().get_room(id, cx) {
                     if let Some(room) = weak_room.upgrade() {
                         let panel = Arc::new(ChatPanel::new(room, window, cx));
-
                         self.dock.update(cx, |dock_area, cx| {
                             dock_area.add_panel(panel, action.position, window, cx);
                         });
@@ -137,8 +136,8 @@ impl AppView {
     fn on_profile_action(
         &mut self,
         _action: &OpenProfile,
-        window: &mut Window,
-        cx: &mut Context<Self>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
     ) {
         // TODO
     }
@@ -146,8 +145,8 @@ impl AppView {
     fn on_contacts_action(
         &mut self,
         _action: &OpenContacts,
-        window: &mut Window,
-        cx: &mut Context<Self>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
     ) {
         // TODO
     }
@@ -155,17 +154,27 @@ impl AppView {
     fn on_settings_action(
         &mut self,
         _action: &OpenSettings,
-        window: &mut Window,
-        cx: &mut Context<Self>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
     ) {
         // TODO
     }
 
-    fn on_logout_action(&mut self, _action: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.update_global::<AppRegistry, _>(|_this, cx| {
+    fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
+        cx.update_global::<AppRegistry, _>(|this, cx| {
             cx.background_executor()
                 .spawn(async move { get_client().reset().await })
                 .detach();
+
+            // Remove user
+            this.set_user(None);
+
+            // Update root view
+            if let Some(root) = this.root() {
+                cx.update_entity(&root, |this: &mut Root, cx| {
+                    this.set_view(cx.new(|cx| Onboarding::new(window, cx)).into(), cx);
+                });
+            }
         });
     }
 }
