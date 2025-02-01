@@ -54,7 +54,7 @@ pub struct DockArea {
     /// The panel style, default is [`PanelStyle::Default`](PanelStyle::Default).
     pub(crate) panel_style: PanelStyle,
 
-    _subscriptions: Vec<Subscription>,
+    subscriptions: Vec<Subscription>,
 }
 
 /// DockItem is a tree structure that represents the layout of the dock.
@@ -316,7 +316,7 @@ impl DockArea {
             bottom_dock: None,
             is_locked: false,
             panel_style: PanelStyle::Default,
-            _subscriptions: vec![],
+            subscriptions: vec![],
         };
 
         this.subscribe_panel(&stack_panel, window, cx);
@@ -535,6 +535,7 @@ impl DockArea {
         cx: &mut Context<Self>,
     ) {
         let weak_self = cx.entity().downgrade();
+
         match placement {
             DockPlacement::Left => {
                 if let Some(dock) = self.left_dock.as_ref() {
@@ -590,7 +591,7 @@ impl DockArea {
                     self.subscribe_item(item, window, cx);
                 }
 
-                self._subscriptions.push(cx.subscribe_in(
+                self.subscriptions.push(cx.subscribe_in(
                     view,
                     window,
                     move |_, _, event, window, cx| {
@@ -601,6 +602,7 @@ impl DockArea {
                                 });
                             })
                             .detach();
+
                             cx.emit(DockEvent::LayoutChanged);
                         }
                     },
@@ -656,7 +658,7 @@ impl DockArea {
                 },
             );
 
-        self._subscriptions.push(subscription);
+        self.subscriptions.push(subscription);
     }
 
     /// Returns the ID of the dock area.

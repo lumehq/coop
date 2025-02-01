@@ -25,7 +25,8 @@ pub struct StackPanel {
     focus_handle: FocusHandle,
     pub(crate) panels: SmallVec<[Arc<dyn PanelView>; 2]>,
     panel_group: Entity<ResizablePanelGroup>,
-    _subscriptions: Vec<Subscription>,
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 impl Panel for StackPanel {
@@ -49,10 +50,11 @@ impl StackPanel {
         });
 
         // Bubble up the resize event.
-        let _subscriptions = vec![cx
-            .subscribe(&panel_group, |_, _, _: &ResizablePanelEvent, cx| {
-                cx.emit(PanelEvent::LayoutChanged)
-            })];
+        let subscriptions = vec![cx.subscribe_in(
+            &panel_group,
+            window,
+            |_, _, _: &ResizablePanelEvent, _, cx| cx.emit(PanelEvent::LayoutChanged),
+        )];
 
         Self {
             axis,
@@ -60,7 +62,7 @@ impl StackPanel {
             focus_handle: cx.focus_handle(),
             panels: SmallVec::new(),
             panel_group,
-            _subscriptions,
+            subscriptions,
         }
     }
 
@@ -125,6 +127,7 @@ impl StackPanel {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_panel_at(
         &mut self,
         panel: Arc<dyn PanelView>,

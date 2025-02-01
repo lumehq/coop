@@ -271,7 +271,7 @@ impl PopupMenu {
                 window.focus(handle);
             }
 
-            cx.dispatch_action(action.as_ref());
+            window.dispatch_action(action.boxed_clone(), cx);
         })
     }
 

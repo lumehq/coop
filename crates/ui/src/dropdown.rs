@@ -225,6 +225,8 @@ pub enum DropdownEvent<D: DropdownDelegate + 'static> {
     Confirm(Option<<D::Item as DropdownItem>::Value>),
 }
 
+type Empty = Option<Box<dyn Fn(&Window, &App) -> AnyElement + 'static>>;
+
 /// A Dropdown element.
 pub struct Dropdown<D: DropdownDelegate + 'static> {
     id: ElementId,
@@ -236,7 +238,7 @@ pub struct Dropdown<D: DropdownDelegate + 'static> {
     placeholder: Option<SharedString>,
     title_prefix: Option<SharedString>,
     selected_value: Option<<D::Item as DropdownItem>::Value>,
-    empty: Option<Box<dyn Fn(&Window, &App) -> AnyElement + 'static>>,
+    empty: Empty,
     width: Length,
     menu_width: Length,
     /// Store the bounds of the input
@@ -479,7 +481,7 @@ where
             return;
         }
         self.list.focus_handle(cx).focus(window);
-        cx.dispatch_action(&list::SelectPrev);
+        window.dispatch_action(Box::new(list::SelectPrev), cx);
     }
 
     fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
@@ -488,7 +490,7 @@ where
         }
 
         self.list.focus_handle(cx).focus(window);
-        cx.dispatch_action(&list::SelectNext);
+        window.dispatch_action(Box::new(list::SelectNext), cx);
     }
 
     fn enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<Self>) {
@@ -500,7 +502,7 @@ where
             cx.notify();
         } else {
             self.list.focus_handle(cx).focus(window);
-            cx.dispatch_action(&list::Confirm);
+            window.dispatch_action(Box::new(list::Confirm), cx);
         }
     }
 

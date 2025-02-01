@@ -698,6 +698,7 @@ impl TabPanel {
             .map(|panel| {
                 v_flex()
                     .id("tab-content")
+                    .group("")
                     .overflow_hidden()
                     .flex_1()
                     .p_1()
@@ -785,7 +786,8 @@ impl TabPanel {
             // center to merge into the current tab
             self.will_split_placement = None;
         }
-        cx.notify()
+
+        cx.notify();
     }
 
     /// Handle the drop event when dragging a panel
@@ -803,13 +805,11 @@ impl TabPanel {
         let is_same_tab = drag.tab_panel == cx.entity();
 
         // If target is same tab, and it is only one panel, do nothing.
-        if is_same_tab && ix.is_none() {
-            #[allow(clippy::if_same_then_else)]
-            if self.will_split_placement.is_none() {
-                return;
-            } else if self.panels.len() == 1 {
-                return;
-            }
+        if is_same_tab
+            && ix.is_none()
+            && (self.will_split_placement.is_none() || self.panels.len() == 1)
+        {
+            return;
         }
 
         // Here is looks like remove_panel on a same item, but it difference.
@@ -978,6 +978,7 @@ impl TabPanel {
         } else {
             cx.emit(PanelEvent::ZoomOut)
         }
+
         self.is_zoomed = !self.is_zoomed;
     }
 
@@ -1010,12 +1011,14 @@ impl EventEmitter<PanelEvent> for TabPanel {}
 impl Render for TabPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let focus_handle = self.focus_handle(cx);
+
         let mut state = TabState {
             closeable: self.closeable(cx),
             draggable: self.draggable(cx),
             droppable: self.droppable(cx),
             zoomable: self.zoomable(cx),
         };
+
         if !state.draggable {
             state.closeable = false;
         }

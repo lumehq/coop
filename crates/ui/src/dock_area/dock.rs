@@ -140,44 +140,6 @@ impl Dock {
         cx.notify();
     }
 
-    pub(super) fn from_state(
-        dock_area: WeakEntity<DockArea>,
-        placement: DockPlacement,
-        size: Pixels,
-        panel: DockItem,
-        open: bool,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self {
-        Self::subscribe_panel_events(dock_area.clone(), &panel, window, cx);
-
-        if !open {
-            match panel.clone() {
-                DockItem::Tabs { view, .. } => {
-                    view.update(cx, |panel, cx| {
-                        panel.set_collapsed(true, window, cx);
-                    });
-                }
-                DockItem::Split { items, .. } => {
-                    for item in items {
-                        item.set_collapsed(true, window, cx);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Self {
-            placement,
-            dock_area,
-            panel,
-            open,
-            size,
-            collapsible: true,
-            is_resizing: false,
-        }
-    }
-
     fn subscribe_panel_events(
         dock_area: WeakEntity<DockArea>,
         panel: &DockItem,
@@ -315,6 +277,7 @@ impl Dock {
                 cx.new(|_| info.clone())
             })
     }
+
     fn resize(
         &mut self,
         mouse_position: Point<Pixels>,
