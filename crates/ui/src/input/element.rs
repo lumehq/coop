@@ -271,7 +271,7 @@ impl TextElement {
 
         // print_points_as_svg_path(&line_corners, &points);
 
-        let first_p = *points.get(0).unwrap();
+        let first_p = *points.first().unwrap();
         let mut builder = gpui::PathBuilder::fill();
         builder.move_to(bounds.origin + first_p);
         for p in points.iter().skip(1) {
@@ -503,6 +503,16 @@ impl Element for TextElement {
         let origin = bounds.origin;
 
         let mut offset_y = px(0.);
+
+        if self.input.read(cx).masked {
+            // Move down offset for vertical centering the *****
+            if cfg!(target_os = "macos") {
+                offset_y = px(3.);
+            } else {
+                offset_y = px(2.5);
+            }
+        }
+
         for line in prepaint.lines.iter() {
             let p = point(origin.x, origin.y + offset_y);
             _ = line.paint(p, line_height, window, cx);

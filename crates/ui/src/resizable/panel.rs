@@ -1,5 +1,3 @@
-use super::resize_handle;
-use crate::{h_flex, v_flex, AxisExt};
 use gpui::{
     canvas, div, prelude::FluentBuilder, px, relative, Along, AnyElement, AnyView, App, AppContext,
     Axis, Bounds, Context, Element, Entity, EntityId, EventEmitter, IntoElement, IsZero,
@@ -7,6 +5,9 @@ use gpui::{
     Style, Styled, WeakEntity, Window,
 };
 use std::rc::Rc;
+
+use super::resize_handle;
+use crate::{h_flex, v_flex, AxisExt};
 
 pub(crate) const PANEL_MIN_SIZE: Pixels = px(100.);
 
@@ -88,11 +89,6 @@ impl ResizablePanelGroup {
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = Some(size);
         self
-    }
-
-    /// Returns the sizes of the resizable panels.
-    pub(crate) fn sizes(&self) -> Vec<Pixels> {
-        self.sizes.clone()
     }
 
     /// Calculates the sum of all panel sizes within the group.

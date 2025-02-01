@@ -1,7 +1,13 @@
-//! A text input field that allows the user to enter text.
-//!
-//! Based on the `Input` example from the `gpui` crate.
-//! https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/input.rs
+use gpui::{
+    actions, div, point, prelude::FluentBuilder as _, px, AnyElement, App, AppContext, Bounds,
+    ClipboardItem, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Half,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Rems, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, Styled as _, UTF16Selection, Window, WrappedLine,
+};
+use smallvec::SmallVec;
+use std::{cell::Cell, ops::Range, rc::Rc};
+use unicode_segmentation::*;
 
 use super::{blink_cursor::BlinkCursor, change::Change, element::TextElement};
 use crate::{
@@ -11,16 +17,6 @@ use crate::{
     theme::{scale::ColorScaleStep, ActiveTheme},
     Sizable, Size, StyleSized, StyledExt,
 };
-use gpui::{
-    actions, div, point, prelude::FluentBuilder as _, px, AnyElement, App, AppContext, Bounds,
-    ClickEvent, ClipboardItem, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle,
-    Focusable, Half, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Rems, Render,
-    ScrollHandle, ScrollWheelEvent, SharedString, Styled as _, UTF16Selection, Window, WrappedLine,
-};
-use smallvec::SmallVec;
-use std::{cell::Cell, ops::Range, rc::Rc};
-use unicode_segmentation::*;
 
 actions!(
     input,
@@ -29,6 +25,8 @@ actions!(
         Delete,
         DeleteToBeginningOfLine,
         DeleteToEndOfLine,
+        DeleteToPreviousWordStart,
+        DeleteToNextWordEnd,
         Enter,
         Up,
         Down,
@@ -45,6 +43,8 @@ actions!(
         SelectToEndOfLine,
         SelectToStart,
         SelectToEnd,
+        SelectToPreviousWordStart,
+        SelectToNextWordEnd,
         ShowCharacterPalette,
         Copy,
         Cut,
@@ -55,6 +55,8 @@ actions!(
         MoveToEndOfLine,
         MoveToStart,
         MoveToEnd,
+        MoveToPreviousWord,
+        MoveToNextWord,
         TextChanged,
     ]
 );
@@ -77,6 +79,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-backspace", DeleteToBeginningOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-delete", DeleteToEndOfLine, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("alt-backspace", DeleteToPreviousWordStart, Some(CONTEXT)),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-backspace", DeleteToPreviousWordStart, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("alt-delete", DeleteToNextWordEnd, Some(CONTEXT)),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-delete", DeleteToNextWordEnd, Some(CONTEXT)),
         KeyBinding::new("enter", Enter, Some(CONTEXT)),
         KeyBinding::new("up", Up, Some(CONTEXT)),
         KeyBinding::new("down", Down, Some(CONTEXT)),
@@ -98,6 +108,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("shift-cmd-left", SelectToStartOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("shift-cmd-right", SelectToEndOfLine, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("alt-shift-left", SelectToPreviousWordStart, Some(CONTEXT)),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-shift-left", SelectToPreviousWordStart, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("alt-shift-right", SelectToNextWordEnd, Some(CONTEXT)),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-shift-right", SelectToNextWordEnd, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
@@ -132,6 +150,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-up", MoveToStart, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-down", MoveToEnd, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("alt-left", MoveToPreviousWord, Some(CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("alt-right", MoveToNextWord, Some(CONTEXT)),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-left", MoveToPreviousWord, Some(CONTEXT)),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-right", MoveToNextWord, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-shift-up", SelectToStart, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
@@ -438,13 +464,13 @@ impl TextInput {
     }
 
     /// Set the disabled state of the input field.
-    pub fn set_disabled(&mut self, disabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_disabled(&mut self, disabled: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.disabled = disabled;
         cx.notify();
     }
 
     /// Set the masked state of the input field.
-    pub fn set_masked(&mut self, masked: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_masked(&mut self, masked: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.masked = masked;
         cx.notify();
     }
@@ -474,7 +500,7 @@ impl TextInput {
     }
 
     /// Set the Input size
-    pub fn set_size(&mut self, size: Size, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_size(&mut self, size: Size, _window: &mut Window, cx: &mut Context<Self>) {
         self.size = size;
         cx.notify();
     }
@@ -550,7 +576,7 @@ impl TextInput {
     }
 
     /// Set true to show indicator at the input right.
-    pub fn set_loading(&mut self, loading: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_loading(&mut self, loading: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.loading = loading;
         cx.notify();
     }
@@ -565,7 +591,7 @@ impl TextInput {
     }
 
     /// Focus the input field.
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn focus(&self, window: &mut Window, _cx: &mut Context<Self>) {
         self.focus_handle.focus(window);
     }
 
@@ -653,6 +679,25 @@ impl TextInput {
         self.move_to(end, window, cx);
     }
 
+    fn move_to_previous_word(
+        &mut self,
+        _: &MoveToPreviousWord,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.previous_start_of_word();
+        self.move_to(offset, window, cx);
+    }
+    fn move_to_next_word(
+        &mut self,
+        _: &MoveToNextWord,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.next_end_of_word();
+        self.move_to(offset, window, cx);
+    }
+
     fn select_to_start(&mut self, _: &SelectToStart, window: &mut Window, cx: &mut Context<Self>) {
         self.select_to(0, window, cx);
     }
@@ -682,6 +727,47 @@ impl TextInput {
         self.select_to(self.next_boundary(offset), window, cx);
     }
 
+    fn select_to_previous_word(
+        &mut self,
+        _: &SelectToPreviousWordStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.previous_start_of_word();
+        self.select_to(offset, window, cx);
+    }
+
+    fn select_to_next_word(
+        &mut self,
+        _: &SelectToNextWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.next_end_of_word();
+        self.select_to(offset, window, cx);
+    }
+
+    /// Return the start offset of the previous word.
+    fn previous_start_of_word(&mut self) -> usize {
+        let offset = self.selected_range.start;
+        let prev_str = &self.text[..offset].to_string();
+        UnicodeSegmentation::split_word_bound_indices(prev_str as &str)
+            .filter(|(_, s)| !s.trim_start().is_empty())
+            .next_back()
+            .map(|(i, _)| i)
+            .unwrap_or(0)
+    }
+
+    /// Return the next end offset of the next word.
+    fn next_end_of_word(&mut self) -> usize {
+        let offset = self.cursor_offset();
+        let next_str = &self.text[offset..].to_string();
+        UnicodeSegmentation::split_word_bound_indices(next_str as &str)
+            .find(|(_, s)| !s.trim_start().is_empty())
+            .map(|(i, s)| offset + i + s.len())
+            .unwrap_or(self.text.len())
+    }
+
     /// Get start of line
     fn start_of_line(&mut self, window: &mut Window, cx: &mut Context<Self>) -> usize {
         if self.is_single_line() {
@@ -689,13 +775,12 @@ impl TextInput {
         }
 
         let offset = self.previous_boundary(self.cursor_offset());
-        let line = self
-            .text_for_range(self.range_to_utf16(&(0..offset + 1)), &mut None, window, cx)
+
+        self.text_for_range(self.range_to_utf16(&(0..offset + 1)), &mut None, window, cx)
             .unwrap_or_default()
             .rfind('\n')
             .map(|i| i + 1)
-            .unwrap_or(0);
-        line
+            .unwrap_or(0)
     }
 
     /// Get end of line
@@ -779,6 +864,38 @@ impl TextInput {
         self.pause_blink_cursor(cx);
     }
 
+    fn delete_previous_word(
+        &mut self,
+        _: &DeleteToPreviousWordStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.previous_start_of_word();
+        self.replace_text_in_range(
+            Some(self.range_to_utf16(&(offset..self.cursor_offset()))),
+            "",
+            window,
+            cx,
+        );
+        self.pause_blink_cursor(cx);
+    }
+
+    fn delete_next_word(
+        &mut self,
+        _: &DeleteToNextWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.next_end_of_word();
+        self.replace_text_in_range(
+            Some(self.range_to_utf16(&(self.cursor_offset()..offset))),
+            "",
+            window,
+            cx,
+        );
+        self.pause_blink_cursor(cx);
+    }
+
     fn enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_multi_line() {
             let is_eof = self.selected_range.end == self.text.len();
@@ -793,10 +910,6 @@ impl TextInput {
         }
 
         cx.emit(InputEvent::PressEnter);
-    }
-
-    fn clean(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
-        self.replace_text("", window, cx);
     }
 
     fn on_mouse_down(
@@ -1122,7 +1235,7 @@ impl TextInput {
         cx.notify()
     }
 
-    fn unselect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn unselect(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.selected_range = self.cursor_offset()..self.cursor_offset();
         cx.notify()
     }
@@ -1209,7 +1322,7 @@ impl TextInput {
     fn on_key_down_for_blink_cursor(
         &mut self,
         _: &KeyDownEvent,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.pause_blink_cursor(cx)
@@ -1272,7 +1385,7 @@ impl EntityInputHandler for TextInput {
         range_utf16: Range<usize>,
         adjusted_range: &mut Option<Range<usize>>,
         _window: &mut Window,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> Option<String> {
         let range = self.range_from_utf16(&range_utf16);
         adjusted_range.replace(self.range_to_utf16(&range));
@@ -1283,7 +1396,7 @@ impl EntityInputHandler for TextInput {
         &mut self,
         _ignore_disabled_input: bool,
         _window: &mut Window,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
             range: self.range_to_utf16(&self.selected_range),
@@ -1294,14 +1407,14 @@ impl EntityInputHandler for TextInput {
     fn marked_text_range(
         &self,
         _window: &mut Window,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
         self.marked_range
             .as_ref()
             .map(|range| self.range_to_utf16(range))
     }
 
-    fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
         self.marked_range = None;
     }
 
@@ -1437,6 +1550,8 @@ impl Render for TextInput {
                     .on_action(cx.listener(Self::delete))
                     .on_action(cx.listener(Self::delete_to_beginning_of_line))
                     .on_action(cx.listener(Self::delete_to_end_of_line))
+                    .on_action(cx.listener(Self::delete_previous_word))
+                    .on_action(cx.listener(Self::delete_next_word))
                     .on_action(cx.listener(Self::enter))
             })
             .on_action(cx.listener(Self::left))
@@ -1452,10 +1567,14 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::select_to_start_of_line))
             .on_action(cx.listener(Self::select_to_end_of_line))
+            .on_action(cx.listener(Self::select_to_previous_word))
+            .on_action(cx.listener(Self::select_to_next_word))
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::move_to_start))
             .on_action(cx.listener(Self::move_to_end))
+            .on_action(cx.listener(Self::move_to_previous_word))
+            .on_action(cx.listener(Self::move_to_next_word))
             .on_action(cx.listener(Self::select_to_start))
             .on_action(cx.listener(Self::select_to_end))
             .on_action(cx.listener(Self::show_character_palette))

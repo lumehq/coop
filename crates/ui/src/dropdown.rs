@@ -1,14 +1,15 @@
-use crate::{
-    h_flex,
-    list::{self, List, ListDelegate, ListItem},
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
-};
 use gpui::{
     actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App,
     AppContext, Bounds, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter,
     FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement,
     Pixels, Render, SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
+};
+
+use crate::{
+    h_flex,
+    list::{self, List, ListDelegate, ListItem},
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    v_flex, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
 };
 
 actions!(dropdown, [Up, Down, Enter, Escape]);
@@ -522,11 +523,6 @@ where
 
         self.open = false;
         cx.notify();
-    }
-
-    fn clean(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_selected_index(None, window, cx);
-        cx.emit(DropdownEvent::Confirm(None));
     }
 
     fn display_title(&self, window: &Window, cx: &App) -> impl IntoElement {

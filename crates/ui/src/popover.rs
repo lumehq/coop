@@ -16,10 +16,12 @@ pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])
 }
 
+type PopoverChild<T> = Rc<dyn Fn(&mut Window, &mut Context<T>) -> AnyElement>;
+
 pub struct PopoverContent {
     focus_handle: FocusHandle,
-    content: Rc<dyn Fn(&mut Window, &mut Context<Self>) -> AnyElement>,
     max_width: Option<Pixels>,
+    child: PopoverChild<Self>,
 }
 
 impl PopoverContent {
@@ -31,7 +33,7 @@ impl PopoverContent {
 
         Self {
             focus_handle,
-            content: Rc::new(content),
+            child: Rc::new(content),
             max_width: None,
         }
     }
@@ -58,15 +60,18 @@ impl Render for PopoverContent {
             .on_action(cx.listener(|_, _: &Escape, _, cx| cx.emit(DismissEvent)))
             .p_2()
             .when_some(self.max_width, |this, v| this.max_w(v))
-            .child(self.content.clone()(window, cx))
+            .child(self.child.clone()(window, cx))
     }
 }
+
+type Trigger = Option<Box<dyn FnOnce(bool, &Window, &App) -> AnyElement + 'static>>;
+type Content<M> = Option<Rc<dyn Fn(&mut Window, &mut App) -> Entity<M> + 'static>>;
 
 pub struct Popover<M: ManagedView> {
     id: ElementId,
     anchor: Corner,
-    trigger: Option<Box<dyn FnOnce(bool, &Window, &App) -> AnyElement + 'static>>,
-    content: Option<Rc<dyn Fn(&mut Window, &mut App) -> Entity<M> + 'static>>,
+    trigger: Trigger,
+    content: Content<M>,
     /// Style for trigger element.
     /// This is used for hotfix the trigger element style to support w_full.
     trigger_style: Option<StyleRefinement>,

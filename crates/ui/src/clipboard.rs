@@ -1,18 +1,22 @@
-use crate::{
-    button::{Button, ButtonVariants as _},
-    h_flex, IconName, Sizable as _,
-};
 use gpui::{
     prelude::FluentBuilder, AnyElement, App, ClipboardItem, Element, ElementId, GlobalElementId,
     IntoElement, LayoutId, ParentElement, SharedString, Styled, Window,
 };
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
+use crate::{
+    button::{Button, ButtonVariants as _},
+    h_flex, IconName, Sizable as _,
+};
+
+type ContentBuilder = Option<Box<dyn Fn(&mut Window, &mut App) -> AnyElement>>;
+type CopiedCallback = Option<Rc<dyn Fn(SharedString, &mut Window, &mut App)>>;
+
 pub struct Clipboard {
     id: ElementId,
     value: SharedString,
-    content_builder: Option<Box<dyn Fn(&mut Window, &mut App) -> AnyElement>>,
-    copied_callback: Option<Rc<dyn Fn(SharedString, &mut Window, &mut App)>>,
+    content_builder: ContentBuilder,
+    copied_callback: CopiedCallback,
 }
 
 impl Clipboard {

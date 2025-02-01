@@ -67,10 +67,13 @@ enum PopupMenuItem {
         icon: Option<Icon>,
         label: SharedString,
         action: Option<Box<dyn Action>>,
+        #[allow(clippy::type_complexity)]
         handler: Rc<dyn Fn(&mut Window, &mut App)>,
     },
     ElementItem {
+        #[allow(clippy::type_complexity)]
         render: Box<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>,
+        #[allow(clippy::type_complexity)]
         handler: Rc<dyn Fn(&mut Window, &mut App)>,
     },
     Submenu {
@@ -249,6 +252,7 @@ impl PopupMenu {
         self
     }
 
+    #[allow(clippy::type_complexity)]
     fn wrap_handler(&self, action: Box<dyn Action>) -> Rc<dyn Fn(&mut Window, &mut App)> {
         let action_focus_handle = self.action_focus_handle.clone();
 

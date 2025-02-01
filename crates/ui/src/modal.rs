@@ -20,6 +20,8 @@ pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])
 }
 
+type OnClose = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+
 #[derive(IntoElement)]
 pub struct Modal {
     base: Div,
@@ -29,7 +31,7 @@ pub struct Modal {
     width: Pixels,
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
-    on_close: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
+    on_close: OnClose,
     show_close: bool,
     keyboard: bool,
     /// This will be change when open the modal, the focus handle is create when open the modal.
