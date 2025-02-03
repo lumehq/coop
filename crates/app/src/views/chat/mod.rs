@@ -1,5 +1,5 @@
 use async_utility::task::spawn;
-use chat::room::Room;
+use chat_state::room::Room;
 use common::{
     constants::IMAGE_SERVICE,
     utils::{compare, message_time, nip96_upload},
@@ -28,15 +28,19 @@ use ui::{
 
 mod message;
 
+pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
+    Chat::new(room, window, cx)
+}
+
 #[derive(Clone)]
 pub struct State {
     count: usize,
     items: Vec<Message>,
 }
 
-pub struct ChatPanel {
+pub struct Chat {
     // Panel
-    closeable: bool,
+    closable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
     // Chat Room
@@ -52,7 +56,7 @@ pub struct ChatPanel {
     is_uploading: bool,
 }
 
-impl ChatPanel {
+impl Chat {
     pub fn new(model: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let room = model.read(cx);
         let id = room.id.to_string().into();
@@ -84,7 +88,7 @@ impl ChatPanel {
             cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut ChatPanel, view, input_event, window, cx| {
+                move |this: &mut Chat, view, input_event, window, cx| {
                     if let InputEvent::PressEnter = input_event {
                         this.send_message(view.downgrade(), window, cx);
                     }
@@ -118,7 +122,7 @@ impl ChatPanel {
             let attaches = cx.new(|_| None);
 
             Self {
-                closeable: true,
+                closable: true,
                 zoomable: true,
                 focus_handle: cx.focus_handle(),
                 room: model,
@@ -425,7 +429,7 @@ impl ChatPanel {
     }
 }
 
-impl Panel for ChatPanel {
+impl Panel for Chat {
     fn panel_id(&self) -> SharedString {
         self.id.clone()
     }
@@ -445,8 +449,8 @@ impl Panel for ChatPanel {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _cx: &App) -> bool {
-        self.closeable
+    fn closable(&self, _cx: &App) -> bool {
+        self.closable
     }
 
     fn zoomable(&self, _cx: &App) -> bool {
@@ -462,15 +466,15 @@ impl Panel for ChatPanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for ChatPanel {}
+impl EventEmitter<PanelEvent> for Chat {}
 
-impl Focusable for ChatPanel {
+impl Focusable for Chat {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for ChatPanel {
+impl Render for Chat {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()

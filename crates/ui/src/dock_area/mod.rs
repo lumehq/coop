@@ -5,7 +5,7 @@ use crate::dock_area::{
     tab_panel::TabPanel,
 };
 use gpui::{
-    actions, canvas, div, prelude::FluentBuilder, AnyElement, AnyView, App, AppContext, Axis,
+    actions, canvas, div, prelude::FluentBuilder, px, AnyElement, AnyView, App, AppContext, Axis,
     Bounds, Context, Edges, Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, Styled, Subscription, WeakEntity, Window,
 };
@@ -543,7 +543,7 @@ impl DockArea {
                 } else {
                     self.set_left_dock(
                         DockItem::tabs(vec![panel], None, &weak_self, window, cx),
-                        None,
+                        Some(px(320.)),
                         true,
                         window,
                         cx,
@@ -569,7 +569,7 @@ impl DockArea {
                 } else {
                     self.set_right_dock(
                         DockItem::tabs(vec![panel], None, &weak_self, window, cx),
-                        None,
+                        Some(px(320.)),
                         true,
                         window,
                         cx,

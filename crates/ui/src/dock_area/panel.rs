@@ -42,7 +42,7 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
     }
 
     /// Whether the panel can be closed, default is `true`.
-    fn closeable(&self, _cx: &App) -> bool {
+    fn closable(&self, _cx: &App) -> bool {
         true
     }
 
@@ -66,7 +66,7 @@ pub trait PanelView: 'static + Send + Sync {
     fn panel_id(&self, cx: &App) -> SharedString;
     fn panel_facepile(&self, cx: &App) -> Option<Vec<String>>;
     fn title(&self, cx: &App) -> AnyElement;
-    fn closeable(&self, cx: &App) -> bool;
+    fn closable(&self, cx: &App) -> bool;
     fn zoomable(&self, cx: &App) -> bool;
     fn popup_menu(&self, menu: PopupMenu, cx: &App) -> PopupMenu;
     fn toolbar_buttons(&self, window: &Window, cx: &App) -> Vec<Button>;
@@ -87,8 +87,8 @@ impl<T: Panel> PanelView for Entity<T> {
         self.read(cx).title(cx)
     }
 
-    fn closeable(&self, cx: &App) -> bool {
-        self.read(cx).closeable(cx)
+    fn closable(&self, cx: &App) -> bool {
+        self.read(cx).closable(cx)
     }
 
     fn zoomable(&self, cx: &App) -> bool {

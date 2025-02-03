@@ -1,0 +1,76 @@
+use gpui::{
+    div, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, Render, SharedString, Styled, Window,
+};
+use ui::{
+    button::Button,
+    dock_area::panel::{Panel, PanelEvent},
+    popup_menu::PopupMenu,
+};
+
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Settings> {
+    Settings::new(window, cx)
+}
+
+pub struct Settings {
+    name: SharedString,
+    closable: bool,
+    zoomable: bool,
+    focus_handle: FocusHandle,
+}
+
+impl Settings {
+    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self {
+            name: "Settings".into(),
+            closable: true,
+            zoomable: true,
+            focus_handle: cx.focus_handle(),
+        })
+    }
+}
+
+impl Panel for Settings {
+    fn panel_id(&self) -> SharedString {
+        "SettingsPanel".into()
+    }
+
+    fn title(&self, _cx: &App) -> AnyElement {
+        self.name.clone().into_any_element()
+    }
+
+    fn closable(&self, _cx: &App) -> bool {
+        self.closable
+    }
+
+    fn zoomable(&self, _cx: &App) -> bool {
+        self.zoomable
+    }
+
+    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
+        menu.track_focus(&self.focus_handle)
+    }
+
+    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
+        vec![]
+    }
+}
+
+impl EventEmitter<PanelEvent> for Settings {}
+
+impl Focusable for Settings {
+    fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for Settings {
+    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child("Settings")
+    }
+}

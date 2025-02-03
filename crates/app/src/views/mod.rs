@@ -1,4 +1,7 @@
 mod chat;
+mod contacts;
+mod profile;
+mod settings;
 mod sidebar;
 mod welcome;
 

@@ -1,8 +1,17 @@
-use common::constants::KEYRING_SERVICE;
-use gpui::{div, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window};
+use app_state::registry::AppRegistry;
+use common::{constants::KEYRING_SERVICE, profile::NostrProfile};
+use gpui::{
+    div, AppContext, BorrowAppContext, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    Window,
+};
 use nostr_sdk::prelude::*;
 use state::get_client;
-use ui::input::{InputEvent, TextInput};
+use ui::{
+    input::{InputEvent, TextInput},
+    Root,
+};
+
+use super::app::AppView;
 
 pub struct Onboarding {
     input: Entity<TextInput>,
@@ -33,47 +42,60 @@ impl Onboarding {
 
     fn save_keys(
         content: &str,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> anyhow::Result<(), anyhow::Error> {
         let keys = Keys::parse(content)?;
         let public_key = keys.public_key();
         let bech32 = public_key.to_bech32()?;
         let secret = keys.secret_key().to_secret_hex();
+        let window_handle = window.window_handle();
+        let task = cx.write_credentials(KEYRING_SERVICE, &bech32, secret.as_bytes());
 
-        let async_cx = cx.to_async();
+        cx.spawn(|_, mut cx| async move {
+            let client = get_client();
 
-        cx.foreground_executor()
-            .spawn({
-                let client = get_client();
-                let task = cx.write_credentials(KEYRING_SERVICE, &bech32, secret.as_bytes());
+            if task.await.is_ok() {
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<NostrProfile>(1);
 
-                async move {
-                    if task.await.is_ok() {
-                        let query: anyhow::Result<Metadata, anyhow::Error> = async_cx
-                            .background_executor()
-                            .spawn(async move {
-                                // Update signer
-                                _ = client.set_signer(keys).await;
+                cx.background_executor()
+                    .spawn(async move {
+                        // Update signer
+                        _ = client.set_signer(keys).await;
 
-                                // Get metadata
-                                if let Some(metadata) =
-                                    client.database().metadata(public_key).await?
-                                {
-                                    Ok(metadata)
-                                } else {
-                                    Ok(Metadata::new())
-                                }
-                            })
-                            .await;
+                        // Get metadata
+                        let metadata = if let Ok(Some(metadata)) =
+                            client.database().metadata(public_key).await
+                        {
+                            metadata
+                        } else {
+                            Metadata::new()
+                        };
 
-                        if let Ok(_metadata) = query {
-                            //
-                        }
-                    }
+                        _ = tx.send(NostrProfile::new(public_key, metadata)).await;
+                    })
+                    .await;
+
+                while let Some(profile) = rx.recv().await {
+                    cx.update_window(window_handle, |_, window, cx| {
+                        cx.update_global::<AppRegistry, _>(|this, cx| {
+                            this.set_user(Some(profile.clone()));
+
+                            if let Some(root) = this.root() {
+                                cx.update_entity(&root, |this: &mut Root, cx| {
+                                    this.set_view(
+                                        cx.new(|cx| AppView::new(profile, window, cx)).into(),
+                                        cx,
+                                    );
+                                });
+                            }
+                        });
+                    })
+                    .unwrap();
                 }
-            })
-            .detach();
+            }
+        })
+        .detach();
 
         Ok(())
     }

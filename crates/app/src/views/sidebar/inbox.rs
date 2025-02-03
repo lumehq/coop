@@ -1,5 +1,5 @@
 use crate::views::app::{AddPanel, PanelKind};
-use chat::registry::ChatRegistry;
+use chat_state::registry::ChatRegistry;
 use common::utils::message_ago;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, Context, InteractiveElement, IntoElement,
@@ -104,10 +104,7 @@ impl Inbox {
 
     fn action(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         window.dispatch_action(
-            Box::new(AddPanel {
-                panel: PanelKind::Room(id),
-                position: DockPlacement::Center,
-            }),
+            Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
             cx,
         );
     }

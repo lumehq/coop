@@ -89,14 +89,14 @@ impl Panel for TabPanel {
             .unwrap_or("Empty Tab".into_any_element())
     }
 
-    fn closeable(&self, cx: &App) -> bool {
+    fn closable(&self, cx: &App) -> bool {
         if !self.closeable {
             return false;
         }
 
         self.active_panel()
-            .map(|panel| panel.closeable(cx))
-            .unwrap_or(false)
+            .map(|panel| panel.closable(cx))
+            .unwrap_or(true)
     }
 
     fn zoomable(&self, cx: &App) -> bool {
@@ -409,6 +409,7 @@ impl TabPanel {
         }
 
         let dock_area = self.dock_area.upgrade()?.read(cx);
+
         if !dock_area.is_dock_collapsible(placement, cx) {
             return None;
         }
@@ -651,6 +652,7 @@ impl TabPanel {
                     .h_full()
                     .flex_grow()
                     .min_w_16()
+                    .rounded(px(cx.theme().radius))
                     .when(state.droppable, |this| {
                         this.drag_over::<DragPanel>(|this, _, _, cx| {
                             this.bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
@@ -1013,7 +1015,7 @@ impl Render for TabPanel {
         let focus_handle = self.focus_handle(cx);
 
         let mut state = TabState {
-            closeable: self.closeable(cx),
+            closeable: self.closable(cx),
             draggable: self.draggable(cx),
             droppable: self.droppable(cx),
             zoomable: self.zoomable(cx),

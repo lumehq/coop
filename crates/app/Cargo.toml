@@ -13,7 +13,7 @@ ui = { path = "../ui" }
 common = { path = "../common" }
 state = { path = "../state" }
 app_state = { path = "../app_state" }
-chat = { path = "../chat" }
+chat_state = { path = "../chat_state" }
 
 gpui.workspace = true
 gpui_tokio.workspace = true

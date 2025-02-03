@@ -12,7 +12,7 @@ use ui::{
 
 pub struct WelcomePanel {
     name: SharedString,
-    closeable: bool,
+    closable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
 }
@@ -25,7 +25,7 @@ impl WelcomePanel {
     fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             name: "Welcome".into(),
-            closeable: true,
+            closable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
         }
@@ -41,8 +41,8 @@ impl Panel for WelcomePanel {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _cx: &App) -> bool {
-        self.closeable
+    fn closable(&self, _cx: &App) -> bool {
+        self.closable
     }
 
     fn zoomable(&self, _cx: &App) -> bool {

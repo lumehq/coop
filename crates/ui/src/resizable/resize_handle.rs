@@ -51,7 +51,8 @@ impl RenderOnce for ResizeHandle {
                     .left(px(-1.))
                     .w(HANDLE_SIZE)
                     .h_full()
-                    .py_10()
+                    .pt_12()
+                    .pb_4()
             })
             .when(self.axis.is_vertical(), |this| {
                 this.cursor_row_resize()
@@ -59,7 +60,7 @@ impl RenderOnce for ResizeHandle {
                     .left_0()
                     .w_full()
                     .h(HANDLE_SIZE)
-                    .px_10()
+                    .px_6()
             })
             .child(
                 div()

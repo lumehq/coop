@@ -1,11 +1,14 @@
-use super::{chat::ChatPanel, onboarding::Onboarding, sidebar::Sidebar, welcome::WelcomePanel};
+use super::{
+    chat, contacts, onboarding::Onboarding, profile, settings, sidebar::Sidebar,
+    welcome::WelcomePanel,
+};
 use app_state::registry::AppRegistry;
-use chat::registry::ChatRegistry;
+use chat_state::registry::ChatRegistry;
 use common::profile::NostrProfile;
 use gpui::{
     actions, div, img, impl_internal_actions, px, AppContext, Axis, BorrowAppContext, Context,
-    Edges, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
-    StyledImage, Window,
+    Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage,
+    Window,
 };
 use serde::Deserialize;
 use state::get_client;
@@ -13,24 +16,33 @@ use std::sync::Arc;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
-    notification::NotificationType,
     popup_menu::PopupMenuExt,
-    ContextModal, Icon, IconName, Root, Sizable, TitleBar,
+    Icon, IconName, Root, Sizable, TitleBar,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
     Room(u64),
+    Profile,
+    Contacts,
+    Settings,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel {
-    pub panel: PanelKind,
-    pub position: DockPlacement,
+    panel: PanelKind,
+    position: DockPlacement,
+}
+
+impl AddPanel {
+    pub fn new(panel: PanelKind, position: DockPlacement) -> Self {
+        Self { panel, position }
+    }
 }
 
 // Dock actions
 impl_internal_actions!(dock, [AddPanel]);
+
 // Account actions
 actions!(account, [OpenProfile, OpenContacts, OpenSettings, Logout]);
 
@@ -53,9 +65,8 @@ impl AppView {
     pub fn new(account: NostrProfile, window: &mut Window, cx: &mut Context<'_, Self>) -> AppView {
         let dock = cx.new(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), window, cx));
         let weak_dock = dock.downgrade();
-
-        let left = DockItem::panel(Arc::new(Sidebar::new(window, cx)));
-        let center = DockItem::split_with_sizes(
+        let left_panel = DockItem::panel(Arc::new(Sidebar::new(window, cx)));
+        let center_panel = DockItem::split_with_sizes(
             Axis::Vertical,
             vec![DockItem::tabs(
                 vec![Arc::new(WelcomePanel::new(window, cx))],
@@ -72,18 +83,8 @@ impl AppView {
 
         _ = weak_dock.update(cx, |view, cx| {
             view.set_version(DOCK_AREA.version, window, cx);
-            view.set_left_dock(left, Some(px(240.)), true, window, cx);
-            view.set_center(center, window, cx);
-            view.set_dock_collapsible(
-                Edges {
-                    left: false,
-                    ..Default::default()
-                },
-                window,
-                cx,
-            );
-            // TODO: support right dock?
-            // TODO: support bottom dock?
+            view.set_left_dock(left_panel, Some(px(240.)), true, window, cx);
+            view.set_center(center_panel, window, cx);
         });
 
         AppView { account, dock }
@@ -102,11 +103,20 @@ impl AppView {
                     .object_fit(ObjectFit::Cover),
             )
             .popup_menu(move |this, _, _cx| {
-                this.menu("Profile", Box::new(OpenProfile))
-                    .menu("Contacts", Box::new(OpenContacts))
-                    .menu("Settings", Box::new(OpenSettings))
-                    .separator()
-                    .menu("Change account", Box::new(Logout))
+                this.menu(
+                    "Profile",
+                    Box::new(AddPanel::new(PanelKind::Profile, DockPlacement::Right)),
+                )
+                .menu(
+                    "Contacts",
+                    Box::new(AddPanel::new(PanelKind::Contacts, DockPlacement::Right)),
+                )
+                .menu(
+                    "Settings",
+                    Box::new(AddPanel::new(PanelKind::Settings, DockPlacement::Center)),
+                )
+                .separator()
+                .menu("Change account", Box::new(Logout))
             })
     }
 
@@ -115,49 +125,35 @@ impl AppView {
             PanelKind::Room(id) => {
                 if let Some(weak_room) = cx.global::<ChatRegistry>().get_room(id, cx) {
                     if let Some(room) = weak_room.upgrade() {
-                        let panel = Arc::new(ChatPanel::new(room, window, cx));
+                        let panel = Arc::new(chat::init(room, window, cx));
                         self.dock.update(cx, |dock_area, cx| {
                             dock_area.add_panel(panel, action.position, window, cx);
                         });
-                    } else {
-                        window.push_notification(
-                            (
-                                NotificationType::Error,
-                                "System error. Cannot open this chat room.",
-                            ),
-                            cx,
-                        );
                     }
                 }
             }
+            PanelKind::Profile => {
+                let panel = Arc::new(profile::init(window, cx));
+
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, window, cx);
+                });
+            }
+            PanelKind::Contacts => {
+                let panel = Arc::new(contacts::init(window, cx));
+
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, window, cx);
+                });
+            }
+            PanelKind::Settings => {
+                let panel = Arc::new(settings::init(window, cx));
+
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, window, cx);
+                });
+            }
         };
-    }
-
-    fn on_profile_action(
-        &mut self,
-        _action: &OpenProfile,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        // TODO
-    }
-
-    fn on_contacts_action(
-        &mut self,
-        _action: &OpenContacts,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        // TODO
-    }
-
-    fn on_settings_action(
-        &mut self,
-        _action: &OpenSettings,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        // TODO
     }
 
     fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
@@ -210,8 +206,5 @@ impl Render for AppView {
             .children(modal_layer)
             .on_action(cx.listener(Self::on_panel_action))
             .on_action(cx.listener(Self::on_logout_action))
-            .on_action(cx.listener(Self::on_profile_action))
-            .on_action(cx.listener(Self::on_contacts_action))
-            .on_action(cx.listener(Self::on_settings_action))
     }
 }

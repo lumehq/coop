@@ -1,5 +1,5 @@
 use crate::views::sidebar::inbox::Inbox;
-use chat::registry::ChatRegistry;
+use chat_state::registry::ChatRegistry;
 use compose::Compose;
 use gpui::{
     div, px, AnyElement, App, AppContext, BorrowAppContext, Context, Entity, EntityId,
@@ -21,7 +21,7 @@ mod inbox;
 pub struct Sidebar {
     // Panel
     name: SharedString,
-    closeable: bool,
+    closable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
     // Dock
@@ -39,7 +39,7 @@ impl Sidebar {
 
         Self {
             name: "Sidebar".into(),
-            closeable: true,
+            closable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
             view_id: cx.entity().entity_id(),
@@ -93,8 +93,8 @@ impl Panel for Sidebar {
         self.name.clone().into_any_element()
     }
 
-    fn closeable(&self, _cx: &App) -> bool {
-        self.closeable
+    fn closable(&self, _cx: &App) -> bool {
+        self.closable
     }
 
     fn zoomable(&self, _cx: &App) -> bool {

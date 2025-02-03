@@ -244,7 +244,8 @@ impl Dock {
                     .right(px(1.))
                     .h_full()
                     .w(HANDLE_SIZE)
-                    .py_10()
+                    .pt_12()
+                    .pb_4()
             })
             .when(self.placement.is_right(), |this| {
                 this.cursor_col_resize()
@@ -252,7 +253,8 @@ impl Dock {
                     .left(px(1.))
                     .h_full()
                     .w(HANDLE_SIZE)
-                    .py_10()
+                    .pt_12()
+                    .pb_4()
             })
             .when(self.placement.is_bottom(), |this| {
                 this.cursor_row_resize()

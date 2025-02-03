@@ -1,7 +1,7 @@
 use app_state::registry::AppRegistry;
 use asset::Assets;
 use async_utility::task::spawn;
-use chat::registry::ChatRegistry;
+use chat_state::registry::ChatRegistry;
 use common::{
     constants::{
         ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,

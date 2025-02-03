@@ -1,5 +1,5 @@
 use app_state::registry::AppRegistry;
-use chat::room::Room;
+use chat_state::room::Room;
 use common::{
     profile::NostrProfile,
     utils::{random_name, room_hash},
