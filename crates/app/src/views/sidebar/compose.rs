@@ -13,6 +13,7 @@ use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use state::get_client;
 use std::{collections::HashSet, time::Duration};
+use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded},
     indicator::Indicator,
@@ -78,31 +79,35 @@ impl Compose {
         )
         .detach();
 
-        cx.spawn(|this, mut async_cx| async move {
-            let query: anyhow::Result<Vec<NostrProfile>, anyhow::Error> = async_cx
-                .background_executor()
+        cx.spawn(|this, mut cx| async move {
+            let client = get_client();
+            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
+
+            cx.background_executor()
                 .spawn(async move {
-                    let client = get_client();
-                    let signer = client.signer().await?;
-                    let public_key = signer.get_public_key().await?;
-                    let profiles = client.database().contacts(public_key).await?;
-                    let members: Vec<NostrProfile> = profiles
-                        .into_iter()
-                        .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
-                        .collect();
+                    let signer = client.signer().await.unwrap();
+                    let public_key = signer.get_public_key().await.unwrap();
 
-                    Ok(members)
+                    if let Ok(profiles) = client.database().contacts(public_key).await {
+                        let members: Vec<NostrProfile> = profiles
+                            .into_iter()
+                            .map(|profile| {
+                                NostrProfile::new(profile.public_key(), profile.metadata())
+                            })
+                            .collect();
+
+                        _ = tx.send(members);
+                    }
                 })
-                .await;
+                .detach();
 
-            if let Ok(contacts) = query {
+            if let Ok(contacts) = rx.await {
                 if let Some(view) = this.upgrade() {
-                    _ = async_cx.update_entity(&view, |this, cx| {
+                    _ = cx.update_entity(&view, |this, cx| {
                         this.contacts.update(cx, |this, cx| {
                             *this = Some(contacts);
                             cx.notify();
                         });
-
                         cx.notify();
                     });
                 }

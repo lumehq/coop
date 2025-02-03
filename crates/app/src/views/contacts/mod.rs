@@ -1,11 +1,20 @@
+use common::profile::NostrProfile;
 use gpui::{
-    div, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, img, px, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window,
 };
+use nostr_sdk::prelude::*;
+use state::get_client;
+use tokio::sync::oneshot;
 use ui::{
     button::Button,
     dock_area::panel::{Panel, PanelEvent},
+    indicator::Indicator,
     popup_menu::PopupMenu,
+    prelude::FluentBuilder,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    Sizable,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Contacts> {
@@ -13,6 +22,8 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Contacts> {
 }
 
 pub struct Contacts {
+    contacts: Entity<Option<Vec<NostrProfile>>>,
+    // Panel
     name: SharedString,
     closable: bool,
     zoomable: bool,
@@ -21,7 +32,42 @@ pub struct Contacts {
 
 impl Contacts {
     pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let contacts = cx.new(|_| None);
+        let async_contact = contacts.clone();
+
+        cx.spawn(|mut cx| async move {
+            let client = get_client();
+            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
+
+            cx.background_executor()
+                .spawn(async move {
+                    let signer = client.signer().await.unwrap();
+                    let public_key = signer.get_public_key().await.unwrap();
+
+                    if let Ok(profiles) = client.database().contacts(public_key).await {
+                        let members: Vec<NostrProfile> = profiles
+                            .into_iter()
+                            .map(|profile| {
+                                NostrProfile::new(profile.public_key(), profile.metadata())
+                            })
+                            .collect();
+
+                        _ = tx.send(members);
+                    }
+                })
+                .detach();
+
+            if let Ok(contacts) = rx.await {
+                _ = cx.update_entity(&async_contact, |this, cx| {
+                    *this = Some(contacts);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+
         cx.new(|cx| Self {
+            contacts,
             name: "Contacts".into(),
             closable: true,
             zoomable: true,
@@ -65,12 +111,60 @@ impl Focusable for Contacts {
 }
 
 impl Render for Contacts {
-    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child("Contacts")
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().pt_2().px_2().map(|this| {
+            if let Some(contacts) = self.contacts.read(cx).clone() {
+                this.child(
+                    uniform_list(
+                        cx.entity().clone(),
+                        "contacts",
+                        contacts.len(),
+                        move |_, range, _window, cx| {
+                            let mut items = Vec::new();
+
+                            for ix in range {
+                                let item = contacts.get(ix).unwrap().clone();
+
+                                items.push(
+                                    div()
+                                        .w_full()
+                                        .h_9()
+                                        .px_2()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .rounded(px(cx.theme().radius))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .text_xs()
+                                                .child(
+                                                    div()
+                                                        .flex_shrink_0()
+                                                        .child(img(item.avatar()).size_6()),
+                                                )
+                                                .child(item.name()),
+                                        )
+                                        .hover(|this| {
+                                            this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                                        }),
+                                );
+                            }
+
+                            items
+                        },
+                    )
+                    .h_full(),
+                )
+            } else {
+                this.flex()
+                    .items_center()
+                    .justify_center()
+                    .h_16()
+                    .child(Indicator::new().small())
+            }
+        })
     }
 }
