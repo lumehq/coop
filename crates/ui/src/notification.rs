@@ -237,16 +237,16 @@ impl Render for Notification {
             .shadow_md()
             .p_2()
             .gap_3()
-            .child(div().absolute().top_3().left_2().child(icon))
+            .child(div().absolute().top_2p5().left_2().child(icon))
             .child(
                 v_flex()
                     .pl_6()
                     .gap_1()
                     .when_some(self.title.clone(), |this, title| {
-                        this.child(div().text_sm().font_semibold().child(title))
+                        this.child(div().text_xs().font_semibold().child(title))
                     })
                     .overflow_hidden()
-                    .child(div().text_sm().child(self.message.clone())),
+                    .child(div().text_xs().child(self.message.clone())),
             )
             .when_some(self.on_click.clone(), |this, on_click| {
                 this.cursor_pointer()
@@ -370,16 +370,16 @@ impl Render for NotificationList {
             .child(
                 v_flex()
                     .id("notification-list")
+                    .gap_3()
                     .absolute()
                     .relative()
                     .right_0()
                     .h(size.height - px(8.))
+                    .children(items)
                     .on_hover(cx.listener(|view, hovered, _window, cx| {
                         view.expanded = *hovered;
                         cx.notify();
-                    }))
-                    .gap_3()
-                    .children(items),
+                    })),
             )
     }
 }

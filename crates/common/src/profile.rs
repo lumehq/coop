@@ -26,11 +26,6 @@ impl NostrProfile {
         self.public_key
     }
 
-    /// Set contact's metadata
-    pub fn metadata(&mut self, metadata: &Metadata) {
-        self.metadata = metadata.clone()
-    }
-
     /// Get contact's avatar
     pub fn avatar(&self) -> String {
         if let Some(picture) = &self.metadata.picture {
@@ -58,5 +53,15 @@ impl NostrProfile {
         }
 
         shorted_public_key(self.public_key)
+    }
+
+    /// Get contact's metadata
+    pub fn metadata(&mut self) -> &Metadata {
+        &self.metadata
+    }
+
+    /// Set contact's metadata
+    pub fn set_metadata(&mut self, metadata: &Metadata) {
+        self.metadata = metadata.clone()
     }
 }

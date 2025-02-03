@@ -495,7 +495,7 @@ impl Element for TextElement {
 
         // Paint selections
         if let Some(path) = prepaint.selection_path.take() {
-            window.paint_path(path, cx.theme().accent.step(cx, ColorScaleStep::FIVE));
+            window.paint_path(path, cx.theme().accent.step(cx, ColorScaleStep::FOUR));
         }
 
         // Paint multi line text
@@ -515,7 +515,7 @@ impl Element for TextElement {
 
         for line in prepaint.lines.iter() {
             let p = point(origin.x, origin.y + offset_y);
-            _ = line.paint(p, line_height, window, cx);
+            _ = line.paint(p, line_height, gpui::TextAlign::Left, window, cx);
             offset_y += line.size(line_height).height;
         }
 

@@ -9,8 +9,8 @@ use common::{
     profile::NostrProfile,
 };
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, BorrowAppContext, Bounds, SharedString,
-    TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
+    actions, point, px, size, App, AppContext, Application, BorrowAppContext, Bounds, Menu,
+    MenuItem, SharedString, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
@@ -223,8 +223,12 @@ fn main() {
             // Initialize components
             ui::init(cx);
 
-            // Set quit action
+            cx.activate(true);
             cx.on_action(quit);
+            cx.set_menus(vec![Menu {
+                name: "Coop".into(),
+                items: vec![MenuItem::action("Quit", Quit)],
+            }]);
 
             let opts = WindowOptions {
                 #[cfg(not(target_os = "linux"))]
@@ -248,7 +252,6 @@ fn main() {
 
             let window = cx
                 .open_window(opts, |window, cx| {
-                    cx.activate(true);
                     window.set_window_title(APP_NAME);
                     window.set_app_id(APP_ID);
 
@@ -363,5 +366,5 @@ fn main() {
 }
 
 fn quit(_: &Quit, cx: &mut App) {
-    cx.shutdown();
+    cx.quit();
 }

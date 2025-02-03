@@ -133,11 +133,13 @@ impl AppView {
                 }
             }
             PanelKind::Profile => {
-                let panel = Arc::new(profile::init(window, cx));
+                if let Some(profile) = cx.global::<AppRegistry>().user() {
+                    let panel = Arc::new(profile::init(profile, window, cx));
 
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, window, cx);
-                });
+                    self.dock.update(cx, |dock_area, cx| {
+                        dock_area.add_panel(panel, action.position, window, cx);
+                    });
+                }
             }
             PanelKind::Contacts => {
                 let panel = Arc::new(contacts::init(window, cx));

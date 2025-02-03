@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 struct TabState {
-    closeable: bool,
+    closable: bool,
     zoomable: bool,
     draggable: bool,
     droppable: bool,
@@ -70,7 +70,7 @@ pub struct TabPanel {
     pub(crate) active_ix: usize,
     /// If this is true, the Panel closeable will follow the active panel's closeable,
     /// otherwise this TabPanel will not able to close
-    pub(crate) closeable: bool,
+    pub(crate) closable: bool,
     tab_bar_scroll_handle: ScrollHandle,
     is_zoomed: bool,
     is_collapsed: bool,
@@ -90,7 +90,7 @@ impl Panel for TabPanel {
     }
 
     fn closable(&self, cx: &App) -> bool {
-        if !self.closeable {
+        if !self.closable {
             return false;
         }
 
@@ -139,7 +139,7 @@ impl TabPanel {
             will_split_placement: None,
             is_zoomed: false,
             is_collapsed: false,
-            closeable: true,
+            closable: true,
         }
     }
 
@@ -356,8 +356,6 @@ impl TabPanel {
         let view = cx.entity().clone();
         let build_popup_menu = move |this, cx: &App| view.read(cx).popup_menu(this, cx);
 
-        // TODO: Do not show MenuButton if there is no menu items
-
         h_flex()
             .gap_2()
             .occlude()
@@ -390,7 +388,7 @@ impl TabPanel {
                                 let name = if is_zoomed { "Zoom Out" } else { "Zoom In" };
                                 this.separator().menu(name, Box::new(ToggleZoom))
                             })
-                            .when(state.closeable, |this| {
+                            .when(state.closable, |this| {
                                 this.separator().menu("Close", Box::new(ClosePanel))
                             })
                     })
@@ -1015,14 +1013,14 @@ impl Render for TabPanel {
         let focus_handle = self.focus_handle(cx);
 
         let mut state = TabState {
-            closeable: self.closable(cx),
+            closable: self.closable(cx),
             draggable: self.draggable(cx),
             droppable: self.droppable(cx),
             zoomable: self.zoomable(cx),
         };
 
         if !state.draggable {
-            state.closeable = false;
+            state.closable = false;
         }
 
         v_flex()

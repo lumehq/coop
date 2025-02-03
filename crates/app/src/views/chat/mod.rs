@@ -370,8 +370,7 @@ impl Chat {
         });
 
         // Show loading spinner
-        self.is_uploading = true;
-        cx.notify();
+        self.set_loading(true, cx);
 
         // TODO: support multiple upload
         cx.spawn(move |this, mut async_cx| async move {
@@ -394,8 +393,7 @@ impl Chat {
                             // Stop loading spinner
                             if let Some(view) = this.upgrade() {
                                 _ = async_cx.update_entity(&view, |this, cx| {
-                                    this.is_uploading = false;
-                                    cx.notify();
+                                    this.set_loading(false, cx);
                                 });
                             }
 
@@ -426,6 +424,11 @@ impl Chat {
                 cx.notify();
             }
         });
+    }
+
+    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.is_uploading = status;
+        cx.notify();
     }
 }
 

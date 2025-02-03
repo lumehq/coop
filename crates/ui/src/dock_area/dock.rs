@@ -77,7 +77,7 @@ impl Dock {
     ) -> Self {
         let panel = cx.new(|cx| {
             let mut tab = TabPanel::new(None, dock_area.clone(), window, cx);
-            tab.closeable = false;
+            tab.closable = true;
             tab
         });
 
@@ -250,7 +250,7 @@ impl Dock {
             .when(self.placement.is_right(), |this| {
                 this.cursor_col_resize()
                     .top_0()
-                    .left(px(1.))
+                    .left(px(-0.5))
                     .h_full()
                     .w(HANDLE_SIZE)
                     .pt_12()

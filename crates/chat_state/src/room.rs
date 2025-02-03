@@ -79,12 +79,12 @@ impl Room {
     /// Set contact's metadata by public key
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
         if self.owner.public_key() == public_key {
-            self.owner.metadata(&metadata);
+            self.owner.set_metadata(&metadata);
         }
 
         for member in self.members.iter_mut() {
             if member.public_key() == public_key {
-                member.metadata(&metadata);
+                member.set_metadata(&metadata);
             }
         }
     }
