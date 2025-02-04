@@ -20,6 +20,7 @@ gpui_tokio.workspace = true
 reqwest_client.workspace = true
 
 tokio.workspace = true
+nostr-connect.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 serde.workspace = true

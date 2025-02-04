@@ -1,7 +1,3 @@
-use super::{
-    chat, contacts, onboarding::Onboarding, profile, settings, sidebar::Sidebar,
-    welcome::WelcomePanel,
-};
 use app_state::registry::AppRegistry;
 use chat_state::registry::ChatRegistry;
 use common::profile::NostrProfile;
@@ -18,6 +14,10 @@ use ui::{
     dock_area::{dock::DockPlacement, DockArea, DockItem},
     popup_menu::PopupMenuExt,
     Icon, IconName, Root, Sizable, TitleBar,
+};
+
+use super::{
+    chat, contacts, onboarding, profile, settings, sidebar::Sidebar, welcome::WelcomePanel,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -170,7 +170,7 @@ impl AppView {
             // Update root view
             if let Some(root) = this.root() {
                 cx.update_entity(&root, |this: &mut Root, cx| {
-                    this.set_view(cx.new(|cx| Onboarding::new(window, cx)).into(), cx);
+                    this.set_view(onboarding::init(window, cx).into(), cx);
                 });
             }
         });

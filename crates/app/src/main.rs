@@ -19,8 +19,8 @@ use nostr_sdk::prelude::*;
 use state::{get_client, initialize_client};
 use std::{borrow::Cow, collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
-use ui::Root;
-use views::{app::AppView, onboarding::Onboarding, startup::Startup};
+use ui::{theme::Theme, Root};
+use views::{app::AppView, onboarding, startup::Startup};
 
 mod asset;
 mod views;
@@ -254,6 +254,11 @@ fn main() {
                 .open_window(opts, |window, cx| {
                     window.set_window_title(APP_NAME);
                     window.set_app_id(APP_ID);
+                    window
+                        .observe_window_appearance(|window, cx| {
+                            Theme::sync_system_appearance(Some(window), cx);
+                        })
+                        .detach();
 
                     let root = cx.new(|cx| {
                         Root::new(cx.new(|cx| Startup::new(window, cx)).into(), window, cx)
@@ -321,10 +326,7 @@ fn main() {
                                 cx.update_global::<AppRegistry, _>(|this, cx| {
                                     if let Some(root) = this.root() {
                                         cx.update_entity(&root, |this: &mut Root, cx| {
-                                            this.set_view(
-                                                cx.new(|cx| Onboarding::new(window, cx)).into(),
-                                                cx,
-                                            );
+                                            this.set_view(onboarding::init(window, cx).into(), cx);
                                         });
                                     }
                                 });
