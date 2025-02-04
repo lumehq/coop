@@ -1,6 +1,6 @@
 use gpui::{
     actions, div, point, prelude::FluentBuilder as _, px, AnyElement, App, AppContext, Bounds,
-    ClipboardItem, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Half,
+    ClipboardItem, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Rems, Render, ScrollHandle,
     ScrollWheelEvent, SharedString, Styled as _, UTF16Selection, Window, WrappedLine,
@@ -1099,16 +1099,17 @@ impl TextInput {
 
         for line in lines.iter() {
             let line_origin = self.line_origin_with_y_offset(&mut y_offset, line, line_height);
-            let mut pos = inner_position - line_origin;
-            // Ignore the y position in single line mode, only check x position.
+            let pos = inner_position - line_origin;
+            let closest_index = line.unwrapped_layout.closest_index_for_x(pos.x);
+
+            // Return offset by use closest_index_for_x if is single line mode.
             if self.is_single_line() {
-                pos.y = line_height.half();
+                return closest_index;
             }
 
-            let index_result = line.index_for_position(pos, line_height);
+            let index_result = line.closest_index_for_position(pos, line_height);
             if let Ok(v) = index_result {
-                // Add 1 for place cursor after the character.
-                index += v + 1;
+                index += v;
                 break;
             } else if line
                 .index_for_position(point(px(0.), pos.y), line_height)

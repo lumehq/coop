@@ -17,7 +17,7 @@ use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use log::{error, info};
 use nostr_sdk::prelude::*;
 use state::{get_client, initialize_client};
-use std::{collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use ui::Root;
 use views::{app::AppView, onboarding::Onboarding, startup::Startup};
@@ -60,7 +60,7 @@ fn main() {
     });
 
     spawn(async move {
-        let (batch_tx, mut batch_rx) = mpsc::channel::<Box<Event>>(20);
+        let (batch_tx, mut batch_rx) = mpsc::channel::<Cow<Event>>(20);
 
         async fn sync_metadata(client: &Client, buffer: &HashSet<PublicKey>) {
             let filter = Filter::new()
@@ -73,7 +73,7 @@ fn main() {
             }
         }
 
-        async fn process_batch(client: &Client, events: &[Box<Event>]) {
+        async fn process_batch(client: &Client, events: &[Cow<'_, Event>]) {
             let sig = Signature::from_str(FAKE_SIG).unwrap();
             let mut buffer: HashSet<PublicKey> = HashSet::with_capacity(100);
 
@@ -157,7 +157,7 @@ fn main() {
                         subscription_id,
                     } => match event.kind {
                         Kind::GiftWrap => {
-                            if subscription_id == new_id {
+                            if new_id == *subscription_id {
                                 if let Ok(UnwrappedGift { mut rumor, .. }) =
                                     client.unwrap_gift_wrap(&event).await
                                 {
@@ -201,7 +201,7 @@ fn main() {
                         _ => {}
                     },
                     RelayMessage::EndOfStoredEvents(subscription_id) => {
-                        if subscription_id == all_id {
+                        if all_id == *subscription_id {
                             if let Err(e) = signal_tx.send(Signal::Eose).await {
                                 error!("Failed to send eose: {}", e)
                             };
