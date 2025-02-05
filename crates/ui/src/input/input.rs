@@ -1524,6 +1524,15 @@ impl EntityInputHandler for TextInput {
             bounds.origin + end_origin.unwrap_or_default(),
         ))
     }
+
+    fn character_index_for_point(
+        &mut self,
+        _point: gpui::Point<Pixels>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<usize> {
+        None
+    }
 }
 
 impl Focusable for TextInput {

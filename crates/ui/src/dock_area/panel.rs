@@ -51,6 +51,27 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
         true
     }
 
+    /// Return false to hide panel, true to show panel, default is `true`.
+    ///
+    /// This method called in Panel render, we should make sure it is fast.
+    fn visible(&self, _cx: &App) -> bool {
+        true
+    }
+
+    /// Set active state of the panel.
+    ///
+    /// This method will be called when the panel is active or inactive.
+    ///
+    /// The last_active_panel and current_active_panel will be touched when the panel is active.
+    fn set_active(&self, _active: bool, _cx: &mut App) {}
+
+    /// Set zoomed state of the panel.
+    ///
+    /// This method will be called when the panel is zoomed or unzoomed.
+    ///
+    /// Only current Panel will touch this method.
+    fn set_zoomed(&self, _zoomed: bool, _cx: &mut App) {}
+
     /// The addition popup menu of the panel, default is `None`.
     fn popup_menu(&self, this: PopupMenu, _cx: &App) -> PopupMenu {
         this
@@ -68,6 +89,9 @@ pub trait PanelView: 'static + Send + Sync {
     fn title(&self, cx: &App) -> AnyElement;
     fn closable(&self, cx: &App) -> bool;
     fn zoomable(&self, cx: &App) -> bool;
+    fn visible(&self, cx: &App) -> bool;
+    fn set_active(&self, active: bool, cx: &mut App);
+    fn set_zoomed(&self, zoomed: bool, cx: &mut App);
     fn popup_menu(&self, menu: PopupMenu, cx: &App) -> PopupMenu;
     fn toolbar_buttons(&self, window: &Window, cx: &App) -> Vec<Button>;
     fn view(&self) -> AnyView;
@@ -93,6 +117,21 @@ impl<T: Panel> PanelView for Entity<T> {
 
     fn zoomable(&self, cx: &App) -> bool {
         self.read(cx).zoomable(cx)
+    }
+
+    fn visible(&self, cx: &App) -> bool {
+        self.read(cx).visible(cx)
+    }
+
+    fn set_active(&self, active: bool, cx: &mut App) {
+        self.update(cx, |this, cx| {
+            this.set_active(active, cx);
+        })
+    }
+    fn set_zoomed(&self, zoomed: bool, cx: &mut App) {
+        self.update(cx, |this, cx| {
+            this.set_zoomed(zoomed, cx);
+        })
     }
 
     fn popup_menu(&self, menu: PopupMenu, cx: &App) -> PopupMenu {

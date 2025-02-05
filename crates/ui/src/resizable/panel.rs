@@ -304,6 +304,7 @@ impl Render for ResizablePanelGroup {
 }
 
 type ContentBuilder = Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>>;
+type ContentVisible = Rc<Box<dyn Fn(&App) -> bool>>;
 
 pub struct ResizablePanel {
     group: Option<WeakEntity<ResizablePanelGroup>>,
@@ -316,6 +317,7 @@ pub struct ResizablePanel {
     axis: Axis,
     content_builder: ContentBuilder,
     content_view: Option<AnyView>,
+    content_visible: ContentVisible,
     /// The bounds of the resizable panel, when render the bounds will be updated.
     bounds: Bounds<Pixels>,
     resize_handle: Option<AnyElement>,
@@ -331,6 +333,7 @@ impl ResizablePanel {
             axis: Axis::Horizontal,
             content_builder: None,
             content_view: None,
+            content_visible: Rc::new(Box::new(|_| true)),
             bounds: Bounds::default(),
             resize_handle: None,
         }
@@ -341,6 +344,14 @@ impl ResizablePanel {
         F: Fn(&mut Window, &mut App) -> AnyElement + 'static,
     {
         self.content_builder = Some(Rc::new(content));
+        self
+    }
+
+    pub(crate) fn content_visible<F>(mut self, content_visible: F) -> Self
+    where
+        F: Fn(&App) -> bool + 'static,
+    {
+        self.content_visible = Rc::new(Box::new(content_visible));
         self
     }
 
@@ -364,16 +375,14 @@ impl ResizablePanel {
     ) {
         let new_size = bounds.size.along(self.axis);
         self.bounds = bounds;
+        self.size_ratio = None;
         self.size = Some(new_size);
 
-        let panel_view = cx.entity().clone();
+        let entity_id = cx.entity_id();
+
         if let Some(group) = self.group.as_ref() {
             _ = group.update(cx, |view, _| {
-                if let Some(ix) = view
-                    .panels
-                    .iter()
-                    .position(|v| v.entity_id() == panel_view.entity_id())
-                {
+                if let Some(ix) = view.panels.iter().position(|v| v.entity_id() == entity_id) {
                     view.sizes[ix] = new_size;
                 }
             });
@@ -386,6 +395,14 @@ impl FluentBuilder for ResizablePanel {}
 
 impl Render for ResizablePanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !(self.content_visible)(cx) {
+            // To keep size as initial size, to make sure the size will not be changed.
+            self.initial_size = self.size;
+            self.size = None;
+
+            return div();
+        }
+
         let view = cx.entity().clone();
         let total_size = self
             .group
