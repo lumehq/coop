@@ -10,14 +10,18 @@ use ui::{
     StyledExt,
 };
 
-pub struct WelcomePanel {
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
+    Welcome::new(window, cx)
+}
+
+pub struct Welcome {
     name: SharedString,
     closable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
 }
 
-impl WelcomePanel {
+impl Welcome {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self::view(window, cx))
     }
@@ -32,7 +36,7 @@ impl WelcomePanel {
     }
 }
 
-impl Panel for WelcomePanel {
+impl Panel for Welcome {
     fn panel_id(&self) -> SharedString {
         "WelcomePanel".into()
     }
@@ -58,15 +62,15 @@ impl Panel for WelcomePanel {
     }
 }
 
-impl EventEmitter<PanelEvent> for WelcomePanel {}
+impl EventEmitter<PanelEvent> for Welcome {}
 
-impl Focusable for WelcomePanel {
+impl Focusable for Welcome {
     fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for WelcomePanel {
+impl Render for Welcome {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()

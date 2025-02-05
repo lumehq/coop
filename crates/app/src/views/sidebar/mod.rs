@@ -18,6 +18,10 @@ use ui::{
 mod compose;
 mod inbox;
 
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
+    Sidebar::new(window, cx)
+}
+
 pub struct Sidebar {
     // Panel
     name: SharedString,

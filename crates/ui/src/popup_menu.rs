@@ -11,7 +11,8 @@ use gpui::{
     actions, anchored, canvas, div, prelude::FluentBuilder, px, rems, Action, AnyElement, App,
     AppContext, Bounds, Context, Corner, DismissEvent, Edges, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement, IntoElement, KeyBinding, Keystroke, ParentElement, Pixels,
-    Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    WeakEntity, Window,
 };
 use std::{cell::Cell, ops::Deref, rc::Rc};
 
@@ -114,7 +115,8 @@ pub struct PopupMenu {
     scroll_state: Rc<Cell<ScrollbarState>>,
 
     action_focus_handle: Option<FocusHandle>,
-    _subscriptions: [gpui::Subscription; 1],
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 impl PopupMenu {
@@ -125,10 +127,12 @@ impl PopupMenu {
     ) -> Entity<Self> {
         cx.new(|cx| {
             let focus_handle = cx.focus_handle();
-            let _on_blur_subscription =
-                cx.on_blur(&focus_handle, window, |this: &mut PopupMenu, window, cx| {
-                    this.dismiss(&Dismiss, window, cx)
-                });
+            let subscriptions =
+                vec![
+                    cx.on_blur(&focus_handle, window, |this: &mut PopupMenu, window, cx| {
+                        this.dismiss(&Dismiss, window, cx)
+                    }),
+                ];
 
             let menu = Self {
                 focus_handle,
@@ -144,7 +148,7 @@ impl PopupMenu {
                 scrollable: false,
                 scroll_handle: ScrollHandle::default(),
                 scroll_state: Rc::new(Cell::new(ScrollbarState::default())),
-                _subscriptions: [_on_blur_subscription],
+                subscriptions,
             };
             window.refresh();
             f(menu, window, cx)

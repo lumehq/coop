@@ -16,9 +16,7 @@ use ui::{
     Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use super::{
-    chat, contacts, onboarding, profile, settings, sidebar::Sidebar, welcome::WelcomePanel,
-};
+use super::{chat, contacts, onboarding, profile, settings, sidebar, welcome};
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -65,11 +63,11 @@ impl AppView {
     pub fn new(account: NostrProfile, window: &mut Window, cx: &mut Context<'_, Self>) -> AppView {
         let dock = cx.new(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), window, cx));
         let weak_dock = dock.downgrade();
-        let left_panel = DockItem::panel(Arc::new(Sidebar::new(window, cx)));
+        let left_panel = DockItem::panel(Arc::new(sidebar::init(window, cx)));
         let center_panel = DockItem::split_with_sizes(
             Axis::Vertical,
             vec![DockItem::tabs(
-                vec![Arc::new(WelcomePanel::new(window, cx))],
+                vec![Arc::new(welcome::init(window, cx))],
                 None,
                 &weak_dock,
                 window,

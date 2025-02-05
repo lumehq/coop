@@ -5,9 +5,9 @@ use common::{
     utils::{random_name, room_hash},
 };
 use gpui::{
-    div, img, impl_internal_actions, px, uniform_list, App, AppContext, Context, Entity,
-    FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, img, impl_internal_actions, prelude::FluentBuilder, px, uniform_list, App, AppContext,
+    Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -18,7 +18,6 @@ use ui::{
     button::{Button, ButtonRounded},
     indicator::Indicator,
     input::{InputEvent, TextInput},
-    prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
     Icon, IconName, Sizable, Size, StyledExt,
 };

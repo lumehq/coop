@@ -1,8 +1,8 @@
 use app_state::registry::AppRegistry;
 use common::profile::NostrProfile;
 use gpui::{
-    div, relative, svg, App, AppContext, BorrowAppContext, Context, Entity, IntoElement,
-    ParentElement, Render, Styled, Window,
+    div, prelude::FluentBuilder, relative, svg, App, AppContext, BorrowAppContext, Context, Entity,
+    IntoElement, ParentElement, Render, Styled, Window,
 };
 use nostr_connect::prelude::*;
 use state::get_client;
@@ -12,7 +12,6 @@ use ui::{
     button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
     notification::NotificationType,
-    prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Root, Size, StyledExt,
 };

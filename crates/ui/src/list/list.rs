@@ -8,7 +8,7 @@ use gpui::{
     actions, div, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, Context,
     Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, Length,
     ListSizingBehavior, MouseButton, ParentElement, Render, ScrollStrategy, SharedString, Styled,
-    Task, UniformListScrollHandle, Window,
+    Subscription, Task, UniformListScrollHandle, Window,
 };
 use smol::Timer;
 use std::{cell::Cell, rc::Rc, time::Duration};
@@ -111,6 +111,7 @@ pub struct List<D: ListDelegate> {
     selected_index: Option<usize>,
     right_clicked_index: Option<usize>,
     _search_task: Task<()>,
+    query_input_subscription: Subscription,
 }
 
 impl<D> List<D>
@@ -129,8 +130,8 @@ where
                 .cleanable()
         });
 
-        cx.subscribe_in(&query_input, window, Self::on_query_input_event)
-            .detach();
+        let query_input_subscription =
+            cx.subscribe_in(&query_input, window, Self::on_query_input_event);
 
         Self {
             focus_handle: cx.focus_handle(),
@@ -146,6 +147,7 @@ where
             loading: false,
             size: Size::default(),
             _search_task: Task::ready(()),
+            query_input_subscription,
         }
     }
 
@@ -180,8 +182,8 @@ where
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.subscribe_in(&query_input, window, Self::on_query_input_event)
-            .detach();
+        self.query_input_subscription =
+            cx.subscribe_in(&query_input, window, Self::on_query_input_event);
         self.query_input = Some(query_input);
     }
 

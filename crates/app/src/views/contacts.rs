@@ -1,8 +1,8 @@
 use common::profile::NostrProfile;
 use gpui::{
-    div, img, px, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    Styled, Window,
+    div, img, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, Context,
+    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use state::get_client;
@@ -12,7 +12,6 @@ use ui::{
     dock_area::panel::{Panel, PanelEvent},
     indicator::Indicator,
     popup_menu::PopupMenu,
-    prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
     Sizable,
 };

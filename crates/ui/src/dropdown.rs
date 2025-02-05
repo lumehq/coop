@@ -2,7 +2,8 @@ use gpui::{
     actions, anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App,
     AppContext, Bounds, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter,
     FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement,
-    Pixels, Render, SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
+    Pixels, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
+    WeakEntity, Window,
 };
 
 use crate::{
@@ -245,6 +246,8 @@ pub struct Dropdown<D: DropdownDelegate + 'static> {
     /// Store the bounds of the input
     bounds: Bounds<Pixels>,
     disabled: bool,
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 pub struct SearchableVec<T> {
@@ -255,6 +258,7 @@ pub struct SearchableVec<T> {
 impl<T: DropdownItem + Clone> SearchableVec<T> {
     pub fn new(items: impl Into<Vec<T>>) -> Self {
         let items = items.into();
+
         Self {
             items: items.clone(),
             matched_items: items,
@@ -345,10 +349,10 @@ where
             list
         });
 
-        cx.on_blur(&list.focus_handle(cx), window, Self::on_blur)
-            .detach();
-
-        cx.on_blur(&focus_handle, window, Self::on_blur).detach();
+        let subscriptions = vec![
+            cx.on_blur(&list.focus_handle(cx), window, Self::on_blur),
+            cx.on_blur(&focus_handle, window, Self::on_blur),
+        ];
 
         let mut this = Self {
             id: id.into(),
@@ -365,6 +369,7 @@ where
             menu_width: Length::Auto,
             bounds: Bounds::default(),
             disabled: false,
+            subscriptions,
         };
         this.set_selected_index(selected_index, window, cx);
         this

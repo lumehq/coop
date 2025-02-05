@@ -5,10 +5,10 @@ use common::{
     utils::{compare, message_time, nip96_upload},
 };
 use gpui::{
-    div, img, list, px, white, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
-    ParentElement, PathPromptOptions, Pixels, Render, SharedString, StatefulInteractiveElement,
-    Styled, StyledImage, WeakEntity, Window,
+    div, img, list, prelude::FluentBuilder, px, white, AnyElement, App, AppContext, Context,
+    Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    ListAlignment, ListState, ObjectFit, ParentElement, PathPromptOptions, Pixels, Render,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, WeakEntity, Window,
 };
 use itertools::Itertools;
 use message::Message;
@@ -21,7 +21,6 @@ use ui::{
     dock_area::panel::{Panel, PanelEvent},
     input::{InputEvent, TextInput},
     popup_menu::PopupMenu,
-    prelude::FluentBuilder,
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Icon, IconName, Sizable,
 };
