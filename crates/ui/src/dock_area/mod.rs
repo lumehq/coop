@@ -7,7 +7,7 @@ use crate::dock_area::{
 use gpui::{
     actions, canvas, div, prelude::FluentBuilder, px, AnyElement, AnyView, App, AppContext, Axis,
     Bounds, Context, Edges, Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, SharedString, Styled, Subscription, WeakEntity, Window,
+    ParentElement as _, Pixels, Render, Styled, Subscription, WeakEntity, Window,
 };
 use std::sync::Arc;
 
@@ -28,17 +28,11 @@ pub enum DockEvent {
 
 /// The main area of the dock.
 pub struct DockArea {
-    id: SharedString,
-    /// The version is used to special the default layout, this is like the `panel_version` in [`Panel`](Panel).
-    version: Option<usize>,
     pub(crate) bounds: Bounds<Pixels>,
-
     /// The center view of the dockarea.
     items: DockItem,
-
     /// The entity_id of the [`TabPanel`](TabPanel) where each toggle button should be displayed,
     toggle_button_panels: Edges<Option<EntityId>>,
-
     /// The left dock of the dock_area.
     left_dock: Option<Entity<Dock>>,
     /// The bottom dock of the dock_area.
@@ -47,13 +41,10 @@ pub struct DockArea {
     right_dock: Option<Entity<Dock>>,
     /// The top zoom view of the dock_area, if any.
     zoom_view: Option<AnyView>,
-
     /// Lock panels layout, but allow to resize.
     is_locked: bool,
-
     /// The panel style, default is [`PanelStyle::Default`](PanelStyle::Default).
     pub(crate) panel_style: PanelStyle,
-
     subscriptions: Vec<Subscription>,
 }
 
@@ -289,12 +280,7 @@ impl DockItem {
 }
 
 impl DockArea {
-    pub fn new(
-        id: impl Into<SharedString>,
-        version: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let stack_panel = cx.new(|cx| StackPanel::new(Axis::Horizontal, window, cx));
 
         let dock_item = DockItem::Split {
@@ -305,8 +291,6 @@ impl DockArea {
         };
 
         let mut this = Self {
-            id: id.into(),
-            version,
             bounds: Bounds::default(),
             items: dock_item,
             zoom_view: None,
@@ -328,12 +312,6 @@ impl DockArea {
     pub fn panel_style(mut self, style: PanelStyle) -> Self {
         self.panel_style = style;
         self
-    }
-
-    /// Set version of the dock area.
-    pub fn set_version(&mut self, version: usize, _window: &mut Window, cx: &mut Context<Self>) {
-        self.version = Some(version);
-        cx.notify();
     }
 
     /// The DockItem as the center of the dock area.
@@ -659,11 +637,6 @@ impl DockArea {
             );
 
         self.subscriptions.push(subscription);
-    }
-
-    /// Returns the ID of the dock area.
-    pub fn id(&self) -> SharedString {
-        self.id.clone()
     }
 
     pub fn set_zoomed_in<P: Panel>(

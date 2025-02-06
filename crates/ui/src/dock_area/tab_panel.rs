@@ -171,6 +171,7 @@ impl TabPanel {
 
     fn set_active_ix(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if ix == self.active_ix {
+            self.focus_active_panel(window, cx);
             return;
         }
 
@@ -1021,7 +1022,7 @@ impl TabPanel {
 
     fn focus_active_panel(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(active_panel) = self.active_panel(cx) {
-            active_panel.focus_handle(cx).focus(window);
+            window.focus(&active_panel.focus_handle(cx));
         }
     }
 

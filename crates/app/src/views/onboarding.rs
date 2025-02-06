@@ -16,7 +16,7 @@ use ui::{
     ContextModal, Root, Size, StyledExt,
 };
 
-use super::app::AppView;
+use super::app;
 
 const ALPHA_MESSAGE: &str = "Coop is in the alpha stage; it does not store any credentials. You will need to log in again when you reopen the app.";
 const JOIN_URL: &str = "https://start.njump.me/";
@@ -61,10 +61,12 @@ impl Onboarding {
         })
     }
 
+    /*
     fn use_connect(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.use_connect = true;
         cx.notify();
     }
+    */
 
     fn use_privkey(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.use_privkey = true;
@@ -127,10 +129,7 @@ impl Onboarding {
 
                         if let Some(root) = this.root() {
                             cx.update_entity(&root, |this: &mut Root, cx| {
-                                this.set_view(
-                                    cx.new(|cx| AppView::new(profile, window, cx)).into(),
-                                    cx,
-                                );
+                                this.set_view(app::init(profile, window, cx).into(), cx);
                             });
                         }
                     });

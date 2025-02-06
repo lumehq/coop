@@ -2,7 +2,7 @@ use app_state::registry::AppRegistry;
 use chat_state::registry::ChatRegistry;
 use common::profile::NostrProfile;
 use gpui::{
-    actions, div, img, impl_internal_actions, px, AppContext, Axis, BorrowAppContext, Context,
+    actions, div, img, impl_internal_actions, px, App, AppContext, Axis, BorrowAppContext, Context,
     Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage,
     Window,
 };
@@ -44,15 +44,9 @@ impl_internal_actions!(dock, [AddPanel]);
 // Account actions
 actions!(account, [OpenProfile, OpenContacts, OpenSettings, Logout]);
 
-pub struct DockAreaTab {
-    id: &'static str,
-    version: usize,
+pub fn init(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<AppView> {
+    AppView::new(account, window, cx)
 }
-
-pub const DOCK_AREA: DockAreaTab = DockAreaTab {
-    id: "dock",
-    version: 1,
-};
 
 pub struct AppView {
     account: NostrProfile,
@@ -60,8 +54,8 @@ pub struct AppView {
 }
 
 impl AppView {
-    pub fn new(account: NostrProfile, window: &mut Window, cx: &mut Context<'_, Self>) -> AppView {
-        let dock = cx.new(|cx| DockArea::new(DOCK_AREA.id, Some(DOCK_AREA.version), window, cx));
+    pub fn new(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let dock = cx.new(|cx| DockArea::new(window, cx));
         let weak_dock = dock.downgrade();
         let left_panel = DockItem::panel(Arc::new(sidebar::init(window, cx)));
         let center_panel = DockItem::split_with_sizes(
@@ -79,13 +73,13 @@ impl AppView {
             cx,
         );
 
+        // Set default dock layout
         _ = weak_dock.update(cx, |view, cx| {
-            view.set_version(DOCK_AREA.version, window, cx);
             view.set_left_dock(left_panel, Some(px(240.)), true, window, cx);
             view.set_center(center_panel, window, cx);
         });
 
-        AppView { account, dock }
+        cx.new(|_| Self { account, dock })
     }
 
     fn render_account(&self) -> impl IntoElement {

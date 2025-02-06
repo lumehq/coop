@@ -33,13 +33,8 @@ smallvec = "1.13.2"
 rust-embed = "8.5.0"
 
 [profile.release]
-codegen-units = 1
-lto = true
-panic = "abort"
-incremental = false
-opt-level = "z"
 strip = true
-rpath = false
-debug = false
-debug-assertions = false
-overflow-checks = false
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
