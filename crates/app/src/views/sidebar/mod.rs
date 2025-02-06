@@ -2,15 +2,14 @@ use crate::views::sidebar::inbox::Inbox;
 use chat_state::registry::ChatRegistry;
 use compose::Compose;
 use gpui::{
-    div, px, AnyElement, App, AppContext, BorrowAppContext, Context, Entity, EntityId,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, App, AppContext, BorrowAppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
-    scroll::ScrollbarAxis,
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
@@ -30,7 +29,6 @@ pub struct Sidebar {
     focus_handle: FocusHandle,
     // Dock
     inbox: Entity<Inbox>,
-    view_id: EntityId,
 }
 
 impl Sidebar {
@@ -46,7 +44,6 @@ impl Sidebar {
             closable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-            view_id: cx.entity().entity_id(),
             inbox,
         }
     }
@@ -125,7 +122,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
-            .scrollable(self.view_id, ScrollbarAxis::Vertical)
+            .w_full()
             .py_3()
             .gap_3()
             .child(

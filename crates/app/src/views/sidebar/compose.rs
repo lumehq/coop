@@ -5,9 +5,9 @@ use common::{
     utils::{random_name, room_hash},
 };
 use gpui::{
-    div, img, impl_internal_actions, prelude::FluentBuilder, px, uniform_list, App, AppContext,
-    Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
+    AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -319,73 +319,104 @@ impl Render for Compose {
                     )
                     .map(|this| {
                         if let Some(contacts) = self.contacts.read(cx).clone() {
-                            this.child(
-                                uniform_list(
-                                    cx.entity().clone(),
-                                    "contacts",
-                                    contacts.len(),
-                                    move |this, range, _window, cx| {
-                                        let selected = this.selected.read(cx);
-                                        let mut items = Vec::new();
-
-                                        for ix in range {
-                                            let item = contacts.get(ix).unwrap().clone();
-                                            let is_select = selected.contains(&item.public_key());
-
-                                            items.push(
-                                                div()
-                                                    .id(ix)
-                                                    .w_full()
-                                                    .h_9()
-                                                    .px_2()
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_between()
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .items_center()
-                                                            .gap_2()
-                                                            .text_xs()
-                                                            .child(
-                                                                div().flex_shrink_0().child(
-                                                                    img(item.avatar()).size_6(),
-                                                                ),
-                                                            )
-                                                            .child(item.name()),
-                                                    )
-                                                    .when(is_select, |this| {
-                                                        this.child(
-                                                            Icon::new(IconName::CircleCheck)
-                                                                .size_3()
-                                                                .text_color(cx.theme().base.step(
-                                                                    cx,
-                                                                    ColorScaleStep::TWELVE,
-                                                                )),
-                                                        )
-                                                    })
-                                                    .hover(|this| {
-                                                        this.bg(cx
-                                                            .theme()
-                                                            .base
-                                                            .step(cx, ColorScaleStep::THREE))
-                                                    })
-                                                    .on_click(move |_, window, cx| {
-                                                        window.dispatch_action(
-                                                            Box::new(SelectContact(
-                                                                item.public_key(),
-                                                            )),
-                                                            cx,
-                                                        );
-                                                    }),
-                                            );
-                                        }
-
-                                        items
-                                    },
+                            if contacts.is_empty() {
+                                this.child(
+                                    div()
+                                        .w_full()
+                                        .h_24()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_align(TextAlign::Center)
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_semibold()
+                                                .line_height(relative(1.2))
+                                                .child("No contacts"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(
+                                                    cx.theme()
+                                                        .base
+                                                        .step(cx, ColorScaleStep::ELEVEN),
+                                                )
+                                                .child("Your recently contacts will appear here."),
+                                        ),
                                 )
-                                .h(px(300.)),
-                            )
+                            } else {
+                                this.child(
+                                    uniform_list(
+                                        cx.entity().clone(),
+                                        "contacts",
+                                        contacts.len(),
+                                        move |this, range, _window, cx| {
+                                            let selected = this.selected.read(cx);
+                                            let mut items = Vec::new();
+
+                                            for ix in range {
+                                                let item = contacts.get(ix).unwrap().clone();
+                                                let is_select =
+                                                    selected.contains(&item.public_key());
+
+                                                items.push(
+                                                    div()
+                                                        .id(ix)
+                                                        .w_full()
+                                                        .h_9()
+                                                        .px_2()
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_between()
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap_2()
+                                                                .text_xs()
+                                                                .child(div().flex_shrink_0().child(
+                                                                    img(item.avatar()).size_6(),
+                                                                ))
+                                                                .child(item.name()),
+                                                        )
+                                                        .when(is_select, |this| {
+                                                            this.child(
+                                                                Icon::new(IconName::CircleCheck)
+                                                                    .size_3()
+                                                                    .text_color(
+                                                                        cx.theme().base.step(
+                                                                            cx,
+                                                                            ColorScaleStep::TWELVE,
+                                                                        ),
+                                                                    ),
+                                                            )
+                                                        })
+                                                        .hover(|this| {
+                                                            this.bg(cx
+                                                                .theme()
+                                                                .base
+                                                                .step(cx, ColorScaleStep::THREE))
+                                                        })
+                                                        .on_click(move |_, window, cx| {
+                                                            window.dispatch_action(
+                                                                Box::new(SelectContact(
+                                                                    item.public_key(),
+                                                                )),
+                                                                cx,
+                                                            );
+                                                        }),
+                                                );
+                                            }
+
+                                            items
+                                        },
+                                    )
+                                    .min_h(px(300.)),
+                                )
+                            }
                         } else {
                             this.flex()
                                 .items_center()

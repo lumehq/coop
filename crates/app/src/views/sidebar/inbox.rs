@@ -2,8 +2,9 @@ use crate::views::app::{AddPanel, PanelKind};
 use chat_state::registry::ChatRegistry;
 use common::utils::message_ago;
 use gpui::{
-    div, img, percentage, prelude::FluentBuilder, px, Context, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, percentage, prelude::FluentBuilder, px, relative, Context, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    TextAlign, Window,
 };
 use ui::{
     dock_area::dock::DockPlacement,
@@ -47,6 +48,30 @@ impl Inbox {
 
                 if inbox.is_loading {
                     this.children(self.render_skeleton(5))
+                } else if inbox.rooms.is_empty() {
+                    this.px_1()
+                        .w_full()
+                        .h_20()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .text_align(TextAlign::Center)
+                        .rounded(px(cx.theme().radius))
+                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_semibold()
+                                .line_height(relative(1.2))
+                                .child("No chats"),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                                .child("Recent chats will appear here."),
+                        )
                 } else {
                     this.children(inbox.rooms.iter().map(|model| {
                         let room = model.read(cx);

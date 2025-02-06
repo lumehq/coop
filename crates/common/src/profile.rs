@@ -29,10 +29,14 @@ impl NostrProfile {
     /// Get contact's avatar
     pub fn avatar(&self) -> String {
         if let Some(picture) = &self.metadata.picture {
-            format!(
-                "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                IMAGE_SERVICE, picture
-            )
+            if picture.len() > 1 {
+                format!(
+                    "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
+                    IMAGE_SERVICE, picture
+                )
+            } else {
+                "brand/avatar.png".into()
+            }
         } else {
             "brand/avatar.png".into()
         }
