@@ -13,7 +13,7 @@ use ui::{
     input::{InputEvent, TextInput},
     notification::NotificationType,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Root, Size, StyledExt,
+    ContextModal, Size, StyledExt,
 };
 
 use super::app;
@@ -126,12 +126,7 @@ impl Onboarding {
                 cx.update_window(window_handle, |_, window, cx| {
                     cx.update_global::<AppRegistry, _>(|this, cx| {
                         this.set_user(Some(profile.clone()));
-
-                        if let Some(root) = this.root() {
-                            cx.update_entity(&root, |this: &mut Root, cx| {
-                                this.set_view(app::init(profile, window, cx).into(), cx);
-                            });
-                        }
+                        this.set_root_view(app::init(profile, window, cx).into(), cx);
                     });
                 })
                 .unwrap();

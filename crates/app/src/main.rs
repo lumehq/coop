@@ -14,13 +14,13 @@ use gpui::{
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
-use log::{error, info};
+use log::error;
 use nostr_sdk::prelude::*;
 use state::{get_client, initialize_client};
 use std::{borrow::Cow, collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use ui::{theme::Theme, Root};
-use views::{app, onboarding, startup::Startup};
+use views::{app, onboarding, startup};
 
 mod asset;
 mod views;
@@ -260,10 +260,7 @@ fn main() {
                         })
                         .detach();
 
-                    let root = cx.new(|cx| {
-                        Root::new(cx.new(|cx| Startup::new(window, cx)).into(), window, cx)
-                    });
-
+                    let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
                     let weak_root = root.downgrade();
                     let window_handle = window.window_handle();
                     let task = cx.read_credentials(KEYRING_SERVICE);
@@ -273,7 +270,7 @@ fn main() {
 
                     cx.spawn(|mut cx| async move {
                         if let Ok(Some((npub, secret))) = task.await {
-                            let (tx, mut rx) = tokio::sync::mpsc::channel::<NostrProfile>(1);
+                            let (tx, rx) = oneshot::channel::<NostrProfile>();
 
                             cx.background_executor()
                                 .spawn(async move {
@@ -293,29 +290,18 @@ fn main() {
                                         Metadata::new()
                                     };
 
-                                    if tx
-                                        .send(NostrProfile::new(public_key, metadata))
-                                        .await
-                                        .is_ok()
-                                    {
-                                        info!("Found account");
-                                    }
+                                    _ = tx.send(NostrProfile::new(public_key, metadata));
                                 })
                                 .detach();
 
-                            while let Some(profile) = rx.recv().await {
+                            if let Ok(profile) = rx.await {
                                 cx.update_window(window_handle, |_, window, cx| {
                                     cx.update_global::<AppRegistry, _>(|this, cx| {
                                         this.set_user(Some(profile.clone()));
-
-                                        if let Some(root) = this.root() {
-                                            cx.update_entity(&root, |this: &mut Root, cx| {
-                                                this.set_view(
-                                                    app::init(profile, window, cx).into(),
-                                                    cx,
-                                                );
-                                            });
-                                        }
+                                        this.set_root_view(
+                                            app::init(profile, window, cx).into(),
+                                            cx,
+                                        );
                                     });
                                 })
                                 .unwrap();
@@ -323,11 +309,7 @@ fn main() {
                         } else {
                             cx.update_window(window_handle, |_, window, cx| {
                                 cx.update_global::<AppRegistry, _>(|this, cx| {
-                                    if let Some(root) = this.root() {
-                                        cx.update_entity(&root, |this: &mut Root, cx| {
-                                            this.set_view(onboarding::init(window, cx).into(), cx);
-                                        });
-                                    }
+                                    this.set_root_view(onboarding::init(window, cx).into(), cx);
                                 });
                             })
                             .unwrap();

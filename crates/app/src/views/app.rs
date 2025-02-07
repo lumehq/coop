@@ -6,17 +6,20 @@ use gpui::{
     Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage,
     Window,
 };
+use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use state::get_client;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use ui::{
-    button::{Button, ButtonVariants},
+    button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
     popup_menu::PopupMenuExt,
-    Icon, IconName, Root, Sizable, TitleBar,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use super::{chat, contacts, onboarding, profile, settings, sidebar, welcome};
+use super::{chat, contacts, onboarding, profile, relays::Relays, settings, sidebar, welcome};
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -78,6 +81,77 @@ impl AppView {
             view.set_left_dock(left_panel, Some(px(240.)), true, window, cx);
             view.set_center(center_panel, window, cx);
         });
+
+        let public_key = account.public_key();
+        let window_handle = window.window_handle();
+
+        // Check user's inbox relays and determine user is ready for NIP17 or not.
+        // If not, show the setup modal and instruct user setup inbox relays
+        cx.spawn(|mut cx| async move {
+            let (tx, rx) = oneshot::channel::<bool>();
+
+            cx.background_spawn(async move {
+                let client = get_client();
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(public_key)
+                    .limit(1);
+
+                let is_ready = if let Ok(events) = client.database().query(filter).await {
+                    events.first_owned().is_some()
+                } else {
+                    false
+                };
+
+                _ = tx.send(is_ready);
+            })
+            .detach();
+
+            if let Ok(is_ready) = rx.await {
+                if is_ready {
+                    //
+                } else {
+                    cx.update_window(window_handle, |_, window, cx| {
+                        let relays = cx.new(|cx| Relays::new(window, cx));
+
+                        window.open_modal(cx, move |this, window, cx| {
+                            let is_loading = relays.read(cx).loading();
+
+                            this.keyboard(false)
+                                .closable(false)
+                                .width(px(420.))
+                                .title("Your Inbox is not configured")
+                                .child(relays.clone())
+                                .footer(
+                                    div()
+                                        .p_2()
+                                        .border_t_1()
+                                        .border_color(
+                                            cx.theme().base.step(cx, ColorScaleStep::FIVE),
+                                        )
+                                        .child(
+                                            Button::new("update_inbox_relays_btn")
+                                                .label("Update")
+                                                .primary()
+                                                .bold()
+                                                .rounded(ButtonRounded::Large)
+                                                .w_full()
+                                                .loading(is_loading)
+                                                .on_click(window.listener_for(
+                                                    &relays,
+                                                    |this, _, window, cx| {
+                                                        this.update(window, cx);
+                                                    },
+                                                )),
+                                        ),
+                                )
+                        });
+                    })
+                    .unwrap();
+                }
+            }
+        })
+        .detach();
 
         cx.new(|_| Self { account, dock })
     }
@@ -158,13 +232,8 @@ impl AppView {
 
             // Remove user
             this.set_user(None);
-
             // Update root view
-            if let Some(root) = this.root() {
-                cx.update_entity(&root, |this: &mut Root, cx| {
-                    this.set_view(onboarding::init(window, cx).into(), cx);
-                });
-            }
+            this.set_root_view(onboarding::init(window, cx).into(), cx);
         });
     }
 }

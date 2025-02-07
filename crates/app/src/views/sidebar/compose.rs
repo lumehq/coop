@@ -306,7 +306,7 @@ impl Render for Compose {
                             .gap_2()
                             .px_2()
                             .child(
-                                Button::new("add")
+                                Button::new("add_user_to_compose_btn")
                                     .icon(IconName::Plus)
                                     .small()
                                     .rounded(ButtonRounded::Size(px(9999.)))
@@ -319,7 +319,10 @@ impl Render for Compose {
                     )
                     .map(|this| {
                         if let Some(contacts) = self.contacts.read(cx).clone() {
-                            if contacts.is_empty() {
+                            let view = cx.entity();
+                            let total = contacts.len();
+
+                            if total != 0 {
                                 this.child(
                                     div()
                                         .w_full()
@@ -350,9 +353,9 @@ impl Render for Compose {
                             } else {
                                 this.child(
                                     uniform_list(
-                                        cx.entity().clone(),
+                                        view,
                                         "contacts",
-                                        contacts.len(),
+                                        total,
                                         move |this, range, _window, cx| {
                                             let selected = this.selected.read(cx);
                                             let mut items = Vec::new();

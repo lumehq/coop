@@ -32,7 +32,7 @@ pub struct Modal {
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
     on_close: OnClose,
-    show_close: bool,
+    closable: bool,
     keyboard: bool,
     /// This will be change when open the modal, the focus handle is create when open the modal.
     pub(crate) focus_handle: FocusHandle,
@@ -61,9 +61,9 @@ impl Modal {
             max_width: None,
             overlay: true,
             keyboard: true,
+            closable: true,
             layer_ix: 0,
             on_close: Rc::new(|_, _, _| {}),
-            show_close: true,
         }
     }
 
@@ -88,9 +88,9 @@ impl Modal {
         self
     }
 
-    /// Sets the false to hide close icon, default: true
-    pub fn show_close(mut self, show_close: bool) -> Self {
-        self.show_close = show_close;
+    /// Sets the false to make modal unclosable, default: true
+    pub fn closable(mut self, closable: bool) -> Self {
+        self.closable = closable;
         self
     }
 
@@ -170,31 +170,20 @@ impl RenderOnce for Modal {
                     .when(self.overlay, |this| {
                         this.bg(cx.theme().base.step_alpha(cx, ColorScaleStep::EIGHT))
                     })
-                    .on_mouse_down(MouseButton::Left, {
-                        let on_close = self.on_close.clone();
-                        move |_, window, cx| {
-                            on_close(&ClickEvent::default(), window, cx);
-                            window.close_modal(cx);
-                        }
+                    .when(self.closable, |this| {
+                        this.on_mouse_down(MouseButton::Left, {
+                            let on_close = self.on_close.clone();
+                            move |_, window, cx| {
+                                on_close(&ClickEvent::default(), window, cx);
+                                window.close_modal(cx);
+                            }
+                        })
                     })
                     .child(
                         self.base
                             .id(SharedString::from(format!("modal-{layer_ix}")))
                             .key_context(CONTEXT)
                             .track_focus(&self.focus_handle)
-                            .when(self.keyboard, |this| {
-                                this.on_action({
-                                    let on_close = self.on_close.clone();
-                                    move |_: &Escape, window, cx| {
-                                        // FIXME:
-                                        //
-                                        // Here some Modal have no focus_handle, so it will not work will Escape key.
-                                        // But by now, we `cx.close_modal()` going to close the last active model, so the Escape is unexpected to work.
-                                        on_close(&ClickEvent::default(), window, cx);
-                                        window.close_modal(cx);
-                                    }
-                                })
-                            })
                             .absolute()
                             .occlude()
                             .relative()
@@ -215,7 +204,20 @@ impl RenderOnce for Modal {
                                         .child(title),
                                 )
                             })
-                            .when(self.show_close, |this| {
+                            .when(self.keyboard, |this| {
+                                this.on_action({
+                                    let on_close = self.on_close.clone();
+                                    move |_: &Escape, window, cx| {
+                                        // FIXME:
+                                        //
+                                        // Here some Modal have no focus_handle, so it will not work will Escape key.
+                                        // But by now, we `cx.close_modal()` going to close the last active model, so the Escape is unexpected to work.
+                                        on_close(&ClickEvent::default(), window, cx);
+                                        window.close_modal(cx);
+                                    }
+                                })
+                            })
+                            .when(self.closable, |this| {
                                 this.child(
                                     Button::new(SharedString::from(format!(
                                         "modal-close-{layer_ix}"

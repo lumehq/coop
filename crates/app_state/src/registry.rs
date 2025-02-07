@@ -2,7 +2,7 @@ use common::{
     constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID},
     profile::NostrProfile,
 };
-use gpui::{App, Entity, Global, WeakEntity};
+use gpui::{AnyView, App, Global, WeakEntity};
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::time::Duration;
@@ -38,11 +38,6 @@ impl AppRegistry {
                         // Create a filter for getting all gift wrapped events send to current user
                         let all_messages = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-                        // Subscription options
-                        let opts = SubscribeAutoCloseOptions::default().exit_policy(
-                            ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(5)),
-                        );
-
                         // Create a filter for getting new message
                         let new_message = Filter::new()
                             .kind(Kind::GiftWrap)
@@ -51,7 +46,13 @@ impl AppRegistry {
 
                         // Subscribe for all messages
                         _ = client
-                            .subscribe_with_id(all_messages_sub_id, all_messages, Some(opts))
+                            .subscribe_with_id(
+                                all_messages_sub_id,
+                                all_messages,
+                                Some(SubscribeAutoCloseOptions::default().exit_policy(
+                                    ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(5)),
+                                )),
+                            )
                             .await;
 
                         // Subscribe for new message
@@ -75,7 +76,11 @@ impl AppRegistry {
         self.user.clone()
     }
 
-    pub fn root(&self) -> Option<Entity<Root>> {
-        self.root.upgrade()
+    pub fn set_root_view(&self, view: AnyView, cx: &mut App) {
+        if let Err(e) = self.root.update(cx, |this, cx| {
+            this.set_view(view, cx);
+        }) {
+            println!("Error: {}", e)
+        }
     }
 }

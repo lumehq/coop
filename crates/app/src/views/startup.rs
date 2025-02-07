@@ -1,11 +1,17 @@
-use gpui::{div, svg, Context, IntoElement, ParentElement, Render, Styled, Window};
+use gpui::{
+    div, svg, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window,
+};
 use ui::theme::{scale::ColorScaleStep, ActiveTheme};
+
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Startup> {
+    Startup::new(window, cx)
+}
 
 pub struct Startup {}
 
 impl Startup {
-    pub fn new(_window: &mut Window, _cx: &mut Context<'_, Self>) -> Self {
-        Self {}
+    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|_| Self {})
     }
 }
 

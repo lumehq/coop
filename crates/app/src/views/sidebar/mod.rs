@@ -64,7 +64,7 @@ impl Sidebar {
                         .border_t_1()
                         .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                         .child(
-                            Button::new("create")
+                            Button::new("create_dm_btn")
                                 .label(label)
                                 .primary()
                                 .bold()
