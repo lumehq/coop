@@ -12,4 +12,4 @@ pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
 pub const IMAGE_SERVICE: &str = "https://wsrv.nl";
 
 /// NIP96 Media Server
-pub const NIP96_SERVER: &str = "https://nostrcheck.me";
+pub const NIP96_SERVER: &str = "https://nostrmedia.com";

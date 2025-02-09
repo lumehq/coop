@@ -326,20 +326,26 @@ fn main() {
                 while let Some(signal) = signal_rx.recv().await {
                     match signal {
                         Signal::Eose => {
-                            cx.update_window(*window.deref(), |_this, _window, cx| {
-                                cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                    this.load(cx);
-                                });
-                            })
-                            .unwrap();
+                            if let Err(e) =
+                                cx.update_window(*window.deref(), |_this, window, cx| {
+                                    cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                        this.load(window, cx);
+                                    });
+                                })
+                            {
+                                error!("Error: {}", e)
+                            }
                         }
                         Signal::Event(event) => {
-                            cx.update_window(*window.deref(), |_this, _window, cx| {
-                                cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                    this.new_room_message(event, cx);
-                                });
-                            })
-                            .unwrap();
+                            if let Err(e) =
+                                cx.update_window(*window.deref(), |_this, window, cx| {
+                                    cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                        this.new_room_message(event, window, cx);
+                                    });
+                                })
+                            {
+                                error!("Error: {}", e)
+                            }
                         }
                     }
                 }

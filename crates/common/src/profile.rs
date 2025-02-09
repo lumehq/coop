@@ -7,6 +7,18 @@ pub struct NostrProfile {
     metadata: Metadata,
 }
 
+impl AsRef<PublicKey> for NostrProfile {
+    fn as_ref(&self) -> &PublicKey {
+        &self.public_key
+    }
+}
+
+impl AsRef<Metadata> for NostrProfile {
+    fn as_ref(&self) -> &Metadata {
+        &self.metadata
+    }
+}
+
 impl PartialEq for NostrProfile {
     fn eq(&self, other: &Self) -> bool {
         self.public_key() == other.public_key()

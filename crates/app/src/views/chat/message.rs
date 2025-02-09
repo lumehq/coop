@@ -10,7 +10,7 @@ use ui::{
 
 #[derive(Clone, Debug, IntoElement)]
 pub struct Message {
-    member: NostrProfile,
+    profile: NostrProfile,
     content: SharedString,
     ago: SharedString,
 }
@@ -18,7 +18,7 @@ pub struct Message {
 impl PartialEq for Message {
     fn eq(&self, other: &Self) -> bool {
         let content = self.content == other.content;
-        let member = self.member == other.member;
+        let member = self.profile == other.profile;
         let ago = self.ago == other.ago;
 
         content && member && ago
@@ -26,9 +26,9 @@ impl PartialEq for Message {
 }
 
 impl Message {
-    pub fn new(member: NostrProfile, content: SharedString, ago: SharedString) -> Self {
+    pub fn new(profile: NostrProfile, content: SharedString, ago: SharedString) -> Self {
         Self {
-            member,
+            profile,
             content,
             ago,
         }
@@ -58,7 +58,7 @@ impl RenderOnce for Message {
                     }),
             )
             .child(
-                img(self.member.avatar())
+                img(self.profile.avatar())
                     .size_8()
                     .rounded_full()
                     .flex_shrink_0(),
@@ -75,7 +75,7 @@ impl RenderOnce for Message {
                             .items_baseline()
                             .gap_2()
                             .text_xs()
-                            .child(div().font_semibold().child(self.member.name()))
+                            .child(div().font_semibold().child(self.profile.name()))
                             .child(
                                 div()
                                     .child(self.ago)

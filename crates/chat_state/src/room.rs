@@ -4,6 +4,7 @@ use common::{
 };
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
+use std::collections::HashSet;
 
 #[derive(Debug)]
 pub struct Room {
@@ -59,14 +60,19 @@ impl Room {
         let id = room_hash(&event.tags);
         let last_seen = event.created_at;
 
+        // Always equal to current user
         let owner = NostrProfile::new(event.pubkey, Metadata::default());
+
+        // Get all pubkeys that invole in this group
         let members: Vec<NostrProfile> = event
             .tags
             .public_keys()
-            .copied()
-            .map(|public_key| NostrProfile::new(public_key, Metadata::default()))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .map(|public_key| NostrProfile::new(*public_key, Metadata::default()))
             .collect();
 
+        // Get title from event's tags
         let title = if let Some(tag) = event.tags.find(TagKind::Title) {
             tag.content().map(|s| s.to_owned().into())
         } else {

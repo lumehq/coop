@@ -1,14 +1,14 @@
-use std::str::FromStr;
-
 use async_utility::task::spawn;
 use common::{constants::IMAGE_SERVICE, profile::NostrProfile, utils::nip96_upload};
 use gpui::{
-    div, img, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle,
-    Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Window,
+    div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render,
+    SharedString, Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
 use state::get_client;
+use std::str::FromStr;
 use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonVariants},
@@ -112,34 +112,39 @@ impl Profile {
 
                         spawn(async move {
                             let client = get_client();
-
                             if let Ok(url) = nip96_upload(client, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
 
                         if let Ok(url) = rx.await {
-                            // Stop loading spinner
-                            if let Some(view) = this.upgrade() {
-                                cx.update_entity(&view, |this, cx| {
+                            cx.update_window(window_handle, |_, window, cx| {
+                                // Stop loading spinner
+                                this.update(cx, |this, cx| {
                                     this.set_loading(false, cx);
                                 })
                                 .unwrap();
-                            }
 
-                            // Update avatar input
-                            if let Some(input) = avatar_input.upgrade() {
-                                cx.update_window(window_handle, |_, window, cx| {
-                                    cx.update_entity(&input, |this, cx| {
+                                // Set avatar input
+                                avatar_input
+                                    .update(cx, |this, cx| {
                                         this.set_text(url.to_string(), window, cx);
-                                    });
-                                })
-                                .unwrap();
-                            }
+                                    })
+                                    .unwrap();
+                            })
+                            .unwrap();
                         }
                     }
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    // Stop loading spinner
+                    if let Some(view) = this.upgrade() {
+                        cx.update_entity(&view, |this, cx| {
+                            this.set_loading(false, cx);
+                        })
+                        .unwrap();
+                    }
+                }
                 Err(_) => {}
             }
         })
@@ -189,18 +194,14 @@ impl Profile {
             .detach();
 
             if rx.await.is_ok() {
-                if let Some(profile) = this.upgrade() {
-                    cx.update_window(window_handle, |_, window, cx| {
-                        cx.update_entity(&profile, |this, cx| {
-                            this.set_submitting(false, cx);
-                            window.push_notification(
-                                "Your profile has been updated successfully",
-                                cx,
-                            );
-                        })
+                cx.update_window(window_handle, |_, window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.set_submitting(false, cx);
+                        window.push_notification("Your profile has been updated successfully", cx);
                     })
-                    .unwrap();
-                }
+                    .unwrap()
+                })
+                .unwrap();
             }
         })
         .detach();
@@ -263,16 +264,29 @@ impl Render for Profile {
                     .gap_2()
                     .w_full()
                     .h_24()
-                    .child(
-                        img(format!(
-                            "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                            IMAGE_SERVICE,
-                            self.avatar_input.read(cx).text()
-                        ))
-                        .size_10()
-                        .rounded_full()
-                        .flex_shrink_0(),
-                    )
+                    .map(|this| {
+                        let picture = self.avatar_input.read(cx).text();
+
+                        if picture.is_empty() {
+                            this.child(
+                                img("brand/avatar.png")
+                                    .size_10()
+                                    .rounded_full()
+                                    .flex_shrink_0(),
+                            )
+                        } else {
+                            this.child(
+                                img(format!(
+                                    "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
+                                    IMAGE_SERVICE,
+                                    self.avatar_input.read(cx).text()
+                                ))
+                                .size_10()
+                                .rounded_full()
+                                .flex_shrink_0(),
+                            )
+                        }
+                    })
                     .child(
                         div()
                             .flex()

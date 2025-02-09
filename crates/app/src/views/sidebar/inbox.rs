@@ -89,7 +89,7 @@ impl Inbox {
                             .text_xs()
                             .rounded(px(cx.theme().radius))
                             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
-                            .child(div().font_medium().map(|this| {
+                            .child(div().flex_1().truncate().font_medium().map(|this| {
                                 if room.is_group {
                                     this.flex()
                                         .items_center()
@@ -113,6 +113,7 @@ impl Inbox {
                             }))
                             .child(
                                 div()
+                                    .flex_shrink_0()
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                                     .child(ago),
                             )

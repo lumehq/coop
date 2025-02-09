@@ -191,7 +191,8 @@ impl AppView {
             PanelKind::Room(id) => {
                 if let Some(weak_room) = cx.global::<ChatRegistry>().get_room(id, cx) {
                     if let Some(room) = weak_room.upgrade() {
-                        let panel = Arc::new(chat::init(room, window, cx));
+                        let panel = Arc::new(chat::init(&room, window, cx));
+
                         self.dock.update(cx, |dock_area, cx| {
                             dock_area.add_panel(panel, action.position, window, cx);
                         });

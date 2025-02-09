@@ -1,11 +1,19 @@
 use crate::constants::NIP96_SERVER;
 use chrono::{Datelike, Local, TimeZone};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use rnglib::{Language, RNG};
 use std::{
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
 };
+
+pub async fn signer_public_key(client: &Client) -> anyhow::Result<PublicKey, anyhow::Error> {
+    let signer = client.signer().await?;
+    let public_key = signer.get_public_key().await?;
+
+    Ok(public_key)
+}
 
 pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
     let signer = client.signer().await?;
@@ -18,8 +26,9 @@ pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url,
 }
 
 pub fn room_hash(tags: &Tags) -> u64 {
-    let pubkeys: Vec<PublicKey> = tags.public_keys().copied().collect();
+    let pubkeys: Vec<&PublicKey> = tags.public_keys().unique_by(|&pubkey| pubkey).collect();
     let mut hasher = DefaultHasher::new();
+
     // Generate unique hash
     pubkeys.hash(&mut hasher);
 

@@ -1,9 +1,8 @@
 use crate::views::sidebar::inbox::Inbox;
-use chat_state::registry::ChatRegistry;
 use compose::Compose;
 use gpui::{
-    div, px, AnyElement, App, AppContext, BorrowAppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use ui::{
@@ -11,7 +10,7 @@ use ui::{
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
 mod compose;
@@ -53,6 +52,7 @@ impl Sidebar {
 
         window.open_modal(cx, move |modal, window, cx| {
             let label = compose.read(cx).label(window, cx);
+            let is_submitting = compose.read(cx).is_submitting();
 
             modal
                 .title("Direct Messages")
@@ -70,14 +70,10 @@ impl Sidebar {
                                 .bold()
                                 .rounded(ButtonRounded::Large)
                                 .w_full()
+                                .loading(is_submitting)
+                                .disabled(is_submitting)
                                 .on_click(window.listener_for(&compose, |this, _, window, cx| {
-                                    if let Some(room) = this.room(window, cx) {
-                                        cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                            this.new_room(room, cx);
-                                        });
-
-                                        window.close_modal(cx);
-                                    }
+                                    this.compose(window, cx)
                                 })),
                         ),
                 )

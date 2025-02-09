@@ -1,6 +1,6 @@
 use anyhow::Error;
 use common::utils::{compare, room_hash};
-use gpui::{App, AppContext, Entity, Global, WeakEntity};
+use gpui::{App, AppContext, Entity, Global, WeakEntity, Window};
 use nostr_sdk::prelude::*;
 use state::get_client;
 
@@ -28,8 +28,11 @@ impl ChatRegistry {
                         let mut profiles = Vec::new();
 
                         for public_key in pubkeys.into_iter() {
-                            let query = client.database().metadata(public_key).await?;
-                            let metadata = query.unwrap_or_default();
+                            let metadata = client
+                                .database()
+                                .metadata(public_key)
+                                .await?
+                                .unwrap_or_default();
 
                             profiles.push((public_key, metadata));
                         }
@@ -56,14 +59,16 @@ impl ChatRegistry {
         cx.set_global(Self { inbox });
     }
 
-    pub fn load(&mut self, cx: &mut App) {
+    pub fn load(&mut self, window: &mut Window, cx: &mut App) {
+        let window_handle = window.window_handle();
+
         self.inbox.update(cx, |this, cx| {
             let task = this.load(cx.to_async());
 
-            cx.spawn(|this, mut async_cx| async move {
-                if let Some(inbox) = this.upgrade() {
-                    if let Ok(events) = task.await {
-                        _ = async_cx.update_entity(&inbox, |this, cx| {
+            cx.spawn(|this, mut cx| async move {
+                if let Ok(events) = task.await {
+                    _ = cx.update_window(window_handle, |_, _, cx| {
+                        _ = this.update(cx, |this, cx| {
                             let current_rooms = this.get_room_ids(cx);
                             let items: Vec<Entity<Room>> = events
                                 .into_iter()
@@ -83,7 +88,7 @@ impl ChatRegistry {
 
                             cx.notify();
                         });
-                    }
+                    });
                 }
             })
             .detach();
@@ -114,29 +119,42 @@ impl ChatRegistry {
         })
     }
 
-    pub fn new_room_message(&mut self, event: Event, cx: &mut App) {
+    pub fn new_room_message(&mut self, event: Event, window: &mut Window, cx: &mut App) {
+        let window_handle = window.window_handle();
+
+        // Get all pubkeys from event's tags for comparision
         let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
         pubkeys.push(event.pubkey);
 
-        self.inbox.update(cx, |this, cx| {
-            if let Some(room) = this.rooms.iter().find(|room| {
-                let all_keys = room.read(cx).get_pubkeys();
-                compare(&all_keys, &pubkeys)
-            }) {
-                room.update(cx, |this, cx| {
-                    this.new_messages.push(event);
-                    cx.notify();
-                })
-            } else {
-                let room = cx.new(|_| Room::parse(&event));
+        if let Some(room) = self
+            .inbox
+            .read(cx)
+            .rooms
+            .iter()
+            .find(|room| compare(&room.read(cx).get_pubkeys(), &pubkeys))
+        {
+            let weak_room = room.downgrade();
 
-                self.inbox.update(cx, |this, cx| {
-                    this.rooms.insert(0, room);
-                    cx.notify();
-                })
-            }
+            cx.spawn(|mut cx| async move {
+                if let Err(e) = cx.update_window(window_handle, |_, _, cx| {
+                    _ = weak_room.update(cx, |this, cx| {
+                        this.last_seen = event.created_at;
+                        this.new_messages.push(event);
 
-            cx.notify();
-        })
+                        cx.notify();
+                    });
+                }) {
+                    println!("Error: {}", e)
+                }
+            })
+            .detach();
+        } else {
+            let room = cx.new(|_| Room::parse(&event));
+
+            self.inbox.update(cx, |this, cx| {
+                this.rooms.insert(0, room);
+                cx.notify();
+            });
+        }
     }
 }

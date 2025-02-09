@@ -1,25 +1,25 @@
 use app_state::registry::AppRegistry;
-use chat_state::room::Room;
+use chat_state::registry::ChatRegistry;
 use common::{
+    constants::FAKE_SIG,
     profile::NostrProfile,
-    utils::{random_name, room_hash},
+    utils::{random_name, signer_public_key},
 };
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
-    AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window,
+    AppContext, BorrowAppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use state::get_client;
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, str::FromStr, time::Duration};
 use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded},
-    indicator::Indicator,
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
-    Icon, IconName, Sizable, Size, StyledExt,
+    ContextModal, Icon, IconName, Sizable, Size, StyledExt,
 };
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -31,15 +31,16 @@ pub struct Compose {
     title_input: Entity<TextInput>,
     message_input: Entity<TextInput>,
     user_input: Entity<TextInput>,
-    contacts: Entity<Option<Vec<NostrProfile>>>,
+    contacts: Entity<Vec<NostrProfile>>,
     selected: Entity<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
     is_loading: bool,
+    is_submitting: bool,
 }
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
-        let contacts = cx.new(|_| None);
+        let contacts = cx.new(|_| Vec::with_capacity(200));
         let selected = cx.new(|_| HashSet::new());
 
         let user_input = cx.new(|cx| {
@@ -64,9 +65,10 @@ impl Compose {
             TextInput::new(window, cx)
                 .appearance(false)
                 .text_size(Size::XSmall)
-                .placeholder("Hello... (Optional)")
+                .placeholder("Hello...")
         });
 
+        // Handle Enter event for message input
         cx.subscribe_in(
             &user_input,
             window,
@@ -79,23 +81,22 @@ impl Compose {
         .detach();
 
         cx.spawn(|this, mut cx| async move {
-            let client = get_client();
             let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
 
             cx.background_executor()
                 .spawn(async move {
-                    let signer = client.signer().await.unwrap();
-                    let public_key = signer.get_public_key().await.unwrap();
+                    let client = get_client();
+                    if let Ok(public_key) = signer_public_key(client).await {
+                        if let Ok(profiles) = client.database().contacts(public_key).await {
+                            let members: Vec<NostrProfile> = profiles
+                                .into_iter()
+                                .map(|profile| {
+                                    NostrProfile::new(profile.public_key(), profile.metadata())
+                                })
+                                .collect();
 
-                    if let Ok(profiles) = client.database().contacts(public_key).await {
-                        let members: Vec<NostrProfile> = profiles
-                            .into_iter()
-                            .map(|profile| {
-                                NostrProfile::new(profile.public_key(), profile.metadata())
-                            })
-                            .collect();
-
-                        _ = tx.send(members);
+                            _ = tx.send(members);
+                        }
                     }
                 })
                 .detach();
@@ -104,7 +105,7 @@ impl Compose {
                 if let Some(view) = this.upgrade() {
                     _ = cx.update_entity(&view, |this, cx| {
                         this.contacts.update(cx, |this, cx| {
-                            *this = Some(contacts);
+                            this.extend(contacts);
                             cx.notify();
                         });
                         cx.notify();
@@ -121,43 +122,116 @@ impl Compose {
             contacts,
             selected,
             is_loading: false,
+            is_submitting: false,
             focus_handle: cx.focus_handle(),
         }
     }
 
-    pub fn room(&self, _window: &Window, cx: &App) -> Option<Room> {
-        if let Some(current_user) = cx.global::<AppRegistry>().user() {
-            // Convert selected pubkeys into nostr tags
-            let tags: Vec<Tag> = self
-                .selected
-                .read(cx)
-                .iter()
-                .map(|pk| Tag::public_key(*pk))
-                .collect();
-            let tags = Tags::new(tags);
+    pub fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let selected = self.selected.read(cx).to_owned();
+        let message = self.message_input.read(cx).text();
 
-            // Convert selected pubkeys into members
-            let members: Vec<NostrProfile> = self
-                .selected
-                .read(cx)
-                .clone()
-                .into_iter()
-                .map(|pk| NostrProfile::new(pk, Metadata::new()))
-                .collect();
-
-            // Get room's id
-            let id = room_hash(&tags);
-
-            // Get room's owner (current user)
-            let owner = NostrProfile::new(current_user.public_key(), Metadata::new());
-
-            // Get room's title
-            let title = self.title_input.read(cx).text().to_string().into();
-
-            Some(Room::new(id, owner, members, Some(title), Timestamp::now()))
-        } else {
-            None
+        if selected.is_empty() {
+            window.push_notification("You need to add at least 1 receiver", cx);
+            return;
         }
+
+        if message.is_empty() {
+            window.push_notification("Message is required", cx);
+            return;
+        }
+
+        let current_user = if let Some(profile) = cx.global::<AppRegistry>().user() {
+            profile
+        } else {
+            return;
+        };
+
+        // Show loading spinner
+        self.set_submitting(true, cx);
+
+        // Get nostr client
+        let client = get_client();
+
+        // Get message from user's input
+        let content = message.to_string();
+
+        // Get room title from user's input
+        let title = Tag::title(self.title_input.read(cx).text().to_string());
+
+        // Get all pubkeys
+        let current_user = current_user.public_key();
+        let mut pubkeys: Vec<PublicKey> = selected.iter().copied().collect();
+        pubkeys.push(current_user);
+
+        // Convert selected pubkeys into Nostr tags
+        let mut tag_list: Vec<Tag> = selected.iter().map(|pk| Tag::public_key(*pk)).collect();
+        tag_list.push(title);
+
+        let tags = Tags::new(tag_list);
+        let window_handle = window.window_handle();
+
+        cx.spawn(|this, mut cx| async move {
+            let (tx, rx) = oneshot::channel::<Event>();
+
+            cx.background_spawn(async move {
+                let mut event: Option<Event> = None;
+
+                for pubkey in pubkeys.iter() {
+                    if let Ok(output) = client
+                        .send_private_msg(*pubkey, &content, tags.clone())
+                        .await
+                    {
+                        if pubkey == &current_user && event.is_none() {
+                            if let Ok(Some(ev)) = client.database().event_by_id(&output.val).await {
+                                if let Ok(UnwrappedGift { mut rumor, .. }) =
+                                    client.unwrap_gift_wrap(&ev).await
+                                {
+                                    // Compute event id if not exist
+                                    rumor.ensure_id();
+
+                                    if let Some(id) = rumor.id {
+                                        let ev = Event::new(
+                                            id,
+                                            rumor.pubkey,
+                                            rumor.created_at,
+                                            rumor.kind,
+                                            rumor.tags,
+                                            rumor.content,
+                                            Signature::from_str(FAKE_SIG).unwrap(),
+                                        );
+
+                                        event = Some(ev);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(event) = event {
+                    _ = tx.send(event);
+                }
+            })
+            .detach();
+
+            if let Ok(event) = rx.await {
+                _ = cx.update_window(window_handle, |_, window, cx| {
+                    cx.update_global::<ChatRegistry, _>(|this, cx| {
+                        this.new_room_message(event, window, cx);
+                    });
+
+                    // Stop loading spinner
+                    _ = this.update(cx, |this, cx| {
+                        this.set_submitting(false, cx);
+                    });
+
+                    // Close modal
+                    window.close_modal(cx);
+                });
+            }
+        })
+        .detach();
     }
 
     pub fn label(&self, _window: &Window, cx: &App) -> SharedString {
@@ -168,35 +242,47 @@ impl Compose {
         }
     }
 
+    pub fn is_submitting(&self) -> bool {
+        self.is_submitting
+    }
+
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let window_handle = window.window_handle();
         let content = self.user_input.read(cx).text().to_string();
-        let input = self.user_input.downgrade();
 
         // Show loading spinner
         self.set_loading(true, cx);
 
         if let Ok(public_key) = PublicKey::parse(&content) {
-            cx.spawn(|this, mut async_cx| async move {
-                let query: anyhow::Result<Metadata, anyhow::Error> = async_cx
-                    .background_executor()
-                    .spawn(async move {
-                        let client = get_client();
-                        let metadata = client
-                            .fetch_metadata(public_key, Duration::from_secs(3))
-                            .await?;
+            if self
+                .contacts
+                .read(cx)
+                .iter()
+                .any(|c| c.public_key() == public_key)
+            {
+                self.set_loading(false, cx);
+                return;
+            };
 
-                        Ok(metadata)
-                    })
-                    .await;
+            cx.spawn(|this, mut cx| async move {
+                let (tx, rx) = oneshot::channel::<Metadata>();
 
-                if let Ok(metadata) = query {
-                    if let Some(view) = this.upgrade() {
-                        _ = async_cx.update_entity(&view, |this, cx| {
+                cx.background_spawn(async move {
+                    let client = get_client();
+                    let metadata = (client
+                        .fetch_metadata(public_key, Duration::from_secs(3))
+                        .await)
+                        .unwrap_or_default();
+
+                    _ = tx.send(metadata);
+                })
+                .detach();
+
+                if let Ok(metadata) = rx.await {
+                    _ = cx.update_window(window_handle, |_, window, cx| {
+                        _ = this.update(cx, |this, cx| {
                             this.contacts.update(cx, |this, cx| {
-                                if let Some(members) = this {
-                                    members.insert(0, NostrProfile::new(public_key, metadata));
-                                }
+                                this.insert(0, NostrProfile::new(public_key, metadata));
                                 cx.notify();
                             });
 
@@ -205,27 +291,32 @@ impl Compose {
                                 cx.notify();
                             });
 
+                            // Stop loading indicator
                             this.set_loading(false, cx);
-                        });
-                    }
 
-                    if let Some(input) = input.upgrade() {
-                        _ = async_cx.update_window(window_handle, |_, window, cx| {
-                            cx.update_entity(&input, |this, cx| {
+                            // Clear input
+                            this.user_input.update(cx, |this, cx| {
                                 this.set_text("", window, cx);
-                            })
+                                cx.notify();
+                            });
                         });
-                    }
+                    });
                 }
             })
             .detach();
         } else {
-            // Handle error
+            self.set_loading(false, cx);
+            window.push_notification("Public Key is not valid", cx);
         }
     }
 
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.is_loading = status;
+        cx.notify();
+    }
+
+    fn set_submitting(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.is_submitting = status;
         cx.notify();
     }
 
@@ -318,114 +409,103 @@ impl Render for Compose {
                             .child(self.user_input.clone()),
                     )
                     .map(|this| {
-                        if let Some(contacts) = self.contacts.read(cx).clone() {
-                            let view = cx.entity();
-                            let total = contacts.len();
+                        let contacts = self.contacts.read(cx).clone();
+                        let view = cx.entity();
 
-                            if total != 0 {
-                                this.child(
-                                    div()
-                                        .w_full()
-                                        .h_24()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_align(TextAlign::Center)
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_semibold()
-                                                .line_height(relative(1.2))
-                                                .child("No contacts"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::ELEVEN),
-                                                )
-                                                .child("Your recently contacts will appear here."),
-                                        ),
-                                )
-                            } else {
-                                this.child(
-                                    uniform_list(
-                                        view,
-                                        "contacts",
-                                        total,
-                                        move |this, range, _window, cx| {
-                                            let selected = this.selected.read(cx);
-                                            let mut items = Vec::new();
-
-                                            for ix in range {
-                                                let item = contacts.get(ix).unwrap().clone();
-                                                let is_select =
-                                                    selected.contains(&item.public_key());
-
-                                                items.push(
-                                                    div()
-                                                        .id(ix)
-                                                        .w_full()
-                                                        .h_9()
-                                                        .px_2()
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_between()
-                                                        .child(
-                                                            div()
-                                                                .flex()
-                                                                .items_center()
-                                                                .gap_2()
-                                                                .text_xs()
-                                                                .child(div().flex_shrink_0().child(
-                                                                    img(item.avatar()).size_6(),
-                                                                ))
-                                                                .child(item.name()),
-                                                        )
-                                                        .when(is_select, |this| {
-                                                            this.child(
-                                                                Icon::new(IconName::CircleCheck)
-                                                                    .size_3()
-                                                                    .text_color(
-                                                                        cx.theme().base.step(
-                                                                            cx,
-                                                                            ColorScaleStep::TWELVE,
-                                                                        ),
-                                                                    ),
-                                                            )
-                                                        })
-                                                        .hover(|this| {
-                                                            this.bg(cx
-                                                                .theme()
-                                                                .base
-                                                                .step(cx, ColorScaleStep::THREE))
-                                                        })
-                                                        .on_click(move |_, window, cx| {
-                                                            window.dispatch_action(
-                                                                Box::new(SelectContact(
-                                                                    item.public_key(),
-                                                                )),
-                                                                cx,
-                                                            );
-                                                        }),
-                                                );
-                                            }
-
-                                            items
-                                        },
+                        if contacts.is_empty() {
+                            this.child(
+                                div()
+                                    .w_full()
+                                    .h_24()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_align(TextAlign::Center)
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_semibold()
+                                            .line_height(relative(1.2))
+                                            .child("No contacts"),
                                     )
-                                    .min_h(px(300.)),
-                                )
-                            }
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(
+                                                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                                            )
+                                            .child("Your recently contacts will appear here."),
+                                    ),
+                            )
                         } else {
-                            this.flex()
-                                .items_center()
-                                .justify_center()
-                                .h_16()
-                                .child(Indicator::new().small())
+                            this.child(
+                                uniform_list(
+                                    view,
+                                    "contacts",
+                                    contacts.len(),
+                                    move |this, range, _window, cx| {
+                                        let selected = this.selected.read(cx);
+                                        let mut items = Vec::new();
+
+                                        for ix in range {
+                                            let item = contacts.get(ix).unwrap().clone();
+                                            let is_select = selected.contains(&item.public_key());
+
+                                            items.push(
+                                                div()
+                                                    .id(ix)
+                                                    .w_full()
+                                                    .h_9()
+                                                    .px_2()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_between()
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_2()
+                                                            .text_xs()
+                                                            .child(
+                                                                div().flex_shrink_0().child(
+                                                                    img(item.avatar()).size_6(),
+                                                                ),
+                                                            )
+                                                            .child(item.name()),
+                                                    )
+                                                    .when(is_select, |this| {
+                                                        this.child(
+                                                            Icon::new(IconName::CircleCheck)
+                                                                .size_3()
+                                                                .text_color(cx.theme().base.step(
+                                                                    cx,
+                                                                    ColorScaleStep::TWELVE,
+                                                                )),
+                                                        )
+                                                    })
+                                                    .hover(|this| {
+                                                        this.bg(cx
+                                                            .theme()
+                                                            .base
+                                                            .step(cx, ColorScaleStep::THREE))
+                                                    })
+                                                    .on_click(move |_, window, cx| {
+                                                        window.dispatch_action(
+                                                            Box::new(SelectContact(
+                                                                item.public_key(),
+                                                            )),
+                                                            cx,
+                                                        );
+                                                    }),
+                                            );
+                                        }
+
+                                        items
+                                    },
+                                )
+                                .min_h(px(250.)),
+                            )
                         }
                     }),
             )

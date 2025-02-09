@@ -140,6 +140,7 @@ impl TextElement {
                 // cursor blink
                 let cursor_height =
                     window.text_style().font_size.to_pixels(window.rem_size()) + px(2.);
+
                 cursor = Some(fill(
                     Bounds::new(
                         point(
@@ -148,7 +149,7 @@ impl TextElement {
                         ),
                         size(px(1.), cursor_height),
                     ),
-                    cx.theme().accent.step(cx, ColorScaleStep::NINE),
+                    cx.theme().accent.step(cx, ColorScaleStep::TEN),
                 ))
             };
         }
