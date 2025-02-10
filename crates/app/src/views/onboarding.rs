@@ -13,12 +13,12 @@ use ui::{
     input::{InputEvent, TextInput},
     notification::NotificationType,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Size, StyledExt,
+    ContextModal, Root, Size, StyledExt,
 };
 
 use super::app;
 
-const ALPHA_MESSAGE: &str = "Coop is in the alpha stage; it doesn't store any credentials. You will need to log in again when you relanch.";
+const ALPHA_MESSAGE: &str = "Coop is in the alpha stage; it doesn't store any credentials. You will need to log in again when you relaunch.";
 const JOIN_URL: &str = "https://start.njump.me/";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
@@ -113,9 +113,12 @@ impl Onboarding {
 
             if let Ok(profile) = rx.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    cx.update_global::<AppRegistry, _>(|this, cx| {
+                    cx.update_global::<AppRegistry, _>(|this, _cx| {
                         this.set_user(Some(profile.clone()));
-                        this.set_root_view(app::init(profile, window, cx).into(), cx);
+                    });
+
+                    window.replace_root(cx, |window, cx| {
+                        Root::new(app::init(profile, window, cx).into(), window, cx)
                     });
                 })
             }
@@ -178,9 +181,12 @@ impl Onboarding {
 
             if let Ok(profile) = rx.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    cx.update_global::<AppRegistry, _>(|this, cx| {
+                    cx.update_global::<AppRegistry, _>(|this, _cx| {
                         this.set_user(Some(profile.clone()));
-                        this.set_root_view(app::init(profile, window, cx).into(), cx);
+                    });
+
+                    window.replace_root(cx, |window, cx| {
+                        Root::new(app::init(profile, window, cx).into(), window, cx)
                     });
                 })
             }
@@ -371,7 +377,7 @@ impl Render for Onboarding {
                             )
                             .child(
                                 div()
-                                    .text_align(gpui::TextAlign::Center)
+                                    .text_center()
                                     .child(
                                         div()
                                             .text_lg()

@@ -226,15 +226,15 @@ impl AppView {
     }
 
     fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
-        cx.update_global::<AppRegistry, _>(|this, cx| {
-            cx.background_executor()
-                .spawn(async move { get_client().reset().await })
-                .detach();
+        cx.background_spawn(async move { get_client().reset().await })
+            .detach();
 
-            // Remove user
+        cx.update_global::<AppRegistry, _>(|this, _cx| {
             this.set_user(None);
-            // Update root view
-            this.set_root_view(onboarding::init(window, cx).into(), cx);
+        });
+
+        window.replace_root(cx, |window, cx| {
+            Root::new(onboarding::init(window, cx).into(), window, cx)
         });
     }
 }

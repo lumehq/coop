@@ -2,21 +2,19 @@ use common::{
     constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID},
     profile::NostrProfile,
 };
-use gpui::{AnyView, App, AppContext, Global, WeakEntity};
+use gpui::{App, AppContext, Global};
 use nostr_sdk::prelude::*;
 use state::get_client;
 use std::time::Duration;
-use ui::Root;
 
 pub struct AppRegistry {
-    root: WeakEntity<Root>,
     user: Option<NostrProfile>,
 }
 
 impl Global for AppRegistry {}
 
 impl AppRegistry {
-    pub fn set_global(root: WeakEntity<Root>, cx: &mut App) {
+    pub fn set_global(cx: &mut App) {
         cx.observe_global::<Self>(|cx| {
             if let Some(profile) = cx.global::<Self>().user() {
                 let client = get_client();
@@ -49,7 +47,7 @@ impl AppRegistry {
                             all_messages_sub_id,
                             all_messages,
                             Some(SubscribeAutoCloseOptions::default().exit_policy(
-                                ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(5)),
+                                ReqExitPolicy::WaitDurationAfterEOSE(Duration::from_secs(3)),
                             )),
                         )
                         .await;
@@ -57,14 +55,14 @@ impl AppRegistry {
                     // Subscribe for new message
                     _ = client
                         .subscribe_with_id(new_message_sub_id, new_message, None)
-                        .await;
+                        .await
                 })
                 .detach();
             }
         })
         .detach();
 
-        cx.set_global(Self { root, user: None });
+        cx.set_global(Self { user: None });
     }
 
     pub fn set_user(&mut self, profile: Option<NostrProfile>) {
@@ -73,13 +71,5 @@ impl AppRegistry {
 
     pub fn user(&self) -> Option<NostrProfile> {
         self.user.clone()
-    }
-
-    pub fn set_root_view(&self, view: AnyView, cx: &mut App) {
-        if let Err(e) = self.root.update(cx, |this, cx| {
-            this.set_view(view, cx);
-        }) {
-            println!("Error: {}", e)
-        }
     }
 }

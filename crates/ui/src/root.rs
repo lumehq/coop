@@ -212,12 +212,6 @@ impl Root {
     pub fn view(&self) -> &AnyView {
         &self.view
     }
-
-    /// Set the root view of the Root.
-    pub fn set_view(&mut self, view: AnyView, cx: &mut Context<Self>) {
-        self.view = view;
-        cx.notify();
-    }
 }
 
 impl Render for Root {

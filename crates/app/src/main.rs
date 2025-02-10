@@ -44,16 +44,14 @@ fn main() {
 
     // Get client
     let client = get_client();
-    let (signal_tx, mut signal_rx) = tokio::sync::mpsc::channel::<Signal>(4096);
+    let (signal_tx, mut signal_rx) = tokio::sync::mpsc::channel::<Signal>(2048);
 
     spawn(async move {
         // Add some bootstrap relays
         _ = client.add_relay("wss://relay.damus.io/").await;
         _ = client.add_relay("wss://relay.primal.net/").await;
-        _ = client.add_relay("wss://nos.lol/").await;
-
-        _ = client.add_discovery_relay("wss://user.kindpag.es/").await;
-        _ = client.add_discovery_relay("wss://directory.yabu.me/").await;
+        _ = client.add_relay("wss://user.kindpag.es/").await;
+        _ = client.add_relay("wss://directory.yabu.me/").await;
 
         // Connect to all relays
         _ = client.connect().await
@@ -217,6 +215,8 @@ fn main() {
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
         .run(move |cx| {
+            // Initialize app global state
+            AppRegistry::set_global(cx);
             // Initialize chat global state
             ChatRegistry::set_global(cx);
 
@@ -260,13 +260,9 @@ fn main() {
                         })
                         .detach();
 
-                    let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
-                    let weak_root = root.downgrade();
                     let window_handle = window.window_handle();
+                    let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
                     let task = cx.read_credentials(KEYRING_SERVICE);
-
-                    // Initialize app global state
-                    AppRegistry::set_global(weak_root, cx);
 
                     cx.spawn(|mut cx| async move {
                         if let Ok(Some((npub, secret))) = task.await {
@@ -295,24 +291,18 @@ fn main() {
                                 .detach();
 
                             if let Ok(profile) = rx.await {
-                                cx.update_window(window_handle, |_, window, cx| {
-                                    cx.update_global::<AppRegistry, _>(|this, cx| {
-                                        this.set_user(Some(profile.clone()));
-                                        this.set_root_view(
-                                            app::init(profile, window, cx).into(),
-                                            cx,
-                                        );
+                                _ = cx.update_window(window_handle, |_, window, cx| {
+                                    window.replace_root(cx, |window, cx| {
+                                        Root::new(app::init(profile, window, cx).into(), window, cx)
                                     });
-                                })
-                                .unwrap();
+                                });
                             }
                         } else {
-                            cx.update_window(window_handle, |_, window, cx| {
-                                cx.update_global::<AppRegistry, _>(|this, cx| {
-                                    this.set_root_view(onboarding::init(window, cx).into(), cx);
+                            _ = cx.update_window(window_handle, |_, window, cx| {
+                                window.replace_root(cx, |window, cx| {
+                                    Root::new(onboarding::init(window, cx).into(), window, cx)
                                 });
-                            })
-                            .unwrap();
+                            });
                         }
                     })
                     .detach();
