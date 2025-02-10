@@ -1,4 +1,3 @@
-use app_state::registry::AppRegistry;
 use asset::Assets;
 use async_utility::task::spawn;
 use chat_state::registry::ChatRegistry;
@@ -215,8 +214,6 @@ fn main() {
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
         .run(move |cx| {
-            // Initialize app global state
-            AppRegistry::set_global(cx);
             // Initialize chat global state
             ChatRegistry::set_global(cx);
 

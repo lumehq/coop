@@ -1,8 +1,7 @@
-use app_state::registry::AppRegistry;
-use common::{profile::NostrProfile, qr::create_qr};
+use common::{profile::NostrProfile, qr::create_qr, utils::preload};
 use gpui::{
-    div, img, prelude::FluentBuilder, relative, svg, App, AppContext, BorrowAppContext,
-    ClipboardItem, Context, Div, Entity, IntoElement, ParentElement, Render, Styled, Window,
+    div, img, prelude::FluentBuilder, relative, svg, App, AppContext, ClipboardItem, Context, Div,
+    Entity, IntoElement, ParentElement, Render, Styled, Window,
 };
 use nostr_connect::prelude::*;
 use state::get_client;
@@ -103,8 +102,10 @@ impl Onboarding {
                                 .ok()
                                 .unwrap_or_default();
 
-                            _ = client.set_signer(signer).await;
-                            _ = tx.send(NostrProfile::new(*public_key, metadata));
+                            if tx.send(NostrProfile::new(*public_key, metadata)).is_ok() {
+                                _ = client.set_signer(signer).await;
+                                _ = preload(client, *public_key).await;
+                            }
                         }
                     }
                 }
@@ -113,10 +114,6 @@ impl Onboarding {
 
             if let Ok(profile) = rx.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    cx.update_global::<AppRegistry, _>(|this, _cx| {
-                        this.set_user(Some(profile.clone()));
-                    });
-
                     window.replace_root(cx, |window, cx| {
                         Root::new(app::init(profile, window, cx).into(), window, cx)
                     });
@@ -173,18 +170,16 @@ impl Onboarding {
                         .ok()
                         .unwrap_or_default();
 
-                    _ = client.set_signer(keys).await;
-                    _ = tx.send(NostrProfile::new(public_key, metadata));
+                    if tx.send(NostrProfile::new(public_key, metadata)).is_ok() {
+                        _ = client.set_signer(keys).await;
+                        _ = preload(client, public_key).await;
+                    }
                 }
             })
             .detach();
 
             if let Ok(profile) = rx.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    cx.update_global::<AppRegistry, _>(|this, _cx| {
-                        this.set_user(Some(profile.clone()));
-                    });
-
                     window.replace_root(cx, |window, cx| {
                         Root::new(app::init(profile, window, cx).into(), window, cx)
                     });

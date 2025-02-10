@@ -1,4 +1,3 @@
-use app_state::registry::AppRegistry;
 use chat_state::registry::ChatRegistry;
 use common::{
     constants::FAKE_SIG,
@@ -141,17 +140,8 @@ impl Compose {
             return;
         }
 
-        let current_user = if let Some(profile) = cx.global::<AppRegistry>().user() {
-            profile
-        } else {
-            return;
-        };
-
         // Show loading spinner
         self.set_submitting(true, cx);
-
-        // Get nostr client
-        let client = get_client();
 
         // Get message from user's input
         let content = message.to_string();
@@ -163,9 +153,7 @@ impl Compose {
         );
 
         // Get all pubkeys
-        let current_user = current_user.public_key();
         let mut pubkeys: Vec<PublicKey> = selected.iter().copied().collect();
-        pubkeys.push(current_user);
 
         // Convert selected pubkeys into Nostr tags
         let mut tag_list: Vec<Tag> = selected.iter().map(|pk| Tag::public_key(*pk)).collect();
@@ -178,14 +166,18 @@ impl Compose {
             let (tx, rx) = oneshot::channel::<Event>();
 
             cx.background_spawn(async move {
+                let client = get_client();
+                let public_key = signer_public_key(client).await.unwrap();
                 let mut event: Option<Event> = None;
+
+                pubkeys.push(public_key);
 
                 for pubkey in pubkeys.iter() {
                     if let Ok(output) = client
                         .send_private_msg(*pubkey, &content, tags.clone())
                         .await
                     {
-                        if pubkey == &current_user && event.is_none() {
+                        if pubkey == &public_key && event.is_none() {
                             if let Ok(Some(ev)) = client.database().event_by_id(&output.val).await {
                                 if let Ok(UnwrappedGift { mut rumor, .. }) =
                                     client.unwrap_gift_wrap(&ev).await

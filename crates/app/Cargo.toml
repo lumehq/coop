@@ -12,7 +12,6 @@ path = "src/main.rs"
 ui = { path = "../ui" }
 common = { path = "../common" }
 state = { path = "../state" }
-app_state = { path = "../app_state" }
 chat_state = { path = "../chat_state" }
 
 gpui.workspace = true
@@ -30,5 +29,19 @@ dirs.workspace = true
 rust-embed.workspace = true
 smol.workspace = true
 
+cargo-packager-updater = "0.2.2"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
 log = "0.4"
+
+[package.metadata.packager]
+before-packaging-command = "cargo build --release"
+product-name = "Coop"
+identifier = "su.reya.coop"
+resources = ["src", "icons/*", "Cargo.toml", "../../README.md"]
+icons = [
+  "icons/32x32.png",
+  "icons/128x128.png",
+  "icons/128x128@2x.png",
+  "icons/icon.icns",
+  "icons/icon.ico",
+]

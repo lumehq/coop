@@ -1,10 +1,8 @@
-use app_state::registry::AppRegistry;
 use chat_state::registry::ChatRegistry;
 use common::profile::NostrProfile;
 use gpui::{
-    actions, div, img, impl_internal_actions, px, App, AppContext, Axis, BorrowAppContext, Context,
-    Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage,
-    Window,
+    actions, div, img, impl_internal_actions, px, App, AppContext, Axis, Context, Entity,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -200,13 +198,11 @@ impl AppView {
                 }
             }
             PanelKind::Profile => {
-                if let Some(profile) = cx.global::<AppRegistry>().user() {
-                    let panel = Arc::new(profile::init(profile, window, cx));
+                let panel = Arc::new(profile::init(self.account.clone(), window, cx));
 
-                    self.dock.update(cx, |dock_area, cx| {
-                        dock_area.add_panel(panel, action.position, window, cx);
-                    });
-                }
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, window, cx);
+                });
             }
             PanelKind::Contacts => {
                 let panel = Arc::new(contacts::init(window, cx));
@@ -228,10 +224,6 @@ impl AppView {
     fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
         cx.background_spawn(async move { get_client().reset().await })
             .detach();
-
-        cx.update_global::<AppRegistry, _>(|this, _cx| {
-            this.set_user(None);
-        });
 
         window.replace_root(cx, |window, cx| {
             Root::new(onboarding::init(window, cx).into(), window, cx)
