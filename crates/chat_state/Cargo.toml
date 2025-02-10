@@ -13,3 +13,4 @@ nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 smol.workspace = true
+chrono.workspace = true

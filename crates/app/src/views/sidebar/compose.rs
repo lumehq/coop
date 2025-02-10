@@ -40,7 +40,7 @@ pub struct Compose {
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
-        let contacts = cx.new(|_| Vec::with_capacity(200));
+        let contacts = cx.new(|_| Vec::new());
         let selected = cx.new(|_| HashSet::new());
 
         let user_input = cx.new(|cx| {
@@ -157,7 +157,10 @@ impl Compose {
         let content = message.to_string();
 
         // Get room title from user's input
-        let title = Tag::title(self.title_input.read(cx).text().to_string());
+        let title = Tag::custom(
+            TagKind::Subject,
+            vec![self.title_input.read(cx).text().to_string()],
+        );
 
         // Get all pubkeys
         let current_user = current_user.public_key();

@@ -22,12 +22,10 @@ pub struct Relays {
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         let relays = cx.new(|_| {
-            let mut list = Vec::with_capacity(10);
-
-            list.push(Url::parse("wss://auth.nostr1.com").unwrap());
-            list.push(Url::parse("wss://relay.0xchat.com").unwrap());
-
-            list
+            vec![
+                Url::parse("wss://auth.nostr1.com").unwrap(),
+                Url::parse("wss://relay.0xchat.com").unwrap(),
+            ]
         });
 
         let input = cx.new(|cx| {
@@ -186,7 +184,7 @@ impl Render for Relays {
                                     "relays",
                                     total,
                                     move |_, range, _window, cx| {
-                                        let mut items = Vec::with_capacity(total);
+                                        let mut items = Vec::new();
 
                                         for ix in range {
                                             let item = relays.get(ix).unwrap().clone().to_string();

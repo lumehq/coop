@@ -1,9 +1,9 @@
 use async_utility::task::spawn;
-use chat_state::room::Room;
+use chat_state::room::{LastSeen, Room};
 use common::{
     constants::IMAGE_SERVICE,
     profile::NostrProfile,
-    utils::{compare, message_time, nip96_upload},
+    utils::{compare, nip96_upload},
 };
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, white, AnyElement, App, AppContext, Context,
@@ -207,7 +207,7 @@ impl Chat {
                                     Some(Message::new(
                                         member,
                                         ev.content.into(),
-                                        message_time(ev.created_at).into(),
+                                        LastSeen(ev.created_at).human_readable(),
                                     ))
                                 } else {
                                     None
@@ -237,7 +237,7 @@ impl Chat {
                     Message::new(
                         member,
                         event.content.clone().into(),
-                        message_time(event.created_at).into(),
+                        LastSeen(event.created_at).human_readable(),
                     )
                 })
             })
@@ -334,7 +334,7 @@ impl Chat {
                     let message = Message::new(
                         this.owner.clone(),
                         content.to_string().into(),
-                        message_time(Timestamp::now()).into(),
+                        LastSeen(Timestamp::now()).human_readable(),
                     );
 
                     // Update message list

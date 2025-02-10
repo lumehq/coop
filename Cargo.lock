@@ -882,6 +882,7 @@ name = "chat_state"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "common",
  "gpui",
  "itertools 0.13.0",
@@ -1111,7 +1112,6 @@ dependencies = [
  "anyhow",
  "app_state",
  "chat_state",
- "chrono",
  "common",
  "dirs 5.0.1",
  "gpui",

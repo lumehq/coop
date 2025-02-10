@@ -1,4 +1,4 @@
-use crate::{constants::IMAGE_SERVICE, utils::shorted_public_key};
+use crate::constants::IMAGE_SERVICE;
 use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -58,17 +58,18 @@ impl NostrProfile {
     pub fn name(&self) -> String {
         if let Some(display_name) = &self.metadata.display_name {
             if !display_name.is_empty() {
-                return display_name.clone();
+                return display_name.to_owned();
             }
         }
 
         if let Some(name) = &self.metadata.name {
             if !name.is_empty() {
-                return name.clone();
+                return name.to_owned();
             }
         }
 
-        shorted_public_key(self.public_key)
+        let pubkey = self.public_key.to_string();
+        format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..])
     }
 
     /// Get contact's metadata

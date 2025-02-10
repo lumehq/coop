@@ -1,6 +1,5 @@
 use crate::views::app::{AddPanel, PanelKind};
 use chat_state::registry::ChatRegistry;
-use common::utils::message_ago;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, relative, Context, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
@@ -75,9 +74,7 @@ impl Inbox {
                 } else {
                     this.children(inbox.rooms.iter().map(|model| {
                         let room = model.read(cx);
-                        let id = room.id;
-                        let room_id: SharedString = id.to_string().into();
-                        let ago: SharedString = message_ago(room.last_seen).into();
+                        let room_id: SharedString = room.id.to_string().into();
 
                         div()
                             .id(room_id)
@@ -115,11 +112,14 @@ impl Inbox {
                                 div()
                                     .flex_shrink_0()
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                                    .child(ago),
+                                    .child(room.last_seen.ago()),
                             )
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.action(id, window, cx);
-                            }))
+                            .on_click({
+                                let id = room.id;
+                                cx.listener(move |this, _, window, cx| {
+                                    this.action(id, window, cx);
+                                })
+                            })
                     }))
                 }
             })

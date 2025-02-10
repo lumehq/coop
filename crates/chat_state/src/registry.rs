@@ -1,8 +1,10 @@
-use anyhow::Error;
-use common::utils::{compare, room_hash};
+use async_utility::tokio::sync::oneshot;
+use common::utils::{compare, room_hash, signer_public_key};
 use gpui::{App, AppContext, Entity, Global, WeakEntity, Window};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
+use std::cmp::Reverse;
 
 use crate::{inbox::Inbox, room::Room};
 
@@ -18,34 +20,30 @@ impl ChatRegistry {
 
         cx.observe_new::<Room>(|this, _window, cx| {
             // Get all pubkeys to load metadata
-            let pubkeys = this.get_pubkeys();
+            let pubkeys = this.pubkeys();
 
-            cx.spawn(|weak_model, mut async_cx| async move {
-                let query: Result<Vec<(PublicKey, Metadata)>, Error> = async_cx
-                    .background_executor()
-                    .spawn(async move {
-                        let client = get_client();
-                        let mut profiles = Vec::new();
+            cx.spawn(|this, mut cx| async move {
+                let (tx, rx) = oneshot::channel::<Vec<(PublicKey, Metadata)>>();
 
-                        for public_key in pubkeys.into_iter() {
-                            let metadata = client
-                                .database()
-                                .metadata(public_key)
-                                .await?
-                                .unwrap_or_default();
+                cx.background_spawn(async move {
+                    let client = get_client();
+                    let mut profiles = Vec::new();
 
-                            profiles.push((public_key, metadata));
+                    for public_key in pubkeys.into_iter() {
+                        if let Ok(metadata) = client.database().metadata(public_key).await {
+                            profiles.push((public_key, metadata.unwrap_or_default()));
                         }
+                    }
 
-                        Ok(profiles)
-                    })
-                    .await;
+                    _ = tx.send(profiles);
+                })
+                .detach();
 
-                if let Ok(profiles) = query {
-                    if let Some(model) = weak_model.upgrade() {
-                        _ = async_cx.update_entity(&model, |model, cx| {
+                if let Ok(profiles) = rx.await {
+                    if let Some(room) = this.upgrade() {
+                        _ = cx.update_entity(&room, |this, cx| {
                             for profile in profiles.into_iter() {
-                                model.set_metadata(profile.0, profile.1);
+                                this.set_metadata(profile.0, profile.1);
                             }
                             cx.notify();
                         });
@@ -61,38 +59,60 @@ impl ChatRegistry {
 
     pub fn load(&mut self, window: &mut Window, cx: &mut App) {
         let window_handle = window.window_handle();
+        let inbox = self.inbox.downgrade();
 
-        self.inbox.update(cx, |this, cx| {
-            let task = this.load(cx.to_async());
+        cx.spawn(|mut cx| async move {
+            let (tx, rx) = oneshot::channel::<Vec<Event>>();
 
-            cx.spawn(|this, mut cx| async move {
-                if let Ok(events) = task.await {
-                    _ = cx.update_window(window_handle, |_, _, cx| {
-                        _ = this.update(cx, |this, cx| {
-                            let current_rooms = this.get_room_ids(cx);
-                            let items: Vec<Entity<Room>> = events
-                                .into_iter()
-                                .filter_map(|ev| {
-                                    let id = room_hash(&ev.tags);
-                                    // Filter all seen events
-                                    if !current_rooms.iter().any(|h| h == &id) {
-                                        Some(cx.new(|_| Room::parse(&ev)))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
+            cx.background_spawn(async move {
+                let client = get_client();
 
-                            this.rooms.extend(items);
-                            this.is_loading = false;
+                if let Ok(public_key) = signer_public_key(client).await {
+                    let filter = Filter::new()
+                        .kind(Kind::PrivateDirectMessage)
+                        .author(public_key);
 
-                            cx.notify();
-                        });
-                    });
+                    // Get all DM events from database
+                    if let Ok(events) = client.database().query(filter).await {
+                        let result: Vec<Event> = events
+                            .into_iter()
+                            .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
+                            .unique_by(room_hash)
+                            .sorted_by_key(|ev| Reverse(ev.created_at))
+                            .collect();
+
+                        _ = tx.send(result);
+                    }
                 }
             })
             .detach();
-        });
+
+            if let Ok(events) = rx.await {
+                _ = cx.update_window(window_handle, |_, _, cx| {
+                    _ = inbox.update(cx, |this, cx| {
+                        let current_rooms = this.ids(cx);
+                        let items: Vec<Entity<Room>> = events
+                            .into_iter()
+                            .filter_map(|ev| {
+                                let new = room_hash(&ev);
+                                // Filter all seen events
+                                if !current_rooms.iter().any(|this| this == &new) {
+                                    Some(cx.new(|_| Room::parse(&ev)))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                        this.rooms.extend(items);
+                        this.is_loading = false;
+
+                        cx.notify();
+                    });
+                });
+            }
+        })
+        .detach();
     }
 
     pub fn inbox(&self) -> WeakEntity<Inbox> {
@@ -121,7 +141,6 @@ impl ChatRegistry {
 
     pub fn new_room_message(&mut self, event: Event, window: &mut Window, cx: &mut App) {
         let window_handle = window.window_handle();
-
         // Get all pubkeys from event's tags for comparision
         let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
         pubkeys.push(event.pubkey);
@@ -131,14 +150,14 @@ impl ChatRegistry {
             .read(cx)
             .rooms
             .iter()
-            .find(|room| compare(&room.read(cx).get_pubkeys(), &pubkeys))
+            .find(|room| compare(&room.read(cx).pubkeys(), &pubkeys))
         {
-            let weak_room = room.downgrade();
+            let this = room.downgrade();
 
             cx.spawn(|mut cx| async move {
                 if let Err(e) = cx.update_window(window_handle, |_, _, cx| {
-                    _ = weak_room.update(cx, |this, cx| {
-                        this.last_seen = event.created_at;
+                    _ = this.update(cx, |this, cx| {
+                        this.last_seen.set(event.created_at);
                         this.new_messages.push(event);
 
                         cx.notify();

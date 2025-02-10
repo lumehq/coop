@@ -75,7 +75,7 @@ fn main() {
 
         async fn process_batch(client: &Client, events: &[Cow<'_, Event>]) {
             let sig = Signature::from_str(FAKE_SIG).unwrap();
-            let mut buffer: HashSet<PublicKey> = HashSet::with_capacity(100);
+            let mut buffer: HashSet<PublicKey> = HashSet::with_capacity(20);
 
             for event in events.iter() {
                 if let Ok(UnwrappedGift { mut rumor, sender }) =
