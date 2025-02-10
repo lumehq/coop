@@ -10,5 +10,7 @@ nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
+dirs.workspace = true
 
 random_name_generator = "0.3.6"
+qrcode-generator = "5.0.0"
