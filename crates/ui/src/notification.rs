@@ -340,12 +340,9 @@ impl NotificationList {
             // Sleep for 3 seconds to autohide the notification
             cx.spawn_in(window, |_, mut cx| async move {
                 Timer::after(Duration::from_secs(3)).await;
-
-                if let Err(err) = notification.update_in(&mut cx, |note, window, cx| {
+                _ = notification.update_in(&mut cx, |note, window, cx| {
                     note.dismiss(&ClickEvent::default(), window, cx)
-                }) {
-                    println!("failed to auto hide notification: {:?}", err);
-                }
+                });
             })
             .detach();
         }

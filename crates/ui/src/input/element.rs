@@ -299,31 +299,6 @@ impl IntoElement for TextElement {
     }
 }
 
-/// A debug function to print points as SVG path.
-#[allow(unused)]
-fn print_points_as_svg_path(line_corners: &Vec<Corners<Point<Pixels>>>, points: &[Point<Pixels>]) {
-    for corners in line_corners {
-        println!(
-            "tl: ({}, {}), tr: ({}, {}), bl: ({}, {}), br: ({}, {})",
-            corners.top_left.x.0 as i32,
-            corners.top_left.y.0 as i32,
-            corners.top_right.x.0 as i32,
-            corners.top_right.y.0 as i32,
-            corners.bottom_left.x.0 as i32,
-            corners.bottom_left.y.0 as i32,
-            corners.bottom_right.x.0 as i32,
-            corners.bottom_right.y.0 as i32,
-        );
-    }
-
-    if !points.is_empty() {
-        println!("M{},{}", points[0].x.0 as i32, points[0].y.0 as i32);
-        for p in points.iter().skip(1) {
-            println!("L{},{}", p.x.0 as i32, p.y.0 as i32);
-        }
-    }
-}
-
 impl Element for TextElement {
     type RequestLayoutState = ();
     type PrepaintState = PrepaintState;

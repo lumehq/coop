@@ -136,7 +136,7 @@ impl Relays {
 
 impl Render for Relays {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let msg = "In order to receive messages from others, you need to setup Inbox Relays. You can use the recommend relays or add more.";
+        let msg = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
 
         div()
             .track_focus(&self.focus_handle)

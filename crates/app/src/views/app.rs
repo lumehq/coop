@@ -1,9 +1,14 @@
+use cargo_packager_updater::{check_update, semver::Version, url::Url};
 use chat_state::registry::ChatRegistry;
-use common::profile::NostrProfile;
+use common::{
+    constants::{UPDATER_PUBKEY, UPDATER_URL},
+    profile::NostrProfile,
+};
 use gpui::{
     actions, div, img, impl_internal_actions, px, App, AppContext, Axis, Context, Entity,
     InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, Window,
 };
+use log::info;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use state::get_client;
@@ -56,9 +61,14 @@ pub struct AppView {
 
 impl AppView {
     pub fn new(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
+        // Initialize dock layout
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let weak_dock = dock.downgrade();
+
+        // Initialize left dock
         let left_panel = DockItem::panel(Arc::new(sidebar::init(window, cx)));
+
+        // Initial central dock
         let center_panel = DockItem::split_with_sizes(
             Axis::Vertical,
             vec![DockItem::tabs(
@@ -74,7 +84,7 @@ impl AppView {
             cx,
         );
 
-        // Set default dock layout
+        // Set default dock layout with left and central docks
         _ = weak_dock.update(cx, |view, cx| {
             view.set_left_dock(left_panel, Some(px(240.)), true, window, cx);
             view.set_center(center_panel, window, cx);
@@ -83,7 +93,27 @@ impl AppView {
         let public_key = account.public_key();
         let window_handle = window.window_handle();
 
-        // Check user's inbox relays and determine user is ready for NIP17 or not.
+        // Check and auto update to the latest version
+        cx.background_spawn(async move {
+            // Set auto updater config
+            let config = cargo_packager_updater::Config {
+                endpoints: vec![Url::parse(UPDATER_URL).expect("Failed to parse UPDATER URL")],
+                pubkey: String::from(UPDATER_PUBKEY),
+                ..Default::default()
+            };
+
+            // Run auto updater
+            if let Ok(current_version) = Version::parse(env!("CARGO_PKG_VERSION")) {
+                if let Ok(Some(update)) = check_update(current_version, config) {
+                    if update.download_and_install().is_ok() {
+                        info!("Update installed")
+                    }
+                }
+            }
+        })
+        .detach();
+
+        // Check user's messaging relays and determine user is ready for NIP17 or not.
         // If not, show the setup modal and instruct user setup inbox relays
         cx.spawn(|mut cx| async move {
             let (tx, rx) = oneshot::channel::<bool>();
@@ -118,7 +148,7 @@ impl AppView {
                             this.keyboard(false)
                                 .closable(false)
                                 .width(px(420.))
-                                .title("Your Inbox is not configured")
+                                .title("Your Messaging Relays is not configured")
                                 .child(relays.clone())
                                 .footer(
                                     div()

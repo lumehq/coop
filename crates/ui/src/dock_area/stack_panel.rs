@@ -256,8 +256,6 @@ impl StackPanel {
 
             cx.emit(PanelEvent::LayoutChanged);
             self.remove_self_if_empty(window, cx);
-        } else {
-            println!("Panel not found in stack panel.");
         }
     }
 

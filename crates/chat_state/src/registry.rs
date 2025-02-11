@@ -155,16 +155,14 @@ impl ChatRegistry {
             let this = room.downgrade();
 
             cx.spawn(|mut cx| async move {
-                if let Err(e) = cx.update_window(window_handle, |_, _, cx| {
+                _ = cx.update_window(window_handle, |_, _, cx| {
                     _ = this.update(cx, |this, cx| {
                         this.last_seen.set(event.created_at);
                         this.new_messages.push(event);
 
                         cx.notify();
                     });
-                }) {
-                    println!("Error: {}", e)
-                }
+                });
             })
             .detach();
         } else {
