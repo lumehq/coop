@@ -1,5 +1,5 @@
 use crate::views::app::{AddPanel, PanelKind};
-use chat_state::registry::ChatRegistry;
+use chats::registry::ChatRegistry;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, relative, Context, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
@@ -39,15 +39,14 @@ impl Inbox {
     }
 
     fn render_item(&self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let weak_model = cx.global::<ChatRegistry>().inbox();
-
-        if let Some(model) = weak_model.upgrade() {
+        if let Some(chats) = ChatRegistry::global(cx) {
             div().map(|this| {
-                let inbox = model.read(cx);
+                let state = chats.read(cx);
+                let rooms = state.rooms();
 
-                if inbox.is_loading {
+                if state.is_loading() {
                     this.children(self.render_skeleton(5))
-                } else if inbox.rooms.is_empty() {
+                } else if rooms.is_empty() {
                     this.px_1()
                         .w_full()
                         .h_20()
@@ -72,7 +71,7 @@ impl Inbox {
                                 .child("Recent chats will appear here."),
                         )
                 } else {
-                    this.children(inbox.rooms.iter().map(|model| {
+                    this.children(rooms.iter().map(|model| {
                         let room = model.read(cx);
                         let room_id: SharedString = room.id.to_string().into();
 

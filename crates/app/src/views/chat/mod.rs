@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
+use anyhow::anyhow;
 use async_utility::task::spawn;
-use chat_state::room::{LastSeen, Room};
+use chats::registry::ChatRegistry;
+use chats::room::{LastSeen, Room};
 use common::{
     constants::IMAGE_SERVICE,
     profile::NostrProfile,
@@ -28,8 +32,20 @@ use ui::{
 
 mod message;
 
-pub fn init(room: &Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
-    Chat::new(room, window, cx)
+pub fn init(
+    id: &u64,
+    window: &mut Window,
+    cx: &mut App,
+) -> Result<Arc<Entity<Chat>>, anyhow::Error> {
+    if let Some(chats) = ChatRegistry::global(cx) {
+        if let Some(room) = chats.read(cx).get(id, cx) {
+            Ok(Arc::new(Chat::new(&room, window, cx)))
+        } else {
+            Err(anyhow!("Chat room is not exist"))
+        }
+    } else {
+        Err(anyhow!("Chat Registry is not initialized"))
+    }
 }
 
 #[derive(Clone)]

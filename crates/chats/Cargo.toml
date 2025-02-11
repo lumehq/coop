@@ -1,5 +1,5 @@
 [package]
-name = "chat_state"
+name = "chats"
 version = "0.1.0"
 edition = "2021"
 publish = false

@@ -1,5 +1,4 @@
 use cargo_packager_updater::{check_update, semver::Version, url::Url};
-use chat_state::registry::ChatRegistry;
 use common::{
     constants::{UPDATER_PUBKEY, UPDATER_URL},
     profile::NostrProfile,
@@ -217,14 +216,10 @@ impl AppView {
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
         match &action.panel {
             PanelKind::Room(id) => {
-                if let Some(weak_room) = cx.global::<ChatRegistry>().get_room(id, cx) {
-                    if let Some(room) = weak_room.upgrade() {
-                        let panel = Arc::new(chat::init(&room, window, cx));
-
-                        self.dock.update(cx, |dock_area, cx| {
-                            dock_area.add_panel(panel, action.position, window, cx);
-                        });
-                    }
+                if let Ok(panel) = chat::init(id, window, cx) {
+                    self.dock.update(cx, |dock_area, cx| {
+                        dock_area.add_panel(panel, action.position, window, cx);
+                    });
                 }
             }
             PanelKind::Profile => {

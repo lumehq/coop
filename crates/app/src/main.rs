@@ -1,6 +1,6 @@
 use asset::Assets;
 use async_utility::task::spawn;
-use chat_state::registry::ChatRegistry;
+use chats::registry::ChatRegistry;
 use common::{
     constants::{
         ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, FAKE_SIG, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
@@ -8,16 +8,15 @@ use common::{
     profile::NostrProfile,
 };
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, AsyncApp, BorrowAppContext, Bounds,
-    KeyBinding, Menu, MenuItem, SharedString, TitlebarOptions, WindowBounds, WindowKind,
-    WindowOptions,
+    actions, point, px, size, App, AppContext, Application, AsyncApp, Bounds, KeyBinding, Menu,
+    MenuItem, SharedString, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use log::{error, info};
 use nostr_sdk::prelude::*;
 use state::{get_client, initialize_client};
-use std::{borrow::Cow, collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 use ui::{theme::Theme, Root};
 use views::{app, onboarding, startup};
@@ -247,11 +246,9 @@ fn main() {
 
     app.run(move |cx| {
         // Initialize chat global state
-        ChatRegistry::set_global(cx);
-
+        chats::registry::init(cx);
         // Initialize components
         ui::init(cx);
-
         // Bring the app to the foreground
         cx.activate(true);
         // Register the `quit` function
@@ -284,93 +281,92 @@ fn main() {
             ..Default::default()
         };
 
-        let window = cx
-            .open_window(opts, |window, cx| {
-                window.set_window_title(APP_NAME);
-                window.set_app_id(APP_ID);
-                window
-                    .observe_window_appearance(|window, cx| {
-                        Theme::sync_system_appearance(Some(window), cx);
-                    })
-                    .detach();
-
-                let window_handle = window.window_handle();
-                let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
-                let task = cx.read_credentials(KEYRING_SERVICE);
-
-                cx.spawn(|mut cx| async move {
-                    if let Ok(Some((npub, secret))) = task.await {
-                        let (tx, rx) = oneshot::channel::<NostrProfile>();
-
-                        cx.background_executor()
-                            .spawn(async move {
-                                let public_key = PublicKey::from_bech32(&npub).unwrap();
-                                let secret_hex = String::from_utf8(secret).unwrap();
-                                let keys = Keys::parse(&secret_hex).unwrap();
-
-                                // Update nostr signer
-                                _ = client.set_signer(keys).await;
-
-                                // Get user's metadata
-                                let metadata = if let Ok(Some(metadata)) =
-                                    client.database().metadata(public_key).await
-                                {
-                                    metadata
-                                } else {
-                                    Metadata::new()
-                                };
-
-                                _ = tx.send(NostrProfile::new(public_key, metadata));
-                            })
-                            .detach();
-
-                        if let Ok(profile) = rx.await {
-                            _ = cx.update_window(window_handle, |_, window, cx| {
-                                window.replace_root(cx, |window, cx| {
-                                    Root::new(app::init(profile, window, cx).into(), window, cx)
-                                });
-                            });
-                        }
-                    } else {
-                        _ = cx.update_window(window_handle, |_, window, cx| {
-                            window.replace_root(cx, |window, cx| {
-                                Root::new(onboarding::init(window, cx).into(), window, cx)
-                            });
-                        });
-                    }
+        cx.open_window(opts, |window, cx| {
+            window.set_window_title(APP_NAME);
+            window.set_app_id(APP_ID);
+            window
+                .observe_window_appearance(|window, cx| {
+                    Theme::sync_system_appearance(Some(window), cx);
                 })
                 .detach();
 
-                root
-            })
-            .expect("System error. Please re-open the app.");
+            let handle = window.window_handle();
+            let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
 
-        // Listen for messages from the Nostr thread
-        cx.spawn(|mut cx| async move {
-            while let Some(signal) = signal_rx.recv().await {
-                match signal {
-                    Signal::Eose => {
-                        if let Err(e) = cx.update_window(*window.deref(), |_this, window, cx| {
-                            cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                this.load(window, cx);
+            let task = cx.read_credentials(KEYRING_SERVICE);
+            let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
+
+            // Read credential in OS Keyring
+            cx.background_spawn(async {
+                let profile = if let Ok(Some((npub, secret))) = task.await {
+                    let public_key = PublicKey::from_bech32(&npub).unwrap();
+                    let secret_hex = String::from_utf8(secret).unwrap();
+                    let keys = Keys::parse(&secret_hex).unwrap();
+
+                    // Update nostr signer
+                    _ = client.set_signer(keys).await;
+
+                    // Get user's metadata
+                    let metadata =
+                        if let Ok(Some(metadata)) = client.database().metadata(public_key).await {
+                            metadata
+                        } else {
+                            Metadata::new()
+                        };
+
+                    Some(NostrProfile::new(public_key, metadata))
+                } else {
+                    None
+                };
+
+                _ = tx.send(profile)
+            })
+            .detach();
+
+            // Set root view based on credential status
+            cx.spawn(|mut cx| async move {
+                if let Ok(Some(profile)) = rx.await {
+                    _ = cx.update_window(handle, |_, window, cx| {
+                        window.replace_root(cx, |window, cx| {
+                            Root::new(app::init(profile, window, cx).into(), window, cx)
+                        });
+                    });
+                } else {
+                    _ = cx.update_window(handle, |_, window, cx| {
+                        window.replace_root(cx, |window, cx| {
+                            Root::new(onboarding::init(window, cx).into(), window, cx)
+                        });
+                    });
+                }
+            })
+            .detach();
+
+            // Listen for messages from the Nostr thread
+            cx.spawn(|cx| async move {
+                while let Some(signal) = signal_rx.recv().await {
+                    match signal {
+                        Signal::Eose => {
+                            _ = cx.update(|cx| {
+                                if let Some(chats) = ChatRegistry::global(cx) {
+                                    chats.update(cx, |this, cx| this.load_chat_rooms(cx))
+                                }
                             });
-                        }) {
-                            error!("Error: {}", e)
                         }
-                    }
-                    Signal::Event(event) => {
-                        if let Err(e) = cx.update_window(*window.deref(), |_this, window, cx| {
-                            cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                this.new_room_message(event, window, cx);
+                        Signal::Event(event) => {
+                            _ = cx.update(|cx| {
+                                if let Some(chats) = ChatRegistry::global(cx) {
+                                    chats.update(cx, |this, cx| this.push_message(event, cx))
+                                }
                             });
-                        }) {
-                            error!("Error: {}", e)
                         }
                     }
                 }
-            }
+            })
+            .detach();
+
+            root
         })
-        .detach();
+        .expect("System error. Please re-open the app.");
     });
 }
 

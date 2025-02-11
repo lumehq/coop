@@ -1,4 +1,4 @@
-use chat_state::registry::ChatRegistry;
+use chats::registry::ChatRegistry;
 use common::{
     constants::FAKE_SIG,
     profile::NostrProfile,
@@ -6,8 +6,8 @@ use common::{
 };
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
-    AppContext, BorrowAppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window,
+    AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -212,9 +212,11 @@ impl Compose {
 
             if let Ok(event) = rx.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    cx.update_global::<ChatRegistry, _>(|this, cx| {
-                        this.new_room_message(event, window, cx);
-                    });
+                    if let Some(chats) = ChatRegistry::global(cx) {
+                        chats.update(cx, |this, cx| {
+                            this.push_message(event, cx);
+                        });
+                    }
 
                     // Stop loading spinner
                     _ = this.update(cx, |this, cx| {

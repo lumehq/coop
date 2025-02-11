@@ -901,7 +901,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "chat_state"
+name = "chats"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1136,7 +1136,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cargo-packager-updater",
- "chat_state",
+ "chats",
  "common",
  "dirs 5.0.1",
  "gpui",

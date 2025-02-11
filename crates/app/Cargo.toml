@@ -12,7 +12,7 @@ path = "src/main.rs"
 ui = { path = "../ui" }
 common = { path = "../common" }
 state = { path = "../state" }
-chat_state = { path = "../chat_state" }
+chats = { path = "../chats" }
 
 gpui.workspace = true
 gpui_tokio.workspace = true
