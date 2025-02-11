@@ -8,12 +8,13 @@ use common::{
     profile::NostrProfile,
 };
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, BorrowAppContext, Bounds, Menu,
-    MenuItem, SharedString, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
+    actions, point, px, size, App, AppContext, Application, AsyncApp, BorrowAppContext, Bounds,
+    KeyBinding, Menu, MenuItem, SharedString, TitlebarOptions, WindowBounds, WindowKind,
+    WindowOptions,
 };
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
-use log::error;
+use log::{error, info};
 use nostr_sdk::prelude::*;
 use state::{get_client, initialize_client};
 use std::{borrow::Cow, collections::HashSet, ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -35,10 +36,7 @@ pub enum Signal {
 }
 
 fn main() {
-    // Log
-    tracing_subscriber::fmt::init();
-
-    // Initialize nostr client
+    // Initialize Nostr client
     initialize_client();
 
     // Get client
@@ -210,137 +208,225 @@ fn main() {
         }
     });
 
-    Application::new()
+    let app = Application::new()
         .with_assets(Assets)
-        .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()))
-        .run(move |cx| {
-            // Initialize chat global state
-            ChatRegistry::set_global(cx);
+        .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
-            // Initialize components
-            ui::init(cx);
+    app.on_reopen(move |cx| {
+        let client = get_client();
+        let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
 
-            cx.activate(true);
-            cx.on_action(quit);
-            cx.set_menus(vec![Menu {
-                name: "Coop".into(),
-                items: vec![MenuItem::action("Quit", Quit)],
-            }]);
-
-            let opts = WindowOptions {
-                #[cfg(not(target_os = "linux"))]
-                titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::new_static(APP_NAME)),
-                    traffic_light_position: Some(point(px(9.0), px(9.0))),
-                    appears_transparent: true,
-                }),
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                    None,
-                    size(px(900.0), px(680.0)),
-                    cx,
-                ))),
-                #[cfg(target_os = "linux")]
-                window_background: WindowBackgroundAppearance::Transparent,
-                #[cfg(target_os = "linux")]
-                window_decorations: Some(WindowDecorations::Client),
-                kind: WindowKind::Normal,
-                ..Default::default()
-            };
-
-            let window = cx
-                .open_window(opts, |window, cx| {
-                    window.set_window_title(APP_NAME);
-                    window.set_app_id(APP_ID);
-                    window
-                        .observe_window_appearance(|window, cx| {
-                            Theme::sync_system_appearance(Some(window), cx);
-                        })
-                        .detach();
-
-                    let window_handle = window.window_handle();
-                    let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
-                    let task = cx.read_credentials(KEYRING_SERVICE);
-
-                    cx.spawn(|mut cx| async move {
-                        if let Ok(Some((npub, secret))) = task.await {
-                            let (tx, rx) = oneshot::channel::<NostrProfile>();
-
-                            cx.background_executor()
-                                .spawn(async move {
-                                    let public_key = PublicKey::from_bech32(&npub).unwrap();
-                                    let secret_hex = String::from_utf8(secret).unwrap();
-                                    let keys = Keys::parse(&secret_hex).unwrap();
-
-                                    // Update nostr signer
-                                    _ = client.set_signer(keys).await;
-
-                                    // Get user's metadata
-                                    let metadata = if let Ok(Some(metadata)) =
-                                        client.database().metadata(public_key).await
-                                    {
-                                        metadata
-                                    } else {
-                                        Metadata::new()
-                                    };
-
-                                    _ = tx.send(NostrProfile::new(public_key, metadata));
-                                })
-                                .detach();
-
-                            if let Ok(profile) = rx.await {
-                                _ = cx.update_window(window_handle, |_, window, cx| {
-                                    window.replace_root(cx, |window, cx| {
-                                        Root::new(app::init(profile, window, cx).into(), window, cx)
-                                    });
-                                });
-                            }
+        cx.spawn(|mut cx| async move {
+            cx.background_spawn(async move {
+                if let Ok(signer) = client.signer().await {
+                    if let Ok(public_key) = signer.get_public_key().await {
+                        let metadata = if let Ok(Some(metadata)) =
+                            client.database().metadata(public_key).await
+                        {
+                            metadata
                         } else {
-                            _ = cx.update_window(window_handle, |_, window, cx| {
-                                window.replace_root(cx, |window, cx| {
-                                    Root::new(onboarding::init(window, cx).into(), window, cx)
-                                });
-                            });
-                        }
-                    })
-                    .detach();
+                            Metadata::new()
+                        };
 
-                    root
-                })
-                .expect("System error. Please re-open the app.");
-
-            // Listen for messages from the Nostr thread
-            cx.spawn(|mut cx| async move {
-                while let Some(signal) = signal_rx.recv().await {
-                    match signal {
-                        Signal::Eose => {
-                            if let Err(e) =
-                                cx.update_window(*window.deref(), |_this, window, cx| {
-                                    cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                        this.load(window, cx);
-                                    });
-                                })
-                            {
-                                error!("Error: {}", e)
-                            }
-                        }
-                        Signal::Event(event) => {
-                            if let Err(e) =
-                                cx.update_window(*window.deref(), |_this, window, cx| {
-                                    cx.update_global::<ChatRegistry, _>(|this, cx| {
-                                        this.new_room_message(event, window, cx);
-                                    });
-                                })
-                            {
-                                error!("Error: {}", e)
-                            }
-                        }
+                        _ = tx.send(Some(NostrProfile::new(public_key, metadata)));
+                    } else {
+                        _ = tx.send(None);
                     }
+                } else {
+                    _ = tx.send(None);
                 }
             })
             .detach();
+
+            if let Ok(result) = rx.await {
+                _ = restore_window(result, &mut cx).await;
+            }
+        })
+        .detach();
+    });
+
+    app.run(move |cx| {
+        // Initialize chat global state
+        ChatRegistry::set_global(cx);
+
+        // Initialize components
+        ui::init(cx);
+
+        // Bring the app to the foreground
+        cx.activate(true);
+        // Register the `quit` function
+        cx.on_action(quit);
+        // Register the `quit` function with CMD+Q
+        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+        // Set menu items
+        cx.set_menus(vec![Menu {
+            name: "Coop".into(),
+            items: vec![MenuItem::action("Quit", Quit)],
+        }]);
+
+        let opts = WindowOptions {
+            #[cfg(not(target_os = "linux"))]
+            titlebar: Some(TitlebarOptions {
+                title: Some(SharedString::new_static(APP_NAME)),
+                traffic_light_position: Some(point(px(9.0), px(9.0))),
+                appears_transparent: true,
+            }),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None,
+                size(px(900.0), px(680.0)),
+                cx,
+            ))),
+            #[cfg(target_os = "linux")]
+            window_background: WindowBackgroundAppearance::Transparent,
+            #[cfg(target_os = "linux")]
+            window_decorations: Some(WindowDecorations::Client),
+            kind: WindowKind::Normal,
+            ..Default::default()
+        };
+
+        let window = cx
+            .open_window(opts, |window, cx| {
+                window.set_window_title(APP_NAME);
+                window.set_app_id(APP_ID);
+                window
+                    .observe_window_appearance(|window, cx| {
+                        Theme::sync_system_appearance(Some(window), cx);
+                    })
+                    .detach();
+
+                let window_handle = window.window_handle();
+                let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
+                let task = cx.read_credentials(KEYRING_SERVICE);
+
+                cx.spawn(|mut cx| async move {
+                    if let Ok(Some((npub, secret))) = task.await {
+                        let (tx, rx) = oneshot::channel::<NostrProfile>();
+
+                        cx.background_executor()
+                            .spawn(async move {
+                                let public_key = PublicKey::from_bech32(&npub).unwrap();
+                                let secret_hex = String::from_utf8(secret).unwrap();
+                                let keys = Keys::parse(&secret_hex).unwrap();
+
+                                // Update nostr signer
+                                _ = client.set_signer(keys).await;
+
+                                // Get user's metadata
+                                let metadata = if let Ok(Some(metadata)) =
+                                    client.database().metadata(public_key).await
+                                {
+                                    metadata
+                                } else {
+                                    Metadata::new()
+                                };
+
+                                _ = tx.send(NostrProfile::new(public_key, metadata));
+                            })
+                            .detach();
+
+                        if let Ok(profile) = rx.await {
+                            _ = cx.update_window(window_handle, |_, window, cx| {
+                                window.replace_root(cx, |window, cx| {
+                                    Root::new(app::init(profile, window, cx).into(), window, cx)
+                                });
+                            });
+                        }
+                    } else {
+                        _ = cx.update_window(window_handle, |_, window, cx| {
+                            window.replace_root(cx, |window, cx| {
+                                Root::new(onboarding::init(window, cx).into(), window, cx)
+                            });
+                        });
+                    }
+                })
+                .detach();
+
+                root
+            })
+            .expect("System error. Please re-open the app.");
+
+        // Listen for messages from the Nostr thread
+        cx.spawn(|mut cx| async move {
+            while let Some(signal) = signal_rx.recv().await {
+                match signal {
+                    Signal::Eose => {
+                        if let Err(e) = cx.update_window(*window.deref(), |_this, window, cx| {
+                            cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                this.load(window, cx);
+                            });
+                        }) {
+                            error!("Error: {}", e)
+                        }
+                    }
+                    Signal::Event(event) => {
+                        if let Err(e) = cx.update_window(*window.deref(), |_this, window, cx| {
+                            cx.update_global::<ChatRegistry, _>(|this, cx| {
+                                this.new_room_message(event, window, cx);
+                            });
+                        }) {
+                            error!("Error: {}", e)
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+    });
+}
+
+async fn restore_window(profile: Option<NostrProfile>, cx: &mut AsyncApp) -> Result<()> {
+    let opts = cx
+        .update(|cx| WindowOptions {
+            #[cfg(not(target_os = "linux"))]
+            titlebar: Some(TitlebarOptions {
+                title: Some(SharedString::new_static(APP_NAME)),
+                traffic_light_position: Some(point(px(9.0), px(9.0))),
+                appears_transparent: true,
+            }),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None,
+                size(px(900.0), px(680.0)),
+                cx,
+            ))),
+            #[cfg(target_os = "linux")]
+            window_background: WindowBackgroundAppearance::Transparent,
+            #[cfg(target_os = "linux")]
+            window_decorations: Some(WindowDecorations::Client),
+            kind: WindowKind::Normal,
+            ..Default::default()
+        })
+        .expect("Failed to set window options.");
+
+    if let Some(profile) = profile {
+        _ = cx.open_window(opts, |window, cx| {
+            window.set_window_title(APP_NAME);
+            window.set_app_id(APP_ID);
+            window
+                .observe_window_appearance(|window, cx| {
+                    Theme::sync_system_appearance(Some(window), cx);
+                })
+                .detach();
+
+            cx.new(|cx| Root::new(app::init(profile, window, cx).into(), window, cx))
         });
+    } else {
+        _ = cx.open_window(opts, |window, cx| {
+            window.set_window_title(APP_NAME);
+            window.set_app_id(APP_ID);
+            window
+                .observe_window_appearance(|window, cx| {
+                    Theme::sync_system_appearance(Some(window), cx);
+                })
+                .detach();
+
+            cx.new(|cx| Root::new(onboarding::init(window, cx).into(), window, cx))
+        });
+    };
+
+    Ok(())
 }
 
 fn quit(_: &Quit, cx: &mut App) {
+    info!("Gracefully quitting the application . . .");
     cx.quit();
 }
