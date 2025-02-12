@@ -11,7 +11,6 @@ pub struct Tab {
     id: ElementId,
     base: Stateful<Div>,
     label: AnyElement,
-    facepill: Option<Vec<String>>,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     disabled: bool,
@@ -19,11 +18,7 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn new(
-        id: impl Into<ElementId>,
-        label: impl IntoElement,
-        facepill: Option<Vec<String>>,
-    ) -> Self {
+    pub fn new(id: impl Into<ElementId>, label: impl IntoElement) -> Self {
         let id: ElementId = id.into();
 
         Self {
@@ -34,7 +29,6 @@ impl Tab {
             selected: false,
             prefix: None,
             suffix: None,
-            facepill,
         }
     }
 
@@ -132,25 +126,6 @@ impl RenderOnce for Tab {
                     .gap_1()
                     .text_ellipsis()
                     .text_xs()
-                    .when_some(self.facepill, |this, facepill| {
-                        this.child(
-                            div()
-                                .flex()
-                                .flex_row_reverse()
-                                .items_center()
-                                .justify_start()
-                                .children(facepill.into_iter().enumerate().rev().map(
-                                    |(ix, face)| {
-                                        div().when(ix > 0, |div| div.ml_neg_1()).child(
-                                            img(face)
-                                                .size_4()
-                                                .rounded_full()
-                                                .object_fit(ObjectFit::Cover),
-                                        )
-                                    },
-                                )),
-                        )
-                    })
                     .child(self.label),
             )
             .when_some(self.suffix, |this, suffix| this.child(suffix))

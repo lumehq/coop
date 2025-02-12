@@ -1,7 +1,7 @@
 use crate::{button::Button, popup_menu::PopupMenu};
 use gpui::{
-    AnyElement, AnyView, App, Entity, EventEmitter, FocusHandle, Focusable, Hsla, IntoElement,
-    Render, SharedString, Window,
+    AnyElement, AnyView, App, Element, Entity, EventEmitter, FocusHandle, Focusable, Hsla, Render,
+    SharedString, Window,
 };
 
 pub enum PanelEvent {
@@ -31,14 +31,9 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
     /// Once you have defined a panel id, this must not be changed.
     fn panel_id(&self) -> SharedString;
 
-    /// The optional facepile of the panel
-    fn panel_facepile(&self, _cx: &App) -> Option<Vec<String>> {
-        None
-    }
-
     /// The title of the panel
     fn title(&self, _cx: &App) -> AnyElement {
-        SharedString::from("Unamed").into_any_element()
+        SharedString::from("Unnamed").into_any()
     }
 
     /// Whether the panel can be closed, default is `true`.
@@ -85,7 +80,6 @@ pub trait Panel: EventEmitter<PanelEvent> + Render + Focusable {
 
 pub trait PanelView: 'static + Send + Sync {
     fn panel_id(&self, cx: &App) -> SharedString;
-    fn panel_facepile(&self, cx: &App) -> Option<Vec<String>>;
     fn title(&self, cx: &App) -> AnyElement;
     fn closable(&self, cx: &App) -> bool;
     fn zoomable(&self, cx: &App) -> bool;
@@ -101,10 +95,6 @@ pub trait PanelView: 'static + Send + Sync {
 impl<T: Panel> PanelView for Entity<T> {
     fn panel_id(&self, cx: &App) -> SharedString {
         self.read(cx).panel_id()
-    }
-
-    fn panel_facepile(&self, cx: &App) -> Option<Vec<String>> {
-        self.read(cx).panel_facepile(cx)
     }
 
     fn title(&self, cx: &App) -> AnyElement {

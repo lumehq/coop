@@ -1,65 +1,11 @@
-use chrono::{Datelike, Local, TimeZone};
 use common::{
+    last_seen::LastSeen,
     profile::NostrProfile,
     utils::{compare, random_name, room_hash},
 };
-use gpui::SharedString;
+use gpui::{App, AppContext, Entity, SharedString};
 use nostr_sdk::prelude::*;
 use std::collections::HashSet;
-
-pub struct LastSeen(pub Timestamp);
-
-impl LastSeen {
-    pub fn ago(&self) -> SharedString {
-        let now = Local::now();
-        let input_time = Local.timestamp_opt(self.0.as_u64() as i64, 0).unwrap();
-        let diff = (now - input_time).num_hours();
-
-        if diff < 24 {
-            let duration = now.signed_duration_since(input_time);
-
-            if duration.num_seconds() < 60 {
-                "now".to_string().into()
-            } else if duration.num_minutes() == 1 {
-                "1m".to_string().into()
-            } else if duration.num_minutes() < 60 {
-                format!("{}m", duration.num_minutes()).into()
-            } else if duration.num_hours() == 1 {
-                "1h".to_string().into()
-            } else if duration.num_hours() < 24 {
-                format!("{}h", duration.num_hours()).into()
-            } else if duration.num_days() == 1 {
-                "1d".to_string().into()
-            } else {
-                format!("{}d", duration.num_days()).into()
-            }
-        } else {
-            input_time.format("%b %d").to_string().into()
-        }
-    }
-
-    pub fn human_readable(&self) -> SharedString {
-        let now = Local::now();
-        let input_time = Local.timestamp_opt(self.0.as_u64() as i64, 0).unwrap();
-
-        if input_time.day() == now.day() {
-            format!("Today at {}", input_time.format("%H:%M %p")).into()
-        } else if input_time.day() == now.day() - 1 {
-            format!("Yesterday at {}", input_time.format("%H:%M %p")).into()
-        } else {
-            format!(
-                "{}, {}",
-                input_time.format("%d/%m/%y"),
-                input_time.format("%H:%M %p")
-            )
-            .into()
-        }
-    }
-
-    pub fn set(&mut self, created_at: Timestamp) {
-        self.0 = created_at
-    }
-}
 
 pub struct Room {
     pub id: u64,
@@ -68,18 +14,12 @@ pub struct Room {
     pub members: Vec<NostrProfile>, // Extract from event's tags
     pub last_seen: LastSeen,
     pub is_group: bool,
-    pub new_messages: Vec<Event>, // Hold all new messages
+    pub new_messages: Entity<Vec<Event>>, // Hold all new messages
 }
 
 impl PartialEq for Room {
     fn eq(&self, other: &Self) -> bool {
-        let mut pubkeys: Vec<PublicKey> = self.members.iter().map(|m| m.public_key()).collect();
-        pubkeys.push(self.owner.public_key());
-
-        let mut pubkeys2: Vec<PublicKey> = other.members.iter().map(|m| m.public_key()).collect();
-        pubkeys2.push(other.owner.public_key());
-
-        compare(&pubkeys, &pubkeys2)
+        compare(&self.pubkeys(), &other.pubkeys())
     }
 }
 
@@ -90,7 +30,9 @@ impl Room {
         members: Vec<NostrProfile>,
         title: Option<SharedString>,
         last_seen: LastSeen,
+        cx: &mut App,
     ) -> Self {
+        let new_messages = cx.new(|_| Vec::new());
         let is_group = members.len() > 1;
         let title = if title.is_none() {
             Some(random_name(2).into())
@@ -105,12 +47,12 @@ impl Room {
             title,
             last_seen,
             is_group,
-            new_messages: vec![],
+            new_messages,
         }
     }
 
     /// Convert nostr event to room
-    pub fn parse(event: &Event) -> Room {
+    pub fn parse(event: &Event, cx: &mut App) -> Room {
         let id = room_hash(event);
         let last_seen = LastSeen(event.created_at);
 
@@ -133,7 +75,7 @@ impl Room {
             None
         };
 
-        Self::new(id, owner, members, title, last_seen)
+        Self::new(id, owner, members, title, last_seen, cx)
     }
 
     /// Set contact's metadata by public key

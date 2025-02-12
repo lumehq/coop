@@ -1,3 +1,11 @@
+use gpui::{
+    div, prelude::FluentBuilder as _, px, AnyView, App, AppContext, Axis, Context, Element, Entity,
+    InteractiveElement as _, IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
+    Point, Render, StatefulInteractiveElement, Style, Styled as _, WeakEntity, Window,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
 use super::{DockArea, DockItem};
 use crate::{
     dock_area::{panel::PanelView, tab_panel::TabPanel},
@@ -5,14 +13,6 @@ use crate::{
     theme::{scale::ColorScaleStep, ActiveTheme as _},
     AxisExt as _, StyledExt,
 };
-use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyView, App, AppContext, Axis, Context, Element, Entity,
-    InteractiveElement as _, IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
-    Point, Render, StatefulInteractiveElement, Style, StyleRefinement, Styled as _, WeakEntity,
-    Window,
-};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 #[derive(Clone, Render)]
 struct ResizePanel;
@@ -296,6 +296,7 @@ impl Dock {
             .upgrade()
             .expect("DockArea is missing")
             .read(cx);
+
         let area_bounds = dock_area.bounds;
         let mut left_dock_size = Pixels(0.0);
         let mut right_dock_size = Pixels(0.0);
@@ -326,6 +327,7 @@ impl Dock {
             DockPlacement::Bottom => area_bounds.bottom() - mouse_position.y,
             DockPlacement::Center => unreachable!(),
         };
+
         match self.placement {
             DockPlacement::Left => {
                 let max_size = area_bounds.size.width - PANEL_MIN_SIZE - right_dock_size;
@@ -356,7 +358,7 @@ impl Render for Dock {
             return div();
         }
 
-        let cache_style = StyleRefinement::default().v_flex().size_full();
+        let cache_style = gpui::StyleRefinement::default().v_flex().size_full();
 
         div()
             .relative()

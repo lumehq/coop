@@ -12,11 +12,10 @@ use crate::{
     v_flex, AxisExt, IconName, Placement, Selectable, Sizable, StyledExt,
 };
 use gpui::{
-    div, img, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
+    div, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
     DismissEvent, DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, ObjectFit, ParentElement, Pixels, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, StyledImage, WeakEntity,
-    Window,
+    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use std::sync::Arc;
 
@@ -591,30 +590,8 @@ impl TabPanel {
                         .child(
                             div()
                                 .w_full()
-                                .flex()
-                                .items_center()
-                                .gap_1()
                                 .text_ellipsis()
                                 .text_xs()
-                                .when_some(panel.panel_facepile(cx), |this, facepill| {
-                                    this.child(
-                                        div()
-                                            .flex()
-                                            .flex_row_reverse()
-                                            .items_center()
-                                            .justify_start()
-                                            .children(facepill.into_iter().enumerate().rev().map(
-                                                |(ix, face)| {
-                                                    div().when(ix > 0, |div| div.ml_neg_1()).child(
-                                                        img(face)
-                                                            .size_4()
-                                                            .rounded_full()
-                                                            .object_fit(ObjectFit::Cover),
-                                                    )
-                                                },
-                                            )),
-                                    )
-                                })
                                 .child(panel.title(cx)),
                         )
                         .when(state.draggable, |this| {
@@ -675,7 +652,7 @@ impl TabPanel {
                 }
 
                 Some(
-                    Tab::new(("tab", ix), panel.title(cx), panel.panel_facepile(cx))
+                    Tab::new(("tab", ix), panel.title(cx))
                         .py_2()
                         .selected(active)
                         .disabled(disabled)
@@ -783,7 +760,7 @@ impl TabPanel {
                     .child(
                         active_panel
                             .view()
-                            .cached(StyleRefinement::default().v_flex().size_full()),
+                            .cached(gpui::StyleRefinement::default().v_flex().size_full()),
                     ),
             )
             .when(state.droppable, |this| {

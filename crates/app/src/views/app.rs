@@ -43,11 +43,8 @@ impl AddPanel {
     }
 }
 
-// Dock actions
 impl_internal_actions!(dock, [AddPanel]);
-
-// Account actions
-actions!(account, [OpenProfile, OpenContacts, OpenSettings, Logout]);
+actions!(account, [Logout]);
 
 pub fn init(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<AppView> {
     AppView::new(account, window, cx)
@@ -89,9 +86,6 @@ impl AppView {
             view.set_center(center_panel, window, cx);
         });
 
-        let public_key = account.public_key();
-        let window_handle = window.window_handle();
-
         // Check and auto update to the latest version
         cx.background_spawn(async move {
             // Set auto updater config
@@ -112,13 +106,17 @@ impl AppView {
         })
         .detach();
 
-        // Check user's messaging relays and determine user is ready for NIP17 or not.
-        // If not, show the setup modal and instruct user setup inbox relays
-        cx.spawn(|mut cx| async move {
+        cx.new(|cx| {
+            // Check user's messaging relays and determine user is ready for NIP17 or not.
+            // If not, show the setup modal and instruct user setup inbox relays
+            let client = get_client();
+            let public_key = account.public_key();
+            let window_handle = window.window_handle();
             let (tx, rx) = oneshot::channel::<bool>();
 
+            let this = Self { account, dock };
+
             cx.background_spawn(async move {
-                let client = get_client();
                 let filter = Filter::new()
                     .kind(Kind::InboxRelays)
                     .author(public_key)
@@ -134,53 +132,53 @@ impl AppView {
             })
             .detach();
 
-            if let Ok(is_ready) = rx.await {
-                if is_ready {
-                    //
-                } else {
-                    cx.update_window(window_handle, |_, window, cx| {
-                        let relays = cx.new(|cx| Relays::new(window, cx));
-
-                        window.open_modal(cx, move |this, window, cx| {
-                            let is_loading = relays.read(cx).loading();
-
-                            this.keyboard(false)
-                                .closable(false)
-                                .width(px(420.))
-                                .title("Your Messaging Relays is not configured")
-                                .child(relays.clone())
-                                .footer(
-                                    div()
-                                        .p_2()
-                                        .border_t_1()
-                                        .border_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::FIVE),
-                                        )
-                                        .child(
-                                            Button::new("update_inbox_relays_btn")
-                                                .label("Update")
-                                                .primary()
-                                                .bold()
-                                                .rounded(ButtonRounded::Large)
-                                                .w_full()
-                                                .loading(is_loading)
-                                                .on_click(window.listener_for(
-                                                    &relays,
-                                                    |this, _, window, cx| {
-                                                        this.update(window, cx);
-                                                    },
-                                                )),
-                                        ),
-                                )
+            cx.spawn(|this, mut cx| async move {
+                if let Ok(is_ready) = rx.await {
+                    if !is_ready {
+                        _ = cx.update_window(window_handle, |_, window, cx| {
+                            this.update(cx, |this: &mut Self, cx| {
+                                this.render_relays_setup(window, cx)
+                            })
                         });
-                    })
-                    .unwrap();
+                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
 
-        cx.new(|_| Self { account, dock })
+            this
+        })
+    }
+
+    fn render_relays_setup(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = cx.new(|cx| Relays::new(window, cx));
+
+        window.open_modal(cx, move |this, window, cx| {
+            let is_loading = relays.read(cx).loading();
+
+            this.keyboard(false)
+                .closable(false)
+                .width(px(420.))
+                .title("Your Messaging Relays is not configured")
+                .child(relays.clone())
+                .footer(
+                    div()
+                        .p_2()
+                        .border_t_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .child(
+                            Button::new("update_inbox_relays_btn")
+                                .label("Update")
+                                .primary()
+                                .bold()
+                                .rounded(ButtonRounded::Large)
+                                .w_full()
+                                .loading(is_loading)
+                                .on_click(window.listener_for(&relays, |this, _, window, cx| {
+                                    this.update(window, cx);
+                                })),
+                        ),
+                )
+        });
     }
 
     fn render_account(&self) -> impl IntoElement {
@@ -215,13 +213,14 @@ impl AppView {
 
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
         match &action.panel {
-            PanelKind::Room(id) => {
-                if let Ok(panel) = chat::init(id, window, cx) {
+            PanelKind::Room(id) => match chat::init(id, window, cx) {
+                Ok(panel) => {
                     self.dock.update(cx, |dock_area, cx| {
                         dock_area.add_panel(panel, action.position, window, cx);
                     });
                 }
-            }
+                Err(e) => window.push_notification(e.to_string(), cx),
+            },
             PanelKind::Profile => {
                 let panel = Arc::new(profile::init(self.account.clone(), window, cx));
 

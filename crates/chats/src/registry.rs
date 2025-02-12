@@ -118,7 +118,7 @@ impl ChatRegistry {
                                 let new = room_hash(&ev);
                                 // Filter all seen events
                                 if !current_rooms.iter().any(|this| this == &new) {
-                                    Some(cx.new(|_| Room::parse(&ev)))
+                                    Some(cx.new(|cx| Room::parse(&ev, cx)))
                                 } else {
                                     None
                                 }
@@ -163,11 +163,14 @@ impl ChatRegistry {
         {
             room.update(cx, |this, cx| {
                 this.last_seen.set(event.created_at);
-                this.new_messages.push(event);
+                this.new_messages.update(cx, |this, cx| {
+                    this.push(event);
+                    cx.notify();
+                });
                 cx.notify();
             });
         } else {
-            let room = cx.new(|_| Room::parse(&event));
+            let room = cx.new(|cx| Room::parse(&event, cx));
             self.rooms.insert(0, room);
             cx.notify();
         }
