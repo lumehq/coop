@@ -29,6 +29,7 @@ To install Coop, follow these steps:
    - **Windows**: Run the downloaded `.exe` installer and follow the on-screen instructions.
    - **macOS**: Open the downloaded `.dmg` file and drag Coop to your Applications folder.
    - **Ubuntu**: Run the downloaded `.deb` or `.AppImage` installer and follow the on-screen instructions.
+   - **Arch Linux**: For `.tar.gz` packages, extract and install manually. For PKGBUILD, use `makepkg -si` to build and install.
    - **Flatpak**: Coming soon.
 
 3. **Run Coop**:

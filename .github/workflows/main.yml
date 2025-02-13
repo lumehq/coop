@@ -20,7 +20,7 @@ jobs:
       - name: create draft release
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: release draft ${{ env.CN_APPLICATION }} --framework packager
+          command: cd crates/app && release draft ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
 
   build:
