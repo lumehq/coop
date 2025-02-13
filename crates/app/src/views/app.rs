@@ -188,7 +188,7 @@ impl AppView {
             this.keyboard(false)
                 .closable(false)
                 .width(px(420.))
-                .title("Your Messaging Relays is not configured")
+                .title("Your Messaging Relays are not configured")
                 .child(relays.clone())
                 .footer(
                     div()

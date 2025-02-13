@@ -66,41 +66,43 @@ impl Relays {
 
         self.set_loading(true, cx);
 
-        cx.spawn(|this, mut cx| async move {
-            let (tx, rx) = oneshot::channel();
+        let client = get_client();
+        let (tx, rx) = oneshot::channel();
 
-            cx.background_spawn(async move {
-                let client = get_client();
-                let signer = client.signer().await.unwrap();
-                let public_key = signer.get_public_key().await.unwrap();
+        cx.background_spawn(async move {
+            let signer = client.signer().await.expect("Signer is required");
+            let public_key = signer
+                .get_public_key()
+                .await
+                .expect("Cannot get public key");
 
-                let tags: Vec<Tag> = relays
-                    .into_iter()
-                    .map(|relay| Tag::custom(TagKind::Relay, vec![relay.to_string()]))
-                    .collect();
+            let tags: Vec<Tag> = relays
+                .into_iter()
+                .map(|relay| Tag::custom(TagKind::Relay, vec![relay.to_string()]))
+                .collect();
 
-                let event = EventBuilder::new(Kind::InboxRelays, "")
-                    .tags(tags)
-                    .build(public_key)
-                    .sign(&signer)
-                    .await
-                    .unwrap();
-
-                if let Ok(output) = client.send_event(&event).await {
-                    _ = tx.send(output.val);
-                };
-            })
-            .detach();
-
-            if rx.await.is_ok() {
-                cx.update_window(window_handle, |_, window, cx| {
-                    window.close_modal(cx);
-                    this.update(cx, |this, cx| {
-                        this.set_loading(false, cx);
-                    })
-                    .unwrap();
-                })
+            let event = EventBuilder::new(Kind::InboxRelays, "")
+                .tags(tags)
+                .build(public_key)
+                .sign(&signer)
+                .await
                 .unwrap();
+
+            if let Ok(output) = client.send_event(&event).await {
+                _ = tx.send(output.val);
+            };
+        })
+        .detach();
+
+        cx.spawn(|this, mut cx| async move {
+            if rx.await.is_ok() {
+                _ = cx.update_window(window_handle, |_, window, cx| {
+                    _ = this.update(cx, |this, cx| {
+                        this.set_loading(false, cx);
+                    });
+
+                    window.close_modal(cx);
+                });
             }
         })
         .detach();
