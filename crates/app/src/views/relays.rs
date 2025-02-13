@@ -12,6 +12,8 @@ use ui::{
     ContextModal, IconName, Sizable,
 };
 
+const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
+
 pub struct Relays {
     relays: Entity<Vec<Url>>,
     input: Entity<TextInput>,
@@ -20,12 +22,20 @@ pub struct Relays {
 }
 
 impl Relays {
-    pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+    pub fn new(
+        relays: Option<Vec<String>>,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) -> Self {
         let relays = cx.new(|_| {
-            vec![
-                Url::parse("wss://auth.nostr1.com").unwrap(),
-                Url::parse("wss://relay.0xchat.com").unwrap(),
-            ]
+            if let Some(value) = relays {
+                value.into_iter().map(|v| Url::parse(&v).unwrap()).collect()
+            } else {
+                vec![
+                    Url::parse("wss://auth.nostr1.com").unwrap(),
+                    Url::parse("wss://relay.0xchat.com").unwrap(),
+                ]
+            }
         });
 
         let input = cx.new(|cx| {
@@ -136,8 +146,6 @@ impl Relays {
 
 impl Render for Relays {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let msg = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
-
         div()
             .track_focus(&self.focus_handle)
             .flex()
@@ -148,7 +156,7 @@ impl Render for Relays {
                     .px_2()
                     .text_xs()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(msg),
+                    .child(MESSAGE),
             )
             .child(
                 div()

@@ -4,8 +4,9 @@ use common::{
     profile::NostrProfile,
 };
 use gpui::{
-    actions, div, img, impl_internal_actions, px, App, AppContext, Axis, Context, Entity,
-    InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled, StyledImage, Window,
+    actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
+    Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
+    StyledImage, Window,
 };
 use log::info;
 use nostr_sdk::prelude::*;
@@ -17,7 +18,7 @@ use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
     popup_menu::PopupMenuExt,
-    theme::{scale::ColorScaleStep, ActiveTheme},
+    theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
     ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
@@ -52,6 +53,7 @@ pub fn init(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<
 
 pub struct AppView {
     account: NostrProfile,
+    relays: Entity<Option<Vec<String>>>,
     dock: Entity<DockArea>,
 }
 
@@ -107,14 +109,21 @@ impl AppView {
         .detach();
 
         cx.new(|cx| {
+            let public_key = account.public_key();
+            let relays = cx.new(|_| None);
+            let async_relays = relays.downgrade();
+
             // Check user's messaging relays and determine user is ready for NIP17 or not.
             // If not, show the setup modal and instruct user setup inbox relays
             let client = get_client();
-            let public_key = account.public_key();
             let window_handle = window.window_handle();
-            let (tx, rx) = oneshot::channel::<bool>();
+            let (tx, rx) = oneshot::channel::<Option<Vec<String>>>();
 
-            let this = Self { account, dock };
+            let this = Self {
+                account,
+                relays,
+                dock,
+            };
 
             cx.background_spawn(async move {
                 let filter = Filter::new()
@@ -122,22 +131,43 @@ impl AppView {
                     .author(public_key)
                     .limit(1);
 
-                let is_ready = if let Ok(events) = client.database().query(filter).await {
-                    events.first_owned().is_some()
+                let relays = if let Ok(events) = client.database().query(filter).await {
+                    if let Some(event) = events.first_owned() {
+                        Some(
+                            event
+                                .tags
+                                .filter_standardized(TagKind::Relay)
+                                .filter_map(|t| match t {
+                                    TagStandard::Relay(url) => Some(url.to_string()),
+
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                    } else {
+                        None
+                    }
                 } else {
-                    false
+                    None
                 };
 
-                _ = tx.send(is_ready);
+                _ = tx.send(relays);
             })
             .detach();
 
             cx.spawn(|this, mut cx| async move {
-                if let Ok(is_ready) = rx.await {
-                    if !is_ready {
+                if let Ok(result) = rx.await {
+                    if let Some(relays) = result {
+                        _ = cx.update(|cx| {
+                            _ = async_relays.update(cx, |this, cx| {
+                                *this = Some(relays);
+                                cx.notify();
+                            });
+                        });
+                    } else {
                         _ = cx.update_window(window_handle, |_, window, cx| {
                             this.update(cx, |this: &mut Self, cx| {
-                                this.render_relays_setup(window, cx)
+                                this.render_setup_relays(window, cx)
                             })
                         });
                     }
@@ -149,8 +179,8 @@ impl AppView {
         })
     }
 
-    fn render_relays_setup(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = cx.new(|cx| Relays::new(window, cx));
+    fn render_setup_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = cx.new(|cx| Relays::new(None, window, cx));
 
         window.open_modal(cx, move |this, window, cx| {
             let is_loading = relays.read(cx).loading();
@@ -179,6 +209,75 @@ impl AppView {
                         ),
                 )
         });
+    }
+
+    fn render_edit_relay(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = self.relays.read(cx).clone();
+        let view = cx.new(|cx| Relays::new(relays, window, cx));
+
+        window.open_modal(cx, move |this, window, cx| {
+            let is_loading = view.read(cx).loading();
+
+            this.width(px(420.))
+                .title("Edit your Messaging Relays")
+                .child(view.clone())
+                .footer(
+                    div()
+                        .p_2()
+                        .border_t_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .child(
+                            Button::new("update_inbox_relays_btn")
+                                .label("Update")
+                                .primary()
+                                .bold()
+                                .rounded(ButtonRounded::Large)
+                                .w_full()
+                                .loading(is_loading)
+                                .on_click(window.listener_for(&view, |this, _, window, cx| {
+                                    this.update(window, cx);
+                                })),
+                        ),
+                )
+        });
+    }
+
+    fn render_appearance_button(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        Button::new("appearance")
+            .xsmall()
+            .ghost()
+            .map(|this| {
+                if cx.theme().appearance.is_dark() {
+                    this.icon(IconName::Sun)
+                } else {
+                    this.icon(IconName::Moon)
+                }
+            })
+            .on_click(cx.listener(|_, _, window, cx| {
+                if cx.theme().appearance.is_dark() {
+                    Theme::change(Appearance::Light, Some(window), cx);
+                } else {
+                    Theme::change(Appearance::Dark, Some(window), cx);
+                }
+            }))
+    }
+
+    fn render_relays_button(
+        &self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        Button::new("relays")
+            .xsmall()
+            .ghost()
+            .icon(IconName::Relays)
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.render_edit_relay(window, cx);
+            }))
     }
 
     fn render_account(&self) -> impl IntoElement {
@@ -276,8 +375,10 @@ impl Render for AppView {
                             .flex()
                             .items_center()
                             .justify_end()
-                            .gap_1()
+                            .gap_2()
                             .px_2()
+                            .child(self.render_appearance_button(window, cx))
+                            .child(self.render_relays_button(window, cx))
                             .child(self.render_account()),
                     ),
             )

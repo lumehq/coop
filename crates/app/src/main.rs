@@ -48,6 +48,7 @@ fn main() {
         _ = client.add_relay("wss://relay.primal.net/").await;
         _ = client.add_relay("wss://user.kindpag.es/").await;
         _ = client.add_relay("wss://directory.yabu.me/").await;
+        _ = client.add_discovery_relay("wss://relaydiscovery.com").await;
 
         // Connect to all relays
         _ = client.connect().await

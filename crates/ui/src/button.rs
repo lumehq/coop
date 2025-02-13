@@ -500,7 +500,7 @@ impl ButtonVariant {
                 _ => cx.theme().accent.step(cx, ColorScaleStep::ONE),
             },
             ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
             ButtonVariant::Custom(colors) => colors.foreground,
             _ => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
         }
