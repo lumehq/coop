@@ -14,10 +14,6 @@ jobs:
   draft:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ./crates/app
-
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +22,7 @@ jobs:
         with:
           command: release draft ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
+          working-directory: ./crates/app
 
   build:
     needs: draft
