@@ -1,0 +1,75 @@
+name: Packager Release Process
+
+run-name: triggered by ${{ github.actor }}.
+on: workflow_dispatch
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CN_APPLICATION: lume/coop
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: create draft release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release draft ${{ env.CN_APPLICATION }} --framework packager
+          api-key: ${{ secrets.CN_API_KEY }}
+
+  build:
+    needs: draft
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: install cargo packager
+        run: |
+          cargo install cargo-packager --locked
+
+      - name: build packager app
+        run: |
+          cargo packager --release
+
+      - name: Move assets to workdir
+        run: |
+          mv target/release/* .
+
+      - name: upload assets
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release upload ${{ env.CN_APPLICATION }} --framework packager
+          api-key: ${{ secrets.CN_API_KEY }}
+
+  publish:
+    needs: build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: publish release
+        uses: crabnebula-dev/cloud-release@v0
+        with:
+          command: release publish ${{ env.CN_APPLICATION }} --framework packager
+          api-key: ${{ secrets.CN_API_KEY }}
