@@ -13,4 +13,6 @@ icons = [
 ]
 before-packaging-command = "cargo build --release"
 out-dir = "./target/release"
-binaries = [{ path = "Coop", main = true }]
+binaries = [
+	{ path = "coop", main = true },
+]
