@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use async_utility::tokio::sync::oneshot;
 use common::utils::{compare, room_hash, signer_public_key};
 use gpui::{App, AppContext, Context, Entity, Global};
@@ -149,6 +150,21 @@ impl ChatRegistry {
             .iter()
             .find(|model| &model.read(cx).id == id)
             .cloned()
+    }
+
+    pub fn new_room(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
+        if !self
+            .rooms
+            .iter()
+            .any(|current| compare(&current.read(cx).pubkeys(), &room.pubkeys()))
+        {
+            self.rooms.insert(0, cx.new(|_| room));
+            cx.notify();
+
+            Ok(())
+        } else {
+            Err(anyhow!("Room is existed"))
+        }
     }
 
     pub fn push_message(&mut self, event: Event, cx: &mut Context<Self>) {

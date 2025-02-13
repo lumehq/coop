@@ -19,6 +19,8 @@ impl AsRef<Metadata> for NostrProfile {
     }
 }
 
+impl Eq for NostrProfile {}
+
 impl PartialEq for NostrProfile {
     fn eq(&self, other: &Self) -> bool {
         self.public_key() == other.public_key()

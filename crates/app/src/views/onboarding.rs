@@ -1,7 +1,7 @@
 use common::{profile::NostrProfile, qr::create_qr, utils::preload};
 use gpui::{
     div, img, prelude::FluentBuilder, relative, svg, App, AppContext, ClipboardItem, Context, Div,
-    Entity, IntoElement, ParentElement, Render, Styled, Window,
+    Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use state::get_client;
@@ -17,7 +17,8 @@ use ui::{
 
 use super::app;
 
-const ALPHA_MESSAGE: &str = "Coop is in the alpha stage; it doesn't store any credentials. You will need to log in again when you relaunch.";
+const ALPHA_MESSAGE: &str =
+    "Coop is in the alpha stage of development; It may contain bugs, unfinished features, or unexpected behavior.";
 const JOIN_URL: &str = "https://start.njump.me/";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
@@ -32,6 +33,8 @@ pub struct Onboarding {
     use_connect: bool,
     use_privkey: bool,
     is_loading: bool,
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 impl Onboarding {
@@ -55,7 +58,7 @@ impl Onboarding {
 
         cx.new(|cx| {
             // Handle Enter event for nsec input
-            cx.subscribe_in(
+            let subscriptions = vec![cx.subscribe_in(
                 &nsec_input,
                 window,
                 move |this: &mut Self, _, input_event, window, cx| {
@@ -63,8 +66,7 @@ impl Onboarding {
                         this.privkey_login(window, cx);
                     }
                 },
-            )
-            .detach();
+            )];
 
             Self {
                 app_keys,
@@ -74,6 +76,7 @@ impl Onboarding {
                 use_connect: false,
                 use_privkey: false,
                 is_loading: false,
+                subscriptions,
             }
         })
     }

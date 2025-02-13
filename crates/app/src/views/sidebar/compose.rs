@@ -1,18 +1,18 @@
-use chats::registry::ChatRegistry;
+use chats::{registry::ChatRegistry, room::Room};
 use common::{
-    constants::FAKE_SIG,
     profile::NostrProfile,
     utils::{random_name, signer_public_key},
 };
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
+use smol::Timer;
 use state::get_client;
-use std::{collections::HashSet, str::FromStr, time::Duration};
+use std::{collections::HashSet, time::Duration};
 use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded},
@@ -21,6 +21,9 @@ use ui::{
     ContextModal, Icon, IconName, Sizable, Size, StyledExt,
 };
 
+const ALERT: &str =
+    "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
+
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 struct SelectContact(PublicKey);
 
@@ -28,26 +31,23 @@ impl_internal_actions!(contacts, [SelectContact]);
 
 pub struct Compose {
     title_input: Entity<TextInput>,
-    message_input: Entity<TextInput>,
     user_input: Entity<TextInput>,
     contacts: Entity<Vec<NostrProfile>>,
     selected: Entity<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
     is_loading: bool,
     is_submitting: bool,
+    error_message: Entity<Option<SharedString>>,
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         let contacts = cx.new(|_| Vec::new());
         let selected = cx.new(|_| HashSet::new());
-
-        let user_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(ui::Size::Small)
-                .small()
-                .placeholder("npub1...")
-        });
+        let error_message = cx.new(|_| None);
+        let mut subscriptions = Vec::new();
 
         let title_input = cx.new(|cx| {
             let name = random_name(2);
@@ -60,15 +60,15 @@ impl Compose {
             input
         });
 
-        let message_input = cx.new(|cx| {
+        let user_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .appearance(false)
-                .text_size(Size::XSmall)
-                .placeholder("Hello...")
+                .text_size(ui::Size::Small)
+                .small()
+                .placeholder("npub1...")
         });
 
-        // Handle Enter event for message input
-        cx.subscribe_in(
+        // Handle Enter event for user input
+        subscriptions.push(cx.subscribe_in(
             &user_input,
             window,
             move |this, _, input_event, window, cx| {
@@ -76,155 +76,118 @@ impl Compose {
                     this.add(window, cx);
                 }
             },
-        )
+        ));
+
+        let client = get_client();
+        let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
+
+        cx.background_spawn(async move {
+            if let Ok(public_key) = signer_public_key(client).await {
+                if let Ok(profiles) = client.database().contacts(public_key).await {
+                    let members: Vec<NostrProfile> = profiles
+                        .into_iter()
+                        .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
+                        .collect();
+
+                    _ = tx.send(members);
+                }
+            }
+        })
         .detach();
 
-        cx.spawn(|this, mut cx| async move {
-            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
-
-            cx.background_executor()
-                .spawn(async move {
-                    let client = get_client();
-                    if let Ok(public_key) = signer_public_key(client).await {
-                        if let Ok(profiles) = client.database().contacts(public_key).await {
-                            let members: Vec<NostrProfile> = profiles
-                                .into_iter()
-                                .map(|profile| {
-                                    NostrProfile::new(profile.public_key(), profile.metadata())
-                                })
-                                .collect();
-
-                            _ = tx.send(members);
-                        }
-                    }
-                })
-                .detach();
-
+        cx.spawn(|this, cx| async move {
             if let Ok(contacts) = rx.await {
-                if let Some(view) = this.upgrade() {
-                    _ = cx.update_entity(&view, |this, cx| {
+                _ = cx.update(|cx| {
+                    this.update(cx, |this, cx| {
                         this.contacts.update(cx, |this, cx| {
                             this.extend(contacts);
                             cx.notify();
                         });
-                        cx.notify();
-                    });
-                }
+                    })
+                });
             }
         })
         .detach();
 
         Self {
             title_input,
-            message_input,
             user_input,
             contacts,
             selected,
+            error_message,
             is_loading: false,
             is_submitting: false,
             focus_handle: cx.focus_handle(),
+            subscriptions,
         }
     }
 
     pub fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let selected = self.selected.read(cx).to_owned();
-        let message = self.message_input.read(cx).text();
-
-        if selected.is_empty() {
-            window.push_notification("You need to add at least 1 receiver", cx);
-            return;
-        }
-
-        if message.is_empty() {
-            window.push_notification("Message is required", cx);
+        if self.selected.read(cx).is_empty() {
+            self.set_error(Some("You need to add at least 1 receiver".into()), cx);
             return;
         }
 
         // Show loading spinner
         self.set_submitting(true, cx);
 
-        // Get message from user's input
-        let content = message.to_string();
-
-        // Get room title from user's input
-        let title = Tag::custom(
-            TagKind::Subject,
-            vec![self.title_input.read(cx).text().to_string()],
-        );
-
         // Get all pubkeys
-        let mut pubkeys: Vec<PublicKey> = selected.iter().copied().collect();
+        let pubkeys: Vec<PublicKey> = self.selected.read(cx).iter().copied().collect();
 
         // Convert selected pubkeys into Nostr tags
-        let mut tag_list: Vec<Tag> = selected.iter().map(|pk| Tag::public_key(*pk)).collect();
-        tag_list.push(title);
+        let mut tag_list: Vec<Tag> = pubkeys.iter().map(|pk| Tag::public_key(*pk)).collect();
+
+        // Add subject if it is present
+        if !self.title_input.read(cx).text().is_empty() {
+            tag_list.push(Tag::custom(
+                TagKind::Subject,
+                vec![self.title_input.read(cx).text().to_string()],
+            ));
+        }
 
         let tags = Tags::new(tag_list);
+        let client = get_client();
         let window_handle = window.window_handle();
+        let (tx, rx) = oneshot::channel::<Event>();
+
+        cx.background_spawn(async move {
+            let signer = client.signer().await.expect("Signer is required");
+            // [IMPORTANT]
+            // Make sure this event is never send,
+            // this event existed just use for convert to Coop's Chat Room later.
+            if let Ok(event) = EventBuilder::private_msg_rumor(*pubkeys.last().unwrap(), "")
+                .tags(tags)
+                .sign(&signer)
+                .await
+            {
+                _ = tx.send(event)
+            };
+        })
+        .detach();
 
         cx.spawn(|this, mut cx| async move {
-            let (tx, rx) = oneshot::channel::<Event>();
-
-            cx.background_spawn(async move {
-                let client = get_client();
-                let public_key = signer_public_key(client).await.unwrap();
-                let mut event: Option<Event> = None;
-
-                pubkeys.push(public_key);
-
-                for pubkey in pubkeys.iter() {
-                    if let Ok(output) = client
-                        .send_private_msg(*pubkey, &content, tags.clone())
-                        .await
-                    {
-                        if pubkey == &public_key && event.is_none() {
-                            if let Ok(Some(ev)) = client.database().event_by_id(&output.val).await {
-                                if let Ok(UnwrappedGift { mut rumor, .. }) =
-                                    client.unwrap_gift_wrap(&ev).await
-                                {
-                                    // Compute event id if not exist
-                                    rumor.ensure_id();
-
-                                    if let Some(id) = rumor.id {
-                                        let ev = Event::new(
-                                            id,
-                                            rumor.pubkey,
-                                            rumor.created_at,
-                                            rumor.kind,
-                                            rumor.tags,
-                                            rumor.content,
-                                            Signature::from_str(FAKE_SIG).unwrap(),
-                                        );
-
-                                        event = Some(ev);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let Some(event) = event {
-                    _ = tx.send(event);
-                }
-            })
-            .detach();
-
             if let Ok(event) = rx.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    if let Some(chats) = ChatRegistry::global(cx) {
-                        chats.update(cx, |this, cx| {
-                            this.push_message(event, cx);
-                        });
-                    }
-
                     // Stop loading spinner
                     _ = this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
                     });
 
-                    // Close modal
-                    window.close_modal(cx);
+                    if let Some(chats) = ChatRegistry::global(cx) {
+                        let room = Room::parse(&event, cx);
+
+                        chats.update(cx, |state, cx| match state.new_room(room, cx) {
+                            Ok(_) => {
+                                // TODO: open chat panel
+                                window.close_modal(cx);
+                            }
+                            Err(e) => {
+                                _ = this.update(cx, |this, cx| {
+                                    this.set_error(Some(e.to_string().into()), cx);
+                                });
+                            }
+                        });
+                    }
                 });
             }
         })
@@ -303,8 +266,27 @@ impl Compose {
             .detach();
         } else {
             self.set_loading(false, cx);
-            window.push_notification("Public Key is not valid", cx);
+            self.set_error(Some("Public Key is not valid".into()), cx);
         }
+    }
+
+    fn set_error(&mut self, error: Option<SharedString>, cx: &mut Context<Self>) {
+        self.error_message.update(cx, |this, cx| {
+            *this = error;
+            cx.notify();
+        });
+
+        // Dismiss error after 2 seconds
+        cx.spawn(|this, cx| async move {
+            Timer::after(Duration::from_secs(2)).await;
+
+            _ = cx.update(|cx| {
+                this.update(cx, |this, cx| {
+                    this.set_error(None, cx);
+                })
+            });
+        })
+        .detach();
     }
 
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
@@ -336,9 +318,6 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let msg =
-            "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
-
         div()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_action_select))
@@ -350,36 +329,30 @@ impl Render for Compose {
                     .px_2()
                     .text_xs()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(msg),
+                    .child(ALERT),
             )
+            .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
+                this.child(
+                    div()
+                        .px_2()
+                        .text_xs()
+                        .text_color(cx.theme().danger)
+                        .child(msg.clone()),
+                )
+            })
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .h_10()
-                            .px_2()
-                            .border_b_1()
-                            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(div().text_xs().font_semibold().child("Title:"))
-                            .child(self.title_input.clone()),
-                    )
-                    .child(
-                        div()
-                            .h_10()
-                            .px_2()
-                            .border_b_1()
-                            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(div().text_xs().font_semibold().child("Message:"))
-                            .child(self.message_input.clone()),
-                    ),
+                div().flex().flex_col().child(
+                    div()
+                        .h_10()
+                        .px_2()
+                        .border_b_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(div().text_xs().font_semibold().child("Title:"))
+                        .child(self.title_input.clone()),
+                ),
             )
             .child(
                 div()

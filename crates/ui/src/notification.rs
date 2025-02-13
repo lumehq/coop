@@ -97,6 +97,7 @@ impl From<(NotificationType, SharedString)> for Notification {
 }
 
 struct DefaultIdType;
+
 impl Notification {
     /// Create a new notification with the given content.
     ///
