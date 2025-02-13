@@ -6,7 +6,7 @@
     </a>
     <img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/lumehq/coop">
     <img alt="GitHub issues" src="https://img.shields.io/github/issues-raw/lumehq/coop">
-    <img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/lumehq/cop">
+    <img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/lumehq/coop">
 </p>
 
 Coop is a cross-platform Nostr client designed for secure communication focus on simplicity and customizability.
