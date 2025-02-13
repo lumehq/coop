@@ -14,13 +14,17 @@ jobs:
   draft:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ./crates/app
+
     steps:
       - uses: actions/checkout@v4
 
       - name: create draft release
         uses: crabnebula-dev/cloud-release@v0
         with:
-          command: cd crates/app && release draft ${{ env.CN_APPLICATION }} --framework packager
+          command: release draft ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
 
   build:
