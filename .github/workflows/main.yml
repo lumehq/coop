@@ -60,6 +60,7 @@ jobs:
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
+          working-directory: ./crates/app
 
   publish:
     needs: build
@@ -74,3 +75,4 @@ jobs:
         with:
           command: release publish ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
+          working-directory: ./crates/app

@@ -8,9 +8,11 @@ use common::{
     profile::NostrProfile,
 };
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, AsyncApp, Bounds, KeyBinding, Menu,
-    MenuItem, SharedString, TitlebarOptions, WindowBounds, WindowKind, WindowOptions,
+    actions, px, size, App, AppContext, Application, AsyncApp, Bounds, KeyBinding, Menu, MenuItem,
+    WindowBounds, WindowKind, WindowOptions,
 };
+#[cfg(not(target_os = "linux"))]
+use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use log::{error, info};
