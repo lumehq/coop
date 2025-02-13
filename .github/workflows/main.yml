@@ -1,6 +1,6 @@
 name: Packager Release Process
 
-run-name: triggered by ${{ github.actor }}.
+run-name: Triggered by ${{ github.actor }}.
 on: workflow_dispatch
 
 concurrency:
@@ -17,18 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: create draft release
+      - name: Create draft release
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release draft ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
-          working-directory: ./crates/app
 
   build:
     needs: draft
 
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
@@ -43,7 +42,7 @@ jobs:
           toolchain: stable
           cache: true
 
-      - name: install dependencies (ubuntu only)
+      - name: Install dependencies (ubuntu only)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -53,7 +52,7 @@ jobs:
         run: |
           cargo install cargo-packager --locked
 
-      - name: build packager app
+      - name: Build packager app
         run: |
           cargo packager --release
 
@@ -61,12 +60,11 @@ jobs:
         run: |
           mv target/release/* .
 
-      - name: upload assets
+      - name: Upload assets
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release upload ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
-          working-directory: ./crates/app
 
   publish:
     needs: build
@@ -76,9 +74,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: publish release
+      - name: Publish release
         uses: crabnebula-dev/cloud-release@v0
         with:
           command: release publish ${{ env.CN_APPLICATION }} --framework packager
           api-key: ${{ secrets.CN_API_KEY }}
-          working-directory: ./dist
