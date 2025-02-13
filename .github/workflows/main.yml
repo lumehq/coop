@@ -43,6 +43,12 @@ jobs:
           toolchain: stable
           cache: true
 
+      - name: install dependencies (ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          apt-get update
+          apt-install -y gcc g++ libasound2-dev libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libssl-dev libzstd-dev libvulkan1 libgit2-dev make cmake clang jq netcat-openbsd git curl gettext-base elfutils libsqlite3-dev musl-tools musl-dev build-essential
+
       - name: install cargo packager
         run: |
           cargo install cargo-packager --locked
