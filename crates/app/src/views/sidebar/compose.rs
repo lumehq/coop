@@ -145,7 +145,7 @@ impl Compose {
             ));
         }
 
-        let tags = Tags::new(tag_list);
+        let tags = Tags::from_list(tag_list);
         let client = get_client();
         let window_handle = window.window_handle();
         let (tx, rx) = oneshot::channel::<Event>();

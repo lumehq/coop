@@ -37,6 +37,11 @@ pub enum Signal {
 }
 
 fn main() {
+    // Issue: https://github.com/snapview/tokio-tungstenite/issues/353
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // Initialize Nostr client
     initialize_client();
 
