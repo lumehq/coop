@@ -122,7 +122,9 @@ impl Chat {
                 },
             )];
 
-            let list_state = ListState::new(0, ListAlignment::Bottom, px(1024.), {
+            // Initialize list state
+            // [item_count] always equal to 1 at the beginning
+            let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.), {
                 let this = cx.entity().downgrade();
                 move |ix, window, cx| {
                     this.update(cx, |this, cx| {
