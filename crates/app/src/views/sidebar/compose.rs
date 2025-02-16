@@ -1,3 +1,4 @@
+use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
 use common::{
     profile::NostrProfile,
@@ -71,9 +72,13 @@ impl Compose {
         subscriptions.push(cx.subscribe_in(
             &user_input,
             window,
-            move |this, _, input_event, window, cx| {
+            move |this, input, input_event, window, cx| {
                 if let InputEvent::PressEnter = input_event {
-                    this.add(window, cx);
+                    if input.read(cx).text().contains("@") {
+                        this.add_nip05(window, cx);
+                    } else {
+                        this.add_npub(window, cx)
+                    }
                 }
             },
         ));
@@ -206,68 +211,133 @@ impl Compose {
         self.is_submitting
     }
 
-    fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn add_npub(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let window_handle = window.window_handle();
         let content = self.user_input.read(cx).text().to_string();
 
         // Show loading spinner
         self.set_loading(true, cx);
 
-        if let Ok(public_key) = PublicKey::parse(&content) {
-            if self
-                .contacts
-                .read(cx)
-                .iter()
-                .any(|c| c.public_key() == public_key)
-            {
-                self.set_loading(false, cx);
-                return;
-            };
+        let Ok(public_key) = PublicKey::parse(&content) else {
+            self.set_loading(false, cx);
+            self.set_error(Some("Public Key is not valid".into()), cx);
+            return;
+        };
 
-            cx.spawn(|this, mut cx| async move {
-                let (tx, rx) = oneshot::channel::<Metadata>();
+        if self
+            .contacts
+            .read(cx)
+            .iter()
+            .any(|c| c.public_key() == public_key)
+        {
+            self.set_loading(false, cx);
+            return;
+        };
 
-                cx.background_spawn(async move {
-                    let client = get_client();
+        let client = get_client();
+        let (tx, rx) = oneshot::channel::<Metadata>();
+
+        cx.background_spawn(async move {
+            let metadata = (client
+                .fetch_metadata(public_key, Duration::from_secs(2))
+                .await)
+                .unwrap_or_default();
+
+            _ = tx.send(metadata);
+        })
+        .detach();
+
+        cx.spawn(|this, mut cx| async move {
+            if let Ok(metadata) = rx.await {
+                _ = cx.update_window(window_handle, |_, window, cx| {
+                    _ = this.update(cx, |this, cx| {
+                        this.contacts.update(cx, |this, cx| {
+                            this.insert(0, NostrProfile::new(public_key, metadata));
+                            cx.notify();
+                        });
+
+                        this.selected.update(cx, |this, cx| {
+                            this.insert(public_key);
+                            cx.notify();
+                        });
+
+                        // Stop loading indicator
+                        this.set_loading(false, cx);
+
+                        // Clear input
+                        this.user_input.update(cx, |this, cx| {
+                            this.set_text("", window, cx);
+                            cx.notify();
+                        });
+                    });
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn add_nip05(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let window_handle = window.window_handle();
+        let content = self.user_input.read(cx).text().to_string();
+
+        // Show loading spinner
+        self.set_loading(true, cx);
+
+        let client = get_client();
+        let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
+
+        cx.background_spawn(async move {
+            spawn(async move {
+                if let Ok(profile) = nip05::profile(&content, None).await {
                     let metadata = (client
-                        .fetch_metadata(public_key, Duration::from_secs(3))
+                        .fetch_metadata(profile.public_key, Duration::from_secs(2))
                         .await)
                         .unwrap_or_default();
 
-                    _ = tx.send(metadata);
-                })
-                .detach();
+                    _ = tx.send(Some(NostrProfile::new(profile.public_key, metadata)));
+                } else {
+                    _ = tx.send(None);
+                }
+            });
+        })
+        .detach();
 
-                if let Ok(metadata) = rx.await {
-                    _ = cx.update_window(window_handle, |_, window, cx| {
-                        _ = this.update(cx, |this, cx| {
-                            this.contacts.update(cx, |this, cx| {
-                                this.insert(0, NostrProfile::new(public_key, metadata));
-                                cx.notify();
-                            });
+        cx.spawn(|this, mut cx| async move {
+            if let Ok(Some(profile)) = rx.await {
+                _ = cx.update_window(window_handle, |_, window, cx| {
+                    _ = this.update(cx, |this, cx| {
+                        let public_key = profile.public_key();
 
-                            this.selected.update(cx, |this, cx| {
-                                this.insert(public_key);
-                                cx.notify();
-                            });
+                        this.contacts.update(cx, |this, cx| {
+                            this.insert(0, profile);
+                            cx.notify();
+                        });
 
-                            // Stop loading indicator
-                            this.set_loading(false, cx);
+                        this.selected.update(cx, |this, cx| {
+                            this.insert(public_key);
+                            cx.notify();
+                        });
 
-                            // Clear input
-                            this.user_input.update(cx, |this, cx| {
-                                this.set_text("", window, cx);
-                                cx.notify();
-                            });
+                        // Stop loading indicator
+                        this.set_loading(false, cx);
+
+                        // Clear input
+                        this.user_input.update(cx, |this, cx| {
+                            this.set_text("", window, cx);
+                            cx.notify();
                         });
                     });
-                }
-            })
-            .detach();
-        } else {
-            self.set_loading(false, cx);
-            self.set_error(Some("Public Key is not valid".into()), cx);
-        }
+                });
+            } else {
+                _ = cx.update_window(window_handle, |_, _, cx| {
+                    _ = this.update(cx, |this, cx| {
+                        this.set_loading(false, cx);
+                        this.set_error(Some("NIP-05 Address is not valid".into()), cx);
+                    });
+                });
+            }
+        })
+        .detach();
     }
 
     fn set_error(&mut self, error: Option<SharedString>, cx: &mut Context<Self>) {
@@ -372,9 +442,13 @@ impl Render for Compose {
                                     .small()
                                     .rounded(ButtonRounded::Size(px(9999.)))
                                     .loading(self.is_loading)
-                                    .on_click(
-                                        cx.listener(|this, _, window, cx| this.add(window, cx)),
-                                    ),
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        if this.user_input.read(cx).text().contains("@") {
+                                            this.add_nip05(window, cx);
+                                        } else {
+                                            this.add_npub(window, cx);
+                                        }
+                                    })),
                             )
                             .child(self.user_input.clone()),
                     )
