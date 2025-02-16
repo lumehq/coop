@@ -29,6 +29,5 @@ rust-embed.workspace = true
 smol.workspace = true
 
 rustls = "0.23.23"
-cargo-packager-updater = "0.2.2"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
 log = "0.4"

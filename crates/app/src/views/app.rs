@@ -1,14 +1,9 @@
-use cargo_packager_updater::{check_update, semver::Version, url::Url};
-use common::{
-    constants::{UPDATER_PUBKEY, UPDATER_URL},
-    profile::NostrProfile,
-};
+use common::profile::NostrProfile;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
     StyledImage, Window,
 };
-use log::info;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use state::get_client;
@@ -87,26 +82,6 @@ impl AppView {
             view.set_left_dock(left_panel, Some(px(240.)), true, window, cx);
             view.set_center(center_panel, window, cx);
         });
-
-        // Check and auto update to the latest version
-        cx.background_spawn(async move {
-            // Set auto updater config
-            let config = cargo_packager_updater::Config {
-                endpoints: vec![Url::parse(UPDATER_URL).expect("Failed to parse UPDATER URL")],
-                pubkey: String::from(UPDATER_PUBKEY),
-                ..Default::default()
-            };
-
-            // Run auto updater
-            if let Ok(current_version) = Version::parse(env!("CARGO_PKG_VERSION")) {
-                if let Ok(Some(update)) = check_update(current_version, config) {
-                    if update.download_and_install().is_ok() {
-                        info!("Update installed")
-                    }
-                }
-            }
-        })
-        .detach();
 
         cx.new(|cx| {
             let public_key = account.public_key();
