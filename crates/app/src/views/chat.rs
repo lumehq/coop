@@ -424,7 +424,7 @@ impl Chat {
         };
 
         // Get message
-        let mut content = self.input.read(cx).text().to_string();
+        let mut content = self.input.read(cx).text();
 
         // Get all attaches and merge its with message
         if let Some(attaches) = self.attaches.read(cx).as_ref() {
@@ -434,7 +434,7 @@ impl Chat {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            content = format!("{}\n{}", content, merged)
+            content = format!("{}\n{}", content, merged).into()
         }
 
         if content.is_empty() {
@@ -454,7 +454,7 @@ impl Chat {
 
         let room = model.read(cx);
         let pubkeys = room.pubkeys();
-        let async_content = content.clone();
+        let async_content = content.clone().to_string();
         let tags: Vec<Tag> = room
             .pubkeys()
             .iter()
@@ -487,7 +487,7 @@ impl Chat {
         cx.spawn(|this, mut cx| async move {
             _ = cx.update_window(window_handle, |_, window, cx| {
                 _ = this.update(cx, |this, cx| {
-                    this.push_message(content.clone(), window, cx);
+                    this.push_message(content.to_string(), window, cx);
                 });
             });
 

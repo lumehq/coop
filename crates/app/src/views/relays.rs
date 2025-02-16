@@ -76,19 +76,30 @@ impl Relays {
                 .await
                 .expect("Cannot get public key");
 
+            // If user didn't have any NIP-65 relays, add default ones
+            // TODO: Is this really necessary?
+            if let Ok(relay_list) = client.database().relay_list(public_key).await {
+                if relay_list.is_empty() {
+                    let builder = EventBuilder::relay_list(vec![
+                        (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
+                        (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
+                        (RelayUrl::parse("wss://nos.lol/").unwrap(), None),
+                    ]);
+
+                    if let Err(e) = client.send_event_builder(builder).await {
+                        log::error!("Failed to send relay list event: {}", e)
+                    }
+                }
+            }
+
             let tags: Vec<Tag> = relays
                 .into_iter()
                 .map(|relay| Tag::custom(TagKind::Relay, vec![relay.to_string()]))
                 .collect();
 
-            let event = EventBuilder::new(Kind::InboxRelays, "")
-                .tags(tags)
-                .build(public_key)
-                .sign(&signer)
-                .await
-                .unwrap();
+            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
 
-            if let Ok(output) = client.send_event(&event).await {
+            if let Ok(output) = client.send_event_builder(builder).await {
                 _ = tx.send(output.val);
             };
         })
