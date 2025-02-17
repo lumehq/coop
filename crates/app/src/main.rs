@@ -292,6 +292,8 @@ fn main() {
         cx.open_window(opts, |window, cx| {
             window.set_window_title(APP_NAME);
             window.set_app_id(APP_ID);
+
+            #[cfg(not(target_os = "linux"))]
             window
                 .observe_window_appearance(|window, cx| {
                     Theme::sync_system_appearance(Some(window), cx);
@@ -405,6 +407,8 @@ async fn restore_window(profile: Option<NostrProfile>, cx: &mut AsyncApp) -> Res
         _ = cx.open_window(opts, |window, cx| {
             window.set_window_title(APP_NAME);
             window.set_app_id(APP_ID);
+
+            #[cfg(not(target_os = "linux"))]
             window
                 .observe_window_appearance(|window, cx| {
                     Theme::sync_system_appearance(Some(window), cx);
