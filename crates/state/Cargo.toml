@@ -6,5 +6,4 @@ publish = false
 
 [dependencies]
 nostr-sdk.workspace = true
-tokio.workspace = true
 dirs.workspace = true

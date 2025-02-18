@@ -16,13 +16,14 @@ pub async fn signer_public_key(client: &Client) -> anyhow::Result<PublicKey, any
 }
 
 pub async fn preload(client: &Client, public_key: PublicKey) -> anyhow::Result<(), anyhow::Error> {
+    let sync_opts = SyncOptions::default();
     let subscription = Filter::new()
         .kind(Kind::ContactList)
         .author(public_key)
         .limit(1);
 
     // Get contact list
-    _ = client.sync(subscription, &SyncOptions::default()).await;
+    _ = client.sync(subscription, &sync_opts).await;
 
     let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
     let new_message_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);

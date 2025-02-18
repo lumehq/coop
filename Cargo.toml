@@ -15,11 +15,15 @@ nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
 nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"lmdb",
-	"all-nips",
+	"nip96",
+	"nip59",
+	"nip49",
+	"nip44",
+	"nip05",
 ] }
 
 smol = "2"
-tokio = { version = "1", features = ["full"] }
+oneshot = { git = "https://github.com/faern/oneshot" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dirs = "5.0"
@@ -30,6 +34,7 @@ tracing = "0.1.40"
 anyhow = "1.0.44"
 smallvec = "1.13.2"
 rust-embed = "8.5.0"
+log = "0.4"
 
 [profile.release]
 strip = true

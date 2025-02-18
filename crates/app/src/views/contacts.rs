@@ -6,7 +6,6 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use state::get_client;
-use tokio::sync::oneshot;
 use ui::{
     button::Button,
     dock_area::panel::{Panel, PanelEvent},

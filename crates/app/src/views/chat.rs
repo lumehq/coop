@@ -19,7 +19,6 @@ use nostr_sdk::prelude::*;
 use smol::fs;
 use state::get_client;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},

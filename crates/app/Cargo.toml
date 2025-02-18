@@ -17,7 +17,6 @@ chats = { path = "../chats" }
 gpui.workspace = true
 reqwest_client.workspace = true
 
-tokio.workspace = true
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
@@ -26,8 +25,10 @@ serde_json.workspace = true
 itertools.workspace = true
 dirs.workspace = true
 rust-embed.workspace = true
+log.workspace = true
 smol.workspace = true
+oneshot.workspace = true
 
 rustls = "0.23.23"
+futures= "0.3"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
-log = "0.4"

@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use async_utility::tokio::sync::oneshot;
 use common::utils::{compare, room_hash, signer_public_key};
 use gpui::{App, AppContext, Context, Entity, Global};
 use itertools::Itertools;
@@ -31,8 +30,10 @@ impl ChatRegistry {
     pub fn register(cx: &mut App) -> Entity<Self> {
         Self::global(cx).unwrap_or_else(|| {
             let entity = cx.new(Self::new);
+
             // Set global state
             cx.set_global(GlobalChatRegistry(entity.clone()));
+
             // Observe and load metadata for any new rooms
             cx.observe_new::<Room>(|this, _window, cx| {
                 let client = get_client();

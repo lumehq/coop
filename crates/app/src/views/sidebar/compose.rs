@@ -14,7 +14,6 @@ use serde::Deserialize;
 use smol::Timer;
 use state::get_client;
 use std::{collections::HashSet, time::Duration};
-use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonRounded},
     input::{InputEvent, TextInput},

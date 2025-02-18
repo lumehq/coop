@@ -6,7 +6,6 @@ use gpui::{
 use nostr_connect::prelude::*;
 use state::get_client;
 use std::{path::PathBuf, time::Duration};
-use tokio::sync::oneshot;
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
     input::{InputEvent, TextInput},
