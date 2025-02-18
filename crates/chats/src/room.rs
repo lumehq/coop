@@ -124,6 +124,10 @@ impl Room {
         }
     }
 
+    pub fn last_seen(&self) -> &LastSeen {
+        &self.last_seen
+    }
+
     /// Get all public keys from current room
     pub fn pubkeys(&self) -> Vec<PublicKey> {
         let mut pubkeys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();

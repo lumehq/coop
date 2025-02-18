@@ -2,6 +2,7 @@ use chrono::{Datelike, Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LastSeen(pub Timestamp);
 
 impl LastSeen {

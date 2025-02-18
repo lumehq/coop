@@ -75,7 +75,7 @@ impl ChatRegistry {
 
     fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            rooms: Vec::with_capacity(5),
+            rooms: vec![],
             is_loading: true,
         }
     }
@@ -186,6 +186,12 @@ impl ChatRegistry {
                 });
                 cx.notify();
             });
+
+            // Re sort rooms by last seen
+            self.rooms
+                .sort_by_key(|room| Reverse(room.read(cx).last_seen()));
+
+            cx.notify();
         } else {
             let room = cx.new(|cx| Room::parse(&event, cx));
             self.rooms.insert(0, room);
