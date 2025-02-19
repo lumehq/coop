@@ -133,7 +133,6 @@ impl PopupMenu {
                         this.dismiss(&Dismiss, window, cx)
                     }),
                 ];
-
             let menu = Self {
                 focus_handle,
                 action_focus_handle: None,
@@ -150,7 +149,7 @@ impl PopupMenu {
                 scroll_state: Rc::new(Cell::new(ScrollbarState::default())),
                 subscriptions,
             };
-            window.refresh();
+
             f(menu, window, cx)
         })
     }

@@ -49,22 +49,39 @@ pub fn init(
 }
 
 #[derive(PartialEq, Eq)]
-struct ChatItem {
-    profile: NostrProfile,
+struct ParsedMessage {
+    avatar: SharedString,
+    display_name: SharedString,
+    created_at: SharedString,
     content: SharedString,
-    ago: SharedString,
+}
+
+impl ParsedMessage {
+    pub fn new(profile: &NostrProfile, content: &str, created_at: Timestamp) -> Self {
+        let avatar = profile.avatar().into();
+        let display_name = profile.name().into();
+        let content = SharedString::new(content);
+        let created_at = LastSeen(created_at).human_readable();
+
+        Self {
+            avatar,
+            display_name,
+            created_at,
+            content,
+        }
+    }
 }
 
 #[derive(PartialEq, Eq)]
 enum Message {
-    Item(Box<ChatItem>),
+    User(Box<ParsedMessage>),
     System(SharedString),
     Placeholder,
 }
 
 impl Message {
-    pub fn new(chat_message: ChatItem) -> Self {
-        Self::Item(Box::new(chat_message))
+    pub fn new(message: ParsedMessage) -> Self {
+        Self::User(Box::new(message))
     }
 
     pub fn system(content: SharedString) -> Self {
@@ -286,12 +303,7 @@ impl Chat {
 
         let old_len = self.messages.read(cx).len();
         let room = model.read(cx);
-        let ago = LastSeen(Timestamp::now()).human_readable();
-        let message = Message::new(ChatItem {
-            profile: room.owner.clone(),
-            content: content.into(),
-            ago,
-        });
+        let message = Message::new(ParsedMessage::new(&room.owner, &content, Timestamp::now()));
 
         // Update message list
         cx.update_entity(&self.messages, |this, cx| {
@@ -336,11 +348,10 @@ impl Chat {
                             room.owner.to_owned()
                         };
 
-                        Some(Message::new(ChatItem {
-                            profile: member,
-                            content: ev.content.into(),
-                            ago: LastSeen(ev.created_at).human_readable(),
-                        }))
+                        let message =
+                            Message::new(ParsedMessage::new(&member, &ev.content, ev.created_at));
+
+                        Some(message)
                     } else {
                         None
                     }
@@ -378,11 +389,11 @@ impl Chat {
                 .iter()
                 .filter_map(|event| {
                     if let Some(profile) = room.member(&event.pubkey) {
-                        let message = Message::new(ChatItem {
-                            profile,
-                            content: event.content.clone().into(),
-                            ago: LastSeen(event.created_at).human_readable(),
-                        });
+                        let message = Message::new(ParsedMessage::new(
+                            &profile,
+                            &event.content,
+                            event.created_at,
+                        ));
 
                         if !old_messages.iter().any(|old| old == &message) {
                             Some(message)
@@ -598,7 +609,7 @@ impl Chat {
                 .w_full()
                 .p_2()
                 .map(|this| match message {
-                    Message::Item(item) => this
+                    Message::User(item) => this
                         .hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
                         .child(
                             div()
@@ -613,7 +624,7 @@ impl Chat {
                                 }),
                         )
                         .child(
-                            img(item.profile.avatar())
+                            img(item.avatar.clone())
                                 .size_8()
                                 .rounded_full()
                                 .flex_shrink_0(),
@@ -630,8 +641,10 @@ impl Chat {
                                         .items_baseline()
                                         .gap_2()
                                         .text_xs()
-                                        .child(div().font_semibold().child(item.profile.name()))
-                                        .child(div().child(item.ago.clone()).text_color(
+                                        .child(
+                                            div().font_semibold().child(item.display_name.clone()),
+                                        )
+                                        .child(div().child(item.created_at.clone()).text_color(
                                             cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                                         )),
                                 )
@@ -668,7 +681,7 @@ impl Chat {
                         .text_center()
                         .text_xs()
                         .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                        .line_height(relative(1.))
+                        .line_height(relative(1.2))
                         .child(
                             svg()
                                 .path("brand/coop.svg")
