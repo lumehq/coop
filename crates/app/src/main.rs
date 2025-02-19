@@ -20,7 +20,7 @@ use nostr_sdk::{
 };
 use nostr_sdk::{prelude::NostrEventsDatabaseExt, FromBech32, SubscriptionId};
 use smol::Timer;
-use state::{get_client, initialize_client};
+use state::get_client;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::{theme::Theme, Root};
 use views::{app, onboarding, startup};
@@ -49,7 +49,7 @@ fn main() {
     let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(100);
 
     // Initialize nostr client
-    let client = initialize_client();
+    let client = get_client();
 
     // Initialize application
     let app = Application::new()

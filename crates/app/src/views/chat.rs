@@ -39,7 +39,7 @@ pub fn init(
 ) -> Result<Arc<Entity<Chat>>, anyhow::Error> {
     if let Some(chats) = ChatRegistry::global(cx) {
         if let Some(room) = chats.read(cx).get(id, cx) {
-            Ok(Arc::new(Chat::new(id, &room, window, cx)))
+            Ok(Arc::new(Chat::new(id, room, window, cx)))
         } else {
             Err(anyhow!("Chat room is not exist"))
         }
@@ -102,7 +102,7 @@ pub struct Chat {
     // Chat Room
     room: WeakEntity<Room>,
     messages: Entity<Vec<Message>>,
-    new_messages: WeakEntity<Vec<Event>>,
+    new_messages: Option<WeakEntity<Vec<Event>>>,
     list_state: ListState,
     subscriptions: Vec<Subscription>,
     // New Message
@@ -113,9 +113,15 @@ pub struct Chat {
 }
 
 impl Chat {
-    pub fn new(id: &u64, model: &Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let room = model.downgrade();
-        let new_messages = model.read(cx).new_messages.downgrade();
+    pub fn new(
+        id: &u64,
+        room: WeakEntity<Room>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Entity<Self> {
+        let new_messages = room
+            .read_with(cx, |this, _| this.new_messages.downgrade())
+            .ok();
 
         cx.new(|cx| {
             let messages = cx.new(|_| vec![Message::placeholder()]);
@@ -371,7 +377,7 @@ impl Chat {
     }
 
     fn load_new_messages(&mut self, cx: &mut Context<Self>) {
-        let Some(model) = self.new_messages.upgrade() else {
+        let Some(Some(model)) = self.new_messages.as_ref().map(|state| state.upgrade()) else {
             return;
         };
 

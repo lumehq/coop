@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use common::utils::{compare, room_hash, signer_public_key};
-use gpui::{App, AppContext, Context, Entity, Global};
+use gpui::{App, AppContext, Context, Entity, Global, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
@@ -29,7 +29,13 @@ impl ChatRegistry {
 
     pub fn register(cx: &mut App) -> Entity<Self> {
         Self::global(cx).unwrap_or_else(|| {
-            let entity = cx.new(Self::new);
+            let entity = cx.new(|cx| {
+                let mut this = Self::new(cx);
+                // Automatically load chat rooms the database when the registry is created
+                this.load_chat_rooms(cx);
+
+                this
+            });
 
             // Set global state
             cx.set_global(GlobalChatRegistry(entity.clone()));
@@ -111,28 +117,30 @@ impl ChatRegistry {
 
         cx.spawn(|this, cx| async move {
             if let Ok(events) = rx.await {
-                _ = cx.update(|cx| {
-                    _ = this.update(cx, |this, cx| {
-                        let current_rooms = this.current_rooms_ids(cx);
-                        let items: Vec<Entity<Room>> = events
-                            .into_iter()
-                            .filter_map(|ev| {
-                                let new = room_hash(&ev);
-                                // Filter all seen events
-                                if !current_rooms.iter().any(|this| this == &new) {
-                                    Some(cx.new(|cx| Room::parse(&ev, cx)))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
+                if !events.is_empty() {
+                    _ = cx.update(|cx| {
+                        _ = this.update(cx, |this, cx| {
+                            let current_rooms = this.current_rooms_ids(cx);
+                            let items: Vec<Entity<Room>> = events
+                                .into_iter()
+                                .filter_map(|ev| {
+                                    let new = room_hash(&ev);
+                                    // Filter all seen events
+                                    if !current_rooms.iter().any(|this| this == &new) {
+                                        Some(cx.new(|cx| Room::parse(&ev, cx)))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
 
-                        this.rooms.extend(items);
-                        this.is_loading = false;
+                            this.rooms.extend(items);
+                            this.is_loading = false;
 
-                        cx.notify();
+                            cx.notify();
+                        });
                     });
-                });
+                }
             }
         })
         .detach();
@@ -146,11 +154,11 @@ impl ChatRegistry {
         self.is_loading
     }
 
-    pub fn get(&self, id: &u64, cx: &App) -> Option<Entity<Room>> {
+    pub fn get(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
         self.rooms
             .iter()
-            .find(|model| &model.read(cx).id == id)
-            .cloned()
+            .find(|model| model.read(cx).id == *id)
+            .map(|room| room.downgrade())
     }
 
     pub fn new_room(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
