@@ -1,11 +1,11 @@
-use common::{profile::NostrProfile, qr::create_qr, utils::preload};
+use account::registry::Account;
+use common::qr::create_qr;
 use gpui::{
     div, img, prelude::FluentBuilder, relative, svg, App, AppContext, ClipboardItem, Context, Div,
     Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
-use state::get_client;
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
     input::{InputEvent, TextInput},
@@ -62,7 +62,7 @@ impl Onboarding {
                 window,
                 move |this: &mut Self, _, input_event, window, cx| {
                     if let InputEvent::PressEnter = input_event {
-                        this.privkey_login(window, cx);
+                        this.login_with_private_key(window, cx);
                     }
                 },
             )];
@@ -80,68 +80,50 @@ impl Onboarding {
         })
     }
 
-    fn use_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_nostr_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let uri = self.connect_uri.clone();
         let app_keys = self.app_keys.clone();
         let window_handle = window.window_handle();
 
-        self.use_connect = true;
-        cx.notify();
+        // Show QR Code for login with Nostr Connect
+        self.use_connect(window, cx);
 
-        cx.spawn(|_, mut cx| async move {
-            let (tx, rx) = oneshot::channel::<NostrProfile>();
+        // Wait for connection
+        let (tx, rx) = oneshot::channel::<NostrConnect>();
 
-            cx.background_spawn(async move {
-                if let Ok(signer) = NostrConnect::new(uri, app_keys, Duration::from_secs(300), None)
-                {
-                    if let Ok(uri) = signer.bunker_uri().await {
-                        let client = get_client();
+        cx.background_spawn(async move {
+            if let Ok(signer) = NostrConnect::new(uri, app_keys, Duration::from_secs(300), None) {
+                tx.send(signer).ok();
+            }
+        })
+        .detach();
 
-                        if let Some(public_key) = uri.remote_signer_public_key() {
-                            let metadata = client
-                                .fetch_metadata(*public_key, Duration::from_secs(2))
-                                .await
-                                .ok()
-                                .unwrap_or_default();
+        cx.spawn(|this, cx| async move {
+            if let Ok(signer) = rx.await {
+                cx.spawn(|mut cx| async move {
+                    let signer = Arc::new(signer);
 
-                            if tx.send(NostrProfile::new(*public_key, metadata)).is_ok() {
-                                _ = client.set_signer(signer).await;
-                                _ = preload(client, *public_key).await;
-                            }
-                        }
+                    if Account::login(signer, &cx).await.is_ok() {
+                        _ = cx.update_window(window_handle, |_, window, cx| {
+                            window.replace_root(cx, |window, cx| {
+                                Root::new(app::init(window, cx).into(), window, cx)
+                            });
+                        })
                     }
-                }
-            })
-            .detach();
-
-            if let Ok(profile) = rx.await {
-                _ = cx.update_window(window_handle, |_, window, cx| {
-                    window.replace_root(cx, |window, cx| {
-                        Root::new(app::init(profile, window, cx).into(), window, cx)
-                    });
                 })
+                .detach();
+            } else {
+                _ = cx.update(|cx| {
+                    _ = this.update(cx, |this, cx| {
+                        this.set_loading(false, cx);
+                    });
+                });
             }
         })
         .detach();
     }
 
-    fn use_privkey(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.use_privkey = true;
-        cx.notify();
-    }
-
-    fn reset(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.use_privkey = false;
-        self.use_connect = false;
-        cx.notify();
-    }
-
-    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_loading = status;
-        cx.notify();
-    }
-
-    fn privkey_login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_private_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let value = self.nsec_input.read(cx).text().to_string();
         let window_handle = window.window_handle();
 
@@ -160,35 +142,45 @@ impl Onboarding {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        cx.spawn(|_, mut cx| async move {
-            let client = get_client();
-            let (tx, rx) = oneshot::channel::<NostrProfile>();
+        cx.spawn(|this, mut cx| async move {
+            let signer = Arc::new(keys);
 
-            cx.background_spawn(async move {
-                if let Ok(public_key) = keys.get_public_key().await {
-                    let metadata = client
-                        .fetch_metadata(public_key, Duration::from_secs(2))
-                        .await
-                        .ok()
-                        .unwrap_or_default();
-
-                    if tx.send(NostrProfile::new(public_key, metadata)).is_ok() {
-                        _ = client.set_signer(keys).await;
-                        _ = preload(client, public_key).await;
-                    }
-                }
-            })
-            .detach();
-
-            if let Ok(profile) = rx.await {
+            if Account::login(signer, &cx).await.is_ok() {
                 _ = cx.update_window(window_handle, |_, window, cx| {
                     window.replace_root(cx, |window, cx| {
-                        Root::new(app::init(profile, window, cx).into(), window, cx)
+                        Root::new(app::init(window, cx).into(), window, cx)
                     });
                 })
+            } else {
+                _ = cx.update(|cx| {
+                    _ = this.update(cx, |this, cx| {
+                        this.set_loading(false, cx);
+                    });
+                });
             }
         })
         .detach();
+    }
+
+    fn use_connect(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.use_connect = true;
+        cx.notify();
+    }
+
+    fn use_privkey(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.use_privkey = true;
+        cx.notify();
+    }
+
+    fn reset(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.use_privkey = false;
+        self.use_connect = false;
+        cx.notify();
+    }
+
+    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.is_loading = status;
+        cx.notify();
     }
 
     fn render_selection(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
@@ -205,7 +197,7 @@ impl Onboarding {
                     .primary()
                     .w_full()
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.use_connect(window, cx);
+                        this.login_with_nostr_connect(window, cx);
                     })),
             )
             .child(
@@ -331,7 +323,7 @@ impl Onboarding {
                     .w_full()
                     .loading(self.is_loading)
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.privkey_login(window, cx);
+                        this.login_with_private_key(window, cx);
                     })),
             )
             .child(

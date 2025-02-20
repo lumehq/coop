@@ -1,4 +1,5 @@
 use crate::views::app::{AddPanel, PanelKind};
+use account::registry::Account;
 use chats::registry::ChatRegistry;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, relative, Context, InteractiveElement,
@@ -86,24 +87,31 @@ impl Inbox {
                             .rounded(px(cx.theme().radius))
                             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
                             .child(div().flex_1().truncate().font_medium().map(|this| {
-                                if room.is_group {
+                                if room.is_group() {
                                     this.flex()
                                         .items_center()
                                         .gap_2()
                                         .child(img("brand/avatar.png").size_6().rounded_full())
                                         .child(room.name())
                                 } else {
-                                    this.when_some(room.members.first(), |this, sender| {
-                                        this.flex()
-                                            .items_center()
-                                            .gap_2()
-                                            .child(
-                                                img(sender.avatar())
-                                                    .size_6()
-                                                    .rounded_full()
-                                                    .flex_shrink_0(),
-                                            )
-                                            .child(sender.name())
+                                    this.when_some(Account::global(cx), |this, account| {
+                                        let user_profile = account.read(cx).get();
+
+                                        this.when_some(
+                                            room.members.iter().find(|&m| m != user_profile),
+                                            |this, member| {
+                                                this.flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        img(member.avatar())
+                                                            .size_6()
+                                                            .rounded_full()
+                                                            .flex_shrink_0(),
+                                                    )
+                                                    .child(member.name())
+                                            },
+                                        )
                                     })
                                 }
                             }))

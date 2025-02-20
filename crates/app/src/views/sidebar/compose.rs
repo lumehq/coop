@@ -180,15 +180,17 @@ impl Compose {
                     if let Some(chats) = ChatRegistry::global(cx) {
                         let room = Room::parse(&event, cx);
 
-                        chats.update(cx, |state, cx| match state.new_room(room, cx) {
-                            Ok(_) => {
-                                // TODO: open chat panel
-                                window.close_modal(cx);
-                            }
-                            Err(e) => {
-                                _ = this.update(cx, |this, cx| {
-                                    this.set_error(Some(e.to_string().into()), cx);
-                                });
+                        chats.update(cx, |state, cx| {
+                            match state.push_room(room, cx) {
+                                Ok(_) => {
+                                    // TODO: open chat panel
+                                    window.close_modal(cx);
+                                }
+                                Err(e) => {
+                                    _ = this.update(cx, |this, cx| {
+                                        this.set_error(Some(e.to_string().into()), cx);
+                                    });
+                                }
                             }
                         });
                     }

@@ -1,3 +1,4 @@
+use account::registry::Account;
 use async_utility::task::spawn;
 use common::{constants::IMAGE_SERVICE, profile::NostrProfile, utils::nip96_upload};
 use gpui::{
@@ -8,7 +9,7 @@ use gpui::{
 use nostr_sdk::prelude::*;
 use smol::fs;
 use state::get_client;
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
@@ -17,8 +18,19 @@ use ui::{
     ContextModal, Disableable, Sizable, Size,
 };
 
-pub fn init(profile: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Profile> {
-    Profile::new(profile, window, cx)
+pub fn init(
+    window: &mut Window,
+    cx: &mut App,
+) -> anyhow::Result<Arc<Entity<Profile>>, anyhow::Error> {
+    if let Some(account) = Account::global(cx) {
+        Ok(Arc::new(Profile::new(
+            account.read(cx).get().to_owned(),
+            window,
+            cx,
+        )))
+    } else {
+        Err(anyhow::anyhow!("No account found"))
+    }
 }
 
 pub struct Profile {

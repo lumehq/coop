@@ -10,11 +10,10 @@ use std::collections::HashSet;
 pub struct Room {
     pub id: u64,
     pub title: Option<SharedString>,
-    pub owner: NostrProfile,        // Owner always match current user
-    pub members: Vec<NostrProfile>, // Extract from event's tags
+    pub members: Vec<NostrProfile>,
     pub last_seen: LastSeen,
-    pub is_group: bool,
-    pub new_messages: Entity<Vec<Event>>, // Hold all new messages
+    // Store all new messages
+    pub new_messages: Entity<Vec<Event>>,
 }
 
 impl PartialEq for Room {
@@ -26,27 +25,18 @@ impl PartialEq for Room {
 impl Room {
     pub fn new(
         id: u64,
-        owner: NostrProfile,
         members: Vec<NostrProfile>,
         title: Option<SharedString>,
         last_seen: LastSeen,
         cx: &mut App,
     ) -> Self {
         let new_messages = cx.new(|_| Vec::new());
-        let is_group = members.len() > 1;
-        let title = if title.is_none() {
-            Some(random_name(2).into())
-        } else {
-            title
-        };
 
         Self {
             id,
-            owner,
             members,
             title,
             last_seen,
-            is_group,
             new_messages,
         }
     }
@@ -55,35 +45,36 @@ impl Room {
     pub fn parse(event: &Event, cx: &mut App) -> Room {
         let id = room_hash(event);
         let last_seen = LastSeen(event.created_at);
+        let mut members: Vec<NostrProfile> = vec![];
 
-        // Always equal to current user
-        let owner = NostrProfile::new(event.pubkey, Metadata::default());
+        // Get all public keys from event's tags,
+        // then convert them to NostrProfile
+        members.extend(
+            event
+                .tags
+                .public_keys()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .map(|public_key| NostrProfile::new(*public_key, Metadata::default()))
+                .collect::<Vec<_>>(),
+        );
 
-        // Get all pubkeys that invole in this group
-        let members: Vec<NostrProfile> = event
-            .tags
-            .public_keys()
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .map(|public_key| NostrProfile::new(*public_key, Metadata::default()))
-            .collect();
+        // Convert event's pubkey to NostrProfile
+        members.push(NostrProfile::new(event.pubkey, Metadata::default()));
 
-        // Get title from event's tags
+        // Get title from event's tags,
+        // and create random title if not found
         let title = if let Some(tag) = event.tags.find(TagKind::Subject) {
             tag.content().map(|s| s.to_owned().into())
         } else {
-            None
+            Some(random_name(2).into())
         };
 
-        Self::new(id, owner, members, title, last_seen, cx)
+        Self::new(id, members, title, last_seen, cx)
     }
 
     /// Set contact's metadata by public key
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
-        if self.owner.public_key() == public_key {
-            self.owner.set_metadata(&metadata);
-        }
-
         for member in self.members.iter_mut() {
             if member.public_key() == public_key {
                 member.set_metadata(&metadata);
@@ -92,25 +83,20 @@ impl Room {
     }
 
     /// Get room's member by public key
-    pub fn member(&self, public_key: &PublicKey) -> Option<NostrProfile> {
-        if &self.owner.public_key() == public_key {
-            Some(self.owner.clone())
-        } else {
-            self.members
-                .iter()
-                .find(|m| &m.public_key() == public_key)
-                .cloned()
-        }
+    pub fn member(&self, public_key: &PublicKey) -> Option<&NostrProfile> {
+        self.members.iter().find(|m| &m.public_key() == public_key)
     }
 
-    /// Get room's display name
-    pub fn name(&self) -> String {
+    /// Get room's display name,
+    /// this is combine all members' names
+    pub fn name(&self) -> SharedString {
         if self.members.len() <= 2 {
             self.members
                 .iter()
                 .map(|profile| profile.name())
                 .collect::<Vec<_>>()
                 .join(", ")
+                .into()
         } else {
             let name = self
                 .members
@@ -120,8 +106,12 @@ impl Room {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            format!("{}, +{}", name, self.members.len() - 2)
+            format!("{}, +{}", name, self.members.len() - 2).into()
         }
+    }
+
+    pub fn is_group(&self) -> bool {
+        self.members.len() > 2
     }
 
     pub fn last_seen(&self) -> &LastSeen {
@@ -130,9 +120,6 @@ impl Room {
 
     /// Get all public keys from current room
     pub fn pubkeys(&self) -> Vec<PublicKey> {
-        let mut pubkeys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
-        pubkeys.push(self.owner.public_key());
-
-        pubkeys
+        self.members.iter().map(|m| m.public_key()).collect()
     }
 }

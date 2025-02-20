@@ -96,21 +96,31 @@ impl ChatRegistry {
 
         cx.background_spawn(async move {
             if let Ok(public_key) = signer_public_key(client).await {
-                let filter = Filter::new()
+                let send = Filter::new()
                     .kind(Kind::PrivateDirectMessage)
                     .author(public_key);
 
-                // Get all DM events from database
-                if let Ok(events) = client.database().query(filter).await {
-                    let result: Vec<Event> = events
-                        .into_iter()
-                        .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
-                        .unique_by(room_hash)
-                        .sorted_by_key(|ev| Reverse(ev.created_at))
-                        .collect();
+                let recv = Filter::new()
+                    .kind(Kind::PrivateDirectMessage)
+                    .pubkey(public_key);
 
-                    _ = tx.send(result);
-                }
+                let Ok(send_events) = client.database().query(send).await else {
+                    return;
+                };
+
+                let Ok(recv_events) = client.database().query(recv).await else {
+                    return;
+                };
+
+                let result: Vec<Event> = send_events
+                    .merge(recv_events)
+                    .into_iter()
+                    .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
+                    .unique_by(room_hash)
+                    .sorted_by_key(|ev| Reverse(ev.created_at))
+                    .collect();
+
+                _ = tx.send(result);
             }
         })
         .detach();
@@ -161,7 +171,7 @@ impl ChatRegistry {
             .map(|room| room.downgrade())
     }
 
-    pub fn new_room(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
+    pub fn push_room(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
         if !self
             .rooms
             .iter()

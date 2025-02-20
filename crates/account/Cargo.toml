@@ -1,0 +1,16 @@
+[package]
+name = "account"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+common = { path = "../common" }
+state = { path = "../state" }
+
+gpui.workspace = true
+nostr-sdk.workspace = true
+anyhow.workspace = true
+smol.workspace = true
+oneshot.workspace = true
+log.workspace = true

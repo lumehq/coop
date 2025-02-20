@@ -1,4 +1,4 @@
-use common::profile::NostrProfile;
+use account::registry::Account;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
@@ -38,21 +38,22 @@ impl AddPanel {
     }
 }
 
+// Dock actions
 impl_internal_actions!(dock, [AddPanel]);
+// Account actions
 actions!(account, [Logout]);
 
-pub fn init(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<AppView> {
-    AppView::new(account, window, cx)
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<AppView> {
+    AppView::new(window, cx)
 }
 
 pub struct AppView {
-    account: NostrProfile,
     relays: Entity<Option<Vec<String>>>,
     dock: Entity<DockArea>,
 }
 
 impl AppView {
-    pub fn new(account: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         // Initialize dock layout
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let weak_dock = dock.downgrade();
@@ -83,74 +84,72 @@ impl AppView {
         });
 
         cx.new(|cx| {
-            let public_key = account.public_key();
             let relays = cx.new(|_| None);
-            let async_relays = relays.downgrade();
+            let this = Self { relays, dock };
 
             // Check user's messaging relays and determine user is ready for NIP17 or not.
             // If not, show the setup modal and instruct user setup inbox relays
-            let client = get_client();
-            let window_handle = window.window_handle();
-            let (tx, rx) = oneshot::channel::<Option<Vec<String>>>();
-
-            let this = Self {
-                account,
-                relays,
-                dock,
-            };
-
-            cx.background_spawn(async move {
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(public_key)
-                    .limit(1);
-
-                let relays = if let Ok(events) = client.database().query(filter).await {
-                    if let Some(event) = events.first_owned() {
-                        Some(
-                            event
-                                .tags
-                                .filter_standardized(TagKind::Relay)
-                                .filter_map(|t| match t {
-                                    TagStandard::Relay(url) => Some(url.to_string()),
-
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>(),
-                        )
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-
-                _ = tx.send(relays);
-            })
-            .detach();
-
-            cx.spawn(|this, mut cx| async move {
-                if let Ok(result) = rx.await {
-                    if let Some(relays) = result {
-                        _ = cx.update(|cx| {
-                            _ = async_relays.update(cx, |this, cx| {
-                                *this = Some(relays);
-                                cx.notify();
-                            });
-                        });
-                    } else {
-                        _ = cx.update_window(window_handle, |_, window, cx| {
-                            this.update(cx, |this: &mut Self, cx| {
-                                this.render_setup_relays(window, cx)
-                            })
-                        });
-                    }
-                }
-            })
-            .detach();
+            this.verify_user_relays(window, cx);
 
             this
         })
+    }
+
+    fn verify_user_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(account) = Account::global(cx) else {
+            return;
+        };
+
+        let public_key = account.read(cx).get().public_key();
+        let client = get_client();
+        let window_handle = window.window_handle();
+        let (tx, rx) = oneshot::channel::<Option<Vec<String>>>();
+
+        cx.background_spawn(async move {
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
+
+            let relays = client
+                .database()
+                .query(filter)
+                .await
+                .ok()
+                .and_then(|events| events.first_owned())
+                .map(|event| {
+                    event
+                        .tags
+                        .filter_standardized(TagKind::Relay)
+                        .filter_map(|t| match t {
+                            TagStandard::Relay(url) => Some(url.to_string()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+            _ = tx.send(relays);
+        })
+        .detach();
+
+        cx.spawn(|this, mut cx| async move {
+            if let Ok(Some(relays)) = rx.await {
+                _ = cx.update(|cx| {
+                    _ = this.update(cx, |this, cx| {
+                        let relays = cx.new(|_| Some(relays));
+                        this.relays = relays;
+                        cx.notify();
+                    });
+                });
+            } else {
+                _ = cx.update_window(window_handle, |_, window, cx| {
+                    this.update(cx, |this: &mut Self, cx| {
+                        this.render_setup_relays(window, cx)
+                    })
+                });
+            }
+        })
+        .detach();
     }
 
     fn render_setup_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -254,18 +253,22 @@ impl AppView {
             }))
     }
 
-    fn render_account(&self) -> impl IntoElement {
+    fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("account")
             .ghost()
             .xsmall()
             .reverse()
             .icon(Icon::new(IconName::ChevronDownSmall))
-            .child(
-                img(self.account.avatar())
-                    .size_5()
-                    .rounded_full()
-                    .object_fit(ObjectFit::Cover),
-            )
+            .when_some(Account::global(cx), |this, account| {
+                let profile = account.read(cx).get();
+
+                this.child(
+                    img(profile.avatar())
+                        .size_5()
+                        .rounded_full()
+                        .object_fit(ObjectFit::Cover),
+                )
+            })
             .popup_menu(move |this, _, _cx| {
                 this.menu(
                     "Profile",
@@ -286,20 +289,27 @@ impl AppView {
 
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
         match &action.panel {
-            PanelKind::Room(id) => match chat::init(id, window, cx) {
-                Ok(panel) => {
-                    self.dock.update(cx, |dock_area, cx| {
-                        dock_area.add_panel(panel, action.position, window, cx);
-                    });
+            PanelKind::Room(id) => {
+                // User must be logged in to open a room
+                match chat::init(id, window, cx) {
+                    Ok(panel) => {
+                        self.dock.update(cx, |dock_area, cx| {
+                            dock_area.add_panel(panel, action.position, window, cx);
+                        });
+                    }
+                    Err(e) => window.push_notification(e.to_string(), cx),
                 }
-                Err(e) => window.push_notification(e.to_string(), cx),
-            },
+            }
             PanelKind::Profile => {
-                let panel = Arc::new(profile::init(self.account.clone(), window, cx));
-
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, window, cx);
-                });
+                // User must be logged in to open a profile
+                match profile::init(window, cx) {
+                    Ok(panel) => {
+                        self.dock.update(cx, |dock_area, cx| {
+                            dock_area.add_panel(panel, action.position, window, cx);
+                        });
+                    }
+                    Err(e) => window.push_notification(e.to_string(), cx),
+                }
             }
             PanelKind::Contacts => {
                 let panel = Arc::new(contacts::init(window, cx));
@@ -319,8 +329,13 @@ impl AppView {
     }
 
     fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
-        cx.background_spawn(async move { get_client().reset().await })
-            .detach();
+        let client = get_client();
+
+        cx.background_spawn(async move {
+            // Reset nostr client
+            client.reset().await
+        })
+        .detach();
 
         window.replace_root(cx, |window, cx| {
             Root::new(onboarding::init(window, cx).into(), window, cx)
@@ -353,7 +368,7 @@ impl Render for AppView {
                             .px_2()
                             .child(self.render_appearance_button(window, cx))
                             .child(self.render_relays_button(window, cx))
-                            .child(self.render_account()),
+                            .child(self.render_account(cx)),
                     ),
             )
             .child(self.dock.clone())

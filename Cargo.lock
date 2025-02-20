@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "account"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "oneshot",
+ "smol",
+ "state",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1174,6 +1188,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 name = "coop"
 version = "0.1.2"
 dependencies = [
+ "account",
  "anyhow",
  "chats",
  "common",

@@ -176,31 +176,17 @@ fn main() {
     // Handle re-open window
     app.on_reopen(move |cx| {
         let client = get_client();
-        let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
+        let (tx, rx) = oneshot::channel::<bool>();
 
         cx.background_spawn(async move {
-            if let Ok(signer) = client.signer().await {
-                if let Ok(public_key) = signer.get_public_key().await {
-                    let metadata =
-                        if let Ok(Some(metadata)) = client.database().metadata(public_key).await {
-                            metadata
-                        } else {
-                            Metadata::new()
-                        };
-
-                    _ = tx.send(Some(NostrProfile::new(public_key, metadata)));
-                } else {
-                    _ = tx.send(None);
-                }
-            } else {
-                _ = tx.send(None);
-            }
+            let is_login = client.signer().await.is_ok();
+            _ = tx.send(is_login);
         })
         .detach();
 
         cx.spawn(|mut cx| async move {
-            if let Ok(result) = rx.await {
-                _ = restore_window(result, &mut cx).await;
+            if let Ok(is_login) = rx.await {
+                _ = restore_window(is_login, &mut cx).await;
             }
         })
         .detach();
@@ -291,12 +277,8 @@ fn main() {
 
                 // Set root view based on credential status
                 cx.spawn(|mut cx| async move {
-                    if let Ok(Some(profile)) = rx.await {
-                        _ = cx.update_window(handle, |_, window, cx| {
-                            window.replace_root(cx, |window, cx| {
-                                Root::new(app::init(profile, window, cx).into(), window, cx)
-                            });
-                        });
+                    if let Ok(Some(_profile)) = rx.await {
+                        // TODO: Implement login
                     } else {
                         _ = cx.update_window(handle, |_, window, cx| {
                             window.replace_root(cx, |window, cx| {
@@ -347,7 +329,7 @@ async fn sync_metadata(client: &Client, buffer: HashSet<PublicKey>) {
     }
 }
 
-async fn restore_window(profile: Option<NostrProfile>, cx: &mut AsyncApp) -> anyhow::Result<()> {
+async fn restore_window(is_login: bool, cx: &mut AsyncApp) -> anyhow::Result<()> {
     let opts = cx
         .update(|cx| WindowOptions {
             #[cfg(not(target_os = "linux"))]
@@ -370,7 +352,7 @@ async fn restore_window(profile: Option<NostrProfile>, cx: &mut AsyncApp) -> any
         })
         .expect("Failed to set window options.");
 
-    if let Some(profile) = profile {
+    if is_login {
         _ = cx.open_window(opts, |window, cx| {
             window.set_window_title(APP_NAME);
             window.set_app_id(APP_ID);
@@ -382,7 +364,7 @@ async fn restore_window(profile: Option<NostrProfile>, cx: &mut AsyncApp) -> any
                 })
                 .detach();
 
-            cx.new(|cx| Root::new(app::init(profile, window, cx).into(), window, cx))
+            cx.new(|cx| Root::new(app::init(window, cx).into(), window, cx))
         });
     } else {
         _ = cx.open_window(opts, |window, cx| {
