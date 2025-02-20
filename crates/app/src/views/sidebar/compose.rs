@@ -178,9 +178,9 @@ impl Compose {
                     });
 
                     if let Some(chats) = ChatRegistry::global(cx) {
-                        let room = Room::parse(&event, cx);
+                        let room = Room::new(&event, cx);
 
-                        chats.update(cx, |state, cx| {
+                        _ = chats.update(cx, |state, cx| {
                             match state.push_room(room, cx) {
                                 Ok(_) => {
                                     // TODO: open chat panel

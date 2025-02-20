@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use common::utils::{compare, room_hash, signer_public_key};
+use common::utils::{room_hash, signer_public_key};
 use gpui::{App, AppContext, Context, Entity, Global, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -39,41 +39,6 @@ impl ChatRegistry {
 
             // Set global state
             cx.set_global(GlobalChatRegistry(entity.clone()));
-
-            // Observe and load metadata for any new rooms
-            cx.observe_new::<Room>(|this, _window, cx| {
-                let client = get_client();
-                let pubkeys = this.pubkeys();
-                let (tx, rx) = oneshot::channel::<Vec<(PublicKey, Metadata)>>();
-
-                cx.background_spawn(async move {
-                    let mut profiles = Vec::new();
-
-                    for public_key in pubkeys.into_iter() {
-                        if let Ok(metadata) = client.database().metadata(public_key).await {
-                            profiles.push((public_key, metadata.unwrap_or_default()));
-                        }
-                    }
-
-                    _ = tx.send(profiles);
-                })
-                .detach();
-
-                cx.spawn(|this, mut cx| async move {
-                    if let Ok(profiles) = rx.await {
-                        if let Some(room) = this.upgrade() {
-                            _ = cx.update_entity(&room, |this, cx| {
-                                for profile in profiles.into_iter() {
-                                    this.set_metadata(profile.0, profile.1);
-                                }
-                                cx.notify();
-                            });
-                        }
-                    }
-                })
-                .detach();
-            })
-            .detach();
 
             entity
         })
@@ -137,7 +102,7 @@ impl ChatRegistry {
                                     let new = room_hash(&ev);
                                     // Filter all seen events
                                     if !current_rooms.iter().any(|this| this == &new) {
-                                        Some(cx.new(|cx| Room::parse(&ev, cx)))
+                                        Some(cx.new(|cx| Room::new(&ev, cx)))
                                     } else {
                                         None
                                     }
@@ -172,11 +137,7 @@ impl ChatRegistry {
     }
 
     pub fn push_room(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
-        if !self
-            .rooms
-            .iter()
-            .any(|current| compare(&current.read(cx).pubkeys(), &room.pubkeys()))
-        {
+        if !self.rooms.iter().any(|current| current.read(cx) == &room) {
             self.rooms.insert(0, cx.new(|_| room));
             cx.notify();
 
@@ -187,15 +148,9 @@ impl ChatRegistry {
     }
 
     pub fn push_message(&mut self, event: Event, cx: &mut Context<Self>) {
-        // Get all pubkeys from event's tags for comparision
-        let mut pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
-        pubkeys.push(event.pubkey);
+        let hash = room_hash(&event);
 
-        if let Some(room) = self
-            .rooms
-            .iter()
-            .find(|room| compare(&room.read(cx).pubkeys(), &pubkeys))
-        {
+        if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == hash) {
             room.update(cx, |this, cx| {
                 this.last_seen.set(event.created_at);
                 this.new_messages.update(cx, |this, cx| {
@@ -211,7 +166,7 @@ impl ChatRegistry {
 
             cx.notify();
         } else {
-            let room = cx.new(|cx| Room::parse(&event, cx));
+            let room = cx.new(|cx| Room::new(&event, cx));
             self.rooms.insert(0, room);
             cx.notify();
         }

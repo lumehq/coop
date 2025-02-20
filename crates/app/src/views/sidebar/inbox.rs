@@ -87,18 +87,21 @@ impl Inbox {
                             .rounded(px(cx.theme().radius))
                             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
                             .child(div().flex_1().truncate().font_medium().map(|this| {
-                                if room.is_group() {
+                                if room.is_group(cx) {
                                     this.flex()
                                         .items_center()
                                         .gap_2()
                                         .child(img("brand/avatar.png").size_6().rounded_full())
-                                        .child(room.name())
+                                        .when_some(room.name(cx), |this, name| this.child(name))
                                 } else {
                                     this.when_some(Account::global(cx), |this, account| {
                                         let user_profile = account.read(cx).get();
 
                                         this.when_some(
-                                            room.members.iter().find(|&m| m != user_profile),
+                                            room.members
+                                                .read(cx)
+                                                .iter()
+                                                .find(|&m| m != user_profile),
                                             |this, member| {
                                                 this.flex()
                                                     .items_center()

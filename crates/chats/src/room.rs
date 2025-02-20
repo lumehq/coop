@@ -1,125 +1,142 @@
 use common::{
     last_seen::LastSeen,
     profile::NostrProfile,
-    utils::{compare, random_name, room_hash},
+    utils::{random_name, room_hash},
 };
 use gpui::{App, AppContext, Entity, SharedString};
 use nostr_sdk::prelude::*;
+use state::get_client;
 use std::collections::HashSet;
 
 pub struct Room {
     pub id: u64,
-    pub title: Option<SharedString>,
-    pub members: Vec<NostrProfile>,
     pub last_seen: LastSeen,
-    // Store all new messages
+    /// Subject of the room (Nostr)
+    pub title: Option<SharedString>,
+    /// Display name of the room (used for display purposes in Coop)
+    pub display_name: Entity<Option<SharedString>>,
+    /// All members of the room
+    pub members: Entity<Vec<NostrProfile>>,
+    /// Store all new messages
     pub new_messages: Entity<Vec<Event>>,
 }
 
 impl PartialEq for Room {
     fn eq(&self, other: &Self) -> bool {
-        compare(&self.pubkeys(), &other.pubkeys())
+        self.id == other.id
     }
 }
 
 impl Room {
-    pub fn new(
-        id: u64,
-        members: Vec<NostrProfile>,
-        title: Option<SharedString>,
-        last_seen: LastSeen,
-        cx: &mut App,
-    ) -> Self {
-        let new_messages = cx.new(|_| Vec::new());
-
-        Self {
-            id,
-            members,
-            title,
-            last_seen,
-            new_messages,
-        }
-    }
-
-    /// Convert nostr event to room
-    pub fn parse(event: &Event, cx: &mut App) -> Room {
+    pub fn new(event: &Event, cx: &mut App) -> Self {
         let id = room_hash(event);
         let last_seen = LastSeen(event.created_at);
-        let mut members: Vec<NostrProfile> = vec![];
 
-        // Get all public keys from event's tags,
-        // then convert them to NostrProfile
-        members.extend(
-            event
-                .tags
-                .public_keys()
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .map(|public_key| NostrProfile::new(*public_key, Metadata::default()))
-                .collect::<Vec<_>>(),
-        );
+        // Initialize display name model
+        let display_name = cx.new(|_| None);
+        let async_name = display_name.downgrade();
 
-        // Convert event's pubkey to NostrProfile
-        members.push(NostrProfile::new(event.pubkey, Metadata::default()));
+        // Initialize new messages model
+        let new_messages = cx.new(|_| Vec::new());
 
-        // Get title from event's tags,
-        // and create random title if not found
+        // Initialize members model
+        let members = cx.new(|cx| {
+            let members: Vec<NostrProfile> = vec![];
+            let mut pubkeys = vec![];
+            // Get all pubkeys from event's tags
+            pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
+            pubkeys.push(event.pubkey);
+
+            let client = get_client();
+            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
+
+            cx.background_spawn(async move {
+                let mut profiles = Vec::new();
+
+                for public_key in pubkeys.into_iter() {
+                    if let Ok(metadata) = client.database().metadata(public_key).await {
+                        profiles.push(NostrProfile::new(public_key, metadata.unwrap_or_default()));
+                    }
+                }
+
+                _ = tx.send(profiles);
+            })
+            .detach();
+
+            cx.spawn(|this, cx| async move {
+                if let Ok(profiles) = rx.await {
+                    _ = cx.update(|cx| {
+                        if profiles.len() > 2 {
+                            let merged = profiles
+                                .iter()
+                                .take(2)
+                                .map(|profile| profile.name().to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+
+                            let name: SharedString =
+                                format!("{}, +{}", merged, profiles.len() - 2).into();
+
+                            _ = async_name.update(cx, |this, cx| {
+                                *this = Some(name);
+                                cx.notify();
+                            })
+                        }
+
+                        _ = this.update(cx, |this: &mut Vec<NostrProfile>, cx| {
+                            this.extend(profiles);
+                            cx.notify();
+                        });
+                    });
+                }
+            })
+            .detach();
+
+            members
+        });
+
+        // Get title from event's tags, create a random title if not found
         let title = if let Some(tag) = event.tags.find(TagKind::Subject) {
             tag.content().map(|s| s.to_owned().into())
         } else {
             Some(random_name(2).into())
         };
 
-        Self::new(id, members, title, last_seen, cx)
+        Self {
+            id,
+            last_seen,
+            title,
+            display_name,
+            members,
+            new_messages,
+        }
     }
 
-    /// Set contact's metadata by public key
-    pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
-        for member in self.members.iter_mut() {
-            if member.public_key() == public_key {
-                member.set_metadata(metadata.clone());
-            }
-        }
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// Get room's member by public key
-    pub fn member(&self, public_key: &PublicKey) -> Option<&NostrProfile> {
-        self.members.iter().find(|m| &m.public_key() == public_key)
+    pub fn member(&self, public_key: &PublicKey, cx: &App) -> Option<NostrProfile> {
+        self.members
+            .read(cx)
+            .iter()
+            .find(|m| &m.public_key() == public_key)
+            .cloned()
     }
 
-    /// Get room's display name,
-    /// this is combine all members' names
-    pub fn name(&self) -> SharedString {
-        if self.members.len() <= 2 {
-            self.members
-                .iter()
-                .map(|profile| profile.name())
-                .collect::<Vec<_>>()
-                .join(", ")
-                .into()
-        } else {
-            let name = self
-                .members
-                .iter()
-                .take(2)
-                .map(|profile| profile.name())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            format!("{}, +{}", name, self.members.len() - 2).into()
-        }
+    /// Get room's display name
+    pub fn name(&self, cx: &App) -> Option<SharedString> {
+        self.display_name.read(cx).clone()
     }
 
-    pub fn is_group(&self) -> bool {
-        self.members.len() > 2
+    /// Determine if room is a group
+    pub fn is_group(&self, cx: &App) -> bool {
+        self.members.read(cx).len() > 2
     }
 
+    /// Get room's last seen
     pub fn last_seen(&self) -> &LastSeen {
         &self.last_seen
-    }
-
-    /// Get all public keys from current room
-    pub fn pubkeys(&self) -> Vec<PublicKey> {
-        self.members.iter().map(|m| m.public_key()).collect()
     }
 }

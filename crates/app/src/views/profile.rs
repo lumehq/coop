@@ -51,39 +51,18 @@ pub struct Profile {
 
 impl Profile {
     pub fn new(profile: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let name_input = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).text_size(Size::XSmall);
-            if let Some(name) = profile.metadata().display_name.as_ref() {
-                input.set_text(name, window, cx);
-            }
-            input
-        });
-        let avatar_input = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).text_size(Size::XSmall).small();
-            if let Some(picture) = profile.metadata().picture.as_ref() {
-                input.set_text(picture, window, cx);
-            }
-            input
+        let name_input = cx.new(|cx| TextInput::new(window, cx).text_size(Size::XSmall));
+        let avatar_input = cx.new(|cx| TextInput::new(window, cx).text_size(Size::XSmall).small());
+        let website_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .text_size(Size::XSmall)
+                .placeholder("https://your-website.com")
         });
         let bio_input = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx)
+            TextInput::new(window, cx)
                 .text_size(Size::XSmall)
-                .multi_line();
-            if let Some(about) = profile.metadata().about.as_ref() {
-                input.set_text(about, window, cx);
-            } else {
-                input.set_placeholder("A short introduce about you.");
-            }
-            input
-        });
-        let website_input = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).text_size(Size::XSmall);
-            if let Some(website) = profile.metadata().website.as_ref() {
-                input.set_text(website, window, cx);
-            } else {
-                input.set_placeholder("https://your-website.com");
-            }
-            input
+                .multi_line()
+                .placeholder("A short introduce about you.")
         });
 
         cx.new(|cx| Self {
@@ -176,12 +155,7 @@ impl Profile {
         let bio = self.bio_input.read(cx).text().to_string();
         let website = self.website_input.read(cx).text().to_string();
 
-        let mut new_metadata = self
-            .profile
-            .metadata()
-            .to_owned()
-            .display_name(name)
-            .about(bio);
+        let mut new_metadata = Metadata::new().display_name(name).about(bio);
 
         if let Ok(url) = Url::from_str(&avatar) {
             new_metadata = new_metadata.picture(url);

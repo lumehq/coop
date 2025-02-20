@@ -12,8 +12,8 @@ use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
     Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ListAlignment, ListState, ObjectFit, ParentElement, PathPromptOptions, Render,
-    SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage, Subscription,
-    WeakEntity, Window,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription, WeakEntity,
+    Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -51,7 +51,7 @@ pub fn init(
 
 #[derive(PartialEq, Eq)]
 struct ParsedMessage {
-    avatar: SharedUri,
+    avatar: SharedString,
     display_name: SharedString,
     created_at: SharedString,
     content: SharedString,
@@ -59,14 +59,12 @@ struct ParsedMessage {
 
 impl ParsedMessage {
     pub fn new(profile: &NostrProfile, content: &str, created_at: Timestamp) -> Self {
-        let avatar = profile.avatar();
-        let display_name = profile.name();
         let content = SharedString::new(content);
         let created_at = LastSeen(created_at).human_readable();
 
         Self {
-            avatar,
-            display_name,
+            avatar: profile.avatar(),
+            display_name: profile.name(),
             created_at,
             content,
         }
@@ -190,10 +188,16 @@ impl Chat {
             return;
         };
 
-        let room = model.read(cx);
-        let pubkeys: Vec<PublicKey> = room.members.iter().map(|m| m.public_key()).collect();
         let client = get_client();
         let (tx, rx) = oneshot::channel::<Vec<(PublicKey, bool)>>();
+
+        let pubkeys: Vec<PublicKey> = model
+            .read(cx)
+            .members
+            .read(cx)
+            .iter()
+            .map(|m| m.public_key())
+            .collect();
 
         cx.background_spawn(async move {
             let mut result = Vec::new();
@@ -225,7 +229,7 @@ impl Chat {
                             if !item.1 {
                                 let name = this
                                     .room
-                                    .read_with(cx, |this, _| this.name())
+                                    .read_with(cx, |this, cx| this.name(cx).unwrap_or("Unnamed".into()))
                                     .unwrap_or("Unnamed".into());
 
                                 this.push_system_message(
@@ -252,6 +256,7 @@ impl Chat {
 
         let pubkeys = room
             .members
+            .read(cx)
             .iter()
             .map(|m| m.public_key())
             .collect::<Vec<_>>();
@@ -325,11 +330,17 @@ impl Chat {
             return;
         };
 
-        let old_len = self.messages.read(cx).len();
         let room = model.read(cx);
-        let pubkeys = room.pubkeys();
+        let pubkeys = room
+            .members
+            .read(cx)
+            .iter()
+            .map(|m| m.public_key())
+            .collect::<Vec<_>>();
 
-        let (messages, total) = {
+        let old_len = self.messages.read(cx).len();
+
+        let (messages, new_len) = {
             let items: Vec<Message> = events
                 .into_iter()
                 .sorted_by_key(|ev| ev.created_at)
@@ -342,6 +353,7 @@ impl Chat {
                     }
 
                     room.members
+                        .read(cx)
                         .iter()
                         .find(|m| m.public_key() == ev.pubkey)
                         .map(|member| {
@@ -351,9 +363,9 @@ impl Chat {
                 .collect();
 
             // Used for update list state
-            let total = items.len();
+            let new_len = items.len();
 
-            (items, total)
+            (items, new_len)
         };
 
         cx.update_entity(&self.messages, |this, cx| {
@@ -361,7 +373,7 @@ impl Chat {
             cx.notify();
         });
 
-        self.list_state.splice(old_len..old_len, total);
+        self.list_state.splice(old_len..old_len, new_len);
     }
 
     fn load_new_messages(&mut self, cx: &mut Context<Self>) {
@@ -382,9 +394,9 @@ impl Chat {
                 .read(cx)
                 .iter()
                 .filter_map(|event| {
-                    if let Some(profile) = room.member(&event.pubkey) {
+                    if let Some(profile) = room.member(&event.pubkey, cx) {
                         let message = Message::new(ParsedMessage::new(
-                            profile,
+                            &profile,
                             &event.content,
                             event.created_at,
                         ));
@@ -454,13 +466,19 @@ impl Chat {
             this.set_disabled(true, window, cx);
         });
 
+        let room = model.read(cx);
+        let pubkeys = room
+            .members
+            .read(cx)
+            .iter()
+            .map(|m| m.public_key())
+            .collect::<Vec<_>>();
+
+        let async_content = content.clone().to_string();
+
         let client = get_client();
         let window_handle = window.window_handle();
         let (tx, rx) = oneshot::channel::<Vec<Error>>();
-
-        let room = model.read(cx);
-        let pubkeys = room.pubkeys();
-        let async_content = content.clone().to_string();
 
         // Send message to all pubkeys
         cx.background_spawn(async move {
@@ -699,10 +717,13 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room
-            .read_with(cx, |this, _cx| {
-                let name = this.name();
-                let facepill: Vec<SharedUri> =
-                    this.members.iter().map(|member| member.avatar()).collect();
+            .read_with(cx, |this, cx| {
+                let facepill: Vec<SharedString> = this
+                    .members
+                    .read(cx)
+                    .iter()
+                    .map(|member| member.avatar())
+                    .collect();
 
                 div()
                     .flex()
@@ -723,7 +744,7 @@ impl Panel for Chat {
                                 )
                             })),
                     )
-                    .child(name)
+                    .when_some(this.name(cx), |this, name| this.child(name))
                     .into_any()
             })
             .unwrap_or("Unnamed".into_any())
