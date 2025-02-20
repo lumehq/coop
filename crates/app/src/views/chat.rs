@@ -265,6 +265,7 @@ impl Chat {
             let Ok(events) = client.database().query(filter).await else {
                 return;
             };
+            println!("Events: {:?}", events);
             _ = tx.send(events);
         })
         .detach();

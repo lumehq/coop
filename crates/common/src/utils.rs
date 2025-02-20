@@ -25,7 +25,10 @@ pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url,
 }
 
 pub fn room_hash(event: &Event) -> u64 {
+    let mut hasher = DefaultHasher::new();
     let mut pubkeys: Vec<&PublicKey> = vec![];
+
+    // Add all public keys from event
     pubkeys.push(&event.pubkey);
     pubkeys.extend(
         event
@@ -36,7 +39,6 @@ pub fn room_hash(event: &Event) -> u64 {
             .collect::<Vec<_>>(),
     );
 
-    let mut hasher = DefaultHasher::new();
     // Generate unique hash
     pubkeys
         .into_iter()
