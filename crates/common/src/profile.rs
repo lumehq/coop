@@ -1,5 +1,7 @@
-use crate::constants::IMAGE_SERVICE;
+use gpui::{SharedString, SharedUri};
 use nostr_sdk::prelude::*;
+
+use crate::constants::IMAGE_SERVICE;
 
 #[derive(Debug, Clone)]
 pub struct NostrProfile {
@@ -41,46 +43,47 @@ impl NostrProfile {
     }
 
     /// Get contact's avatar
-    pub fn avatar(&self) -> String {
-        if let Some(picture) = &self.metadata.picture {
-            if picture.len() > 1 {
+    pub fn avatar(&self) -> SharedUri {
+        self.metadata
+            .picture
+            .as_ref()
+            .filter(|picture| !picture.is_empty())
+            .map(|picture| {
                 format!(
                     "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
                     IMAGE_SERVICE, picture
                 )
-            } else {
-                "brand/avatar.png".into()
-            }
-        } else {
-            "brand/avatar.png".into()
-        }
+                .into()
+            })
+            .unwrap_or_else(|| "brand/avatar.png".into())
     }
 
     /// Get contact's name, fallback to public key as shorted format
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> SharedString {
         if let Some(display_name) = &self.metadata.display_name {
             if !display_name.is_empty() {
-                return display_name.to_owned();
+                return display_name.into();
             }
         }
 
         if let Some(name) = &self.metadata.name {
             if !name.is_empty() {
-                return name.to_owned();
+                return name.into();
             }
         }
 
-        let pubkey = self.public_key.to_string();
-        format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..])
+        let pubkey = self.public_key.to_hex();
+
+        format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..]).into()
     }
 
     /// Get contact's metadata
-    pub fn metadata(&mut self) -> &Metadata {
+    pub fn metadata(&self) -> &Metadata {
         &self.metadata
     }
 
     /// Set contact's metadata
-    pub fn set_metadata(&mut self, metadata: &Metadata) {
-        self.metadata = metadata.clone()
+    pub fn set_metadata(&mut self, metadata: Metadata) {
+        self.metadata = metadata;
     }
 }

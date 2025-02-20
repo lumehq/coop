@@ -3,6 +3,10 @@ use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
 const NOW: &str = "now";
+const SECONDS_IN_MINUTE: i64 = 60;
+const MINUTES_IN_HOUR: i64 = 60;
+const HOURS_IN_DAY: i64 = 24;
+const DAYS_IN_MONTH: i64 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LastSeen(pub Timestamp);
@@ -17,10 +21,10 @@ impl LastSeen {
         let duration = now.signed_duration_since(input_time);
 
         match duration {
-            d if d.num_seconds() < 60 => NOW.into(),
-            d if d.num_minutes() < 60 => format!("{}m", d.num_minutes()),
-            d if d.num_hours() < 24 => format!("{}h", d.num_hours()),
-            d if d.num_days() < 30 => format!("{}d", d.num_days()),
+            d if d.num_seconds() < SECONDS_IN_MINUTE => NOW.into(),
+            d if d.num_minutes() < MINUTES_IN_HOUR => format!("{}m", d.num_minutes()),
+            d if d.num_hours() < HOURS_IN_DAY => format!("{}h", d.num_hours()),
+            d if d.num_days() < DAYS_IN_MONTH => format!("{}d", d.num_days()),
             _ => input_time.format("%b %d").to_string(),
         }
         .into()

@@ -50,7 +50,7 @@ pub struct Profile {
 }
 
 impl Profile {
-    pub fn new(mut profile: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(profile: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let name_input = cx.new(|cx| {
             let mut input = TextInput::new(window, cx).text_size(Size::XSmall);
             if let Some(name) = profile.metadata().display_name.as_ref() {

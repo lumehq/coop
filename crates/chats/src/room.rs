@@ -77,7 +77,7 @@ impl Room {
     pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
         for member in self.members.iter_mut() {
             if member.public_key() == public_key {
-                member.set_metadata(&metadata);
+                member.set_metadata(metadata.clone());
             }
         }
     }

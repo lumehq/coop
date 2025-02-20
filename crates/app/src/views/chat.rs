@@ -12,8 +12,8 @@ use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
     Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ListAlignment, ListState, ObjectFit, ParentElement, PathPromptOptions, Render,
-    SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription, WeakEntity,
-    Window,
+    SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage, Subscription,
+    WeakEntity, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -51,7 +51,7 @@ pub fn init(
 
 #[derive(PartialEq, Eq)]
 struct ParsedMessage {
-    avatar: SharedString,
+    avatar: SharedUri,
     display_name: SharedString,
     created_at: SharedString,
     content: SharedString,
@@ -59,8 +59,8 @@ struct ParsedMessage {
 
 impl ParsedMessage {
     pub fn new(profile: &NostrProfile, content: &str, created_at: Timestamp) -> Self {
-        let avatar = profile.avatar().into();
-        let display_name = profile.name().into();
+        let avatar = profile.avatar();
+        let display_name = profile.name();
         let content = SharedString::new(content);
         let created_at = LastSeen(created_at).human_readable();
 
@@ -701,7 +701,7 @@ impl Panel for Chat {
         self.room
             .read_with(cx, |this, _cx| {
                 let name = this.name();
-                let facepill: Vec<String> =
+                let facepill: Vec<SharedUri> =
                     this.members.iter().map(|member| member.avatar()).collect();
 
                 div()
