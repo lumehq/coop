@@ -13,5 +13,6 @@ nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
+smallvec.workspace = true
 smol.workspace = true
 oneshot.workspace = true

@@ -5,6 +5,7 @@ use common::{
 };
 use gpui::{App, AppContext, Entity, SharedString};
 use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
 use state::get_client;
 use std::collections::HashSet;
 
@@ -16,7 +17,7 @@ pub struct Room {
     /// Display name of the room (used for display purposes in Coop)
     pub display_name: Entity<Option<SharedString>>,
     /// All members of the room
-    pub members: Entity<Vec<NostrProfile>>,
+    pub members: Entity<SmallVec<[NostrProfile; 2]>>,
     /// Store all new messages
     pub new_messages: Entity<Vec<Event>>,
 }
@@ -41,7 +42,7 @@ impl Room {
 
         // Initialize members model
         let members = cx.new(|cx| {
-            let members: Vec<NostrProfile> = vec![];
+            let members: SmallVec<[NostrProfile; 2]> = smallvec![];
             let mut pubkeys = vec![];
             // Get all pubkeys from event's tags
             pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
@@ -83,7 +84,7 @@ impl Room {
                             })
                         }
 
-                        _ = this.update(cx, |this: &mut Vec<NostrProfile>, cx| {
+                        _ = this.update(cx, |this: &mut SmallVec<[NostrProfile; 2]>, cx| {
                             this.extend(profiles);
                             cx.notify();
                         });

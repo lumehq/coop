@@ -945,6 +945,7 @@ dependencies = [
  "itertools 0.13.0",
  "nostr-sdk",
  "oneshot",
+ "smallvec",
  "smol",
  "state",
 ]
@@ -3766,7 +3767,8 @@ checksum = "945462a4b81e43c4e3ba96bd7b49d834c6f61198356aa858733bc4acf3cbe62e"
 [[package]]
 name = "oneshot"
 version = "0.1.10"
-source = "git+https://github.com/faern/oneshot#d36ef86c3cbcc54764391ae89805c160696cf57c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79d72a7c0f743d2ebb0a2ad1d219db75fdc799092ed3a884c9144c42a31225bd"
 
 [[package]]
 name = "oo7"

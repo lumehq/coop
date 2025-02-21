@@ -1,8 +1,7 @@
 use asset::Assets;
 use chats::registry::ChatRegistry;
-use common::{
-    constants::{ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID},
-    profile::NostrProfile,
+use common::constants::{
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
 };
 use futures::{select, FutureExt};
 use gpui::{
@@ -14,16 +13,16 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use log::{error, info};
+use nostr_sdk::SubscriptionId;
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Client, Event, Filter, Keys, Kind, Metadata, PublicKey,
-    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions,
+    pool::prelude::ReqExitPolicy, Client, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
+    RelayPoolNotification, SubscribeAutoCloseOptions,
 };
-use nostr_sdk::{prelude::NostrEventsDatabaseExt, FromBech32, SubscriptionId};
 use smol::Timer;
 use state::get_client;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::{theme::Theme, Root};
-use views::{app, onboarding, startup};
+use views::{app, onboarding};
 
 mod asset;
 mod views;
@@ -45,7 +44,7 @@ fn main() {
     // Enable logging
     tracing_subscriber::fmt::init();
 
-    let (event_tx, event_rx) = smol::channel::bounded::<Signal>(2048);
+    let (event_tx, event_rx) = smol::channel::bounded::<Signal>(1024);
     let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(100);
 
     // Initialize nostr client
@@ -209,108 +208,90 @@ fn main() {
             items: vec![MenuItem::action("Quit", Quit)],
         }]);
 
-        // Open window with default options
-        cx.open_window(
-            WindowOptions {
-                #[cfg(not(target_os = "linux"))]
-                titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::new_static(APP_NAME)),
-                    traffic_light_position: Some(point(px(9.0), px(9.0))),
-                    appears_transparent: true,
-                }),
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                    None,
-                    size(px(900.0), px(680.0)),
-                    cx,
-                ))),
-                #[cfg(target_os = "linux")]
-                window_background: WindowBackgroundAppearance::Transparent,
-                #[cfg(target_os = "linux")]
-                window_decorations: Some(WindowDecorations::Client),
-                kind: WindowKind::Normal,
-                ..Default::default()
-            },
-            |window, cx| {
-                window.set_window_title(APP_NAME);
-                window.set_app_id(APP_ID);
-
-                #[cfg(not(target_os = "linux"))]
-                window
-                    .observe_window_appearance(|window, cx| {
-                        Theme::sync_system_appearance(Some(window), cx);
-                    })
-                    .detach();
-
-                let handle = window.window_handle();
-                let root = cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx));
-
-                let task = cx.read_credentials(KEYRING_SERVICE);
-                let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
-
-                // Read credential in OS Keyring
-                cx.background_spawn(async {
-                    let profile = if let Ok(Some((npub, secret))) = task.await {
-                        let public_key = PublicKey::from_bech32(&npub).unwrap();
-                        let secret_hex = String::from_utf8(secret).unwrap();
-                        let keys = Keys::parse(&secret_hex).unwrap();
-
-                        // Update nostr signer
-                        _ = client.set_signer(keys).await;
-
-                        // Get user's metadata
-                        let metadata = if let Ok(Some(metadata)) =
-                            client.database().metadata(public_key).await
-                        {
-                            metadata
-                        } else {
-                            Metadata::new()
-                        };
-
-                        Some(NostrProfile::new(public_key, metadata))
-                    } else {
-                        None
-                    };
-
-                    _ = tx.send(profile)
-                })
-                .detach();
-
-                // Set root view based on credential status
-                cx.spawn(|mut cx| async move {
-                    if let Ok(Some(_profile)) = rx.await {
-                        // TODO: Implement login
-                    } else {
-                        _ = cx.update_window(handle, |_, window, cx| {
-                            window.replace_root(cx, |window, cx| {
-                                Root::new(onboarding::init(window, cx).into(), window, cx)
-                            });
-                        });
-                    }
-                })
-                .detach();
-
-                cx.spawn(|cx| async move {
-                    while let Ok(signal) = event_rx.recv().await {
-                        _ = cx.update(|cx| {
-                            if let Some(chats) = ChatRegistry::global(cx) {
-                                match signal {
-                                    Signal::Eose => {
-                                        chats.update(cx, |this, cx| this.load_chat_rooms(cx))
-                                    }
-                                    Signal::Event(event) => {
-                                        chats.update(cx, |this, cx| this.push_message(event, cx))
-                                    }
-                                };
+        // Spawn a task to handle events from nostr channel
+        cx.spawn(|cx| async move {
+            while let Ok(signal) = event_rx.recv().await {
+                cx.update(|cx| {
+                    if let Some(chats) = ChatRegistry::global(cx) {
+                        match signal {
+                            Signal::Eose => chats.update(cx, |this, cx| this.load_chat_rooms(cx)),
+                            Signal::Event(event) => {
+                                chats.update(cx, |this, cx| this.push_message(event, cx))
                             }
-                        });
+                        };
                     }
                 })
-                .detach();
+                .ok();
+            }
+        })
+        .detach();
 
-                root
-            },
-        )
-        .expect("System error. Please re-open the app.");
+        // Set up the window options
+        let window_opts = WindowOptions {
+            #[cfg(not(target_os = "linux"))]
+            titlebar: Some(TitlebarOptions {
+                title: Some(SharedString::new_static(APP_NAME)),
+                traffic_light_position: Some(point(px(9.0), px(9.0))),
+                appears_transparent: true,
+            }),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None,
+                size(px(900.0), px(680.0)),
+                cx,
+            ))),
+            #[cfg(target_os = "linux")]
+            window_background: WindowBackgroundAppearance::Transparent,
+            #[cfg(target_os = "linux")]
+            window_decorations: Some(WindowDecorations::Client),
+            kind: WindowKind::Normal,
+            ..Default::default()
+        };
+
+        // Create a task to read credentials from the keyring service
+        let task = cx.read_credentials(KEYRING_SERVICE);
+        let (tx, rx) = oneshot::channel::<bool>();
+
+        // Read credential in OS Keyring
+        cx.background_spawn(async {
+            let is_ready = if let Ok(Some((_, secret))) = task.await {
+                let result = async {
+                    let secret_hex = String::from_utf8(secret)?;
+                    let keys = Keys::parse(&secret_hex)?;
+
+                    // Update nostr signer
+                    client.set_signer(keys).await;
+
+                    Ok::<_, anyhow::Error>(true)
+                }
+                .await;
+
+                result.is_ok()
+            } else {
+                false
+            };
+
+            _ = tx.send(is_ready)
+        })
+        .detach();
+
+        cx.spawn(|cx| async move {
+            if let Ok(is_ready) = rx.await {
+                if is_ready {
+                    // Open a App window
+                    cx.open_window(window_opts, |window, cx| {
+                        cx.new(|cx| Root::new(app::init(window, cx).into(), window, cx))
+                    })
+                    .expect("Failed to open window");
+                } else {
+                    // Open a Onboarding window
+                    cx.open_window(window_opts, |window, cx| {
+                        cx.new(|cx| Root::new(onboarding::init(window, cx).into(), window, cx))
+                    })
+                    .expect("Failed to open window");
+                }
+            }
+        })
+        .detach();
     });
 }
 
