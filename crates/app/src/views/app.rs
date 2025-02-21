@@ -301,15 +301,11 @@ impl AppView {
                 }
             }
             PanelKind::Profile => {
-                // User must be logged in to open a profile
-                match profile::init(window, cx) {
-                    Ok(panel) => {
-                        self.dock.update(cx, |dock_area, cx| {
-                            dock_area.add_panel(panel, action.position, window, cx);
-                        });
-                    }
-                    Err(e) => window.push_notification(e.to_string(), cx),
-                }
+                let panel = profile::init(window, cx);
+
+                self.dock.update(cx, |dock_area, cx| {
+                    dock_area.add_panel(panel, action.position, window, cx);
+                });
             }
             PanelKind::Contacts => {
                 let panel = Arc::new(contacts::init(window, cx));

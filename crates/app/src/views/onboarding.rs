@@ -16,8 +16,12 @@ use ui::{
 
 use super::app;
 
+const LOGO_URL: &str = "brand/coop.svg";
+const TITLE: &str = "Welcome to Coop!";
+const SUBTITLE: &str = "A Nostr client for secure communication.";
 const ALPHA_MESSAGE: &str =
     "Coop is in the alpha stage of development; It may contain bugs, unfinished features, or unexpected behavior.";
+
 const JOIN_URL: &str = "https://start.njump.me/";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
@@ -360,7 +364,7 @@ impl Render for Onboarding {
                             .gap_4()
                             .child(
                                 svg()
-                                    .path("brand/coop.svg")
+                                    .path(LOGO_URL)
                                     .size_12()
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                             )
@@ -372,7 +376,7 @@ impl Render for Onboarding {
                                             .text_lg()
                                             .font_semibold()
                                             .line_height(relative(1.2))
-                                            .child("Welcome to Coop!"),
+                                            .child(TITLE),
                                     )
                                     .child(
                                         div()
@@ -380,19 +384,19 @@ impl Render for Onboarding {
                                             .text_color(
                                                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                                             )
-                                            .child("A Nostr client for secure communication."),
+                                            .child(SUBTITLE),
                                     ),
                             ),
                     )
-                    .child(div().w_72().map(|_| {
-                        if self.use_privkey {
-                            self.render_privkey_login(cx)
-                        } else if self.use_connect {
-                            self.render_connect_login(cx)
-                        } else {
-                            self.render_selection(window, cx)
-                        }
-                    })),
+                    .child(
+                        div()
+                            .w_72()
+                            .map(|_| match (self.use_privkey, self.use_connect) {
+                                (true, _) => self.render_privkey_login(cx),
+                                (_, true) => self.render_connect_login(cx),
+                                _ => self.render_selection(window, cx),
+                            }),
+                    ),
             )
             .child(
                 div()
@@ -403,8 +407,8 @@ impl Render for Onboarding {
                     .items_center()
                     .justify_center()
                     .text_xs()
+                    .text_center()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .text_align(gpui::TextAlign::Center)
                     .child(ALPHA_MESSAGE),
             )
     }

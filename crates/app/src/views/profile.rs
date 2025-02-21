@@ -1,6 +1,5 @@
-use account::registry::Account;
 use async_utility::task::spawn;
-use common::{constants::IMAGE_SERVICE, profile::NostrProfile, utils::nip96_upload};
+use common::{constants::IMAGE_SERVICE, utils::nip96_upload};
 use gpui::{
     div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity, EventEmitter,
     Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render,
@@ -9,7 +8,7 @@ use gpui::{
 use nostr_sdk::prelude::*;
 use smol::fs;
 use state::get_client;
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
@@ -18,23 +17,12 @@ use ui::{
     ContextModal, Disableable, Sizable, Size,
 };
 
-pub fn init(
-    window: &mut Window,
-    cx: &mut App,
-) -> anyhow::Result<Arc<Entity<Profile>>, anyhow::Error> {
-    if let Some(account) = Account::global(cx) {
-        Ok(Arc::new(Profile::new(
-            account.read(cx).get().to_owned(),
-            window,
-            cx,
-        )))
-    } else {
-        Err(anyhow::anyhow!("No account found"))
-    }
+pub fn init(window: &mut Window, cx: &mut App) -> Arc<Entity<Profile>> {
+    Arc::new(Profile::new(window, cx))
 }
 
 pub struct Profile {
-    profile: NostrProfile,
+    profile: Option<Metadata>,
     // Form
     name_input: Entity<TextInput>,
     avatar_input: Entity<TextInput>,
@@ -44,20 +32,32 @@ pub struct Profile {
     is_submitting: bool,
     // Panel
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
 }
 
 impl Profile {
-    pub fn new(profile: NostrProfile, window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let name_input = cx.new(|cx| TextInput::new(window, cx).text_size(Size::XSmall));
-        let avatar_input = cx.new(|cx| TextInput::new(window, cx).text_size(Size::XSmall).small());
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let window_handle = window.window_handle();
+
+        let name_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .text_size(Size::XSmall)
+                .placeholder("Alice")
+        });
+
+        let avatar_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .text_size(Size::XSmall)
+                .small()
+                .placeholder("https://example.com/avatar.png")
+        });
+
         let website_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(Size::XSmall)
                 .placeholder("https://your-website.com")
         });
+
         let bio_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(Size::XSmall)
@@ -65,18 +65,75 @@ impl Profile {
                 .placeholder("A short introduce about you.")
         });
 
-        cx.new(|cx| Self {
-            profile,
-            name_input,
-            avatar_input,
-            bio_input,
-            website_input,
-            is_loading: false,
-            is_submitting: false,
-            name: "Profile".into(),
-            closable: true,
-            zoomable: true,
-            focus_handle: cx.focus_handle(),
+        cx.new(|cx| {
+            let this = Self {
+                name_input,
+                avatar_input,
+                bio_input,
+                website_input,
+                profile: None,
+                is_loading: false,
+                is_submitting: false,
+                name: "Profile".into(),
+                focus_handle: cx.focus_handle(),
+            };
+
+            let client = get_client();
+            let (tx, rx) = oneshot::channel::<Option<Metadata>>();
+
+            cx.background_spawn(async move {
+                let result = async {
+                    let signer = client.signer().await?;
+                    let public_key = signer.get_public_key().await?;
+                    let metadata = client
+                        .fetch_metadata(public_key, Duration::from_secs(2))
+                        .await?;
+
+                    Ok::<_, anyhow::Error>(metadata)
+                }
+                .await;
+
+                if let Ok(metadata) = result {
+                    _ = tx.send(Some(metadata));
+                } else {
+                    _ = tx.send(None);
+                };
+            })
+            .detach();
+
+            cx.spawn(|this, mut cx| async move {
+                if let Ok(Some(metadata)) = rx.await {
+                    _ = cx.update_window(window_handle, |_, window, cx| {
+                        _ = this.update(cx, |this: &mut Profile, cx| {
+                            this.avatar_input.update(cx, |this, cx| {
+                                if let Some(avatar) = metadata.picture.as_ref() {
+                                    this.set_text(avatar, window, cx);
+                                }
+                            });
+                            this.bio_input.update(cx, |this, cx| {
+                                if let Some(bio) = metadata.about.as_ref() {
+                                    this.set_text(bio, window, cx);
+                                }
+                            });
+                            this.name_input.update(cx, |this, cx| {
+                                if let Some(display_name) = metadata.display_name.as_ref() {
+                                    this.set_text(display_name, window, cx);
+                                }
+                            });
+                            this.website_input.update(cx, |this, cx| {
+                                if let Some(website) = metadata.website.as_ref() {
+                                    this.set_text(website, window, cx);
+                                }
+                            });
+                            this.profile = Some(metadata);
+                            cx.notify();
+                        });
+                    });
+                }
+            })
+            .detach();
+
+            this
         })
     }
 
@@ -155,7 +212,13 @@ impl Profile {
         let bio = self.bio_input.read(cx).text().to_string();
         let website = self.website_input.read(cx).text().to_string();
 
-        let mut new_metadata = Metadata::new().display_name(name).about(bio);
+        let old_metadata = if let Some(metadata) = self.profile.as_ref() {
+            metadata.clone()
+        } else {
+            Metadata::default()
+        };
+
+        let mut new_metadata = old_metadata.display_name(name).about(bio);
 
         if let Ok(url) = Url::from_str(&avatar) {
             new_metadata = new_metadata.picture(url);
@@ -205,14 +268,6 @@ impl Panel for Profile {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {

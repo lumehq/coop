@@ -291,21 +291,18 @@ fn main() {
 
                 cx.spawn(|cx| async move {
                     while let Ok(signal) = event_rx.recv().await {
-                        cx.update(|cx| {
-                            match signal {
-                                Signal::Eose => {
-                                    if let Some(chats) = ChatRegistry::global(cx) {
+                        _ = cx.update(|cx| {
+                            if let Some(chats) = ChatRegistry::global(cx) {
+                                match signal {
+                                    Signal::Eose => {
                                         chats.update(cx, |this, cx| this.load_chat_rooms(cx))
                                     }
-                                }
-                                Signal::Event(event) => {
-                                    if let Some(chats) = ChatRegistry::global(cx) {
+                                    Signal::Event(event) => {
                                         chats.update(cx, |this, cx| this.push_message(event, cx))
                                     }
-                                }
-                            };
-                        })
-                        .ok();
+                                };
+                            }
+                        });
                     }
                 })
                 .detach();
