@@ -52,11 +52,20 @@ impl Room {
             let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
 
             cx.background_spawn(async move {
-                let mut profiles = Vec::new();
+                let signer = client.signer().await.unwrap();
+                let signer_pubkey = signer.get_public_key().await.unwrap();
+                let mut profiles = vec![];
 
                 for public_key in pubkeys.into_iter() {
-                    if let Ok(metadata) = client.database().metadata(public_key).await {
-                        profiles.push(NostrProfile::new(public_key, metadata.unwrap_or_default()));
+                    if let Ok(result) = client.database().metadata(public_key).await {
+                        let metadata = result.unwrap_or_default();
+                        let profile = NostrProfile::new(public_key, metadata);
+
+                        if public_key == signer_pubkey {
+                            profiles.push(profile);
+                        } else {
+                            profiles.insert(0, profile);
+                        }
                     }
                 }
 

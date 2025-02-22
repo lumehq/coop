@@ -1,9 +1,6 @@
 use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
-use common::{
-    profile::NostrProfile,
-    utils::{random_name, signer_public_key},
-};
+use common::{profile::NostrProfile, utils::random_name};
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
@@ -86,15 +83,16 @@ impl Compose {
         let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
 
         cx.background_spawn(async move {
-            if let Ok(public_key) = signer_public_key(client).await {
-                if let Ok(profiles) = client.database().contacts(public_key).await {
-                    let members: Vec<NostrProfile> = profiles
-                        .into_iter()
-                        .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
-                        .collect();
+            let signer = client.signer().await.unwrap();
+            let public_key = signer.get_public_key().await.unwrap();
 
-                    _ = tx.send(members);
-                }
+            if let Ok(profiles) = client.database().contacts(public_key).await {
+                let members: Vec<NostrProfile> = profiles
+                    .into_iter()
+                    .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
+                    .collect();
+
+                _ = tx.send(members);
             }
         })
         .detach();
@@ -180,7 +178,7 @@ impl Compose {
                     if let Some(chats) = ChatRegistry::global(cx) {
                         let room = Room::new(&event, cx);
 
-                        _ = chats.update(cx, |state, cx| {
+                        chats.update(cx, |state, cx| {
                             match state.push_room(room, cx) {
                                 Ok(_) => {
                                     // TODO: open chat panel

@@ -6,7 +6,7 @@ use common::{
     constants::IMAGE_SERVICE,
     last_seen::LastSeen,
     profile::NostrProfile,
-    utils::{compare, nip96_upload, signer_public_key},
+    utils::{compare, nip96_upload},
 };
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
@@ -270,7 +270,6 @@ impl Chat {
             let Ok(events) = client.database().query(filter).await else {
                 return;
             };
-            println!("Events: {:?}", events);
             _ = tx.send(events);
         })
         .detach();
@@ -482,10 +481,11 @@ impl Chat {
 
         // Send message to all pubkeys
         cx.background_spawn(async move {
+            let signer = client.signer().await.unwrap();
+            let public_key = signer.get_public_key().await.unwrap();
+
             let mut errors = Vec::new();
-            let Ok(public_key) = signer_public_key(client).await else {
-                return;
-            };
+
             let tags: Vec<Tag> = pubkeys
                 .iter()
                 .filter_map(|pubkey| {

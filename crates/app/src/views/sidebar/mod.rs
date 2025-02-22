@@ -1,33 +1,32 @@
-use crate::views::sidebar::inbox::Inbox;
+use chats::{registry::ChatRegistry, room::Room};
 use compose::Compose;
 use gpui::{
-    div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, img, percentage, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext,
+    Context, Div, Empty, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    Window,
 };
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
+    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
+use super::app::AddPanel;
+
 mod compose;
-mod inbox;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
 }
 
 pub struct Sidebar {
-    // Panel
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
-    // Dock
-    inbox: Entity<Inbox>,
+    label: SharedString,
+    is_collapsed: bool,
 }
 
 impl Sidebar {
@@ -35,19 +34,19 @@ impl Sidebar {
         cx.new(|cx| Self::view(window, cx))
     }
 
-    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let inbox = cx.new(|cx| Inbox::new(window, cx));
+    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus_handle = cx.focus_handle();
+        let label = SharedString::from("Inbox");
 
         Self {
             name: "Sidebar".into(),
-            closable: true,
-            zoomable: true,
-            focus_handle: cx.focus_handle(),
-            inbox,
+            is_collapsed: false,
+            focus_handle,
+            label,
         }
     }
 
-    fn show_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn render_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let compose = cx.new(|cx| Compose::new(window, cx));
 
         window.open_modal(cx, move |modal, window, cx| {
@@ -79,6 +78,62 @@ impl Sidebar {
                 )
         })
     }
+
+    fn render_room(&self, ix: usize, room: &Entity<Room>, cx: &Context<Self>) -> Stateful<Div> {
+        let room = room.read(cx);
+
+        div()
+            .id(ix)
+            .px_1()
+            .h_8()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .text_xs()
+            .rounded(px(cx.theme().radius))
+            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
+            .child(div().flex_1().truncate().font_medium().map(|this| {
+                if room.is_group(cx) {
+                    this.flex()
+                        .items_center()
+                        .gap_2()
+                        .child(img("brand/avatar.png").size_6().rounded_full())
+                        .when_some(room.name(cx), |this, name| this.child(name))
+                } else {
+                    this.when_some(room.members.read(cx).first(), |this, member| {
+                        this.flex()
+                            .items_center()
+                            .gap_2()
+                            .child(img(member.avatar()).size_6().rounded_full().flex_shrink_0())
+                            .child(member.name())
+                    })
+                }
+            }))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .child(room.last_seen.ago()),
+            )
+            .on_click({
+                let id = room.id;
+
+                cx.listener(move |this, _, window, cx| {
+                    this.open(id, window, cx);
+                })
+            })
+    }
+
+    fn open(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        window.dispatch_action(
+            Box::new(AddPanel::new(
+                super::app::PanelKind::Room(id),
+                ui::dock_area::dock::DockPlacement::Center,
+            )),
+            cx,
+        );
+    }
 }
 
 impl Panel for Sidebar {
@@ -88,14 +143,6 @@ impl Panel for Sidebar {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -117,41 +164,116 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .w_full()
-            .py_3()
-            .gap_3()
+        let entity = cx.entity();
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
             .child(
-                v_flex().px_2().gap_1().child(
-                    div()
-                        .id("new")
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_1()
-                        .h_7()
-                        .text_xs()
-                        .font_semibold()
-                        .rounded(px(cx.theme().radius))
-                        .child(
-                            div()
-                                .size_6()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded_full()
-                                .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
-                                .child(
-                                    Icon::new(IconName::ComposeFill)
-                                        .small()
-                                        .text_color(cx.theme().base.darken(cx)),
-                                ),
-                        )
-                        .child("New Message")
-                        .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                        .on_click(cx.listener(|this, _, window, cx| this.show_compose(window, cx))),
-                ),
+                div()
+                    .px_2()
+                    .py_3()
+                    .w_full()
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("new_message")
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_1()
+                            .h_7()
+                            .text_xs()
+                            .font_semibold()
+                            .rounded(px(cx.theme().radius))
+                            .child(
+                                div()
+                                    .size_6()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded_full()
+                                    .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+                                    .child(
+                                        Icon::new(IconName::ComposeFill)
+                                            .small()
+                                            .text_color(cx.theme().base.darken(cx)),
+                                    ),
+                            )
+                            .child("New Message")
+                            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                // Open compose modal
+                                this.render_compose(window, cx);
+                            })),
+                    )
+                    .child(Empty),
             )
-            .child(self.inbox.clone())
+            .child(
+                div()
+                    .px_2()
+                    .w_full()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("inbox_header")
+                            .px_1()
+                            .h_7()
+                            .flex()
+                            .items_center()
+                            .flex_shrink_0()
+                            .rounded(px(cx.theme().radius))
+                            .text_xs()
+                            .font_semibold()
+                            .child(
+                                Icon::new(IconName::ChevronDown)
+                                    .size_6()
+                                    .when(self.is_collapsed, |this| {
+                                        this.rotate(percentage(270. / 360.))
+                                    }),
+                            )
+                            .child(self.label.clone())
+                            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                            .on_click(cx.listener(move |view, _event, _window, cx| {
+                                view.is_collapsed = !view.is_collapsed;
+                                cx.notify();
+                            })),
+                    )
+                    .when(!self.is_collapsed, |this| {
+                        this.flex_1()
+                            .w_full()
+                            .when_some(ChatRegistry::global(cx), |this, state| {
+                                let rooms = state.read(cx).rooms();
+                                let len = rooms.len();
+
+                                this.child(
+                                    uniform_list(
+                                        entity,
+                                        "rooms",
+                                        len,
+                                        move |this, range, _, cx| {
+                                            let mut items = vec![];
+
+                                            for ix in range {
+                                                if let Some(room) = rooms.get(ix) {
+                                                    items.push(this.render_room(ix, room, cx));
+                                                }
+                                            }
+
+                                            items
+                                        },
+                                    )
+                                    .size_full(),
+                                )
+                            })
+                    }),
+            )
     }
 }

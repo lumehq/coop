@@ -7,13 +7,6 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
 };
 
-pub async fn signer_public_key(client: &Client) -> anyhow::Result<PublicKey, anyhow::Error> {
-    let signer = client.signer().await?;
-    let public_key = signer.get_public_key().await?;
-
-    Ok(public_key)
-}
-
 pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
     let signer = client.signer().await?;
     let server_url = Url::parse(NIP96_SERVER)?;
