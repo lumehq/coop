@@ -2,7 +2,7 @@ name = "coop"
 description = "Coop is a cross-platform Nostr client designed for secure communication focus on simplicity and customizability."
 product-name = "Coop"
 identifier = "su.reya.coop"
-version = "0.1.2"
+version = "0.1.3"
 resources = ["assets/*/*", "Cargo.toml", "./LICENSE", "./README.md"]
 icons = [
   "assets/brand/32x32.png",
