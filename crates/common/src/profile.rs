@@ -47,7 +47,7 @@ impl NostrProfile {
                 )
                 .into()
             })
-            .unwrap_or_else(|| "brand/avatar.png".into())
+            .unwrap_or_else(|| "brand/avatar.jpg".into())
     }
 
     fn extract_name(public_key: &PublicKey, metadata: &Metadata) -> SharedString {
