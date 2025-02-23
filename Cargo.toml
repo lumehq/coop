@@ -23,7 +23,7 @@ nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 ] }
 
 smol = "2"
-oneshot = { git = "https://github.com/faern/oneshot" }
+oneshot = "0.1.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dirs = "5.0"
@@ -32,7 +32,7 @@ futures = "0.3.30"
 chrono = "0.4.38"
 tracing = "0.1.40"
 anyhow = "1.0.44"
-smallvec = "1.13.2"
+smallvec = "1.14.0"
 rust-embed = "8.5.0"
 log = "0.4"
 

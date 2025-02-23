@@ -1,5 +1,5 @@
 [package]
-name = "chats"
+name = "account"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -11,8 +11,6 @@ state = { path = "../state" }
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
-itertools.workspace = true
-chrono.workspace = true
-smallvec.workspace = true
 smol.workspace = true
 oneshot.workspace = true
+log.workspace = true

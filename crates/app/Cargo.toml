@@ -13,6 +13,7 @@ ui = { path = "../ui" }
 common = { path = "../common" }
 state = { path = "../state" }
 chats = { path = "../chats" }
+account = { path = "../account" }
 
 gpui.workspace = true
 reqwest_client.workspace = true

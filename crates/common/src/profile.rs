@@ -1,37 +1,24 @@
-use crate::constants::IMAGE_SERVICE;
+use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
-#[derive(Debug, Clone)]
+use crate::constants::IMAGE_SERVICE;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NostrProfile {
     public_key: PublicKey,
-    metadata: Metadata,
-}
-
-impl AsRef<PublicKey> for NostrProfile {
-    fn as_ref(&self) -> &PublicKey {
-        &self.public_key
-    }
-}
-
-impl AsRef<Metadata> for NostrProfile {
-    fn as_ref(&self) -> &Metadata {
-        &self.metadata
-    }
-}
-
-impl Eq for NostrProfile {}
-
-impl PartialEq for NostrProfile {
-    fn eq(&self, other: &Self) -> bool {
-        self.public_key() == other.public_key()
-    }
+    avatar: SharedString,
+    name: SharedString,
 }
 
 impl NostrProfile {
     pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
+        let name = Self::extract_name(&public_key, &metadata);
+        let avatar = Self::extract_avatar(&metadata);
+
         Self {
             public_key,
-            metadata,
+            name,
+            avatar,
         }
     }
 
@@ -40,47 +27,44 @@ impl NostrProfile {
         self.public_key
     }
 
-    /// Get contact's avatar
-    pub fn avatar(&self) -> String {
-        if let Some(picture) = &self.metadata.picture {
-            if picture.len() > 1 {
+    pub fn avatar(&self) -> SharedString {
+        self.avatar.clone()
+    }
+
+    pub fn name(&self) -> SharedString {
+        self.name.clone()
+    }
+
+    fn extract_avatar(metadata: &Metadata) -> SharedString {
+        metadata
+            .picture
+            .as_ref()
+            .filter(|picture| !picture.is_empty())
+            .map(|picture| {
                 format!(
                     "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
                     IMAGE_SERVICE, picture
                 )
-            } else {
-                "brand/avatar.png".into()
-            }
-        } else {
-            "brand/avatar.png".into()
-        }
+                .into()
+            })
+            .unwrap_or_else(|| "brand/avatar.png".into())
     }
 
-    /// Get contact's name, fallback to public key as shorted format
-    pub fn name(&self) -> String {
-        if let Some(display_name) = &self.metadata.display_name {
+    fn extract_name(public_key: &PublicKey, metadata: &Metadata) -> SharedString {
+        if let Some(display_name) = metadata.display_name.as_ref() {
             if !display_name.is_empty() {
-                return display_name.to_owned();
+                return display_name.into();
             }
         }
 
-        if let Some(name) = &self.metadata.name {
+        if let Some(name) = metadata.name.as_ref() {
             if !name.is_empty() {
-                return name.to_owned();
+                return name.into();
             }
         }
 
-        let pubkey = self.public_key.to_string();
-        format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..])
-    }
+        let pubkey = public_key.to_hex();
 
-    /// Get contact's metadata
-    pub fn metadata(&mut self) -> &Metadata {
-        &self.metadata
-    }
-
-    /// Set contact's metadata
-    pub fn set_metadata(&mut self, metadata: &Metadata) {
-        self.metadata = metadata.clone()
+        format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..]).into()
     }
 }

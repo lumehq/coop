@@ -358,8 +358,6 @@ impl Render for Dock {
             return div();
         }
 
-        let cache_style = gpui::StyleRefinement::default().v_flex().size_full();
-
         div()
             .relative()
             .overflow_hidden()
@@ -375,7 +373,7 @@ impl Render for Dock {
             .map(|this| match &self.panel {
                 DockItem::Split { view, .. } => this.child(view.clone()),
                 DockItem::Tabs { view, .. } => this.child(view.clone()),
-                DockItem::Panel { view, .. } => this.child(view.clone().view().cached(cache_style)),
+                DockItem::Panel { view, .. } => this.child(view.clone().view()),
             })
             .child(self.render_resize_handle(window, cx))
             .child(DockElement {

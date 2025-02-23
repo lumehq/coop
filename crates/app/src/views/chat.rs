@@ -1,3 +1,4 @@
+use account::registry::Account;
 use anyhow::anyhow;
 use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
@@ -58,14 +59,12 @@ struct ParsedMessage {
 
 impl ParsedMessage {
     pub fn new(profile: &NostrProfile, content: &str, created_at: Timestamp) -> Self {
-        let avatar = profile.avatar().into();
-        let display_name = profile.name().into();
         let content = SharedString::new(content);
         let created_at = LastSeen(created_at).human_readable();
 
         Self {
-            avatar,
-            display_name,
+            avatar: profile.avatar(),
+            display_name: profile.name(),
             created_at,
             content,
         }
@@ -96,13 +95,10 @@ impl Message {
 pub struct Chat {
     // Panel
     id: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
     // Chat Room
     room: WeakEntity<Room>,
     messages: Entity<Vec<Message>>,
-    new_messages: Option<WeakEntity<Vec<Event>>>,
     list_state: ListState,
     subscriptions: Vec<Subscription>,
     // New Message
@@ -119,21 +115,16 @@ impl Chat {
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<Self> {
-        let new_messages = room
-            .read_with(cx, |this, _| this.new_messages.downgrade())
-            .ok();
+        let messages = cx.new(|_| vec![Message::placeholder()]);
+        let attaches = cx.new(|_| None);
+        let input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .appearance(false)
+                .text_size(ui::Size::Small)
+                .placeholder("Message...")
+        });
 
         cx.new(|cx| {
-            let messages = cx.new(|_| vec![Message::placeholder()]);
-            let attaches = cx.new(|_| None);
-
-            let input = cx.new(|cx| {
-                TextInput::new(window, cx)
-                    .appearance(false)
-                    .text_size(ui::Size::Small)
-                    .placeholder("Message...")
-            });
-
             let subscriptions = vec![cx.subscribe_in(
                 &input,
                 window,
@@ -157,13 +148,10 @@ impl Chat {
             });
 
             let mut this = Self {
-                closable: true,
-                zoomable: true,
                 focus_handle: cx.focus_handle(),
                 is_uploading: false,
                 id: id.to_string().into(),
                 room,
-                new_messages,
                 messages,
                 list_state,
                 input,
@@ -189,10 +177,15 @@ impl Chat {
             return;
         };
 
-        let room = model.read(cx);
-        let pubkeys: Vec<PublicKey> = room.members.iter().map(|m| m.public_key()).collect();
         let client = get_client();
         let (tx, rx) = oneshot::channel::<Vec<(PublicKey, bool)>>();
+
+        let pubkeys: Vec<PublicKey> = model
+            .read(cx)
+            .members
+            .iter()
+            .map(|m| m.public_key())
+            .collect();
 
         cx.background_spawn(async move {
             let mut result = Vec::new();
@@ -224,7 +217,7 @@ impl Chat {
                             if !item.1 {
                                 let name = this
                                     .room
-                                    .read_with(cx, |this, _| this.name())
+                                    .read_with(cx, |this, _| this.name().unwrap_or("Unnamed".into()))
                                     .unwrap_or("Unnamed".into());
 
                                 this.push_system_message(
@@ -245,35 +238,25 @@ impl Chat {
             return;
         };
 
+        let room = model.read(cx);
         let client = get_client();
         let (tx, rx) = oneshot::channel::<Events>();
 
-        let room = model.read(cx);
         let pubkeys = room
             .members
             .iter()
             .map(|m| m.public_key())
             .collect::<Vec<_>>();
 
-        let recv = Filter::new()
+        let filter = Filter::new()
             .kind(Kind::PrivateDirectMessage)
-            .author(room.owner.public_key())
-            .pubkeys(pubkeys.iter().copied());
-
-        let send = Filter::new()
-            .kind(Kind::PrivateDirectMessage)
-            .authors(pubkeys)
-            .pubkey(room.owner.public_key());
+            .authors(pubkeys.iter().copied())
+            .pubkeys(pubkeys);
 
         cx.background_spawn(async move {
-            let Ok(recv_events) = client.database().query(recv).await else {
+            let Ok(events) = client.database().query(filter).await else {
                 return;
             };
-            let Ok(send_events) = client.database().query(send).await else {
-                return;
-            };
-            let events = recv_events.merge(send_events);
-
             _ = tx.send(events);
         })
         .detach();
@@ -303,13 +286,13 @@ impl Chat {
     }
 
     fn push_message(&self, content: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(model) = self.room.upgrade() else {
+        let Some(account) = Account::global(cx) else {
             return;
         };
 
         let old_len = self.messages.read(cx).len();
-        let room = model.read(cx);
-        let message = Message::new(ParsedMessage::new(&room.owner, &content, Timestamp::now()));
+        let profile = account.read(cx).get();
+        let message = Message::new(ParsedMessage::new(profile, &content, Timestamp::now()));
 
         // Update message list
         cx.update_entity(&self.messages, |this, cx| {
@@ -333,39 +316,40 @@ impl Chat {
             return;
         };
 
-        let old_len = self.messages.read(cx).len();
         let room = model.read(cx);
-        let pubkeys = room.pubkeys();
+        let pubkeys = room
+            .members
+            .iter()
+            .map(|m| m.public_key())
+            .collect::<Vec<_>>();
 
-        let (messages, total) = {
+        let old_len = self.messages.read(cx).len();
+
+        let (messages, new_len) = {
             let items: Vec<Message> = events
                 .into_iter()
                 .sorted_by_key(|ev| ev.created_at)
                 .filter_map(|ev| {
-                    let mut other_pubkeys: Vec<_> = ev.tags.public_keys().copied().collect();
+                    let mut other_pubkeys = ev.tags.public_keys().copied().collect::<Vec<_>>();
                     other_pubkeys.push(ev.pubkey);
 
-                    if compare(&other_pubkeys, &pubkeys) {
-                        let member = if let Some(member) =
-                            room.members.iter().find(|&m| m.public_key() == ev.pubkey)
-                        {
-                            member.to_owned()
-                        } else {
-                            room.owner.to_owned()
-                        };
-
-                        let message =
-                            Message::new(ParsedMessage::new(&member, &ev.content, ev.created_at));
-
-                        Some(message)
-                    } else {
-                        None
+                    if !compare(&other_pubkeys, &pubkeys) {
+                        return None;
                     }
+
+                    room.members
+                        .iter()
+                        .find(|m| m.public_key() == ev.pubkey)
+                        .map(|member| {
+                            Message::new(ParsedMessage::new(member, &ev.content, ev.created_at))
+                        })
                 })
                 .collect();
-            let total = items.len();
 
-            (items, total)
+            // Used for update list state
+            let new_len = items.len();
+
+            (items, new_len)
         };
 
         cx.update_entity(&self.messages, |this, cx| {
@@ -373,25 +357,27 @@ impl Chat {
             cx.notify();
         });
 
-        self.list_state.splice(old_len..old_len, total);
+        self.list_state.splice(old_len..old_len, new_len);
     }
 
     fn load_new_messages(&mut self, cx: &mut Context<Self>) {
-        let Some(Some(model)) = self.new_messages.as_ref().map(|state| state.upgrade()) else {
+        let Some(room) = self.room.upgrade() else {
             return;
         };
 
-        let subscription = cx.observe(&model, |view, this, cx| {
-            let Some(model) = view.room.upgrade() else {
+        let subscription = cx.observe(&room, |view, this, cx| {
+            let room = this.read(cx);
+
+            if room.new_messages.is_empty() {
                 return;
             };
 
-            let room = model.read(cx);
             let old_messages = view.messages.read(cx);
             let old_len = old_messages.len();
 
             let items: Vec<Message> = this
                 .read(cx)
+                .new_messages
                 .iter()
                 .filter_map(|event| {
                     if let Some(profile) = room.member(&event.pubkey) {
@@ -466,28 +452,32 @@ impl Chat {
             this.set_disabled(true, window, cx);
         });
 
+        let room = model.read(cx);
+        // let subject = Tag::from_standardized_without_cell(TagStandard::Subject(room.title.clone()));
+        let pubkeys = room.public_keys();
+        let async_content = content.clone().to_string();
+
         let client = get_client();
         let window_handle = window.window_handle();
         let (tx, rx) = oneshot::channel::<Vec<Error>>();
 
-        let room = model.read(cx);
-        let pubkeys = room.pubkeys();
-        let async_content = content.clone().to_string();
-        let tags: Vec<Tag> = room
-            .pubkeys()
-            .iter()
-            .filter_map(|pubkey| {
-                if pubkey != &room.owner.public_key() {
-                    Some(Tag::public_key(*pubkey))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
         // Send message to all pubkeys
         cx.background_spawn(async move {
+            let signer = client.signer().await.unwrap();
+            let public_key = signer.get_public_key().await.unwrap();
+
             let mut errors = Vec::new();
+
+            let tags: Vec<Tag> = pubkeys
+                .iter()
+                .filter_map(|pubkey| {
+                    if pubkey != &public_key {
+                        Some(Tag::public_key(*pubkey))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
             for pubkey in pubkeys.iter() {
                 if let Err(e) = client
@@ -709,9 +699,8 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room
-            .read_with(cx, |this, _cx| {
-                let name = this.name();
-                let facepill: Vec<String> =
+            .read_with(cx, |this, _| {
+                let facepill: Vec<SharedString> =
                     this.members.iter().map(|member| member.avatar()).collect();
 
                 div()
@@ -733,18 +722,10 @@ impl Panel for Chat {
                                 )
                             })),
                     )
-                    .child(name)
+                    .when_some(this.name(), |this, name| this.child(name))
                     .into_any()
             })
             .unwrap_or("Unnamed".into_any())
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {

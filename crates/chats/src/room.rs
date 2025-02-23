@@ -1,138 +1,161 @@
 use common::{
     last_seen::LastSeen,
     profile::NostrProfile,
-    utils::{compare, random_name, room_hash},
+    utils::{random_name, room_hash},
 };
 use gpui::{App, AppContext, Entity, SharedString};
 use nostr_sdk::prelude::*;
-use std::collections::HashSet;
+use smallvec::{smallvec, SmallVec};
+use state::get_client;
+use std::{collections::HashSet, rc::Rc};
 
 pub struct Room {
     pub id: u64,
-    pub title: Option<SharedString>,
-    pub owner: NostrProfile,        // Owner always match current user
-    pub members: Vec<NostrProfile>, // Extract from event's tags
-    pub last_seen: LastSeen,
-    pub is_group: bool,
-    pub new_messages: Entity<Vec<Event>>, // Hold all new messages
+    pub last_seen: Rc<LastSeen>,
+    /// Subject of the room (Nostr)
+    pub title: String,
+    /// Display name of the room (used for display purposes in Coop)
+    pub display_name: Option<SharedString>,
+    /// All members of the room
+    pub members: SmallVec<[NostrProfile; 2]>,
+    /// Store all new messages
+    pub new_messages: Vec<Event>,
 }
 
 impl PartialEq for Room {
     fn eq(&self, other: &Self) -> bool {
-        compare(&self.pubkeys(), &other.pubkeys())
+        self.id == other.id
     }
 }
 
 impl Room {
-    pub fn new(
-        id: u64,
-        owner: NostrProfile,
-        members: Vec<NostrProfile>,
-        title: Option<SharedString>,
-        last_seen: LastSeen,
-        cx: &mut App,
-    ) -> Self {
-        let new_messages = cx.new(|_| Vec::new());
-        let is_group = members.len() > 1;
-        let title = if title.is_none() {
-            Some(random_name(2).into())
-        } else {
-            title
-        };
-
-        Self {
-            id,
-            owner,
-            members,
-            title,
-            last_seen,
-            is_group,
-            new_messages,
-        }
-    }
-
-    /// Convert nostr event to room
-    pub fn parse(event: &Event, cx: &mut App) -> Room {
+    pub fn new(event: &Event, cx: &mut App) -> Entity<Self> {
         let id = room_hash(event);
-        let last_seen = LastSeen(event.created_at);
-
-        // Always equal to current user
-        let owner = NostrProfile::new(event.pubkey, Metadata::default());
-
-        // Get all pubkeys that invole in this group
-        let members: Vec<NostrProfile> = event
-            .tags
-            .public_keys()
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .map(|public_key| NostrProfile::new(*public_key, Metadata::default()))
-            .collect();
-
-        // Get title from event's tags
+        let last_seen = Rc::new(LastSeen(event.created_at));
+        // Get the subject from the event's tags, or create a random subject if none is found
         let title = if let Some(tag) = event.tags.find(TagKind::Subject) {
-            tag.content().map(|s| s.to_owned().into())
+            tag.content()
+                .map(|s| s.to_owned())
+                .unwrap_or(random_name(2))
         } else {
-            None
+            random_name(2)
         };
 
-        Self::new(id, owner, members, title, last_seen, cx)
+        let room = cx.new(|cx| {
+            let this = Self {
+                id,
+                last_seen,
+                title,
+                display_name: None,
+                members: smallvec![],
+                new_messages: vec![],
+            };
+
+            let mut pubkeys = vec![];
+
+            // Get all pubkeys from event's tags
+            pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
+            pubkeys.push(event.pubkey);
+
+            let client = get_client();
+            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
+
+            cx.background_spawn(async move {
+                let signer = client.signer().await.unwrap();
+                let signer_pubkey = signer.get_public_key().await.unwrap();
+                let mut profiles = vec![];
+
+                for public_key in pubkeys.into_iter() {
+                    if let Ok(result) = client.database().metadata(public_key).await {
+                        let metadata = result.unwrap_or_default();
+                        let profile = NostrProfile::new(public_key, metadata);
+
+                        if public_key == signer_pubkey {
+                            profiles.push(profile);
+                        } else {
+                            profiles.insert(0, profile);
+                        }
+                    }
+                }
+
+                _ = tx.send(profiles);
+            })
+            .detach();
+
+            cx.spawn(|this, cx| async move {
+                if let Ok(profiles) = rx.await {
+                    _ = cx.update(|cx| {
+                        let display_name = if profiles.len() > 2 {
+                            let merged = profiles
+                                .iter()
+                                .take(2)
+                                .map(|profile| profile.name().to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+
+                            let name: SharedString =
+                                format!("{}, +{}", merged, profiles.len() - 2).into();
+
+                            Some(name)
+                        } else {
+                            None
+                        };
+
+                        _ = this.update(cx, |this: &mut Room, cx| {
+                            this.members.extend(profiles);
+                            this.display_name = display_name;
+                            cx.notify();
+                        });
+                    });
+                }
+            })
+            .detach();
+
+            this
+        });
+
+        room
     }
 
-    /// Set contact's metadata by public key
-    pub fn set_metadata(&mut self, public_key: PublicKey, metadata: Metadata) {
-        if self.owner.public_key() == public_key {
-            self.owner.set_metadata(&metadata);
-        }
-
-        for member in self.members.iter_mut() {
-            if member.public_key() == public_key {
-                member.set_metadata(&metadata);
-            }
-        }
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// Get room's member by public key
     pub fn member(&self, public_key: &PublicKey) -> Option<NostrProfile> {
-        if &self.owner.public_key() == public_key {
-            Some(self.owner.clone())
-        } else {
-            self.members
-                .iter()
-                .find(|m| &m.public_key() == public_key)
-                .cloned()
-        }
+        self.members
+            .iter()
+            .find(|m| &m.public_key() == public_key)
+            .cloned()
+    }
+
+    /// Get room's first member's public key
+    pub fn first_member(&self) -> Option<&NostrProfile> {
+        self.members.first()
+    }
+
+    /// Collect room's member's public keys
+    pub fn public_keys(&self) -> Vec<PublicKey> {
+        self.members.iter().map(|m| m.public_key()).collect()
     }
 
     /// Get room's display name
-    pub fn name(&self) -> String {
-        if self.members.len() <= 2 {
-            self.members
-                .iter()
-                .map(|profile| profile.name())
-                .collect::<Vec<_>>()
-                .join(", ")
-        } else {
-            let name = self
-                .members
-                .iter()
-                .take(2)
-                .map(|profile| profile.name())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            format!("{}, +{}", name, self.members.len() - 2)
-        }
+    pub fn name(&self) -> Option<SharedString> {
+        self.display_name.clone()
     }
 
-    pub fn last_seen(&self) -> &LastSeen {
-        &self.last_seen
+    /// Determine if room is a group
+    pub fn is_group(&self) -> bool {
+        self.members.len() > 2
     }
 
-    /// Get all public keys from current room
-    pub fn pubkeys(&self) -> Vec<PublicKey> {
-        let mut pubkeys: Vec<_> = self.members.iter().map(|m| m.public_key()).collect();
-        pubkeys.push(self.owner.public_key());
+    /// Get room's last seen
+    pub fn last_seen(&self) -> Rc<LastSeen> {
+        self.last_seen.clone()
+    }
 
-        pubkeys
+    /// Get room's last seen as ago format
+    pub fn ago(&self) -> SharedString {
+        self.last_seen.ago()
     }
 }
