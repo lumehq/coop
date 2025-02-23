@@ -1,6 +1,6 @@
 use crate::room::Room;
 use anyhow::anyhow;
-use common::utils::room_hash;
+use common::{last_seen::LastSeen, utils::room_hash};
 use gpui::{App, AppContext, Context, Entity, Global, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -110,7 +110,7 @@ impl ChatRegistry {
                                     let new = room_hash(&ev);
                                     // Filter all seen events
                                     if !current_rooms.iter().any(|this| this == &new) {
-                                        Some(cx.new(|cx| Room::new(&ev, cx)))
+                                        Some(Room::new(&ev, cx))
                                     } else {
                                         None
                                     }
@@ -146,11 +146,18 @@ impl ChatRegistry {
             .map(|room| room.downgrade())
     }
 
-    pub fn push_room(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
+    pub fn push_room(
+        &mut self,
+        room: Entity<Room>,
+        cx: &mut Context<Self>,
+    ) -> Result<(), anyhow::Error> {
         let mut rooms = self.rooms.write().unwrap();
 
-        if !rooms.iter().any(|current| current.read(cx) == &room) {
-            rooms.insert(0, cx.new(|_| room));
+        if !rooms
+            .iter()
+            .any(|current| current.read(cx) == room.read(cx))
+        {
+            rooms.insert(0, room);
             cx.notify();
 
             Ok(())
@@ -160,29 +167,25 @@ impl ChatRegistry {
     }
 
     pub fn push_message(&mut self, event: Event, cx: &mut Context<Self>) {
-        let hash = room_hash(&event);
-        let rooms = self.rooms.read().unwrap();
+        let id = room_hash(&event);
+        let mut rooms = self.rooms.write().unwrap();
 
-        if let Some(room) = rooms.iter().find(|room| room.read(cx).id == hash) {
+        if let Some(room) = rooms.iter().find(|room| room.read(cx).id == id) {
             room.update(cx, |this, cx| {
-                this.last_seen.set(event.created_at);
-                this.new_messages.update(cx, |this, cx| {
-                    this.push(event);
-                    cx.notify();
-                });
+                if let Some(last_seen) = Rc::get_mut(&mut this.last_seen) {
+                    *last_seen = LastSeen(event.created_at);
+                }
+                this.new_messages.push(event);
                 cx.notify();
             });
 
             // Re sort rooms by last seen
-            self.rooms
-                .write()
-                .unwrap()
-                .sort_by_key(|room| Reverse(room.read(cx).last_seen()));
+            rooms.sort_by_key(|room| Reverse(room.read(cx).last_seen()));
 
             cx.notify();
         } else {
             let mut rooms = self.rooms.write().unwrap();
-            let new_room = cx.new(|cx| Room::new(&event, cx));
+            let new_room = Room::new(&event, cx);
 
             rooms.insert(0, new_room);
             cx.notify();

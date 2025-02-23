@@ -94,14 +94,25 @@ impl Sidebar {
             .rounded(px(cx.theme().radius))
             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
             .child(div().flex_1().truncate().font_medium().map(|this| {
-                if room.is_group(cx) {
+                if room.is_group() {
                     this.flex()
                         .items_center()
                         .gap_2()
-                        .child(img("brand/avatar.png").size_6().rounded_full())
-                        .when_some(room.name(cx), |this, name| this.child(name))
+                        .child(
+                            div()
+                                .flex()
+                                .justify_center()
+                                .items_center()
+                                .size_6()
+                                .rounded_full()
+                                .bg(cx.theme().accent.step(cx, ColorScaleStep::THREE))
+                                .child(Icon::new(IconName::GroupFill).size_3().text_color(
+                                    cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
+                                )),
+                        )
+                        .when_some(room.name(), |this, name| this.child(name))
                 } else {
-                    this.when_some(room.members.read(cx).first(), |this, member| {
+                    this.when_some(room.first_member(), |this, member| {
                         this.flex()
                             .items_center()
                             .gap_2()
@@ -114,7 +125,7 @@ impl Sidebar {
                 div()
                     .flex_shrink_0()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(room.last_seen.ago()),
+                    .child(room.ago()),
             )
             .on_click({
                 let id = room.id;

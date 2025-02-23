@@ -95,13 +95,10 @@ impl Message {
 pub struct Chat {
     // Panel
     id: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
     // Chat Room
     room: WeakEntity<Room>,
     messages: Entity<Vec<Message>>,
-    new_messages: Option<WeakEntity<Vec<Event>>>,
     list_state: ListState,
     subscriptions: Vec<Subscription>,
     // New Message
@@ -118,21 +115,16 @@ impl Chat {
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<Self> {
-        let new_messages = room
-            .read_with(cx, |this, _| this.new_messages.downgrade())
-            .ok();
+        let messages = cx.new(|_| vec![Message::placeholder()]);
+        let attaches = cx.new(|_| None);
+        let input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .appearance(false)
+                .text_size(ui::Size::Small)
+                .placeholder("Message...")
+        });
 
         cx.new(|cx| {
-            let messages = cx.new(|_| vec![Message::placeholder()]);
-            let attaches = cx.new(|_| None);
-
-            let input = cx.new(|cx| {
-                TextInput::new(window, cx)
-                    .appearance(false)
-                    .text_size(ui::Size::Small)
-                    .placeholder("Message...")
-            });
-
             let subscriptions = vec![cx.subscribe_in(
                 &input,
                 window,
@@ -156,13 +148,10 @@ impl Chat {
             });
 
             let mut this = Self {
-                closable: true,
-                zoomable: true,
                 focus_handle: cx.focus_handle(),
                 is_uploading: false,
                 id: id.to_string().into(),
                 room,
-                new_messages,
                 messages,
                 list_state,
                 input,
@@ -194,7 +183,6 @@ impl Chat {
         let pubkeys: Vec<PublicKey> = model
             .read(cx)
             .members
-            .read(cx)
             .iter()
             .map(|m| m.public_key())
             .collect();
@@ -229,7 +217,7 @@ impl Chat {
                             if !item.1 {
                                 let name = this
                                     .room
-                                    .read_with(cx, |this, cx| this.name(cx).unwrap_or("Unnamed".into()))
+                                    .read_with(cx, |this, _| this.name().unwrap_or("Unnamed".into()))
                                     .unwrap_or("Unnamed".into());
 
                                 this.push_system_message(
@@ -256,7 +244,6 @@ impl Chat {
 
         let pubkeys = room
             .members
-            .read(cx)
             .iter()
             .map(|m| m.public_key())
             .collect::<Vec<_>>();
@@ -332,7 +319,6 @@ impl Chat {
         let room = model.read(cx);
         let pubkeys = room
             .members
-            .read(cx)
             .iter()
             .map(|m| m.public_key())
             .collect::<Vec<_>>();
@@ -352,7 +338,6 @@ impl Chat {
                     }
 
                     room.members
-                        .read(cx)
                         .iter()
                         .find(|m| m.public_key() == ev.pubkey)
                         .map(|member| {
@@ -376,24 +361,26 @@ impl Chat {
     }
 
     fn load_new_messages(&mut self, cx: &mut Context<Self>) {
-        let Some(Some(model)) = self.new_messages.as_ref().map(|state| state.upgrade()) else {
+        let Some(room) = self.room.upgrade() else {
             return;
         };
 
-        let subscription = cx.observe(&model, |view, this, cx| {
-            let Some(model) = view.room.upgrade() else {
+        let subscription = cx.observe(&room, |view, this, cx| {
+            let room = this.read(cx);
+
+            if room.new_messages.is_empty() {
                 return;
             };
 
-            let room = model.read(cx);
             let old_messages = view.messages.read(cx);
             let old_len = old_messages.len();
 
             let items: Vec<Message> = this
                 .read(cx)
+                .new_messages
                 .iter()
                 .filter_map(|event| {
-                    if let Some(profile) = room.member(&event.pubkey, cx) {
+                    if let Some(profile) = room.member(&event.pubkey) {
                         let message = Message::new(ParsedMessage::new(
                             &profile,
                             &event.content,
@@ -466,13 +453,8 @@ impl Chat {
         });
 
         let room = model.read(cx);
-        let pubkeys = room
-            .members
-            .read(cx)
-            .iter()
-            .map(|m| m.public_key())
-            .collect::<Vec<_>>();
-
+        // let subject = Tag::from_standardized_without_cell(TagStandard::Subject(room.title.clone()));
+        let pubkeys = room.public_keys();
         let async_content = content.clone().to_string();
 
         let client = get_client();
@@ -717,13 +699,9 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room
-            .read_with(cx, |this, cx| {
-                let facepill: Vec<SharedString> = this
-                    .members
-                    .read(cx)
-                    .iter()
-                    .map(|member| member.avatar())
-                    .collect();
+            .read_with(cx, |this, _| {
+                let facepill: Vec<SharedString> =
+                    this.members.iter().map(|member| member.avatar()).collect();
 
                 div()
                     .flex()
@@ -744,18 +722,10 @@ impl Panel for Chat {
                                 )
                             })),
                     )
-                    .when_some(this.name(cx), |this, name| this.child(name))
+                    .when_some(this.name(), |this, name| this.child(name))
                     .into_any()
             })
             .unwrap_or("Unnamed".into_any())
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
