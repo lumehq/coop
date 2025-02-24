@@ -1,4 +1,4 @@
-use crate::room::Room;
+use crate::room::{IncomingEvent, Room};
 use anyhow::anyhow;
 use common::{last_seen::LastSeen, utils::room_hash};
 use gpui::{App, AppContext, Context, Entity, Global, WeakEntity};
@@ -175,7 +175,7 @@ impl ChatRegistry {
                 if let Some(last_seen) = Rc::get_mut(&mut this.last_seen) {
                     *last_seen = LastSeen(event.created_at);
                 }
-                this.new_messages.push(event);
+                cx.emit(IncomingEvent { event });
                 cx.notify();
             });
 
@@ -184,8 +184,8 @@ impl ChatRegistry {
 
             cx.notify();
         } else {
-            let mut rooms = self.rooms.write().unwrap();
             let new_room = Room::new(&event, cx);
+            let mut rooms = self.rooms.write().unwrap();
 
             rooms.insert(0, new_room);
             cx.notify();

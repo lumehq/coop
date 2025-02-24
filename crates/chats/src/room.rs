@@ -1,26 +1,26 @@
-use common::{
-    last_seen::LastSeen,
-    profile::NostrProfile,
-    utils::{random_name, room_hash},
-};
-use gpui::{App, AppContext, Entity, SharedString};
+use anyhow::Error;
+use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
+use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use state::get_client;
 use std::{collections::HashSet, rc::Rc};
 
+#[derive(Debug, Clone)]
+pub struct IncomingEvent {
+    pub event: Event,
+}
+
 pub struct Room {
     pub id: u64,
     pub last_seen: Rc<LastSeen>,
-    /// Subject of the room (Nostr)
-    pub title: String,
-    /// Display name of the room (used for display purposes in Coop)
-    pub display_name: Option<SharedString>,
+    /// Subject of the room
+    pub name: Option<SharedString>,
     /// All members of the room
     pub members: SmallVec<[NostrProfile; 2]>,
-    /// Store all new messages
-    pub new_messages: Vec<Event>,
 }
+
+impl EventEmitter<IncomingEvent> for Room {}
 
 impl PartialEq for Room {
     fn eq(&self, other: &Self) -> bool {
@@ -32,78 +32,47 @@ impl Room {
     pub fn new(event: &Event, cx: &mut App) -> Entity<Self> {
         let id = room_hash(event);
         let last_seen = Rc::new(LastSeen(event.created_at));
-        // Get the subject from the event's tags, or create a random subject if none is found
-        let title = if let Some(tag) = event.tags.find(TagKind::Subject) {
-            tag.content()
-                .map(|s| s.to_owned())
-                .unwrap_or(random_name(2))
+
+        // Get the subject from the event's tags
+        let name = if let Some(tag) = event.tags.find(TagKind::Subject) {
+            tag.content().map(|s| s.to_owned().into())
         } else {
-            random_name(2)
+            None
         };
+
+        // Create a task for loading metadata
+        let load_metadata = Self::load_metadata(event, cx);
 
         let room = cx.new(|cx| {
             let this = Self {
                 id,
                 last_seen,
-                title,
-                display_name: None,
+                name,
                 members: smallvec![],
-                new_messages: vec![],
             };
 
-            let mut pubkeys = vec![];
-
-            // Get all pubkeys from event's tags
-            pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
-            pubkeys.push(event.pubkey);
-
-            let client = get_client();
-            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
-
-            cx.background_spawn(async move {
-                let signer = client.signer().await.unwrap();
-                let signer_pubkey = signer.get_public_key().await.unwrap();
-                let mut profiles = vec![];
-
-                for public_key in pubkeys.into_iter() {
-                    if let Ok(result) = client.database().metadata(public_key).await {
-                        let metadata = result.unwrap_or_default();
-                        let profile = NostrProfile::new(public_key, metadata);
-
-                        if public_key == signer_pubkey {
-                            profiles.push(profile);
-                        } else {
-                            profiles.insert(0, profile);
-                        }
-                    }
-                }
-
-                _ = tx.send(profiles);
-            })
-            .detach();
-
             cx.spawn(|this, cx| async move {
-                if let Ok(profiles) = rx.await {
+                if let Ok(profiles) = load_metadata.await {
                     _ = cx.update(|cx| {
-                        let display_name = if profiles.len() > 2 {
-                            let merged = profiles
-                                .iter()
-                                .take(2)
-                                .map(|profile| profile.name().to_string())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-
-                            let name: SharedString =
-                                format!("{}, +{}", merged, profiles.len() - 2).into();
-
-                            Some(name)
-                        } else {
-                            None
-                        };
-
                         _ = this.update(cx, |this: &mut Room, cx| {
+                            // Update the room's name if it's not already set
+                            if this.name.is_none() {
+                                let mut name = profiles
+                                    .iter()
+                                    .take(2)
+                                    .map(|profile| profile.name().to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+
+                                if profiles.len() > 2 {
+                                    name = format!("{}, +{}", name, profiles.len() - 2);
+                                }
+
+                                this.name = Some(name.into())
+                            };
+                            // Update the room's members
                             this.members.extend(profiles);
-                            this.display_name = display_name;
+
                             cx.notify();
                         });
                     });
@@ -141,7 +110,7 @@ impl Room {
 
     /// Get room's display name
     pub fn name(&self) -> Option<SharedString> {
-        self.display_name.clone()
+        self.name.clone()
     }
 
     /// Determine if room is a group
@@ -157,5 +126,86 @@ impl Room {
     /// Get room's last seen as ago format
     pub fn ago(&self) -> SharedString {
         self.last_seen.ago()
+    }
+
+    /// Send message to all room's members
+    pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
+        let client = get_client();
+        let pubkeys = self.public_keys();
+
+        cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let mut msg = Vec::new();
+
+            let tags: Vec<Tag> = pubkeys
+                .iter()
+                .filter_map(|pubkey| {
+                    if pubkey != &public_key {
+                        Some(Tag::public_key(*pubkey))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for pubkey in pubkeys.iter() {
+                if let Err(e) = client
+                    .send_private_msg(*pubkey, &content, tags.clone())
+                    .await
+                {
+                    msg.push(e.to_string());
+                }
+            }
+
+            Ok(msg)
+        })
+    }
+
+    /// Load metadata for all members
+    pub fn load_messages(&self, cx: &App) -> Task<Result<Events, Error>> {
+        let client = get_client();
+        let pubkeys = self.public_keys();
+        let filter = Filter::new()
+            .kind(Kind::PrivateDirectMessage)
+            .authors(pubkeys.iter().copied())
+            .pubkeys(pubkeys);
+
+        cx.background_spawn(async move {
+            let query = client.database().query(filter).await?;
+            Ok(query)
+        })
+    }
+
+    /// Load metadata for all members
+    fn load_metadata(event: &Event, cx: &App) -> Task<Result<Vec<NostrProfile>, Error>> {
+        let client = get_client();
+        let mut pubkeys = vec![];
+
+        // Get all pubkeys from event's tags
+        pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
+        pubkeys.push(event.pubkey);
+
+        cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let signer_pubkey = signer.get_public_key().await?;
+            let mut profiles = vec![];
+
+            for public_key in pubkeys.into_iter() {
+                if let Ok(result) = client.database().metadata(public_key).await {
+                    let metadata = result.unwrap_or_default();
+                    let profile = NostrProfile::new(public_key, metadata);
+
+                    if public_key == signer_pubkey {
+                        profiles.push(profile);
+                    } else {
+                        profiles.insert(0, profile);
+                    }
+                }
+            }
+
+            Ok(profiles)
+        })
     }
 }

@@ -1,4 +1,3 @@
-use account::registry::Account;
 use anyhow::anyhow;
 use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
@@ -100,6 +99,7 @@ pub struct Chat {
     room: WeakEntity<Room>,
     messages: Entity<Vec<Message>>,
     list_state: ListState,
+    #[allow(dead_code)]
     subscriptions: Vec<Subscription>,
     // New Message
     input: Entity<TextInput>,
@@ -125,15 +125,27 @@ impl Chat {
         });
 
         cx.new(|cx| {
-            let subscriptions = vec![cx.subscribe_in(
+            let mut subscriptions = Vec::with_capacity(2);
+
+            subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Chat, _, input_event, window, cx| {
-                    if let InputEvent::PressEnter = input_event {
+                move |this: &mut Self, _, event, window, cx| {
+                    if let InputEvent::PressEnter = event {
                         this.send_message(window, cx);
                     }
                 },
-            )];
+            ));
+
+            if let Some(room) = room.upgrade() {
+                subscriptions.push(cx.subscribe_in(
+                    &room,
+                    window,
+                    move |this: &mut Self, _, event, window, cx| {
+                        this.push_message(&event.event, window, cx);
+                    },
+                ));
+            }
 
             // Initialize list state
             // [item_count] always equal to 1 at the beginning
@@ -147,7 +159,7 @@ impl Chat {
                 }
             });
 
-            let mut this = Self {
+            let this = Self {
                 focus_handle: cx.focus_handle(),
                 is_uploading: false,
                 id: id.to_string().into(),
@@ -164,9 +176,6 @@ impl Chat {
 
             // Load all messages from database
             this.load_messages(cx);
-
-            // Subscribe and load new messages
-            this.load_new_messages(cx);
 
             this
         })
@@ -239,30 +248,10 @@ impl Chat {
         };
 
         let room = model.read(cx);
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<Events>();
-
-        let pubkeys = room
-            .members
-            .iter()
-            .map(|m| m.public_key())
-            .collect::<Vec<_>>();
-
-        let filter = Filter::new()
-            .kind(Kind::PrivateDirectMessage)
-            .authors(pubkeys.iter().copied())
-            .pubkeys(pubkeys);
-
-        cx.background_spawn(async move {
-            let Ok(events) = client.database().query(filter).await else {
-                return;
-            };
-            _ = tx.send(events);
-        })
-        .detach();
+        let task = room.load_messages(cx);
 
         cx.spawn(|this, cx| async move {
-            if let Ok(events) = rx.await {
+            if let Ok(events) = task.await {
                 _ = cx.update(|cx| {
                     _ = this.update(cx, |this, cx| {
                         this.push_messages(events, cx);
@@ -285,26 +274,26 @@ impl Chat {
         self.list_state.splice(old_len..old_len, 1);
     }
 
-    fn push_message(&self, content: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(account) = Account::global(cx) else {
+    fn push_message(&self, event: &Event, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(model) = self.room.upgrade() else {
             return;
         };
 
         let old_len = self.messages.read(cx).len();
-        let profile = account.read(cx).get();
-        let message = Message::new(ParsedMessage::new(profile, &content, Timestamp::now()));
+        let room = model.read(cx);
 
-        // Update message list
+        let profile = room
+            .member(&event.pubkey)
+            .unwrap_or(NostrProfile::new(event.pubkey, Metadata::default()));
+
+        let message = Message::new(ParsedMessage::new(
+            &profile,
+            &event.content,
+            Timestamp::now(),
+        ));
+
         cx.update_entity(&self.messages, |this, cx| {
             this.extend(vec![message]);
-            cx.notify();
-        });
-
-        // Reset message input
-        cx.update_entity(&self.input, |this, cx| {
-            this.set_loading(false, window, cx);
-            this.set_disabled(false, window, cx);
-            this.set_text("", window, cx);
             cx.notify();
         });
 
@@ -317,12 +306,7 @@ impl Chat {
         };
 
         let room = model.read(cx);
-        let pubkeys = room
-            .members
-            .iter()
-            .map(|m| m.public_key())
-            .collect::<Vec<_>>();
-
+        let pubkeys = room.public_keys();
         let old_len = self.messages.read(cx).len();
 
         let (messages, new_len) = {
@@ -360,75 +344,13 @@ impl Chat {
         self.list_state.splice(old_len..old_len, new_len);
     }
 
-    fn load_new_messages(&mut self, cx: &mut Context<Self>) {
-        let Some(room) = self.room.upgrade() else {
-            return;
-        };
-
-        let subscription = cx.observe(&room, |view, this, cx| {
-            let room = this.read(cx);
-
-            if room.new_messages.is_empty() {
-                return;
-            };
-
-            let old_messages = view.messages.read(cx);
-            let old_len = old_messages.len();
-
-            let items: Vec<Message> = this
-                .read(cx)
-                .new_messages
-                .iter()
-                .filter_map(|event| {
-                    if let Some(profile) = room.member(&event.pubkey) {
-                        let message = Message::new(ParsedMessage::new(
-                            &profile,
-                            &event.content,
-                            event.created_at,
-                        ));
-
-                        if !old_messages.iter().any(|old| old == &message) {
-                            Some(message)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            let total = items.len();
-
-            cx.update_entity(&view.messages, |this, cx| {
-                let messages: Vec<Message> = items
-                    .into_iter()
-                    .filter_map(|new| {
-                        if !this.iter().any(|old| old == &new) {
-                            Some(new)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                this.extend(messages);
-                cx.notify();
-            });
-
-            view.list_state.splice(old_len..old_len, total);
-        });
-
-        self.subscriptions.push(subscription);
-    }
-
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(model) = self.room.upgrade() else {
             return;
         };
 
         // Get message
-        let mut content = self.input.read(cx).text();
+        let mut content = self.input.read(cx).text().to_string();
 
         // Get all attaches and merge its with message
         if let Some(attaches) = self.attaches.read(cx).as_ref() {
@@ -438,7 +360,7 @@ impl Chat {
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            content = format!("{}\n{}", content, merged).into()
+            content = format!("{}\n{}", content, merged)
         }
 
         if content.is_empty() {
@@ -453,57 +375,25 @@ impl Chat {
         });
 
         let room = model.read(cx);
-        // let subject = Tag::from_standardized_without_cell(TagStandard::Subject(room.title.clone()));
-        let pubkeys = room.public_keys();
-        let async_content = content.clone().to_string();
-
-        let client = get_client();
+        let task = room.send_message(content, cx);
         let window_handle = window.window_handle();
-        let (tx, rx) = oneshot::channel::<Vec<Error>>();
-
-        // Send message to all pubkeys
-        cx.background_spawn(async move {
-            let signer = client.signer().await.unwrap();
-            let public_key = signer.get_public_key().await.unwrap();
-
-            let mut errors = Vec::new();
-
-            let tags: Vec<Tag> = pubkeys
-                .iter()
-                .filter_map(|pubkey| {
-                    if pubkey != &public_key {
-                        Some(Tag::public_key(*pubkey))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            for pubkey in pubkeys.iter() {
-                if let Err(e) = client
-                    .send_private_msg(*pubkey, &async_content, tags.clone())
-                    .await
-                {
-                    errors.push(e);
-                }
-            }
-
-            _ = tx.send(errors);
-        })
-        .detach();
 
         cx.spawn(|this, mut cx| async move {
-            _ = cx.update_window(window_handle, |_, window, cx| {
-                _ = this.update(cx, |this, cx| {
-                    this.push_message(content.to_string(), window, cx);
-                });
-            });
-
-            if let Ok(errors) = rx.await {
+            if let Ok(msgs) = task.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    for error in errors.into_iter() {
+                    _ = this.update(cx, |this, cx| {
+                        // Reset message input
+                        cx.update_entity(&this.input, |this, cx| {
+                            this.set_loading(false, window, cx);
+                            this.set_disabled(false, window, cx);
+                            this.set_text("", window, cx);
+                            cx.notify();
+                        });
+                    });
+
+                    for item in msgs.into_iter() {
                         window.push_notification(
-                            Notification::error(error.to_string()).title("Message Failed to Send"),
+                            Notification::error(item).title("Message Failed to Send"),
                             cx,
                         );
                     }

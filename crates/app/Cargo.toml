@@ -27,6 +27,7 @@ itertools.workspace = true
 dirs.workspace = true
 rust-embed.workspace = true
 log.workspace = true
+smallvec.workspace = true
 smol.workspace = true
 oneshot.workspace = true
 

@@ -1,4 +1,3 @@
-use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
 use common::{profile::NostrProfile, utils::random_name};
 use gpui::{
@@ -286,18 +285,16 @@ impl Compose {
         let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
 
         cx.background_spawn(async move {
-            spawn(async move {
-                if let Ok(profile) = nip05::profile(&content, None).await {
-                    let metadata = (client
-                        .fetch_metadata(profile.public_key, Duration::from_secs(2))
-                        .await)
-                        .unwrap_or_default();
+            if let Ok(profile) = nip05::profile(&content, None).await {
+                let metadata = (client
+                    .fetch_metadata(profile.public_key, Duration::from_secs(2))
+                    .await)
+                    .unwrap_or_default();
 
-                    _ = tx.send(Some(NostrProfile::new(profile.public_key, metadata)));
-                } else {
-                    _ = tx.send(None);
-                }
-            });
+                _ = tx.send(Some(NostrProfile::new(profile.public_key, metadata)));
+            } else {
+                _ = tx.send(None);
+            }
         })
         .detach();
 
