@@ -128,6 +128,35 @@ impl Room {
         self.last_seen.ago()
     }
 
+    /// Sync inbox relays for all room's members
+    pub fn verify_inbox_relays(&self, cx: &App) -> Task<Result<Vec<(PublicKey, bool)>, Error>> {
+        let client = get_client();
+        let pubkeys = self.public_keys();
+
+        cx.background_spawn(async move {
+            let mut result = Vec::with_capacity(pubkeys.len());
+
+            for pubkey in pubkeys.into_iter() {
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(pubkey)
+                    .limit(1);
+
+                let is_ready = client
+                    .database()
+                    .query(filter)
+                    .await
+                    .ok()
+                    .and_then(|events| events.first_owned())
+                    .is_some();
+
+                result.push((pubkey, is_ready));
+            }
+
+            Ok(result)
+        })
+    }
+
     /// Send message to all room's members
     pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
         let client = get_client();
@@ -155,6 +184,8 @@ impl Room {
                     .send_private_msg(*pubkey, &content, tags.clone())
                     .await
                 {
+                    log::error!("Failed to send message to {}: {}", pubkey.to_bech32()?, e);
+                    // Convert error into string
                     msg.push(e.to_string());
                 }
             }

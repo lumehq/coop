@@ -1,6 +1,6 @@
 use gpui::{
     div, prelude::FluentBuilder, px, uniform_list, AppContext, Context, Entity, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, TextAlign, Window,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Task, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use state::get_client;
@@ -63,31 +63,23 @@ impl Relays {
         let relays = self.relays.read(cx).clone();
         let window_handle = window.window_handle();
 
+        // Show loading spinner
         self.set_loading(true, cx);
 
-        let client = get_client();
-        let (tx, rx) = oneshot::channel();
-
-        cx.background_spawn(async move {
-            let signer = client.signer().await.expect("Signer is required");
-            let public_key = signer
-                .get_public_key()
-                .await
-                .expect("Cannot get public key");
+        let task: Task<Result<EventId, anyhow::Error>> = cx.background_spawn(async move {
+            let client = get_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
             // If user didn't have any NIP-65 relays, add default ones
-            // TODO: Is this really necessary?
-            if let Ok(relay_list) = client.database().relay_list(public_key).await {
-                if relay_list.is_empty() {
-                    let builder = EventBuilder::relay_list(vec![
-                        (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
-                        (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
-                        (RelayUrl::parse("wss://nos.lol/").unwrap(), None),
-                    ]);
+            if client.database().relay_list(public_key).await?.is_empty() {
+                let builder = EventBuilder::relay_list(vec![
+                    (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
+                    (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
+                ]);
 
-                    if let Err(e) = client.send_event_builder(builder).await {
-                        log::error!("Failed to send relay list event: {}", e)
-                    }
+                if let Err(e) = client.send_event_builder(builder).await {
+                    log::error!("Failed to send relay list event: {}", e);
                 }
             }
 
@@ -97,15 +89,13 @@ impl Relays {
                 .collect();
 
             let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
+            let output = client.send_event_builder(builder).await?;
 
-            if let Ok(output) = client.send_event_builder(builder).await {
-                _ = tx.send(output.val);
-            };
-        })
-        .detach();
+            Ok(output.val)
+        });
 
         cx.spawn(|this, mut cx| async move {
-            if rx.await.is_ok() {
+            if task.await.is_ok() {
                 _ = cx.update_window(window_handle, |_, window, cx| {
                     _ = this.update(cx, |this, cx| {
                         this.set_loading(false, cx);

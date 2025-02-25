@@ -29,7 +29,8 @@ use ui::{
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
 
-const ALERT: &str =
+const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
+const DESCRIPTION: &str =
     "This conversation is private. Only members of this chat can see each other's messages.";
 
 pub fn init(
@@ -186,55 +187,25 @@ impl Chat {
             return;
         };
 
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<Vec<(PublicKey, bool)>>();
-
-        let pubkeys: Vec<PublicKey> = model
-            .read(cx)
-            .members
-            .iter()
-            .map(|m| m.public_key())
-            .collect();
-
-        cx.background_spawn(async move {
-            let mut result = Vec::new();
-
-            for pubkey in pubkeys.into_iter() {
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(pubkey)
-                    .limit(1);
-
-                let is_ready = if let Ok(events) = client.database().query(filter).await {
-                    events.first_owned().is_some()
-                } else {
-                    false
-                };
-
-                result.push((pubkey, is_ready));
-            }
-
-            _ = tx.send(result);
-        })
-        .detach();
+        let room = model.read(cx);
+        let task = room.verify_inbox_relays(cx);
 
         cx.spawn(|this, cx| async move {
-            if let Ok(result) = rx.await {
+            if let Ok(result) = task.await {
                 _ = cx.update(|cx| {
                     _ = this.update(cx, |this, cx| {
-                        for item in result.into_iter() {
+                        result.into_iter().for_each(|item| {
                             if !item.1 {
-                                let name = this
-                                    .room
-                                    .read_with(cx, |this, _| this.name().unwrap_or("Unnamed".into()))
-                                    .unwrap_or("Unnamed".into());
-
-                                this.push_system_message(
-                                    format!("{} has not set up Messaging (DM) Relays, so they will NOT receive your messages.", name),
-                                    cx,
-                                );
+                                if let Ok(Some(member)) =
+                                    this.room.read_with(cx, |this, _| this.member(&item.0))
+                                {
+                                    this.push_system_message(
+                                        format!("{} {}", ALERT, member.name()),
+                                        cx,
+                                    );
+                                }
                             }
-                        }
+                        });
                     });
                 });
             }
@@ -549,7 +520,7 @@ impl Chat {
                                 .group_hover("", |this| this.bg(cx.theme().danger)),
                         )
                         .child(
-                            img("brand/avatar.png")
+                            img("brand/avatar.jpg")
                                 .size_8()
                                 .rounded_full()
                                 .flex_shrink_0(),
@@ -574,7 +545,7 @@ impl Chat {
                                 .size_8()
                                 .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                         )
-                        .child(ALERT),
+                        .child(DESCRIPTION),
                 })
         } else {
             div()

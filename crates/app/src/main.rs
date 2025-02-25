@@ -1,7 +1,7 @@
 use asset::Assets;
 use chats::registry::ChatRegistry;
 use common::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
 };
 use futures::{select, FutureExt};
 use gpui::{
@@ -12,11 +12,9 @@ use gpui::{
 use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
-use log::{error, info};
-use nostr_sdk::SubscriptionId;
 use nostr_sdk::{
     pool::prelude::ReqExitPolicy, Client, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions,
+    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
 };
 use smol::Timer;
 use state::get_client;
@@ -58,11 +56,11 @@ fn main() {
     // Connect to default relays
     app.background_executor()
         .spawn(async {
-            _ = client.add_relay("wss://relay.damus.io/").await;
-            _ = client.add_relay("wss://relay.primal.net/").await;
-            _ = client.add_relay("wss://user.kindpag.es/").await;
-            _ = client.add_relay("wss://purplepag.es/").await;
+            for relay in BOOTSTRAP_RELAYS.iter() {
+                _ = client.add_relay(*relay).await;
+            }
             _ = client.add_discovery_relay("wss://relaydiscovery.com").await;
+            _ = client.add_discovery_relay("wss://user.kindpag.es").await;
             _ = client.connect().await
         })
         .detach();
@@ -131,12 +129,15 @@ fn main() {
                                             if let Err(e) =
                                                 client.database().save_event(&event).await
                                             {
-                                                error!("Failed to save event: {}", e);
+                                                log::error!("Failed to save event: {}", e);
                                             }
 
                                             // Send all pubkeys to the batch
                                             if let Err(e) = batch_tx.send(pubkeys).await {
-                                                error!("Failed to send pubkeys to batch: {}", e)
+                                                log::error!(
+                                                    "Failed to send pubkeys to batch: {}",
+                                                    e
+                                                )
                                             }
 
                                             // Send this event to the GPUI
@@ -144,7 +145,10 @@ fn main() {
                                                 if let Err(e) =
                                                     event_tx.send(Signal::Event(event)).await
                                                 {
-                                                    error!("Failed to send event to GPUI: {}", e)
+                                                    log::error!(
+                                                        "Failed to send event to GPUI: {}",
+                                                        e
+                                                    )
                                                 }
                                             }
                                         }
@@ -153,6 +157,7 @@ fn main() {
                                 Kind::ContactList => {
                                     let pubkeys =
                                         event.tags.public_keys().copied().collect::<HashSet<_>>();
+
                                     sync_metadata(client, pubkeys).await;
                                 }
                                 _ => {}
@@ -161,7 +166,7 @@ fn main() {
                         RelayMessage::EndOfStoredEvents(subscription_id) => {
                             if all_id == *subscription_id {
                                 if let Err(e) = event_tx.send(Signal::Eose).await {
-                                    error!("Failed to send eose: {}", e)
+                                    log::error!("Failed to send eose: {}", e)
                                 };
                             }
                         }
@@ -296,14 +301,17 @@ fn main() {
 }
 
 async fn sync_metadata(client: &Client, buffer: HashSet<PublicKey>) {
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+    let opts = SubscribeAutoCloseOptions::default()
+        .exit_policy(ReqExitPolicy::ExitOnEOSE)
+        .idle_timeout(Some(Duration::from_secs(2)));
+
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
         .kind(Kind::Metadata)
         .limit(buffer.len());
 
     if let Err(e) = client.subscribe(filter, Some(opts)).await {
-        error!("Subscribe error: {e}");
+        log::error!("Failed to sync metadata: {e}");
     }
 }
 
@@ -362,6 +370,6 @@ async fn restore_window(is_login: bool, cx: &mut AsyncApp) -> anyhow::Result<()>
 }
 
 fn quit(_: &Quit, cx: &mut App) {
-    info!("Gracefully quitting the application . . .");
+    log::info!("Gracefully quitting the application . . .");
     cx.quit();
 }

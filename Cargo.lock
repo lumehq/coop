@@ -943,6 +943,7 @@ dependencies = [
  "common",
  "gpui",
  "itertools 0.13.0",
+ "log",
  "nostr-sdk",
  "oneshot",
  "smallvec",

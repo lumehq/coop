@@ -16,3 +16,4 @@ chrono.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 oneshot.workspace = true
+log.workspace = true

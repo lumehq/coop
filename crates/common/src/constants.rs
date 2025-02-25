@@ -2,6 +2,13 @@ pub const KEYRING_SERVICE: &str = "Coop Safe Storage";
 pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 
+/// Bootstrap relays
+pub const BOOTSTRAP_RELAYS: [&str; 3] = [
+    "wss://relay.damus.io",
+    "wss://relay.primal.net",
+    "wss://purplepag.es",
+];
+
 /// Subscriptions
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";

@@ -3,10 +3,12 @@ use common::{profile::NostrProfile, utils::random_name};
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, TextAlign, Window,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, TextAlign,
+    Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
+use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use state::get_client;
 use std::{collections::HashSet, time::Duration};
@@ -17,7 +19,7 @@ use ui::{
     ContextModal, Icon, IconName, Sizable, Size, StyledExt,
 };
 
-const ALERT: &str =
+const DESCRIPTION: &str =
     "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -35,7 +37,7 @@ pub struct Compose {
     is_submitting: bool,
     error_message: Entity<Option<SharedString>>,
     #[allow(dead_code)]
-    subscriptions: Vec<Subscription>,
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Compose {
@@ -43,7 +45,6 @@ impl Compose {
         let contacts = cx.new(|_| Vec::new());
         let selected = cx.new(|_| HashSet::new());
         let error_message = cx.new(|_| None);
-        let mut subscriptions = Vec::new();
 
         let title_input = cx.new(|cx| {
             let name = random_name(2);
@@ -63,17 +64,15 @@ impl Compose {
                 .placeholder("npub1...")
         });
 
+        let mut subscriptions = smallvec![];
+
         // Handle Enter event for user input
         subscriptions.push(cx.subscribe_in(
             &user_input,
             window,
-            move |this, input, input_event, window, cx| {
+            move |this, _, input_event, window, cx| {
                 if let InputEvent::PressEnter = input_event {
-                    if input.read(cx).text().contains("@") {
-                        this.add_nip05(window, cx);
-                    } else {
-                        this.add_npub(window, cx)
-                    }
+                    this.add(window, cx);
                 }
             },
         ));
@@ -147,50 +146,48 @@ impl Compose {
         }
 
         let tags = Tags::from_list(tag_list);
-        let client = get_client();
         let window_handle = window.window_handle();
-        let (tx, rx) = oneshot::channel::<Event>();
 
-        cx.background_spawn(async move {
-            let signer = client.signer().await.expect("Signer is required");
+        let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
+            let client = get_client();
+            let signer = client.signer().await?;
             // [IMPORTANT]
             // Make sure this event is never send,
             // this event existed just use for convert to Coop's Chat Room later.
-            if let Ok(event) = EventBuilder::private_msg_rumor(*pubkeys.last().unwrap(), "")
+            let event = EventBuilder::private_msg_rumor(*pubkeys.last().unwrap(), "")
                 .tags(tags)
                 .sign(&signer)
-                .await
-            {
-                _ = tx.send(event)
-            };
-        })
-        .detach();
+                .await?;
+
+            Ok(event)
+        });
 
         cx.spawn(|this, mut cx| async move {
-            if let Ok(event) = rx.await {
+            if let Ok(event) = event.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
                     // Stop loading spinner
                     _ = this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
                     });
 
-                    if let Some(chats) = ChatRegistry::global(cx) {
-                        let room = Room::new(&event, cx);
+                    let Some(chats) = ChatRegistry::global(cx) else {
+                        return;
+                    };
+                    let room = Room::new(&event, cx);
 
-                        chats.update(cx, |state, cx| {
-                            match state.push_room(room, cx) {
-                                Ok(_) => {
-                                    // TODO: open chat panel
-                                    window.close_modal(cx);
-                                }
-                                Err(e) => {
-                                    _ = this.update(cx, |this, cx| {
-                                        this.set_error(Some(e.to_string().into()), cx);
-                                    });
-                                }
+                    chats.update(cx, |state, cx| {
+                        match state.push_room(room, cx) {
+                            Ok(_) => {
+                                // TODO: automatically open newly created chat panel
+                                window.close_modal(cx);
                             }
-                        });
-                    }
+                            Err(e) => {
+                                _ = this.update(cx, |this, cx| {
+                                    this.set_error(Some(e.to_string().into()), cx);
+                                });
+                            }
+                        }
+                    });
                 });
             }
         })
@@ -209,128 +206,77 @@ impl Compose {
         self.is_submitting
     }
 
-    fn add_npub(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let client = get_client();
         let window_handle = window.window_handle();
         let content = self.user_input.read(cx).text().to_string();
 
         // Show loading spinner
         self.set_loading(true, cx);
 
-        let Ok(public_key) = PublicKey::parse(&content) else {
-            self.set_loading(false, cx);
-            self.set_error(Some("Public Key is not valid".into()), cx);
-            return;
+        let task: Task<Result<NostrProfile, anyhow::Error>> = if content.starts_with("npub1") {
+            let Ok(public_key) = PublicKey::parse(&content) else {
+                self.set_loading(false, cx);
+                self.set_error(Some("Public Key is not valid".into()), cx);
+                return;
+            };
+
+            cx.background_spawn(async move {
+                let metadata = client
+                    .fetch_metadata(public_key, Duration::from_secs(2))
+                    .await?;
+
+                Ok(NostrProfile::new(public_key, metadata))
+            })
+        } else {
+            cx.background_spawn(async move {
+                let profile = nip05::profile(&content, None).await?;
+                let public_key = profile.public_key;
+
+                let metadata = client
+                    .fetch_metadata(public_key, Duration::from_secs(2))
+                    .await?;
+
+                Ok(NostrProfile::new(public_key, metadata))
+            })
         };
 
-        if self
-            .contacts
-            .read(cx)
-            .iter()
-            .any(|c| c.public_key() == public_key)
-        {
-            self.set_loading(false, cx);
-            return;
-        };
-
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<Metadata>();
-
-        cx.background_spawn(async move {
-            let metadata = (client
-                .fetch_metadata(public_key, Duration::from_secs(2))
-                .await)
-                .unwrap_or_default();
-
-            _ = tx.send(metadata);
-        })
-        .detach();
-
         cx.spawn(|this, mut cx| async move {
-            if let Ok(metadata) = rx.await {
-                _ = cx.update_window(window_handle, |_, window, cx| {
-                    _ = this.update(cx, |this, cx| {
-                        this.contacts.update(cx, |this, cx| {
-                            this.insert(0, NostrProfile::new(public_key, metadata));
-                            cx.notify();
-                        });
+            match task.await {
+                Ok(profile) => {
+                    _ = cx.update_window(window_handle, |_, window, cx| {
+                        _ = this.update(cx, |this, cx| {
+                            let public_key = profile.public_key();
 
-                        this.selected.update(cx, |this, cx| {
-                            this.insert(public_key);
-                            cx.notify();
-                        });
+                            this.contacts.update(cx, |this, cx| {
+                                this.insert(0, profile);
+                                cx.notify();
+                            });
 
-                        // Stop loading indicator
-                        this.set_loading(false, cx);
+                            this.selected.update(cx, |this, cx| {
+                                this.insert(public_key);
+                                cx.notify();
+                            });
 
-                        // Clear input
-                        this.user_input.update(cx, |this, cx| {
-                            this.set_text("", window, cx);
-                            cx.notify();
-                        });
-                    });
-                });
-            }
-        })
-        .detach();
-    }
+                            // Stop loading indicator
+                            this.set_loading(false, cx);
 
-    fn add_nip05(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let window_handle = window.window_handle();
-        let content = self.user_input.read(cx).text().to_string();
-
-        // Show loading spinner
-        self.set_loading(true, cx);
-
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<Option<NostrProfile>>();
-
-        cx.background_spawn(async move {
-            if let Ok(profile) = nip05::profile(&content, None).await {
-                let metadata = (client
-                    .fetch_metadata(profile.public_key, Duration::from_secs(2))
-                    .await)
-                    .unwrap_or_default();
-
-                _ = tx.send(Some(NostrProfile::new(profile.public_key, metadata)));
-            } else {
-                _ = tx.send(None);
-            }
-        })
-        .detach();
-
-        cx.spawn(|this, mut cx| async move {
-            if let Ok(Some(profile)) = rx.await {
-                _ = cx.update_window(window_handle, |_, window, cx| {
-                    _ = this.update(cx, |this, cx| {
-                        let public_key = profile.public_key();
-
-                        this.contacts.update(cx, |this, cx| {
-                            this.insert(0, profile);
-                            cx.notify();
-                        });
-
-                        this.selected.update(cx, |this, cx| {
-                            this.insert(public_key);
-                            cx.notify();
-                        });
-
-                        // Stop loading indicator
-                        this.set_loading(false, cx);
-
-                        // Clear input
-                        this.user_input.update(cx, |this, cx| {
-                            this.set_text("", window, cx);
-                            cx.notify();
+                            // Clear input
+                            this.user_input.update(cx, |this, cx| {
+                                this.set_text("", window, cx);
+                                cx.notify();
+                            });
                         });
                     });
-                });
-            } else {
-                _ = cx.update_window(window_handle, |_, _, cx| {
-                    _ = this.update(cx, |this, cx| {
-                        this.set_loading(false, cx);
-                        this.set_error(Some("NIP-05 Address is not valid".into()), cx);
+                }
+                Err(e) => {
+                    _ = cx.update_window(window_handle, |_, _, cx| {
+                        _ = this.update(cx, |this, cx| {
+                            this.set_loading(false, cx);
+                            this.set_error(Some(e.to_string().into()), cx);
+                        });
                     });
-                });
+                }
             }
         })
         .detach();
@@ -395,7 +341,7 @@ impl Render for Compose {
                     .px_2()
                     .text_xs()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(ALERT),
+                    .child(DESCRIPTION),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
                 this.child(
@@ -439,11 +385,7 @@ impl Render for Compose {
                                     .rounded(ButtonRounded::Size(px(9999.)))
                                     .loading(self.is_loading)
                                     .on_click(cx.listener(|this, _, window, cx| {
-                                        if this.user_input.read(cx).text().contains("@") {
-                                            this.add_nip05(window, cx);
-                                        } else {
-                                            this.add_npub(window, cx);
-                                        }
+                                        this.add(window, cx);
                                     })),
                             )
                             .child(self.user_input.clone()),

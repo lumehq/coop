@@ -4,7 +4,6 @@ use gpui::{
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
     StyledImage, Window,
 };
-use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use state::get_client;
 use std::sync::Arc;
@@ -96,56 +95,27 @@ impl AppView {
     }
 
     fn verify_user_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(account) = Account::global(cx) else {
+        let Some(model) = Account::global(cx) else {
             return;
         };
 
-        let public_key = account.read(cx).get().public_key();
-        let client = get_client();
+        let account = model.read(cx);
+        let task = account.verify_inbox_relays(cx);
         let window_handle = window.window_handle();
-        let (tx, rx) = oneshot::channel::<Option<Vec<String>>>();
-
-        cx.background_spawn(async move {
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
-
-            let relays = client
-                .database()
-                .query(filter)
-                .await
-                .ok()
-                .and_then(|events| events.first_owned())
-                .map(|event| {
-                    event
-                        .tags
-                        .filter_standardized(TagKind::Relay)
-                        .filter_map(|t| match t {
-                            TagStandard::Relay(url) => Some(url.to_string()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-            _ = tx.send(relays);
-        })
-        .detach();
 
         cx.spawn(|this, mut cx| async move {
-            if let Ok(Some(relays)) = rx.await {
+            if let Ok(relays) = task.await {
                 _ = cx.update(|cx| {
                     _ = this.update(cx, |this, cx| {
-                        let relays = cx.new(|_| Some(relays));
-                        this.relays = relays;
+                        this.relays = cx.new(|_| Some(relays));
                         cx.notify();
                     });
                 });
             } else {
                 _ = cx.update_window(window_handle, |_, window, cx| {
-                    this.update(cx, |this: &mut Self, cx| {
+                    _ = this.update(cx, |this: &mut Self, cx| {
                         this.render_setup_relays(window, cx)
-                    })
+                    });
                 });
             }
         })

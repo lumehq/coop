@@ -49,7 +49,7 @@ impl Profile {
             TextInput::new(window, cx)
                 .text_size(Size::XSmall)
                 .small()
-                .placeholder("https://example.com/avatar.png")
+                .placeholder("https://example.com/avatar.jpg")
         });
 
         let website_input = cx.new(|cx| {
@@ -309,7 +309,7 @@ impl Render for Profile {
 
                         if picture.is_empty() {
                             this.child(
-                                img("brand/avatar.png")
+                                img("brand/avatar.jpg")
                                     .size_10()
                                     .rounded_full()
                                     .flex_shrink_0(),
