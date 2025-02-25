@@ -1,3 +1,4 @@
+use common::constants::NEW_MESSAGE_SUB_ID;
 use gpui::{
     div, prelude::FluentBuilder, px, uniform_list, AppContext, Context, Entity, FocusHandle,
     InteractiveElement, IntoElement, ParentElement, Render, Styled, Task, TextAlign, Window,
@@ -84,12 +85,38 @@ impl Relays {
             }
 
             let tags: Vec<Tag> = relays
-                .into_iter()
+                .iter()
                 .map(|relay| Tag::custom(TagKind::Relay, vec![relay.to_string()]))
                 .collect();
 
             let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
             let output = client.send_event_builder(builder).await?;
+
+            // Connect to messaging relays
+            for relay in relays.into_iter() {
+                _ = client.add_relay(&relay).await;
+                _ = client.connect_relay(&relay).await;
+            }
+
+            let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+
+            // Close old subscription
+            client.unsubscribe(&sub_id).await;
+
+            // Subscribe to new messages
+            if let Err(e) = client
+                .subscribe_with_id(
+                    sub_id,
+                    Filter::new()
+                        .kind(Kind::GiftWrap)
+                        .pubkey(public_key)
+                        .limit(0),
+                    None,
+                )
+                .await
+            {
+                log::error!("Failed to subscribe to new messages: {}", e);
+            }
 
             Ok(output.val)
         });
