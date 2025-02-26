@@ -1,4 +1,4 @@
-use account::registry::Account;
+use account::Account;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
@@ -230,7 +230,7 @@ impl AppView {
             .reverse()
             .icon(Icon::new(IconName::ChevronDownSmall))
             .when_some(Account::global(cx), |this, account| {
-                let profile = account.read(cx).get();
+                let profile = account.read(cx).profile();
 
                 this.child(
                     img(profile.avatar())

@@ -1,6 +1,8 @@
-pub const KEYRING_SERVICE: &str = "Coop Safe Storage";
 pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
+
+pub const DEVICE_KEYRING_SERVICE: &str = "Coop Device Storage";
+pub const KEYRING_SERVICE: &str = "Coop Safe Storage";
 
 /// Bootstrap relays
 pub const BOOTSTRAP_RELAYS: [&str; 3] = [
