@@ -1,7 +1,7 @@
 use crate::room::{IncomingEvent, Room};
 use anyhow::anyhow;
 use common::{last_seen::LastSeen, utils::room_hash};
-use gpui::{App, AppContext, Context, Entity, Global, WeakEntity};
+use gpui::{App, AppContext, Context, Entity, Global, Task, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use state::get_client;
@@ -61,55 +61,46 @@ impl ChatRegistry {
 
     pub fn load_chat_rooms(&mut self, cx: &mut Context<Self>) {
         let client = get_client();
-        let (tx, rx) = oneshot::channel::<Option<Vec<Event>>>();
 
-        cx.background_spawn(async move {
-            let result = async {
-                let signer = client.signer().await?;
-                let public_key = signer.get_public_key().await?;
+        let task: Task<Result<Vec<Event>, Error>> = cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
-                let send = Filter::new()
-                    .kind(Kind::PrivateDirectMessage)
-                    .author(public_key);
+            let send = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .author(public_key);
 
-                let recv = Filter::new()
-                    .kind(Kind::PrivateDirectMessage)
-                    .pubkey(public_key);
+            let recv = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .pubkey(public_key);
 
-                let send_events = client.database().query(send).await?;
-                let recv_events = client.database().query(recv).await?;
+            let send_events = client.database().query(send).await?;
+            let recv_events = client.database().query(recv).await?;
+            let events = send_events.merge(recv_events);
 
-                Ok::<_, anyhow::Error>(send_events.merge(recv_events))
-            }
-            .await;
+            let result: Vec<Event> = events
+                .into_iter()
+                .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
+                .unique_by(room_hash)
+                .sorted_by_key(|ev| Reverse(ev.created_at))
+                .collect();
 
-            if let Ok(events) = result {
-                let result: Vec<Event> = events
-                    .into_iter()
-                    .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
-                    .unique_by(room_hash)
-                    .sorted_by_key(|ev| Reverse(ev.created_at))
-                    .collect();
-
-                _ = tx.send(Some(result));
-            } else {
-                _ = tx.send(None);
-            }
-        })
-        .detach();
+            Ok(result)
+        });
 
         cx.spawn(|this, cx| async move {
-            if let Ok(Some(events)) = rx.await {
-                if !events.is_empty() {
-                    _ = cx.update(|cx| {
-                        _ = this.update(cx, |this, cx| {
-                            let current_rooms = this.current_rooms_ids(cx);
+            if let Ok(events) = task.await {
+                cx.update(|cx| {
+                    if !events.is_empty() {
+                        this.update(cx, |this, cx| {
+                            let mut rooms = this.rooms.write().unwrap();
+                            let current_ids = this.current_rooms_ids(cx);
                             let items: Vec<Entity<Room>> = events
                                 .into_iter()
                                 .filter_map(|ev| {
                                     let new = room_hash(&ev);
-                                    // Filter all seen events
-                                    if !current_rooms.iter().any(|this| this == &new) {
+                                    // Filter all seen rooms
+                                    if !current_ids.iter().any(|this| this == &new) {
                                         Some(Room::new(&ev, cx))
                                     } else {
                                         None
@@ -117,13 +108,22 @@ impl ChatRegistry {
                                 })
                                 .collect();
 
-                            this.rooms.write().unwrap().extend(items);
+                            rooms.extend(items);
+                            rooms.sort_by_key(|room| Reverse(room.read(cx).last_seen()));
                             this.is_loading = false;
 
                             cx.notify();
-                        });
-                    });
-                }
+                        })
+                        .ok();
+                    } else {
+                        this.update(cx, |this, cx| {
+                            this.is_loading = false;
+                            cx.notify();
+                        })
+                        .ok();
+                    }
+                })
+                .ok();
             }
         })
         .detach();

@@ -1,15 +1,16 @@
 use chats::{registry::ChatRegistry, room::Room};
 use compose::Compose;
 use gpui::{
-    div, img, percentage, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext,
-    Context, Div, Empty, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    Window,
+    div, img, percentage, prelude::FluentBuilder, px, relative, uniform_list, AnyElement, App,
+    AppContext, Context, Div, Empty, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window,
 };
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
+    skeleton::Skeleton,
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
@@ -134,6 +135,20 @@ impl Sidebar {
                     this.open(id, window, cx);
                 })
             })
+    }
+
+    fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
+        (0..total).map(|_| {
+            div()
+                .h_8()
+                .w_full()
+                .px_1()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
+                .child(Skeleton::new().w_20().h_3().rounded_sm())
+        })
     }
 
     fn open(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -261,28 +276,64 @@ impl Render for Sidebar {
                         this.flex_1()
                             .w_full()
                             .when_some(ChatRegistry::global(cx), |this, state| {
+                                let is_loading = state.read(cx).is_loading();
                                 let rooms = state.read(cx).rooms();
                                 let len = rooms.len();
 
-                                this.child(
-                                    uniform_list(
-                                        entity,
-                                        "rooms",
-                                        len,
-                                        move |this, range, _, cx| {
-                                            let mut items = vec![];
-
-                                            for ix in range {
-                                                if let Some(room) = rooms.get(ix) {
-                                                    items.push(this.render_room(ix, room, cx));
-                                                }
-                                            }
-
-                                            items
-                                        },
+                                if is_loading {
+                                    this.children(self.render_skeleton(5))
+                                } else if rooms.is_empty() {
+                                    this.child(
+                                        div()
+                                            .px_1()
+                                            .w_full()
+                                            .h_20()
+                                            .flex()
+                                            .flex_col()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_center()
+                                            .rounded(px(cx.theme().radius))
+                                            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_semibold()
+                                                    .line_height(relative(1.2))
+                                                    .child("No chats"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(
+                                                        cx.theme()
+                                                            .base
+                                                            .step(cx, ColorScaleStep::ELEVEN),
+                                                    )
+                                                    .child("Recent chats will appear here."),
+                                            ),
                                     )
-                                    .size_full(),
-                                )
+                                } else {
+                                    this.child(
+                                        uniform_list(
+                                            entity,
+                                            "rooms",
+                                            len,
+                                            move |this, range, _, cx| {
+                                                let mut items = vec![];
+
+                                                for ix in range {
+                                                    if let Some(room) = rooms.get(ix) {
+                                                        items.push(this.render_room(ix, room, cx));
+                                                    }
+                                                }
+
+                                                items
+                                            },
+                                        )
+                                        .size_full(),
+                                    )
+                                }
                             })
                     }),
             )
