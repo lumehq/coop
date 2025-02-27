@@ -1,7 +1,11 @@
+use account::{
+    constants::{DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND},
+    Account,
+};
 use asset::Assets;
 use chats::registry::ChatRegistry;
 use common::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID,
 };
 use futures::{select, FutureExt};
 use gpui::{
@@ -14,7 +18,7 @@ use gpui::{point, SharedString, TitlebarOptions};
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
     pool::prelude::ReqExitPolicy, Client, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
+    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
 };
 use smol::Timer;
 use state::get_client;
@@ -27,10 +31,14 @@ mod views;
 
 actions!(coop, [Quit]);
 
-#[derive(Clone)]
+#[derive(Debug)]
 enum Signal {
     /// Receive event
     Event(Event),
+    /// Receive request master key event
+    RequestMasterKey(PublicKey),
+    /// Receive approve master key event
+    ReceiveMasterKey(Event),
     /// Receive EOSE
     Eose,
 }
@@ -160,6 +168,30 @@ fn main() {
 
                                     sync_metadata(client, pubkeys).await;
                                 }
+                                Kind::Custom(DEVICE_REQUEST_KIND) => {
+                                    let public_key = event
+                                        .tags
+                                        .find(TagKind::custom("pubkey"))
+                                        .and_then(|tag| tag.content())
+                                        .and_then(|content| PublicKey::parse(content).ok());
+
+                                    if let Some(public_key) = public_key {
+                                        if let Err(e) = event_tx
+                                            .send(Signal::RequestMasterKey(public_key))
+                                            .await
+                                        {
+                                            log::error!("Failed to send eose: {}", e)
+                                        };
+                                    }
+                                }
+                                Kind::Custom(DEVICE_RESPONSE_KIND) => {
+                                    if let Err(e) = event_tx
+                                        .send(Signal::ReceiveMasterKey(event.into_owned()))
+                                        .await
+                                    {
+                                        log::error!("Failed to send eose: {}", e)
+                                    };
+                                }
                                 _ => {}
                             }
                         }
@@ -217,14 +249,32 @@ fn main() {
         cx.spawn(|cx| async move {
             while let Ok(signal) = event_rx.recv().await {
                 cx.update(|cx| {
-                    if let Some(chats) = ChatRegistry::global(cx) {
-                        match signal {
-                            Signal::Eose => chats.update(cx, |this, cx| this.load_chat_rooms(cx)),
-                            Signal::Event(event) => {
+                    match signal {
+                        Signal::Eose => {
+                            if let Some(chats) = ChatRegistry::global(cx) {
+                                chats.update(cx, |this, cx| this.load_chat_rooms(cx))
+                            }
+                        }
+                        Signal::Event(event) => {
+                            if let Some(chats) = ChatRegistry::global(cx) {
                                 chats.update(cx, |this, cx| this.push_message(event, cx))
                             }
-                        };
-                    }
+                        }
+                        Signal::ReceiveMasterKey(event) => {
+                            if let Some(account) = Account::global(cx) {
+                                account.update(cx, |this, cx| {
+                                    this.response(&event, cx);
+                                });
+                            }
+                        }
+                        Signal::RequestMasterKey(public_key) => {
+                            if let Some(account) = Account::global(cx) {
+                                account.update(cx, |this, cx| {
+                                    this.approve(public_key, cx);
+                                });
+                            }
+                        }
+                    };
                 })
                 .ok();
             }
@@ -253,7 +303,7 @@ fn main() {
         };
 
         // Create a task to read credentials from the keyring service
-        let task = cx.read_credentials(KEYRING_SERVICE);
+        let task = cx.read_credentials("Coop Safe Storage");
         let (tx, rx) = oneshot::channel::<bool>();
 
         // Read credential in OS Keyring

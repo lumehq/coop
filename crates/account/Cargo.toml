@@ -12,5 +12,4 @@ gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 smol.workspace = true
-oneshot.workspace = true
 log.workspace = true
