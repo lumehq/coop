@@ -106,7 +106,7 @@ impl Onboarding {
                 cx.spawn(|mut cx| async move {
                     let signer = Arc::new(signer);
 
-                    if account::login(signer, &cx).await.is_ok() {
+                    if device::init(signer, &cx).await.is_ok() {
                         _ = cx.update_window(window_handle, |_, window, cx| {
                             window.replace_root(cx, |window, cx| {
                                 Root::new(app::init(window, cx).into(), window, cx)
@@ -148,7 +148,7 @@ impl Onboarding {
         cx.spawn(|this, mut cx| async move {
             let signer = Arc::new(keys);
 
-            if account::login(signer, &cx).await.is_ok() {
+            if device::init(signer, &cx).await.is_ok() {
                 _ = cx.update_window(window_handle, |_, window, cx| {
                     window.replace_root(cx, |window, cx| {
                         Root::new(app::init(window, cx).into(), window, cx)

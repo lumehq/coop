@@ -1,4 +1,4 @@
-use account::Account;
+use device::Device;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
@@ -95,7 +95,7 @@ impl AppView {
     }
 
     fn verify_user_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(model) = Account::global(cx) else {
+        let Some(model) = Device::global(cx) else {
             return;
         };
 
@@ -229,7 +229,7 @@ impl AppView {
             .xsmall()
             .reverse()
             .icon(Icon::new(IconName::ChevronDownSmall))
-            .when_some(Account::global(cx), |this, account| {
+            .when_some(Device::global(cx), |this, account| {
                 let profile = account.read(cx).profile();
 
                 this.child(

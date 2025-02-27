@@ -1,11 +1,11 @@
-use account::{
-    constants::{DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND},
-    Account,
-};
 use asset::Assets;
 use chats::registry::ChatRegistry;
 use common::constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID,
+};
+use device::{
+    constants::{DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND},
+    Device,
 };
 use futures::{select, FutureExt};
 use gpui::{
@@ -261,16 +261,16 @@ fn main() {
                             }
                         }
                         Signal::ReceiveMasterKey(event) => {
-                            if let Some(account) = Account::global(cx) {
-                                account.update(cx, |this, cx| {
-                                    this.response(&event, cx);
+                            if let Some(device) = Device::global(cx) {
+                                device.update(cx, |this, cx| {
+                                    this.handle_response(&event, cx);
                                 });
                             }
                         }
                         Signal::RequestMasterKey(public_key) => {
-                            if let Some(account) = Account::global(cx) {
-                                account.update(cx, |this, cx| {
-                                    this.approve(public_key, cx);
+                            if let Some(device) = Device::global(cx) {
+                                device.update(cx, |this, cx| {
+                                    this.handle_request(public_key, cx);
                                 });
                             }
                         }

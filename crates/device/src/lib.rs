@@ -11,7 +11,7 @@ use std::{sync::Arc, time::Duration};
 
 pub mod constants;
 
-pub fn login(user_signer: Arc<dyn NostrSigner>, cx: &AsyncApp) -> Task<Result<(), Error>> {
+pub fn init(user_signer: Arc<dyn NostrSigner>, cx: &AsyncApp) -> Task<Result<(), Error>> {
     let client = get_client();
     let set_signer: Task<Result<NostrProfile, Error>> = cx.background_spawn(async move {
         // Use user's signer for main signer
@@ -35,9 +35,10 @@ pub fn login(user_signer: Arc<dyn NostrSigner>, cx: &AsyncApp) -> Task<Result<()
 
         cx.update(|cx| {
             let this = cx.new(|cx| {
-                let this = Account {
+                let this = Device {
                     profile,
                     master_signer: None,
+                    local_keys: None,
                 };
                 // Run initial setup for this account
                 this.setup(cx);
@@ -47,29 +48,35 @@ pub fn login(user_signer: Arc<dyn NostrSigner>, cx: &AsyncApp) -> Task<Result<()
                 this
             });
 
-            Account::set_global(this, cx)
+            Device::set_global(this, cx)
         })
     })
 }
 
-struct GlobalAccount(Entity<Account>);
+struct GlobalDevice(Entity<Device>);
 
-impl Global for GlobalAccount {}
+impl Global for GlobalDevice {}
 
+/// Current Device (Client)
+///
+/// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
 #[derive(Debug)]
-pub struct Account {
+pub struct Device {
+    /// Profile (Metadata) of current user
     profile: NostrProfile,
+    /// Master Signer, this can be created by this device or requested from others
     master_signer: Option<Arc<dyn NostrSigner>>,
+    /// Local Keys, used for requesting master keys from others
+    local_keys: Option<Keys>,
 }
 
-impl Account {
+impl Device {
     pub fn global(cx: &App) -> Option<Entity<Self>> {
-        cx.try_global::<GlobalAccount>()
-            .map(|model| model.0.clone())
+        cx.try_global::<GlobalDevice>().map(|model| model.0.clone())
     }
 
-    pub fn set_global(account: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalAccount(account));
+    pub fn set_global(device: Entity<Self>, cx: &mut App) {
+        cx.set_global(GlobalDevice(device));
     }
 
     /// Get the account's profile
@@ -159,7 +166,7 @@ impl Account {
             if let Ok(keys) = task.await {
                 cx.update(|cx| {
                     this.update(cx, |this, cx| {
-                        this.master_signer = Some(Arc::new(keys));
+                        this.local_keys = Some(keys);
                         cx.notify();
                     })
                     .ok()
@@ -170,12 +177,13 @@ impl Account {
         .detach();
     }
 
-    /// Handle response master key event from other Nostr client send to this client
-    pub fn response(&self, event: &Event, cx: &Context<Self>) {
-        let Some(local_signer) = self.master_signer.clone() else {
+    /// Handle response event from other Nostr client
+    pub fn handle_response(&self, event: &Event, cx: &Context<Self>) {
+        let Some(local_keys) = self.local_keys.clone() else {
             return;
         };
 
+        let local_signer = local_keys.into_nostr_signer();
         let target = event.tags.find(TagKind::custom("pubkey")).cloned();
         let content = event.content.clone();
 
@@ -183,8 +191,8 @@ impl Account {
             if let Some(tag) = target {
                 let hex = tag.content().context(anyhow!("Public Key not found"))?;
                 let public_key = PublicKey::parse(hex)?;
-                let secret = local_signer.nip44_decrypt(&public_key, &content).await?;
 
+                let secret = local_signer.nip44_decrypt(&public_key, &content).await?;
                 let keys = Keys::parse(&secret)?;
 
                 Ok(keys)
@@ -208,8 +216,8 @@ impl Account {
         .detach();
     }
 
-    /// Handle approve master key event from this client to other Nostr client
-    pub fn approve(&self, target: PublicKey, cx: &Context<Self>) {
+    /// Handle approve event for request from other Nostr client
+    pub fn handle_request(&self, target: PublicKey, cx: &Context<Self>) {
         let client = get_client();
         let read_device_keys = cx.read_credentials(DEVICE_KEYRING);
 
