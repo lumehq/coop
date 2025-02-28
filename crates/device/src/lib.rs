@@ -11,7 +11,10 @@ use std::{sync::Arc, time::Duration};
 
 pub mod constants;
 
-pub fn init(user_signer: Arc<dyn NostrSigner>, cx: &AsyncApp) -> Task<Result<(), Error>> {
+pub fn init<T>(user_signer: T, cx: &AsyncApp) -> Task<Result<(), Error>>
+where
+    T: NostrSigner + 'static,
+{
     let client = get_client();
     let set_signer: Task<Result<NostrProfile, Error>> = cx.background_spawn(async move {
         // Use user's signer for main signer
@@ -82,6 +85,14 @@ impl Device {
     /// Get the account's profile
     pub fn profile(&self) -> &NostrProfile {
         &self.profile
+    }
+
+    /// Get master signer
+    pub fn master_signer(&self) -> Arc<dyn NostrSigner> {
+        let Some(master_signer) = &self.master_signer else {
+            panic!("Master Signer not found. Please restart the application.");
+        };
+        Arc::clone(master_signer)
     }
 
     /// Create a task to verify inbox relays

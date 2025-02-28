@@ -7,6 +7,7 @@ use common::{
     profile::NostrProfile,
     utils::{compare, nip96_upload},
 };
+use device::Device;
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
     Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
@@ -316,6 +317,10 @@ impl Chat {
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(device) = Device::global(cx) else {
+            return;
+        };
+
         let Some(model) = self.room.upgrade() else {
             return;
         };
@@ -346,7 +351,8 @@ impl Chat {
         });
 
         let room = model.read(cx);
-        let task = room.send_message(content, cx);
+        let master_signer = device.read(cx).master_signer();
+        let task = room.send_message(content, master_signer, cx);
         let window_handle = window.window_handle();
 
         cx.spawn(|this, mut cx| async move {

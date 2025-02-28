@@ -4,7 +4,7 @@ use gpui::{
     Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, time::Duration};
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
     input::{InputEvent, TextInput},
@@ -104,8 +104,6 @@ impl Onboarding {
         cx.spawn(|this, cx| async move {
             if let Ok(signer) = rx.await {
                 cx.spawn(|mut cx| async move {
-                    let signer = Arc::new(signer);
-
                     if device::init(signer, &cx).await.is_ok() {
                         _ = cx.update_window(window_handle, |_, window, cx| {
                             window.replace_root(cx, |window, cx| {
@@ -146,9 +144,7 @@ impl Onboarding {
         self.set_loading(true, cx);
 
         cx.spawn(|this, mut cx| async move {
-            let signer = Arc::new(keys);
-
-            if device::init(signer, &cx).await.is_ok() {
+            if device::init(keys, &cx).await.is_ok() {
                 _ = cx.update_window(window_handle, |_, window, cx| {
                     window.replace_root(cx, |window, cx| {
                         Root::new(app::init(window, cx).into(), window, cx)

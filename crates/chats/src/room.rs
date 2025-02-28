@@ -4,7 +4,7 @@ use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use state::get_client;
-use std::{collections::HashSet, rc::Rc};
+use std::{collections::HashSet, rc::Rc, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub struct IncomingEvent {
@@ -158,7 +158,12 @@ impl Room {
     }
 
     /// Send message to all room's members
-    pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
+    pub fn send_message(
+        &self,
+        content: String,
+        master_signer: Arc<dyn NostrSigner>,
+        cx: &App,
+    ) -> Task<Result<Vec<String>, Error>> {
         let client = get_client();
         let pubkeys = self.public_keys();
 
@@ -166,7 +171,7 @@ impl Room {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
-            let mut msg = Vec::new();
+            let mut report = Vec::with_capacity(pubkeys.len());
 
             let tags: Vec<Tag> = pubkeys
                 .iter()
@@ -180,17 +185,17 @@ impl Room {
                 .collect();
 
             for pubkey in pubkeys.iter() {
-                if let Err(e) = client
-                    .send_private_msg(*pubkey, &content, tags.clone())
-                    .await
-                {
-                    log::error!("Failed to send message to {}: {}", pubkey.to_bech32()?, e);
-                    // Convert error into string
-                    msg.push(e.to_string());
+                let event =
+                    EventBuilder::private_msg(&master_signer, *pubkey, &content, tags.clone())
+                        .await?;
+
+                if let Err(e) = client.send_event(&event).await {
+                    // Convert error into string, then push it to the report
+                    report.push(e.to_string());
                 }
             }
 
-            Ok(msg)
+            Ok(report)
         })
     }
 
