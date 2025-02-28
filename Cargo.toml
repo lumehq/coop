@@ -11,9 +11,9 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Nostr
-nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
-nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
-nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
+nostr-relay-builder = { git = "https://github.com/reyamir/nostr", branch = "feat/improve-nip17" }
+nostr-connect = { git = "https://github.com/reyamir/nostr", branch = "feat/improve-nip17" }
+nostr-sdk = { git = "https://github.com/reyamir/nostr", branch = "feat/improve-nip17", features = [
 	"lmdb",
 	"nip96",
 	"nip59",

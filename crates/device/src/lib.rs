@@ -40,7 +40,7 @@ where
             let this = cx.new(|cx| {
                 let this = Device {
                     profile,
-                    master_signer: None,
+                    device_signer: None,
                     local_keys: None,
                 };
                 // Run initial setup for this account
@@ -60,6 +60,11 @@ struct GlobalDevice(Entity<Device>);
 
 impl Global for GlobalDevice {}
 
+enum DeviceState {
+    Master(Keys),
+    Minion(Keys),
+}
+
 /// Current Device (Client)
 ///
 /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
@@ -67,9 +72,9 @@ impl Global for GlobalDevice {}
 pub struct Device {
     /// Profile (Metadata) of current user
     profile: NostrProfile,
-    /// Master Signer, this can be created by this device or requested from others
-    master_signer: Option<Arc<dyn NostrSigner>>,
-    /// Local Keys, used for requesting master keys from others
+    /// Device Signer, this can be created by this device or requested from others
+    device_signer: Option<Arc<dyn NostrSigner>>,
+    /// Local Keys, used for requesting device keys from others
     local_keys: Option<Keys>,
 }
 
@@ -87,12 +92,12 @@ impl Device {
         &self.profile
     }
 
-    /// Get master signer
-    pub fn master_signer(&self) -> Arc<dyn NostrSigner> {
-        let Some(master_signer) = &self.master_signer else {
-            panic!("Master Signer not found. Please restart the application.");
+    /// Get device signer
+    pub fn device_signer(&self) -> Arc<dyn NostrSigner> {
+        let Some(device_signer) = &self.device_signer else {
+            panic!("Device Signer not found. Please restart the application.");
         };
-        Arc::clone(master_signer)
+        Arc::clone(device_signer)
     }
 
     /// Create a task to verify inbox relays
@@ -134,53 +139,116 @@ impl Device {
     /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
     fn init_device(&self, cx: &Context<Self>) {
         let client = get_client();
-        let public_key = self.profile().public_key();
+        let current_user = self.profile().public_key();
 
-        let task: Task<Result<Keys, Error>> = cx.background_spawn(async move {
+        // Get app name
+        let app_name = get_app_name();
+
+        // Create a task to get device keys from keyring
+        let read_keys = cx.read_credentials(DEVICE_KEYRING);
+
+        // Create a task to verify device keys
+        let task: Task<Result<DeviceState, Error>> = cx.background_spawn(async move {
             let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
-            let filter = Filter::new().kind(kind).author(public_key).limit(1);
+            let filter = Filter::new().kind(kind).author(current_user).limit(1);
 
             // Fetch device announcement events
             let events = client.fetch_events(filter, Duration::from_secs(2)).await?;
 
-            // If device announcement events exists,
-            // this client does not need to create device keys,
-            // instead, it sends a request to the other client to ask for master keys.
-            if events.first_owned().is_some() {
-                // Create a temporary local keys, only use for master keys request
-                // THIS IS NOT MASTER KEYS
+            // Found device announcement event,
+            // that means user is already used another Nostr client or re-install this client
+            if let Some(event) = events.first_owned() {
+                // Check if device keys are found in keyring
+                if let Ok(Some((_, secret))) = read_keys.await {
+                    let secret_hex = String::from_utf8(secret)?;
+                    let keys = Keys::parse(&secret_hex)?;
+                    let device_pubkey = keys.public_key();
+
+                    let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
+                    let content = n_tag.content().context("Not found")?;
+                    let target_pubkey = PublicKey::parse(content)?;
+
+                    // If device public key matches announcement public key, re-appoint as master
+                    if device_pubkey == target_pubkey {
+                        log::info!("Re-appointing as master");
+                        return Ok(DeviceState::Master(keys));
+                    }
+
+                    // Otherwise fall through to request device keys
+                }
+
+                // Send a request for device keys to the other Nostr client
+                //
+                // Create a local keys to send request
                 let keys = Keys::generate();
+                let pubkey = keys.public_key();
 
                 let kind = Kind::Custom(DEVICE_REQUEST_KIND);
-                let app_name = get_app_name();
                 let client_tag = Tag::client(app_name);
-                let pubkey_tag =
-                    Tag::custom(TagKind::custom("pubkey"), vec![keys.public_key().to_hex()]);
-
-                // Create request device keys event builder
+                let pubkey_tag = Tag::custom(TagKind::custom("pubkey"), vec![pubkey.to_hex()]);
+                // Create a request event builder
                 let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
 
                 if let Err(e) = client.send_event_builder(builder).await {
                     log::error!("Failed to send device keys request: {}", e);
                 }
 
-                Ok(keys)
-            } else {
-                // Create a new device keys
-                let keys = Keys::generate();
+                log::info!("Sent a request to ask for device keys from the other Nostr client");
 
-                Ok(keys)
+                Ok(DeviceState::Minion(keys))
+            } else {
+                log::info!("Device announcement is not found, appoint this device as master");
+
+                let keys = Keys::generate();
+                let pubkey = keys.public_key();
+
+                let client_tag = Tag::client(app_name);
+                let pubkey_tag = Tag::custom(TagKind::custom("n"), vec![pubkey.to_hex()]);
+                // Create an announcement event builder
+                let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
+
+                if let Err(e) = client.send_event_builder(builder).await {
+                    log::error!("Failed to send device keys request: {}", e);
+                }
+
+                Ok(DeviceState::Master(keys))
             }
         });
 
         cx.spawn(|this, cx| async move {
-            if let Ok(keys) = task.await {
+            if let Ok(state) = task.await {
                 cx.update(|cx| {
-                    this.update(cx, |this, cx| {
-                        this.local_keys = Some(keys);
-                        cx.notify();
-                    })
-                    .ok()
+                    match state {
+                        DeviceState::Master(keys) => {
+                            // Save device keys to keyring for future use
+                            let task = cx.write_credentials(
+                                DEVICE_KEYRING,
+                                &keys.public_key().to_hex(),
+                                &keys.secret_key().to_secret_bytes(),
+                            );
+
+                            cx.background_spawn(async move {
+                                if let Err(e) = task.await {
+                                    log::error!("Failed to save device keys to keyring: {}", e);
+                                }
+                            })
+                            .detach();
+
+                            this.update(cx, |this, cx| {
+                                this.device_signer = Some(Arc::new(keys));
+                                cx.notify();
+                            })
+                            .ok()
+                        }
+                        DeviceState::Minion(keys) => {
+                            // Update local keys to waiting for device keys
+                            this.update(cx, |this, cx| {
+                                this.local_keys = Some(keys);
+                                cx.notify();
+                            })
+                            .ok()
+                        }
+                    }
                 })
                 .ok();
             }
@@ -205,10 +273,11 @@ impl Device {
 
                 let secret = local_signer.nip44_decrypt(&public_key, &content).await?;
                 let keys = Keys::parse(&secret)?;
+                log::info!("Received device keys from other client");
 
                 Ok(keys)
             } else {
-                Err(anyhow!("Failed to retrieve master key"))
+                Err(anyhow!("Failed to retrieve device key"))
             }
         });
 
@@ -216,7 +285,7 @@ impl Device {
             if let Ok(keys) = task.await {
                 cx.update(|cx| {
                     this.update(cx, |this, cx| {
-                        this.master_signer = Some(Arc::new(keys));
+                        this.device_signer = Some(Arc::new(keys));
                         cx.notify();
                     })
                     .ok()
@@ -258,6 +327,7 @@ impl Device {
 
                 // Send event
                 client.send_event_builder(builder).await?;
+                log::info!("Sent device keys to other client");
 
                 Ok(())
             } else {

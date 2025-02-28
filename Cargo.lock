@@ -927,6 +927,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
+ "device",
  "gpui",
  "itertools 0.13.0",
  "log",
@@ -3328,7 +3329,7 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 [[package]]
 name = "nostr"
 version = "0.39.0"
-source = "git+https://github.com/rust-nostr/nostr#16ad5e1190733f6e20d84891165e54d30f917e6d"
+source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#82c0f9e43519e66503491935924b5d9dc29d1dff"
 dependencies = [
  "aes",
  "base64",
@@ -3352,7 +3353,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.39.0"
-source = "git+https://github.com/rust-nostr/nostr#16ad5e1190733f6e20d84891165e54d30f917e6d"
+source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#82c0f9e43519e66503491935924b5d9dc29d1dff"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3364,7 +3365,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.39.0"
-source = "git+https://github.com/rust-nostr/nostr#16ad5e1190733f6e20d84891165e54d30f917e6d"
+source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#82c0f9e43519e66503491935924b5d9dc29d1dff"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3375,7 +3376,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.39.0"
-source = "git+https://github.com/rust-nostr/nostr#16ad5e1190733f6e20d84891165e54d30f917e6d"
+source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#82c0f9e43519e66503491935924b5d9dc29d1dff"
 dependencies = [
  "async-utility",
  "heed",
@@ -3388,7 +3389,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.39.0"
-source = "git+https://github.com/rust-nostr/nostr#16ad5e1190733f6e20d84891165e54d30f917e6d"
+source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#82c0f9e43519e66503491935924b5d9dc29d1dff"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3405,7 +3406,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.39.0"
-source = "git+https://github.com/rust-nostr/nostr#16ad5e1190733f6e20d84891165e54d30f917e6d"
+source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#82c0f9e43519e66503491935924b5d9dc29d1dff"
 dependencies = [
  "async-utility",
  "nostr",

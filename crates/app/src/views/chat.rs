@@ -351,8 +351,8 @@ impl Chat {
         });
 
         let room = model.read(cx);
-        let master_signer = device.read(cx).master_signer();
-        let task = room.send_message(content, master_signer, cx);
+        let signer = device.read(cx).device_signer();
+        let task = room.send_message(content, signer, cx);
         let window_handle = window.window_handle();
 
         cx.spawn(|this, mut cx| async move {

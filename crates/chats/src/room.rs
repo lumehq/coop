@@ -4,7 +4,7 @@ use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use state::get_client;
-use std::{collections::HashSet, rc::Rc, sync::Arc};
+use std::{collections::HashSet, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub struct IncomingEvent {
@@ -158,18 +158,23 @@ impl Room {
     }
 
     /// Send message to all room's members
-    pub fn send_message(
+    ///
+    /// NIP-4E: Message will be signed by the device signer
+    pub fn send_message<T>(
         &self,
         content: String,
-        master_signer: Arc<dyn NostrSigner>,
+        device_signer: T,
         cx: &App,
-    ) -> Task<Result<Vec<String>, Error>> {
+    ) -> Task<Result<Vec<String>, Error>>
+    where
+        T: NostrSigner + 'static,
+    {
         let client = get_client();
         let pubkeys = self.public_keys();
 
         cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+            let user_signer = client.signer().await?;
+            let public_key = user_signer.get_public_key().await?;
 
             let mut report = Vec::with_capacity(pubkeys.len());
 
@@ -186,7 +191,7 @@ impl Room {
 
             for pubkey in pubkeys.iter() {
                 let event =
-                    EventBuilder::private_msg(&master_signer, *pubkey, &content, tags.clone())
+                    EventBuilder::private_msg(&device_signer, *pubkey, &content, tags.clone())
                         .await?;
 
                 if let Err(e) = client.send_event(&event).await {
