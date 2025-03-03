@@ -38,7 +38,7 @@ enum Signal {
     /// Receive event
     Event(Event),
     /// Receive request master key event
-    RequestMasterKey(PublicKey),
+    RequestMasterKey((PublicKey, Option<String>)),
     /// Receive approve master key event
     ReceiveMasterKey(Event),
     /// Receive EOSE
@@ -177,12 +177,18 @@ fn main() {
                                         .and_then(|tag| tag.content())
                                         .and_then(|content| PublicKey::parse(content).ok());
 
+                                    let name = event
+                                        .tags
+                                        .find(TagKind::Client)
+                                        .and_then(|tag| tag.content())
+                                        .map(|content| content.to_string());
+
                                     if let Some(public_key) = public_key {
                                         if let Err(e) = event_tx
-                                            .send(Signal::RequestMasterKey(public_key))
+                                            .send(Signal::RequestMasterKey((public_key, name)))
                                             .await
                                         {
-                                            log::error!("Failed to send eose: {}", e)
+                                            log::error!("Failed to send: {}", e)
                                         };
                                     }
                                 }
@@ -191,7 +197,7 @@ fn main() {
                                         .send(Signal::ReceiveMasterKey(event.into_owned()))
                                         .await
                                     {
-                                        log::error!("Failed to send eose: {}", e)
+                                        log::error!("Failed to send: {}", e)
                                     };
                                 }
                                 Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
@@ -319,15 +325,19 @@ fn main() {
                             }
                             Signal::ReceiveMasterKey(event) => {
                                 if let Some(device) = Device::global(cx) {
-                                    device.update(cx, |this, cx| {
-                                        this.handle_response(&event, cx).detach();
+                                    _ = handle.update(cx, |_, window, cx| {
+                                        device.update(cx, |this, cx| {
+                                            this.handle_response(&event, window, cx);
+                                        });
                                     });
                                 }
                             }
-                            Signal::RequestMasterKey(public_key) => {
+                            Signal::RequestMasterKey(user) => {
                                 if let Some(device) = Device::global(cx) {
-                                    device.update(cx, |this, cx| {
-                                        this.handle_request(public_key, cx).detach();
+                                    _ = handle.update(cx, |_, window, cx| {
+                                        device.update(cx, |this, cx| {
+                                            this.handle_request(user, window, cx);
+                                        });
                                     });
                                 }
                             }

@@ -9,8 +9,9 @@ use global::{
     },
     get_app_name, get_client, set_device_keys,
 };
-use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task};
+use gpui::{App, AppContext, AsyncApp, Entity, Global, PromptLevel, Task, Window};
 use nostr_sdk::prelude::*;
+use ui::{notification::Notification, ContextModal};
 
 pub fn init<T>(user_signer: T, cx: &AsyncApp) -> Task<Result<(), Error>>
 where
@@ -156,52 +157,98 @@ impl Device {
     }
 
     /// Handle response event from other Nostr client
-    pub fn handle_response(&self, event: &Event, cx: &Context<Self>) -> Task<Result<(), Error>> {
+    pub fn handle_response(&self, event: &Event, window: &mut Window, cx: &App) {
         let Some(local_keys) = self.local_keys.clone() else {
-            return Task::ready(Err(anyhow!("Local keys not found")));
+            return;
         };
 
+        let handle = window.window_handle();
         let local_signer = local_keys.into_nostr_signer();
         let target = event.tags.find(TagKind::custom("pubkey")).cloned();
         let content = event.content.clone();
 
-        cx.background_spawn(async move {
+        let task = cx.background_spawn(async move {
             if let Some(tag) = target {
                 let hex = tag.content().context(anyhow!("Public Key not found"))?;
                 let public_key = PublicKey::parse(hex)?;
 
                 let secret = local_signer.nip44_decrypt(&public_key, &content).await?;
                 let keys = Keys::parse(&secret)?;
-
-                log::info!("Received device keys from other client");
                 // Update global state with new device keys
                 set_device_keys(keys).await;
+
+                log::info!("Received device keys from other client");
 
                 Ok(())
             } else {
                 Err(anyhow!("Failed to retrieve device key"))
             }
+        });
+
+        cx.spawn(|cx| async move {
+            if let Err(e) = task.await {
+                _ = cx.update(|cx| {
+                    _ = handle.update(cx, |_, window, cx| {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    });
+                });
+            } else {
+                _ = cx.update(|cx| {
+                    _ = handle.update(cx, |_, window, cx| {
+                        window.push_notification(
+                            Notification::success("Device request has been approved"),
+                            cx,
+                        );
+                    });
+                });
+            }
         })
+        .detach();
     }
 
     /// Handle approve event for request from other Nostr client
-    pub fn handle_request(&self, target: PublicKey, cx: &Context<Self>) -> Task<Result<(), Error>> {
+    pub fn handle_request(
+        &self,
+        requester: (PublicKey, Option<String>),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        // Only handle request if requester is current user
+        if requester.0 != self.profile.public_key() {
+            return;
+        }
+
         let client = get_client();
+        let handle = window.window_handle();
         let read_device_keys = cx.read_credentials(KEYRING);
 
-        cx.background_spawn(async move {
+        let public_key = requester.0;
+        let client_name = requester.1;
+
+        let detail = if let Some(client_name) = client_name {
+            format!(
+                "{} requests to share device keys from this device",
+                client_name
+            )
+        } else {
+            "Other client requests to share device keys from this device".to_string()
+        };
+
+        let approve_task = cx.background_spawn(async move {
             if let Ok(Some((_, secret))) = read_device_keys.await {
                 let local_keys = Keys::generate();
                 let local_pubkey = local_keys.public_key();
                 let local_signer = local_keys.into_nostr_signer();
 
                 // Get device's secret key
-                let device_secret = String::from_utf8(secret)?;
+                let device_secret = SecretKey::from_slice(&secret)?;
                 // Encrypt device's secret key by using NIP-44
-                let content = local_signer.nip44_encrypt(&target, &device_secret).await?;
+                let content = local_signer
+                    .nip44_encrypt(&public_key, device_secret.to_secret_hex().as_str())
+                    .await?;
 
                 // Create pubkey tag for other device (lowercase p)
-                let other_tag = Tag::public_key(target);
+                let other_tag = Tag::public_key(public_key);
                 // Create pubkey tag for this device (uppercase P)
                 let local_tag = Tag::custom(
                     TagKind::SingleLetter(SingleLetterTag::uppercase(Alphabet::P)),
@@ -221,7 +268,31 @@ impl Device {
             } else {
                 Err(anyhow!("Device Keys not found"))
             }
+        });
+
+        let response = window.prompt(
+            PromptLevel::Info,
+            "Device Keys Request",
+            Some(&detail),
+            &["Approve", "Reject"],
+            cx,
+        );
+
+        cx.spawn(|cx| async move {
+            if let Ok(answers) = response.await {
+                if answers == 0 && approve_task.await.is_ok() {
+                    _ = cx.update(|cx| {
+                        _ = handle.update(cx, |_, window, cx| {
+                            window.push_notification(
+                                Notification::info("You have approved the device request"),
+                                cx,
+                            );
+                        });
+                    });
+                }
+            }
         })
+        .detach();
     }
 
     /// Initialize device's keys
@@ -247,12 +318,12 @@ impl Device {
             // Found device announcement event,
             // that means user is already used another Nostr client or re-install this client
             if let Some(event) = events.first_owned() {
-                println!("Event: {:?}", event);
                 // Check if device keys are found in keyring
                 if let Ok(Some((_, secret))) = read_keys.await {
                     let secret_key = SecretKey::from_slice(&secret)?;
                     let keys = Keys::new(secret_key);
                     let device_pubkey = keys.public_key();
+
                     log::info!("Device's Public Key: {:?}", device_pubkey);
 
                     let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
@@ -264,7 +335,6 @@ impl Device {
                         log::info!("Re-appointing this device as master");
                         return Ok(DeviceState::Master(keys));
                     }
-
                     // Otherwise fall through to request device keys
                 }
 
@@ -301,7 +371,7 @@ impl Device {
                 if let Err(e) = client.send_event_builder(builder).await {
                     log::error!("Failed to send device keys request: {}", e);
                 } else {
-                    log::info!("Announcement sent");
+                    log::info!("Device announcement sent");
                 }
 
                 Ok(DeviceState::Master(keys))
