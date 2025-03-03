@@ -1,6 +1,11 @@
 pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 
+pub const KEYRING: &str = "Coop Safe Storage";
+pub const DEVICE_ANNOUNCEMENT_KIND: u16 = 10044;
+pub const DEVICE_REQUEST_KIND: u16 = 4454;
+pub const DEVICE_RESPONSE_KIND: u16 = 4455;
+
 /// Bootstrap relays
 pub const BOOTSTRAP_RELAYS: [&str; 3] = [
     "wss://relay.damus.io",

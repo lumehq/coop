@@ -2,12 +2,11 @@ use anyhow::anyhow;
 use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
 use common::{
-    constants::IMAGE_SERVICE,
     last_seen::LastSeen,
     profile::NostrProfile,
     utils::{compare, nip96_upload},
 };
-use device::Device;
+use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
     Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
@@ -18,7 +17,6 @@ use gpui::{
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smol::fs;
-use state::get_client;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -317,10 +315,6 @@ impl Chat {
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(device) = Device::global(cx) else {
-            return;
-        };
-
         let Some(model) = self.room.upgrade() else {
             return;
         };
@@ -351,8 +345,7 @@ impl Chat {
         });
 
         let room = model.read(cx);
-        let signer = device.read(cx).device_signer();
-        let task = room.send_message(content, signer, cx);
+        let task = room.send_message(content, cx);
         let window_handle = window.window_handle();
 
         cx.spawn(|this, mut cx| async move {

@@ -1,11 +1,11 @@
 use common::profile::NostrProfile;
+use global::get_client;
 use gpui::{
     div, img, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, Context,
     Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, Styled, Window,
 };
 use nostr_sdk::prelude::*;
-use state::get_client;
 use ui::{
     button::Button,
     dock_area::panel::{Panel, PanelEvent},

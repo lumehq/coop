@@ -1,11 +1,10 @@
-use device::Device;
+use global::get_client;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
     StyledImage, Window,
 };
 use serde::Deserialize;
-use state::get_client;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -16,6 +15,7 @@ use ui::{
 };
 
 use super::{chat, contacts, onboarding, profile, relays::Relays, settings, sidebar, welcome};
+use crate::device::Device;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {

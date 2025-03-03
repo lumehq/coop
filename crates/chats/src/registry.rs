@@ -1,11 +1,13 @@
-use crate::room::{IncomingEvent, Room};
+use std::{cmp::Reverse, rc::Rc, sync::RwLock};
+
 use anyhow::anyhow;
 use common::{last_seen::LastSeen, utils::room_hash};
+use global::get_client;
 use gpui::{App, AppContext, Context, Entity, Global, Task, WeakEntity};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use state::get_client;
-use std::{cmp::Reverse, rc::Rc, sync::RwLock};
+
+use crate::room::{IncomingEvent, Room};
 
 pub fn init(cx: &mut App) {
     ChatRegistry::register(cx);

@@ -11,9 +11,8 @@ path = "src/main.rs"
 [dependencies]
 ui = { path = "../ui" }
 common = { path = "../common" }
-state = { path = "../state" }
+global = { path = "../global" }
 chats = { path = "../chats" }
-device = { path = "../device" }
 
 gpui.workspace = true
 reqwest_client.workspace = true

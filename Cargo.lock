@@ -927,7 +927,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
- "device",
+ "global",
  "gpui",
  "itertools 0.13.0",
  "log",
@@ -935,7 +935,6 @@ dependencies = [
  "oneshot",
  "smallvec",
  "smol",
- "state",
 ]
 
 [[package]]
@@ -1131,6 +1130,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs 5.0.1",
+ "global",
  "gpui",
  "itertools 0.13.0",
  "nostr-sdk",
@@ -1180,9 +1180,9 @@ dependencies = [
  "anyhow",
  "chats",
  "common",
- "device",
  "dirs 5.0.1",
  "futures",
+ "global",
  "gpui",
  "itertools 0.13.0",
  "log",
@@ -1196,7 +1196,6 @@ dependencies = [
  "serde_json",
  "smallvec",
  "smol",
- "state",
  "tracing-subscriber",
  "ui",
 ]
@@ -1426,19 +1425,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "device"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "common",
- "gpui",
- "log",
- "nostr-sdk",
- "smol",
- "state",
 ]
 
 [[package]]
@@ -2082,6 +2068,16 @@ name = "glob"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
+
+[[package]]
+name = "global"
+version = "0.0.0"
+dependencies = [
+ "dirs 5.0.1",
+ "nostr-sdk",
+ "smol",
+ "whoami",
+]
 
 [[package]]
 name = "globset"
@@ -5245,14 +5241,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
-name = "state"
-version = "0.0.0"
-dependencies = [
- "dirs 5.0.1",
- "nostr-sdk",
-]
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6289,6 +6277,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasite"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8dad83b4f25e74f184f64c43b150b91efe7647395b42289f38e50566d82855b"
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6511,6 +6505,17 @@ dependencies = [
  "home",
  "once_cell",
  "rustix",
+]
+
+[[package]]
+name = "whoami"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "372d5b87f58ec45c384ba03563b03544dc5fadc3983e434b286913f5b4a9bb6d"
+dependencies = [
+ "redox_syscall",
+ "wasite",
+ "web-sys",
 ]
 
 [[package]]

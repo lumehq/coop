@@ -1,14 +1,26 @@
+use constants::APP_ID;
 use dirs::config_dir;
 use nostr_sdk::prelude::*;
-use std::{fs, sync::OnceLock, time::Duration};
+use smol::lock::Mutex;
+
+use std::{
+    fs,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
+
+pub mod constants;
 
 static CLIENT: OnceLock<Client> = OnceLock::new();
+static DEVICE_KEYS: Mutex<Option<Arc<dyn NostrSigner>>> = Mutex::new(None);
+static APP_NAME: OnceLock<Arc<str>> = OnceLock::new();
 
+/// Nostr Client instance
 pub fn get_client() -> &'static Client {
     CLIENT.get_or_init(|| {
         // Setup app data folder
         let config_dir = config_dir().expect("Config directory not found");
-        let app_dir = config_dir.join("Coop/");
+        let app_dir = config_dir.join(APP_ID);
 
         // Create app directory if it doesn't exist
         _ = fs::create_dir_all(&app_dir);
@@ -26,4 +38,23 @@ pub fn get_client() -> &'static Client {
         // Setup Nostr Client
         ClientBuilder::default().database(lmdb).opts(opts).build()
     })
+}
+
+/// Get app name
+pub fn get_app_name() -> &'static str {
+    APP_NAME.get_or_init(|| Arc::from(format!("Coop on {}", whoami::distro())))
+}
+
+/// Get device keys
+pub async fn get_device_keys() -> Option<Arc<dyn NostrSigner>> {
+    let guard = DEVICE_KEYS.lock().await;
+    guard.clone()
+}
+
+/// Set device keys
+pub async fn set_device_keys<T>(signer: T)
+where
+    T: NostrSigner + 'static,
+{
+    DEVICE_KEYS.lock().await.replace(Arc::new(signer));
 }

@@ -1,5 +1,6 @@
 use chats::{registry::ChatRegistry, room::Room};
 use common::{profile::NostrProfile, utils::random_name};
+use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
@@ -10,7 +11,6 @@ use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
-use state::get_client;
 use std::{collections::HashSet, time::Duration};
 use ui::{
     button::{Button, ButtonRounded},

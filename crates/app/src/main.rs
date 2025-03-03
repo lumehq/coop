@@ -1,13 +1,14 @@
 use asset::Assets;
 use chats::registry::ChatRegistry;
-use common::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID,
-};
-use device::{
-    constants::{DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND},
-    Device,
-};
+use device::Device;
 use futures::{select, FutureExt};
+use global::{
+    constants::{
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
+        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
+    },
+    get_client,
+};
 use gpui::{
     actions, px, size, App, AppContext, Application, AsyncApp, Bounds, KeyBinding, Menu, MenuItem,
     WindowBounds, WindowKind, WindowOptions,
@@ -21,12 +22,12 @@ use nostr_sdk::{
     RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
 };
 use smol::Timer;
-use state::get_client;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::{theme::Theme, Root};
-use views::{app, onboarding};
+use views::{app, onboarding, startup};
 
 mod asset;
+mod device;
 mod views;
 
 actions!(coop, [Quit]);
@@ -64,8 +65,8 @@ fn main() {
     // Connect to default relays
     app.background_executor()
         .spawn(async {
-            for relay in BOOTSTRAP_RELAYS.iter() {
-                _ = client.add_relay(*relay).await;
+            for relay in BOOTSTRAP_RELAYS.into_iter() {
+                _ = client.add_relay(relay).await;
             }
             _ = client.add_discovery_relay("wss://relaydiscovery.com").await;
             _ = client.add_discovery_relay("wss://user.kindpag.es").await;
@@ -192,6 +193,9 @@ fn main() {
                                         log::error!("Failed to send eose: {}", e)
                                     };
                                 }
+                                Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
+                                    log::info!("Device announcement received")
+                                }
                                 _ => {}
                             }
                         }
@@ -245,44 +249,8 @@ fn main() {
             items: vec![MenuItem::action("Quit", Quit)],
         }]);
 
-        // Spawn a task to handle events from nostr channel
-        cx.spawn(|cx| async move {
-            while let Ok(signal) = event_rx.recv().await {
-                cx.update(|cx| {
-                    match signal {
-                        Signal::Eose => {
-                            if let Some(chats) = ChatRegistry::global(cx) {
-                                chats.update(cx, |this, cx| this.load_chat_rooms(cx))
-                            }
-                        }
-                        Signal::Event(event) => {
-                            if let Some(chats) = ChatRegistry::global(cx) {
-                                chats.update(cx, |this, cx| this.push_message(event, cx))
-                            }
-                        }
-                        Signal::ReceiveMasterKey(event) => {
-                            if let Some(device) = Device::global(cx) {
-                                device.update(cx, |this, cx| {
-                                    this.handle_response(&event, cx);
-                                });
-                            }
-                        }
-                        Signal::RequestMasterKey(public_key) => {
-                            if let Some(device) = Device::global(cx) {
-                                device.update(cx, |this, cx| {
-                                    this.handle_request(public_key, cx);
-                                });
-                            }
-                        }
-                    };
-                })
-                .ok();
-            }
-        })
-        .detach();
-
         // Set up the window options
-        let window_opts = WindowOptions {
+        let opts = WindowOptions {
             #[cfg(not(target_os = "linux"))]
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::new_static(APP_NAME)),
@@ -302,51 +270,95 @@ fn main() {
             ..Default::default()
         };
 
-        // Create a task to read credentials from the keyring service
-        let task = cx.read_credentials("Coop Safe Storage");
-        let (tx, rx) = oneshot::channel::<bool>();
+        // Open a window with default options
+        cx.open_window(opts, |window, cx| {
+            let handle = window.window_handle();
 
-        // Read credential in OS Keyring
-        cx.background_spawn(async {
-            let is_ready = if let Ok(Some((_, secret))) = task.await {
-                let result = async {
-                    let secret_hex = String::from_utf8(secret)?;
-                    let keys = Keys::parse(&secret_hex)?;
+            // Spawn a task to handle credentials
+            cx.spawn(|cx| async move {
+                /*
+                if let Ok(Some((_, vec))) = read_credentials.await {
+                    let Ok(content) = String::from_utf8(vec) else {
+                        return;
+                    };
 
-                    // Update nostr signer
-                    client.set_signer(keys).await;
+                    let Ok(uri) = NostrConnectURI::parse(content) else {
+                        return;
+                    };
 
-                    Ok::<_, anyhow::Error>(true)
+                    let keys = Keys::generate();
+
+                    if let Ok(signer) = NostrConnect::new(uri, keys, Duration::from_secs(300), None)
+                    {
+                        if device::init(signer, &cx).await.is_ok() {
+                            cx.update(|cx| {
+                                handle
+                                    .update(cx, |_, window, cx| {
+                                        window.replace_root(cx, |window, cx| {
+                                            Root::new(app::init(window, cx).into(), window, cx)
+                                        });
+                                    })
+                                    .expect("Window is closed. Please restart the application.")
+                            })
+                            .ok();
+                        }
+                    }
+                    return;
                 }
-                .await;
+                */
 
-                result.is_ok()
-            } else {
-                false
-            };
+                cx.update(|cx| {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            window.replace_root(cx, |window, cx| {
+                                Root::new(onboarding::init(window, cx).into(), window, cx)
+                            });
+                        })
+                        .expect("Window is closed. Please restart the application.")
+                })
+                .ok();
+            })
+            .detach();
 
-            _ = tx.send(is_ready)
-        })
-        .detach();
-
-        cx.spawn(|cx| async move {
-            if let Ok(is_ready) = rx.await {
-                if is_ready {
-                    // Open a App window
-                    cx.open_window(window_opts, |window, cx| {
-                        cx.new(|cx| Root::new(app::init(window, cx).into(), window, cx))
+            // Spawn a task to handle events from nostr channel
+            cx.spawn(|cx| async move {
+                while let Ok(signal) = event_rx.recv().await {
+                    cx.update(|cx| {
+                        match signal {
+                            Signal::Eose => {
+                                if let Some(chats) = ChatRegistry::global(cx) {
+                                    chats.update(cx, |this, cx| this.load_chat_rooms(cx))
+                                }
+                            }
+                            Signal::Event(event) => {
+                                if let Some(chats) = ChatRegistry::global(cx) {
+                                    chats.update(cx, |this, cx| this.push_message(event, cx))
+                                }
+                            }
+                            Signal::ReceiveMasterKey(event) => {
+                                if let Some(device) = Device::global(cx) {
+                                    device.update(cx, |this, cx| {
+                                        this.handle_response(&event, cx).detach();
+                                    });
+                                }
+                            }
+                            Signal::RequestMasterKey(public_key) => {
+                                if let Some(device) = Device::global(cx) {
+                                    device.update(cx, |this, cx| {
+                                        this.handle_request(public_key, cx).detach();
+                                    });
+                                }
+                            }
+                        };
                     })
-                    .expect("Failed to open window");
-                } else {
-                    // Open a Onboarding window
-                    cx.open_window(window_opts, |window, cx| {
-                        cx.new(|cx| Root::new(onboarding::init(window, cx).into(), window, cx))
-                    })
-                    .expect("Failed to open window");
+                    .ok();
                 }
-            }
+            })
+            .detach();
+
+            cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx))
         })
-        .detach();
+        .expect("Failed to open window. Please restart the application.");
     });
 }
 

@@ -1,4 +1,4 @@
-use crate::constants::NIP96_SERVER;
+use global::constants::NIP96_SERVER;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use rnglib::{Language, RNG};

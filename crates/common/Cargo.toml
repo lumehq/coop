@@ -5,6 +5,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
+global = { path = "../global" }
+
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true

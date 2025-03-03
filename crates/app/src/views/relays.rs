@@ -1,10 +1,9 @@
-use common::constants::NEW_MESSAGE_SUB_ID;
+use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
 use gpui::{
     div, prelude::FluentBuilder, px, uniform_list, AppContext, Context, Entity, FocusHandle,
     InteractiveElement, IntoElement, ParentElement, Render, Styled, Task, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
-use state::get_client;
 use ui::{
     button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},

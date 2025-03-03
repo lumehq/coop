@@ -1,7 +1,6 @@
+use global::constants::IMAGE_SERVICE;
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
-
-use crate::constants::IMAGE_SERVICE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NostrProfile {
