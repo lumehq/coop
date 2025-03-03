@@ -46,9 +46,6 @@ enum Signal {
 }
 
 fn main() {
-    // Fix crash on startup
-    // TODO: why this is needed?
-    _ = rustls::crypto::ring::default_provider().install_default();
     // Enable logging
     tracing_subscriber::fmt::init();
 
@@ -66,11 +63,17 @@ fn main() {
     // Connect to default relays
     app.background_executor()
         .spawn(async {
+            // Fix crash on startup
+            // TODO: why this is needed?
+            _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
             for relay in BOOTSTRAP_RELAYS.into_iter() {
                 _ = client.add_relay(relay).await;
             }
+
             _ = client.add_discovery_relay("wss://relaydiscovery.com").await;
             _ = client.add_discovery_relay("wss://user.kindpag.es").await;
+
             _ = client.connect().await
         })
         .detach();
