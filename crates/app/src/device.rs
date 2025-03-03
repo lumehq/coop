@@ -258,11 +258,10 @@ impl Device {
                     let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
                     let content = n_tag.content().context("Not found")?;
                     let target_pubkey = PublicKey::parse(content)?;
-                    println!("Target: {:?}", target_pubkey);
 
                     // If device public key matches announcement public key, re-appoint as master
                     if device_pubkey == target_pubkey {
-                        log::info!("Re-appointing as master");
+                        log::info!("Re-appointing this device as master");
                         return Ok(DeviceState::Master(keys));
                     }
 

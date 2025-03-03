@@ -1,16 +1,17 @@
+use anyhow::anyhow;
 use asset::Assets;
 use chats::registry::ChatRegistry;
 use device::Device;
 use futures::{select, FutureExt};
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
+        ALL_MESSAGES_SUB_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
         DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
     },
-    get_client,
+    get_client, get_device_keys,
 };
 use gpui::{
-    actions, px, size, App, AppContext, Application, AsyncApp, Bounds, KeyBinding, Menu, MenuItem,
+    actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(not(target_os = "linux"))]
@@ -18,13 +19,13 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Client, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
+    nips::nip59::UnwrappedGift, pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey,
+    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
-use ui::{theme::Theme, Root};
-use views::{app, onboarding, startup};
+use ui::Root;
+use views::{onboarding, startup};
 
 mod asset;
 mod device;
@@ -91,7 +92,7 @@ fn main() {
                             Ok(keys) => {
                                 batch.extend(keys);
                                 if batch.len() >= BATCH_SIZE {
-                                    sync_metadata(client, mem::take(&mut batch)).await;
+                                    handle_metadata(mem::take(&mut batch)).await;
                                 }
                             }
                             Err(_) => break,
@@ -99,7 +100,7 @@ fn main() {
                     }
                     _ = timeout => {
                         if !batch.is_empty() {
-                            sync_metadata(client, mem::take(&mut batch)).await;
+                            handle_metadata(mem::take(&mut batch)).await;
                         }
                     }
                 }
@@ -124,7 +125,7 @@ fn main() {
                         } => {
                             match event.kind {
                                 Kind::GiftWrap => {
-                                    if let Ok(gift) = client.unwrap_gift_wrap(&event).await {
+                                    if let Ok(gift) = handle_gift_wrap(&event).await {
                                         let mut pubkeys = vec![];
 
                                         // Sign the rumor with the generated keys,
@@ -167,7 +168,7 @@ fn main() {
                                     let pubkeys =
                                         event.tags.public_keys().copied().collect::<HashSet<_>>();
 
-                                    sync_metadata(client, pubkeys).await;
+                                    handle_metadata(pubkeys).await;
                                 }
                                 Kind::Custom(DEVICE_REQUEST_KIND) => {
                                     let public_key = event
@@ -212,25 +213,6 @@ fn main() {
             }
         })
         .detach();
-
-    // Handle re-open window
-    app.on_reopen(move |cx| {
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<bool>();
-
-        cx.background_spawn(async move {
-            let is_login = client.signer().await.is_ok();
-            _ = tx.send(is_login);
-        })
-        .detach();
-
-        cx.spawn(|mut cx| async move {
-            if let Ok(is_login) = rx.await {
-                _ = restore_window(is_login, &mut cx).await;
-            }
-        })
-        .detach();
-    });
 
     app.run(move |cx| {
         // Initialize chat global state
@@ -362,73 +344,40 @@ fn main() {
     });
 }
 
-async fn sync_metadata(client: &Client, buffer: HashSet<PublicKey>) {
+async fn handle_gift_wrap(gift_wrap: &Event) -> Result<UnwrappedGift, anyhow::Error> {
+    let client = get_client();
+
+    if let Some(device) = get_device_keys().await {
+        // Try to unwrap with the device keys first
+        match UnwrappedGift::from_gift_wrap(&device, gift_wrap).await {
+            Ok(event) => Ok(event),
+            Err(_) => {
+                // Try to unwrap again with the user's signer
+                let signer = client.signer().await?;
+                let event = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
+                Ok(event)
+            }
+        }
+    } else {
+        Err(anyhow!("Signer not found"))
+    }
+}
+
+async fn handle_metadata(buffer: HashSet<PublicKey>) {
+    let client = get_client();
+
     let opts = SubscribeAutoCloseOptions::default()
         .exit_policy(ReqExitPolicy::ExitOnEOSE)
         .idle_timeout(Some(Duration::from_secs(2)));
 
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
-        .kind(Kind::Metadata)
-        .limit(buffer.len());
+        .limit(buffer.len() * 2)
+        .kinds(vec![Kind::Metadata, Kind::Custom(DEVICE_ANNOUNCEMENT_KIND)]);
 
     if let Err(e) = client.subscribe(filter, Some(opts)).await {
         log::error!("Failed to sync metadata: {e}");
     }
-}
-
-async fn restore_window(is_login: bool, cx: &mut AsyncApp) -> anyhow::Result<()> {
-    let opts = cx
-        .update(|cx| WindowOptions {
-            #[cfg(not(target_os = "linux"))]
-            titlebar: Some(TitlebarOptions {
-                title: Some(SharedString::new_static(APP_NAME)),
-                traffic_light_position: Some(point(px(9.0), px(9.0))),
-                appears_transparent: true,
-            }),
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(900.0), px(680.0)),
-                cx,
-            ))),
-            #[cfg(target_os = "linux")]
-            window_background: WindowBackgroundAppearance::Transparent,
-            #[cfg(target_os = "linux")]
-            window_decorations: Some(WindowDecorations::Client),
-            kind: WindowKind::Normal,
-            ..Default::default()
-        })
-        .expect("Failed to set window options.");
-
-    if is_login {
-        _ = cx.open_window(opts, |window, cx| {
-            window.set_window_title(APP_NAME);
-            window.set_app_id(APP_ID);
-
-            #[cfg(not(target_os = "linux"))]
-            window
-                .observe_window_appearance(|window, cx| {
-                    Theme::sync_system_appearance(Some(window), cx);
-                })
-                .detach();
-
-            cx.new(|cx| Root::new(app::init(window, cx).into(), window, cx))
-        });
-    } else {
-        _ = cx.open_window(opts, |window, cx| {
-            window.set_window_title(APP_NAME);
-            window.set_app_id(APP_ID);
-            window
-                .observe_window_appearance(|window, cx| {
-                    Theme::sync_system_appearance(Some(window), cx);
-                })
-                .detach();
-
-            cx.new(|cx| Root::new(onboarding::init(window, cx).into(), window, cx))
-        });
-    };
-
-    Ok(())
 }
 
 fn quit(_: &Quit, cx: &mut App) {

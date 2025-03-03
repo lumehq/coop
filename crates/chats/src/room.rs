@@ -2,7 +2,7 @@ use std::{collections::HashSet, rc::Rc};
 
 use anyhow::{anyhow, Error};
 use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
-use global::{get_client, get_device_keys};
+use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client, get_device_keys};
 use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -187,8 +187,32 @@ impl Room {
                 .collect();
 
             for pubkey in pubkeys.iter() {
+                // Check if the pubkey has a device announcement
+                let filter = Filter::new()
+                    .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
+                    .author(*pubkey)
+                    .limit(1);
+
+                let has_device = client
+                    .database()
+                    .query(filter)
+                    .await
+                    .ok()
+                    .and_then(|events| events.first_owned())
+                    .is_some();
+
+                // Choose the appropriate signer based on device presence
+                let signer = if has_device {
+                    log::info!("Use device signer to send message");
+                    &device
+                } else {
+                    log::info!("Use user signer to send message");
+                    &client.signer().await?
+                };
+
+                // Create and send the message
                 let event =
-                    EventBuilder::private_msg(&device, *pubkey, &content, tags.clone()).await?;
+                    EventBuilder::private_msg(signer, *pubkey, &content, tags.clone()).await?;
 
                 if let Err(e) = client.send_event(&event).await {
                     // Convert error into string, then push it to the report

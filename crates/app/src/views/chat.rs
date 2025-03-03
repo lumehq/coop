@@ -199,7 +199,7 @@ impl Chat {
                                     this.room.read_with(cx, |this, _| this.member(&item.0))
                                 {
                                     this.push_system_message(
-                                        format!("{} {}", ALERT, member.name()),
+                                        format!("{} {}", member.name(), ALERT),
                                         cx,
                                     );
                                 }
