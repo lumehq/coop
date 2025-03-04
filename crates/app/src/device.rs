@@ -45,7 +45,7 @@ where
         Device::subscribe(public_key, &cx).await?;
 
         // Initialize device
-        match Device::init(public_key, &cx).await? {
+        match Device::setup_device(public_key, &cx).await? {
             DeviceState::Master(keys) => {
                 // Update global state with new device keys
                 set_device_keys(keys.clone()).await;
@@ -298,7 +298,7 @@ impl Device {
     /// Initialize device's keys
     ///
     /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    fn init(current_user: PublicKey, cx: &AsyncApp) -> Task<Result<DeviceState, Error>> {
+    fn setup_device(current_user: PublicKey, cx: &AsyncApp) -> Task<Result<DeviceState, Error>> {
         // Create a task to get device keys from keyring
         let Ok(read_keys) = cx.update(|cx| cx.read_credentials(KEYRING)) else {
             return Task::ready(Err(anyhow!("Failed to read device keys from keyring")));

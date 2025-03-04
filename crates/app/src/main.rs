@@ -129,12 +129,11 @@ fn main() {
                             match event.kind {
                                 Kind::GiftWrap => {
                                     if let Ok(gift) = handle_gift_wrap(&event).await {
-                                        let mut pubkeys = vec![];
-
                                         // Sign the rumor with the generated keys,
                                         // this event will be used for internal only,
                                         // and NEVER send to relays.
                                         if let Ok(event) = gift.rumor.sign_with_keys(&rng_keys) {
+                                            let mut pubkeys = vec![];
                                             pubkeys.extend(event.tags.public_keys());
                                             pubkeys.push(event.pubkey);
 
@@ -146,23 +145,11 @@ fn main() {
                                             }
 
                                             // Send all pubkeys to the batch
-                                            if let Err(e) = batch_tx.send(pubkeys).await {
-                                                log::error!(
-                                                    "Failed to send pubkeys to batch: {}",
-                                                    e
-                                                )
-                                            }
+                                            _ = batch_tx.send(pubkeys).await;
 
                                             // Send this event to the GPUI
                                             if new_id == *subscription_id {
-                                                if let Err(e) =
-                                                    event_tx.send(Signal::Event(event)).await
-                                                {
-                                                    log::error!(
-                                                        "Failed to send event to GPUI: {}",
-                                                        e
-                                                    )
-                                                }
+                                                _ = event_tx.send(Signal::Event(event)).await;
                                             }
                                         }
                                     }

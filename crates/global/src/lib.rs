@@ -1,4 +1,4 @@
-use constants::APP_ID;
+use constants::{ALL_MESSAGES_SUB_ID, APP_ID};
 use dirs::config_dir;
 use nostr_sdk::prelude::*;
 use smol::lock::Mutex;
@@ -33,7 +33,7 @@ pub fn get_client() -> &'static Client {
             // NIP-65
             .gossip(true)
             // Skip all very slow relays
-            .max_avg_latency(Duration::from_millis(800));
+            .max_avg_latency(Duration::from_secs(2));
 
         // Setup Nostr Client
         ClientBuilder::default().database(lmdb).opts(opts).build()
@@ -57,4 +57,22 @@ where
     T: NostrSigner + 'static,
 {
     DEVICE_KEYS.lock().await.replace(Arc::new(signer));
+
+    // Re-subscribe
+    smol::spawn(async move {
+        let client = get_client();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        if let Ok(signer) = client.signer().await {
+            let public_key = signer.get_public_key().await.unwrap();
+
+            // Create a filter for getting all gift wrapped events send to current user
+            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+            let id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+            _ = client.unsubscribe(&id);
+            _ = client.subscribe_with_id(id, filter, Some(opts)).await;
+        }
+    })
+    .await;
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, rc::Rc};
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Context, Error};
 use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
 use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client, get_device_keys};
 use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
@@ -171,14 +171,14 @@ impl Room {
             };
 
             let user_signer = client.signer().await?;
-            let public_key = user_signer.get_public_key().await?;
+            let user_pubkey = user_signer.get_public_key().await?;
 
             let mut report = Vec::with_capacity(pubkeys.len());
 
             let tags: Vec<Tag> = pubkeys
                 .iter()
                 .filter_map(|pubkey| {
-                    if pubkey != &public_key {
+                    if pubkey != &user_pubkey {
                         Some(Tag::public_key(*pubkey))
                     } else {
                         None
@@ -192,31 +192,43 @@ impl Room {
                     .author(*pubkey)
                     .limit(1);
 
-                // Check if the pubkey has a device announcement
-                let has_device = client
-                    .database()
-                    .query(filter)
-                    .await
-                    .ok()
-                    .and_then(|events| events.first_owned())
-                    .is_some();
-
-                // Choose the appropriate signer based on device presence
-                let signer = if has_device {
+                // Check if the pubkey has a device announcement,
+                // then choose the appropriate signer based on device presence
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
                     log::info!("Use device signer to send message");
-                    &device
+                    let signer = &device;
+
+                    // Get the device's public key of other user
+                    let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
+                    let hex = n_tag.content().context("Not found")?;
+                    let target_pubkey = PublicKey::parse(hex)?;
+
+                    let rumor = EventBuilder::private_msg_rumor(*pubkey, &content)
+                        .tags(tags.clone())
+                        .build(user_pubkey);
+
+                    let event = EventBuilder::gift_wrap(
+                        signer,
+                        &target_pubkey,
+                        rumor,
+                        vec![Tag::public_key(*pubkey)],
+                    )
+                    .await?;
+
+                    if let Err(e) = client.send_event(&event).await {
+                        // Convert error into string, then push it to the report
+                        report.push(e.to_string());
+                    }
                 } else {
                     log::info!("Use user signer to send message");
-                    &client.signer().await?
-                };
+                    let signer = &client.signer().await?;
 
-                // Create and send the message
-                let event =
-                    EventBuilder::private_msg(signer, *pubkey, &content, tags.clone()).await?;
+                    let event =
+                        EventBuilder::private_msg(signer, *pubkey, &content, tags.clone()).await?;
 
-                if let Err(e) = client.send_event(&event).await {
-                    // Convert error into string, then push it to the report
-                    report.push(e.to_string());
+                    if let Err(e) = client.send_event(&event).await {
+                        report.push(e.to_string());
+                    }
                 }
             }
 
