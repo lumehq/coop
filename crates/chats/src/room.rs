@@ -186,21 +186,21 @@ impl Room {
                 })
                 .collect();
 
+            let filter = Filter::new()
+                .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
+                .author(public_key)
+                .limit(1);
+
+            // Check if the pubkey has a device announcement
+            let has_device = client
+                .database()
+                .query(filter)
+                .await
+                .ok()
+                .and_then(|events| events.first_owned())
+                .is_some();
+
             for pubkey in pubkeys.iter() {
-                // Check if the pubkey has a device announcement
-                let filter = Filter::new()
-                    .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
-                    .author(*pubkey)
-                    .limit(1);
-
-                let has_device = client
-                    .database()
-                    .query(filter)
-                    .await
-                    .ok()
-                    .and_then(|events| events.first_owned())
-                    .is_some();
-
                 // Choose the appropriate signer based on device presence
                 let signer = if has_device {
                     log::info!("Use device signer to send message");
