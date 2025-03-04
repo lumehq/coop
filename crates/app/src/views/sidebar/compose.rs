@@ -214,7 +214,19 @@ impl Compose {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        let task: Task<Result<NostrProfile, anyhow::Error>> = if content.starts_with("npub1") {
+        let task: Task<Result<NostrProfile, anyhow::Error>> = if content.contains("@") {
+            cx.background_spawn(async move {
+                let profile = nip05::profile(&content, None).await?;
+                let public_key = profile.public_key;
+
+                let metadata = client
+                    .fetch_metadata(public_key, Duration::from_secs(2))
+                    .await
+                    .unwrap_or_default();
+
+                Ok(NostrProfile::new(public_key, metadata))
+            })
+        } else {
             let Ok(public_key) = PublicKey::parse(&content) else {
                 self.set_loading(false, cx);
                 self.set_error(Some("Public Key is not valid".into()), cx);
@@ -224,18 +236,8 @@ impl Compose {
             cx.background_spawn(async move {
                 let metadata = client
                     .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?;
-
-                Ok(NostrProfile::new(public_key, metadata))
-            })
-        } else {
-            cx.background_spawn(async move {
-                let profile = nip05::profile(&content, None).await?;
-                let public_key = profile.public_key;
-
-                let metadata = client
-                    .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?;
+                    .await
+                    .unwrap_or_default();
 
                 Ok(NostrProfile::new(public_key, metadata))
             })
