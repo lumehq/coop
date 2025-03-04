@@ -1,6 +1,6 @@
 use chats::{registry::ChatRegistry, room::Room};
 use common::{profile::NostrProfile, utils::random_name};
-use global::get_client;
+use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client};
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
@@ -246,6 +246,24 @@ impl Compose {
         cx.spawn(|this, mut cx| async move {
             match task.await {
                 Ok(profile) => {
+                    let public_key = profile.public_key();
+
+                    _ = cx
+                        .background_spawn(async move {
+                            let opts = SubscribeAutoCloseOptions::default()
+                                .exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+                            // Create a device announcement filter
+                            let device = Filter::new()
+                                .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
+                                .author(public_key)
+                                .limit(1);
+
+                            // Only subscribe to the latest device announcement
+                            client.subscribe(device, Some(opts)).await
+                        })
+                        .await;
+
                     _ = cx.update_window(window_handle, |_, window, cx| {
                         _ = this.update(cx, |this, cx| {
                             let public_key = profile.public_key();
