@@ -82,8 +82,8 @@ impl ChatRegistry {
         cx.spawn(|this, cx| async move {
             if let Ok(events) = task.await {
                 _ = cx.update(|cx| {
-                    if !events.is_empty() {
-                        _ = this.update(cx, |this, cx| {
+                    _ = this.update(cx, |this, cx| {
+                        if !events.is_empty() {
                             let current_ids = this.current_rooms_ids(cx);
                             let items: Vec<Entity<Room>> = events
                                 .into_iter()
@@ -99,18 +99,16 @@ impl ChatRegistry {
                                 .collect();
 
                             this.is_loading = false;
+
                             this.rooms.extend(items);
                             this.rooms
                                 .sort_by_key(|room| Reverse(room.read(cx).last_seen()));
-
-                            cx.notify();
-                        });
-                    } else {
-                        _ = this.update(cx, |this, cx| {
+                        } else {
                             this.is_loading = false;
-                            cx.notify();
-                        });
-                    }
+                        }
+
+                        cx.notify();
+                    });
                 });
             }
         })

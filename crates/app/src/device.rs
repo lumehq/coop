@@ -99,7 +99,7 @@ enum DeviceState {
 
 /// Current Device (Client)
 ///
-/// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
+/// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
 #[derive(Debug)]
 pub struct Device {
     /// Profile (Metadata) of current user
@@ -196,7 +196,7 @@ impl Device {
                 _ = cx.update(|cx| {
                     _ = handle.update(cx, |_, window, cx| {
                         window.push_notification(
-                            Notification::success("Device request has been approved"),
+                            Notification::success("Device Keys request has been approved"),
                             cx,
                         );
                     });
