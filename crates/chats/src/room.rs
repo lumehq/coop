@@ -1,4 +1,4 @@
-use std::{collections::HashSet, rc::Rc};
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Context, Error};
 use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
@@ -14,7 +14,7 @@ pub struct IncomingEvent {
 
 pub struct Room {
     pub id: u64,
-    pub last_seen: Rc<LastSeen>,
+    pub last_seen: LastSeen,
     /// Subject of the room
     pub name: Option<SharedString>,
     /// All members of the room
@@ -32,7 +32,7 @@ impl PartialEq for Room {
 impl Room {
     pub fn new(event: &Event, cx: &mut App) -> Entity<Self> {
         let id = room_hash(event);
-        let last_seen = Rc::new(LastSeen(event.created_at));
+        let last_seen = LastSeen(event.created_at);
 
         // Get the subject from the event's tags
         let name = if let Some(tag) = event.tags.find(TagKind::Subject) {
@@ -120,8 +120,8 @@ impl Room {
     }
 
     /// Get room's last seen
-    pub fn last_seen(&self) -> Rc<LastSeen> {
-        self.last_seen.clone()
+    pub fn last_seen(&self) -> LastSeen {
+        self.last_seen
     }
 
     /// Get room's last seen as ago format

@@ -277,12 +277,11 @@ impl Render for Sidebar {
                             .w_full()
                             .when_some(ChatRegistry::global(cx), |this, state| {
                                 let is_loading = state.read(cx).is_loading();
-                                let rooms = state.read(cx).rooms();
-                                let len = rooms.len();
+                                let len = state.read(cx).rooms().len();
 
                                 if is_loading {
                                     this.children(self.render_skeleton(5))
-                                } else if rooms.is_empty() {
+                                } else if state.read(cx).rooms().is_empty() {
                                     this.child(
                                         div()
                                             .px_1()
@@ -323,7 +322,9 @@ impl Render for Sidebar {
                                                 let mut items = vec![];
 
                                                 for ix in range {
-                                                    if let Some(room) = rooms.get(ix) {
+                                                    if let Some(room) =
+                                                        state.read(cx).rooms().get(ix)
+                                                    {
                                                         items.push(this.render_room(ix, room, cx));
                                                     }
                                                 }

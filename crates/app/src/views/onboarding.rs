@@ -1,9 +1,10 @@
 use common::qr::create_qr;
 use gpui::{
     div, img, prelude::FluentBuilder, relative, svg, App, AppContext, Context, Entity, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window,
+    ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
+use smallvec::{smallvec, SmallVec};
 use std::{path::PathBuf, time::Duration};
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
@@ -36,6 +37,8 @@ pub struct Onboarding {
     error_message: Entity<Option<SharedString>>,
     open: PageKind,
     is_loading: bool,
+    #[allow(dead_code)]
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Onboarding {
@@ -49,7 +52,7 @@ impl Onboarding {
         });
 
         cx.new(|cx| {
-            let mut subscriptions = vec![];
+            let mut subscriptions = smallvec![];
 
             subscriptions.push(cx.subscribe_in(
                 &bunker_input,
@@ -65,6 +68,7 @@ impl Onboarding {
                 bunker_input,
                 connect_url,
                 error_message,
+                subscriptions,
                 open: PageKind::Selection,
                 is_loading: false,
             }

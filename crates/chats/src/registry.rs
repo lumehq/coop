@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, rc::Rc, sync::RwLock};
+use std::cmp::Reverse;
 
 use anyhow::anyhow;
 use common::{last_seen::LastSeen, utils::room_hash};
@@ -18,7 +18,7 @@ struct GlobalChatRegistry(Entity<ChatRegistry>);
 impl Global for GlobalChatRegistry {}
 
 pub struct ChatRegistry {
-    rooms: Rc<RwLock<Vec<Entity<Room>>>>,
+    rooms: Vec<Entity<Room>>,
     is_loading: bool,
 }
 
@@ -30,13 +30,7 @@ impl ChatRegistry {
 
     pub fn register(cx: &mut App) -> Entity<Self> {
         Self::global(cx).unwrap_or_else(|| {
-            let entity = cx.new(|cx| {
-                let mut this = Self::new(cx);
-                // Automatically load chat rooms the database when the registry is created
-                this.load_chat_rooms(cx);
-
-                this
-            });
+            let entity = cx.new(Self::new);
 
             // Set global state
             cx.set_global(GlobalChatRegistry(entity.clone()));
@@ -47,18 +41,13 @@ impl ChatRegistry {
 
     fn new(_cx: &mut Context<Self>) -> Self {
         Self {
-            rooms: Rc::new(RwLock::new(vec![])),
+            rooms: vec![],
             is_loading: true,
         }
     }
 
     pub fn current_rooms_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
-        self.rooms
-            .read()
-            .unwrap()
-            .iter()
-            .map(|room| room.read(cx).id)
-            .collect()
+        self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
     pub fn load_chat_rooms(&mut self, cx: &mut Context<Self>) {
@@ -92,10 +81,9 @@ impl ChatRegistry {
 
         cx.spawn(|this, cx| async move {
             if let Ok(events) = task.await {
-                cx.update(|cx| {
+                _ = cx.update(|cx| {
                     if !events.is_empty() {
-                        this.update(cx, |this, cx| {
-                            let mut rooms = this.rooms.write().unwrap();
+                        _ = this.update(cx, |this, cx| {
                             let current_ids = this.current_rooms_ids(cx);
                             let items: Vec<Entity<Room>> = events
                                 .into_iter()
@@ -110,29 +98,27 @@ impl ChatRegistry {
                                 })
                                 .collect();
 
-                            rooms.extend(items);
-                            rooms.sort_by_key(|room| Reverse(room.read(cx).last_seen()));
                             this.is_loading = false;
+                            this.rooms.extend(items);
+                            this.rooms
+                                .sort_by_key(|room| Reverse(room.read(cx).last_seen()));
 
                             cx.notify();
-                        })
-                        .ok();
+                        });
                     } else {
-                        this.update(cx, |this, cx| {
+                        _ = this.update(cx, |this, cx| {
                             this.is_loading = false;
                             cx.notify();
-                        })
-                        .ok();
+                        });
                     }
-                })
-                .ok();
+                });
             }
         })
         .detach();
     }
 
-    pub fn rooms(&self) -> Vec<Entity<Room>> {
-        self.rooms.read().unwrap().clone()
+    pub fn rooms(&self) -> &[Entity<Room>] {
+        &self.rooms
     }
 
     pub fn is_loading(&self) -> bool {
@@ -141,8 +127,6 @@ impl ChatRegistry {
 
     pub fn get(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
         self.rooms
-            .read()
-            .unwrap()
             .iter()
             .find(|model| model.read(cx).id == *id)
             .map(|room| room.downgrade())
@@ -153,44 +137,40 @@ impl ChatRegistry {
         room: Entity<Room>,
         cx: &mut Context<Self>,
     ) -> Result<(), anyhow::Error> {
-        let mut rooms = self.rooms.write().unwrap();
-
-        if !rooms
+        if !self
+            .rooms
             .iter()
             .any(|current| current.read(cx) == room.read(cx))
         {
-            rooms.insert(0, room);
+            self.rooms.insert(0, room);
             cx.notify();
 
             Ok(())
         } else {
-            Err(anyhow!("Room is existed"))
+            Err(anyhow!("Room already exists"))
         }
     }
 
     pub fn push_message(&mut self, event: Event, cx: &mut Context<Self>) {
         let id = room_hash(&event);
-        let mut rooms = self.rooms.write().unwrap();
 
-        if let Some(room) = rooms.iter().find(|room| room.read(cx).id == id) {
+        if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             room.update(cx, |this, cx| {
-                if let Some(last_seen) = Rc::get_mut(&mut this.last_seen) {
-                    *last_seen = LastSeen(event.created_at);
-                }
+                this.last_seen = LastSeen(event.created_at);
                 cx.emit(IncomingEvent { event });
                 cx.notify();
             });
 
-            // Re sort rooms by last seen
-            rooms.sort_by_key(|room| Reverse(room.read(cx).last_seen()));
-
-            cx.notify();
+            // Re-sort rooms by last seen
+            self.rooms
+                .sort_by_key(|room| Reverse(room.read(cx).last_seen()));
         } else {
             let new_room = Room::new(&event, cx);
-            let mut rooms = self.rooms.write().unwrap();
 
-            rooms.insert(0, new_room);
-            cx.notify();
+            // Push the new room to the front of the list
+            self.rooms.insert(0, new_room);
         }
+
+        cx.notify();
     }
 }
