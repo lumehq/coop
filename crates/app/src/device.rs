@@ -4,111 +4,29 @@ use anyhow::{anyhow, Context as AnyContext, Error};
 use common::profile::NostrProfile;
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, DEVICE_ANNOUNCEMENT_KIND, DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND,
-        KEYRING, NEW_MESSAGE_SUB_ID,
+        ALL_MESSAGES_SUB_ID, CLIENT_KEYRING, DATA_SUB_ID, DEVICE_ANNOUNCEMENT_KIND,
+        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, MASTER_KEYRING, NEW_MESSAGE_SUB_ID,
     },
     get_app_name, get_client, set_device_keys,
 };
-use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task, Window};
+use gpui::{
+    div, px, relative, App, AppContext, Context, Entity, Global, ParentElement, Styled, Task,
+    Window,
+};
 use nostr_sdk::prelude::*;
-use ui::{notification::Notification, ContextModal};
+use smol::future::FutureExt;
+use ui::{
+    indicator::Indicator,
+    notification::Notification,
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    ContextModal, Root, Sizable, StyledExt,
+};
 
-pub fn init<T>(user_signer: T, cx: &AsyncApp) -> Task<Result<(), Error>>
-where
-    T: NostrSigner + 'static,
-{
-    let client = get_client();
-
-    // Set the user's signer as the main signer
-    let set_signer: Task<Result<NostrProfile, Error>> = cx.background_spawn(async move {
-        // Use user's signer for main signer
-        _ = client.set_signer(user_signer).await;
-
-        // Verify nostr signer and get public key
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        // Fetch user's metadata
-        let metadata = client
-            .fetch_metadata(public_key, Duration::from_secs(2))
-            .await
-            .unwrap_or_default();
-
-        Ok(NostrProfile::new(public_key, metadata))
-    });
-
-    cx.spawn(|cx| async move {
-        let profile = set_signer.await?;
-        let public_key = profile.public_key();
-
-        // Run initial subscription for this user
-        Device::subscribe(public_key, &cx).await?;
-
-        // Initialize device
-        match Device::setup_device(public_key, &cx).await? {
-            DeviceState::Master(keys) => {
-                // Update global state with new device keys
-                set_device_keys(keys.clone()).await;
-
-                // Subscribe to device keys requests
-                cx.background_spawn(async move {
-                    log::info!("Subscribing to device keys requests...");
-
-                    let filter = Filter::new()
-                        .kind(Kind::Custom(DEVICE_REQUEST_KIND))
-                        .author(public_key)
-                        .since(Timestamp::now());
-
-                    _ = client.subscribe(filter, None).await;
-                })
-                .await;
-
-                _ = cx.update(|cx| {
-                    // Save device keys to keyring for future use
-                    let password = keys.secret_key().as_secret_bytes();
-                    let app_name = get_app_name();
-                    let task = cx.write_credentials(KEYRING, app_name, password);
-
-                    cx.spawn(|_cx| async move {
-                        if let Err(e) = task.await {
-                            log::error!("Failed to save device keys to keyring: {}", e);
-                        }
-                    })
-                    .detach();
-
-                    let device = cx.new(|_| Device {
-                        profile,
-                        local_keys: None,
-                    });
-
-                    Device::set_global(device, cx);
-                });
-            }
-            DeviceState::Minion(local_keys) => {
-                _ = cx.update(|cx| {
-                    let device = cx.new(|_| Device {
-                        profile,
-                        local_keys: Some(local_keys),
-                    });
-
-                    Device::set_global(device, cx);
-                })
-            }
-        }
-
-        Ok(())
-    })
-}
+use crate::views::{app, onboarding};
 
 struct GlobalDevice(Entity<Device>);
 
 impl Global for GlobalDevice {}
-
-#[derive(Debug)]
-enum DeviceState {
-    Master(Keys),
-    Minion(Keys),
-}
 
 /// Current Device (Client)
 ///
@@ -116,9 +34,66 @@ enum DeviceState {
 #[derive(Debug)]
 pub struct Device {
     /// Profile (Metadata) of current user
-    profile: NostrProfile,
-    /// Local Keys, used for requesting device keys from others
-    local_keys: Option<Keys>,
+    profile: Option<NostrProfile>,
+    /// Client Keys
+    client_keys: Keys,
+}
+
+pub fn init(window: &mut Window, cx: &App) {
+    // Initialize client keys
+    let read_keys = cx.read_credentials(CLIENT_KEYRING);
+    let window_handle = window.window_handle();
+
+    cx.spawn(|cx| async move {
+        let keys = if let Ok(Some((_, secret))) = read_keys.await {
+            let secret_key = SecretKey::from_slice(&secret).unwrap();
+
+            Keys::new(secret_key)
+        } else {
+            // Generate new keys and save them to keyring
+            let keys = Keys::generate();
+
+            if let Ok(write_keys) = cx.update(|cx| {
+                cx.write_credentials(
+                    CLIENT_KEYRING,
+                    keys.public_key.to_hex().as_str(),
+                    keys.secret_key().as_secret_bytes(),
+                )
+            }) {
+                _ = write_keys.await;
+            };
+
+            keys
+        };
+
+        cx.update(|cx| {
+            let entity = cx.new(|_| Device {
+                profile: None,
+                client_keys: keys,
+            });
+
+            window_handle
+                .update(cx, |_, window, cx| {
+                    // Open the onboarding view
+                    Root::update(window, cx, |this, window, cx| {
+                        this.replace_view(onboarding::init(window, cx).into());
+                    });
+
+                    window
+                        .observe(&entity, cx, |this, window, cx| {
+                            this.update(cx, |this, cx| {
+                                this.on_login(window, cx);
+                            });
+                        })
+                        .detach();
+                })
+                .ok();
+
+            Device::set_global(entity, cx)
+        })
+        .ok();
+    })
+    .detach();
 }
 
 impl Device {
@@ -130,54 +105,107 @@ impl Device {
         cx.set_global(GlobalDevice(device));
     }
 
-    /// Get the account's profile
-    pub fn profile(&self) -> &NostrProfile {
-        &self.profile
+    pub fn profile(&self) -> Option<&NostrProfile> {
+        self.profile.as_ref()
     }
 
-    /// Create a task to verify inbox relays
-    pub fn verify_inbox_relays(&self, cx: &App) -> Task<Result<Vec<String>, Error>> {
+    /// Login and set user signer
+    pub fn login<T>(&self, signer: T, cx: &mut Context<Self>) -> Task<Result<(), Error>>
+    where
+        T: NostrSigner + 'static,
+    {
         let client = get_client();
-        let public_key = self.profile.public_key();
 
-        cx.background_spawn(async move {
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
+        // Set the user's signer as the main signer
+        let set_signer: Task<Result<NostrProfile, Error>> = cx.background_spawn(async move {
+            // Use user's signer for main signer
+            _ = client.set_signer(signer).await;
 
-            // Get inbox relays event from database
-            let events = client.database().query(filter).await?;
+            // Verify nostr signer and get public key
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
-            if let Some(event) = events.first_owned() {
-                let relays = event
-                    .tags
-                    .filter_standardized(TagKind::Relay)
-                    .filter_map(|t| {
-                        if let TagStandard::Relay(url) = t {
-                            Some(url.to_string())
-                        } else {
-                            None
-                        }
+            // Fetch user's metadata
+            let metadata = client
+                .fetch_metadata(public_key, Duration::from_secs(2))
+                .await
+                .unwrap_or_default();
+
+            Ok(NostrProfile::new(public_key, metadata))
+        });
+
+        cx.spawn(|this, cx| async move {
+            match set_signer.await {
+                Ok(user) => {
+                    cx.update(|cx| {
+                        this.update(cx, |this, cx| {
+                            this.profile = Some(user);
+                            cx.notify();
+                        })
+                        .ok();
                     })
-                    .collect::<Vec<_>>();
+                    .ok();
 
-                Ok(relays)
-            } else {
-                Err(anyhow!("Not found"))
+                    Ok(())
+                }
+                Err(e) => Err(e),
             }
         })
+    }
+
+    fn on_login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(profile) = self.profile.as_ref() else {
+            return;
+        };
+
+        let pubkey = profile.public_key();
+        let client_keys = self.client_keys.clone();
+        let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
+        let window_handle = window.window_handle();
+
+        // Open the app view
+        Root::update(window, cx, |this, window, cx| {
+            this.replace_view(app::init(window, cx).into());
+        });
+
+        cx.spawn(|this, cx| async move {
+            // Initialize subscription for current user
+            _ = Device::subscribe(pubkey).await;
+
+            // Initialize master keys for current user
+            if let Ok(Some(keys)) = Device::master_keys(read_task, pubkey).await {
+                set_device_keys(keys).await;
+            } else {
+                // Send request for master keys
+                if cx
+                    .background_spawn(async move {
+                        Device::request_master_keys(pubkey, client_keys).await
+                    })
+                    .await
+                    .is_ok()
+                {
+                    cx.update(|cx| {
+                        window_handle
+                            .update(cx, |_, window, cx| {
+                                this.update(cx, |this, cx| {
+                                    this.render_waiting_modal(window, cx);
+                                })
+                                .ok();
+                            })
+                            .ok()
+                    })
+                    .ok();
+                }
+            }
+        })
+        .detach();
     }
 
     /// Receive device keys approval from other Nostr client,
     /// then process and update device keys.
     pub fn handle_response(&self, event: Event, window: &mut Window, cx: &Context<Self>) {
-        let Some(local_keys) = self.local_keys.clone() else {
-            return;
-        };
-
         let handle = window.window_handle();
-        let local_signer = local_keys.into_nostr_signer();
+        let local_signer = self.client_keys.clone().into_nostr_signer();
 
         let task = cx.background_spawn(async move {
             if let Some(public_key) = event.tags.public_keys().copied().last() {
@@ -245,10 +273,10 @@ impl Device {
 
         let client = get_client();
         let handle = window.window_handle();
-        let read_device_keys = cx.read_credentials(KEYRING);
+        let read_keys = cx.read_credentials(MASTER_KEYRING);
 
         let approve_task = cx.background_spawn(async move {
-            if let Ok(Some((_, secret))) = read_device_keys.await {
+            if let Ok(Some((_, secret))) = read_keys.await {
                 let local_keys = Keys::generate();
                 let local_pubkey = local_keys.public_key();
                 let local_signer = local_keys.into_nostr_signer();
@@ -297,101 +325,170 @@ impl Device {
         .detach();
     }
 
-    /// Initialize device's keys
-    ///
-    /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    fn setup_device(current_user: PublicKey, cx: &AsyncApp) -> Task<Result<DeviceState, Error>> {
-        // Create a task to get device keys from keyring
-        let Ok(read_keys) = cx.update(|cx| cx.read_credentials(KEYRING)) else {
-            return Task::ready(Err(anyhow!("Failed to read device keys from keyring")));
-        };
+    pub fn render_waiting_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, _window, cx| {
+            let msg = format!(
+                "Please open {} and approve sharing device keys request.",
+                get_app_name()
+            );
+
+            this.keyboard(false)
+                .closable(false)
+                .width(px(420.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .size_full()
+                        .p_4()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .justify_center()
+                                .size_full()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .font_semibold()
+                                                .child("You're using a new device."),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(
+                                                    cx.theme()
+                                                        .base
+                                                        .step(cx, ColorScaleStep::ELEVEN),
+                                                )
+                                                .line_height(relative(1.3))
+                                                .child(msg),
+                                        ),
+                                ),
+                        ),
+                )
+                .footer(
+                    div()
+                        .p_4()
+                        .border_t_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .w_full()
+                        .flex()
+                        .gap_2()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                        .child(Indicator::new().small())
+                        .child("Waiting for approval ..."),
+                )
+        });
+    }
+
+    async fn request_master_keys(current_user: PublicKey, client_keys: Keys) -> Result<(), Error> {
+        log::info!("Sent a request to ask for device keys from the other Nostr client");
 
         let client = get_client();
         let app_name = get_app_name();
 
-        // Create a task to verify device keys
-        cx.background_spawn(async move {
-            let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
-            let filter = Filter::new().kind(kind).author(current_user).limit(1);
+        let kind = Kind::Custom(DEVICE_REQUEST_KIND);
 
-            // Fetch device announcement events
-            let events = client.database().query(filter).await?;
+        let client_tag = Tag::client(app_name);
+        let pubkey_tag = Tag::custom(
+            TagKind::custom("pubkey"),
+            vec![client_keys.public_key().to_hex()],
+        );
 
-            // Found device announcement event,
-            // that means user is already used another Nostr client or re-install this client
-            if let Some(event) = events.first_owned() {
-                // Check if device keys are found in keyring
-                if let Ok(Some((_, secret))) = read_keys.await {
-                    let secret_key = SecretKey::from_slice(&secret)?;
-                    let keys = Keys::new(secret_key);
-                    let device_pubkey = keys.public_key();
+        // Create a request event builder
+        let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
 
-                    log::info!("Device's Public Key: {:?}", device_pubkey);
+        if let Err(e) = client.send_event_builder(builder).await {
+            log::error!("Failed to send device keys request: {}", e);
+        }
 
-                    let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
-                    let content = n_tag.content().context("Not found")?;
-                    let target_pubkey = PublicKey::parse(content)?;
+        log::info!("Waiting for response...");
 
-                    // If device public key matches announcement public key, re-appoint as master
-                    if device_pubkey == target_pubkey {
-                        log::info!("Re-appointing this device as master");
-                        return Ok(DeviceState::Master(keys));
-                    }
-                    // Otherwise fall through to request device keys
-                }
+        let resp = Filter::new()
+            .kind(Kind::Custom(DEVICE_RESPONSE_KIND))
+            .author(current_user)
+            .since(Timestamp::now());
 
-                // Send a request for device keys to the other Nostr client
-                //
-                // Create a local keys to send request
-                let keys = Keys::generate();
-                let pubkey = keys.public_key();
+        // Continously receive the request approval
+        client.subscribe(resp, None).await?;
 
-                let kind = Kind::Custom(DEVICE_REQUEST_KIND);
-                let client_tag = Tag::client(app_name);
-                let pubkey_tag = Tag::custom(TagKind::custom("pubkey"), vec![pubkey.to_hex()]);
-                // Create a request event builder
-                let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
-
-                if let Err(e) = client.send_event_builder(builder).await {
-                    log::error!("Failed to send device keys request: {}", e);
-                }
-
-                log::info!("Sent a request to ask for device keys from the other Nostr client");
-                log::info!("Waiting for response...");
-
-                let resp = Filter::new()
-                    .kind(Kind::Custom(DEVICE_RESPONSE_KIND))
-                    .author(current_user)
-                    .since(Timestamp::now());
-
-                // Continously receive the request approval
-                client.subscribe(resp, None).await?;
-
-                Ok(DeviceState::Minion(keys))
-            } else {
-                log::info!("Device announcement is not found, appoint this device as master");
-
-                let keys = Keys::generate();
-                let pubkey = keys.public_key();
-
-                let client_tag = Tag::client(app_name);
-                let pubkey_tag = Tag::custom(TagKind::custom("n"), vec![pubkey.to_hex()]);
-                // Create an announcement event builder
-                let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
-
-                if let Err(e) = client.send_event_builder(builder).await {
-                    log::error!("Failed to send device announcement: {}", e);
-                } else {
-                    log::info!("Device announcement sent");
-                }
-
-                Ok(DeviceState::Master(keys))
-            }
-        })
+        Ok(())
     }
 
-    /// Run initial subscription
-    fn subscribe(current_user: PublicKey, cx: &AsyncApp) -> Task<Result<(), Error>> {
+    /// Initialize master keys (encryption keys) for current user
+    ///
+    /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
+    #[allow(clippy::type_complexity)]
+    async fn master_keys(
+        task: BoxedFuture<'static, Result<Option<(String, Vec<u8>)>, Error>>,
+        current_user: PublicKey,
+    ) -> Result<Option<Keys>, Error> {
+        let client = get_client();
+        let app_name = get_app_name();
+
+        let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
+        let filter = Filter::new().kind(kind).author(current_user).limit(1);
+        let client_tag = Tag::client(app_name);
+
+        // Fetch device announcement events
+        let events = client.database().query(filter).await?;
+
+        // Found device announcement event,
+        // that means user is already used another Nostr client or re-install this client
+        if let Some(event) = events.first_owned() {
+            // Check if master keys are found in keyring
+            if let Ok(Some((_, secret))) = task.await {
+                let secret_key = SecretKey::from_slice(&secret)?;
+                let keys = Keys::new(secret_key);
+                let device_pubkey = keys.public_key();
+
+                log::info!("Device's Public Key: {:?}", device_pubkey);
+
+                let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
+                let content = n_tag.content().context("Not found")?;
+                let target_pubkey = PublicKey::parse(content)?;
+
+                // If device public key matches announcement public key, re-appoint as master
+                if device_pubkey == target_pubkey {
+                    log::info!("Re-appointing this device as master");
+                    return Ok(Some(keys));
+                }
+                // Otherwise fall through to request device keys
+            }
+
+            Ok(None)
+        } else {
+            log::info!("Device announcement is not found, appoint this device as master");
+
+            let keys = Keys::generate();
+            let pubkey = keys.public_key();
+
+            let pubkey_tag = Tag::custom(TagKind::custom("n"), vec![pubkey.to_hex()]);
+
+            // Create an announcement event builder
+            let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
+
+            if let Err(e) = client.send_event_builder(builder).await {
+                log::error!("Failed to send device announcement: {}", e);
+            } else {
+                log::info!("Device announcement sent");
+            }
+
+            Ok(Some(keys))
+        }
+    }
+
+    /// Initialize subscription for current user
+    async fn subscribe(current_user: PublicKey) -> Result<(), Error> {
         let client = get_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
@@ -400,6 +497,14 @@ impl Device {
             .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
             .author(current_user)
             .limit(1);
+
+        // Create a filter for getting all device keys activity
+        let device_keys = Filter::new()
+            .kinds(vec![
+                Kind::Custom(DEVICE_REQUEST_KIND),
+                Kind::Custom(DEVICE_RESPONSE_KIND),
+            ])
+            .author(current_user);
 
         // Create a contact list filter
         let contacts = Filter::new()
@@ -411,7 +516,13 @@ impl Device {
         let data = Filter::new()
             .author(current_user)
             .since(Timestamp::now())
-            .kinds(vec![Kind::Metadata, Kind::InboxRelays, Kind::RelayList]);
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::InboxRelays,
+                Kind::RelayList,
+                Kind::Custom(DEVICE_REQUEST_KIND),
+                Kind::Custom(DEVICE_RESPONSE_KIND),
+            ]);
 
         // Create a filter for getting all gift wrapped events send to current user
         let msg = Filter::new().kind(Kind::GiftWrap).pubkey(current_user);
@@ -422,23 +533,25 @@ impl Device {
             .pubkey(current_user)
             .limit(0);
 
-        cx.background_spawn(async move {
-            // Only subscribe to the latest device announcement
-            client.subscribe(device, Some(opts)).await?;
+        // Only subscribe to the latest device announcement
+        client.subscribe(device, Some(opts)).await?;
 
-            // Only subscribe to the latest contact list
-            client.subscribe(contacts, Some(opts)).await?;
+        // Get all device keys activity (request/response)
+        client.subscribe(device_keys, Some(opts)).await?;
 
-            // Continuously receive new user's data since now
-            client.subscribe(data, None).await?;
+        // Only subscribe to the latest contact list
+        client.subscribe(contacts, Some(opts)).await?;
 
-            let sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-            client.subscribe_with_id(sub_id, msg, Some(opts)).await?;
+        // Continuously receive new user's data since now
+        let sub_id = SubscriptionId::new(DATA_SUB_ID);
+        client.subscribe_with_id(sub_id, data, None).await?;
 
-            let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-            client.subscribe_with_id(sub_id, new_msg, None).await?;
+        let sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+        client.subscribe_with_id(sub_id, msg, Some(opts)).await?;
 
-            Ok(())
-        })
+        let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+        client.subscribe_with_id(sub_id, new_msg, None).await?;
+
+        Ok(())
     }
 }

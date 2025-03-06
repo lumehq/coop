@@ -58,7 +58,7 @@ where
 {
     DEVICE_KEYS.lock().await.replace(Arc::new(signer));
 
-    // Re-subscribe
+    // Re-subscribe to all messages
     smol::spawn(async move {
         let client = get_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);

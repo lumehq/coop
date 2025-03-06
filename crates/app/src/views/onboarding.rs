@@ -14,7 +14,7 @@ use ui::{
 };
 
 use super::app;
-use crate::device;
+use crate::device::Device;
 
 const LOGO_URL: &str = "brand/coop.svg";
 const TITLE: &str = "Welcome to Coop!";
@@ -76,32 +76,45 @@ impl Onboarding {
     }
 
     fn login(&self, signer: NostrConnect, window: &mut Window, cx: &mut Context<Self>) {
-        let handle = window.window_handle();
+        let Some(device) = Device::global(cx) else {
+            return;
+        };
 
-        cx.spawn(|this, cx| async move {
-            match device::init(signer, &cx).await {
-                Ok(_) => {
-                    _ = cx.update(|cx| {
-                        handle
-                            .update(cx, |_, window, cx| {
-                                window.replace_root(cx, |window, cx| {
-                                    Root::new(app::init(window, cx).into(), window, cx)
-                                });
-                            })
-                            .ok();
-                    });
+        let handle = window.window_handle();
+        let entity = cx.weak_entity();
+
+        device.update(cx, |this, cx| {
+            let login = this.login(signer, cx);
+
+            cx.spawn(|_, cx| async move {
+                match login.await {
+                    Ok(_) => {
+                        cx.update(|cx| {
+                            handle
+                                .update(cx, |_, window, cx| {
+                                    window.replace_root(cx, |window, cx| {
+                                        Root::new(app::init(window, cx).into(), window, cx)
+                                    });
+                                })
+                                .ok();
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        cx.update(|cx| {
+                            entity
+                                .update(cx, |this, cx| {
+                                    this.set_error(e.to_string(), cx);
+                                    this.set_loading(false, cx);
+                                })
+                                .ok();
+                        })
+                        .ok();
+                    }
                 }
-                Err(e) => {
-                    _ = cx.update(|cx| {
-                        _ = this.update(cx, |this, cx| {
-                            this.set_error(e.to_string(), cx);
-                            this.set_loading(false, cx);
-                        });
-                    });
-                }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        });
     }
 
     fn connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {

@@ -1,17 +1,18 @@
 use global::get_client;
 use gpui::{
-    actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
-    Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
-    StyledImage, Window,
+    actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, App,
+    AppContext, Axis, Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement,
+    Render, Styled, StyledImage, Window,
 };
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
+    indicator::Indicator,
     popup_menu::PopupMenuExt,
     theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
-    ContextModal, Icon, IconName, Root, Sizable, TitleBar,
+    ContextModal, Icon, IconName, Root, Sizable, StyledExt, TitleBar,
 };
 
 use super::{chat, contacts, onboarding, profile, relays::Relays, settings, sidebar, welcome};
@@ -87,46 +88,13 @@ impl AppView {
             let relays = cx.new(|_| None);
             let this = Self { relays, dock };
 
-            // Check user's messaging relays and determine user is ready for NIP17 or not.
-            // If not, show the setup modal and instruct user setup inbox relays
-            this.verify_user_relays(window, cx);
-
             this
         })
     }
 
-    fn verify_user_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(model) = Device::global(cx) else {
-            return;
-        };
-
-        let device = model.read(cx);
-        let task = device.verify_inbox_relays(cx);
-        let window_handle = window.window_handle();
-
-        cx.spawn(|this, mut cx| async move {
-            if let Ok(relays) = task.await {
-                _ = cx.update(|cx| {
-                    _ = this.update(cx, |this, cx| {
-                        this.relays = cx.new(|_| Some(relays));
-                        cx.notify();
-                    });
-                });
-            } else {
-                _ = cx.update_window(window_handle, |_, window, cx| {
-                    _ = this.update(cx, |this: &mut Self, cx| {
-                        this.render_setup_relays(window, cx)
-                    });
-                });
-            }
-        })
-        .detach();
-    }
-
     fn render_setup_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = cx.new(|cx| Relays::new(None, window, cx));
-
         window.open_modal(cx, move |this, window, cx| {
+            let relays = cx.new(|cx| Relays::new(None, window, cx));
             let is_loading = relays.read(cx).loading();
 
             this.keyboard(false)
@@ -231,14 +199,14 @@ impl AppView {
             .reverse()
             .icon(Icon::new(IconName::ChevronDownSmall))
             .when_some(Device::global(cx), |this, account| {
-                let profile = account.read(cx).profile();
-
-                this.child(
-                    img(profile.avatar())
-                        .size_5()
-                        .rounded_full()
-                        .object_fit(ObjectFit::Cover),
-                )
+                this.when_some(account.read(cx).profile(), |this, profile| {
+                    this.child(
+                        img(profile.avatar())
+                            .size_5()
+                            .rounded_full()
+                            .object_fit(ObjectFit::Cover),
+                    )
+                })
             })
             .popup_menu(move |this, _, _cx| {
                 this.menu(

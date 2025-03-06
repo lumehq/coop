@@ -5,8 +5,8 @@ use device::Device;
 use futures::{select, FutureExt};
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
-        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DATA_SUB_ID,
+        DEVICE_ANNOUNCEMENT_KIND, DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
     },
     get_client, get_device_keys,
 };
@@ -25,7 +25,7 @@ use nostr_sdk::{
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::Root;
-use views::{onboarding, startup};
+use views::startup;
 
 mod asset;
 mod device;
@@ -117,6 +117,7 @@ fn main() {
             let rng_keys = Keys::generate();
             let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
             let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+            let data_id = SubscriptionId::new(DATA_SUB_ID);
             let mut notifications = client.notifications();
 
             while let Ok(notification) = notifications.recv().await {
@@ -161,11 +162,14 @@ fn main() {
                                     handle_metadata(pubkeys).await;
                                 }
                                 Kind::Custom(DEVICE_REQUEST_KIND) => {
-                                    log::info!("Received device keys request");
+                                    // Only process new requests
+                                    if data_id == *subscription_id {
+                                        log::info!("Received device keys request");
 
-                                    _ = event_tx
-                                        .send(Signal::RequestMasterKey(event.into_owned()))
-                                        .await;
+                                        _ = event_tx
+                                            .send(Signal::RequestMasterKey(event.into_owned()))
+                                            .await;
+                                    }
                                 }
                                 Kind::Custom(DEVICE_RESPONSE_KIND) => {
                                     log::info!("Received device keys approval");
@@ -195,16 +199,15 @@ fn main() {
         .detach();
 
     app.run(move |cx| {
-        // Initialize chat global state
-        chats::registry::init(cx);
-        // Initialize components
-        ui::init(cx);
         // Bring the app to the foreground
         cx.activate(true);
+
         // Register the `quit` function
         cx.on_action(quit);
+
         // Register the `quit` function with CMD+Q
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+
         // Set menu items
         cx.set_menus(vec![Menu {
             name: "Coop".into(),
@@ -235,53 +238,16 @@ fn main() {
 
         // Open a window with default options
         cx.open_window(opts, |window, cx| {
+            // Initialize components
+            ui::init(cx);
+
+            // Initialize chat global state
+            chats::registry::init(cx);
+
+            // Initialize device
+            device::init(window, cx);
+
             let handle = window.window_handle();
-
-            // Spawn a task to handle credentials
-            cx.spawn(|cx| async move {
-                /*
-                if let Ok(Some((_, vec))) = read_credentials.await {
-                    let Ok(content) = String::from_utf8(vec) else {
-                        return;
-                    };
-
-                    let Ok(uri) = NostrConnectURI::parse(content) else {
-                        return;
-                    };
-
-                    let keys = Keys::generate();
-
-                    if let Ok(signer) = NostrConnect::new(uri, keys, Duration::from_secs(300), None)
-                    {
-                        if device::init(signer, &cx).await.is_ok() {
-                            cx.update(|cx| {
-                                handle
-                                    .update(cx, |_, window, cx| {
-                                        window.replace_root(cx, |window, cx| {
-                                            Root::new(app::init(window, cx).into(), window, cx)
-                                        });
-                                    })
-                                    .expect("Window is closed. Please restart the application.")
-                            })
-                            .ok();
-                        }
-                    }
-                    return;
-                }
-                */
-
-                cx.update(|cx| {
-                    handle
-                        .update(cx, |_, window, cx| {
-                            window.replace_root(cx, |window, cx| {
-                                Root::new(onboarding::init(window, cx).into(), window, cx)
-                            });
-                        })
-                        .expect("Window is closed. Please restart the application.")
-                })
-                .ok();
-            })
-            .detach();
 
             // Spawn a task to handle events from nostr channel
             cx.spawn(|cx| async move {

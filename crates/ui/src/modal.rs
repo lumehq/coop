@@ -47,8 +47,7 @@ impl Modal {
             .border_1()
             .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
             .rounded_lg()
-            .shadow_xl()
-            .min_h_48();
+            .shadow_xl();
 
         Self {
             base,
