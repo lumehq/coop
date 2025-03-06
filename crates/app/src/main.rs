@@ -20,7 +20,7 @@ use gpui::{point, SharedString, TitlebarOptions};
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
     nips::nip59::UnwrappedGift, pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey,
-    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
+    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -38,7 +38,7 @@ enum Signal {
     /// Receive event
     Event(Event),
     /// Receive request master key event
-    RequestMasterKey((PublicKey, Option<String>)),
+    RequestMasterKey(Event),
     /// Receive approve master key event
     ReceiveMasterKey(Event),
     /// Receive EOSE
@@ -161,27 +161,15 @@ fn main() {
                                     handle_metadata(pubkeys).await;
                                 }
                                 Kind::Custom(DEVICE_REQUEST_KIND) => {
-                                    let public_key = event
-                                        .tags
-                                        .find(TagKind::custom("pubkey"))
-                                        .and_then(|tag| tag.content())
-                                        .and_then(|content| PublicKey::parse(content).ok());
+                                    log::info!("Received device keys request");
 
-                                    let name = event
-                                        .tags
-                                        .find(TagKind::Client)
-                                        .and_then(|tag| tag.content())
-                                        .map(|content| content.to_string());
-
-                                    if let Some(public_key) = public_key {
-                                        log::info!("Received device request from {:?}", public_key);
-                                        _ = event_tx
-                                            .send(Signal::RequestMasterKey((public_key, name)))
-                                            .await
-                                    }
+                                    _ = event_tx
+                                        .send(Signal::RequestMasterKey(event.into_owned()))
+                                        .await;
                                 }
                                 Kind::Custom(DEVICE_RESPONSE_KIND) => {
-                                    log::info!("Received device response");
+                                    log::info!("Received device keys approval");
+
                                     _ = event_tx
                                         .send(Signal::ReceiveMasterKey(event.into_owned()))
                                         .await;
@@ -314,16 +302,16 @@ fn main() {
                                 if let Some(device) = Device::global(cx) {
                                     _ = handle.update(cx, |_, window, cx| {
                                         device.update(cx, |this, cx| {
-                                            this.handle_response(&event, window, cx);
+                                            this.handle_response(event, window, cx);
                                         });
                                     });
                                 }
                             }
-                            Signal::RequestMasterKey(user) => {
+                            Signal::RequestMasterKey(event) => {
                                 if let Some(device) = Device::global(cx) {
                                     _ = handle.update(cx, |_, window, cx| {
                                         device.update(cx, |this, cx| {
-                                            this.handle_request(user, window, cx);
+                                            this.handle_request(event, window, cx);
                                         });
                                     });
                                 }

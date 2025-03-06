@@ -53,6 +53,7 @@ where
                 // Subscribe to device keys requests
                 cx.background_spawn(async move {
                     log::info!("Subscribing to device keys requests...");
+
                     let filter = Filter::new()
                         .kind(Kind::Custom(DEVICE_REQUEST_KIND))
                         .author(public_key)
@@ -168,24 +169,24 @@ impl Device {
         })
     }
 
-    /// Handle response event from other Nostr client
-    pub fn handle_response(&self, event: &Event, window: &mut Window, cx: &Context<Self>) {
+    /// Receive device keys approval from other Nostr client,
+    /// then process and update device keys.
+    pub fn handle_response(&self, event: Event, window: &mut Window, cx: &Context<Self>) {
         let Some(local_keys) = self.local_keys.clone() else {
             return;
         };
 
         let handle = window.window_handle();
         let local_signer = local_keys.into_nostr_signer();
-        let target = event.tags.find(TagKind::custom("pubkey")).cloned();
-        let content = event.content.clone();
 
         let task = cx.background_spawn(async move {
-            if let Some(tag) = target {
-                let hex = tag.content().context(anyhow!("Public Key not found"))?;
-                let public_key = PublicKey::parse(hex)?;
+            if let Some(public_key) = event.tags.public_keys().copied().last() {
+                let secret = local_signer
+                    .nip44_decrypt(&public_key, &event.content)
+                    .await?;
 
-                let secret = local_signer.nip44_decrypt(&public_key, &content).await?;
                 let keys = Keys::parse(&secret)?;
+
                 // Update global state with new device keys
                 set_device_keys(keys).await;
 
@@ -218,29 +219,33 @@ impl Device {
         .detach();
     }
 
-    /// Handle approve event for request from other Nostr client
-    pub fn handle_request(
-        &self,
-        requester: (PublicKey, Option<String>),
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if requester.0 != self.profile.public_key() {
+    /// Received device keys request from other Nostr client,
+    /// then process the request and send approval response.
+    pub fn handle_request(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(public_key) = event
+            .tags
+            .find(TagKind::custom("pubkey"))
+            .and_then(|tag| tag.content())
+            .and_then(|content| PublicKey::parse(content).ok())
+        else {
             return;
-        }
+        };
 
-        let client = get_client();
-        let handle = window.window_handle();
-        let read_device_keys = cx.read_credentials(KEYRING);
+        let name = event
+            .tags
+            .find(TagKind::Client)
+            .and_then(|tag| tag.content())
+            .map(|content| content.to_string());
 
-        let public_key = requester.0;
-        let client_name = requester.1;
-
-        let message = if let Some(client_name) = client_name {
+        let message = if let Some(client_name) = name {
             format!("Device Keys shared with {}", client_name)
         } else {
             "Device Keys shared with other client".to_owned()
         };
+
+        let client = get_client();
+        let handle = window.window_handle();
+        let read_device_keys = cx.read_credentials(KEYRING);
 
         let approve_task = cx.background_spawn(async move {
             if let Ok(Some((_, secret))) = read_device_keys.await {
@@ -250,13 +255,15 @@ impl Device {
 
                 // Get device's secret key
                 let device_secret = SecretKey::from_slice(&secret)?;
+
                 // Encrypt device's secret key by using NIP-44
                 let content = local_signer
-                    .nip44_encrypt(&public_key, device_secret.to_secret_hex().as_str())
+                    .nip44_encrypt(&public_key, &device_secret.to_secret_hex())
                     .await?;
 
                 // Create pubkey tag for other device (lowercase p)
                 let other_tag = Tag::public_key(public_key);
+
                 // Create pubkey tag for this device (uppercase P)
                 let local_tag = Tag::custom(
                     TagKind::SingleLetter(SingleLetterTag::uppercase(Alphabet::P)),
