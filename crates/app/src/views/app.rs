@@ -39,6 +39,7 @@ impl AddPanel {
 
 // Dock actions
 impl_internal_actions!(dock, [AddPanel]);
+
 // Account actions
 actions!(account, [Logout]);
 
@@ -99,8 +100,8 @@ impl AppView {
             return;
         };
 
-        let account = model.read(cx);
-        let task = account.verify_inbox_relays(cx);
+        let device = model.read(cx);
+        let task = device.verify_inbox_relays(cx);
         let window_handle = window.window_handle();
 
         cx.spawn(|this, mut cx| async move {
@@ -317,29 +318,37 @@ impl Render for AppView {
         div()
             .relative()
             .size_full()
-            .flex()
-            .flex_col()
-            // Main
             .child(
-                TitleBar::new()
-                    // Left side
-                    .child(div())
-                    // Right side
+                div()
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    // Title Bar
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .gap_2()
-                            .px_2()
-                            .child(self.render_appearance_button(window, cx))
-                            .child(self.render_relays_button(window, cx))
-                            .child(self.render_account(cx)),
-                    ),
+                        TitleBar::new()
+                            // Left side
+                            .child(div())
+                            // Right side
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .gap_2()
+                                    .px_2()
+                                    .child(self.render_appearance_button(window, cx))
+                                    .child(self.render_relays_button(window, cx))
+                                    .child(self.render_account(cx)),
+                            ),
+                    )
+                    // Dock
+                    .child(self.dock.clone()),
             )
-            .child(self.dock.clone())
+            // Notifications
             .child(div().absolute().top_8().children(notification_layer))
+            // Modals
             .children(modal_layer)
+            // Actions
             .on_action(cx.listener(Self::on_panel_action))
             .on_action(cx.listener(Self::on_logout_action))
     }

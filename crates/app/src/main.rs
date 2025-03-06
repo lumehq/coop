@@ -5,7 +5,7 @@ use device::Device;
 use futures::{select, FutureExt};
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
         DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
     },
     get_client, get_device_keys,
@@ -174,21 +174,17 @@ fn main() {
                                         .map(|content| content.to_string());
 
                                     if let Some(public_key) = public_key {
-                                        if let Err(e) = event_tx
+                                        log::info!("Received device request from {:?}", public_key);
+                                        _ = event_tx
                                             .send(Signal::RequestMasterKey((public_key, name)))
                                             .await
-                                        {
-                                            log::error!("Failed to send: {}", e)
-                                        };
                                     }
                                 }
                                 Kind::Custom(DEVICE_RESPONSE_KIND) => {
-                                    if let Err(e) = event_tx
+                                    log::info!("Received device response");
+                                    _ = event_tx
                                         .send(Signal::ReceiveMasterKey(event.into_owned()))
-                                        .await
-                                    {
-                                        log::error!("Failed to send: {}", e)
-                                    };
+                                        .await;
                                 }
                                 Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
                                     log::info!("Device announcement received")
@@ -245,6 +241,7 @@ fn main() {
             #[cfg(target_os = "linux")]
             window_decorations: Some(WindowDecorations::Client),
             kind: WindowKind::Normal,
+            app_id: Some(APP_ID.to_owned()),
             ..Default::default()
         };
 

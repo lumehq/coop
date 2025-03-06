@@ -9,7 +9,7 @@ use global::{
     },
     get_app_name, get_client, set_device_keys,
 };
-use gpui::{App, AppContext, AsyncApp, Entity, Global, PromptLevel, Task, Window};
+use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task, Window};
 use nostr_sdk::prelude::*;
 use ui::{notification::Notification, ContextModal};
 
@@ -49,6 +49,18 @@ where
             DeviceState::Master(keys) => {
                 // Update global state with new device keys
                 set_device_keys(keys.clone()).await;
+
+                // Subscribe to device keys requests
+                cx.background_spawn(async move {
+                    log::info!("Subscribing to device keys requests...");
+                    let filter = Filter::new()
+                        .kind(Kind::Custom(DEVICE_REQUEST_KIND))
+                        .author(public_key)
+                        .since(Timestamp::now());
+
+                    _ = client.subscribe(filter, None).await;
+                })
+                .await;
 
                 _ = cx.update(|cx| {
                     // Save device keys to keyring for future use
@@ -157,7 +169,7 @@ impl Device {
     }
 
     /// Handle response event from other Nostr client
-    pub fn handle_response(&self, event: &Event, window: &mut Window, cx: &App) {
+    pub fn handle_response(&self, event: &Event, window: &mut Window, cx: &Context<Self>) {
         let Some(local_keys) = self.local_keys.clone() else {
             return;
         };
@@ -185,7 +197,7 @@ impl Device {
             }
         });
 
-        cx.spawn(|cx| async move {
+        cx.spawn(|_, cx| async move {
             if let Err(e) = task.await {
                 _ = cx.update(|cx| {
                     _ = handle.update(cx, |_, window, cx| {
@@ -211,9 +223,8 @@ impl Device {
         &self,
         requester: (PublicKey, Option<String>),
         window: &mut Window,
-        cx: &mut App,
+        cx: &mut Context<Self>,
     ) {
-        // Only handle request if requester is current user
         if requester.0 != self.profile.public_key() {
             return;
         }
@@ -225,13 +236,10 @@ impl Device {
         let public_key = requester.0;
         let client_name = requester.1;
 
-        let detail = if let Some(client_name) = client_name {
-            format!(
-                "{} requests to share device keys from this device",
-                client_name
-            )
+        let message = if let Some(client_name) = client_name {
+            format!("Device Keys shared with {}", client_name)
         } else {
-            "Other client requests to share device keys from this device".to_string()
+            "Device Keys shared with other client".to_owned()
         };
 
         let approve_task = cx.background_spawn(async move {
@@ -270,26 +278,13 @@ impl Device {
             }
         });
 
-        let response = window.prompt(
-            PromptLevel::Info,
-            "Device Keys Request",
-            Some(&detail),
-            &["Approve", "Reject"],
-            cx,
-        );
-
-        cx.spawn(|cx| async move {
-            if let Ok(answers) = response.await {
-                if answers == 0 && approve_task.await.is_ok() {
-                    _ = cx.update(|cx| {
-                        _ = handle.update(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::info("You have approved the device request"),
-                                cx,
-                            );
-                        });
+        cx.spawn(|_, cx| async move {
+            if approve_task.await.is_ok() {
+                _ = cx.update(|cx| {
+                    _ = handle.update(cx, |_, window, cx| {
+                        window.push_notification(Notification::info(message), cx);
                     });
-                }
+                });
             }
         })
         .detach();
@@ -355,6 +350,15 @@ impl Device {
                 }
 
                 log::info!("Sent a request to ask for device keys from the other Nostr client");
+                log::info!("Waiting for response...");
+
+                let resp = Filter::new()
+                    .kind(Kind::Custom(DEVICE_RESPONSE_KIND))
+                    .author(current_user)
+                    .since(Timestamp::now());
+
+                // Continously receive the request approval
+                client.subscribe(resp, None).await?;
 
                 Ok(DeviceState::Minion(keys))
             } else {
@@ -369,7 +373,7 @@ impl Device {
                 let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
 
                 if let Err(e) = client.send_event_builder(builder).await {
-                    log::error!("Failed to send device keys request: {}", e);
+                    log::error!("Failed to send device announcement: {}", e);
                 } else {
                     log::info!("Device announcement sent");
                 }
@@ -396,14 +400,6 @@ impl Device {
             .author(current_user)
             .limit(1);
 
-        // Create a filter to continuously receive device requests.
-        let device_filter = Filter::new()
-            .kinds(vec![
-                Kind::Custom(DEVICE_REQUEST_KIND),
-                Kind::Custom(DEVICE_RESPONSE_KIND),
-            ])
-            .author(current_user);
-
         // Create a user's data filter
         let data = Filter::new()
             .author(current_user)
@@ -428,9 +424,6 @@ impl Device {
 
             // Continuously receive new user's data since now
             client.subscribe(data, None).await?;
-
-            // Continously receive new device requests
-            client.subscribe(device_filter, None).await?;
 
             let sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
             client.subscribe_with_id(sub_id, msg, Some(opts)).await?;
