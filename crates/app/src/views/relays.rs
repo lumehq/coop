@@ -14,6 +14,8 @@ use ui::{
     ContextModal, IconName, Sizable,
 };
 
+use crate::device::Device;
+
 const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
 const HELP_TEXT: &str = "Please add some relays.";
 
@@ -35,7 +37,10 @@ impl Relays {
         let client = get_client();
 
         let relays = cx.new(|cx| {
-            let relays = vec![];
+            let relays = vec![
+                RelayUrl::parse("wss://auth.nostr1.com").unwrap(),
+                RelayUrl::parse("wss://relay.0xchat.com").unwrap(),
+            ];
 
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
                 let signer = client.signer().await?;
@@ -77,15 +82,15 @@ impl Relays {
             relays
         });
 
+        let input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .text_size(ui::Size::XSmall)
+                .small()
+                .placeholder("wss://example.com")
+        });
+
         cx.new(|cx| {
             let mut subscriptions = smallvec![];
-
-            let input = cx.new(|cx| {
-                TextInput::new(window, cx)
-                    .text_size(ui::Size::XSmall)
-                    .small()
-                    .placeholder("wss://example.com")
-            });
 
             subscriptions.push(cx.subscribe_in(
                 &input,
@@ -170,13 +175,28 @@ impl Relays {
 
         cx.spawn(|this, mut cx| async move {
             if task.await.is_ok() {
-                _ = cx.update_window(window_handle, |_, window, cx| {
+                cx.update_window(window_handle, |_, window, cx| {
                     _ = this.update(cx, |this, cx| {
                         this.set_loading(false, cx);
+                        cx.notify();
                     });
 
+                    if let Some(device) = Device::global(cx) {
+                        let relays = this
+                            .read_with(cx, |this, cx| this.relays.read(cx).clone())
+                            .unwrap();
+
+                        device.update(cx, |this, cx| {
+                            if let Some(profile) = this.profile() {
+                                let new_profile = profile.clone().relays(Some(relays.into()));
+                                this.set_profile(new_profile, cx);
+                            }
+                        })
+                    }
+
                     window.close_modal(cx);
-                });
+                })
+                .ok();
             }
         })
         .detach();
@@ -227,6 +247,7 @@ impl Render for Relays {
             .flex()
             .flex_col()
             .gap_2()
+            .w_full()
             .child(
                 div()
                     .px_2()
@@ -237,6 +258,7 @@ impl Render for Relays {
             .child(
                 div()
                     .px_2()
+                    .w_full()
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -244,6 +266,7 @@ impl Render for Relays {
                         div()
                             .flex()
                             .items_center()
+                            .w_full()
                             .gap_2()
                             .child(self.input.clone())
                             .child(
@@ -311,6 +334,7 @@ impl Render for Relays {
                                         items
                                     },
                                 )
+                                .w_full()
                                 .min_h(px(120.)),
                             )
                         } else {

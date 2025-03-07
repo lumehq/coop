@@ -113,6 +113,11 @@ impl Device {
         self.profile.as_ref()
     }
 
+    pub fn set_profile(&mut self, profile: NostrProfile, cx: &mut Context<Self>) {
+        self.profile = Some(profile);
+        cx.notify();
+    }
+
     /// Login and set user signer
     pub fn login<T>(&self, signer: T, cx: &mut Context<Self>) -> Task<Result<(), Error>>
     where
@@ -206,19 +211,23 @@ impl Device {
 
         let pubkey = profile.public_key;
         let client_keys = self.client_keys.clone();
+
         let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
         let window_handle = window.window_handle();
         let entity = cx.entity();
 
         // User's messaging relays not found
         if profile.messaging_relays.is_none() {
-            window_handle
-                .update(cx, |_, window, cx| {
-                    entity.update(cx, |this, cx| {
-                        this.render_setup_relays(window, cx);
-                    });
-                })
-                .ok();
+            cx.spawn_in(window, |_, mut cx| async move {
+                cx.window_handle()
+                    .update(&mut cx, |_, window, cx| {
+                        entity.update(cx, |this, cx| {
+                            this.render_setup_relays(window, cx);
+                        });
+                    })
+                    .ok()
+            })
+            .detach();
 
             return;
         };
@@ -375,8 +384,9 @@ impl Device {
     }
 
     pub fn render_setup_relays(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = relays::init(window, cx);
+
         window.open_modal(cx, move |this, window, cx| {
-            let relays = relays::init(window, cx);
             let is_loading = relays.read(cx).loading();
 
             this.keyboard(false)

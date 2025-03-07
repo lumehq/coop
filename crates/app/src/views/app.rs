@@ -150,8 +150,9 @@ impl AppView {
     }
 
     fn render_edit_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = relays::init(window, cx);
+
         window.open_modal(cx, move |this, window, cx| {
-            let relays = relays::init(window, cx);
             let is_loading = relays.read(cx).loading();
 
             this.width(px(420.))
