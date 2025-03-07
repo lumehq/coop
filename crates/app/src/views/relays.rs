@@ -1,50 +1,109 @@
+use anyhow::{anyhow, Error};
 use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
 use gpui::{
     div, prelude::FluentBuilder, px, uniform_list, App, AppContext, Context, Entity, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Task, TextAlign, Window,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign,
+    Window,
 };
 use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
 use ui::{
     button::{Button, ButtonVariants},
-    input::TextInput,
+    input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, IconName, Sizable,
 };
 
 const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
+const HELP_TEXT: &str = "Please add some relays.";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
     Relays::new(window, cx)
 }
 
 pub struct Relays {
-    relays: Entity<Vec<Url>>,
+    relays: Entity<Vec<RelayUrl>>,
     input: Entity<TextInput>,
     focus_handle: FocusHandle,
     is_loading: bool,
+    #[allow(dead_code)]
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let relays = cx.new(|_| {
-            vec![
-                Url::parse("wss://auth.nostr1.com").unwrap(),
-                Url::parse("wss://relay.0xchat.com").unwrap(),
-            ]
+        let client = get_client();
+
+        let relays = cx.new(|cx| {
+            let relays = vec![];
+
+            let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(public_key)
+                    .limit(1);
+
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                    let relays = event
+                        .tags
+                        .filter_standardized(TagKind::Relay)
+                        .filter_map(|t| match t {
+                            TagStandard::Relay(url) => Some(url.to_owned()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+
+                    Ok(relays)
+                } else {
+                    Err(anyhow!("Messaging Relays not found."))
+                }
+            });
+
+            cx.spawn(|this, cx| async move {
+                if let Ok(relays) = task.await {
+                    _ = cx.update(|cx| {
+                        _ = this.update(cx, |this: &mut Vec<RelayUrl>, cx| {
+                            this.extend(relays);
+                            cx.notify();
+                        });
+                    });
+                }
+            })
+            .detach();
+
+            relays
         });
 
-        let input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(ui::Size::XSmall)
-                .small()
-                .placeholder("wss://...")
-        });
+        cx.new(|cx| {
+            let mut subscriptions = smallvec![];
 
-        cx.new(|cx| Self {
-            relays,
-            input,
-            is_loading: false,
-            focus_handle: cx.focus_handle(),
+            let input = cx.new(|cx| {
+                TextInput::new(window, cx)
+                    .text_size(ui::Size::XSmall)
+                    .small()
+                    .placeholder("wss://example.com")
+            });
+
+            subscriptions.push(cx.subscribe_in(
+                &input,
+                window,
+                move |this: &mut Relays, _, input_event, window, cx| {
+                    if let InputEvent::PressEnter = input_event {
+                        this.add(window, cx);
+                    }
+                },
+            ));
+
+            Self {
+                relays,
+                input,
+                subscriptions,
+                is_loading: false,
+                focus_handle: cx.focus_handle(),
+            }
         })
     }
 
@@ -55,7 +114,7 @@ impl Relays {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        let task: Task<Result<EventId, anyhow::Error>> = cx.background_spawn(async move {
+        let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
@@ -139,7 +198,7 @@ impl Relays {
             return;
         }
 
-        if let Ok(url) = Url::parse(&value) {
+        if let Ok(url) = RelayUrl::parse(&value) {
             self.relays.update(cx, |this, cx| {
                 if !this.contains(&url) {
                     this.push(url);
@@ -262,7 +321,7 @@ impl Render for Relays {
                                 .justify_center()
                                 .text_xs()
                                 .text_align(TextAlign::Center)
-                                .child("Please add some relays.")
+                                .child(HELP_TEXT)
                         }
                     }),
             )

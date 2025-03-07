@@ -17,6 +17,7 @@ use nostr_sdk::prelude::*;
 use smallvec::SmallVec;
 use smol::future::FutureExt;
 use ui::{
+    button::{Button, ButtonRounded, ButtonVariants},
     indicator::Indicator,
     notification::Notification,
     theme::{scale::ColorScaleStep, ActiveTheme},
@@ -197,27 +198,30 @@ impl Device {
             return;
         };
 
-        // User's messaging relays not found
-        if profile.messaging_relays.is_none() {
-            // User must set up NIP-17 relays to continue.
-            Root::update(window, cx, |this, window, cx| {
-                this.replace_view(relays::init(window, cx).into());
-                cx.notify();
-            });
-
-            return;
-        };
-
-        let pubkey = profile.public_key;
-        let client_keys = self.client_keys.clone();
-        let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
-        let window_handle = window.window_handle();
-
         // Replace the Onboarding View with the Dock View
         Root::update(window, cx, |this, window, cx| {
             this.replace_view(app::init(window, cx).into());
             cx.notify();
         });
+
+        let pubkey = profile.public_key;
+        let client_keys = self.client_keys.clone();
+        let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
+        let window_handle = window.window_handle();
+        let entity = cx.entity();
+
+        // User's messaging relays not found
+        if profile.messaging_relays.is_none() {
+            window_handle
+                .update(cx, |_, window, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.render_setup_relays(window, cx);
+                    });
+                })
+                .ok();
+
+            return;
+        };
 
         cx.spawn(|this, cx| async move {
             // Initialize subscription for current user
@@ -368,6 +372,37 @@ impl Device {
             }
         })
         .detach();
+    }
+
+    pub fn render_setup_relays(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, window, cx| {
+            let relays = relays::init(window, cx);
+            let is_loading = relays.read(cx).loading();
+
+            this.keyboard(false)
+                .closable(false)
+                .width(px(420.))
+                .title("Your Messaging Relays are not configured")
+                .child(relays.clone())
+                .footer(
+                    div()
+                        .p_2()
+                        .border_t_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .child(
+                            Button::new("update_inbox_relays_btn")
+                                .label("Update")
+                                .primary()
+                                .bold()
+                                .rounded(ButtonRounded::Large)
+                                .w_full()
+                                .loading(is_loading)
+                                .on_click(window.listener_for(&relays, |this, _, window, cx| {
+                                    this.update(window, cx);
+                                })),
+                        ),
+                )
+        });
     }
 
     pub fn render_waiting_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {

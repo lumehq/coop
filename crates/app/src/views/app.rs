@@ -7,14 +7,14 @@ use gpui::{
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
-    button::{Button, ButtonVariants},
+    button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
     popup_menu::PopupMenuExt,
-    theme::{ActiveTheme, Appearance, Theme},
+    theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
     ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use super::{chat, contacts, onboarding, profile, settings, sidebar, welcome};
+use super::{chat, contacts, onboarding, profile, relays, settings, sidebar, welcome};
 use crate::device::Device;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -85,11 +85,7 @@ impl AppView {
         cx.new(|_| Self { dock })
     }
 
-    fn render_appearance_button(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_mode_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("appearance")
             .xsmall()
             .ghost()
@@ -109,7 +105,7 @@ impl AppView {
             }))
     }
 
-    fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_account_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("account")
             .ghost()
             .xsmall()
@@ -141,6 +137,45 @@ impl AppView {
                 .separator()
                 .menu("Change account", Box::new(Logout))
             })
+    }
+
+    fn render_relays_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Button::new("relays")
+            .xsmall()
+            .ghost()
+            .icon(IconName::Relays)
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.render_edit_relays(window, cx);
+            }))
+    }
+
+    fn render_edit_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, window, cx| {
+            let relays = relays::init(window, cx);
+            let is_loading = relays.read(cx).loading();
+
+            this.width(px(420.))
+                .title("Edit your Messaging Relays")
+                .child(relays.clone())
+                .footer(
+                    div()
+                        .p_2()
+                        .border_t_1()
+                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .child(
+                            Button::new("update_inbox_relays_btn")
+                                .label("Update")
+                                .primary()
+                                .bold()
+                                .rounded(ButtonRounded::Large)
+                                .w_full()
+                                .loading(is_loading)
+                                .on_click(window.listener_for(&relays, |this, _, window, cx| {
+                                    this.update(window, cx);
+                                })),
+                        ),
+                )
+        });
     }
 
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
@@ -221,8 +256,9 @@ impl Render for AppView {
                                     .justify_end()
                                     .gap_2()
                                     .px_2()
-                                    .child(self.render_appearance_button(window, cx))
-                                    .child(self.render_account(cx)),
+                                    .child(self.render_mode_btn(cx))
+                                    .child(self.render_relays_btn(cx))
+                                    .child(self.render_account_btn(cx)),
                             ),
                     )
                     // Dock
