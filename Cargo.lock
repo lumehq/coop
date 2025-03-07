@@ -1136,6 +1136,7 @@ dependencies = [
  "nostr-sdk",
  "qrcode-generator",
  "random_name_generator",
+ "smallvec",
 ]
 
 [[package]]

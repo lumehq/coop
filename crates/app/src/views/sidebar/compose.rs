@@ -246,7 +246,7 @@ impl Compose {
         cx.spawn(|this, mut cx| async move {
             match task.await {
                 Ok(profile) => {
-                    let public_key = profile.public_key();
+                    let public_key = profile.public_key;
 
                     _ = cx
                         .background_spawn(async move {
@@ -266,7 +266,7 @@ impl Compose {
 
                     _ = cx.update_window(window_handle, |_, window, cx| {
                         _ = this.update(cx, |this, cx| {
-                            let public_key = profile.public_key();
+                            let public_key = profile.public_key;
 
                             this.contacts.update(cx, |this, cx| {
                                 this.insert(0, profile);
@@ -452,7 +452,7 @@ impl Render for Compose {
 
                                         for ix in range {
                                             let item = contacts.get(ix).unwrap().clone();
-                                            let is_select = selected.contains(&item.public_key());
+                                            let is_select = selected.contains(&item.public_key);
 
                                             items.push(
                                                 div()
@@ -471,10 +471,10 @@ impl Render for Compose {
                                                             .text_xs()
                                                             .child(
                                                                 div().flex_shrink_0().child(
-                                                                    img(item.avatar()).size_6(),
+                                                                    img(item.avatar).size_6(),
                                                                 ),
                                                             )
-                                                            .child(item.name()),
+                                                            .child(item.name),
                                                     )
                                                     .when(is_select, |this| {
                                                         this.child(
@@ -495,7 +495,7 @@ impl Render for Compose {
                                                     .on_click(move |_, window, cx| {
                                                         window.dispatch_action(
                                                             Box::new(SelectContact(
-                                                                item.public_key(),
+                                                                item.public_key,
                                                             )),
                                                             cx,
                                                         );

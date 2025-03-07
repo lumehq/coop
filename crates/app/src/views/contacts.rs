@@ -141,9 +141,9 @@ impl Render for Contacts {
                                                 .child(
                                                     div()
                                                         .flex_shrink_0()
-                                                        .child(img(item.avatar()).size_6()),
+                                                        .child(img(item.avatar).size_6()),
                                                 )
-                                                .child(item.name()),
+                                                .child(item.name),
                                         )
                                         .hover(|this| {
                                             this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))

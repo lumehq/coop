@@ -1,21 +1,20 @@
 use global::get_client;
 use gpui::{
-    actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, App,
-    AppContext, Axis, Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement,
-    Render, Styled, StyledImage, Window,
+    actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
+    Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
+    StyledImage, Window,
 };
 use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
-    button::{Button, ButtonRounded, ButtonVariants},
+    button::{Button, ButtonVariants},
     dock_area::{dock::DockPlacement, DockArea, DockItem},
-    indicator::Indicator,
     popup_menu::PopupMenuExt,
-    theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
-    ContextModal, Icon, IconName, Root, Sizable, StyledExt, TitleBar,
+    theme::{ActiveTheme, Appearance, Theme},
+    ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use super::{chat, contacts, onboarding, profile, relays::Relays, settings, sidebar, welcome};
+use super::{chat, contacts, onboarding, profile, settings, sidebar, welcome};
 use crate::device::Device;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -49,7 +48,6 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<AppView> {
 }
 
 pub struct AppView {
-    relays: Entity<Option<Vec<String>>>,
     dock: Entity<DockArea>,
 }
 
@@ -84,74 +82,7 @@ impl AppView {
             view.set_center(center_panel, window, cx);
         });
 
-        cx.new(|cx| {
-            let relays = cx.new(|_| None);
-            let this = Self { relays, dock };
-
-            this
-        })
-    }
-
-    fn render_setup_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_modal(cx, move |this, window, cx| {
-            let relays = cx.new(|cx| Relays::new(None, window, cx));
-            let is_loading = relays.read(cx).loading();
-
-            this.keyboard(false)
-                .closable(false)
-                .width(px(420.))
-                .title("Your Messaging Relays are not configured")
-                .child(relays.clone())
-                .footer(
-                    div()
-                        .p_2()
-                        .border_t_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                        .child(
-                            Button::new("update_inbox_relays_btn")
-                                .label("Update")
-                                .primary()
-                                .bold()
-                                .rounded(ButtonRounded::Large)
-                                .w_full()
-                                .loading(is_loading)
-                                .on_click(window.listener_for(&relays, |this, _, window, cx| {
-                                    this.update(window, cx);
-                                })),
-                        ),
-                )
-        });
-    }
-
-    fn render_edit_relay(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = self.relays.read(cx).clone();
-        let view = cx.new(|cx| Relays::new(relays, window, cx));
-
-        window.open_modal(cx, move |this, window, cx| {
-            let is_loading = view.read(cx).loading();
-
-            this.width(px(420.))
-                .title("Edit your Messaging Relays")
-                .child(view.clone())
-                .footer(
-                    div()
-                        .p_2()
-                        .border_t_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                        .child(
-                            Button::new("update_inbox_relays_btn")
-                                .label("Update")
-                                .primary()
-                                .bold()
-                                .rounded(ButtonRounded::Large)
-                                .w_full()
-                                .loading(is_loading)
-                                .on_click(window.listener_for(&view, |this, _, window, cx| {
-                                    this.update(window, cx);
-                                })),
-                        ),
-                )
-        });
+        cx.new(|_| Self { dock })
     }
 
     fn render_appearance_button(
@@ -178,20 +109,6 @@ impl AppView {
             }))
     }
 
-    fn render_relays_button(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        Button::new("relays")
-            .xsmall()
-            .ghost()
-            .icon(IconName::Relays)
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.render_edit_relay(window, cx);
-            }))
-    }
-
     fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("account")
             .ghost()
@@ -201,7 +118,7 @@ impl AppView {
             .when_some(Device::global(cx), |this, account| {
                 this.when_some(account.read(cx).profile(), |this, profile| {
                     this.child(
-                        img(profile.avatar())
+                        img(profile.avatar.clone())
                             .size_5()
                             .rounded_full()
                             .object_fit(ObjectFit::Cover),
@@ -305,7 +222,6 @@ impl Render for AppView {
                                     .gap_2()
                                     .px_2()
                                     .child(self.render_appearance_button(window, cx))
-                                    .child(self.render_relays_button(window, cx))
                                     .child(self.render_account(cx)),
                             ),
                     )

@@ -61,7 +61,7 @@ impl Room {
                                 let mut name = profiles
                                     .iter()
                                     .take(2)
-                                    .map(|profile| profile.name().to_string())
+                                    .map(|profile| profile.name.to_string())
                                     .collect::<Vec<_>>()
                                     .join(", ");
 
@@ -95,7 +95,7 @@ impl Room {
     pub fn member(&self, public_key: &PublicKey) -> Option<NostrProfile> {
         self.members
             .iter()
-            .find(|m| &m.public_key() == public_key)
+            .find(|m| &m.public_key == public_key)
             .cloned()
     }
 
@@ -106,7 +106,7 @@ impl Room {
 
     /// Collect room's member's public keys
     pub fn public_keys(&self) -> Vec<PublicKey> {
-        self.members.iter().map(|m| m.public_key()).collect()
+        self.members.iter().map(|m| m.public_key).collect()
     }
 
     /// Get room's display name

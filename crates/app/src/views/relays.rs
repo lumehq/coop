@@ -1,17 +1,21 @@
 use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
 use gpui::{
-    div, prelude::FluentBuilder, px, uniform_list, AppContext, Context, Entity, FocusHandle,
+    div, prelude::FluentBuilder, px, uniform_list, App, AppContext, Context, Entity, FocusHandle,
     InteractiveElement, IntoElement, ParentElement, Render, Styled, Task, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use ui::{
     button::{Button, ButtonVariants},
-    input::{InputEvent, TextInput},
+    input::TextInput,
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, IconName, Sizable,
 };
 
 const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
+
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
+    Relays::new(window, cx)
+}
 
 pub struct Relays {
     relays: Entity<Vec<Url>>,
@@ -21,20 +25,12 @@ pub struct Relays {
 }
 
 impl Relays {
-    pub fn new(
-        relays: Option<Vec<String>>,
-        window: &mut Window,
-        cx: &mut Context<'_, Self>,
-    ) -> Self {
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let relays = cx.new(|_| {
-            if let Some(value) = relays {
-                value.into_iter().map(|v| Url::parse(&v).unwrap()).collect()
-            } else {
-                vec![
-                    Url::parse("wss://auth.nostr1.com").unwrap(),
-                    Url::parse("wss://relay.0xchat.com").unwrap(),
-                ]
-            }
+            vec![
+                Url::parse("wss://auth.nostr1.com").unwrap(),
+                Url::parse("wss://relay.0xchat.com").unwrap(),
+            ]
         });
 
         let input = cx.new(|cx| {
@@ -44,19 +40,12 @@ impl Relays {
                 .placeholder("wss://...")
         });
 
-        cx.subscribe_in(&input, window, move |this, _, input_event, window, cx| {
-            if let InputEvent::PressEnter = input_event {
-                this.add(window, cx);
-            }
-        })
-        .detach();
-
-        Self {
+        cx.new(|cx| Self {
             relays,
             input,
             is_loading: false,
             focus_handle: cx.focus_handle(),
-        }
+        })
     }
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {

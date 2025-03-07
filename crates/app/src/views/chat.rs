@@ -62,8 +62,8 @@ impl ParsedMessage {
         let created_at = LastSeen(created_at).human_readable();
 
         Self {
-            avatar: profile.avatar(),
-            display_name: profile.name(),
+            avatar: profile.avatar.clone(),
+            display_name: profile.name.clone(),
             created_at,
             content,
         }
@@ -199,7 +199,7 @@ impl Chat {
                                     this.room.read_with(cx, |this, _| this.member(&item.0))
                                 {
                                     this.push_system_message(
-                                        format!("{} {}", member.name(), ALERT),
+                                        format!("{} {}", member.name, ALERT),
                                         cx,
                                     );
                                 }
@@ -293,7 +293,7 @@ impl Chat {
 
                     room.members
                         .iter()
-                        .find(|m| m.public_key() == ev.pubkey)
+                        .find(|m| m.public_key == ev.pubkey)
                         .map(|member| {
                             Message::new(ParsedMessage::new(member, &ev.content, ev.created_at))
                         })
@@ -560,8 +560,11 @@ impl Panel for Chat {
     fn title(&self, cx: &App) -> AnyElement {
         self.room
             .read_with(cx, |this, _| {
-                let facepill: Vec<SharedString> =
-                    this.members.iter().map(|member| member.avatar()).collect();
+                let facepill: Vec<SharedString> = this
+                    .members
+                    .iter()
+                    .map(|member| member.avatar.clone())
+                    .collect();
 
                 div()
                     .flex()

@@ -117,8 +117,13 @@ impl Sidebar {
                         this.flex()
                             .items_center()
                             .gap_2()
-                            .child(img(member.avatar()).size_6().rounded_full().flex_shrink_0())
-                            .child(member.name())
+                            .child(
+                                img(member.avatar.clone())
+                                    .size_6()
+                                    .rounded_full()
+                                    .flex_shrink_0(),
+                            )
+                            .child(member.name.clone())
                     })
                 }
             }))

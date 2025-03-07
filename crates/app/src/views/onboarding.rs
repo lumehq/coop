@@ -10,10 +10,9 @@ use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
-    Disableable, Root, Size, StyledExt,
+    Disableable, Size, StyledExt,
 };
 
-use super::app;
 use crate::device::Device;
 
 const LOGO_URL: &str = "brand/coop.svg";
@@ -75,42 +74,27 @@ impl Onboarding {
         })
     }
 
-    fn login(&self, signer: NostrConnect, window: &mut Window, cx: &mut Context<Self>) {
+    fn login(&self, signer: NostrConnect, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(device) = Device::global(cx) else {
             return;
         };
 
-        let handle = window.window_handle();
         let entity = cx.weak_entity();
 
         device.update(cx, |this, cx| {
             let login = this.login(signer, cx);
 
             cx.spawn(|_, cx| async move {
-                match login.await {
-                    Ok(_) => {
-                        cx.update(|cx| {
-                            handle
-                                .update(cx, |_, window, cx| {
-                                    window.replace_root(cx, |window, cx| {
-                                        Root::new(app::init(window, cx).into(), window, cx)
-                                    });
-                                })
-                                .ok();
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|cx| {
-                            entity
-                                .update(cx, |this, cx| {
-                                    this.set_error(e.to_string(), cx);
-                                    this.set_loading(false, cx);
-                                })
-                                .ok();
-                        })
-                        .ok();
-                    }
+                if let Err(e) = login.await {
+                    cx.update(|cx| {
+                        entity
+                            .update(cx, |this, cx| {
+                                this.set_error(e.to_string(), cx);
+                                this.set_loading(false, cx);
+                            })
+                            .ok();
+                    })
+                    .ok();
                 }
             })
             .detach();
