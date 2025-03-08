@@ -15,7 +15,6 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use smallvec::SmallVec;
-use smol::future::FutureExt;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     indicator::Indicator,
@@ -212,8 +211,6 @@ impl Device {
         let pubkey = profile.public_key;
         let client_keys = self.client_keys.clone();
 
-        let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
-
         // User's messaging relays not found
         if profile.messaging_relays.is_none() {
             cx.spawn_in(window, |this, mut cx| async move {
@@ -235,7 +232,7 @@ impl Device {
             _ = Device::subscribe(pubkey, &cx).await;
 
             // Initialize master keys for current user
-            if let Ok(Some(keys)) = Device::fetch_master_keys(read_task, pubkey, &cx).await {
+            if let Ok(Some(keys)) = Device::fetch_master_keys(pubkey, &cx).await {
                 set_device_keys(keys.clone()).await;
 
                 if let Ok(task) = cx.update(|_, cx| {
@@ -556,11 +553,7 @@ impl Device {
     ///
     /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
     #[allow(clippy::type_complexity)]
-    fn fetch_master_keys(
-        task: BoxedFuture<'static, Result<Option<(String, Vec<u8>)>, Error>>,
-        user: PublicKey,
-        cx: &AsyncApp,
-    ) -> Task<Result<Option<Keys>, Error>> {
+    fn fetch_master_keys(user: PublicKey, cx: &AsyncApp) -> Task<Result<Option<Keys>, Error>> {
         let client = get_client();
         let app_name = get_app_name();
 
@@ -568,15 +561,24 @@ impl Device {
         let filter = Filter::new().kind(kind).author(user).limit(1);
         let client_tag = Tag::client(app_name);
 
-        cx.background_spawn(async move {
-            // Fetch device announcement events
-            let events = client.database().query(filter).await?;
+        // Fetch device announcement events
+        let fetch_announcement = cx.background_spawn(async move {
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                Ok(event)
+            } else {
+                Err(anyhow!("Device Announcement not found."))
+            }
+        });
 
-            // Found device announcement event,
-            // that means user is already used another Nostr client or re-install this client
-            if let Some(event) = events.first_owned() {
-                // Check if master keys are found in keyring
-                if let Ok(Some((_, secret))) = task.await {
+        cx.spawn(|cx| async move {
+            let Ok(task) = cx.update(|cx| cx.read_credentials(MASTER_KEYRING)) else {
+                return Err(anyhow!("Failed to read credentials"));
+            };
+
+            let secret = task.await;
+
+            if let Ok(event) = fetch_announcement.await {
+                if let Ok(Some((_, secret))) = secret {
                     let secret_key = SecretKey::from_slice(&secret)?;
                     let keys = Keys::new(secret_key);
                     let device_pubkey = keys.public_key();
@@ -599,18 +601,21 @@ impl Device {
                 log::info!("Device announcement is not found, appoint this device as master");
 
                 let keys = Keys::generate();
-                let pubkey = keys.public_key();
-
-                let pubkey_tag = Tag::custom(TagKind::custom("n"), vec![pubkey.to_hex()]);
+                let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
+                let pubkey_tag =
+                    Tag::custom(TagKind::custom("n"), vec![keys.public_key().to_hex()]);
 
                 // Create an announcement event builder
                 let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
 
-                if let Err(e) = client.send_event_builder(builder).await {
-                    log::error!("Failed to send device announcement: {}", e);
-                } else {
-                    log::info!("Device announcement sent");
-                }
+                cx.background_spawn(async move {
+                    if let Err(e) = client.send_event_builder(builder).await {
+                        log::error!("Failed to send device announcement: {}", e);
+                    } else {
+                        log::info!("Device announcement sent");
+                    }
+                })
+                .await;
 
                 Ok(Some(keys))
             }
