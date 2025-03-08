@@ -19,7 +19,6 @@ pub const BOOTSTRAP_RELAYS: [&str; 3] = [
 /// Subscriptions
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
-pub const DATA_SUB_ID: &str = "listen_all_data";
 
 /// Image Resizer Service
 pub const IMAGE_SERVICE: &str = "https://wsrv.nl";

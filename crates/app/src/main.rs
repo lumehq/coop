@@ -5,8 +5,8 @@ use device::Device;
 use futures::{select, FutureExt};
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DATA_SUB_ID,
-        DEVICE_ANNOUNCEMENT_KIND, DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
+        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
     },
     get_client, get_device_keys, set_device_name,
 };
@@ -38,9 +38,7 @@ enum Signal {
     /// Receive event
     Event(Event),
     /// Receive request master key event
-    ///
-    /// bool: toggle silent mode
-    RequestMasterKey((Event, bool)),
+    RequestMasterKey(Event),
     /// Receive approve master key event
     ReceiveMasterKey(Event),
     /// Receive EOSE
@@ -84,7 +82,7 @@ fn main() {
     app.background_executor()
         .spawn(async move {
             const BATCH_SIZE: usize = 20;
-            const BATCH_TIMEOUT: Duration = Duration::from_millis(200);
+            const BATCH_TIMEOUT: Duration = Duration::from_millis(500);
 
             let mut batch: HashSet<PublicKey> = HashSet::new();
 
@@ -119,7 +117,6 @@ fn main() {
             let rng_keys = Keys::generate();
             let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
             let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-            let data_id = SubscriptionId::new(DATA_SUB_ID);
             let mut notifications = client.notifications();
 
             while let Ok(notification) = notifications.recv().await {
@@ -166,13 +163,8 @@ fn main() {
                                 Kind::Custom(DEVICE_REQUEST_KIND) => {
                                     log::info!("Received device keys request");
 
-                                    let silent = data_id != *subscription_id;
-
                                     _ = event_tx
-                                        .send(Signal::RequestMasterKey((
-                                            event.into_owned(),
-                                            silent,
-                                        )))
+                                        .send(Signal::RequestMasterKey(event.into_owned()))
                                         .await;
                                 }
                                 Kind::Custom(DEVICE_RESPONSE_KIND) => {
