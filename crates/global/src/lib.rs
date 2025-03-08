@@ -11,9 +11,14 @@ use std::{
 
 pub mod constants;
 
+/// Nostr Client
 static CLIENT: OnceLock<Client> = OnceLock::new();
-static DEVICE_KEYS: Mutex<Option<Arc<dyn NostrSigner>>> = Mutex::new(None);
+/// Current App Name
 static APP_NAME: OnceLock<Arc<str>> = OnceLock::new();
+/// NIP-4e: Device Keys, used for encryption
+static DEVICE_KEYS: Mutex<Option<Arc<dyn NostrSigner>>> = Mutex::new(None);
+/// NIP-4e: Device Name, used for display purposes
+static DEVICE_NAME: Mutex<Option<Arc<String>>> = Mutex::new(None);
 
 /// Nostr Client instance
 pub fn get_client() -> &'static Client {
@@ -42,7 +47,7 @@ pub fn get_client() -> &'static Client {
 
 /// Get app name
 pub fn get_app_name() -> &'static str {
-    APP_NAME.get_or_init(|| Arc::from(format!("Coop on {}", whoami::distro())))
+    APP_NAME.get_or_init(|| Arc::from(format!("{} ({})", whoami::devicename(), whoami::distro())))
 }
 
 /// Get device keys
@@ -75,4 +80,19 @@ where
         }
     })
     .await;
+}
+
+/// Set master's device name
+pub async fn set_device_name(name: &str) {
+    let mut guard = DEVICE_NAME.lock().await;
+
+    if guard.is_none() {
+        guard.replace(Arc::new(name.to_owned()));
+    }
+}
+
+/// Get master's device name
+pub fn get_device_name() -> Arc<String> {
+    let guard = DEVICE_NAME.lock_blocking();
+    guard.clone().unwrap_or(Arc::new("Main Device".into()))
 }

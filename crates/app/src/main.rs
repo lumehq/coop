@@ -8,7 +8,7 @@ use global::{
         ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DATA_SUB_ID,
         DEVICE_ANNOUNCEMENT_KIND, DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
     },
-    get_client, get_device_keys,
+    get_client, get_device_keys, set_device_name,
 };
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
@@ -20,7 +20,7 @@ use gpui::{point, SharedString, TitlebarOptions};
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
     nips::nip59::UnwrappedGift, pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey,
-    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
+    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -179,7 +179,15 @@ fn main() {
                                         .await;
                                 }
                                 Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
-                                    log::info!("Device announcement received")
+                                    log::info!("Device announcement received");
+
+                                    if let Some(tag) = event
+                                        .tags
+                                        .find(TagKind::custom("client"))
+                                        .and_then(|tag| tag.content())
+                                    {
+                                        set_device_name(tag).await;
+                                    }
                                 }
                                 _ => {}
                             }

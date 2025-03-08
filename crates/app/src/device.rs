@@ -7,7 +7,7 @@ use global::{
         ALL_MESSAGES_SUB_ID, CLIENT_KEYRING, DATA_SUB_ID, DEVICE_ANNOUNCEMENT_KIND,
         DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, MASTER_KEYRING, NEW_MESSAGE_SUB_ID,
     },
-    get_app_name, get_client, set_device_keys,
+    get_app_name, get_client, get_device_name, set_device_keys,
 };
 use gpui::{
     div, px, relative, App, AppContext, AsyncApp, Context, Entity, Global, ParentElement, Styled,
@@ -213,7 +213,6 @@ impl Device {
         let client_keys = self.client_keys.clone();
 
         let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
-        let window_handle = window.window_handle();
         let entity = cx.entity();
 
         // User's messaging relays not found
@@ -232,25 +231,25 @@ impl Device {
             return;
         };
 
-        cx.spawn(|this, cx| async move {
+        cx.spawn_in(window, |this, mut cx| async move {
             // Initialize subscription for current user
             _ = Device::subscribe(pubkey, &cx).await;
 
             // Initialize master keys for current user
-            if let Ok(Some(keys)) = Device::master_keys(read_task, pubkey, &cx).await {
+            if let Ok(Some(keys)) = Device::fetch_master_keys(read_task, pubkey, &cx).await {
                 set_device_keys(keys).await;
+
+                if let Ok(event) = Device::fetch_request(pubkey, &cx).await {
+                    println!("event: {:?}", event)
+                }
             } else {
                 // Send request for master keys
                 if Device::request_keys(pubkey, client_keys, &cx).await.is_ok() {
-                    cx.update(|cx| {
-                        window_handle
-                            .update(cx, |_, window, cx| {
-                                this.update(cx, |this, cx| {
-                                    this.render_waiting_modal(window, cx);
-                                })
-                                .ok();
-                            })
-                            .ok()
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.render_waiting_modal(window, cx);
+                        })
+                        .ok();
                     })
                     .ok();
                 }
@@ -286,20 +285,26 @@ impl Device {
 
         cx.spawn(|_, cx| async move {
             if let Err(e) = task.await {
-                _ = cx.update(|cx| {
-                    _ = handle.update(cx, |_, window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx);
-                    });
-                });
+                cx.update(|cx| {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        })
+                        .ok();
+                })
+                .ok();
             } else {
-                _ = cx.update(|cx| {
-                    _ = handle.update(cx, |_, window, cx| {
-                        window.push_notification(
-                            Notification::success("Device Keys request has been approved"),
-                            cx,
-                        );
-                    });
-                });
+                cx.update(|cx| {
+                    handle
+                        .update(cx, |_, window, cx| {
+                            window.push_notification(
+                                Notification::success("Device Keys request has been approved"),
+                                cx,
+                            );
+                        })
+                        .ok();
+                })
+                .ok();
             }
         })
         .detach();
@@ -419,7 +424,7 @@ impl Device {
         window.open_modal(cx, move |this, _window, cx| {
             let msg = format!(
                 "Please open {} and approve sharing device keys request.",
-                get_app_name()
+                get_device_name()
             );
 
             this.keyboard(false)
@@ -480,27 +485,45 @@ impl Device {
         });
     }
 
-    fn request_keys(
-        current_user: PublicKey,
-        client_keys: Keys,
-        cx: &AsyncApp,
-    ) -> Task<Result<(), Error>> {
+    /// Fetch the latest request from the other Nostr client
+    ///
+    /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
+    fn fetch_request(user: PublicKey, cx: &AsyncApp) -> Task<Result<Event, Error>> {
+        let client = get_client();
+
+        let filter = Filter::new()
+            .kind(Kind::Custom(DEVICE_REQUEST_KIND))
+            .limit(1)
+            .author(user);
+
+        cx.background_spawn(async move {
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                Ok(event)
+            } else {
+                Err(anyhow!("Request not found"))
+            }
+        })
+    }
+
+    /// Send a request to ask for device keys from the other Nostr client
+    ///
+    /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
+    fn request_keys(user: PublicKey, client_keys: Keys, cx: &AsyncApp) -> Task<Result<(), Error>> {
+        let client = get_client();
+        let app_name = get_app_name();
+
+        let kind = Kind::Custom(DEVICE_REQUEST_KIND);
+        let client_tag = Tag::client(app_name);
+        let pubkey_tag = Tag::custom(
+            TagKind::custom("pubkey"),
+            vec![client_keys.public_key().to_hex()],
+        );
+
+        // Create a request event builder
+        let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
+
         cx.background_spawn(async move {
             log::info!("Sent a request to ask for device keys from the other Nostr client");
-
-            let client = get_client();
-            let app_name = get_app_name();
-
-            let kind = Kind::Custom(DEVICE_REQUEST_KIND);
-
-            let client_tag = Tag::client(app_name);
-            let pubkey_tag = Tag::custom(
-                TagKind::custom("pubkey"),
-                vec![client_keys.public_key().to_hex()],
-            );
-
-            // Create a request event builder
-            let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
 
             if let Err(e) = client.send_event_builder(builder).await {
                 log::error!("Failed to send device keys request: {}", e);
@@ -510,7 +533,7 @@ impl Device {
 
             let resp = Filter::new()
                 .kind(Kind::Custom(DEVICE_RESPONSE_KIND))
-                .author(current_user)
+                .author(user)
                 .since(Timestamp::now());
 
             // Continously receive the request approval
@@ -520,23 +543,23 @@ impl Device {
         })
     }
 
-    /// Initialize master keys (encryption keys) for current user
+    /// Get the master keys for current user
     ///
     /// NIP-4E: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
     #[allow(clippy::type_complexity)]
-    fn master_keys(
+    fn fetch_master_keys(
         task: BoxedFuture<'static, Result<Option<(String, Vec<u8>)>, Error>>,
-        current_user: PublicKey,
+        user: PublicKey,
         cx: &AsyncApp,
     ) -> Task<Result<Option<Keys>, Error>> {
+        let client = get_client();
+        let app_name = get_app_name();
+
+        let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
+        let filter = Filter::new().kind(kind).author(user).limit(1);
+        let client_tag = Tag::client(app_name);
+
         cx.background_spawn(async move {
-            let client = get_client();
-            let app_name = get_app_name();
-
-            let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
-            let filter = Filter::new().kind(kind).author(current_user).limit(1);
-            let client_tag = Tag::client(app_name);
-
             // Fetch device announcement events
             let events = client.database().query(filter).await?;
 
@@ -587,52 +610,46 @@ impl Device {
     }
 
     /// Initialize subscription for current user
-    fn subscribe(current_user: PublicKey, cx: &AsyncApp) -> Task<Result<(), Error>> {
+    fn subscribe(user: PublicKey, cx: &AsyncApp) -> Task<Result<(), Error>> {
+        let client = get_client();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        // Create a device announcement filter
+        let device = Filter::new()
+            .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
+            .author(user)
+            .limit(1);
+
+        // Create a filter for getting all device keys activity
+        let device_keys = Filter::new()
+            .kinds(vec![
+                Kind::Custom(DEVICE_REQUEST_KIND),
+                Kind::Custom(DEVICE_RESPONSE_KIND),
+            ])
+            .author(user);
+
+        // Create a contact list filter
+        let contacts = Filter::new().kind(Kind::ContactList).author(user).limit(1);
+
+        // Create a user's data filter
+        let data = Filter::new()
+            .author(user)
+            .since(Timestamp::now())
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::InboxRelays,
+                Kind::RelayList,
+                Kind::Custom(DEVICE_REQUEST_KIND),
+                Kind::Custom(DEVICE_RESPONSE_KIND),
+            ]);
+
+        // Create a filter for getting all gift wrapped events send to current user
+        let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
+
+        // Create a filter to continuously receive new messages.
+        let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
+
         cx.background_spawn(async move {
-            let client = get_client();
-            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
-            // Create a device announcement filter
-            let device = Filter::new()
-                .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
-                .author(current_user)
-                .limit(1);
-
-            // Create a filter for getting all device keys activity
-            let device_keys = Filter::new()
-                .kinds(vec![
-                    Kind::Custom(DEVICE_REQUEST_KIND),
-                    Kind::Custom(DEVICE_RESPONSE_KIND),
-                ])
-                .author(current_user);
-
-            // Create a contact list filter
-            let contacts = Filter::new()
-                .kind(Kind::ContactList)
-                .author(current_user)
-                .limit(1);
-
-            // Create a user's data filter
-            let data = Filter::new()
-                .author(current_user)
-                .since(Timestamp::now())
-                .kinds(vec![
-                    Kind::Metadata,
-                    Kind::InboxRelays,
-                    Kind::RelayList,
-                    Kind::Custom(DEVICE_REQUEST_KIND),
-                    Kind::Custom(DEVICE_RESPONSE_KIND),
-                ]);
-
-            // Create a filter for getting all gift wrapped events send to current user
-            let msg = Filter::new().kind(Kind::GiftWrap).pubkey(current_user);
-
-            // Create a filter to continuously receive new messages.
-            let new_msg = Filter::new()
-                .kind(Kind::GiftWrap)
-                .pubkey(current_user)
-                .limit(0);
-
             // Only subscribe to the latest device announcement
             client.subscribe(device, Some(opts)).await?;
 
