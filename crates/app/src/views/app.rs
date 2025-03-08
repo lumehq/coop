@@ -1,11 +1,10 @@
-use account::registry::Account;
+use global::get_client;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
     StyledImage, Window,
 };
 use serde::Deserialize;
-use state::get_client;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -15,7 +14,8 @@ use ui::{
     ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use super::{chat, contacts, onboarding, profile, relays::Relays, settings, sidebar, welcome};
+use super::{chat, contacts, onboarding, profile, relays, settings, sidebar, welcome};
+use crate::device::Device;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -39,6 +39,7 @@ impl AddPanel {
 
 // Dock actions
 impl_internal_actions!(dock, [AddPanel]);
+
 // Account actions
 actions!(account, [Logout]);
 
@@ -47,7 +48,6 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<AppView> {
 }
 
 pub struct AppView {
-    relays: Entity<Option<Vec<String>>>,
     dock: Entity<DockArea>,
 }
 
@@ -82,56 +82,81 @@ impl AppView {
             view.set_center(center_panel, window, cx);
         });
 
-        cx.new(|cx| {
-            let relays = cx.new(|_| None);
-            let this = Self { relays, dock };
-
-            // Check user's messaging relays and determine user is ready for NIP17 or not.
-            // If not, show the setup modal and instruct user setup inbox relays
-            this.verify_user_relays(window, cx);
-
-            this
-        })
+        cx.new(|_| Self { dock })
     }
 
-    fn verify_user_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(model) = Account::global(cx) else {
-            return;
-        };
-
-        let account = model.read(cx);
-        let task = account.verify_inbox_relays(cx);
-        let window_handle = window.window_handle();
-
-        cx.spawn(|this, mut cx| async move {
-            if let Ok(relays) = task.await {
-                _ = cx.update(|cx| {
-                    _ = this.update(cx, |this, cx| {
-                        this.relays = cx.new(|_| Some(relays));
-                        cx.notify();
-                    });
-                });
-            } else {
-                _ = cx.update_window(window_handle, |_, window, cx| {
-                    _ = this.update(cx, |this: &mut Self, cx| {
-                        this.render_setup_relays(window, cx)
-                    });
-                });
-            }
-        })
-        .detach();
+    fn render_mode_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Button::new("appearance")
+            .xsmall()
+            .ghost()
+            .map(|this| {
+                if cx.theme().appearance.is_dark() {
+                    this.icon(IconName::Sun)
+                } else {
+                    this.icon(IconName::Moon)
+                }
+            })
+            .on_click(cx.listener(|_, _, window, cx| {
+                if cx.theme().appearance.is_dark() {
+                    Theme::change(Appearance::Light, Some(window), cx);
+                } else {
+                    Theme::change(Appearance::Dark, Some(window), cx);
+                }
+            }))
     }
 
-    fn render_setup_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = cx.new(|cx| Relays::new(None, window, cx));
+    fn render_account_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Button::new("account")
+            .ghost()
+            .xsmall()
+            .reverse()
+            .icon(Icon::new(IconName::ChevronDownSmall))
+            .when_some(Device::global(cx), |this, account| {
+                this.when_some(account.read(cx).profile(), |this, profile| {
+                    this.child(
+                        img(profile.avatar.clone())
+                            .size_5()
+                            .rounded_full()
+                            .object_fit(ObjectFit::Cover),
+                    )
+                })
+            })
+            .popup_menu(move |this, _, _cx| {
+                this.menu(
+                    "Profile",
+                    Box::new(AddPanel::new(PanelKind::Profile, DockPlacement::Right)),
+                )
+                .menu(
+                    "Contacts",
+                    Box::new(AddPanel::new(PanelKind::Contacts, DockPlacement::Right)),
+                )
+                .menu(
+                    "Settings",
+                    Box::new(AddPanel::new(PanelKind::Settings, DockPlacement::Center)),
+                )
+                .separator()
+                .menu("Change account", Box::new(Logout))
+            })
+    }
+
+    fn render_relays_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Button::new("relays")
+            .xsmall()
+            .ghost()
+            .icon(IconName::Relays)
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.render_edit_relays(window, cx);
+            }))
+    }
+
+    fn render_edit_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = relays::init(window, cx);
 
         window.open_modal(cx, move |this, window, cx| {
             let is_loading = relays.read(cx).loading();
 
-            this.keyboard(false)
-                .closable(false)
-                .width(px(420.))
-                .title("Your Messaging Relays are not configured")
+            this.width(px(420.))
+                .title("Edit your Messaging Relays")
                 .child(relays.clone())
                 .footer(
                     div()
@@ -152,109 +177,6 @@ impl AppView {
                         ),
                 )
         });
-    }
-
-    fn render_edit_relay(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = self.relays.read(cx).clone();
-        let view = cx.new(|cx| Relays::new(relays, window, cx));
-
-        window.open_modal(cx, move |this, window, cx| {
-            let is_loading = view.read(cx).loading();
-
-            this.width(px(420.))
-                .title("Edit your Messaging Relays")
-                .child(view.clone())
-                .footer(
-                    div()
-                        .p_2()
-                        .border_t_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                        .child(
-                            Button::new("update_inbox_relays_btn")
-                                .label("Update")
-                                .primary()
-                                .bold()
-                                .rounded(ButtonRounded::Large)
-                                .w_full()
-                                .loading(is_loading)
-                                .on_click(window.listener_for(&view, |this, _, window, cx| {
-                                    this.update(window, cx);
-                                })),
-                        ),
-                )
-        });
-    }
-
-    fn render_appearance_button(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        Button::new("appearance")
-            .xsmall()
-            .ghost()
-            .map(|this| {
-                if cx.theme().appearance.is_dark() {
-                    this.icon(IconName::Sun)
-                } else {
-                    this.icon(IconName::Moon)
-                }
-            })
-            .on_click(cx.listener(|_, _, window, cx| {
-                if cx.theme().appearance.is_dark() {
-                    Theme::change(Appearance::Light, Some(window), cx);
-                } else {
-                    Theme::change(Appearance::Dark, Some(window), cx);
-                }
-            }))
-    }
-
-    fn render_relays_button(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        Button::new("relays")
-            .xsmall()
-            .ghost()
-            .icon(IconName::Relays)
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.render_edit_relay(window, cx);
-            }))
-    }
-
-    fn render_account(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Button::new("account")
-            .ghost()
-            .xsmall()
-            .reverse()
-            .icon(Icon::new(IconName::ChevronDownSmall))
-            .when_some(Account::global(cx), |this, account| {
-                let profile = account.read(cx).get();
-
-                this.child(
-                    img(profile.avatar())
-                        .size_5()
-                        .rounded_full()
-                        .object_fit(ObjectFit::Cover),
-                )
-            })
-            .popup_menu(move |this, _, _cx| {
-                this.menu(
-                    "Profile",
-                    Box::new(AddPanel::new(PanelKind::Profile, DockPlacement::Right)),
-                )
-                .menu(
-                    "Contacts",
-                    Box::new(AddPanel::new(PanelKind::Contacts, DockPlacement::Right)),
-                )
-                .menu(
-                    "Settings",
-                    Box::new(AddPanel::new(PanelKind::Settings, DockPlacement::Center)),
-                )
-                .separator()
-                .menu("Change account", Box::new(Logout))
-            })
     }
 
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
@@ -303,8 +225,9 @@ impl AppView {
         })
         .detach();
 
-        window.replace_root(cx, |window, cx| {
-            Root::new(onboarding::init(window, cx).into(), window, cx)
+        Root::update(window, cx, |this, window, cx| {
+            this.replace_view(onboarding::init(window, cx).into());
+            cx.notify();
         });
     }
 }
@@ -317,29 +240,37 @@ impl Render for AppView {
         div()
             .relative()
             .size_full()
-            .flex()
-            .flex_col()
-            // Main
             .child(
-                TitleBar::new()
-                    // Left side
-                    .child(div())
-                    // Right side
+                div()
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    // Title Bar
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .gap_2()
-                            .px_2()
-                            .child(self.render_appearance_button(window, cx))
-                            .child(self.render_relays_button(window, cx))
-                            .child(self.render_account(cx)),
-                    ),
+                        TitleBar::new()
+                            // Left side
+                            .child(div())
+                            // Right side
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .gap_2()
+                                    .px_2()
+                                    .child(self.render_mode_btn(cx))
+                                    .child(self.render_relays_btn(cx))
+                                    .child(self.render_account_btn(cx)),
+                            ),
+                    )
+                    // Dock
+                    .child(self.dock.clone()),
             )
-            .child(self.dock.clone())
+            // Notifications
             .child(div().absolute().top_8().children(notification_layer))
+            // Modals
             .children(modal_layer)
+            // Actions
             .on_action(cx.listener(Self::on_panel_action))
             .on_action(cx.listener(Self::on_logout_action))
     }

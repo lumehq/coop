@@ -1,10 +1,12 @@
-use common::constants::NEW_MESSAGE_SUB_ID;
+use anyhow::{anyhow, Error};
+use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
 use gpui::{
-    div, prelude::FluentBuilder, px, uniform_list, AppContext, Context, Entity, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Task, TextAlign, Window,
+    div, prelude::FluentBuilder, px, uniform_list, App, AppContext, Context, Entity, FocusHandle,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign,
+    Window,
 };
 use nostr_sdk::prelude::*;
-use state::get_client;
+use smallvec::{smallvec, SmallVec};
 use ui::{
     button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
@@ -12,52 +14,102 @@ use ui::{
     ContextModal, IconName, Sizable,
 };
 
+use crate::device::Device;
+
 const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
+const HELP_TEXT: &str = "Please add some relays.";
+
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
+    Relays::new(window, cx)
+}
 
 pub struct Relays {
-    relays: Entity<Vec<Url>>,
+    relays: Entity<Vec<RelayUrl>>,
     input: Entity<TextInput>,
     focus_handle: FocusHandle,
     is_loading: bool,
+    #[allow(dead_code)]
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Relays {
-    pub fn new(
-        relays: Option<Vec<String>>,
-        window: &mut Window,
-        cx: &mut Context<'_, Self>,
-    ) -> Self {
-        let relays = cx.new(|_| {
-            if let Some(value) = relays {
-                value.into_iter().map(|v| Url::parse(&v).unwrap()).collect()
-            } else {
-                vec![
-                    Url::parse("wss://auth.nostr1.com").unwrap(),
-                    Url::parse("wss://relay.0xchat.com").unwrap(),
-                ]
-            }
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let client = get_client();
+
+        let relays = cx.new(|cx| {
+            let relays = vec![
+                RelayUrl::parse("wss://auth.nostr1.com").unwrap(),
+                RelayUrl::parse("wss://relay.0xchat.com").unwrap(),
+            ];
+
+            let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(public_key)
+                    .limit(1);
+
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                    let relays = event
+                        .tags
+                        .filter_standardized(TagKind::Relay)
+                        .filter_map(|t| match t {
+                            TagStandard::Relay(url) => Some(url.to_owned()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+
+                    Ok(relays)
+                } else {
+                    Err(anyhow!("Messaging Relays not found."))
+                }
+            });
+
+            cx.spawn(|this, cx| async move {
+                if let Ok(relays) = task.await {
+                    _ = cx.update(|cx| {
+                        _ = this.update(cx, |this: &mut Vec<RelayUrl>, cx| {
+                            this.extend(relays);
+                            cx.notify();
+                        });
+                    });
+                }
+            })
+            .detach();
+
+            relays
         });
 
         let input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(ui::Size::XSmall)
                 .small()
-                .placeholder("wss://...")
+                .placeholder("wss://example.com")
         });
 
-        cx.subscribe_in(&input, window, move |this, _, input_event, window, cx| {
-            if let InputEvent::PressEnter = input_event {
-                this.add(window, cx);
+        cx.new(|cx| {
+            let mut subscriptions = smallvec![];
+
+            subscriptions.push(cx.subscribe_in(
+                &input,
+                window,
+                move |this: &mut Relays, _, input_event, window, cx| {
+                    if let InputEvent::PressEnter = input_event {
+                        this.add(window, cx);
+                    }
+                },
+            ));
+
+            Self {
+                relays,
+                input,
+                subscriptions,
+                is_loading: false,
+                focus_handle: cx.focus_handle(),
             }
         })
-        .detach();
-
-        Self {
-            relays,
-            input,
-            is_loading: false,
-            focus_handle: cx.focus_handle(),
-        }
     }
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -67,7 +119,7 @@ impl Relays {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        let task: Task<Result<EventId, anyhow::Error>> = cx.background_spawn(async move {
+        let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
@@ -123,13 +175,28 @@ impl Relays {
 
         cx.spawn(|this, mut cx| async move {
             if task.await.is_ok() {
-                _ = cx.update_window(window_handle, |_, window, cx| {
+                cx.update_window(window_handle, |_, window, cx| {
                     _ = this.update(cx, |this, cx| {
                         this.set_loading(false, cx);
+                        cx.notify();
                     });
 
+                    if let Some(device) = Device::global(cx) {
+                        let relays = this
+                            .read_with(cx, |this, cx| this.relays.read(cx).clone())
+                            .unwrap();
+
+                        device.update(cx, |this, cx| {
+                            if let Some(profile) = this.profile() {
+                                let new_profile = profile.clone().relays(Some(relays.into()));
+                                this.set_profile(new_profile, cx);
+                            }
+                        })
+                    }
+
                     window.close_modal(cx);
-                });
+                })
+                .ok();
             }
         })
         .detach();
@@ -151,7 +218,7 @@ impl Relays {
             return;
         }
 
-        if let Ok(url) = Url::parse(&value) {
+        if let Ok(url) = RelayUrl::parse(&value) {
             self.relays.update(cx, |this, cx| {
                 if !this.contains(&url) {
                     this.push(url);
@@ -180,6 +247,7 @@ impl Render for Relays {
             .flex()
             .flex_col()
             .gap_2()
+            .w_full()
             .child(
                 div()
                     .px_2()
@@ -190,6 +258,7 @@ impl Render for Relays {
             .child(
                 div()
                     .px_2()
+                    .w_full()
                     .flex()
                     .flex_col()
                     .gap_2()
@@ -197,6 +266,7 @@ impl Render for Relays {
                         div()
                             .flex()
                             .items_center()
+                            .w_full()
                             .gap_2()
                             .child(self.input.clone())
                             .child(
@@ -264,6 +334,7 @@ impl Render for Relays {
                                         items
                                     },
                                 )
+                                .w_full()
                                 .min_h(px(120.)),
                             )
                         } else {
@@ -274,7 +345,7 @@ impl Render for Relays {
                                 .justify_center()
                                 .text_xs()
                                 .text_align(TextAlign::Center)
-                                .child("Please add some relays.")
+                                .child(HELP_TEXT)
                         }
                     }),
             )

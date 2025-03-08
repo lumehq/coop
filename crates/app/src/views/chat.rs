@@ -2,11 +2,11 @@ use anyhow::anyhow;
 use async_utility::task::spawn;
 use chats::{registry::ChatRegistry, room::Room};
 use common::{
-    constants::IMAGE_SERVICE,
     last_seen::LastSeen,
     profile::NostrProfile,
     utils::{compare, nip96_upload},
 };
+use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
     Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
@@ -17,7 +17,6 @@ use gpui::{
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smol::fs;
-use state::get_client;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -63,8 +62,8 @@ impl ParsedMessage {
         let created_at = LastSeen(created_at).human_readable();
 
         Self {
-            avatar: profile.avatar(),
-            display_name: profile.name(),
+            avatar: profile.avatar.clone(),
+            display_name: profile.name.clone(),
             created_at,
             content,
         }
@@ -200,7 +199,7 @@ impl Chat {
                                     this.room.read_with(cx, |this, _| this.member(&item.0))
                                 {
                                     this.push_system_message(
-                                        format!("{} {}", ALERT, member.name()),
+                                        format!("{} {}", member.name, ALERT),
                                         cx,
                                     );
                                 }
@@ -294,7 +293,7 @@ impl Chat {
 
                     room.members
                         .iter()
-                        .find(|m| m.public_key() == ev.pubkey)
+                        .find(|m| m.public_key == ev.pubkey)
                         .map(|member| {
                             Message::new(ParsedMessage::new(member, &ev.content, ev.created_at))
                         })
@@ -561,8 +560,11 @@ impl Panel for Chat {
     fn title(&self, cx: &App) -> AnyElement {
         self.room
             .read_with(cx, |this, _| {
-                let facepill: Vec<SharedString> =
-                    this.members.iter().map(|member| member.avatar()).collect();
+                let facepill: Vec<SharedString> = this
+                    .members
+                    .iter()
+                    .map(|member| member.avatar.clone())
+                    .collect();
 
                 div()
                     .flex()

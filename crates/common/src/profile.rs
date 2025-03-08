@@ -1,13 +1,14 @@
+use global::constants::IMAGE_SERVICE;
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
-
-use crate::constants::IMAGE_SERVICE;
+use smallvec::SmallVec;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NostrProfile {
-    public_key: PublicKey,
-    avatar: SharedString,
-    name: SharedString,
+    pub public_key: PublicKey,
+    pub avatar: SharedString,
+    pub name: SharedString,
+    pub messaging_relays: Option<SmallVec<[RelayUrl; 3]>>,
 }
 
 impl NostrProfile {
@@ -19,20 +20,14 @@ impl NostrProfile {
             public_key,
             name,
             avatar,
+            messaging_relays: None,
         }
     }
 
-    /// Get contact's public key
-    pub fn public_key(&self) -> PublicKey {
-        self.public_key
-    }
-
-    pub fn avatar(&self) -> SharedString {
-        self.avatar.clone()
-    }
-
-    pub fn name(&self) -> SharedString {
-        self.name.clone()
+    /// Set contact's relays
+    pub fn relays(mut self, relays: Option<SmallVec<[RelayUrl; 3]>>) -> Self {
+        self.messaging_relays = relays;
+        self
     }
 
     fn extract_avatar(metadata: &Metadata) -> SharedString {

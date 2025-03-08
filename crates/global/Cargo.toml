@@ -1,5 +1,5 @@
 [package]
-name = "state"
+name = "global"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -7,3 +7,6 @@ publish = false
 [dependencies]
 nostr-sdk.workspace = true
 dirs.workspace = true
+smol.workspace = true
+
+whoami = "1.5.2"

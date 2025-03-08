@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 common = { path = "../common" }
-state = { path = "../state" }
+global = { path = "../global" }
 
 gpui.workspace = true
 nostr-sdk.workspace = true

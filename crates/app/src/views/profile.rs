@@ -1,5 +1,6 @@
 use async_utility::task::spawn;
-use common::{constants::IMAGE_SERVICE, utils::nip96_upload};
+use common::utils::nip96_upload;
+use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity, EventEmitter,
     Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render,
@@ -7,7 +8,6 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
-use state::get_client;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use ui::{
     button::{Button, ButtonVariants},

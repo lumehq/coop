@@ -5,12 +5,15 @@ edition = "2021"
 publish = false
 
 [dependencies]
+global = { path = "../global" }
+
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
 dirs.workspace = true
+smallvec.workspace = true
 
 random_name_generator = "0.3.6"
 qrcode-generator = "5.0.0"

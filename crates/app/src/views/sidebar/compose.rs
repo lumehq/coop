@@ -1,5 +1,6 @@
 use chats::{registry::ChatRegistry, room::Room};
 use common::{profile::NostrProfile, utils::random_name};
+use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client};
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
@@ -10,7 +11,6 @@ use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
-use state::get_client;
 use std::{collections::HashSet, time::Duration};
 use ui::{
     button::{Button, ButtonRounded},
@@ -214,7 +214,19 @@ impl Compose {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        let task: Task<Result<NostrProfile, anyhow::Error>> = if content.starts_with("npub1") {
+        let task: Task<Result<NostrProfile, anyhow::Error>> = if content.contains("@") {
+            cx.background_spawn(async move {
+                let profile = nip05::profile(&content, None).await?;
+                let public_key = profile.public_key;
+
+                let metadata = client
+                    .fetch_metadata(public_key, Duration::from_secs(2))
+                    .await
+                    .unwrap_or_default();
+
+                Ok(NostrProfile::new(public_key, metadata))
+            })
+        } else {
             let Ok(public_key) = PublicKey::parse(&content) else {
                 self.set_loading(false, cx);
                 self.set_error(Some("Public Key is not valid".into()), cx);
@@ -224,18 +236,8 @@ impl Compose {
             cx.background_spawn(async move {
                 let metadata = client
                     .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?;
-
-                Ok(NostrProfile::new(public_key, metadata))
-            })
-        } else {
-            cx.background_spawn(async move {
-                let profile = nip05::profile(&content, None).await?;
-                let public_key = profile.public_key;
-
-                let metadata = client
-                    .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?;
+                    .await
+                    .unwrap_or_default();
 
                 Ok(NostrProfile::new(public_key, metadata))
             })
@@ -244,9 +246,27 @@ impl Compose {
         cx.spawn(|this, mut cx| async move {
             match task.await {
                 Ok(profile) => {
+                    let public_key = profile.public_key;
+
+                    _ = cx
+                        .background_spawn(async move {
+                            let opts = SubscribeAutoCloseOptions::default()
+                                .exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+                            // Create a device announcement filter
+                            let device = Filter::new()
+                                .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
+                                .author(public_key)
+                                .limit(1);
+
+                            // Only subscribe to the latest device announcement
+                            client.subscribe(device, Some(opts)).await
+                        })
+                        .await;
+
                     _ = cx.update_window(window_handle, |_, window, cx| {
                         _ = this.update(cx, |this, cx| {
-                            let public_key = profile.public_key();
+                            let public_key = profile.public_key;
 
                             this.contacts.update(cx, |this, cx| {
                                 this.insert(0, profile);
@@ -432,7 +452,7 @@ impl Render for Compose {
 
                                         for ix in range {
                                             let item = contacts.get(ix).unwrap().clone();
-                                            let is_select = selected.contains(&item.public_key());
+                                            let is_select = selected.contains(&item.public_key);
 
                                             items.push(
                                                 div()
@@ -451,10 +471,10 @@ impl Render for Compose {
                                                             .text_xs()
                                                             .child(
                                                                 div().flex_shrink_0().child(
-                                                                    img(item.avatar()).size_6(),
+                                                                    img(item.avatar).size_6(),
                                                                 ),
                                                             )
-                                                            .child(item.name()),
+                                                            .child(item.name),
                                                     )
                                                     .when(is_select, |this| {
                                                         this.child(
@@ -475,7 +495,7 @@ impl Render for Compose {
                                                     .on_click(move |_, window, cx| {
                                                         window.dispatch_action(
                                                             Box::new(SelectContact(
-                                                                item.public_key(),
+                                                                item.public_key,
                                                             )),
                                                             cx,
                                                         );

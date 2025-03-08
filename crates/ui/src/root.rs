@@ -212,6 +212,11 @@ impl Root {
     pub fn view(&self) -> &AnyView {
         &self.view
     }
+
+    /// Replace the root view of the Root.
+    pub fn replace_view(&mut self, view: AnyView) {
+        self.view = view;
+    }
 }
 
 impl Render for Root {

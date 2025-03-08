@@ -1,11 +1,17 @@
+use anyhow::anyhow;
 use asset::Assets;
 use chats::registry::ChatRegistry;
-use common::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, KEYRING_SERVICE, NEW_MESSAGE_SUB_ID,
-};
+use device::Device;
 use futures::{select, FutureExt};
+use global::{
+    constants::{
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
+        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
+    },
+    get_client, get_device_keys, set_device_name,
+};
 use gpui::{
-    actions, px, size, App, AppContext, Application, AsyncApp, Bounds, KeyBinding, Menu, MenuItem,
+    actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(not(target_os = "linux"))]
@@ -13,32 +19,33 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Client, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
+    nips::nip59::UnwrappedGift, pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey,
+    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
 };
 use smol::Timer;
-use state::get_client;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
-use ui::{theme::Theme, Root};
-use views::{app, onboarding};
+use ui::Root;
+use views::startup;
 
 mod asset;
+mod device;
 mod views;
 
 actions!(coop, [Quit]);
 
-#[derive(Clone)]
+#[derive(Debug)]
 enum Signal {
     /// Receive event
     Event(Event),
+    /// Receive request master key event
+    RequestMasterKey(Event),
+    /// Receive approve master key event
+    ReceiveMasterKey(Event),
     /// Receive EOSE
     Eose,
 }
 
 fn main() {
-    // Fix crash on startup
-    // TODO: why this is needed?
-    _ = rustls::crypto::ring::default_provider().install_default();
     // Enable logging
     tracing_subscriber::fmt::init();
 
@@ -56,11 +63,17 @@ fn main() {
     // Connect to default relays
     app.background_executor()
         .spawn(async {
-            for relay in BOOTSTRAP_RELAYS.iter() {
-                _ = client.add_relay(*relay).await;
+            // Fix crash on startup
+            // TODO: why this is needed?
+            _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+            for relay in BOOTSTRAP_RELAYS.into_iter() {
+                _ = client.add_relay(relay).await;
             }
+
             _ = client.add_discovery_relay("wss://relaydiscovery.com").await;
             _ = client.add_discovery_relay("wss://user.kindpag.es").await;
+
             _ = client.connect().await
         })
         .detach();
@@ -69,7 +82,7 @@ fn main() {
     app.background_executor()
         .spawn(async move {
             const BATCH_SIZE: usize = 20;
-            const BATCH_TIMEOUT: Duration = Duration::from_millis(200);
+            const BATCH_TIMEOUT: Duration = Duration::from_millis(500);
 
             let mut batch: HashSet<PublicKey> = HashSet::new();
 
@@ -82,7 +95,7 @@ fn main() {
                             Ok(keys) => {
                                 batch.extend(keys);
                                 if batch.len() >= BATCH_SIZE {
-                                    sync_metadata(client, mem::take(&mut batch)).await;
+                                    handle_metadata(mem::take(&mut batch)).await;
                                 }
                             }
                             Err(_) => break,
@@ -90,7 +103,7 @@ fn main() {
                     }
                     _ = timeout => {
                         if !batch.is_empty() {
-                            sync_metadata(client, mem::take(&mut batch)).await;
+                            handle_metadata(mem::take(&mut batch)).await;
                         }
                     }
                 }
@@ -115,13 +128,12 @@ fn main() {
                         } => {
                             match event.kind {
                                 Kind::GiftWrap => {
-                                    if let Ok(gift) = client.unwrap_gift_wrap(&event).await {
-                                        let mut pubkeys = vec![];
-
+                                    if let Ok(gift) = handle_gift_wrap(&event).await {
                                         // Sign the rumor with the generated keys,
                                         // this event will be used for internal only,
                                         // and NEVER send to relays.
                                         if let Ok(event) = gift.rumor.sign_with_keys(&rng_keys) {
+                                            let mut pubkeys = vec![];
                                             pubkeys.extend(event.tags.public_keys());
                                             pubkeys.push(event.pubkey);
 
@@ -133,23 +145,11 @@ fn main() {
                                             }
 
                                             // Send all pubkeys to the batch
-                                            if let Err(e) = batch_tx.send(pubkeys).await {
-                                                log::error!(
-                                                    "Failed to send pubkeys to batch: {}",
-                                                    e
-                                                )
-                                            }
+                                            _ = batch_tx.send(pubkeys).await;
 
                                             // Send this event to the GPUI
                                             if new_id == *subscription_id {
-                                                if let Err(e) =
-                                                    event_tx.send(Signal::Event(event)).await
-                                                {
-                                                    log::error!(
-                                                        "Failed to send event to GPUI: {}",
-                                                        e
-                                                    )
-                                                }
+                                                _ = event_tx.send(Signal::Event(event)).await;
                                             }
                                         }
                                     }
@@ -158,7 +158,32 @@ fn main() {
                                     let pubkeys =
                                         event.tags.public_keys().copied().collect::<HashSet<_>>();
 
-                                    sync_metadata(client, pubkeys).await;
+                                    handle_metadata(pubkeys).await;
+                                }
+                                Kind::Custom(DEVICE_REQUEST_KIND) => {
+                                    log::info!("Received device keys request");
+
+                                    _ = event_tx
+                                        .send(Signal::RequestMasterKey(event.into_owned()))
+                                        .await;
+                                }
+                                Kind::Custom(DEVICE_RESPONSE_KIND) => {
+                                    log::info!("Received device keys approval");
+
+                                    _ = event_tx
+                                        .send(Signal::ReceiveMasterKey(event.into_owned()))
+                                        .await;
+                                }
+                                Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
+                                    log::info!("Device announcement received");
+
+                                    if let Some(tag) = event
+                                        .tags
+                                        .find(TagKind::custom("client"))
+                                        .and_then(|tag| tag.content())
+                                    {
+                                        set_device_name(tag).await;
+                                    }
                                 }
                                 _ => {}
                             }
@@ -177,62 +202,24 @@ fn main() {
         })
         .detach();
 
-    // Handle re-open window
-    app.on_reopen(move |cx| {
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<bool>();
-
-        cx.background_spawn(async move {
-            let is_login = client.signer().await.is_ok();
-            _ = tx.send(is_login);
-        })
-        .detach();
-
-        cx.spawn(|mut cx| async move {
-            if let Ok(is_login) = rx.await {
-                _ = restore_window(is_login, &mut cx).await;
-            }
-        })
-        .detach();
-    });
-
     app.run(move |cx| {
-        // Initialize chat global state
-        chats::registry::init(cx);
-        // Initialize components
-        ui::init(cx);
         // Bring the app to the foreground
         cx.activate(true);
+
         // Register the `quit` function
         cx.on_action(quit);
+
         // Register the `quit` function with CMD+Q
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+
         // Set menu items
         cx.set_menus(vec![Menu {
             name: "Coop".into(),
             items: vec![MenuItem::action("Quit", Quit)],
         }]);
 
-        // Spawn a task to handle events from nostr channel
-        cx.spawn(|cx| async move {
-            while let Ok(signal) = event_rx.recv().await {
-                cx.update(|cx| {
-                    if let Some(chats) = ChatRegistry::global(cx) {
-                        match signal {
-                            Signal::Eose => chats.update(cx, |this, cx| this.load_chat_rooms(cx)),
-                            Signal::Event(event) => {
-                                chats.update(cx, |this, cx| this.push_message(event, cx))
-                            }
-                        };
-                    }
-                })
-                .ok();
-            }
-        })
-        .detach();
-
         // Set up the window options
-        let window_opts = WindowOptions {
+        let opts = WindowOptions {
             #[cfg(not(target_os = "linux"))]
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::new_static(APP_NAME)),
@@ -249,124 +236,101 @@ fn main() {
             #[cfg(target_os = "linux")]
             window_decorations: Some(WindowDecorations::Client),
             kind: WindowKind::Normal,
+            app_id: Some(APP_ID.to_owned()),
             ..Default::default()
         };
 
-        // Create a task to read credentials from the keyring service
-        let task = cx.read_credentials(KEYRING_SERVICE);
-        let (tx, rx) = oneshot::channel::<bool>();
+        // Open a window with default options
+        cx.open_window(opts, |window, cx| {
+            // Initialize components
+            ui::init(cx);
 
-        // Read credential in OS Keyring
-        cx.background_spawn(async {
-            let is_ready = if let Ok(Some((_, secret))) = task.await {
-                let result = async {
-                    let secret_hex = String::from_utf8(secret)?;
-                    let keys = Keys::parse(&secret_hex)?;
+            // Initialize chat global state
+            chats::registry::init(cx);
 
-                    // Update nostr signer
-                    client.set_signer(keys).await;
+            // Initialize device
+            device::init(window, cx);
 
-                    Ok::<_, anyhow::Error>(true)
-                }
-                .await;
+            cx.new(|cx| {
+                let root = Root::new(startup::init(window, cx).into(), window, cx);
 
-                result.is_ok()
-            } else {
-                false
-            };
+                // Spawn a task to handle events from nostr channel
+                cx.spawn_in(window, |_, mut cx| async move {
+                    while let Ok(signal) = event_rx.recv().await {
+                        cx.update(|window, cx| {
+                            match signal {
+                                Signal::Eose => {
+                                    if let Some(chats) = ChatRegistry::global(cx) {
+                                        chats.update(cx, |this, cx| this.load_chat_rooms(cx))
+                                    }
+                                }
+                                Signal::Event(event) => {
+                                    if let Some(chats) = ChatRegistry::global(cx) {
+                                        chats.update(cx, |this, cx| this.push_message(event, cx))
+                                    }
+                                }
+                                Signal::ReceiveMasterKey(event) => {
+                                    if let Some(device) = Device::global(cx) {
+                                        device.update(cx, |this, cx| {
+                                            this.handle_response(event, window, cx);
+                                        });
+                                    }
+                                }
+                                Signal::RequestMasterKey(event) => {
+                                    if let Some(device) = Device::global(cx) {
+                                        device.update(cx, |this, cx| {
+                                            this.handle_request(event, window, cx);
+                                        });
+                                    }
+                                }
+                            };
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
 
-            _ = tx.send(is_ready)
+                root
+            })
         })
-        .detach();
-
-        cx.spawn(|cx| async move {
-            if let Ok(is_ready) = rx.await {
-                if is_ready {
-                    // Open a App window
-                    cx.open_window(window_opts, |window, cx| {
-                        cx.new(|cx| Root::new(app::init(window, cx).into(), window, cx))
-                    })
-                    .expect("Failed to open window");
-                } else {
-                    // Open a Onboarding window
-                    cx.open_window(window_opts, |window, cx| {
-                        cx.new(|cx| Root::new(onboarding::init(window, cx).into(), window, cx))
-                    })
-                    .expect("Failed to open window");
-                }
-            }
-        })
-        .detach();
+        .expect("Failed to open window. Please restart the application.");
     });
 }
 
-async fn sync_metadata(client: &Client, buffer: HashSet<PublicKey>) {
+async fn handle_gift_wrap(gift_wrap: &Event) -> Result<UnwrappedGift, anyhow::Error> {
+    let client = get_client();
+
+    if let Some(device) = get_device_keys().await {
+        // Try to unwrap with the device keys first
+        match UnwrappedGift::from_gift_wrap(&device, gift_wrap).await {
+            Ok(event) => Ok(event),
+            Err(_) => {
+                // Try to unwrap again with the user's signer
+                let signer = client.signer().await?;
+                let event = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
+                Ok(event)
+            }
+        }
+    } else {
+        Err(anyhow!("Signer not found"))
+    }
+}
+
+async fn handle_metadata(buffer: HashSet<PublicKey>) {
+    let client = get_client();
+
     let opts = SubscribeAutoCloseOptions::default()
         .exit_policy(ReqExitPolicy::ExitOnEOSE)
         .idle_timeout(Some(Duration::from_secs(2)));
 
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
-        .kind(Kind::Metadata)
-        .limit(buffer.len());
+        .limit(buffer.len() * 2)
+        .kinds(vec![Kind::Metadata, Kind::Custom(DEVICE_ANNOUNCEMENT_KIND)]);
 
     if let Err(e) = client.subscribe(filter, Some(opts)).await {
         log::error!("Failed to sync metadata: {e}");
     }
-}
-
-async fn restore_window(is_login: bool, cx: &mut AsyncApp) -> anyhow::Result<()> {
-    let opts = cx
-        .update(|cx| WindowOptions {
-            #[cfg(not(target_os = "linux"))]
-            titlebar: Some(TitlebarOptions {
-                title: Some(SharedString::new_static(APP_NAME)),
-                traffic_light_position: Some(point(px(9.0), px(9.0))),
-                appears_transparent: true,
-            }),
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(900.0), px(680.0)),
-                cx,
-            ))),
-            #[cfg(target_os = "linux")]
-            window_background: WindowBackgroundAppearance::Transparent,
-            #[cfg(target_os = "linux")]
-            window_decorations: Some(WindowDecorations::Client),
-            kind: WindowKind::Normal,
-            ..Default::default()
-        })
-        .expect("Failed to set window options.");
-
-    if is_login {
-        _ = cx.open_window(opts, |window, cx| {
-            window.set_window_title(APP_NAME);
-            window.set_app_id(APP_ID);
-
-            #[cfg(not(target_os = "linux"))]
-            window
-                .observe_window_appearance(|window, cx| {
-                    Theme::sync_system_appearance(Some(window), cx);
-                })
-                .detach();
-
-            cx.new(|cx| Root::new(app::init(window, cx).into(), window, cx))
-        });
-    } else {
-        _ = cx.open_window(opts, |window, cx| {
-            window.set_window_title(APP_NAME);
-            window.set_app_id(APP_ID);
-            window
-                .observe_window_appearance(|window, cx| {
-                    Theme::sync_system_appearance(Some(window), cx);
-                })
-                .detach();
-
-            cx.new(|cx| Root::new(onboarding::init(window, cx).into(), window, cx))
-        });
-    };
-
-    Ok(())
 }
 
 fn quit(_: &Quit, cx: &mut App) {

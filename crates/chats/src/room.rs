@@ -1,10 +1,11 @@
-use anyhow::Error;
+use std::collections::HashSet;
+
+use anyhow::{anyhow, Context, Error};
 use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
+use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client, get_device_keys};
 use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::get_client;
-use std::{collections::HashSet, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub struct IncomingEvent {
@@ -13,7 +14,7 @@ pub struct IncomingEvent {
 
 pub struct Room {
     pub id: u64,
-    pub last_seen: Rc<LastSeen>,
+    pub last_seen: LastSeen,
     /// Subject of the room
     pub name: Option<SharedString>,
     /// All members of the room
@@ -31,7 +32,7 @@ impl PartialEq for Room {
 impl Room {
     pub fn new(event: &Event, cx: &mut App) -> Entity<Self> {
         let id = room_hash(event);
-        let last_seen = Rc::new(LastSeen(event.created_at));
+        let last_seen = LastSeen(event.created_at);
 
         // Get the subject from the event's tags
         let name = if let Some(tag) = event.tags.find(TagKind::Subject) {
@@ -60,7 +61,7 @@ impl Room {
                                 let mut name = profiles
                                     .iter()
                                     .take(2)
-                                    .map(|profile| profile.name().to_string())
+                                    .map(|profile| profile.name.to_string())
                                     .collect::<Vec<_>>()
                                     .join(", ");
 
@@ -94,7 +95,7 @@ impl Room {
     pub fn member(&self, public_key: &PublicKey) -> Option<NostrProfile> {
         self.members
             .iter()
-            .find(|m| &m.public_key() == public_key)
+            .find(|m| &m.public_key == public_key)
             .cloned()
     }
 
@@ -105,7 +106,7 @@ impl Room {
 
     /// Collect room's member's public keys
     pub fn public_keys(&self) -> Vec<PublicKey> {
-        self.members.iter().map(|m| m.public_key()).collect()
+        self.members.iter().map(|m| m.public_key).collect()
     }
 
     /// Get room's display name
@@ -119,8 +120,8 @@ impl Room {
     }
 
     /// Get room's last seen
-    pub fn last_seen(&self) -> Rc<LastSeen> {
-        self.last_seen.clone()
+    pub fn last_seen(&self) -> LastSeen {
+        self.last_seen
     }
 
     /// Get room's last seen as ago format
@@ -158,20 +159,26 @@ impl Room {
     }
 
     /// Send message to all room's members
+    ///
+    /// NIP-4e: Message will be signed by the device signer
     pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
         let client = get_client();
         let pubkeys = self.public_keys();
 
         cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+            let Some(device) = get_device_keys().await else {
+                return Err(anyhow!("Device not found. Please restart the application."));
+            };
 
-            let mut msg = Vec::new();
+            let user_signer = client.signer().await?;
+            let user_pubkey = user_signer.get_public_key().await?;
+
+            let mut report = Vec::with_capacity(pubkeys.len());
 
             let tags: Vec<Tag> = pubkeys
                 .iter()
                 .filter_map(|pubkey| {
-                    if pubkey != &public_key {
+                    if pubkey != &user_pubkey {
                         Some(Tag::public_key(*pubkey))
                     } else {
                         None
@@ -180,17 +187,52 @@ impl Room {
                 .collect();
 
             for pubkey in pubkeys.iter() {
-                if let Err(e) = client
-                    .send_private_msg(*pubkey, &content, tags.clone())
-                    .await
-                {
-                    log::error!("Failed to send message to {}: {}", pubkey.to_bech32()?, e);
-                    // Convert error into string
-                    msg.push(e.to_string());
+                let filter = Filter::new()
+                    .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
+                    .author(*pubkey)
+                    .limit(1);
+
+                // Check if the pubkey has a device announcement,
+                // then choose the appropriate signer based on device presence
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                    log::info!("Use device signer to send message");
+                    let signer = &device;
+
+                    // Get the device's public key of other user
+                    let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
+                    let hex = n_tag.content().context("Not found")?;
+                    let target_pubkey = PublicKey::parse(hex)?;
+
+                    let rumor = EventBuilder::private_msg_rumor(*pubkey, &content)
+                        .tags(tags.clone())
+                        .build(user_pubkey);
+
+                    let event = EventBuilder::gift_wrap(
+                        signer,
+                        &target_pubkey,
+                        rumor,
+                        vec![Tag::public_key(*pubkey)],
+                    )
+                    .await?;
+
+                    if let Err(e) = client.send_event(&event).await {
+                        // Convert error into string, then push it to the report
+                        report.push(e.to_string());
+                    }
+                } else {
+                    log::info!("Use user signer to send message");
+                    let signer = &client.signer().await?;
+
+                    let event =
+                        EventBuilder::private_msg(signer, *pubkey, &content, tags.clone()).await?;
+
+                    if let Err(e) = client.send_event(&event).await {
+                        report.push(e.to_string());
+                    }
                 }
             }
 
-            Ok(msg)
+            Ok(report)
         })
     }
 
