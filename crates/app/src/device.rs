@@ -267,7 +267,6 @@ impl Device {
     /// Receive device keys approval from other Nostr client,
     /// then process and update device keys.
     pub fn handle_response(&self, event: Event, window: &mut Window, cx: &Context<Self>) {
-        let handle = window.window_handle();
         let local_signer = self.client_keys.clone().into_nostr_signer();
 
         let task = cx.background_spawn(async move {
@@ -280,7 +279,6 @@ impl Device {
 
                 // Update global state with new device keys
                 set_device_keys(keys).await;
-
                 log::info!("Received device keys from other client");
 
                 Ok(())
@@ -289,26 +287,18 @@ impl Device {
             }
         });
 
-        cx.spawn(|_, cx| async move {
+        cx.spawn_in(window, |_, mut cx| async move {
             if let Err(e) = task.await {
-                cx.update(|cx| {
-                    handle
-                        .update(cx, |_, window, cx| {
-                            window.push_notification(Notification::error(e.to_string()), cx);
-                        })
-                        .ok();
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error(e.to_string()), cx);
                 })
                 .ok();
             } else {
-                cx.update(|cx| {
-                    handle
-                        .update(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::success("Device Keys request has been approved"),
-                                cx,
-                            );
-                        })
-                        .ok();
+                cx.update(|window, cx| {
+                    window.push_notification(
+                        Notification::success("Device Keys request has been approved"),
+                        cx,
+                    );
                 })
                 .ok();
             }
@@ -318,8 +308,14 @@ impl Device {
 
     /// Received device keys request from other Nostr client,
     /// then process the request and send approval response.
-    pub fn handle_request(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn handle_request(
+        &self,
+        event: (Event, bool),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(public_key) = event
+            .0
             .tags
             .find(TagKind::custom("pubkey"))
             .and_then(|tag| tag.content())
@@ -328,70 +324,126 @@ impl Device {
             return;
         };
 
-        let name = event
+        let client = get_client();
+        let read_keys = cx.read_credentials(MASTER_KEYRING);
+        let local_signer = self.client_keys.clone().into_nostr_signer();
+        let silent = event.1;
+
+        let device_name = event
+            .0
             .tags
             .find(TagKind::Client)
             .and_then(|tag| tag.content())
-            .map(|content| content.to_string());
+            .unwrap_or("Other Device")
+            .to_owned();
 
-        let message = if let Some(client_name) = name {
-            format!("Device Keys shared with {}", client_name)
+        if !silent {
+            let response = window.prompt(
+                gpui::PromptLevel::Info,
+                "Requesting Device Keys",
+                Some(
+                    format!(
+                        "{} is requesting shared device keys stored in this device",
+                        device_name
+                    )
+                    .as_str(),
+                ),
+                &["Approve", "Deny"],
+                cx,
+            );
+
+            cx.spawn_in(window, |_, cx| async move {
+                match response.await {
+                    Ok(0) => {
+                        if let Ok(Some((_, secret))) = read_keys.await {
+                            let local_pubkey = local_signer.get_public_key().await?;
+
+                            // Get device's secret key
+                            let device_secret = SecretKey::from_slice(&secret)?;
+
+                            // Encrypt device's secret key by using NIP-44
+                            let content = local_signer
+                                .nip44_encrypt(&public_key, &device_secret.to_secret_hex())
+                                .await?;
+
+                            // Create pubkey tag for other device (lowercase p)
+                            let other_tag = Tag::public_key(public_key);
+
+                            // Create pubkey tag for this device (uppercase P)
+                            let local_tag = Tag::custom(
+                                TagKind::SingleLetter(SingleLetterTag::uppercase(Alphabet::P)),
+                                vec![local_pubkey.to_hex()],
+                            );
+
+                            // Create event builder
+                            let kind = Kind::Custom(DEVICE_RESPONSE_KIND);
+                            let tags = vec![other_tag, local_tag];
+                            let builder = EventBuilder::new(kind, content).tags(tags);
+
+                            cx.background_spawn(async move {
+                                if let Err(err) = client.send_event_builder(builder).await {
+                                    log::error!(
+                                        "Failed to send device keys to other client: {}",
+                                        err
+                                    );
+                                } else {
+                                    log::info!("Sent device keys to other client");
+                                }
+                            })
+                            .await;
+
+                            Ok(())
+                        } else {
+                            Err(anyhow!("Device Keys not found"))
+                        }
+                    }
+                    _ => Ok(()),
+                }
+            })
+            .detach();
         } else {
-            "Device Keys shared with other client".to_owned()
-        };
+            cx.spawn_in(window, |_, cx| async move {
+                if let Ok(Some((_, secret))) = read_keys.await {
+                    let local_pubkey = local_signer.get_public_key().await?;
 
-        let client = get_client();
-        let handle = window.window_handle();
-        let read_keys = cx.read_credentials(MASTER_KEYRING);
+                    // Get device's secret key
+                    let device_secret = SecretKey::from_slice(&secret)?;
 
-        let approve_task = cx.background_spawn(async move {
-            if let Ok(Some((_, secret))) = read_keys.await {
-                let local_keys = Keys::generate();
-                let local_pubkey = local_keys.public_key();
-                let local_signer = local_keys.into_nostr_signer();
+                    // Encrypt device's secret key by using NIP-44
+                    let content = local_signer
+                        .nip44_encrypt(&public_key, &device_secret.to_secret_hex())
+                        .await?;
 
-                // Get device's secret key
-                let device_secret = SecretKey::from_slice(&secret)?;
+                    // Create pubkey tag for other device (lowercase p)
+                    let other_tag = Tag::public_key(public_key);
 
-                // Encrypt device's secret key by using NIP-44
-                let content = local_signer
-                    .nip44_encrypt(&public_key, &device_secret.to_secret_hex())
-                    .await?;
+                    // Create pubkey tag for this device (uppercase P)
+                    let local_tag = Tag::custom(
+                        TagKind::SingleLetter(SingleLetterTag::uppercase(Alphabet::P)),
+                        vec![local_pubkey.to_hex()],
+                    );
 
-                // Create pubkey tag for other device (lowercase p)
-                let other_tag = Tag::public_key(public_key);
+                    // Create event builder
+                    let kind = Kind::Custom(DEVICE_RESPONSE_KIND);
+                    let tags = vec![other_tag, local_tag];
+                    let builder = EventBuilder::new(kind, content).tags(tags);
 
-                // Create pubkey tag for this device (uppercase P)
-                let local_tag = Tag::custom(
-                    TagKind::SingleLetter(SingleLetterTag::uppercase(Alphabet::P)),
-                    vec![local_pubkey.to_hex()],
-                );
+                    cx.background_spawn(async move {
+                        if let Err(err) = client.send_event_builder(builder).await {
+                            log::error!("Failed to send device keys to other client: {}", err);
+                        } else {
+                            log::info!("Sent device keys to other client");
+                        }
+                    })
+                    .await;
 
-                // Create event builder
-                let tags = vec![other_tag, local_tag];
-                let builder =
-                    EventBuilder::new(Kind::Custom(DEVICE_RESPONSE_KIND), content).tags(tags);
-
-                // Send event
-                client.send_event_builder(builder).await?;
-                log::info!("Sent device keys to other client");
-
-                Ok(())
-            } else {
-                Err(anyhow!("Device Keys not found"))
-            }
-        });
-
-        cx.spawn(|_, cx| async move {
-            if approve_task.await.is_ok() {
-                _ = cx.update(|cx| {
-                    _ = handle.update(cx, |_, window, cx| {
-                        window.push_notification(Notification::info(message), cx);
-                    });
-                });
-            }
-        })
-        .detach();
+                    Ok(())
+                } else {
+                    Err(anyhow!("Device Keys not found"))
+                }
+            })
+            .detach();
+        }
     }
 
     pub fn render_setup_relays(&mut self, window: &mut Window, cx: &mut Context<Self>) {

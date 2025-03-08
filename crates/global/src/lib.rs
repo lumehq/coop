@@ -47,7 +47,13 @@ pub fn get_client() -> &'static Client {
 
 /// Get app name
 pub fn get_app_name() -> &'static str {
-    APP_NAME.get_or_init(|| Arc::from(format!("{} ({})", whoami::devicename(), whoami::distro())))
+    APP_NAME.get_or_init(|| {
+        Arc::from(format!(
+            "Coop on {} ({})",
+            whoami::distro(),
+            whoami::devicename()
+        ))
+    })
 }
 
 /// Get device keys

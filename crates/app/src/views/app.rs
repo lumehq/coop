@@ -225,8 +225,9 @@ impl AppView {
         })
         .detach();
 
-        window.replace_root(cx, |window, cx| {
-            Root::new(onboarding::init(window, cx).into(), window, cx)
+        Root::update(window, cx, |this, window, cx| {
+            this.replace_view(onboarding::init(window, cx).into());
+            cx.notify();
         });
     }
 }

@@ -38,7 +38,9 @@ enum Signal {
     /// Receive event
     Event(Event),
     /// Receive request master key event
-    RequestMasterKey(Event),
+    ///
+    /// bool: toggle silent mode
+    RequestMasterKey((Event, bool)),
     /// Receive approve master key event
     ReceiveMasterKey(Event),
     /// Receive EOSE
@@ -162,14 +164,16 @@ fn main() {
                                     handle_metadata(pubkeys).await;
                                 }
                                 Kind::Custom(DEVICE_REQUEST_KIND) => {
-                                    // Only process new requests
-                                    if data_id == *subscription_id {
-                                        log::info!("Received device keys request");
+                                    log::info!("Received device keys request");
 
-                                        _ = event_tx
-                                            .send(Signal::RequestMasterKey(event.into_owned()))
-                                            .await;
-                                    }
+                                    let silent = data_id != *subscription_id;
+
+                                    _ = event_tx
+                                        .send(Signal::RequestMasterKey((
+                                            event.into_owned(),
+                                            silent,
+                                        )))
+                                        .await;
                                 }
                                 Kind::Custom(DEVICE_RESPONSE_KIND) => {
                                     log::info!("Received device keys approval");
@@ -255,49 +259,47 @@ fn main() {
             // Initialize device
             device::init(window, cx);
 
-            let handle = window.window_handle();
+            cx.new(|cx| {
+                let root = Root::new(startup::init(window, cx).into(), window, cx);
 
-            // Spawn a task to handle events from nostr channel
-            cx.spawn(|cx| async move {
-                while let Ok(signal) = event_rx.recv().await {
-                    cx.update(|cx| {
-                        match signal {
-                            Signal::Eose => {
-                                if let Some(chats) = ChatRegistry::global(cx) {
-                                    chats.update(cx, |this, cx| this.load_chat_rooms(cx))
+                // Spawn a task to handle events from nostr channel
+                cx.spawn_in(window, |_, mut cx| async move {
+                    while let Ok(signal) = event_rx.recv().await {
+                        cx.update(|window, cx| {
+                            match signal {
+                                Signal::Eose => {
+                                    if let Some(chats) = ChatRegistry::global(cx) {
+                                        chats.update(cx, |this, cx| this.load_chat_rooms(cx))
+                                    }
                                 }
-                            }
-                            Signal::Event(event) => {
-                                if let Some(chats) = ChatRegistry::global(cx) {
-                                    chats.update(cx, |this, cx| this.push_message(event, cx))
+                                Signal::Event(event) => {
+                                    if let Some(chats) = ChatRegistry::global(cx) {
+                                        chats.update(cx, |this, cx| this.push_message(event, cx))
+                                    }
                                 }
-                            }
-                            Signal::ReceiveMasterKey(event) => {
-                                if let Some(device) = Device::global(cx) {
-                                    _ = handle.update(cx, |_, window, cx| {
+                                Signal::ReceiveMasterKey(event) => {
+                                    if let Some(device) = Device::global(cx) {
                                         device.update(cx, |this, cx| {
                                             this.handle_response(event, window, cx);
                                         });
-                                    });
+                                    }
                                 }
-                            }
-                            Signal::RequestMasterKey(event) => {
-                                if let Some(device) = Device::global(cx) {
-                                    _ = handle.update(cx, |_, window, cx| {
+                                Signal::RequestMasterKey(event) => {
+                                    if let Some(device) = Device::global(cx) {
                                         device.update(cx, |this, cx| {
                                             this.handle_request(event, window, cx);
                                         });
-                                    });
+                                    }
                                 }
-                            }
-                        };
-                    })
-                    .ok();
-                }
-            })
-            .detach();
+                            };
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
 
-            cx.new(|cx| Root::new(startup::init(window, cx).into(), window, cx))
+                root
+            })
         })
         .expect("Failed to open window. Please restart the application.");
     });
