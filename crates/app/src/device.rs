@@ -581,15 +581,14 @@ impl Device {
     #[allow(clippy::type_complexity)]
     fn fetch_master_keys(user: PublicKey, cx: &AsyncApp) -> Task<Result<Option<Keys>, Error>> {
         let client = get_client();
-        let app_name = get_app_name();
 
         let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
         let filter = Filter::new().kind(kind).author(user).limit(1);
-        let client_tag = Tag::client(app_name);
 
         // Fetch device announcement events
         let fetch_announcement = cx.background_spawn(async move {
             if let Some(event) = client.database().query(filter).await?.first_owned() {
+                println!("event: {:?}", event);
                 Ok(event)
             } else {
                 Err(anyhow!("Device Announcement not found."))
@@ -626,22 +625,30 @@ impl Device {
             } else {
                 log::info!("Device announcement is not found, appoint this device as master");
 
+                let app_name = get_app_name();
                 let keys = Keys::generate();
                 let kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
+                let client_tag = Tag::client(app_name);
                 let pubkey_tag =
                     Tag::custom(TagKind::custom("n"), vec![keys.public_key().to_hex()]);
 
-                // Create an announcement event builder
-                let builder = EventBuilder::new(kind, "").tags(vec![client_tag, pubkey_tag]);
+                let _task: Result<(), Error> = cx
+                    .background_spawn(async move {
+                        let signer = client.signer().await?;
+                        let event = EventBuilder::new(kind, "")
+                            .tags(vec![client_tag, pubkey_tag])
+                            .sign(&signer)
+                            .await?;
 
-                cx.background_spawn(async move {
-                    if let Err(e) = client.send_event_builder(builder).await {
-                        log::error!("Failed to send device announcement: {}", e);
-                    } else {
-                        log::info!("Device announcement sent");
-                    }
-                })
-                .await;
+                        if let Err(e) = client.send_event(&event).await {
+                            log::error!("Failed to send device announcement: {}", e);
+                        } else {
+                            log::info!("Device announcement sent");
+                        }
+
+                        Ok(())
+                    })
+                    .await;
 
                 Ok(Some(keys))
             }
@@ -653,11 +660,10 @@ impl Device {
         let client = get_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
+        let device_kind = Kind::Custom(DEVICE_ANNOUNCEMENT_KIND);
+
         // Create a device announcement filter
-        let device = Filter::new()
-            .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
-            .author(user)
-            .limit(1);
+        let device = Filter::new().kind(device_kind).author(user).limit(1);
 
         // Create a contact list filter
         let contacts = Filter::new().kind(Kind::ContactList).author(user).limit(1);
@@ -666,7 +672,12 @@ impl Device {
         let data = Filter::new()
             .author(user)
             .since(Timestamp::now())
-            .kinds(vec![Kind::Metadata, Kind::InboxRelays, Kind::RelayList]);
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::InboxRelays,
+                Kind::RelayList,
+                device_kind,
+            ]);
 
         // Create a filter for getting all gift wrapped events send to current user
         let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
