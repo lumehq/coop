@@ -213,18 +213,17 @@ impl Device {
         let client_keys = self.client_keys.clone();
 
         let read_task = cx.read_credentials(MASTER_KEYRING).boxed();
-        let entity = cx.entity();
 
         // User's messaging relays not found
         if profile.messaging_relays.is_none() {
-            cx.spawn_in(window, |_, mut cx| async move {
-                cx.window_handle()
-                    .update(&mut cx, |_, window, cx| {
-                        entity.update(cx, |this, cx| {
-                            this.render_setup_relays(window, cx);
-                        });
+            cx.spawn_in(window, |this, mut cx| async move {
+                cx.update(|window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.render_setup_relays(window, cx);
                     })
-                    .ok()
+                    .ok();
+                })
+                .ok();
             })
             .detach();
 
@@ -237,7 +236,17 @@ impl Device {
 
             // Initialize master keys for current user
             if let Ok(Some(keys)) = Device::fetch_master_keys(read_task, pubkey, &cx).await {
-                set_device_keys(keys).await;
+                set_device_keys(keys.clone()).await;
+
+                if let Ok(task) = cx.update(|_, cx| {
+                    cx.write_credentials(
+                        MASTER_KEYRING,
+                        keys.public_key().to_hex().as_str(),
+                        keys.secret_key().as_secret_bytes(),
+                    )
+                }) {
+                    _ = task.await;
+                }
 
                 if let Ok(event) = Device::fetch_request(pubkey, &cx).await {
                     println!("event: {:?}", event)
@@ -583,7 +592,6 @@ impl Device {
                         log::info!("Re-appointing this device as master");
                         return Ok(Some(keys));
                     }
-                    // Otherwise fall through to request device keys
                 }
 
                 Ok(None)
