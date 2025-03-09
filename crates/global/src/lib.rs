@@ -63,11 +63,11 @@ pub async fn get_device_keys() -> Option<Arc<dyn NostrSigner>> {
 }
 
 /// Set device keys
-pub async fn set_device_keys<T>(signer: T)
+pub async fn set_device_keys<T>(signer: Arc<T>)
 where
     T: NostrSigner + 'static,
 {
-    DEVICE_KEYS.lock().await.replace(Arc::new(signer));
+    DEVICE_KEYS.lock().await.replace(signer);
 
     // Re-subscribe to all messages
     smol::spawn(async move {

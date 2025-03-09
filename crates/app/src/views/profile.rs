@@ -4,7 +4,7 @@ use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity, EventEmitter,
     Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render,
-    SharedString, Styled, Window,
+    SharedString, Styled, Task, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
@@ -79,30 +79,18 @@ impl Profile {
             };
 
             let client = get_client();
-            let (tx, rx) = oneshot::channel::<Option<Metadata>>();
+            let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                let metadata = client
+                    .fetch_metadata(public_key, Duration::from_secs(2))
+                    .await?;
 
-            cx.background_spawn(async move {
-                let result = async {
-                    let signer = client.signer().await?;
-                    let public_key = signer.get_public_key().await?;
-                    let metadata = client
-                        .fetch_metadata(public_key, Duration::from_secs(2))
-                        .await?;
-
-                    Ok::<_, anyhow::Error>(metadata)
-                }
-                .await;
-
-                if let Ok(metadata) = result {
-                    _ = tx.send(Some(metadata));
-                } else {
-                    _ = tx.send(None);
-                };
-            })
-            .detach();
+                Ok(metadata)
+            });
 
             cx.spawn(|this, mut cx| async move {
-                if let Ok(Some(metadata)) = rx.await {
+                if let Ok(Some(metadata)) = task.await {
                     _ = cx.update_window(window_handle, |_, window, cx| {
                         _ = this.update(cx, |this: &mut Profile, cx| {
                             this.avatar_input.update(cx, |this, cx| {

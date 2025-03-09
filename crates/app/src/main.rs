@@ -6,7 +6,7 @@ use futures::{select, FutureExt};
 use global::{
     constants::{
         ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
-        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, NEW_MESSAGE_SUB_ID,
+        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, DEVICE_SUB_ID, NEW_MESSAGE_SUB_ID,
     },
     get_client, get_device_keys, set_device_name,
 };
@@ -41,6 +41,8 @@ enum Signal {
     RequestMasterKey(Event),
     /// Receive approve master key event
     ReceiveMasterKey(Event),
+    /// Receive announcement event
+    ReceiveAnnouncement,
     /// Receive EOSE
     Eose,
 }
@@ -117,6 +119,7 @@ fn main() {
             let rng_keys = Keys::generate();
             let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
             let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+            let device_id = SubscriptionId::new(DEVICE_SUB_ID);
             let mut notifications = client.notifications();
 
             while let Ok(notification) = notifications.recv().await {
@@ -190,9 +193,9 @@ fn main() {
                         }
                         RelayMessage::EndOfStoredEvents(subscription_id) => {
                             if all_id == *subscription_id {
-                                if let Err(e) = event_tx.send(Signal::Eose).await {
-                                    log::error!("Failed to send eose: {}", e)
-                                };
+                                _ = event_tx.send(Signal::Eose).await;
+                            } else if device_id == *subscription_id {
+                                _ = event_tx.send(Signal::ReceiveAnnouncement).await;
                             }
                         }
                         _ => {}
@@ -267,6 +270,13 @@ fn main() {
                                 Signal::Event(event) => {
                                     if let Some(chats) = ChatRegistry::global(cx) {
                                         chats.update(cx, |this, cx| this.push_message(event, cx))
+                                    }
+                                }
+                                Signal::ReceiveAnnouncement => {
+                                    if let Some(device) = Device::global(cx) {
+                                        device.update(cx, |this, cx| {
+                                            this.setup_device(window, cx);
+                                        });
                                     }
                                 }
                                 Signal::ReceiveMasterKey(event) => {

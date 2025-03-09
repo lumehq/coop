@@ -222,6 +222,7 @@ impl Compose {
                 let metadata = client
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await
+                    .unwrap_or_default()
                     .unwrap_or_default();
 
                 Ok(NostrProfile::new(public_key, metadata))
@@ -237,6 +238,7 @@ impl Compose {
                 let metadata = client
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await
+                    .unwrap_or_default()
                     .unwrap_or_default();
 
                 Ok(NostrProfile::new(public_key, metadata))
