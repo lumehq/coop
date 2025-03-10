@@ -293,10 +293,7 @@ impl ColorScaleSet {
         }
     }
 
-    pub fn darken(&self, cx: &App) -> Hsla {
-        match cx.theme().appearance {
-            Appearance::Light => self.light.step_12(),
-            Appearance::Dark => self.dark.step_1(),
-        }
+    pub fn darken(&self, _cx: &App) -> Hsla {
+        self.light.step_12()
     }
 }

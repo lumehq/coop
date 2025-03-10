@@ -282,7 +282,7 @@ fn main() {
                                 Signal::ReceiveMasterKey(event) => {
                                     if let Some(device) = Device::global(cx) {
                                         device.update(cx, |this, cx| {
-                                            this.handle_response(event, window, cx);
+                                            this.handle_approval(event, window, cx);
                                         });
                                     }
                                 }
