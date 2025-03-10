@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Error};
 use common::profile::NostrProfile;
@@ -123,6 +123,7 @@ pub struct Device {
     client_keys: Arc<Keys>,
     /// Device State
     state: Entity<DeviceState>,
+    requesters: Entity<HashSet<PublicKey>>,
     is_processing: bool,
 }
 
@@ -174,11 +175,13 @@ pub fn init(window: &mut Window, cx: &App) {
                 })
                 .ok();
 
+            let requesters = cx.new(|_| HashSet::new());
             let entity = cx.new(|_| Device {
                 profile: None,
                 is_processing: false,
                 state,
                 client_keys,
+                requesters,
             });
 
             window_handle
@@ -234,6 +237,13 @@ impl Device {
     pub fn set_processing(&mut self, is_processing: bool, cx: &mut Context<Self>) {
         self.is_processing = is_processing;
         cx.notify();
+    }
+
+    pub fn add_requester(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
+        self.requesters.update(cx, |this, cx| {
+            this.insert(public_key);
+            cx.notify();
+        });
     }
 
     /// Login and set user signer
@@ -354,6 +364,10 @@ impl Device {
 
     /// Initialize subscription for current user
     pub fn start_subscription(&self, cx: &Context<Self>) {
+        if self.is_processing {
+            return;
+        }
+
         let Some(profile) = self.profile() else {
             return;
         };
@@ -664,8 +678,10 @@ impl Device {
                         .await?;
 
                     let keys = Arc::new(Keys::parse(&secret)?);
+
                     // Update global state with new device keys
                     set_device_keys(keys).await;
+                    log::info!("Received master keys");
 
                     Ok(())
                 } else {
@@ -679,12 +695,15 @@ impl Device {
         cx.spawn_in(window, |_, mut cx| async move {
             if let Err(e) = task.await {
                 cx.update(|window, cx| {
-                    window.push_notification(Notification::error(e.to_string()), cx);
+                    window.push_notification(
+                        Notification::error(format!("Failed to decrypt: {}", e)),
+                        cx,
+                    );
                 })
                 .ok();
             } else {
                 cx.update(|window, cx| {
-                    window.close_modal(cx);
+                    window.close_all_modals(cx);
                     window.push_notification(
                         Notification::success("Device Keys request has been approved"),
                         cx,
@@ -699,7 +718,7 @@ impl Device {
     /// Received Master Keys request from other Nostr client
     ///
     /// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    pub fn recv_request(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn recv_request(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let Some(target_pubkey) = event
             .tags
             .find(TagKind::custom("pubkey"))
@@ -709,6 +728,13 @@ impl Device {
             log::error!("Invalid public key.");
             return;
         };
+
+        // Prevent processing duplicate requests
+        if self.requesters.read(cx).contains(&target_pubkey) {
+            return;
+        }
+
+        self.add_requester(target_pubkey, cx);
 
         let client = get_client();
         let read_keys = cx.read_credentials(MASTER_KEYRING);
