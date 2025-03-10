@@ -18,7 +18,9 @@ use crate::device::Device;
 const LOGO_URL: &str = "brand/coop.svg";
 const TITLE: &str = "Welcome to Coop!";
 const SUBTITLE: &str = "A Nostr client for secure communication.";
-const JOIN_URL: &str = "https://start.njump.me/";
+// TODO: Replace it with Persona Mobile App
+const NSTART_URL: &str =
+    "https://start.njump.me?an=Coop&at=ios&ac=coop&afb=yes&asf=yes&aan=null&aac=null&arr=wss://relay.damus.io&awr=wss://relay.primal.net,wss://purplerelay.com,wss://offchain.pub";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -402,7 +404,7 @@ impl Render for Onboarding {
                                         .ghost()
                                         .w_full()
                                         .on_click(|_, _, cx| {
-                                            cx.open_url(JOIN_URL);
+                                            cx.open_url(NSTART_URL);
                                         }),
                                 ),
                         }
