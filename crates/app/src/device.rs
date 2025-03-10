@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Error};
 use common::profile::NostrProfile;
@@ -39,19 +39,32 @@ pub enum DeviceState {
 
 impl DeviceState {
     pub fn subscribe(&self, window: &mut Window, cx: &mut Context<Self>) {
+        log::info!("Device State: {:?}", self);
         match self {
             Self::Master => {
                 let client = get_client();
                 let task: Task<Result<(), Error>> = cx.background_spawn(async move {
                     let signer = client.signer().await?;
                     let public_key = signer.get_public_key().await?;
+
+                    let opts =
+                        SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+                    let filter = Filter::new()
+                        .kind(Kind::Custom(DEVICE_REQUEST_KIND))
+                        .author(public_key)
+                        .limit(1);
+
+                    // Subscribe for the latest request
+                    client.subscribe(filter, Some(opts)).await?;
+
                     let filter = Filter::new()
                         .kind(Kind::Custom(DEVICE_REQUEST_KIND))
                         .author(public_key)
                         .since(Timestamp::now());
 
                     // Subscribe for new device requests
-                    _ = client.subscribe(filter, None).await;
+                    client.subscribe(filter, None).await?;
 
                     Ok(())
                 });
@@ -110,6 +123,7 @@ pub struct Device {
     client_keys: Arc<Keys>,
     /// Device State
     state: Entity<DeviceState>,
+    is_processing: bool,
 }
 
 pub fn init(window: &mut Window, cx: &App) {
@@ -162,6 +176,7 @@ pub fn init(window: &mut Window, cx: &App) {
 
             let entity = cx.new(|_| Device {
                 profile: None,
+                is_processing: false,
                 state,
                 client_keys,
             });
@@ -214,6 +229,11 @@ impl Device {
             *this = state;
             cx.notify();
         });
+    }
+
+    pub fn set_processing(&mut self, is_processing: bool, cx: &mut Context<Self>) {
+        self.is_processing = is_processing;
+        cx.notify();
     }
 
     /// Login and set user signer
@@ -395,13 +415,21 @@ impl Device {
         .detach();
     }
 
-    /// Setup device
+    /// Setup Device
     ///
     /// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    pub fn setup_device(&mut self, window: &mut Window, cx: &Context<Self>) {
-        let Some(profile) = self.profile() else {
+    pub fn setup_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(profile) = self.profile().cloned() else {
             return;
         };
+
+        // If processing, return early
+        if self.is_processing {
+            return;
+        }
+
+        // Only process if device keys are not set
+        self.set_processing(true, cx);
 
         let client = get_client();
         let public_key = profile.public_key;
@@ -442,8 +470,7 @@ impl Device {
 
                                 cx.update(|window, cx| {
                                     this.update(cx, |this, cx| {
-                                        this.request_keys(window, cx);
-                                        this.set_state(DeviceState::Master, cx);
+                                        this.request_master_keys(window, cx);
                                     })
                                 })
                                 .ok();
@@ -457,7 +484,6 @@ impl Device {
                             cx.update(|window, cx| {
                                 this.update(cx, |this, cx| {
                                     this.set_master_keys(secret, window, cx);
-                                    this.set_state(DeviceState::Master, cx);
                                 })
                             })
                             .ok();
@@ -468,8 +494,7 @@ impl Device {
 
                             cx.update(|window, cx| {
                                 this.update(cx, |this, cx| {
-                                    this.request_keys(window, cx);
-                                    this.set_state(DeviceState::Minion, cx);
+                                    this.request_master_keys(window, cx);
                                 })
                             })
                             .ok();
@@ -478,12 +503,11 @@ impl Device {
                 }
                 Err(_) => {
                     log::info!("Device Announcement not found.");
-                    log::info!("Appoint this device as master.");
+                    log::info!("Appoint this device as Master Device.");
 
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             this.set_new_master_keys(window, cx);
-                            this.set_state(DeviceState::Master, cx);
                         })
                         .ok();
                     })
@@ -518,7 +542,7 @@ impl Device {
             Ok(Arc::new(keys))
         });
 
-        cx.spawn_in(window, |_, mut cx| async move {
+        cx.spawn_in(window, |this, mut cx| async move {
             if get_device_keys().await.is_some() {
                 return;
             }
@@ -539,6 +563,14 @@ impl Device {
                         log::error!("Failed to write device keys to keyring: {}", e);
                     }
                 };
+
+                cx.update(|_, cx| {
+                    this.update(cx, |this, cx| {
+                        this.set_state(DeviceState::Master, cx);
+                    })
+                    .ok();
+                })
+                .ok();
             }
         })
         .detach();
@@ -558,9 +590,9 @@ impl Device {
             log::info!("Re-appointing this device as Master Device.");
             set_device_keys(keys).await;
 
-            cx.update(|window, cx| {
+            cx.update(|_, cx| {
                 this.update(cx, |this, cx| {
-                    this.fetch_request(window, cx);
+                    this.set_state(DeviceState::Master, cx);
                 })
                 .ok();
             })
@@ -572,7 +604,7 @@ impl Device {
     /// Send a request to ask for device keys from the other Nostr client
     ///
     /// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    pub fn request_keys(&self, window: &mut Window, cx: &Context<Self>) {
+    pub fn request_master_keys(&self, window: &mut Window, cx: &Context<Self>) {
         let client = get_client();
         let app_name = get_app_name();
         let client_keys = self.client_keys.clone();
@@ -603,47 +635,8 @@ impl Device {
             if task.await.is_ok() {
                 cx.update(|window, cx| {
                     this.update(cx, |this, cx| {
+                        this.set_state(DeviceState::Minion, cx);
                         this.render_waiting_modal(window, cx);
-                    })
-                    .ok();
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
-    /// Fetch the latest request from the other Nostr client
-    ///
-    /// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    pub fn fetch_request(&self, window: &mut Window, cx: &Context<Self>) {
-        let Some(profile) = self.profile() else {
-            return;
-        };
-
-        let client = get_client();
-        let public_key = profile.public_key;
-
-        let filter = Filter::new()
-            .kind(Kind::Custom(DEVICE_REQUEST_KIND))
-            .author(public_key)
-            .limit(1);
-
-        let task: Task<Result<Event, Error>> = cx.background_spawn(async move {
-            let events = client.fetch_events(filter, Duration::from_secs(2)).await?;
-
-            if let Some(event) = events.first_owned() {
-                Ok(event)
-            } else {
-                Err(anyhow!("No request found"))
-            }
-        });
-
-        cx.spawn_in(window, |this, mut cx| async move {
-            if let Ok(event) = task.await {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.handle_request(event, window, cx);
                     })
                     .ok();
                 })
@@ -656,20 +649,28 @@ impl Device {
     /// Received Device Keys approval from Master Device,
     ///
     /// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    pub fn handle_approval(&self, event: Event, window: &mut Window, cx: &Context<Self>) {
+    pub fn recv_approval(&self, event: Event, window: &mut Window, cx: &Context<Self>) {
         let local_signer = self.client_keys.clone();
 
         let task = cx.background_spawn(async move {
-            if let Some(public_key) = event.tags.public_keys().copied().last() {
-                let secret = local_signer
-                    .nip44_decrypt(&public_key, &event.content)
-                    .await?;
+            if let Some(tag) = event
+                .tags
+                .find(TagKind::custom("P"))
+                .and_then(|tag| tag.content())
+            {
+                if let Ok(public_key) = PublicKey::from_str(tag) {
+                    let secret = local_signer
+                        .nip44_decrypt(&public_key, &event.content)
+                        .await?;
 
-                let keys = Arc::new(Keys::parse(&secret)?);
-                // Update global state with new device keys
-                set_device_keys(keys).await;
+                    let keys = Arc::new(Keys::parse(&secret)?);
+                    // Update global state with new device keys
+                    set_device_keys(keys).await;
 
-                Ok(())
+                    Ok(())
+                } else {
+                    Err(anyhow!("Public Key is invalid"))
+                }
             } else {
                 Err(anyhow!("Failed to decrypt the Master Keys"))
             }
@@ -698,14 +699,14 @@ impl Device {
     /// Received Master Keys request from other Nostr client
     ///
     /// NIP-4e: <https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md>
-    pub fn handle_request(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(public_key) = event
+    pub fn recv_request(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(target_pubkey) = event
             .tags
             .find(TagKind::custom("pubkey"))
             .and_then(|tag| tag.content())
             .and_then(|content| PublicKey::parse(content).ok())
         else {
-            log::error!("Invalid public key");
+            log::error!("Invalid public key.");
             return;
         };
 
@@ -742,14 +743,15 @@ impl Device {
 
                         // Get device's secret key
                         let device_secret = SecretKey::from_slice(&secret)?;
+                        let device_secret_hex = device_secret.to_secret_hex();
 
                         // Encrypt device's secret key by using NIP-44
                         let content = local_signer
-                            .nip44_encrypt(&public_key, &device_secret.to_secret_hex())
+                            .nip44_encrypt(&target_pubkey, &device_secret_hex)
                             .await?;
 
                         // Create pubkey tag for other device (lowercase p)
-                        let other_tag = Tag::public_key(public_key);
+                        let other_tag = Tag::public_key(target_pubkey);
 
                         // Create pubkey tag for this device (uppercase P)
                         let local_tag = Tag::custom(

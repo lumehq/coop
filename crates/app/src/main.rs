@@ -178,7 +178,7 @@ fn main() {
                                         .await;
                                 }
                                 Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
-                                    log::info!("Device announcement received");
+                                    log::info!("Device Announcement received");
 
                                     if let Some(tag) = event
                                         .tags
@@ -282,14 +282,14 @@ fn main() {
                                 Signal::ReceiveMasterKey(event) => {
                                     if let Some(device) = Device::global(cx) {
                                         device.update(cx, |this, cx| {
-                                            this.handle_approval(event, window, cx);
+                                            this.recv_approval(event, window, cx);
                                         });
                                     }
                                 }
                                 Signal::RequestMasterKey(event) => {
                                     if let Some(device) = Device::global(cx) {
                                         device.update(cx, |this, cx| {
-                                            this.handle_request(event, window, cx);
+                                            this.recv_request(event, window, cx);
                                         });
                                     }
                                 }
