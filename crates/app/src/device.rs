@@ -265,8 +265,7 @@ impl Device {
             // Fetch user's metadata
             let metadata = client
                 .fetch_metadata(public_key, Duration::from_secs(2))
-                .await
-                .unwrap_or_default()
+                .await?
                 .unwrap_or_default();
 
             // Get user's inbox relays
@@ -693,6 +692,11 @@ impl Device {
         });
 
         cx.spawn_in(window, |_, mut cx| async move {
+            // No need to update if device keys are already available
+            if get_device_keys().await.is_some() {
+                return;
+            }
+
             if let Err(e) = task.await {
                 cx.update(|window, cx| {
                     window.push_notification(
@@ -821,7 +825,7 @@ impl Device {
 
             this.keyboard(false)
                 .closable(false)
-                .width(px(420.))
+                .width(px(430.))
                 .title("Your Messaging Relays are not configured")
                 .child(relays.clone())
                 .footer(
@@ -857,7 +861,7 @@ impl Device {
 
             this.keyboard(false)
                 .closable(false)
-                .width(px(420.))
+                .width(px(430.))
                 .child(
                     div()
                         .flex()

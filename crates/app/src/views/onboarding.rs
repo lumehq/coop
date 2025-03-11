@@ -235,6 +235,89 @@ impl Render for Onboarding {
                     )
                     .child(div().w_72().w_full().flex().flex_col().gap_2().map(|this| {
                         match self.open {
+                            PageKind::Connect => this
+                                .when_some(self.connect_url.read(cx).as_ref(), |this, path| {
+                                    this.child(
+                                        div()
+                                            .mb_2()
+                                            .p_2()
+                                            .size_72()
+                                            .flex()
+                                            .flex_col()
+                                            .items_center()
+                                            .justify_center()
+                                            .gap_2()
+                                            .rounded_lg()
+                                            .shadow_md()
+                                            .when(cx.theme().appearance.is_dark(), |this| {
+                                                this.shadow_none().border_1().border_color(
+                                                    cx.theme().base.step(cx, ColorScaleStep::SIX),
+                                                )
+                                            })
+                                            .bg(cx.theme().background)
+                                            .child(img(path.as_path()).h_64()),
+                                    )
+                                })
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_center()
+                                        .font_semibold()
+                                        .line_height(relative(1.2))
+                                        .child("Scan this QR to connect"),
+                                )
+                                .child(
+                                    Button::new("wait_for_connection")
+                                        .label("Waiting for connection")
+                                        .primary()
+                                        .w_full()
+                                        .loading(true)
+                                        .disabled(true),
+                                )
+                                .child(
+                                    Button::new("use_url")
+                                        .label("Use Bunker URL")
+                                        .custom(
+                                            ButtonCustomVariant::new(window, cx)
+                                                .color(
+                                                    cx.theme().base.step(cx, ColorScaleStep::THREE),
+                                                )
+                                                .border(
+                                                    cx.theme().base.step(cx, ColorScaleStep::THREE),
+                                                )
+                                                .hover(
+                                                    cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                                                )
+                                                .active(
+                                                    cx.theme().base.step(cx, ColorScaleStep::FIVE),
+                                                )
+                                                .foreground(
+                                                    cx.theme()
+                                                        .base
+                                                        .step(cx, ColorScaleStep::TWELVE),
+                                                ),
+                                        )
+                                        .w_full()
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.open(PageKind::Bunker, window, cx);
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .my_2()
+                                        .w_full()
+                                        .h_px()
+                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                                )
+                                .child(
+                                    Button::new("cancel")
+                                        .label("Cancel")
+                                        .ghost()
+                                        .w_full()
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.open(PageKind::Selection, window, cx);
+                                        })),
+                                ),
                             PageKind::Bunker => this
                                 .child(
                                     div()
@@ -271,108 +354,6 @@ impl Render for Onboarding {
                                         })),
                                 )
                                 .child(
-                                    Button::new("use_url")
-                                        .label("Get Connection URL")
-                                        .custom(
-                                            ButtonCustomVariant::new(window, cx)
-                                                .color(
-                                                    cx.theme().base.step(cx, ColorScaleStep::THREE),
-                                                )
-                                                .border(
-                                                    cx.theme().base.step(cx, ColorScaleStep::THREE),
-                                                )
-                                                .hover(
-                                                    cx.theme().base.step(cx, ColorScaleStep::FOUR),
-                                                )
-                                                .active(
-                                                    cx.theme().base.step(cx, ColorScaleStep::FIVE),
-                                                )
-                                                .foreground(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::TWELVE),
-                                                ),
-                                        )
-                                        .w_full()
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.wait_for_connection(window, cx);
-                                        })),
-                                )
-                                .child(
-                                    div()
-                                        .my_2()
-                                        .w_full()
-                                        .h_px()
-                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE)),
-                                )
-                                .child(
-                                    Button::new("cancel")
-                                        .label("Cancel")
-                                        .ghost()
-                                        .w_full()
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.open(PageKind::Selection, window, cx);
-                                        })),
-                                ),
-                            PageKind::Connect => this
-                                .when_some(self.connect_url.read(cx).as_ref(), |this, path| {
-                                    this.child(
-                                        div()
-                                            .mb_2()
-                                            .p_2()
-                                            .size_72()
-                                            .flex()
-                                            .flex_col()
-                                            .items_center()
-                                            .justify_center()
-                                            .gap_2()
-                                            .rounded_lg()
-                                            .shadow_md()
-                                            .when(cx.theme().appearance.is_dark(), |this| {
-                                                this.shadow_none().border_1().border_color(
-                                                    cx.theme().base.step(cx, ColorScaleStep::SIX),
-                                                )
-                                            })
-                                            .bg(cx.theme().background)
-                                            .child(img(path.as_path()).h_64()),
-                                    )
-                                })
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_center()
-                                        .font_semibold()
-                                        .line_height(relative(1.2))
-                                        .child("Scan this QR to connect"),
-                                )
-                                .child(
-                                    Button::new("wait_for_connection")
-                                        .label("Waiting for connection")
-                                        .custom(
-                                            ButtonCustomVariant::new(window, cx)
-                                                .color(
-                                                    cx.theme().base.step(cx, ColorScaleStep::THREE),
-                                                )
-                                                .border(
-                                                    cx.theme().base.step(cx, ColorScaleStep::THREE),
-                                                )
-                                                .hover(
-                                                    cx.theme().base.step(cx, ColorScaleStep::FOUR),
-                                                )
-                                                .active(
-                                                    cx.theme().base.step(cx, ColorScaleStep::FIVE),
-                                                )
-                                                .foreground(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::TWELVE),
-                                                ),
-                                        )
-                                        .w_full()
-                                        .loading(true)
-                                        .disabled(true),
-                                )
-                                .child(
                                     div()
                                         .my_2()
                                         .w_full()
@@ -395,7 +376,7 @@ impl Render for Onboarding {
                                         .primary()
                                         .w_full()
                                         .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.open(PageKind::Bunker, window, cx);
+                                            this.wait_for_connection(window, cx);
                                         })),
                                 )
                                 .child(
