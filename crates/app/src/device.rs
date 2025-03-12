@@ -39,7 +39,6 @@ pub enum DeviceState {
 
 impl DeviceState {
     pub fn subscribe(&self, window: &mut Window, cx: &mut Context<Self>) {
-        log::info!("Device State: {:?}", self);
         match self {
             Self::Master => {
                 let client = get_client();
@@ -156,25 +155,7 @@ pub fn init(window: &mut Window, cx: &App) {
 
         cx.update(|cx| {
             let state = cx.new(|_| DeviceState::None);
-
-            window_handle
-                .update(cx, |_, window, cx| {
-                    // Open the onboarding view
-                    Root::update(window, cx, |this, window, cx| {
-                        this.replace_view(onboarding::init(window, cx).into());
-                        cx.notify();
-                    });
-
-                    window
-                        .observe(&state, cx, |this, window, cx| {
-                            this.update(cx, |this, cx| {
-                                this.subscribe(window, cx);
-                            });
-                        })
-                        .detach();
-                })
-                .ok();
-
+            let weak_state = state.downgrade();
             let requesters = cx.new(|_| HashSet::new());
             let entity = cx.new(|_| Device {
                 profile: None,
@@ -192,6 +173,18 @@ pub fn init(window: &mut Window, cx: &App) {
                         cx.notify();
                     });
 
+                    // Observe the DeviceState changes
+                    if let Some(state) = weak_state.upgrade() {
+                        window
+                            .observe(&state, cx, |this, window, cx| {
+                                this.update(cx, |this, cx| {
+                                    this.subscribe(window, cx);
+                                });
+                            })
+                            .detach();
+                    };
+
+                    // Observe the Device changes
                     window
                         .observe(&entity, cx, |this, window, cx| {
                             this.update(cx, |this, cx| {

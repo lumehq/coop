@@ -1,7 +1,6 @@
 pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 
-pub const KEYRING: &str = "Coop Safe Storage";
 pub const CLIENT_KEYRING: &str = "Coop Client Keys";
 pub const MASTER_KEYRING: &str = "Coop Master Keys";
 

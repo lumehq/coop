@@ -11,7 +11,7 @@ use gpui::{
 use std::rc::Rc;
 
 const HEIGHT: Pixels = px(34.);
-const TITLE_BAR_HEIGHT: Pixels = px(35.);
+const TITLE_BAR_HEIGHT: Pixels = px(34.);
 #[cfg(target_os = "macos")]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
 #[cfg(not(target_os = "macos"))]

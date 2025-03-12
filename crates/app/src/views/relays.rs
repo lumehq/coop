@@ -71,7 +71,7 @@ impl Relays {
                 if let Ok(relays) = task.await {
                     _ = cx.update(|cx| {
                         _ = this.update(cx, |this: &mut Vec<RelayUrl>, cx| {
-                            this.extend(relays);
+                            *this = relays;
                             cx.notify();
                         });
                     });

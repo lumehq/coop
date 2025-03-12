@@ -634,7 +634,18 @@ impl ButtonVariant {
             _ => cx.theme().base.step(cx, ColorScaleStep::THREE),
         };
 
-        let fg = cx.theme().base.step(cx, ColorScaleStep::ELEVEN);
+        let fg = match self {
+            ButtonVariant::Primary => match cx.theme().accent.name().to_string().as_str() {
+                "Sky" => cx.theme().base.darken(cx),
+                "Mint" => cx.theme().base.darken(cx),
+                "Lime" => cx.theme().base.darken(cx),
+                "Amber" => cx.theme().base.darken(cx),
+                "Yellow" => cx.theme().base.darken(cx),
+                _ => cx.theme().accent.step(cx, ColorScaleStep::ONE),
+            },
+            _ => cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+        };
+
         let border = bg;
         let underline = self.underline(window, cx);
         let shadow = false;

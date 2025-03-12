@@ -24,12 +24,12 @@ use nostr_sdk::{
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
-use ui::Root;
+use ui::{theme::Theme, Root};
 use views::startup;
 
-mod asset;
-mod device;
-mod views;
+pub(crate) mod asset;
+pub(crate) mod device;
+pub(crate) mod views;
 
 actions!(coop, [Quit]);
 
@@ -245,6 +245,13 @@ fn main() {
 
         // Open a window with default options
         cx.open_window(opts, |window, cx| {
+            // Automatically sync theme with system appearance
+            window
+                .observe_window_appearance(|window, cx| {
+                    Theme::sync_system_appearance(Some(window), cx);
+                })
+                .detach();
+
             // Initialize components
             ui::init(cx);
 
