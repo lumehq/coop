@@ -3,9 +3,11 @@ use asset::Assets;
 use chats::registry::ChatRegistry;
 use device::Device;
 use futures::{select, FutureExt};
+#[cfg(not(target_os = "linux"))]
+use global::constants::APP_NAME;
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
+        ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
         DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, DEVICE_SUB_ID, NEW_MESSAGE_SUB_ID,
     },
     get_client, get_device_keys, set_device_name,
