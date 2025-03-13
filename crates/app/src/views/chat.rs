@@ -98,6 +98,7 @@ pub struct Chat {
     // Chat Room
     room: WeakEntity<Room>,
     messages: Entity<Vec<Message>>,
+    seens: Entity<Vec<EventId>>,
     list_state: ListState,
     #[allow(dead_code)]
     subscriptions: Vec<Subscription>,
@@ -116,6 +117,7 @@ impl Chat {
         cx: &mut App,
     ) -> Entity<Self> {
         let messages = cx.new(|_| vec![Message::placeholder()]);
+        let seens = cx.new(|_| vec![]);
         let attaches = cx.new(|_| None);
         let input = cx.new(|cx| {
             TextInput::new(window, cx)
@@ -165,6 +167,7 @@ impl Chat {
                 id: id.to_string().into(),
                 room,
                 messages,
+                seens,
                 list_state,
                 input,
                 attaches,
@@ -244,10 +247,17 @@ impl Chat {
         self.list_state.splice(old_len..old_len, 1);
     }
 
-    fn push_message(&self, event: &Event, _window: &mut Window, cx: &mut Context<Self>) {
+    fn push_message(&mut self, event: &Event, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(model) = self.room.upgrade() else {
             return;
         };
+
+        // Prevent duplicate messages
+        if self.seens.read(cx).iter().any(|id| id == &event.id) {
+            return;
+        }
+        // Add ID to seen list
+        self.seen(event.id, cx);
 
         let old_len = self.messages.read(cx).len();
         let room = model.read(cx);
@@ -448,6 +458,13 @@ impl Chat {
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.is_uploading = status;
         cx.notify();
+    }
+
+    fn seen(&mut self, id: EventId, cx: &mut Context<Self>) {
+        self.seens.update(cx, |this, cx| {
+            this.push(id);
+            cx.notify();
+        });
     }
 
     fn render_message(

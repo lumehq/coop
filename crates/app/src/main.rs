@@ -141,19 +141,15 @@ fn main() {
                                             pubkeys.push(event.pubkey);
 
                                             // Save the event to the database, use for query directly.
-                                            if let Err(e) =
-                                                client.database().save_event(&event).await
-                                            {
-                                                log::error!("Failed to save event: {}", e);
-                                            }
-
-                                            // Send all pubkeys to the batch
-                                            _ = batch_tx.send(pubkeys).await;
+                                            _ = client.database().save_event(&event).await;
 
                                             // Send this event to the GPUI
                                             if new_id == *subscription_id {
                                                 _ = event_tx.send(Signal::Event(event)).await;
                                             }
+
+                                            // Send all pubkeys to the batch
+                                            _ = batch_tx.send(pubkeys).await;
                                         }
                                     }
                                 }
@@ -180,12 +176,18 @@ fn main() {
                                 Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
                                     log::info!("Device Announcement received");
 
-                                    if let Some(tag) = event
-                                        .tags
-                                        .find(TagKind::custom("client"))
-                                        .and_then(|tag| tag.content())
-                                    {
-                                        set_device_name(tag).await;
+                                    if let Ok(signer) = client.signer().await {
+                                        if let Ok(public_key) = signer.get_public_key().await {
+                                            if event.pubkey == public_key {
+                                                if let Some(tag) = event
+                                                    .tags
+                                                    .find(TagKind::custom("client"))
+                                                    .and_then(|tag| tag.content())
+                                                {
+                                                    set_device_name(tag).await;
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 _ => {}

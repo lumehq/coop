@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 
-use anyhow::{anyhow, Context, Error};
-use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
+use anyhow::{anyhow, Error};
+use common::{
+    last_seen::LastSeen,
+    profile::NostrProfile,
+    utils::{device_pubkey, room_hash},
+};
 use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client, get_device_keys};
 use gpui::{App, AppContext, Entity, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
@@ -194,41 +198,35 @@ impl Room {
 
                 // Check if the pubkey has a device announcement,
                 // then choose the appropriate signer based on device presence
-                if let Some(event) = client.database().query(filter).await?.first_owned() {
-                    log::info!("Use device signer to send message");
-                    let signer = &device;
+                let event = match client.database().query(filter).await?.first() {
+                    Some(event) => {
+                        log::info!("Use device signer to send message");
+                        let signer = &device;
+                        // Get the device's public key of other user
+                        let device_pubkey = device_pubkey(event)?;
 
-                    // Get the device's public key of other user
-                    let n_tag = event.tags.find(TagKind::custom("n")).context("Not found")?;
-                    let hex = n_tag.content().context("Not found")?;
-                    let target_pubkey = PublicKey::parse(hex)?;
+                        let rumor = EventBuilder::private_msg_rumor(*pubkey, &content)
+                            .tags(tags.clone())
+                            .build(user_pubkey);
 
-                    let rumor = EventBuilder::private_msg_rumor(*pubkey, &content)
-                        .tags(tags.clone())
-                        .build(user_pubkey);
-
-                    let event = EventBuilder::gift_wrap(
-                        signer,
-                        &target_pubkey,
-                        rumor,
-                        vec![Tag::public_key(*pubkey)],
-                    )
-                    .await?;
-
-                    if let Err(e) = client.send_event(&event).await {
-                        // Convert error into string, then push it to the report
-                        report.push(e.to_string());
+                        EventBuilder::gift_wrap(
+                            signer,
+                            &device_pubkey,
+                            rumor,
+                            vec![Tag::public_key(*pubkey)],
+                        )
+                        .await?
                     }
-                } else {
-                    log::info!("Use user signer to send message");
-                    let signer = &client.signer().await?;
+                    None => {
+                        log::info!("Use user signer to send message");
+                        let signer = client.signer().await?;
 
-                    let event =
-                        EventBuilder::private_msg(signer, *pubkey, &content, tags.clone()).await?;
-
-                    if let Err(e) = client.send_event(&event).await {
-                        report.push(e.to_string());
+                        EventBuilder::private_msg(&signer, *pubkey, &content, tags.clone()).await?
                     }
+                };
+
+                if let Err(e) = client.send_event(&event).await {
+                    report.push(e.to_string());
                 }
             }
 

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use global::constants::NIP96_SERVER;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -41,6 +42,14 @@ pub fn room_hash(event: &Event) -> u64 {
         .hash(&mut hasher);
 
     hasher.finish()
+}
+
+pub fn device_pubkey(event: &Event) -> Result<PublicKey, anyhow::Error> {
+    let n_tag = event.tags.find(TagKind::custom("n")).context("Invalid")?;
+    let hex = n_tag.content().context("Invalid")?;
+    let pubkey = PublicKey::parse(hex)?;
+
+    Ok(pubkey)
 }
 
 pub fn random_name(length: usize) -> String {

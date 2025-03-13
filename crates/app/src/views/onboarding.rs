@@ -5,7 +5,7 @@ use gpui::{
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
     input::{InputEvent, TextInput},
@@ -104,8 +104,12 @@ impl Onboarding {
     }
 
     fn connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(model) = Device::global(cx) else {
+            return;
+        };
+
         let text = self.bunker_input.read(cx).text().to_string();
-        let keys = Keys::generate();
+        let keys = Arc::unwrap_or_clone(model.read(cx).client_keys());
 
         self.set_loading(true, cx);
 

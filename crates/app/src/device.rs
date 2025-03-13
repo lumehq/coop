@@ -211,6 +211,10 @@ impl Device {
         cx.set_global(GlobalDevice(device));
     }
 
+    pub fn client_keys(&self) -> Arc<Keys> {
+        self.client_keys.clone()
+    }
+
     pub fn profile(&self) -> Option<&NostrProfile> {
         self.profile.as_ref()
     }
