@@ -27,9 +27,9 @@ use nostr_sdk::{
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::{theme::Theme, Root};
-use views::startup;
 
 pub(crate) mod asset;
+pub(crate) mod chatspace;
 pub(crate) mod device;
 pub(crate) mod views;
 
@@ -266,7 +266,7 @@ fn main() {
             device::init(window, cx);
 
             cx.new(|cx| {
-                let root = Root::new(startup::init(window, cx).into(), window, cx);
+                let root = Root::new(chatspace::init(window, cx).into(), window, cx);
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, |_, mut cx| async move {

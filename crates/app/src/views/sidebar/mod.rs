@@ -15,7 +15,7 @@ use ui::{
     ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
-use super::app::AddPanel;
+use crate::chatspace::{AddPanel, PanelKind};
 
 mod compose;
 
@@ -159,7 +159,7 @@ impl Sidebar {
     fn open(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         window.dispatch_action(
             Box::new(AddPanel::new(
-                super::app::PanelKind::Room(id),
+                PanelKind::Room(id),
                 ui::dock_area::dock::DockPlacement::Center,
             )),
             cx,

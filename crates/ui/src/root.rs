@@ -120,10 +120,10 @@ struct ActiveModal {
 
 /// Root is a view for the App window for as the top level view (Must be the first view in the window).
 ///
-/// It is used to manage the Drawer, Modal, and Notification.
+/// It is used to manage the Modal, and Notification.
 pub struct Root {
     /// Used to store the focus handle of the previous view.
-    /// When the Modal, Drawer closes, we will focus back to the previous view.
+    /// When the Modal closes, we will focus back to the previous view.
     previous_focus_handle: Option<FocusHandle>,
     active_modals: Vec<ActiveModal>,
     pub notification: Entity<NotificationList>,

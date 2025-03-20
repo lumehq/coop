@@ -38,7 +38,7 @@ impl Welcome {
 
 impl Panel for Welcome {
     fn panel_id(&self) -> SharedString {
-        "WelcomePanel".into()
+        self.name.clone()
     }
 
     fn title(&self, _cx: &App) -> AnyElement {

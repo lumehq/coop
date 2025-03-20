@@ -1,14 +1,17 @@
 use common::qr::create_qr;
 use gpui::{
-    div, img, prelude::FluentBuilder, relative, svg, App, AppContext, Context, Entity, IntoElement,
-    ParentElement, Render, SharedString, Styled, Subscription, Window,
+    div, img, prelude::FluentBuilder, relative, svg, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, SharedString, Styled,
+    Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
+    dock_area::panel::{Panel, PanelEvent},
     input::{InputEvent, TextInput},
+    popup_menu::PopupMenu,
     theme::{scale::ColorScaleStep, ActiveTheme},
     Disableable, Size, StyledExt,
 };
@@ -33,6 +36,12 @@ enum PageKind {
 }
 
 pub struct Onboarding {
+    // Panel
+    name: SharedString,
+    closable: bool,
+    zoomable: bool,
+    focus_handle: FocusHandle,
+    // Onboarding
     bunker_input: Entity<TextInput>,
     connect_url: Entity<Option<PathBuf>>,
     error_message: Entity<Option<SharedString>>,
@@ -66,6 +75,10 @@ impl Onboarding {
             ));
 
             Self {
+                name: "Onboarding".into(),
+                closable: true,
+                zoomable: true,
+                focus_handle: cx.focus_handle(),
                 bunker_input,
                 connect_url,
                 error_message,
@@ -188,6 +201,40 @@ impl Onboarding {
     fn open(&mut self, kind: PageKind, _window: &mut Window, cx: &mut Context<Self>) {
         self.open = kind;
         cx.notify();
+    }
+}
+
+impl Panel for Onboarding {
+    fn panel_id(&self) -> SharedString {
+        self.name.clone()
+    }
+
+    fn title(&self, _cx: &App) -> AnyElement {
+        self.name.clone().into_any_element()
+    }
+
+    fn closable(&self, _cx: &App) -> bool {
+        self.closable
+    }
+
+    fn zoomable(&self, _cx: &App) -> bool {
+        self.zoomable
+    }
+
+    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
+        menu.track_focus(&self.focus_handle)
+    }
+
+    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
+        vec![]
+    }
+}
+
+impl EventEmitter<PanelEvent> for Onboarding {}
+
+impl Focusable for Onboarding {
+    fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
+        self.focus_handle.clone()
     }
 }
 

@@ -1,11 +1,8 @@
-mod chat;
-mod contacts;
-mod profile;
-mod settings;
-mod sidebar;
-mod welcome;
-
-pub mod app;
+pub mod chat;
+pub mod contacts;
 pub mod onboarding;
+pub mod profile;
 pub mod relays;
-pub mod startup;
+pub mod settings;
+pub mod sidebar;
+pub mod welcome;

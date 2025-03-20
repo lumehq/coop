@@ -8,14 +8,14 @@ use serde::Deserialize;
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
-    dock_area::{dock::DockPlacement, DockArea, DockItem},
+    dock_area::{dock::DockPlacement, panel::PanelView, DockArea, DockItem},
     popup_menu::PopupMenuExt,
     theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
     ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use super::{chat, contacts, onboarding, profile, relays, settings, sidebar, welcome};
-use crate::device::Device;
+use crate::views::{chat, contacts, onboarding, profile, relays, settings, welcome};
+use crate::{device::*, views::sidebar};
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -43,46 +43,75 @@ impl_internal_actions!(dock, [AddPanel]);
 // Account actions
 actions!(account, [Logout]);
 
-pub fn init(window: &mut Window, cx: &mut App) -> Entity<AppView> {
-    AppView::new(window, cx)
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
+    ChatSpace::new(window, cx)
 }
 
-pub struct AppView {
+pub struct ChatSpace {
+    titlebar: bool,
     dock: Entity<DockArea>,
 }
 
-impl AppView {
+impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        // Initialize dock layout
         let dock = cx.new(|cx| DockArea::new(window, cx));
-        let weak_dock = dock.downgrade();
+        let titlebar = false;
 
-        // Initialize left dock
-        let left_panel = DockItem::panel(Arc::new(sidebar::init(window, cx)));
+        cx.new(|_| Self { dock, titlebar })
+    }
 
-        // Initial central dock
-        let center_panel = DockItem::split_with_sizes(
-            Axis::Vertical,
-            vec![DockItem::tabs(
-                vec![Arc::new(welcome::init(window, cx))],
-                None,
-                &weak_dock,
-                window,
-                cx,
-            )],
-            vec![None],
-            &weak_dock,
-            window,
-            cx,
-        );
+    pub fn set_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                let panel = Arc::new(panel);
+                let center = DockItem::panel(panel);
 
-        // Set default dock layout with left and central docks
-        _ = weak_dock.update(cx, |view, cx| {
-            view.set_left_dock(left_panel, Some(px(240.)), true, window, cx);
-            view.set_center(center_panel, window, cx);
-        });
+                chatspace.update(cx, |this, cx| {
+                    this.dock.update(cx, |this, cx| {
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
+    }
 
-        cx.new(|_| Self { dock })
+    pub fn set_chat_panels(window: &mut Window, cx: &mut App) {
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                chatspace.update(cx, |this, cx| {
+                    let weak_dock = this.dock.downgrade();
+                    let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
+                    let center = DockItem::split_with_sizes(
+                        Axis::Vertical,
+                        vec![DockItem::tabs(
+                            vec![Arc::new(welcome::init(window, cx))],
+                            None,
+                            &weak_dock,
+                            window,
+                            cx,
+                        )],
+                        vec![None],
+                        &weak_dock,
+                        window,
+                        cx,
+                    );
+
+                    // Show titlebar
+                    this.show_titlebar(cx);
+
+                    // Update the dock
+                    this.dock.update(cx, |this, cx| {
+                        this.set_left_dock(left, Some(px(240.)), true, window, cx);
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
+    }
+
+    fn show_titlebar(&mut self, cx: &mut Context<Self>) {
+        self.titlebar = true;
+        cx.notify();
     }
 
     fn render_mode_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -232,7 +261,7 @@ impl AppView {
     }
 }
 
-impl Render for AppView {
+impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
@@ -246,23 +275,25 @@ impl Render for AppView {
                     .flex_col()
                     .size_full()
                     // Title Bar
-                    .child(
-                        TitleBar::new()
-                            // Left side
-                            .child(div())
-                            // Right side
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_end()
-                                    .gap_2()
-                                    .px_2()
-                                    .child(self.render_mode_btn(cx))
-                                    .child(self.render_relays_btn(cx))
-                                    .child(self.render_account_btn(cx)),
-                            ),
-                    )
+                    .when(self.titlebar, |this| {
+                        this.child(
+                            TitleBar::new()
+                                // Left side
+                                .child(div())
+                                // Right side
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_end()
+                                        .gap_2()
+                                        .px_2()
+                                        .child(self.render_mode_btn(cx))
+                                        .child(self.render_relays_btn(cx))
+                                        .child(self.render_account_btn(cx)),
+                                ),
+                        )
+                    })
                     // Dock
                     .child(self.dock.clone()),
             )

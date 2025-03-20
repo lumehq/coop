@@ -20,10 +20,13 @@ use ui::{
     indicator::Indicator,
     notification::Notification,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Root, Sizable, StyledExt,
+    ContextModal, Sizable, StyledExt,
 };
 
-use crate::views::{app, onboarding, relays};
+use crate::{
+    chatspace::ChatSpace,
+    views::{onboarding, relays},
+};
 
 struct GlobalDevice(Entity<Device>);
 
@@ -167,11 +170,8 @@ pub fn init(window: &mut Window, cx: &App) {
 
             window_handle
                 .update(cx, |_, window, cx| {
-                    // Open the onboarding view
-                    Root::update(window, cx, |this, window, cx| {
-                        this.replace_view(onboarding::init(window, cx).into());
-                        cx.notify();
-                    });
+                    // Open Onboarding Panel
+                    ChatSpace::set_panel(onboarding::init(window, cx), window, cx);
 
                     // Observe the DeviceState changes
                     if let Some(state) = weak_state.upgrade() {
@@ -320,20 +320,14 @@ impl Device {
     /// This function is called whenever the device is changed
     fn on_device_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(profile) = self.profile.as_ref() else {
-            // User not logged in, render the Onboarding View
-            Root::update(window, cx, |this, window, cx| {
-                this.replace_view(onboarding::init(window, cx).into());
-                cx.notify();
-            });
+            // User not logged in, render the Onboarding Panel
+            ChatSpace::set_panel(onboarding::init(window, cx), window, cx);
 
             return;
         };
 
-        // Replace the Onboarding View with the Dock View
-        Root::update(window, cx, |this, window, cx| {
-            this.replace_view(app::init(window, cx).into());
-            cx.notify();
-        });
+        // Replace the Onboarding Panel with the Chat Panel
+        ChatSpace::set_chat_panels(window, cx);
 
         // Get the user's messaging relays
         // If it is empty, user must setup relays
