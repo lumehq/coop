@@ -1,12 +1,12 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use account::Account;
 use common::utils::create_qr;
 use global::get_client_keys;
 use gpui::{
     div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, SharedString, Styled,
-    Subscription, Window,
+    EventEmitter, FocusHandle, Focusable, Image, IntoElement, ParentElement, Render, SharedString,
+    Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -36,6 +36,7 @@ pub struct Login {
     error_message: Entity<Option<SharedString>>,
     is_logging_in: bool,
     // Nostr Connect
+    qr: Option<Arc<Image>>,
     connect_relay: Entity<TextInput>,
     connect_client: Entity<Option<NostrConnectURI>>,
     // Panel
@@ -90,12 +91,17 @@ impl Login {
         ));
 
         subscriptions.push(
-            cx.observe_in(&connect_client, window, |_, this, window, cx| {
+            cx.observe_in(&connect_client, window, |this, uri, window, cx| {
                 let keys = get_client_keys().to_owned();
                 let account = Account::global(cx);
 
-                if let Some(uri) = this.read(cx) {
-                    match NostrConnect::new(uri.to_owned(), keys, Duration::from_secs(300), None) {
+                if let Some(uri) = uri.read(cx).clone() {
+                    if let Ok(qr) = create_qr(uri.to_string().as_str()) {
+                        this.qr = Some(qr);
+                        cx.notify();
+                    }
+
+                    match NostrConnect::new(uri, keys, Duration::from_secs(300), None) {
                         Ok(signer) => {
                             account.update(cx, |this, cx| {
                                 this.login(signer, window, cx);
@@ -141,6 +147,7 @@ impl Login {
             connect_client,
             subscriptions,
             error_message,
+            qr: None,
             is_logging_in: false,
             name: "Login".into(),
             closable: true,
@@ -371,31 +378,27 @@ impl Render for Login {
                                             .child("Use Nostr Connect apps to scan the code"),
                                     ),
                             )
-                            .when_some(self.connect_client.read(cx).as_ref(), |this, uri| {
-                                if let Ok(qr) = create_qr(uri.to_string().as_ref()) {
-                                    this.child(
-                                        div()
-                                            .mb_2()
-                                            .p_2()
-                                            .size_64()
-                                            .flex()
-                                            .flex_col()
-                                            .items_center()
-                                            .justify_center()
-                                            .gap_2()
-                                            .rounded_2xl()
-                                            .shadow_md()
-                                            .when(cx.theme().appearance.is_dark(), |this| {
-                                                this.shadow_none().border_1().border_color(
-                                                    cx.theme().base.step(cx, ColorScaleStep::SIX),
-                                                )
-                                            })
-                                            .bg(cx.theme().background)
-                                            .child(img(qr).h_56()),
-                                    )
-                                } else {
-                                    this
-                                }
+                            .when_some(self.qr.clone(), |this, qr| {
+                                this.child(
+                                    div()
+                                        .mb_2()
+                                        .p_2()
+                                        .size_64()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap_2()
+                                        .rounded_2xl()
+                                        .shadow_md()
+                                        .when(cx.theme().appearance.is_dark(), |this| {
+                                            this.shadow_none().border_1().border_color(
+                                                cx.theme().base.step(cx, ColorScaleStep::SIX),
+                                            )
+                                        })
+                                        .bg(cx.theme().background)
+                                        .child(img(qr).h_56()),
+                                )
                             })
                             .child(
                                 div()
