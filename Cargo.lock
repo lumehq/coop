@@ -3,6 +3,21 @@
 version = 4
 
 [[package]]
+name = "account"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "global",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "smallvec",
+ "smol",
+ "ui",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1127,7 +1142,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
- "dirs 5.0.1",
  "global",
  "gpui",
  "itertools 0.13.0",
@@ -1176,6 +1190,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 name = "coop"
 version = "0.1.4"
 dependencies = [
+ "account",
  "anyhow",
  "chats",
  "common",
@@ -1184,6 +1199,7 @@ dependencies = [
  "global",
  "gpui",
  "itertools 0.13.0",
+ "keyring",
  "log",
  "nostr-connect",
  "nostr-sdk",
@@ -1412,6 +1428,35 @@ name = "data-url"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c297a1c74b71ae29df00c3e22dd9534821d60eb9af5a0192823fa2acea70c2a"
+
+[[package]]
+name = "dbus"
+version = "0.9.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bb21987b9fb1613058ba3843121dd18b163b254d8a6e797e144cbac14d96d1b"
+dependencies = [
+ "libc",
+ "libdbus-sys",
+ "winapi",
+]
+
+[[package]]
+name = "dbus-secret-service"
+version = "4.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b42a16374481d92aed73ae45b1f120207d8e71d24fb89f357fadbd8f946fd84b"
+dependencies = [
+ "aes",
+ "block-padding",
+ "cbc",
+ "dbus",
+ "futures-util",
+ "hkdf",
+ "num",
+ "once_cell",
+ "rand 0.8.5",
+ "sha2",
+]
 
 [[package]]
 name = "derive_more"
@@ -2963,6 +3008,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring"
+version = "4.0.0-rc.1"
+source = "git+https://github.com/hwchen/keyring-rs#9d1b02ff4c9fd1ff125c71f252c14b9ed7313fcb"
+dependencies = [
+ "byteorder",
+ "dbus-secret-service",
+ "log",
+ "security-framework",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3008,6 +3065,15 @@ name = "libc"
 version = "0.2.171"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
+
+[[package]]
+name = "libdbus-sys"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06085512b750d640299b79be4bad3d2fa90a9c00b1fd9e1b46364f66f0485c72"
+dependencies = [
+ "pkg-config",
+]
 
 [[package]]
 name = "libfuzzer-sys"
@@ -3378,7 +3444,7 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 [[package]]
 name = "nostr"
 version = "0.40.0"
-source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#a81679d648f55f2250feb8b88d0637cb28648d16"
+source = "git+https://github.com/rust-nostr/nostr#942d0b07844071188ce81fa70ffac7c7d389c15a"
 dependencies = [
  "aes",
  "base64",
@@ -3403,7 +3469,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.40.0"
-source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#a81679d648f55f2250feb8b88d0637cb28648d16"
+source = "git+https://github.com/rust-nostr/nostr#942d0b07844071188ce81fa70ffac7c7d389c15a"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3415,7 +3481,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.40.0"
-source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#a81679d648f55f2250feb8b88d0637cb28648d16"
+source = "git+https://github.com/rust-nostr/nostr#942d0b07844071188ce81fa70ffac7c7d389c15a"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3426,7 +3492,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.40.0"
-source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#a81679d648f55f2250feb8b88d0637cb28648d16"
+source = "git+https://github.com/rust-nostr/nostr#942d0b07844071188ce81fa70ffac7c7d389c15a"
 dependencies = [
  "async-utility",
  "heed",
@@ -3439,7 +3505,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.40.0"
-source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#a81679d648f55f2250feb8b88d0637cb28648d16"
+source = "git+https://github.com/rust-nostr/nostr#942d0b07844071188ce81fa70ffac7c7d389c15a"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3456,7 +3522,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.40.0"
-source = "git+https://github.com/reyamir/nostr?branch=feat%2Fimprove-nip17#a81679d648f55f2250feb8b88d0637cb28648d16"
+source = "git+https://github.com/rust-nostr/nostr#942d0b07844071188ce81fa70ffac7c7d389c15a"
 dependencies = [
  "async-utility",
  "nostr",

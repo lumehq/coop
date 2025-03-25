@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use async_utility::task::spawn;
-use chats::{registry::ChatRegistry, room::Room};
+use chats::{room::Room, ChatRegistry};
 use common::{
     last_seen::LastSeen,
     profile::NostrProfile,
@@ -37,14 +37,10 @@ pub fn init(
     window: &mut Window,
     cx: &mut App,
 ) -> Result<Arc<Entity<Chat>>, anyhow::Error> {
-    if let Some(chats) = ChatRegistry::global(cx) {
-        if let Some(room) = chats.read(cx).get(id, cx) {
-            Ok(Arc::new(Chat::new(id, room, window, cx)))
-        } else {
-            Err(anyhow!("Chat room is not exist"))
-        }
+    if let Some(room) = ChatRegistry::global(cx).read(cx).get(id, cx) {
+        Ok(Arc::new(Chat::new(id, room, window, cx)))
     } else {
-        Err(anyhow!("Chat Registry is not initialized"))
+        Err(anyhow!("Chat room is not exist"))
     }
 }
 

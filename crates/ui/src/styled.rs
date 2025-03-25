@@ -200,7 +200,7 @@ impl<T: Styled> StyleSized<T> for T {
         match size {
             Size::Large => self.h_11(),
             Size::Medium => self.h_8(),
-            _ => self.h(px(26.)),
+            _ => self.h(px(28.)),
         }
         .input_text_size(size)
     }

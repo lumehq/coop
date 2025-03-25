@@ -348,8 +348,7 @@ impl RenderOnce for Button {
                         Size::Size(px) => this.size(px),
                         Size::XSmall => this.size_5(),
                         Size::Small => this.size_6(),
-                        Size::Medium => this.size_8(),
-                        Size::Large => this.size_9(),
+                        _ => this.size_8(),
                     }
                 } else {
                     // Normal Button
@@ -357,6 +356,7 @@ impl RenderOnce for Button {
                         Size::Size(size) => this.px(size * 0.2),
                         Size::XSmall => this.h_6().px_0p5(),
                         Size::Small => this.h_7().px_2(),
+                        Size::Large => this.h_10().px_3(),
                         _ => this.h_8().px_3(),
                     }
                 }
@@ -437,10 +437,11 @@ impl RenderOnce for Button {
                     .id("label")
                     .items_center()
                     .justify_center()
+                    .text_xs()
                     .map(|this| match self.size {
-                        Size::XSmall => this.gap_0p5().text_xs(),
-                        Size::Small => this.gap_1().text_xs(),
-                        _ => this.gap_2().text_xs(),
+                        Size::XSmall => this.gap_0p5(),
+                        Size::Small => this.gap_1(),
+                        _ => this.gap_2().font_medium(),
                     })
                     .when(!self.loading, |this| {
                         this.when_some(self.icon, |this, icon| {

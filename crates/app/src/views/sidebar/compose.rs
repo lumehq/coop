@@ -1,4 +1,4 @@
-use chats::{registry::ChatRegistry, room::Room};
+use chats::{room::Room, ChatRegistry};
 use common::{profile::NostrProfile, utils::random_name};
 use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client};
 use gpui::{
@@ -166,13 +166,12 @@ impl Compose {
             if let Ok(event) = event.await {
                 _ = cx.update_window(window_handle, |_, window, cx| {
                     // Stop loading spinner
-                    _ = this.update(cx, |this, cx| {
+                    this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
-                    });
+                    })
+                    .ok();
 
-                    let Some(chats) = ChatRegistry::global(cx) else {
-                        return;
-                    };
+                    let chats = ChatRegistry::global(cx);
                     let room = Room::new(&event, cx);
 
                     chats.update(cx, |state, cx| {

@@ -1,16 +1,11 @@
-use anyhow::anyhow;
 use asset::Assets;
-use chats::registry::ChatRegistry;
-use device::Device;
+use chats::ChatRegistry;
 use futures::{select, FutureExt};
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
 use global::{
-    constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, DEVICE_ANNOUNCEMENT_KIND,
-        DEVICE_REQUEST_KIND, DEVICE_RESPONSE_KIND, DEVICE_SUB_ID, NEW_MESSAGE_SUB_ID,
-    },
-    get_client, get_device_keys, set_device_name,
+    constants::{ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID},
+    get_client,
 };
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
@@ -21,16 +16,15 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    nips::nip59::UnwrappedGift, pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey,
-    RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, TagKind,
+    pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
+    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::{theme::Theme, Root};
-use views::startup;
 
 pub(crate) mod asset;
-pub(crate) mod device;
+pub(crate) mod chat_space;
 pub(crate) mod views;
 
 actions!(coop, [Quit]);
@@ -39,12 +33,6 @@ actions!(coop, [Quit]);
 enum Signal {
     /// Receive event
     Event(Event),
-    /// Receive request master key event
-    RequestMasterKey(Event),
-    /// Receive approve master key event
-    ReceiveMasterKey(Event),
-    /// Receive announcement event
-    ReceiveAnnouncement,
     /// Receive EOSE
     Eose,
 }
@@ -121,7 +109,6 @@ fn main() {
             let rng_keys = Keys::generate();
             let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
             let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-            let device_id = SubscriptionId::new(DEVICE_SUB_ID);
             let mut notifications = client.notifications();
 
             while let Ok(notification) = notifications.recv().await {
@@ -133,7 +120,7 @@ fn main() {
                         } => {
                             match event.kind {
                                 Kind::GiftWrap => {
-                                    if let Ok(gift) = handle_gift_wrap(&event).await {
+                                    if let Ok(gift) = client.unwrap_gift_wrap(&event).await {
                                         // Sign the rumor with the generated keys,
                                         // this event will be used for internal only,
                                         // and NEVER send to relays.
@@ -161,45 +148,12 @@ fn main() {
 
                                     handle_metadata(pubkeys).await;
                                 }
-                                Kind::Custom(DEVICE_REQUEST_KIND) => {
-                                    log::info!("Received device keys request");
-
-                                    _ = event_tx
-                                        .send(Signal::RequestMasterKey(event.into_owned()))
-                                        .await;
-                                }
-                                Kind::Custom(DEVICE_RESPONSE_KIND) => {
-                                    log::info!("Received device keys approval");
-
-                                    _ = event_tx
-                                        .send(Signal::ReceiveMasterKey(event.into_owned()))
-                                        .await;
-                                }
-                                Kind::Custom(DEVICE_ANNOUNCEMENT_KIND) => {
-                                    log::info!("Device Announcement received");
-
-                                    if let Ok(signer) = client.signer().await {
-                                        if let Ok(public_key) = signer.get_public_key().await {
-                                            if event.pubkey == public_key {
-                                                if let Some(tag) = event
-                                                    .tags
-                                                    .find(TagKind::custom("client"))
-                                                    .and_then(|tag| tag.content())
-                                                {
-                                                    set_device_name(tag).await;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                                 _ => {}
                             }
                         }
                         RelayMessage::EndOfStoredEvents(subscription_id) => {
                             if all_id == *subscription_id {
                                 _ = event_tx.send(Signal::Eose).await;
-                            } else if device_id == *subscription_id {
-                                _ = event_tx.send(Signal::ReceiveAnnouncement).await;
                             }
                         }
                         _ => {}
@@ -256,53 +210,26 @@ fn main() {
                 })
                 .detach();
 
-            // Initialize components
-            ui::init(cx);
-
-            // Initialize chat global state
-            chats::registry::init(cx);
-
-            // Initialize device
-            device::init(window, cx);
-
+            // Root Entity
             cx.new(|cx| {
-                let root = Root::new(startup::init(window, cx).into(), window, cx);
-
+                // Initialize components
+                ui::init(cx);
+                // Initialize chat state
+                chats::init(cx);
+                // Initialize account state
+                account::init(cx);
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, |_, mut cx| async move {
+                    let chats = cx.update(|_, cx| ChatRegistry::global(cx)).unwrap();
+
                     while let Ok(signal) = event_rx.recv().await {
-                        cx.update(|window, cx| {
+                        cx.update(|_, cx| {
                             match signal {
                                 Signal::Eose => {
-                                    if let Some(chats) = ChatRegistry::global(cx) {
-                                        chats.update(cx, |this, cx| this.load_chat_rooms(cx))
-                                    }
+                                    chats.update(cx, |this, cx| this.load_chat_rooms(cx));
                                 }
                                 Signal::Event(event) => {
-                                    if let Some(chats) = ChatRegistry::global(cx) {
-                                        chats.update(cx, |this, cx| this.push_message(event, cx))
-                                    }
-                                }
-                                Signal::ReceiveAnnouncement => {
-                                    if let Some(device) = Device::global(cx) {
-                                        device.update(cx, |this, cx| {
-                                            this.setup_device(window, cx);
-                                        });
-                                    }
-                                }
-                                Signal::ReceiveMasterKey(event) => {
-                                    if let Some(device) = Device::global(cx) {
-                                        device.update(cx, |this, cx| {
-                                            this.recv_approval(event, window, cx);
-                                        });
-                                    }
-                                }
-                                Signal::RequestMasterKey(event) => {
-                                    if let Some(device) = Device::global(cx) {
-                                        device.update(cx, |this, cx| {
-                                            this.recv_request(event, window, cx);
-                                        });
-                                    }
+                                    chats.update(cx, |this, cx| this.push_message(event, cx));
                                 }
                             };
                         })
@@ -311,30 +238,11 @@ fn main() {
                 })
                 .detach();
 
-                root
+                Root::new(chat_space::init(window, cx).into(), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");
     });
-}
-
-async fn handle_gift_wrap(gift_wrap: &Event) -> Result<UnwrappedGift, anyhow::Error> {
-    let client = get_client();
-
-    if let Some(device) = get_device_keys().await {
-        // Try to unwrap with the device keys first
-        match UnwrappedGift::from_gift_wrap(&device, gift_wrap).await {
-            Ok(event) => Ok(event),
-            Err(_) => {
-                // Try to unwrap again with the user's signer
-                let signer = client.signer().await?;
-                let event = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
-                Ok(event)
-            }
-        }
-    } else {
-        Err(anyhow!("Signer not found"))
-    }
 }
 
 async fn handle_metadata(buffer: HashSet<PublicKey>) {
@@ -342,12 +250,12 @@ async fn handle_metadata(buffer: HashSet<PublicKey>) {
 
     let opts = SubscribeAutoCloseOptions::default()
         .exit_policy(ReqExitPolicy::ExitOnEOSE)
-        .idle_timeout(Some(Duration::from_secs(2)));
+        .idle_timeout(Some(Duration::from_secs(1)));
 
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
-        .limit(buffer.len() * 2)
-        .kinds(vec![Kind::Metadata, Kind::Custom(DEVICE_ANNOUNCEMENT_KIND)]);
+        .limit(100)
+        .kinds(vec![Kind::Metadata, Kind::UserStatus]);
 
     if let Err(e) = client.subscribe(filter, Some(opts)).await {
         log::error!("Failed to sync metadata: {e}");

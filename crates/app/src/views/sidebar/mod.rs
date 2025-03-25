@@ -1,4 +1,4 @@
-use chats::{registry::ChatRegistry, room::Room};
+use chats::{room::Room, ChatRegistry};
 use compose::Compose;
 use gpui::{
     div, img, percentage, prelude::FluentBuilder, px, relative, uniform_list, AnyElement, App,
@@ -15,7 +15,7 @@ use ui::{
     ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
-use super::app::AddPanel;
+use crate::chat_space::{AddPanel, PanelKind};
 
 mod compose;
 
@@ -159,7 +159,7 @@ impl Sidebar {
     fn open(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         window.dispatch_action(
             Box::new(AddPanel::new(
-                super::app::PanelKind::Room(id),
+                PanelKind::Room(id),
                 ui::dock_area::dock::DockPlacement::Center,
             )),
             cx,
@@ -278,69 +278,66 @@ impl Render for Sidebar {
                             })),
                     )
                     .when(!self.is_collapsed, |this| {
-                        this.flex_1()
-                            .w_full()
-                            .when_some(ChatRegistry::global(cx), |this, state| {
-                                let is_loading = state.read(cx).is_loading();
-                                let len = state.read(cx).rooms().len();
+                        this.flex_1().w_full().map(|this| {
+                            let state = ChatRegistry::global(cx);
+                            let is_loading = state.read(cx).is_loading();
+                            let len = state.read(cx).rooms().len();
 
-                                if is_loading {
-                                    this.children(self.render_skeleton(5))
-                                } else if state.read(cx).rooms().is_empty() {
-                                    this.child(
-                                        div()
-                                            .px_1()
-                                            .w_full()
-                                            .h_20()
-                                            .flex()
-                                            .flex_col()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_center()
-                                            .rounded(px(cx.theme().radius))
-                                            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .line_height(relative(1.2))
-                                                    .child("No chats"),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(
-                                                        cx.theme()
-                                                            .base
-                                                            .step(cx, ColorScaleStep::ELEVEN),
-                                                    )
-                                                    .child("Recent chats will appear here."),
-                                            ),
-                                    )
-                                } else {
-                                    this.child(
-                                        uniform_list(
-                                            entity,
-                                            "rooms",
-                                            len,
-                                            move |this, range, _, cx| {
-                                                let mut items = vec![];
-
-                                                for ix in range {
-                                                    if let Some(room) =
-                                                        state.read(cx).rooms().get(ix)
-                                                    {
-                                                        items.push(this.render_room(ix, room, cx));
-                                                    }
-                                                }
-
-                                                items
-                                            },
+                            if is_loading {
+                                this.children(self.render_skeleton(5))
+                            } else if state.read(cx).rooms().is_empty() {
+                                this.child(
+                                    div()
+                                        .px_1()
+                                        .w_full()
+                                        .h_20()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_center()
+                                        .rounded(px(cx.theme().radius))
+                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_semibold()
+                                                .line_height(relative(1.2))
+                                                .child("No chats"),
                                         )
-                                        .size_full(),
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(
+                                                    cx.theme()
+                                                        .base
+                                                        .step(cx, ColorScaleStep::ELEVEN),
+                                                )
+                                                .child("Recent chats will appear here."),
+                                        ),
+                                )
+                            } else {
+                                this.child(
+                                    uniform_list(
+                                        entity,
+                                        "rooms",
+                                        len,
+                                        move |this, range, _, cx| {
+                                            let mut items = vec![];
+
+                                            for ix in range {
+                                                if let Some(room) = state.read(cx).rooms().get(ix) {
+                                                    items.push(this.render_room(ix, room, cx));
+                                                }
+                                            }
+
+                                            items
+                                        },
                                     )
-                                }
-                            })
+                                    .size_full(),
+                                )
+                            }
+                        })
                     }),
             )
     }
