@@ -14,8 +14,6 @@ use ui::{
     ContextModal, IconName, Sizable,
 };
 
-use crate::device::Device;
-
 const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
 const HELP_TEXT: &str = "Please add some relays.";
 
@@ -113,11 +111,10 @@ impl Relays {
     }
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = self.relays.read(cx).clone();
-        let window_handle = window.window_handle();
-
         // Show loading spinner
         self.set_loading(true, cx);
+
+        let relays = self.relays.read(cx).clone();
 
         let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
             let client = get_client();
@@ -173,26 +170,13 @@ impl Relays {
             Ok(output.val)
         });
 
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn_in(window, |this, mut cx| async move {
             if task.await.is_ok() {
-                cx.update_window(window_handle, |_, window, cx| {
+                cx.update(|window, cx| {
                     _ = this.update(cx, |this, cx| {
                         this.set_loading(false, cx);
                         cx.notify();
                     });
-
-                    if let Some(device) = Device::global(cx) {
-                        let relays = this
-                            .read_with(cx, |this, cx| this.relays.read(cx).clone())
-                            .unwrap();
-
-                        device.update(cx, |this, cx| {
-                            if let Some(profile) = this.profile() {
-                                let new_profile = profile.clone().relays(Some(relays.into()));
-                                this.set_profile(new_profile, cx);
-                            }
-                        })
-                    }
 
                     window.close_modal(cx);
                 })

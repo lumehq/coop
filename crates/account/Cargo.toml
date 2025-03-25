@@ -1,18 +1,17 @@
 [package]
-name = "common"
+name = "account"
 version = "0.0.0"
 edition = "2021"
 publish = false
 
 [dependencies]
+ui = { path = "../ui" }
+common = { path = "../common" }
 global = { path = "../global" }
 
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
-itertools.workspace = true
-chrono.workspace = true
+smol.workspace = true
 smallvec.workspace = true
-
-random_name_generator = "0.3.6"
-qrcode-generator = "5.0.0"
+log.workspace = true

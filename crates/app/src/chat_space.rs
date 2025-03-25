@@ -1,10 +1,12 @@
+use account::Account;
 use global::get_client;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
-    StyledImage, Window,
+    StyledImage, Subscription, Task, Window,
 };
 use serde::Deserialize;
+use smallvec::{smallvec, SmallVec};
 use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
@@ -14,8 +16,8 @@ use ui::{
     ContextModal, Icon, IconName, Root, Sizable, TitleBar,
 };
 
-use crate::views::{chat, contacts, onboarding, profile, relays, settings, welcome};
-use crate::{device::*, views::sidebar};
+use crate::views::{chat, contacts, profile, relays, settings, welcome};
+use crate::views::{onboarding, sidebar};
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -50,17 +52,44 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
 pub struct ChatSpace {
     titlebar: bool,
     dock: Entity<DockArea>,
+    #[allow(unused)]
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let account = Account::global(cx);
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let titlebar = false;
 
-        cx.new(|_| Self { dock, titlebar })
+        cx.new(|cx| {
+            let mut this = Self {
+                dock,
+                titlebar,
+                subscriptions: smallvec![cx.observe_in(
+                    &account,
+                    window,
+                    |this: &mut ChatSpace, account, window, cx| {
+                        if account.read(cx).profile.is_some() {
+                            this.open_chats(window, cx);
+                        } else {
+                            this.open_onboarding(window, cx);
+                        }
+                    },
+                )],
+            };
+
+            if Account::global(cx).read(cx).profile.is_some() {
+                this.open_chats(window, cx);
+            } else {
+                this.open_onboarding(window, cx);
+            }
+
+            this
+        })
     }
 
-    pub fn set_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
+    pub fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
         if let Some(Some(root)) = window.root::<Root>() {
             if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
                 let panel = Arc::new(panel);
@@ -75,38 +104,39 @@ impl ChatSpace {
         }
     }
 
-    pub fn set_chat_panels(window: &mut Window, cx: &mut App) {
-        if let Some(Some(root)) = window.root::<Root>() {
-            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
-                chatspace.update(cx, |this, cx| {
-                    let weak_dock = this.dock.downgrade();
-                    let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
-                    let center = DockItem::split_with_sizes(
-                        Axis::Vertical,
-                        vec![DockItem::tabs(
-                            vec![Arc::new(welcome::init(window, cx))],
-                            None,
-                            &weak_dock,
-                            window,
-                            cx,
-                        )],
-                        vec![None],
-                        &weak_dock,
-                        window,
-                        cx,
-                    );
+    fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let panel = Arc::new(onboarding::init(window, cx));
+        let center = DockItem::panel(panel);
 
-                    // Show titlebar
-                    this.show_titlebar(cx);
+        self.dock.update(cx, |this, cx| {
+            this.set_center(center, window, cx);
+        });
+    }
 
-                    // Update the dock
-                    this.dock.update(cx, |this, cx| {
-                        this.set_left_dock(left, Some(px(240.)), true, window, cx);
-                        this.set_center(center, window, cx);
-                    });
-                });
-            }
-        }
+    fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_titlebar(cx);
+
+        let weak_dock = self.dock.downgrade();
+        let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
+        let center = DockItem::split_with_sizes(
+            Axis::Vertical,
+            vec![DockItem::tabs(
+                vec![Arc::new(welcome::init(window, cx))],
+                None,
+                &weak_dock,
+                window,
+                cx,
+            )],
+            vec![None],
+            &weak_dock,
+            window,
+            cx,
+        );
+
+        self.dock.update(cx, |this, cx| {
+            this.set_left_dock(left, Some(px(240.)), true, window, cx);
+            this.set_center(center, window, cx);
+        });
     }
 
     fn show_titlebar(&mut self, cx: &mut Context<Self>) {
@@ -114,7 +144,7 @@ impl ChatSpace {
         cx.notify();
     }
 
-    fn render_mode_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_appearance_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("appearance")
             .xsmall()
             .ghost()
@@ -140,16 +170,17 @@ impl ChatSpace {
             .xsmall()
             .reverse()
             .icon(Icon::new(IconName::ChevronDownSmall))
-            .when_some(Device::global(cx), |this, account| {
-                this.when_some(account.read(cx).profile(), |this, profile| {
+            .when_some(
+                Account::global(cx).read(cx).profile.as_ref(),
+                |this, profile| {
                     this.child(
                         img(profile.avatar.clone())
                             .size_5()
                             .rounded_full()
                             .object_fit(ObjectFit::Cover),
                     )
-                })
-            })
+                },
+            )
             .popup_menu(move |this, _, _cx| {
                 this.menu(
                     "Profile",
@@ -247,17 +278,23 @@ impl ChatSpace {
 
     fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
+        let reset: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
+            client.reset().await;
+            Ok(())
+        });
 
-        cx.background_spawn(async move {
-            // Reset nostr client
-            client.reset().await
+        cx.spawn_in(window, |_, mut cx| async move {
+            if reset.await.is_ok() {
+                cx.update(|_, cx| {
+                    Account::global(cx).update(cx, |this, cx| {
+                        this.profile = None;
+                        cx.notify();
+                    });
+                })
+                .ok();
+            };
         })
         .detach();
-
-        Root::update(window, cx, |this, window, cx| {
-            this.replace_view(onboarding::init(window, cx).into());
-            cx.notify();
-        });
     }
 }
 
@@ -288,7 +325,7 @@ impl Render for ChatSpace {
                                         .justify_end()
                                         .gap_2()
                                         .px_2()
-                                        .child(self.render_mode_btn(cx))
+                                        .child(self.render_appearance_btn(cx))
                                         .child(self.render_relays_btn(cx))
                                         .child(self.render_account_btn(cx)),
                                 ),

@@ -13,6 +13,7 @@ ui = { path = "../ui" }
 common = { path = "../common" }
 global = { path = "../global" }
 chats = { path = "../chats" }
+account = { path = "../account" }
 
 gpui.workspace = true
 reqwest_client.workspace = true
@@ -29,7 +30,8 @@ log.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 oneshot.workspace = true
+keyring.workspace = true
 
 rustls = "0.23.23"
-futures= "0.3"
+futures = "0.3"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }

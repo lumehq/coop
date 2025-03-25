@@ -1,11 +1,14 @@
 use anyhow::Context;
 use global::constants::NIP96_SERVER;
+use gpui::Image;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use qrcode_generator::QrCodeEcc;
 use rnglib::{Language, RNG};
 use std::{
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
+    sync::Arc,
 };
 
 pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
@@ -55,6 +58,17 @@ pub fn device_pubkey(event: &Event) -> Result<PublicKey, anyhow::Error> {
 pub fn random_name(length: usize) -> String {
     let rng = RNG::from(&Language::Roman);
     rng.generate_names(length, true).join("-").to_lowercase()
+}
+
+pub fn create_qr(data: &str) -> Result<Arc<Image>, anyhow::Error> {
+    let qr = qrcode_generator::to_png_to_vec_from_str(data, QrCodeEcc::Medium, 256)?;
+    let img = Arc::new(Image {
+        format: gpui::ImageFormat::Png,
+        bytes: qr.clone(),
+        id: 1,
+    });
+
+    Ok(img)
 }
 
 pub fn compare<T>(a: &[T], b: &[T]) -> bool
