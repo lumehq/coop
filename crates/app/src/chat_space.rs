@@ -283,7 +283,7 @@ impl ChatSpace {
             Ok(())
         });
 
-        cx.spawn_in(window, |_, mut cx| async move {
+        cx.spawn_in(window, async move |_, cx| {
             if reset.await.is_ok() {
                 cx.update(|_, cx| {
                     Account::global(cx).update(cx, |this, cx| {

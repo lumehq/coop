@@ -188,9 +188,9 @@ impl Chat {
         let room = model.read(cx);
         let task = room.verify_inbox_relays(cx);
 
-        cx.spawn(|this, cx| async move {
+        cx.spawn(async move |this, cx| {
             if let Ok(result) = task.await {
-                _ = cx.update(|cx| {
+                cx.update(|cx| {
                     _ = this.update(cx, |this, cx| {
                         result.into_iter().for_each(|item| {
                             if !item.1 {
@@ -205,7 +205,8 @@ impl Chat {
                             }
                         });
                     });
-                });
+                })
+                .ok();
             }
         })
         .detach();
@@ -219,13 +220,15 @@ impl Chat {
         let room = model.read(cx);
         let task = room.load_messages(cx);
 
-        cx.spawn(|this, cx| async move {
+        cx.spawn(async move |this, cx| {
             if let Ok(events) = task.await {
-                _ = cx.update(|cx| {
-                    _ = this.update(cx, |this, cx| {
+                cx.update(|cx| {
+                    this.update(cx, |this, cx| {
                         this.push_messages(events, cx);
-                    });
+                    })
+                    .ok();
                 })
+                .ok();
             }
         })
         .detach();
@@ -352,12 +355,11 @@ impl Chat {
 
         let room = model.read(cx);
         let task = room.send_message(content, cx);
-        let window_handle = window.window_handle();
 
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn_in(window, async move |this, cx| {
             if let Ok(msgs) = task.await {
-                _ = cx.update_window(window_handle, |_, window, cx| {
-                    _ = this.update(cx, |this, cx| {
+                cx.update(|window, cx| {
+                    this.update(cx, |this, cx| {
                         // Reset message input
                         cx.update_entity(&this.input, |this, cx| {
                             this.set_loading(false, window, cx);
@@ -365,7 +367,8 @@ impl Chat {
                             this.set_text("", window, cx);
                             cx.notify();
                         });
-                    });
+                    })
+                    .ok();
 
                     for item in msgs.into_iter() {
                         window.push_notification(
@@ -373,7 +376,8 @@ impl Chat {
                             cx,
                         );
                     }
-                });
+                })
+                .ok();
             }
         })
         .detach();
@@ -392,7 +396,7 @@ impl Chat {
         self.set_loading(true, cx);
 
         // TODO: support multiple upload
-        cx.spawn(move |this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
                     let path = paths.pop().unwrap();

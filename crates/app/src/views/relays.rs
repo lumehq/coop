@@ -65,14 +65,16 @@ impl Relays {
                 }
             });
 
-            cx.spawn(|this, cx| async move {
+            cx.spawn(async move |this, cx| {
                 if let Ok(relays) = task.await {
-                    _ = cx.update(|cx| {
-                        _ = this.update(cx, |this: &mut Vec<RelayUrl>, cx| {
+                    cx.update(|cx| {
+                        this.update(cx, |this: &mut Vec<RelayUrl>, cx| {
                             *this = relays;
                             cx.notify();
-                        });
-                    });
+                        })
+                        .ok();
+                    })
+                    .ok();
                 }
             })
             .detach();
@@ -170,13 +172,14 @@ impl Relays {
             Ok(output.val)
         });
 
-        cx.spawn_in(window, |this, mut cx| async move {
+        cx.spawn_in(window, async move |this, cx| {
             if task.await.is_ok() {
                 cx.update(|window, cx| {
-                    _ = this.update(cx, |this, cx| {
+                    this.update(cx, |this, cx| {
                         this.set_loading(false, cx);
                         cx.notify();
-                    });
+                    })
+                    .ok();
 
                     window.close_modal(cx);
                 })

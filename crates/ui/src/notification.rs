@@ -193,7 +193,7 @@ impl Notification {
         cx.notify();
 
         // Dismiss the notification after 0.15s to show the animation.
-        cx.spawn(|view, cx| async move {
+        cx.spawn(async move |view, cx| {
             Timer::after(Duration::from_secs_f32(0.15)).await;
             cx.update(|cx| {
                 if let Some(view) = view.upgrade() {
@@ -339,9 +339,9 @@ impl NotificationList {
         self.notifications.push_back(notification.clone());
         if autohide {
             // Sleep for 3 seconds to autohide the notification
-            cx.spawn_in(window, |_, mut cx| async move {
+            cx.spawn_in(window, async move |_, cx| {
                 Timer::after(Duration::from_secs(3)).await;
-                _ = notification.update_in(&mut cx, |note, window, cx| {
+                _ = notification.update_in(cx, |note, window, cx| {
                     note.dismiss(&ClickEvent::default(), window, cx)
                 });
             })

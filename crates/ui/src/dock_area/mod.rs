@@ -574,8 +574,8 @@ impl DockArea {
                     window,
                     move |_, _, event, window, cx| {
                         if let PanelEvent::LayoutChanged = event {
-                            cx.spawn_in(window, |view, mut window| async move {
-                                _ = view.update_in(&mut window, |view, window, cx| {
+                            cx.spawn_in(window, async move |view, window| {
+                                _ = view.update_in(window, |view, window, cx| {
                                     view.update_toggle_button_tab_panels(window, cx)
                                 });
                             })
@@ -609,8 +609,8 @@ impl DockArea {
                 move |_, panel, event, window, cx| match event {
                     PanelEvent::ZoomIn => {
                         let panel = panel.clone();
-                        cx.spawn_in(window, |view, mut window| async move {
-                            _ = view.update_in(&mut window, |view, window, cx| {
+                        cx.spawn_in(window, async move |view, window| {
+                            _ = view.update_in(window, |view, window, cx| {
                                 view.set_zoomed_in(panel, window, cx);
                                 cx.notify();
                             });
@@ -618,15 +618,15 @@ impl DockArea {
                         .detach();
                     }
                     PanelEvent::ZoomOut => cx
-                        .spawn_in(window, |view, mut window| async move {
-                            _ = view.update_in(&mut window, |view, window, cx| {
+                        .spawn_in(window, async move |view, window| {
+                            _ = view.update_in(window, |view, window, cx| {
                                 view.set_zoomed_out(window, cx);
                             });
                         })
                         .detach(),
                     PanelEvent::LayoutChanged => {
-                        cx.spawn_in(window, |view, mut window| async move {
-                            _ = view.update_in(&mut window, |view, window, cx| {
+                        cx.spawn_in(window, async move |view, window| {
+                            _ = view.update_in(window, |view, window, cx| {
                                 view.update_toggle_button_tab_panels(window, cx)
                             });
                         })

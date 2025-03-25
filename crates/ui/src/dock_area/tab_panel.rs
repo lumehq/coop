@@ -181,7 +181,7 @@ impl TabPanel {
         self.focus_active_panel(window, cx);
 
         // Sync the active state to all panels
-        cx.spawn(|view, cx| async move {
+        cx.spawn(async move |view, cx| {
             _ = cx.update(|cx| {
                 _ = view.update(cx, |view, cx| {
                     if let Some(last_active) = view.panels.get(last_active_ix) {
@@ -255,7 +255,7 @@ impl TabPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        cx.spawn_in(window, |view, mut cx| async move {
+        cx.spawn_in(window, async move |view, cx| {
             cx.update(|window, cx| {
                 view.update(cx, |view, cx| {
                     view.will_split_placement = Some(placement);
@@ -986,7 +986,7 @@ impl TabPanel {
                 });
             }
 
-            cx.spawn_in(window, |_, mut cx| async move {
+            cx.spawn_in(window, async move |_, cx| {
                 cx.update(|window, cx| {
                     tab_panel.update(cx, |view, cx| view.remove_self_if_empty(window, cx))
                 })
@@ -1021,9 +1021,9 @@ impl TabPanel {
 
         self.is_zoomed = !self.is_zoomed;
 
-        cx.spawn(|view, cx| {
+        cx.spawn({
             let is_zoomed = self.is_zoomed;
-            async move {
+            async move |view, cx| {
                 _ = cx.update(|cx| {
                     _ = view.update(cx, |view, cx| {
                         view.set_zoomed(is_zoomed, cx);

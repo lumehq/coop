@@ -78,8 +78,8 @@ impl Profile {
                 focus_handle: cx.focus_handle(),
             };
 
-            let client = get_client();
             let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
+                let client = get_client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
                 let metadata = client
@@ -89,7 +89,7 @@ impl Profile {
                 Ok(metadata)
             });
 
-            cx.spawn(|this, mut cx| async move {
+            cx.spawn(async move |this, cx| {
                 if let Ok(Some(metadata)) = task.await {
                     _ = cx.update_window(window_handle, |_, window, cx| {
                         _ = this.update(cx, |this: &mut Profile, cx| {
@@ -137,7 +137,7 @@ impl Profile {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        cx.spawn(move |this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
                     let path = paths.pop().unwrap();
@@ -218,7 +218,7 @@ impl Profile {
 
         let window_handle = window.window_handle();
 
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             let client = get_client();
             let (tx, rx) = oneshot::channel::<EventId>();
 

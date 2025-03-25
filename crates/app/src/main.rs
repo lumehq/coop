@@ -219,7 +219,7 @@ fn main() {
                 // Initialize account state
                 account::init(cx);
                 // Spawn a task to handle events from nostr channel
-                cx.spawn_in(window, |_, mut cx| async move {
+                cx.spawn_in(window, async move |_, cx| {
                     let chats = cx.update(|_, cx| ChatRegistry::global(cx)).unwrap();
 
                     while let Ok(signal) = event_rx.recv().await {

@@ -33,7 +33,7 @@ impl Contacts {
         let contacts = cx.new(|_| None);
         let async_contact = contacts.clone();
 
-        cx.spawn(|mut cx| async move {
+        cx.spawn(async move |cx| {
             let client = get_client();
             let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
 

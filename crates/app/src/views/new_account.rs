@@ -122,7 +122,7 @@ impl NewAccount {
 
         self.set_uploading(true, cx);
 
-        cx.spawn_in(window, |this, mut cx| async move {
+        cx.spawn_in(window, async move |this, cx| {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
                     let Some(path) = paths.pop() else {

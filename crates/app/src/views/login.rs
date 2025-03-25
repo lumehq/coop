@@ -115,7 +115,7 @@ impl Login {
             }),
         );
 
-        cx.spawn(|this, cx| async move {
+        cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(500))
                 .await;

@@ -54,24 +54,22 @@ impl Account {
             Ok(NostrProfile::new(public_key, metadata))
         });
 
-        cx.spawn_in(window, |this, mut cx| async move {
-            match task.await {
-                Ok(profile) => {
-                    cx.update(|_, cx| {
-                        this.update(cx, |this, cx| {
-                            this.profile = Some(profile);
-                            this.subscribe(cx);
-                            cx.notify();
-                        })
+        cx.spawn_in(window, async move |this, cx| match task.await {
+            Ok(profile) => {
+                cx.update(|_, cx| {
+                    this.update(cx, |this, cx| {
+                        this.profile = Some(profile);
+                        this.subscribe(cx);
+                        cx.notify();
                     })
-                    .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx)
-                    })
-                    .ok();
-                }
+                })
+                .ok();
+            }
+            Err(e) => {
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error(e.to_string()), cx)
+                })
+                .ok();
             }
         })
         .detach();
@@ -91,7 +89,7 @@ impl Account {
             Ok(NostrProfile::new(public_key, metadata))
         });
 
-        cx.spawn_in(window, |this, mut cx| async move {
+        cx.spawn_in(window, async move |this, cx| {
             if let Ok(profile) = task.await {
                 cx.update(|_, cx| {
                     this.update(cx, |this, cx| {
@@ -156,7 +154,7 @@ impl Account {
             Ok(())
         });
 
-        cx.spawn(|_, _| async move {
+        cx.spawn(async move |_, _| {
             if let Err(e) = task.await {
                 log::error!("Error: {}", e);
             }

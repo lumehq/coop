@@ -95,16 +95,17 @@ impl Compose {
         })
         .detach();
 
-        cx.spawn(|this, cx| async move {
+        cx.spawn(async move |this, cx| {
             if let Ok(contacts) = rx.await {
-                _ = cx.update(|cx| {
+                cx.update(|cx| {
                     this.update(cx, |this, cx| {
                         this.contacts.update(cx, |this, cx| {
                             this.extend(contacts);
                             cx.notify();
                         });
                     })
-                });
+                })
+                .ok();
             }
         })
         .detach();
@@ -146,7 +147,6 @@ impl Compose {
         }
 
         let tags = Tags::from_list(tag_list);
-        let window_handle = window.window_handle();
 
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
             let client = get_client();
@@ -162,9 +162,9 @@ impl Compose {
             Ok(event)
         });
 
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn_in(window, async move |this, cx| {
             if let Ok(event) = event.await {
-                _ = cx.update_window(window_handle, |_, window, cx| {
+                cx.update(|window, cx| {
                     // Stop loading spinner
                     this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
@@ -187,7 +187,8 @@ impl Compose {
                             }
                         }
                     });
-                });
+                })
+                .ok();
             }
         })
         .detach();
@@ -242,7 +243,7 @@ impl Compose {
             })
         };
 
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             match task.await {
                 Ok(profile) => {
                     let public_key = profile.public_key;
@@ -308,14 +309,16 @@ impl Compose {
         });
 
         // Dismiss error after 2 seconds
-        cx.spawn(|this, cx| async move {
+        cx.spawn(async move |this, cx| {
             Timer::after(Duration::from_secs(2)).await;
 
-            _ = cx.update(|cx| {
+            cx.update(|cx| {
                 this.update(cx, |this, cx| {
                     this.set_error(None, cx);
                 })
-            });
+                .ok();
+            })
+            .ok();
         })
         .detach();
     }

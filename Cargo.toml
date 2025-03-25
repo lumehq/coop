@@ -1,7 +1,11 @@
 [workspace]
+resolver = "2"
 members = ["crates/*"]
 default-members = ["crates/app"]
-resolver = "2"
+
+[workspace.package]
+publish = false
+edition = "2021"
 
 [workspace.dependencies]
 coop = { path = "crates/*" }

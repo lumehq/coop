@@ -44,7 +44,7 @@ impl Room {
         // Create a task for loading metadata
         let load_metadata = Self::load_metadata(event, cx);
 
-        let room = cx.new(|cx| {
+        cx.new(|cx| {
             let this = Self {
                 id,
                 last_seen,
@@ -52,7 +52,7 @@ impl Room {
                 members: smallvec![],
             };
 
-            cx.spawn(|this, cx| async move {
+            cx.spawn(async move |this, cx| {
                 if let Ok(profiles) = load_metadata.await {
                     _ = cx.update(|cx| {
                         _ = this.update(cx, |this: &mut Room, cx| {
@@ -82,9 +82,7 @@ impl Room {
             .detach();
 
             this
-        });
-
-        room
+        })
     }
 
     pub fn id(&self) -> u64 {
