@@ -19,6 +19,10 @@ use ui::{
     Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
+use crate::chat_space::ChatSpace;
+
+use super::onboarding;
+
 const STEAM_ID_DESCRIPTION: &str =
     "Steam ID is used to get your currently playing game and update your status.";
 
@@ -184,6 +188,11 @@ impl NewAccount {
         self.is_uploading = status;
         cx.notify();
     }
+
+    fn back(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let panel = onboarding::init(window, cx);
+        ChatSpace::set_center_panel(panel, window, cx);
+    }
 }
 
 impl Panel for NewAccount {
@@ -224,6 +233,7 @@ impl Render for NewAccount {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .items_center()
@@ -336,6 +346,18 @@ impl Render for NewAccount {
                                 this.submit(window, cx);
                             })),
                     ),
+            )
+            .child(
+                div().absolute().left_2().top_10().w_16().child(
+                    Button::new("back")
+                        .label("Back")
+                        .icon(Icon::new(IconName::ArrowLeft))
+                        .ghost()
+                        .small()
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.back(window, cx);
+                        })),
+                ),
             )
     }
 }

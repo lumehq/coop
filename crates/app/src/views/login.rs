@@ -17,8 +17,12 @@ use ui::{
     notification::Notification,
     popup_menu::PopupMenu,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Disableable, Sizable, Size, StyledExt,
+    ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
+
+use crate::chat_space::ChatSpace;
+
+use super::onboarding;
 
 const INPUT_INVALID: &str = "You must provide a valid Private Key or Bunker.";
 
@@ -218,6 +222,11 @@ impl Login {
         self.is_logging_in = status;
         cx.notify();
     }
+
+    fn back(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let panel = onboarding::init(window, cx);
+        ChatSpace::set_center_panel(panel, window, cx);
+    }
 }
 
 impl Panel for Login {
@@ -258,6 +267,7 @@ impl Render for Login {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
+            .relative()
             .flex()
             .child(
                 div()
@@ -406,6 +416,18 @@ impl Render for Login {
                                     ),
                             ),
                     ),
+            )
+            .child(
+                div().absolute().left_2().top_10().w_16().child(
+                    Button::new("back")
+                        .label("Back")
+                        .icon(Icon::new(IconName::ArrowLeft))
+                        .ghost()
+                        .small()
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.back(window, cx);
+                        })),
+                ),
             )
     }
 }
