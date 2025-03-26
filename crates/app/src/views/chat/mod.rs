@@ -458,12 +458,7 @@ impl Chat {
                                         this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
                                     }),
                             )
-                            .child(
-                                img(item.avatar.clone())
-                                    .size_8()
-                                    .rounded_full()
-                                    .flex_shrink_0(),
-                            )
+                            .child(img(item.avatar.clone()).size_8().flex_shrink_0())
                             .child(
                                 div()
                                     .flex()
@@ -508,12 +503,7 @@ impl Chat {
                                 .bg(cx.theme().transparent)
                                 .group_hover("", |this| this.bg(cx.theme().danger)),
                         )
-                        .child(
-                            img("brand/avatar.jpg")
-                                .size_8()
-                                .rounded_full()
-                                .flex_shrink_0(),
-                        )
+                        .child(img("brand/avatar.jpg").size_8().flex_shrink_0())
                         .text_xs()
                         .text_color(cx.theme().danger)
                         .child(content.clone()),

@@ -172,14 +172,7 @@ impl ChatSpace {
             .icon(Icon::new(IconName::ChevronDownSmall))
             .when_some(
                 Account::global(cx).read(cx).profile.as_ref(),
-                |this, profile| {
-                    this.child(
-                        img(profile.avatar.clone())
-                            .size_5()
-                            .rounded_full()
-                            .object_fit(ObjectFit::Cover),
-                    )
-                },
+                |this, profile| this.child(img(profile.avatar.clone()).size_5()),
             )
             .popup_menu(move |this, _, _cx| {
                 this.menu(
