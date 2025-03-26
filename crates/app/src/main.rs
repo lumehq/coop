@@ -40,6 +40,8 @@ enum Signal {
 fn main() {
     // Enable logging
     tracing_subscriber::fmt::init();
+    // Fix crash on startup
+    _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let (event_tx, event_rx) = smol::channel::bounded::<Signal>(1024);
     let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(100);
@@ -55,10 +57,6 @@ fn main() {
     // Connect to default relays
     app.background_executor()
         .spawn(async {
-            // Fix crash on startup
-            // TODO: why this is needed?
-            _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-
             for relay in BOOTSTRAP_RELAYS.into_iter() {
                 _ = client.add_relay(relay).await;
             }

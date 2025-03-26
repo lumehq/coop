@@ -1,7 +1,7 @@
 use gpui::{
-    fill, point, px, relative, App, Bounds, ContentMask, CursorStyle, Edges, Element, EntityId,
-    Hitbox, Hsla, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
-    Point, Position, ScrollHandle, ScrollWheelEvent, UniformListScrollHandle, Window,
+    fill, point, px, relative, App, BorderStyle, Bounds, ContentMask, CursorStyle, Edges, Element,
+    EntityId, Hitbox, Hsla, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, Position, ScrollHandle, ScrollWheelEvent, UniformListScrollHandle, Window,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -682,6 +682,7 @@ impl Element for Scrollbar {
                                 }
                             },
                             border_color: state.border,
+                            border_style: BorderStyle::Solid,
                         });
 
                         cx.paint_quad(

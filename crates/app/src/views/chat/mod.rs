@@ -2,7 +2,6 @@ use anyhow::anyhow;
 use async_utility::task::spawn;
 use chats::{room::Room, ChatRegistry};
 use common::{
-    last_seen::LastSeen,
     profile::NostrProfile,
     utils::{compare, nip96_upload},
 };
@@ -15,6 +14,7 @@ use gpui::{
     Window,
 };
 use itertools::Itertools;
+use message::{Message, ParsedMessage};
 use nostr_sdk::prelude::*;
 use smol::fs;
 use std::sync::Arc;
@@ -24,9 +24,12 @@ use ui::{
     input::{InputEvent, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
+    text::RichText,
     theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
 };
+
+mod message;
 
 const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
 const DESCRIPTION: &str =
@@ -40,50 +43,7 @@ pub fn init(
     if let Some(room) = ChatRegistry::global(cx).read(cx).get(id, cx) {
         Ok(Arc::new(Chat::new(id, room, window, cx)))
     } else {
-        Err(anyhow!("Chat room is not exist"))
-    }
-}
-
-#[derive(PartialEq, Eq)]
-struct ParsedMessage {
-    avatar: SharedString,
-    display_name: SharedString,
-    created_at: SharedString,
-    content: SharedString,
-}
-
-impl ParsedMessage {
-    pub fn new(profile: &NostrProfile, content: &str, created_at: Timestamp) -> Self {
-        let content = SharedString::new(content);
-        let created_at = LastSeen(created_at).human_readable();
-
-        Self {
-            avatar: profile.avatar.clone(),
-            display_name: profile.name.clone(),
-            created_at,
-            content,
-        }
-    }
-}
-
-#[derive(PartialEq, Eq)]
-enum Message {
-    User(Box<ParsedMessage>),
-    System(SharedString),
-    Placeholder,
-}
-
-impl Message {
-    pub fn new(message: ParsedMessage) -> Self {
-        Self::User(Box::new(message))
-    }
-
-    pub fn system(content: SharedString) -> Self {
-        Self::System(content)
-    }
-
-    pub fn placeholder() -> Self {
-        Self::Placeholder
+        Err(anyhow!("Chat Room not found."))
     }
 }
 
@@ -96,13 +56,13 @@ pub struct Chat {
     messages: Entity<Vec<Message>>,
     seens: Entity<Vec<EventId>>,
     list_state: ListState,
-    #[allow(dead_code)]
-    subscriptions: Vec<Subscription>,
     // New Message
     input: Entity<TextInput>,
-    // Media
+    // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     is_uploading: bool,
+    #[allow(dead_code)]
+    subscriptions: Vec<Subscription>,
 }
 
 impl Chat {
@@ -470,7 +430,7 @@ impl Chat {
     fn render_message(
         &self,
         ix: usize,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         if let Some(message) = self.messages.read(cx).get(ix) {
@@ -482,47 +442,60 @@ impl Chat {
                 .w_full()
                 .p_2()
                 .map(|this| match message {
-                    Message::User(item) => this
-                        .hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
-                        .child(
-                            div()
-                                .absolute()
-                                .left_0()
-                                .top_0()
-                                .w(px(2.))
-                                .h_full()
-                                .bg(cx.theme().transparent)
-                                .group_hover("", |this| {
-                                    this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
-                                }),
-                        )
-                        .child(
-                            img(item.avatar.clone())
-                                .size_8()
-                                .rounded_full()
-                                .flex_shrink_0(),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_initial()
-                                .overflow_hidden()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_baseline()
-                                        .gap_2()
-                                        .text_xs()
-                                        .child(
-                                            div().font_semibold().child(item.display_name.clone()),
-                                        )
-                                        .child(div().child(item.created_at.clone()).text_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                                        )),
-                                )
-                                .child(div().text_sm().child(item.content.clone())),
-                        ),
+                    Message::User(item) => {
+                        let rich_text = RichText::new(item.content.to_owned());
+
+                        this.hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .top_0()
+                                    .w(px(2.))
+                                    .h_full()
+                                    .bg(cx.theme().transparent)
+                                    .group_hover("", |this| {
+                                        this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+                                    }),
+                            )
+                            .child(
+                                img(item.avatar.clone())
+                                    .size_8()
+                                    .rounded_full()
+                                    .flex_shrink_0(),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_initial()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_baseline()
+                                            .gap_2()
+                                            .text_xs()
+                                            .child(
+                                                div()
+                                                    .font_semibold()
+                                                    .child(item.display_name.clone()),
+                                            )
+                                            .child(
+                                                div().child(item.created_at.clone()).text_color(
+                                                    cx.theme()
+                                                        .base
+                                                        .step(cx, ColorScaleStep::ELEVEN),
+                                                ),
+                                            ),
+                                    )
+                                    .child(div().text_sm().child(rich_text.element(
+                                        "body".into(),
+                                        window,
+                                        cx,
+                                    ))),
+                            )
+                    }
                     Message::System(content) => this
                         .items_center()
                         .child(

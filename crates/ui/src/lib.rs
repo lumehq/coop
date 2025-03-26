@@ -22,6 +22,7 @@ pub mod scroll;
 pub mod skeleton;
 pub mod switch;
 pub mod tab;
+pub mod text;
 pub mod theme;
 pub mod tooltip;
 
