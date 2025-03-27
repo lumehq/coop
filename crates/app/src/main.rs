@@ -221,13 +221,15 @@ fn main() {
                     let chats = cx.update(|_, cx| ChatRegistry::global(cx)).unwrap();
 
                     while let Ok(signal) = event_rx.recv().await {
-                        cx.update(|_, cx| {
+                        cx.update(|window, cx| {
                             match signal {
                                 Signal::Eose => {
-                                    chats.update(cx, |this, cx| this.load_chat_rooms(cx));
+                                    chats.update(cx, |this, cx| this.load_chat_rooms(window, cx));
                                 }
                                 Signal::Event(event) => {
-                                    chats.update(cx, |this, cx| this.push_message(event, cx));
+                                    chats.update(cx, |this, cx| {
+                                        this.push_message(event, window, cx)
+                                    });
                                 }
                             };
                         })

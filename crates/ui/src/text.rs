@@ -4,6 +4,8 @@ use gpui::{
 };
 use std::{ops::Range, sync::Arc};
 
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
     Highlight(HighlightStyle),
@@ -63,7 +65,9 @@ impl RichText {
         self.custom_ranges_tooltip_fn = Some(Arc::new(f));
     }
 
-    pub fn element(&self, id: ElementId, window: &mut Window, _cx: &App) -> AnyElement {
+    pub fn element(&self, id: ElementId, window: &mut Window, cx: &App) -> AnyElement {
+        let link_color = cx.theme().accent.step(cx, ColorScaleStep::ELEVEN);
+
         InteractiveText::new(
             id,
             StyledText::new(self.text.clone()).with_default_highlights(
@@ -72,7 +76,17 @@ impl RichText {
                     (
                         range.clone(),
                         match highlight {
-                            Highlight::Highlight(highlight) => *highlight,
+                            Highlight::Highlight(highlight) => {
+                                // Check if this is a link highlight by seeing if it has an underline
+                                if highlight.underline.is_some() {
+                                    // It's a link, so apply the link color
+                                    let mut link_style = *highlight;
+                                    link_style.color = Some(link_color);
+                                    link_style
+                                } else {
+                                    *highlight
+                                }
+                            }
                             Highlight::Mention => HighlightStyle {
                                 font_weight: Some(FontWeight::BOLD),
                                 ..Default::default()

@@ -2,8 +2,8 @@ use account::Account;
 use global::get_client;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
-    Context, Entity, InteractiveElement, IntoElement, ObjectFit, ParentElement, Render, Styled,
-    StyledImage, Subscription, Task, Window,
+    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
+    Task, Window,
 };
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};

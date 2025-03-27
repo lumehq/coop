@@ -296,12 +296,7 @@ impl Render for Profile {
                         let picture = self.avatar_input.read(cx).text();
 
                         if picture.is_empty() {
-                            this.child(
-                                img("brand/avatar.jpg")
-                                    .size_10()
-                                    .rounded_full()
-                                    .flex_shrink_0(),
-                            )
+                            this.child(img("brand/avatar.png").size_10().flex_shrink_0())
                         } else {
                             this.child(
                                 img(format!(
@@ -310,7 +305,6 @@ impl Render for Profile {
                                     self.avatar_input.read(cx).text()
                                 ))
                                 .size_10()
-                                .rounded_full()
                                 .flex_shrink_0(),
                             )
                         }

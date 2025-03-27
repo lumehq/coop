@@ -264,12 +264,7 @@ impl Render for NewAccount {
                             .gap_2()
                             .map(|this| {
                                 if self.avatar_input.read(cx).text().is_empty() {
-                                    this.child(
-                                        img("brand/avatar.jpg")
-                                            .size_10()
-                                            .rounded_full()
-                                            .flex_shrink_0(),
-                                    )
+                                    this.child(img("brand/avatar.png").size_10().flex_shrink_0())
                                 } else {
                                     this.child(
                                         img(format!(
@@ -278,7 +273,6 @@ impl Render for NewAccount {
                                             self.avatar_input.read(cx).text()
                                         ))
                                         .size_10()
-                                        .rounded_full()
                                         .flex_shrink_0(),
                                     )
                                 }
