@@ -4,6 +4,7 @@ use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
+    pub id: EventId,
     pub content: String,
     pub author: NostrProfile,
     pub mentions: Vec<NostrProfile>,
@@ -12,6 +13,7 @@ pub struct Message {
 
 impl Message {
     pub fn new(
+        id: EventId,
         content: String,
         author: NostrProfile,
         mentions: Vec<NostrProfile>,
@@ -20,6 +22,7 @@ impl Message {
         let created_at = LastSeen(created_at);
 
         Self {
+            id,
             content,
             author,
             mentions,
@@ -40,7 +43,7 @@ pub enum RoomMessage {
 }
 
 impl RoomMessage {
-    pub fn new(message: Message) -> Self {
+    pub fn user(message: Message) -> Self {
         Self::User(Box::new(message))
     }
 

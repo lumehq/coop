@@ -51,7 +51,7 @@ impl Room {
         // Create a task for loading metadata
         let load_metadata = Self::load_metadata(event, cx);
 
-        // Create a snew GPUI's Entity
+        // Create a new GPUI's Entity
         cx.new(|cx| {
             let this = Self {
                 id,
@@ -260,12 +260,9 @@ impl Room {
                     })
                     .collect::<Vec<_>>();
 
-                println!("mentions: {:?}", pubkey_tokens);
-
                 for pubkey in pubkey_tokens {
-                    if let Some(profile) = members
-                        .iter()
-                        .find(|profile| profile.public_key == event.pubkey)
+                    if let Some(profile) =
+                        members.iter().find(|profile| profile.public_key == pubkey)
                     {
                         mentions.push(profile.clone());
                     } else {
@@ -279,8 +276,8 @@ impl Room {
                     }
                 }
 
-                let message = Message::new(content, author, mentions, event.created_at);
-                let room_message = RoomMessage::new(message);
+                let message = Message::new(event.id, content, author, mentions, event.created_at);
+                let room_message = RoomMessage::user(message);
 
                 messages.push(room_message);
             }
@@ -334,8 +331,8 @@ impl Room {
                 }
             }
 
-            let message = Message::new(content, author, mentions, event.created_at);
-            let room_message = RoomMessage::new(message);
+            let message = Message::new(event.id, content, author, mentions, event.created_at);
+            let room_message = RoomMessage::user(message);
 
             Ok(room_message)
         });

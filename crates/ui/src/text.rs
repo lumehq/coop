@@ -1,10 +1,21 @@
+use common::profile::NostrProfile;
 use gpui::{
     AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
     SharedString, StyledText, UnderlineStyle, Window,
 };
-use std::{ops::Range, sync::Arc};
+use linkify::{LinkFinder, LinkKind};
+use nostr_sdk::prelude::*;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use crate::theme::{scale::ColorScaleStep, ActiveTheme};
+
+static NOSTR_URI_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"nostr:(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+").unwrap());
+
+static BECH32_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+\b").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
@@ -32,14 +43,17 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new(content: String) -> Self {
+    pub fn new(content: String, profiles: &[NostrProfile]) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
         let mut link_ranges = Vec::new();
         let mut link_urls = Vec::new();
 
+        println!("rich text");
+
         render_plain_text_mut(
             &content,
+            profiles,
             &mut text,
             &mut highlights,
             &mut link_ranges,
@@ -88,7 +102,8 @@ impl RichText {
                                 }
                             }
                             Highlight::Mention => HighlightStyle {
-                                font_weight: Some(FontWeight::BOLD),
+                                color: Some(link_color),
+                                font_weight: Some(FontWeight::MEDIUM),
                                 ..Default::default()
                             },
                         },
@@ -141,6 +156,7 @@ impl RichText {
 
 pub fn render_plain_text_mut(
     content: &str,
+    profiles: &[NostrProfile],
     text: &mut String,
     highlights: &mut Vec<(Range<usize>, Highlight)>,
     link_ranges: &mut Vec<Range<usize>>,
@@ -149,50 +165,218 @@ pub fn render_plain_text_mut(
     // Copy the content directly
     text.push_str(content);
 
-    // Process links with linkify
-    let mut finder = linkify::LinkFinder::new();
-    finder.kinds(&[linkify::LinkKind::Url]);
+    // Create a profile lookup using PublicKey directly
+    let profile_lookup: HashMap<&PublicKey, &NostrProfile> = profiles
+        .iter()
+        .map(|profile| (&profile.public_key, profile))
+        .collect();
+
+    // Process regular URLs using linkify
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Url]);
+
+    // Collect all URLs
+    let mut url_matches: Vec<(Range<usize>, String)> = Vec::new();
 
     for link in finder.links(content) {
         let start = link.start();
         let end = link.end();
         let range = start..end;
+        let url = link.as_str().to_string();
 
-        link_ranges.push(range.clone());
-        link_urls.push(link.as_str().to_string());
-
-        highlights.push((
-            range,
-            Highlight::Highlight(HighlightStyle {
-                underline: Some(UnderlineStyle {
-                    thickness: 1.0.into(),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }),
-        ));
+        url_matches.push((range, url));
     }
 
-    // Process mentions (npub and nprofile)
-    let mention_pattern = regex::Regex::new(r"\b(npub|nprofile)[a-zA-Z0-9]+\b").unwrap();
+    // Process nostr entities with nostr: prefix
+    let mut nostr_matches: Vec<(Range<usize>, String)> = Vec::new();
 
-    for mention_match in mention_pattern.find_iter(content) {
-        let start = mention_match.start();
-        let end = mention_match.end();
+    for nostr_match in NOSTR_URI_REGEX.find_iter(content) {
+        let start = nostr_match.start();
+        let end = nostr_match.end();
         let range = start..end;
-        let mention_text = mention_match.as_str();
+        let nostr_uri = nostr_match.as_str().to_string();
 
-        // Avoid duplicating highlights if this range was already processed as a link
-        if !link_ranges
+        // Check if this nostr URI overlaps with any already processed URL
+        if !url_matches
             .iter()
-            .any(|r| r.start < range.end && range.start < r.end)
+            .any(|(url_range, _)| url_range.start < range.end && range.start < url_range.end)
         {
-            // All mentions are treated the same way
-            highlights.push((range.clone(), Highlight::Mention));
+            nostr_matches.push((range, nostr_uri));
+        }
+    }
 
-            // Make mentions clickable
+    // Process raw bech32 entities (without nostr: prefix)
+    let mut bech32_matches: Vec<(Range<usize>, String)> = Vec::new();
+
+    for bech32_match in BECH32_REGEX.find_iter(content) {
+        let start = bech32_match.start();
+        let end = bech32_match.end();
+        let range = start..end;
+        let bech32_entity = bech32_match.as_str().to_string();
+
+        // Check if this entity overlaps with any already processed matches
+        let overlaps_with_url = url_matches
+            .iter()
+            .any(|(url_range, _)| url_range.start < range.end && range.start < url_range.end);
+
+        let overlaps_with_nostr = nostr_matches
+            .iter()
+            .any(|(nostr_range, _)| nostr_range.start < range.end && range.start < nostr_range.end);
+
+        if !overlaps_with_url && !overlaps_with_nostr {
+            bech32_matches.push((range, bech32_entity));
+        }
+    }
+
+    // Combine all matches for processing from end to start
+    let mut all_matches = Vec::new();
+    all_matches.extend(url_matches);
+    all_matches.extend(nostr_matches);
+    all_matches.extend(bech32_matches);
+
+    // Sort by position (end to start) to avoid changing positions when replacing text
+    all_matches.sort_by(|(range_a, _), (range_b, _)| range_b.start.cmp(&range_a.start));
+
+    // Process all matches
+    for (range, entity) in all_matches {
+        if entity.starts_with("http") {
+            // Regular URL
+            highlights.push((
+                range.clone(),
+                Highlight::Highlight(HighlightStyle {
+                    underline: Some(UnderlineStyle {
+                        thickness: 1.0.into(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+            ));
+
             link_ranges.push(range);
-            link_urls.push(format!("mention:{}", mention_text));
+            link_urls.push(entity);
+        } else {
+            // Handle nostr entities
+            let entity_without_prefix = if entity.starts_with("nostr:") {
+                entity.strip_prefix("nostr:").unwrap_or(&entity)
+            } else {
+                &entity
+            };
+
+            // Try to find a matching profile if this is npub or nprofile
+            let profile_match = if entity_without_prefix.starts_with("npub") {
+                PublicKey::from_bech32(entity_without_prefix)
+                    .ok()
+                    .and_then(|pubkey| profile_lookup.get(&pubkey).copied())
+            } else if entity_without_prefix.starts_with("nprofile") {
+                Nip19Profile::from_bech32(entity_without_prefix)
+                    .ok()
+                    .and_then(|profile| profile_lookup.get(&profile.public_key).copied())
+            } else {
+                None
+            };
+
+            if let Some(profile) = profile_match {
+                // Profile found - create a mention
+                let display_name = format!("@{}", profile.name);
+
+                // Replace mention with profile name
+                text.replace_range(range.clone(), &display_name);
+
+                // Adjust ranges
+                let new_length = display_name.len();
+                let length_diff = new_length as isize - (range.end - range.start) as isize;
+
+                // New range for the replacement
+                let new_range = range.start..(range.start + new_length);
+
+                // Add highlight for the profile name
+                highlights.push((new_range.clone(), Highlight::Mention));
+
+                // Make it clickable
+                link_ranges.push(new_range);
+                link_urls.push(format!("mention:{}", entity_without_prefix));
+
+                // Adjust subsequent ranges if needed
+                if length_diff != 0 {
+                    adjust_ranges(highlights, link_ranges, range.end, length_diff);
+                }
+            } else {
+                // No profile match or not a profile entity - create njump.me link
+                let njump_url = format!("https://njump.me/{}", entity_without_prefix);
+
+                // Create a shortened display format for the URL
+                let shortened_entity = format_shortened_entity(entity_without_prefix);
+                let display_text = format!("https://njump.me/{}", shortened_entity);
+
+                // Replace the original entity with the shortened display version
+                text.replace_range(range.clone(), &display_text);
+
+                // Adjust the ranges
+                let new_length = display_text.len();
+                let length_diff = new_length as isize - (range.end - range.start) as isize;
+
+                // New range for the replacement
+                let new_range = range.start..(range.start + new_length);
+
+                // Add underline highlight
+                highlights.push((
+                    new_range.clone(),
+                    Highlight::Highlight(HighlightStyle {
+                        underline: Some(UnderlineStyle {
+                            thickness: 1.0.into(),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                ));
+
+                // Make it clickable
+                link_ranges.push(new_range);
+                link_urls.push(njump_url);
+
+                // Adjust subsequent ranges if needed
+                if length_diff != 0 {
+                    adjust_ranges(highlights, link_ranges, range.end, length_diff);
+                }
+            }
+        }
+    }
+}
+
+/// Format a bech32 entity with ellipsis and last 4 characters
+fn format_shortened_entity(entity: &str) -> String {
+    let prefix_end = entity.find('1').unwrap_or(0);
+
+    if prefix_end > 0 && entity.len() > prefix_end + 5 {
+        let prefix = &entity[0..=prefix_end]; // Include the '1'
+        let suffix = &entity[entity.len() - 4..]; // Last 4 chars
+
+        format!("{}...{}", prefix, suffix)
+    } else {
+        entity.to_string()
+    }
+}
+
+// Helper function to adjust ranges when text length changes
+fn adjust_ranges(
+    highlights: &mut [(Range<usize>, Highlight)],
+    link_ranges: &mut [Range<usize>],
+    position: usize,
+    length_diff: isize,
+) {
+    // Adjust highlight ranges
+    for (range, _) in highlights.iter_mut() {
+        if range.start > position {
+            range.start = (range.start as isize + length_diff) as usize;
+            range.end = (range.end as isize + length_diff) as usize;
+        }
+    }
+
+    // Adjust link ranges
+    for range in link_ranges.iter_mut() {
+        if range.start > position {
+            range.start = (range.start as isize + length_diff) as usize;
+            range.end = (range.end as isize + length_diff) as usize;
         }
     }
 }

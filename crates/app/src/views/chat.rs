@@ -12,7 +12,7 @@ use gpui::{
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
@@ -41,6 +41,7 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     messages: Entity<Vec<RoomMessage>>,
+    text_data: HashMap<EventId, RichText>,
     list_state: ListState,
     // New Message
     input: Entity<TextInput>,
@@ -107,6 +108,7 @@ impl Chat {
                 focus_handle: cx.focus_handle(),
                 is_uploading: false,
                 id: id.to_string().into(),
+                text_data: HashMap::new(),
                 room,
                 messages,
                 list_state,
@@ -328,7 +330,7 @@ impl Chat {
     }
 
     fn render_message(
-        &self,
+        &mut self,
         ix: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -337,6 +339,7 @@ impl Chat {
         "This conversation is private. Only members of this chat can see each other's messages.";
 
         let message = self.messages.read(cx).get(ix).unwrap();
+        let text_data = &mut self.text_data;
 
         div()
             .group("")
@@ -347,7 +350,9 @@ impl Chat {
             .p_2()
             .map(|this| match message {
                 RoomMessage::User(item) => {
-                    let rich_text = RichText::new(item.content.to_owned());
+                    let text = text_data
+                        .entry(item.id)
+                        .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
 
                     this.hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
                         .child(
@@ -388,7 +393,7 @@ impl Chat {
                                                 ),
                                         ),
                                 )
-                                .child(div().text_sm().child(rich_text.element(
+                                .child(div().text_sm().child(text.element(
                                     "body".into(),
                                     window,
                                     cx,
