@@ -62,15 +62,3 @@ pub fn nostr_file() -> &'static PathBuf {
     static NOSTR_FILE: OnceLock<PathBuf> = OnceLock::new();
     NOSTR_FILE.get_or_init(|| support_dir().join("nostr"))
 }
-
-/// Returns the path to the `client.dat` file.
-pub fn client_file() -> &'static PathBuf {
-    static CLIENT_FILE: OnceLock<PathBuf> = OnceLock::new();
-    CLIENT_FILE.get_or_init(|| support_dir().join("client.dat"))
-}
-
-/// Returns the path to the `device.dat` file.
-pub fn device_file() -> &'static PathBuf {
-    static DEVICE_FILE: OnceLock<PathBuf> = OnceLock::new();
-    DEVICE_FILE.get_or_init(|| support_dir().join("device.dat"))
-}
