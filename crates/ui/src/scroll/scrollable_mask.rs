@@ -1,7 +1,7 @@
 use gpui::{
-    px, relative, App, Axis, Bounds, ContentMask, Corners, Edges, Element, ElementId, EntityId,
-    GlobalElementId, Hitbox, Hsla, IntoElement, IsZero as _, LayoutId, PaintQuad, Pixels, Point,
-    Position, ScrollHandle, ScrollWheelEvent, Size, Style, Window,
+    px, relative, App, Axis, BorderStyle, Bounds, ContentMask, Corners, Edges, Element, ElementId,
+    EntityId, GlobalElementId, Hitbox, Hsla, IntoElement, IsZero as _, LayoutId, PaintQuad, Pixels,
+    Point, Position, ScrollHandle, ScrollWheelEvent, Size, Style, Window,
 };
 
 use crate::AxisExt;
@@ -111,6 +111,7 @@ impl Element for ScrollableMask {
                     bounds,
                     border_widths: Edges::all(px(1.0)),
                     border_color: color,
+                    border_style: BorderStyle::Solid,
                     background: gpui::transparent_white().into(),
                     corner_radii: Corners::all(px(0.)),
                 });

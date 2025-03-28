@@ -7,8 +7,10 @@ publish.workspace = true
 [dependencies]
 common = { path = "../common" }
 global = { path = "../global" }
+ui = { path = "../ui" }
 
 gpui.workspace = true
+nostr.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true

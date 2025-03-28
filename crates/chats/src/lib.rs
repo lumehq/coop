@@ -3,12 +3,13 @@ use std::cmp::Reverse;
 use anyhow::anyhow;
 use common::{last_seen::LastSeen, utils::room_hash};
 use global::get_client;
-use gpui::{App, AppContext, Context, Entity, Global, Task, WeakEntity};
+use gpui::{App, AppContext, Context, Entity, Global, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
-use crate::room::{IncomingEvent, Room};
+use crate::room::Room;
 
+pub mod message;
 pub mod room;
 
 pub fn init(cx: &mut App) {
@@ -44,7 +45,7 @@ impl ChatRegistry {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
-    pub fn load_chat_rooms(&mut self, cx: &mut Context<Self>) {
+    pub fn load_chat_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
 
         let task: Task<Result<Vec<Event>, Error>> = cx.background_spawn(async move {
@@ -73,9 +74,9 @@ impl ChatRegistry {
             Ok(result)
         });
 
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             if let Ok(events) = task.await {
-                cx.update(|cx| {
+                cx.update(|_, cx| {
                     this.update(cx, |this, cx| {
                         if !events.is_empty() {
                             let current_ids = this.current_rooms_ids(cx);
@@ -118,11 +119,11 @@ impl ChatRegistry {
         self.is_loading
     }
 
-    pub fn get(&self, id: &u64, cx: &App) -> Option<WeakEntity<Room>> {
+    pub fn get(&self, id: &u64, cx: &App) -> Option<Entity<Room>> {
         self.rooms
             .iter()
             .find(|model| model.read(cx).id == *id)
-            .map(|room| room.downgrade())
+            .cloned()
     }
 
     pub fn push_room(
@@ -144,14 +145,13 @@ impl ChatRegistry {
         }
     }
 
-    pub fn push_message(&mut self, event: Event, cx: &mut Context<Self>) {
+    pub fn push_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             room.update(cx, |this, cx| {
-                this.last_seen = LastSeen(event.created_at);
-                cx.emit(IncomingEvent { event });
-                cx.notify();
+                this.set_last_seen(LastSeen(event.created_at), cx);
+                this.emit_message(event, window, cx);
             });
 
             // Re-sort rooms by last seen

@@ -15,6 +15,7 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Nostr
+nostr = { git = "https://github.com/rust-nostr/nostr", features = ["parser"] }
 nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
 nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
@@ -39,7 +40,6 @@ anyhow = "1.0.44"
 smallvec = "1.14.0"
 rust-embed = "8.5.0"
 log = "0.4"
-keyring = { git = "https://github.com/hwchen/keyring-rs" }
 
 [profile.release]
 strip = true

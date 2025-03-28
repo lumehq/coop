@@ -30,7 +30,6 @@ log.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 oneshot.workspace = true
-keyring.workspace = true
 
 rustls = "0.23.23"
 futures = "0.3"

@@ -40,6 +40,8 @@ enum Signal {
 fn main() {
     // Enable logging
     tracing_subscriber::fmt::init();
+    // Fix crash on startup
+    _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let (event_tx, event_rx) = smol::channel::bounded::<Signal>(1024);
     let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(100);
@@ -55,10 +57,6 @@ fn main() {
     // Connect to default relays
     app.background_executor()
         .spawn(async {
-            // Fix crash on startup
-            // TODO: why this is needed?
-            _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-
             for relay in BOOTSTRAP_RELAYS.into_iter() {
                 _ = client.add_relay(relay).await;
             }
@@ -223,13 +221,15 @@ fn main() {
                     let chats = cx.update(|_, cx| ChatRegistry::global(cx)).unwrap();
 
                     while let Ok(signal) = event_rx.recv().await {
-                        cx.update(|_, cx| {
+                        cx.update(|window, cx| {
                             match signal {
                                 Signal::Eose => {
-                                    chats.update(cx, |this, cx| this.load_chat_rooms(cx));
+                                    chats.update(cx, |this, cx| this.load_chat_rooms(window, cx));
                                 }
                                 Signal::Event(event) => {
-                                    chats.update(cx, |this, cx| this.push_message(event, cx));
+                                    chats.update(cx, |this, cx| {
+                                        this.push_message(event, window, cx)
+                                    });
                                 }
                             };
                         })

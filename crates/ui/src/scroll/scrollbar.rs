@@ -1,7 +1,7 @@
 use gpui::{
-    fill, point, px, relative, App, Bounds, ContentMask, CursorStyle, Edges, Element, EntityId,
-    Hitbox, Hsla, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels,
-    Point, Position, ScrollHandle, ScrollWheelEvent, UniformListScrollHandle, Window,
+    fill, point, px, relative, App, BorderStyle, Bounds, ContentMask, CursorStyle, Edges, Element,
+    EntityId, Hitbox, Hsla, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, Position, ScrollHandle, ScrollWheelEvent, UniformListScrollHandle, Window,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -657,7 +657,7 @@ impl Element for Scrollbar {
                     let margin_end = state.margin_end;
                     let is_vertical = axis.is_vertical();
 
-                    window.set_cursor_style(CursorStyle::default(), &state.bar_hitbox);
+                    window.set_cursor_style(CursorStyle::default(), Some(&state.bar_hitbox));
 
                     window.paint_layer(hitbox_bounds, |cx| {
                         cx.paint_quad(fill(state.bounds, state.bg));
@@ -682,6 +682,7 @@ impl Element for Scrollbar {
                                 }
                             },
                             border_color: state.border,
+                            border_style: BorderStyle::Solid,
                         });
 
                         cx.paint_quad(
