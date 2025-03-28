@@ -61,9 +61,6 @@ fn main() {
                 _ = client.add_relay(relay).await;
             }
 
-            _ = client.add_discovery_relay("wss://relaydiscovery.com").await;
-            _ = client.add_discovery_relay("wss://user.kindpag.es").await;
-
             _ = client.connect().await
         })
         .detach();
@@ -257,7 +254,10 @@ async fn handle_metadata(buffer: HashSet<PublicKey>) {
         .limit(100)
         .kinds(vec![Kind::Metadata, Kind::UserStatus]);
 
-    if let Err(e) = client.subscribe(filter, Some(opts)).await {
+    if let Err(e) = client
+        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+        .await
+    {
         log::error!("Failed to sync metadata: {e}");
     }
 }

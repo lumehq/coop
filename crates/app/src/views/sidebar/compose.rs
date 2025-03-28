@@ -1,6 +1,6 @@
 use chats::{room::Room, ChatRegistry};
 use common::{profile::NostrProfile, utils::random_name};
-use global::{constants::DEVICE_ANNOUNCEMENT_KIND, get_client};
+use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
@@ -208,7 +208,6 @@ impl Compose {
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
-        let window_handle = window.window_handle();
         let content = self.user_input.read(cx).text().to_string();
 
         // Show loading spinner
@@ -243,29 +242,11 @@ impl Compose {
             })
         };
 
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(profile) => {
-                    let public_key = profile.public_key;
-
-                    _ = cx
-                        .background_spawn(async move {
-                            let opts = SubscribeAutoCloseOptions::default()
-                                .exit_policy(ReqExitPolicy::ExitOnEOSE);
-
-                            // Create a device announcement filter
-                            let device = Filter::new()
-                                .kind(Kind::Custom(DEVICE_ANNOUNCEMENT_KIND))
-                                .author(public_key)
-                                .limit(1);
-
-                            // Only subscribe to the latest device announcement
-                            client.subscribe(device, Some(opts)).await
-                        })
-                        .await;
-
-                    _ = cx.update_window(window_handle, |_, window, cx| {
-                        _ = this.update(cx, |this, cx| {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
                             let public_key = profile.public_key;
 
                             this.contacts.update(cx, |this, cx| {
@@ -286,16 +267,20 @@ impl Compose {
                                 this.set_text("", window, cx);
                                 cx.notify();
                             });
-                        });
-                    });
+                        })
+                        .ok();
+                    })
+                    .ok();
                 }
                 Err(e) => {
-                    _ = cx.update_window(window_handle, |_, _, cx| {
-                        _ = this.update(cx, |this, cx| {
+                    cx.update(|_, cx| {
+                        this.update(cx, |this, cx| {
                             this.set_loading(false, cx);
                             this.set_error(Some(e.to_string().into()), cx);
-                        });
-                    });
+                        })
+                        .ok();
+                    })
+                    .ok();
                 }
             }
         })
