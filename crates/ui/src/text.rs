@@ -49,8 +49,6 @@ impl RichText {
         let mut link_ranges = Vec::new();
         let mut link_urls = Vec::new();
 
-        println!("rich text");
-
         render_plain_text_mut(
             &content,
             profiles,
@@ -255,7 +253,6 @@ pub fn render_plain_text_mut(
             link_ranges.push(range);
             link_urls.push(entity);
         } else {
-            // Handle nostr entities
             let entity_without_prefix = if entity.starts_with("nostr:") {
                 entity.strip_prefix("nostr:").unwrap_or(&entity)
             } else {
