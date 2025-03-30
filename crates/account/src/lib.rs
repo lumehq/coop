@@ -118,7 +118,7 @@ impl Account {
         let user = profile.public_key;
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-        // Create a contact list filter
+        let metadata = Filter::new().kind(Kind::Metadata).author(user).limit(1);
         let contacts = Filter::new().kind(Kind::ContactList).author(user).limit(1);
 
         // Create a user's data filter
@@ -139,6 +139,9 @@ impl Account {
         let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            // Only subscribe to the latest metadata
+            client.subscribe(metadata, Some(opts)).await?;
+
             // Only subscribe to the latest contact list
             client.subscribe(contacts, Some(opts)).await?;
 

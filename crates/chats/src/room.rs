@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Error;
 use common::{
@@ -7,7 +7,7 @@ use common::{
     utils::{compare, room_hash},
 };
 use global::get_client;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, SharedString, Task, Window};
+use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -19,6 +19,15 @@ pub struct IncomingEvent {
     pub event: RoomMessage,
 }
 
+#[derive(Debug, Default)]
+pub enum RoomKind {
+    Inbox,
+    Verified,
+    Others,
+    #[default]
+    Unknown,
+}
+
 pub struct Room {
     pub id: u64,
     pub last_seen: LastSeen,
@@ -26,6 +35,8 @@ pub struct Room {
     pub name: Option<SharedString>,
     /// All members of the room
     pub members: Arc<SmallVec<[NostrProfile; 2]>>,
+    /// Kind
+    pub kind: RoomKind,
 }
 
 impl EventEmitter<IncomingEvent> for Room {}
@@ -37,7 +48,8 @@ impl PartialEq for Room {
 }
 
 impl Room {
-    pub fn new(event: &Event, cx: &mut App) -> Entity<Self> {
+    /// Create a new room from an Nostr Event
+    pub fn new(event: &Event, kind: RoomKind) -> Self {
         let id = room_hash(event);
         let last_seen = LastSeen(event.created_at);
 
@@ -48,55 +60,16 @@ impl Room {
             None
         };
 
-        // Create a task for loading metadata
-        let load_metadata = Self::load_metadata(event, cx);
-
-        // Create a new GPUI's Entity
-        cx.new(|cx| {
-            let this = Self {
-                id,
-                last_seen,
-                name,
-                members: Arc::new(smallvec![]),
-            };
-
-            cx.spawn(async move |this, cx| {
-                if let Ok(profiles) = load_metadata.await {
-                    cx.update(|cx| {
-                        this.update(cx, |this: &mut Room, cx| {
-                            // Update the room's name if it's not already set
-                            if this.name.is_none() {
-                                let mut name = profiles
-                                    .iter()
-                                    .take(2)
-                                    .map(|profile| profile.name.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(", ");
-
-                                if profiles.len() > 2 {
-                                    name = format!("{}, +{}", name, profiles.len() - 2);
-                                }
-
-                                this.name = Some(name.into())
-                            };
-
-                            let mut new_members = SmallVec::new();
-                            new_members.extend(profiles);
-                            this.members = Arc::new(new_members);
-
-                            cx.notify();
-                        })
-                        .ok();
-                    })
-                    .ok();
-                }
-            })
-            .detach();
-
-            this
-        })
+        Self {
+            id,
+            last_seen,
+            name,
+            kind,
+            members: Arc::new(smallvec![]),
+        }
     }
 
+    /// Get room's id
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -205,6 +178,38 @@ impl Room {
             }
 
             Ok(report)
+        })
+    }
+
+    /// Load metadata for all members
+    pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<Vec<NostrProfile>, Error>> {
+        let client = get_client();
+        let pubkeys = self.public_keys();
+
+        cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let signer_pubkey = signer.get_public_key().await?;
+            let mut profiles = Vec::with_capacity(pubkeys.len());
+
+            for public_key in pubkeys.into_iter() {
+                let metadata = client
+                    .database()
+                    .metadata(public_key)
+                    .await?
+                    .unwrap_or_default();
+
+                // Convert metadata to profile
+                let profile = NostrProfile::new(public_key, metadata);
+
+                if public_key == signer_pubkey {
+                    // Room's owner always push to the end of the vector
+                    profiles.push(profile);
+                } else {
+                    profiles.insert(0, profile);
+                }
+            }
+
+            Ok(profiles)
         })
     }
 
@@ -349,41 +354,5 @@ impl Room {
             }
         })
         .detach();
-    }
-
-    /// Load metadata for all members
-    fn load_metadata(event: &Event, cx: &App) -> Task<Result<Vec<NostrProfile>, Error>> {
-        let client = get_client();
-        let mut pubkeys = vec![];
-
-        // Get all pubkeys from event's tags
-        pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
-        pubkeys.push(event.pubkey);
-
-        cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let signer_pubkey = signer.get_public_key().await?;
-            let mut profiles = Vec::with_capacity(pubkeys.len());
-
-            for public_key in pubkeys.into_iter() {
-                let metadata = client
-                    .database()
-                    .metadata(public_key)
-                    .await?
-                    .unwrap_or_default();
-
-                // Convert metadata to profile
-                let profile = NostrProfile::new(public_key, metadata);
-
-                if public_key == signer_pubkey {
-                    // Room's owner always push to the end of the vector
-                    profiles.push(profile);
-                } else {
-                    profiles.insert(0, profile);
-                }
-            }
-
-            Ok(profiles)
-        })
     }
 }

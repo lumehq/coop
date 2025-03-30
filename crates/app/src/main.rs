@@ -134,6 +134,8 @@ fn main() {
 
                                             // Send all pubkeys to the batch
                                             _ = batch_tx.send(pubkeys).await;
+                                        } else {
+                                            log::error!("Failed to sign event with rng keys")
                                         }
                                     }
                                 }
@@ -148,7 +150,7 @@ fn main() {
                         }
                         RelayMessage::EndOfStoredEvents(subscription_id) => {
                             if all_id == *subscription_id {
-                                _ = event_tx.send(Signal::Eose).await;
+                                event_tx.send(Signal::Eose).await.ok();
                             }
                         }
                         _ => {}
@@ -221,7 +223,7 @@ fn main() {
                         cx.update(|window, cx| {
                             match signal {
                                 Signal::Eose => {
-                                    chats.update(cx, |this, cx| this.load_chat_rooms(window, cx));
+                                    chats.update(cx, |this, cx| this.load_rooms(window, cx));
                                 }
                                 Signal::Event(event) => {
                                     chats.update(cx, |this, cx| {
@@ -244,15 +246,12 @@ fn main() {
 
 async fn handle_metadata(buffer: HashSet<PublicKey>) {
     let client = get_client();
-
-    let opts = SubscribeAutoCloseOptions::default()
-        .exit_policy(ReqExitPolicy::ExitOnEOSE)
-        .idle_timeout(Some(Duration::from_secs(1)));
+    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
         .limit(100)
-        .kinds(vec![Kind::Metadata, Kind::UserStatus]);
+        .kinds(vec![Kind::Metadata, Kind::InboxRelays, Kind::UserStatus]);
 
     if let Err(e) = client
         .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
