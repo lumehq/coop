@@ -209,8 +209,8 @@ where
                         ),
                 )
                 .into_any_element();
-            let element_id = element.request_layout(window, cx);
 
+            let element_id = element.request_layout(window, cx);
             let layout_id = window.request_layout(style, vec![element_id], cx);
 
             (layout_id, element)

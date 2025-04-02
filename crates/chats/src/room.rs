@@ -23,9 +23,8 @@ pub struct IncomingEvent {
 pub enum RoomKind {
     Inbox,
     Verified,
-    Other,
     #[default]
-    Unknown,
+    Other,
 }
 
 pub struct Room {

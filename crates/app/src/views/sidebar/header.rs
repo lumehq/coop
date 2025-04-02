@@ -61,7 +61,7 @@ impl RenderOnce for Header {
             .flex()
             .items_center()
             .flex_shrink_0()
-            .gap_1p5()
+            .gap_0p5()
             .px_1()
             .h_6()
             .rounded(px(cx.theme().radius))

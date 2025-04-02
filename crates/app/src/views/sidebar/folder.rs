@@ -81,7 +81,7 @@ impl RenderOnce for Folder {
                     .pl_3()
                     .flex()
                     .items_center()
-                    .gap_1p5()
+                    .gap_0p5()
                     .h_6()
                     .rounded(px(cx.theme().radius))
                     .text_xs()
@@ -104,7 +104,7 @@ impl RenderOnce for Folder {
                     .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))),
             )
             .when(!self.collapsed, |this| {
-                this.child(div().pl_2().flex().flex_col().children(self.items))
+                this.child(div().flex().flex_col().children(self.items))
             })
     }
 }
@@ -148,7 +148,8 @@ impl RenderOnce for FolderItem {
         div()
             .id("folder-item")
             .h_7()
-            .px_2()
+            .pl_12()
+            .pr_1()
             .w_full()
             .flex()
             .items_center()

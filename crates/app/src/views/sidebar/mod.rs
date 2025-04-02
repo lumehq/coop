@@ -11,6 +11,7 @@ use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
+    scroll::ScrollbarAxis,
     skeleton::Skeleton,
     theme::{scale::ColorScaleStep, ActiveTheme},
     Collapsible, ContextModal, Disableable, IconName, StyledExt,
@@ -160,6 +161,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .scrollable(cx.entity_id(), ScrollbarAxis::Vertical)
             .flex()
             .flex_col()
             .size_full()
@@ -193,7 +195,6 @@ impl Render for Sidebar {
                         this.map(|this| {
                             let state = ChatRegistry::global(cx);
                             let is_loading = state.read(cx).is_loading();
-                            let rooms = state.read(cx).rooms();
 
                             if is_loading {
                                 this.children(self.render_skeleton(5))
@@ -229,6 +230,10 @@ impl Render for Sidebar {
                                         ),
                                 )
                             } else {
+                                let inbox = state.read(cx).inbox_rooms(cx);
+                                let verified = state.read(cx).verified_rooms(cx);
+                                let others = state.read(cx).other_rooms(cx);
+
                                 this.child(
                                     Folder::new("Inbox")
                                         .icon(IconName::FolderFill)
@@ -239,7 +244,7 @@ impl Render for Sidebar {
                                         .children({
                                             let mut items = vec![];
 
-                                            for room in rooms {
+                                            for room in inbox {
                                                 let room = room.read(cx);
                                                 let ago = room.last_seen().ago();
                                                 let Some(member) = room.first_member() else {
@@ -280,7 +285,44 @@ impl Render for Sidebar {
                                         .collapsed(self.verified_collapsed)
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.verified_collapse(cx);
-                                        })),
+                                        }))
+                                        .children({
+                                            let mut items = vec![];
+
+                                            for room in verified {
+                                                let room = room.read(cx);
+                                                let ago = room.last_seen().ago();
+                                                let Some(member) = room.first_member() else {
+                                                    continue;
+                                                };
+
+                                                let label = if room.is_group() {
+                                                    room.name().unwrap_or("Unnamed".into())
+                                                } else {
+                                                    member.name.clone()
+                                                };
+
+                                                let img = if !room.is_group() {
+                                                    Some(img(member.avatar.clone()))
+                                                } else {
+                                                    None
+                                                };
+
+                                                let item = FolderItem::new(label, ago)
+                                                    .img(img)
+                                                    .on_click({
+                                                        let id = room.id;
+
+                                                        cx.listener(move |this, _, window, cx| {
+                                                            this.open_room(id, window, cx);
+                                                        })
+                                                    });
+
+                                                items.push(item);
+                                            }
+
+                                            items
+                                        }),
                                 )
                                 .child(
                                     Folder::new("Others")
@@ -288,7 +330,44 @@ impl Render for Sidebar {
                                         .collapsed(self.other_collapsed)
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.other_collapse(cx);
-                                        })),
+                                        }))
+                                        .children({
+                                            let mut items = vec![];
+
+                                            for room in others {
+                                                let room = room.read(cx);
+                                                let ago = room.last_seen().ago();
+                                                let Some(member) = room.first_member() else {
+                                                    continue;
+                                                };
+
+                                                let label = if room.is_group() {
+                                                    room.name().unwrap_or("Unnamed".into())
+                                                } else {
+                                                    member.name.clone()
+                                                };
+
+                                                let img = if !room.is_group() {
+                                                    Some(img(member.avatar.clone()))
+                                                } else {
+                                                    None
+                                                };
+
+                                                let item = FolderItem::new(label, ago)
+                                                    .img(img)
+                                                    .on_click({
+                                                        let id = room.id;
+
+                                                        cx.listener(move |this, _, window, cx| {
+                                                            this.open_room(id, window, cx);
+                                                        })
+                                                    });
+
+                                                items.push(item);
+                                            }
+
+                                            items
+                                        }),
                                 )
                             }
                         })
