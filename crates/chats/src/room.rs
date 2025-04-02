@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::Error;
 use common::{
@@ -10,7 +10,7 @@ use global::get_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 
 use crate::message::{Message, RoomMessage};
 
@@ -19,11 +19,11 @@ pub struct IncomingEvent {
     pub event: RoomMessage,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub enum RoomKind {
     Inbox,
     Verified,
-    Others,
+    Other,
     #[default]
     Unknown,
 }
@@ -37,6 +37,8 @@ pub struct Room {
     pub members: Arc<SmallVec<[NostrProfile; 2]>>,
     /// Kind
     pub kind: RoomKind,
+    /// All public keys of the room members
+    pubkeys: Vec<PublicKey>,
 }
 
 impl EventEmitter<IncomingEvent> for Room {}
@@ -60,12 +62,18 @@ impl Room {
             None
         };
 
+        // Get all public keys from the event's tags
+        let mut pubkeys = vec![];
+        pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
+        pubkeys.push(event.pubkey);
+
         Self {
             id,
             last_seen,
             name,
             kind,
-            members: Arc::new(smallvec![]),
+            members: Arc::new(SmallVec::with_capacity(pubkeys.len())),
+            pubkeys,
         }
     }
 
@@ -89,12 +97,27 @@ impl Room {
 
     /// Collect room's member's public keys
     pub fn public_keys(&self) -> Vec<PublicKey> {
-        self.members.iter().map(|m| m.public_key).collect()
+        self.pubkeys.clone()
     }
 
     /// Get room's display name
     pub fn name(&self) -> Option<SharedString> {
         self.name.clone()
+    }
+
+    /// Determine if room is an inbox room
+    pub fn is_inbox(&self) -> bool {
+        self.kind == RoomKind::Inbox
+    }
+
+    /// Determine if room is an verified room
+    pub fn is_verified(&self) -> bool {
+        self.kind == RoomKind::Verified
+    }
+
+    /// Determine if room is an other room
+    pub fn is_other(&self) -> bool {
+        self.kind == RoomKind::Other
     }
 
     /// Determine if room is a group

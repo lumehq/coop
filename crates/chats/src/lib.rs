@@ -47,7 +47,7 @@ impl ChatRegistry {
             cx.spawn(async move |this, cx| {
                 if let Ok(profiles) = load_metadata.await {
                     cx.update(|cx| {
-                        this.update(cx, |this: &mut Room, cx| {
+                        this.update(cx, |this, cx| {
                             // Update the room's name if it's not already set
                             if this.name.is_none() {
                                 let mut name = profiles
@@ -142,7 +142,7 @@ impl ChatRegistry {
                                         let kind = if item.1 > 2 {
                                             RoomKind::Inbox
                                         } else {
-                                            RoomKind::Others
+                                            RoomKind::default()
                                         };
                                         Room::new(&item.0, kind)
                                     }))
@@ -175,6 +175,30 @@ impl ChatRegistry {
     /// Get all rooms.
     pub fn rooms(&self) -> &[Entity<Room>] {
         &self.rooms
+    }
+
+    /// Get all inbox rooms.
+    pub fn inbox_rooms(&self, cx: &App) -> Vec<&Entity<Room>> {
+        self.rooms
+            .iter()
+            .filter(|room| room.read(cx).is_inbox())
+            .collect()
+    }
+
+    /// Get all verified rooms.
+    pub fn verified_rooms(&self, cx: &App) -> Vec<&Entity<Room>> {
+        self.rooms
+            .iter()
+            .filter(|room| room.read(cx).is_verified())
+            .collect()
+    }
+
+    /// Get all other rooms.
+    pub fn other_rooms(&self, cx: &App) -> Vec<&Entity<Room>> {
+        self.rooms
+            .iter()
+            .filter(|room| room.read(cx).is_other())
+            .collect()
     }
 
     /// Get the loading status of the rooms.
