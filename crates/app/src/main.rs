@@ -1,11 +1,13 @@
+use anyhow::Error;
 use asset::Assets;
 use chats::ChatRegistry;
 use futures::{select, FutureExt};
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
 use global::{
-    constants::{ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID},
-    get_client,
+    add_verified_pubkey,
+    constants::{ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, DVM_RELAYS, NEW_MESSAGE_SUB_ID},
+    get_client, get_verified_pubkeys,
 };
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
@@ -16,8 +18,8 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
+    pool::prelude::ReqExitPolicy, Event, EventBuilder, Filter, Keys, Kind, PublicKey, RelayMessage,
+    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, Tag, TagKind,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -127,13 +129,13 @@ fn main() {
                                             // Save the event to the database, use for query directly.
                                             _ = client.database().save_event(&event).await;
 
+                                            // Send all pubkeys to the batch
+                                            _ = batch_tx.send(pubkeys).await;
+
                                             // Send this event to the GPUI
                                             if new_id == *subscription_id {
                                                 _ = event_tx.send(Signal::Event(event)).await;
                                             }
-
-                                            // Send all pubkeys to the batch
-                                            _ = batch_tx.send(pubkeys).await;
                                         } else {
                                             log::error!("Failed to sign event with rng keys")
                                         }
@@ -144,6 +146,12 @@ fn main() {
                                         event.tags.public_keys().copied().collect::<HashSet<_>>();
 
                                     handle_metadata(pubkeys).await;
+                                }
+                                Kind::Custom(6312) => {
+                                    log::info!("DVM response: {:?}", event);
+                                }
+                                Kind::Custom(7000) => {
+                                    log::error!("DVM error: {:?}", event);
                                 }
                                 _ => {}
                             }
@@ -242,6 +250,37 @@ fn main() {
         })
         .expect("Failed to open window. Please restart the application.");
     });
+}
+
+#[allow(dead_code)]
+async fn verify_pubkey(public_key: PublicKey) -> Result<(), Error> {
+    // If the public key is already processed, return early
+    if get_verified_pubkeys().lock().await.contains(&public_key) {
+        return Ok(());
+    };
+
+    // Mark the public key as processed
+    add_verified_pubkey(public_key).await;
+
+    let client = get_client();
+    let req_kind = Kind::Custom(5312);
+    let resp_kind = Kind::Custom(6312);
+
+    let filter = Filter::new().kind(resp_kind).pubkey(public_key).limit(1);
+    let status = client.database().query(filter).await?.first().is_some();
+
+    if !status {
+        let param = TagKind::custom("param");
+        let tag = Tag::custom(param.clone(), vec!["target", public_key.to_hex().as_str()]);
+        let sort_tag = Tag::custom(param, vec!["sort", "personalizedPagerank"]);
+        let builder = EventBuilder::job_request(req_kind)?.tags(vec![tag, sort_tag]);
+
+        if let Err(e) = client.send_event_builder_to(DVM_RELAYS, builder).await {
+            log::error!("Failed to send verification request: {e}");
+        }
+    }
+
+    Ok(())
 }
 
 async fn handle_metadata(buffer: HashSet<PublicKey>) {

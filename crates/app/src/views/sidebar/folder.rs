@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, percentage, prelude::FluentBuilder, px, App, ClickEvent, Img, InteractiveElement,
-    IntoElement, ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement,
-    Styled as _, Window,
+    div, prelude::FluentBuilder, px, App, ClickEvent, Img, InteractiveElement, IntoElement,
+    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled as _, Window,
 };
 use ui::{
     theme::{scale::ColorScaleStep, ActiveTheme},
@@ -13,8 +12,118 @@ use ui::{
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
+pub struct Parent {
+    icon: Option<Icon>,
+    active_icon: Option<Icon>,
+    label: SharedString,
+    items: Vec<Folder>,
+    collapsed: bool,
+    handler: Handler,
+}
+
+impl Parent {
+    pub fn new(label: impl Into<SharedString>) -> Self {
+        Self {
+            label: label.into(),
+            icon: None,
+            active_icon: None,
+            items: Vec::new(),
+            collapsed: false,
+            handler: Rc::new(|_, _, _| {}),
+        }
+    }
+
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn active_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.active_icon = Some(icon.into());
+        self
+    }
+
+    pub fn collapsed(mut self, collapsed: bool) -> Self {
+        self.collapsed = collapsed;
+        self
+    }
+
+    pub fn child(mut self, child: impl Into<Folder>) -> Self {
+        self.items.push(child.into());
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn children(mut self, children: impl IntoIterator<Item = impl Into<Folder>>) -> Self {
+        self.items = children.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.handler = Rc::new(handler);
+        self
+    }
+}
+
+impl Collapsible for Parent {
+    fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
+    fn collapsed(mut self, collapsed: bool) -> Self {
+        self.collapsed = collapsed;
+        self
+    }
+}
+
+impl RenderOnce for Parent {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let handler = self.handler.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .id(self.label.clone())
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .h_6()
+                    .rounded(px(cx.theme().radius))
+                    .text_xs()
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .font_semibold()
+                    .when_some(self.icon, |this, icon| {
+                        this.map(|this| {
+                            if self.collapsed {
+                                this.child(icon.size_4())
+                            } else {
+                                this.when_some(self.active_icon, |this, icon| {
+                                    this.child(icon.size_4())
+                                })
+                            }
+                        })
+                    })
+                    .child(self.label.clone())
+                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                    .on_click(move |ev, window, cx| handler(ev, window, cx)),
+            )
+            .when(!self.collapsed, |this| {
+                this.child(div().flex().flex_col().gap_1().pl_3().children(self.items))
+            })
+    }
+}
+
+#[derive(IntoElement)]
 pub struct Folder {
     icon: Option<Icon>,
+    active_icon: Option<Icon>,
     label: SharedString,
     items: Vec<FolderItem>,
     collapsed: bool,
@@ -26,6 +135,7 @@ impl Folder {
         Self {
             label: label.into(),
             icon: None,
+            active_icon: None,
             items: Vec::new(),
             collapsed: false,
             handler: Rc::new(|_, _, _| {}),
@@ -34,6 +144,11 @@ impl Folder {
 
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn active_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.active_icon = Some(icon.into());
         self
     }
 
@@ -78,33 +193,32 @@ impl RenderOnce for Folder {
             .child(
                 div()
                     .id(self.label.clone())
-                    .pl_3()
                     .flex()
                     .items_center()
-                    .gap_0p5()
+                    .gap_2()
+                    .px_2()
                     .h_6()
                     .rounded(px(cx.theme().radius))
                     .text_xs()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .font_semibold()
-                    .child(
-                        Icon::new(IconName::ChevronDown)
-                            .size_6()
-                            .when(self.collapsed, |this| this.rotate(percentage(270. / 360.))),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .when_some(self.icon, |this, icon| this.child(icon.size_3()))
-                            .child(self.label.clone()),
-                    )
-                    .on_click(move |ev, window, cx| handler(ev, window, cx))
-                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))),
+                    .when_some(self.icon, |this, icon| {
+                        this.map(|this| {
+                            if self.collapsed {
+                                this.child(icon.size_4())
+                            } else {
+                                this.when_some(self.active_icon, |this, icon| {
+                                    this.child(icon.size_4())
+                                })
+                            }
+                        })
+                    })
+                    .child(self.label.clone())
+                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                    .on_click(move |ev, window, cx| handler(ev, window, cx)),
             )
             .when(!self.collapsed, |this| {
-                this.child(div().flex().flex_col().children(self.items))
+                this.child(div().flex().flex_col().gap_1().pl_6().children(self.items))
             })
     }
 }
@@ -146,10 +260,9 @@ impl RenderOnce for FolderItem {
         let handler = self.handler.clone();
 
         div()
-            .id("folder-item")
-            .h_7()
-            .pl_12()
-            .pr_1()
+            .id(self.label.clone())
+            .h_6()
+            .px_2()
             .w_full()
             .flex()
             .items_center()

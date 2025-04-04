@@ -1,12 +1,11 @@
 use chats::ChatRegistry;
 use compose::{Compose, ComposeButton};
-use folder::{Folder, FolderItem};
+use folder::{Folder, FolderItem, Parent};
 use gpui::{
-    div, img, prelude::FluentBuilder, px, relative, AnyElement, App, AppContext, Context, Entity,
+    div, img, prelude::FluentBuilder, px, AnyElement, App, AppContext, Context, Entity,
     EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, SharedString, Styled,
     Window,
 };
-use header::Header;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
@@ -14,14 +13,13 @@ use ui::{
     scroll::ScrollbarAxis,
     skeleton::Skeleton,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    Collapsible, ContextModal, Disableable, IconName, StyledExt,
+    ContextModal, Disableable, IconName, StyledExt,
 };
 
 use crate::chat_space::{AddPanel, PanelKind};
 
 mod compose;
 mod folder;
-mod header;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
@@ -30,10 +28,10 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
 pub struct Sidebar {
     name: SharedString,
     focus_handle: FocusHandle,
-    collapsed: bool,
-    inbox_collapsed: bool,
-    verified_collapsed: bool,
-    other_collapsed: bool,
+    ongoing: bool,
+    incoming: bool,
+    trusted: bool,
+    unknown: bool,
 }
 
 impl Sidebar {
@@ -45,12 +43,12 @@ impl Sidebar {
         let focus_handle = cx.focus_handle();
 
         Self {
-            name: "Sidebar".into(),
+            name: "Chat Sidebar".into(),
+            ongoing: false,
+            incoming: false,
+            trusted: true,
+            unknown: true,
             focus_handle,
-            collapsed: false,
-            inbox_collapsed: false,
-            verified_collapsed: true,
-            other_collapsed: true,
         }
     }
 
@@ -97,26 +95,27 @@ impl Sidebar {
         );
     }
 
-    fn collapse(&mut self, cx: &mut Context<Self>) {
-        self.collapsed = !self.collapsed;
+    fn ongoing(&mut self, cx: &mut Context<Self>) {
+        self.ongoing = !self.ongoing;
         cx.notify();
     }
 
-    fn inbox_collapse(&mut self, cx: &mut Context<Self>) {
-        self.inbox_collapsed = !self.inbox_collapsed;
+    fn incoming(&mut self, cx: &mut Context<Self>) {
+        self.incoming = !self.incoming;
         cx.notify();
     }
 
-    fn verified_collapse(&mut self, cx: &mut Context<Self>) {
-        self.verified_collapsed = !self.verified_collapsed;
+    fn trusted(&mut self, cx: &mut Context<Self>) {
+        self.trusted = !self.trusted;
         cx.notify();
     }
 
-    fn other_collapse(&mut self, cx: &mut Context<Self>) {
-        self.other_collapsed = !self.other_collapsed;
+    fn unknown(&mut self, cx: &mut Context<Self>) {
+        self.unknown = !self.unknown;
         cx.notify();
     }
 
+    #[allow(dead_code)]
     fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
@@ -160,218 +159,170 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let registry = ChatRegistry::global(cx);
+
         div()
             .scrollable(cx.entity_id(), ScrollbarAxis::Vertical)
+            .size_full()
             .flex()
             .flex_col()
-            .size_full()
-            .child(
-                div()
-                    .px_2()
-                    .py_3()
-                    .w_full()
-                    .child(ComposeButton::new("New Message").on_click(cx.listener(
-                        |this, _, window, cx| {
-                            this.render_compose(window, cx);
-                        },
-                    ))),
-            )
-            .child(
-                div()
-                    .px_2()
-                    .w_full()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        Header::new("Chat Folders", IconName::BubbleFill)
-                            .collapsed(self.collapsed)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.collapse(cx);
-                            })),
-                    )
-                    .when(!self.collapsed, |this| {
-                        this.map(|this| {
-                            let state = ChatRegistry::global(cx);
-                            let is_loading = state.read(cx).is_loading();
+            .gap_3()
+            .px_2()
+            .py_3()
+            .child(ComposeButton::new("New Message").on_click(cx.listener(
+                |this, _, window, cx| {
+                    this.render_compose(window, cx);
+                },
+            )))
+            .child(div().map(|this| {
+                let inbox = registry.read(cx).inbox_rooms(cx);
 
-                            if is_loading {
-                                this.children(self.render_skeleton(5))
-                            } else if state.read(cx).rooms().is_empty() {
-                                this.child(
-                                    div()
-                                        .px_1()
-                                        .w_full()
-                                        .h_20()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_center()
-                                        .rounded(px(cx.theme().radius))
-                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_semibold()
-                                                .line_height(relative(1.2))
-                                                .child("No chats"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::ELEVEN),
-                                                )
-                                                .child("Recent chats will appear here."),
-                                        ),
-                                )
-                            } else {
-                                let inbox = state.read(cx).inbox_rooms(cx);
-                                let verified = state.read(cx).verified_rooms(cx);
-                                let others = state.read(cx).other_rooms(cx);
+                this.child(
+                    Folder::new("Ongoing")
+                        .icon(IconName::FolderFill)
+                        .active_icon(IconName::FolderOpenFill)
+                        .collapsed(self.ongoing)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.ongoing(cx);
+                        }))
+                        .children({
+                            let mut items = Vec::with_capacity(inbox.len());
 
-                                this.child(
-                                    Folder::new("Inbox")
-                                        .icon(IconName::FolderFill)
-                                        .collapsed(self.inbox_collapsed)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.inbox_collapse(cx);
-                                        }))
-                                        .children({
-                                            let mut items = vec![];
+                            for room in inbox {
+                                let room = room.read(cx);
+                                let ago = room.last_seen().ago();
+                                let Some(member) = room.first_member() else {
+                                    continue;
+                                };
 
-                                            for room in inbox {
-                                                let room = room.read(cx);
-                                                let ago = room.last_seen().ago();
-                                                let Some(member) = room.first_member() else {
-                                                    continue;
-                                                };
+                                let label = if room.is_group() {
+                                    room.name().unwrap_or("Unnamed".into())
+                                } else {
+                                    member.name.clone()
+                                };
 
-                                                let label = if room.is_group() {
-                                                    room.name().unwrap_or("Unnamed".into())
-                                                } else {
-                                                    member.name.clone()
-                                                };
+                                let img = if !room.is_group() {
+                                    Some(img(member.avatar.clone()))
+                                } else {
+                                    None
+                                };
 
-                                                let img = if !room.is_group() {
-                                                    Some(img(member.avatar.clone()))
-                                                } else {
-                                                    None
-                                                };
+                                let item = FolderItem::new(label, ago).img(img).on_click({
+                                    let id = room.id;
 
-                                                let item = FolderItem::new(label, ago)
-                                                    .img(img)
-                                                    .on_click({
-                                                        let id = room.id;
+                                    cx.listener(move |this, _, window, cx| {
+                                        this.open_room(id, window, cx);
+                                    })
+                                });
 
-                                                        cx.listener(move |this, _, window, cx| {
-                                                            this.open_room(id, window, cx);
-                                                        })
-                                                    });
-
-                                                items.push(item);
-                                            }
-
-                                            items
-                                        }),
-                                )
-                                .child(
-                                    Folder::new("Verified")
-                                        .icon(IconName::FolderFill)
-                                        .collapsed(self.verified_collapsed)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.verified_collapse(cx);
-                                        }))
-                                        .children({
-                                            let mut items = vec![];
-
-                                            for room in verified {
-                                                let room = room.read(cx);
-                                                let ago = room.last_seen().ago();
-                                                let Some(member) = room.first_member() else {
-                                                    continue;
-                                                };
-
-                                                let label = if room.is_group() {
-                                                    room.name().unwrap_or("Unnamed".into())
-                                                } else {
-                                                    member.name.clone()
-                                                };
-
-                                                let img = if !room.is_group() {
-                                                    Some(img(member.avatar.clone()))
-                                                } else {
-                                                    None
-                                                };
-
-                                                let item = FolderItem::new(label, ago)
-                                                    .img(img)
-                                                    .on_click({
-                                                        let id = room.id;
-
-                                                        cx.listener(move |this, _, window, cx| {
-                                                            this.open_room(id, window, cx);
-                                                        })
-                                                    });
-
-                                                items.push(item);
-                                            }
-
-                                            items
-                                        }),
-                                )
-                                .child(
-                                    Folder::new("Others")
-                                        .icon(IconName::FolderFill)
-                                        .collapsed(self.other_collapsed)
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.other_collapse(cx);
-                                        }))
-                                        .children({
-                                            let mut items = vec![];
-
-                                            for room in others {
-                                                let room = room.read(cx);
-                                                let ago = room.last_seen().ago();
-                                                let Some(member) = room.first_member() else {
-                                                    continue;
-                                                };
-
-                                                let label = if room.is_group() {
-                                                    room.name().unwrap_or("Unnamed".into())
-                                                } else {
-                                                    member.name.clone()
-                                                };
-
-                                                let img = if !room.is_group() {
-                                                    Some(img(member.avatar.clone()))
-                                                } else {
-                                                    None
-                                                };
-
-                                                let item = FolderItem::new(label, ago)
-                                                    .img(img)
-                                                    .on_click({
-                                                        let id = room.id;
-
-                                                        cx.listener(move |this, _, window, cx| {
-                                                            this.open_room(id, window, cx);
-                                                        })
-                                                    });
-
-                                                items.push(item);
-                                            }
-
-                                            items
-                                        }),
-                                )
+                                items.push(item);
                             }
-                        })
-                    }),
-            )
+
+                            items
+                        }),
+                )
+            }))
+            .child(div().map(|this| {
+                let verified = registry.read(cx).verified_rooms(cx);
+                let others = registry.read(cx).other_rooms(cx);
+
+                this.child(
+                    Parent::new("Incoming")
+                        .icon(IconName::FolderFill)
+                        .active_icon(IconName::FolderOpenFill)
+                        .collapsed(self.incoming)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.incoming(cx);
+                        }))
+                        .child(
+                            Folder::new("Trusted")
+                                .icon(IconName::FolderFill)
+                                .active_icon(IconName::FolderOpenFill)
+                                .collapsed(self.trusted)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.trusted(cx);
+                                }))
+                                .children({
+                                    let mut items = Vec::with_capacity(verified.len());
+
+                                    for room in verified {
+                                        let room = room.read(cx);
+                                        let ago = room.last_seen().ago();
+                                        let Some(member) = room.first_member() else {
+                                            continue;
+                                        };
+
+                                        let label = if room.is_group() {
+                                            room.name().unwrap_or("Unnamed".into())
+                                        } else {
+                                            member.name.clone()
+                                        };
+
+                                        let img = if !room.is_group() {
+                                            Some(img(member.avatar.clone()))
+                                        } else {
+                                            None
+                                        };
+
+                                        let item = FolderItem::new(label, ago).img(img).on_click({
+                                            let id = room.id;
+
+                                            cx.listener(move |this, _, window, cx| {
+                                                this.open_room(id, window, cx);
+                                            })
+                                        });
+
+                                        items.push(item);
+                                    }
+
+                                    items
+                                }),
+                        )
+                        .child(
+                            Folder::new("Unknown")
+                                .icon(IconName::FolderFill)
+                                .active_icon(IconName::FolderOpenFill)
+                                .collapsed(self.unknown)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.unknown(cx);
+                                }))
+                                .children({
+                                    let mut items = Vec::with_capacity(others.len());
+
+                                    for room in others {
+                                        let room = room.read(cx);
+                                        let ago = room.last_seen().ago();
+                                        let Some(member) = room.first_member() else {
+                                            continue;
+                                        };
+
+                                        let label = if room.is_group() {
+                                            room.name().unwrap_or("Unnamed".into())
+                                        } else {
+                                            member.name.clone()
+                                        };
+
+                                        let img = if !room.is_group() {
+                                            Some(img(member.avatar.clone()))
+                                        } else {
+                                            None
+                                        };
+
+                                        let item = FolderItem::new(label, ago).img(img).on_click({
+                                            let id = room.id;
+
+                                            cx.listener(move |this, _, window, cx| {
+                                                this.open_room(id, window, cx);
+                                            })
+                                        });
+
+                                        items.push(item);
+                                    }
+
+                                    items
+                                }),
+                        ),
+                )
+            }))
     }
 }

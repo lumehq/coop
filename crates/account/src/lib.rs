@@ -132,6 +132,18 @@ impl Account {
                 Kind::RelayList,
             ]);
 
+        // Create a filter for getting all dvm responses (vertex verification)
+        //let all_dvm = Filter::new()
+        //    .kinds(vec![Kind::Custom(6312), Kind::Custom(7000)])
+        //    .pubkey(user)
+        //    .limit(200);
+
+        // Create a filter for continuously receive dvm responses (vertex verification)
+        //let dvm = Filter::new()
+        //    .kinds(vec![Kind::Custom(6312), Kind::Custom(7000)])
+        //    .pubkey(user)
+        //    .since(Timestamp::now());
+
         // Create a filter for getting all gift wrapped events send to current user
         let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
 
@@ -139,13 +151,10 @@ impl Account {
         let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            // Only subscribe to the latest metadata
             client.subscribe(metadata, Some(opts)).await?;
-
-            // Only subscribe to the latest contact list
             client.subscribe(contacts, Some(opts)).await?;
-
-            // Continuously receive new user's data since now
+            //client.subscribe_to(DVM_RELAYS, all_dvm, Some(opts)).await?;
+            //client.subscribe_to(DVM_RELAYS, dvm, None).await?;
             client.subscribe(data, None).await?;
 
             let sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
