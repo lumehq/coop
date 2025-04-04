@@ -19,12 +19,12 @@ pub struct IncomingEvent {
     pub event: RoomMessage,
 }
 
-#[derive(Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, Default)]
 pub enum RoomKind {
-    Inbox,
-    Verified,
+    Ongoing,
+    Trusted,
     #[default]
-    Other,
+    Unknown,
 }
 
 pub struct Room {
@@ -104,19 +104,9 @@ impl Room {
         self.name.clone()
     }
 
-    /// Determine if room is an inbox room
-    pub fn is_inbox(&self) -> bool {
-        self.kind == RoomKind::Inbox
-    }
-
-    /// Determine if room is an verified room
-    pub fn is_verified(&self) -> bool {
-        self.kind == RoomKind::Verified
-    }
-
-    /// Determine if room is an other room
-    pub fn is_other(&self) -> bool {
-        self.kind == RoomKind::Other
+    /// Get room's kind
+    pub fn kind(&self) -> RoomKind {
+        self.kind
     }
 
     /// Determine if room is a group

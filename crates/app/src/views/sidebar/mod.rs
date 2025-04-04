@@ -1,4 +1,7 @@
-use chats::ChatRegistry;
+use chats::{
+    room::{Room, RoomKind},
+    ChatRegistry,
+};
 use compose::{Compose, ComposeButton};
 use folder::{Folder, FolderItem, Parent};
 use gpui::{
@@ -129,6 +132,45 @@ impl Sidebar {
                 .child(Skeleton::new().w_20().h_3().rounded_sm())
         })
     }
+
+    fn render_items(rooms: &Vec<&Entity<Room>>, cx: &Context<Self>) -> Vec<FolderItem> {
+        let mut items = Vec::with_capacity(rooms.len());
+
+        for room in rooms {
+            let room = room.read(cx);
+            let room_id = room.id;
+            let ago = room.last_seen().ago();
+            let Some(member) = room.first_member() else {
+                continue;
+            };
+
+            let label = if room.is_group() {
+                room.name().unwrap_or("Unnamed".into())
+            } else {
+                member.name.clone()
+            };
+
+            let img = if !room.is_group() {
+                Some(img(member.avatar.clone()))
+            } else {
+                None
+            };
+
+            let item = FolderItem::new(room_id as usize)
+                .label(label)
+                .description(ago)
+                .img(img)
+                .on_click({
+                    cx.listener(move |this, _, window, cx| {
+                        this.open_room(room_id, window, cx);
+                    })
+                });
+
+            items.push(item);
+        }
+
+        items
+    }
 }
 
 impl Panel for Sidebar {
@@ -160,7 +202,10 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = ChatRegistry::global(cx);
-
+        let rooms = registry.read(cx).rooms(cx);
+        let ongoing = rooms.get(&RoomKind::Ongoing);
+        let trusted = rooms.get(&RoomKind::Trusted);
+        let unknown = rooms.get(&RoomKind::Unknown);
         div()
             .scrollable(cx.entity_id(), ScrollbarAxis::Vertical)
             .size_full()
@@ -174,9 +219,7 @@ impl Render for Sidebar {
                     this.render_compose(window, cx);
                 },
             )))
-            .child(div().map(|this| {
-                let inbox = registry.read(cx).inbox_rooms(cx);
-
+            .when_some(ongoing, |this, rooms| {
                 this.child(
                     Folder::new("Ongoing")
                         .icon(IconName::FolderFill)
@@ -185,56 +228,19 @@ impl Render for Sidebar {
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.ongoing(cx);
                         }))
-                        .children({
-                            let mut items = Vec::with_capacity(inbox.len());
-
-                            for room in inbox {
-                                let room = room.read(cx);
-                                let ago = room.last_seen().ago();
-                                let Some(member) = room.first_member() else {
-                                    continue;
-                                };
-
-                                let label = if room.is_group() {
-                                    room.name().unwrap_or("Unnamed".into())
-                                } else {
-                                    member.name.clone()
-                                };
-
-                                let img = if !room.is_group() {
-                                    Some(img(member.avatar.clone()))
-                                } else {
-                                    None
-                                };
-
-                                let item = FolderItem::new(label, ago).img(img).on_click({
-                                    let id = room.id;
-
-                                    cx.listener(move |this, _, window, cx| {
-                                        this.open_room(id, window, cx);
-                                    })
-                                });
-
-                                items.push(item);
-                            }
-
-                            items
-                        }),
+                        .children(Self::render_items(rooms, cx)),
                 )
-            }))
-            .child(div().map(|this| {
-                let verified = registry.read(cx).verified_rooms(cx);
-                let others = registry.read(cx).other_rooms(cx);
-
-                this.child(
-                    Parent::new("Incoming")
-                        .icon(IconName::FolderFill)
-                        .active_icon(IconName::FolderOpenFill)
-                        .collapsed(self.incoming)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.incoming(cx);
-                        }))
-                        .child(
+            })
+            .child(
+                Parent::new("Incoming")
+                    .icon(IconName::FolderFill)
+                    .active_icon(IconName::FolderOpenFill)
+                    .collapsed(self.incoming)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.incoming(cx);
+                    }))
+                    .when_some(trusted, |this, rooms| {
+                        this.child(
                             Folder::new("Trusted")
                                 .icon(IconName::FolderFill)
                                 .active_icon(IconName::FolderOpenFill)
@@ -242,43 +248,11 @@ impl Render for Sidebar {
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.trusted(cx);
                                 }))
-                                .children({
-                                    let mut items = Vec::with_capacity(verified.len());
-
-                                    for room in verified {
-                                        let room = room.read(cx);
-                                        let ago = room.last_seen().ago();
-                                        let Some(member) = room.first_member() else {
-                                            continue;
-                                        };
-
-                                        let label = if room.is_group() {
-                                            room.name().unwrap_or("Unnamed".into())
-                                        } else {
-                                            member.name.clone()
-                                        };
-
-                                        let img = if !room.is_group() {
-                                            Some(img(member.avatar.clone()))
-                                        } else {
-                                            None
-                                        };
-
-                                        let item = FolderItem::new(label, ago).img(img).on_click({
-                                            let id = room.id;
-
-                                            cx.listener(move |this, _, window, cx| {
-                                                this.open_room(id, window, cx);
-                                            })
-                                        });
-
-                                        items.push(item);
-                                    }
-
-                                    items
-                                }),
+                                .children(Self::render_items(rooms, cx)),
                         )
-                        .child(
+                    })
+                    .when_some(unknown, |this, rooms| {
+                        this.child(
                             Folder::new("Unknown")
                                 .icon(IconName::FolderFill)
                                 .active_icon(IconName::FolderOpenFill)
@@ -286,43 +260,9 @@ impl Render for Sidebar {
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.unknown(cx);
                                 }))
-                                .children({
-                                    let mut items = Vec::with_capacity(others.len());
-
-                                    for room in others {
-                                        let room = room.read(cx);
-                                        let ago = room.last_seen().ago();
-                                        let Some(member) = room.first_member() else {
-                                            continue;
-                                        };
-
-                                        let label = if room.is_group() {
-                                            room.name().unwrap_or("Unnamed".into())
-                                        } else {
-                                            member.name.clone()
-                                        };
-
-                                        let img = if !room.is_group() {
-                                            Some(img(member.avatar.clone()))
-                                        } else {
-                                            None
-                                        };
-
-                                        let item = FolderItem::new(label, ago).img(img).on_click({
-                                            let id = room.id;
-
-                                            cx.listener(move |this, _, window, cx| {
-                                                this.open_room(id, window, cx);
-                                            })
-                                        });
-
-                                        items.push(item);
-                                    }
-
-                                    items
-                                }),
-                        ),
-                )
-            }))
+                                .children(Self::render_items(rooms, cx)),
+                        )
+                    }),
+            )
     }
 }

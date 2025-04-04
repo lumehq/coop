@@ -174,7 +174,7 @@ impl Compose {
                     .ok();
 
                     let chats = ChatRegistry::global(cx);
-                    let room = Room::new(&event, RoomKind::Inbox);
+                    let room = Room::new(&event, RoomKind::Ongoing);
 
                     chats.update(cx, |chats, cx| {
                         match chats.push(room, cx) {

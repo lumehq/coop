@@ -225,20 +225,32 @@ impl RenderOnce for Folder {
 
 #[derive(IntoElement)]
 pub struct FolderItem {
+    ix: usize,
     img: Option<Img>,
-    label: SharedString,
-    sub_label: SharedString,
+    label: Option<SharedString>,
+    description: Option<SharedString>,
     handler: Handler,
 }
 
 impl FolderItem {
-    pub fn new(label: impl Into<SharedString>, sub_label: impl Into<SharedString>) -> Self {
+    pub fn new(ix: usize) -> Self {
         Self {
+            ix,
             img: None,
-            label: label.into(),
-            sub_label: sub_label.into(),
+            label: None,
+            description: None,
             handler: Rc::new(|_, _, _| {}),
         }
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
+        self
     }
 
     pub fn img(mut self, img: Option<Img>) -> Self {
@@ -260,7 +272,7 @@ impl RenderOnce for FolderItem {
         let handler = self.handler.clone();
 
         div()
-            .id(self.label.clone())
+            .id(self.ix)
             .h_6()
             .px_2()
             .w_full()
@@ -295,14 +307,16 @@ impl RenderOnce for FolderItem {
                             )
                         }
                     })
-                    .child(self.label.clone()),
+                    .when_some(self.label, |this, label| this.child(label)),
             )
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(self.sub_label.clone()),
-            )
+            .when_some(self.description, |this, description| {
+                this.child(
+                    div()
+                        .flex_shrink_0()
+                        .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                        .child(description),
+                )
+            })
             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
             .on_click(move |ev, window, cx| handler(ev, window, cx))
     }

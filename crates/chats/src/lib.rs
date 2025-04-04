@@ -138,9 +138,9 @@ impl ChatRegistry {
                                 // Filter all seen rooms
                                 if !current_ids.iter().any(|this| this == &new) {
                                     Some(cx.new(|_| {
-                                        // If frequency is greater than 2, mark this room as inbox
+                                        // If frequency is greater than 2, mark this room as ongoing
                                         let kind = if item.1 > 2 {
-                                            RoomKind::Inbox
+                                            RoomKind::Ongoing
                                         } else {
                                             RoomKind::default()
                                         };
@@ -172,32 +172,26 @@ impl ChatRegistry {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
-    /// Get all rooms.
-    pub fn rooms(&self) -> &[Entity<Room>] {
-        &self.rooms
+    /// Get all rooms
+    pub fn rooms(&self, cx: &App) -> HashMap<RoomKind, Vec<&Entity<Room>>> {
+        let mut groups = HashMap::new();
+        groups.insert(RoomKind::Ongoing, Vec::new());
+        groups.insert(RoomKind::Trusted, Vec::new());
+        groups.insert(RoomKind::Unknown, Vec::new());
+
+        for room in self.rooms.iter() {
+            let kind = room.read(cx).kind();
+            groups.entry(kind).or_insert_with(Vec::new).push(room);
+        }
+
+        groups
     }
 
-    /// Get all inbox rooms.
-    pub fn inbox_rooms(&self, cx: &App) -> Vec<&Entity<Room>> {
+    /// Get rooms by their kind
+    pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<&Entity<Room>> {
         self.rooms
             .iter()
-            .filter(|room| room.read(cx).is_inbox())
-            .collect()
-    }
-
-    /// Get all verified rooms.
-    pub fn verified_rooms(&self, cx: &App) -> Vec<&Entity<Room>> {
-        self.rooms
-            .iter()
-            .filter(|room| room.read(cx).is_verified())
-            .collect()
-    }
-
-    /// Get all other rooms.
-    pub fn other_rooms(&self, cx: &App) -> Vec<&Entity<Room>> {
-        self.rooms
-            .iter()
-            .filter(|room| room.read(cx).is_other())
+            .filter(|room| room.read(cx).kind() == kind)
             .collect()
     }
 
