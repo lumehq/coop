@@ -7,11 +7,8 @@ pub const BOOTSTRAP_RELAYS: [&str; 5] = [
     "wss://relay.primal.net",
     "wss://user.kindpag.es",
     "wss://relaydiscovery.com",
-    "wss://relay.vertexlab.io",
+    "wss://purplepag.es",
 ];
-
-/// DVM relays
-pub const DVM_RELAYS: [&str; 1] = ["wss://relay.vertexlab.io"];
 
 /// Subscriptions
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";

@@ -24,7 +24,7 @@ impl Global for GlobalChatRegistry {}
 
 pub struct ChatRegistry {
     rooms: Vec<Entity<Room>>,
-    is_loading: bool,
+    loading: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -81,13 +81,14 @@ impl ChatRegistry {
 
         Self {
             rooms: vec![],
-            is_loading: true,
+            loading: true,
             subscriptions,
         }
     }
 
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
+        let room_ids = self.room_ids(cx);
 
         let task: Task<Result<Vec<(Event, usize)>, Error>> = cx.background_spawn(async move {
             let signer = client.signer().await?;
@@ -112,10 +113,13 @@ impl ChatRegistry {
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
                 let hash = room_hash(&event);
-                room_counts
-                    .entry(hash)
-                    .and_modify(|(_, count)| *count += 1)
-                    .or_insert((event, 1));
+
+                if !room_ids.iter().any(|id| id == &hash) {
+                    room_counts
+                        .entry(hash)
+                        .and_modify(|(_, count)| *count += 1)
+                        .or_insert((event, 1));
+                }
             }
 
             let result: Vec<(Event, usize)> = room_counts
@@ -128,34 +132,25 @@ impl ChatRegistry {
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(events) = task.await {
+                let rooms: Vec<Entity<Room>> = events
+                    .into_iter()
+                    .map(|(event, count)| {
+                        let kind = if count > 2 {
+                            // If frequency is greater than 2, mark this room as ongoing
+                            RoomKind::Ongoing
+                        } else {
+                            RoomKind::default()
+                        };
+
+                        cx.new(|_| Room::new(&event, kind)).unwrap()
+                    })
+                    .collect();
+
                 cx.update(|_, cx| {
                     this.update(cx, |this, cx| {
-                        let current_ids = this.rooms_ids(cx);
-                        let rooms: Vec<Entity<Room>> = events
-                            .into_iter()
-                            .filter_map(|item| {
-                                let new = room_hash(&item.0);
-                                // Filter all seen rooms
-                                if !current_ids.iter().any(|this| this == &new) {
-                                    Some(cx.new(|_| {
-                                        // If frequency is greater than 2, mark this room as ongoing
-                                        let kind = if item.1 > 2 {
-                                            RoomKind::Ongoing
-                                        } else {
-                                            RoomKind::default()
-                                        };
-                                        Room::new(&item.0, kind)
-                                    }))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-
-                        this.is_loading = false;
                         this.rooms.extend(rooms);
-                        this.rooms
-                            .sort_by_key(|room| Reverse(room.read(cx).last_seen()));
+                        this.rooms.sort_by_key(|r| Reverse(r.read(cx).last_seen()));
+                        this.loading = false;
 
                         cx.notify();
                     })
@@ -168,7 +163,7 @@ impl ChatRegistry {
     }
 
     /// Get the IDs of all rooms.
-    pub fn rooms_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
+    pub fn room_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
@@ -196,8 +191,8 @@ impl ChatRegistry {
     }
 
     /// Get the loading status of the rooms.
-    pub fn is_loading(&self) -> bool {
-        self.is_loading
+    pub fn loading(&self) -> bool {
+        self.loading
     }
 
     /// Get a room by its ID.

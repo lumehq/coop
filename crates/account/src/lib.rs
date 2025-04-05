@@ -118,43 +118,34 @@ impl Account {
         let user = profile.public_key;
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-        let metadata = Filter::new().kind(Kind::Metadata).author(user).limit(1);
-        let contacts = Filter::new().kind(Kind::ContactList).author(user).limit(1);
+        let metadata = Filter::new()
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::ContactList,
+                Kind::InboxRelays,
+                Kind::MuteList,
+                Kind::SimpleGroups,
+            ])
+            .author(user)
+            .limit(10);
 
-        // Create a user's data filter
         let data = Filter::new()
             .author(user)
             .since(Timestamp::now())
             .kinds(vec![
                 Kind::Metadata,
                 Kind::ContactList,
+                Kind::MuteList,
+                Kind::SimpleGroups,
                 Kind::InboxRelays,
                 Kind::RelayList,
             ]);
 
-        // Create a filter for getting all dvm responses (vertex verification)
-        //let all_dvm = Filter::new()
-        //    .kinds(vec![Kind::Custom(6312), Kind::Custom(7000)])
-        //    .pubkey(user)
-        //    .limit(200);
-
-        // Create a filter for continuously receive dvm responses (vertex verification)
-        //let dvm = Filter::new()
-        //    .kinds(vec![Kind::Custom(6312), Kind::Custom(7000)])
-        //    .pubkey(user)
-        //    .since(Timestamp::now());
-
-        // Create a filter for getting all gift wrapped events send to current user
         let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
-
-        // Create a filter to continuously receive new messages.
         let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             client.subscribe(metadata, Some(opts)).await?;
-            client.subscribe(contacts, Some(opts)).await?;
-            //client.subscribe_to(DVM_RELAYS, all_dvm, Some(opts)).await?;
-            //client.subscribe_to(DVM_RELAYS, dvm, None).await?;
             client.subscribe(data, None).await?;
 
             let sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);

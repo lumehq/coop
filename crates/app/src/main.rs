@@ -1,13 +1,12 @@
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use asset::Assets;
 use chats::ChatRegistry;
 use futures::{select, FutureExt};
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
 use global::{
-    add_verified_pubkey,
-    constants::{ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, DVM_RELAYS, NEW_MESSAGE_SUB_ID},
-    get_client, get_verified_pubkeys,
+    constants::{ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID},
+    get_client,
 };
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
@@ -18,8 +17,8 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Event, EventBuilder, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, Tag, TagKind,
+    pool::prelude::ReqExitPolicy, Event, EventBuilder, EventId, Filter, JsonUtil, Keys, Kind,
+    PublicKey, RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, Tag,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -46,7 +45,7 @@ fn main() {
     _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let (event_tx, event_rx) = smol::channel::bounded::<Signal>(1024);
-    let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(100);
+    let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(500);
 
     // Initialize nostr client
     let client = get_client();
@@ -70,8 +69,8 @@ fn main() {
     // Handle batch metadata
     app.background_executor()
         .spawn(async move {
-            const BATCH_SIZE: usize = 20;
-            const BATCH_TIMEOUT: Duration = Duration::from_millis(500);
+            const BATCH_SIZE: usize = 500;
+            const BATCH_TIMEOUT: Duration = Duration::from_millis(300);
 
             let mut batch: HashSet<PublicKey> = HashSet::new();
 
@@ -84,7 +83,7 @@ fn main() {
                             Ok(keys) => {
                                 batch.extend(keys);
                                 if batch.len() >= BATCH_SIZE {
-                                    handle_metadata(mem::take(&mut batch)).await;
+                                    sync_metadata(mem::take(&mut batch)).await;
                                 }
                             }
                             Err(_) => break,
@@ -92,7 +91,7 @@ fn main() {
                     }
                     _ = timeout => {
                         if !batch.is_empty() {
-                            handle_metadata(mem::take(&mut batch)).await;
+                            sync_metadata(mem::take(&mut batch)).await;
                         }
                     }
                 }
@@ -117,41 +116,42 @@ fn main() {
                         } => {
                             match event.kind {
                                 Kind::GiftWrap => {
-                                    if let Ok(gift) = client.unwrap_gift_wrap(&event).await {
-                                        // Sign the rumor with the generated keys,
-                                        // this event will be used for internal only,
-                                        // and NEVER send to relays.
-                                        if let Ok(event) = gift.rumor.sign_with_keys(&rng_keys) {
-                                            let mut pubkeys = vec![];
-                                            pubkeys.extend(event.tags.public_keys());
-                                            pubkeys.push(event.pubkey);
-
-                                            // Save the event to the database, use for query directly.
-                                            _ = client.database().save_event(&event).await;
-
-                                            // Send all pubkeys to the batch
-                                            _ = batch_tx.send(pubkeys).await;
-
-                                            // Send this event to the GPUI
-                                            if new_id == *subscription_id {
-                                                _ = event_tx.send(Signal::Event(event)).await;
+                                    let event = match get_unwrapped(event.id).await {
+                                        Ok(event) => event,
+                                        Err(_) => match client.unwrap_gift_wrap(&event).await {
+                                            Ok(unwrap) => {
+                                                match unwrap.rumor.sign_with_keys(&rng_keys) {
+                                                    Ok(ev) => {
+                                                        set_unwrapped(event.id, &ev, &rng_keys)
+                                                            .await
+                                                            .ok();
+                                                        ev
+                                                    }
+                                                    Err(_) => continue,
+                                                }
                                             }
-                                        } else {
-                                            log::error!("Failed to sign event with rng keys")
-                                        }
+                                            Err(_) => continue,
+                                        },
+                                    };
+
+                                    let mut pubkeys = vec![];
+                                    pubkeys.extend(event.tags.public_keys());
+                                    pubkeys.push(event.pubkey);
+
+                                    // Send all pubkeys to the batch to sync metadata
+                                    batch_tx.send(pubkeys).await.ok();
+
+                                    // Save the event to the database, use for query directly.
+                                    client.database().save_event(&event).await.ok();
+
+                                    // Send this event to the GPUI
+                                    if new_id == *subscription_id {
+                                        event_tx.send(Signal::Event(event)).await.ok();
                                     }
                                 }
                                 Kind::ContactList => {
-                                    let pubkeys =
-                                        event.tags.public_keys().copied().collect::<HashSet<_>>();
-
-                                    handle_metadata(pubkeys).await;
-                                }
-                                Kind::Custom(6312) => {
-                                    log::info!("DVM response: {:?}", event);
-                                }
-                                Kind::Custom(7000) => {
-                                    log::error!("DVM error: {:?}", event);
+                                    let pk = event.tags.public_keys().copied().collect::<Vec<_>>();
+                                    batch_tx.send(pk).await.ok();
                                 }
                                 _ => {}
                             }
@@ -252,38 +252,34 @@ fn main() {
     });
 }
 
-#[allow(dead_code)]
-async fn verify_pubkey(public_key: PublicKey) -> Result<(), Error> {
-    // If the public key is already processed, return early
-    if get_verified_pubkeys().lock().await.contains(&public_key) {
-        return Ok(());
-    };
-
-    // Mark the public key as processed
-    add_verified_pubkey(public_key).await;
-
+async fn set_unwrapped(root: EventId, event: &Event, keys: &Keys) -> Result<(), Error> {
     let client = get_client();
-    let req_kind = Kind::Custom(5312);
-    let resp_kind = Kind::Custom(6312);
+    let event = EventBuilder::new(Kind::Custom(9001), event.as_json())
+        .tags(vec![Tag::event(root)])
+        .sign(keys)
+        .await?;
 
-    let filter = Filter::new().kind(resp_kind).pubkey(public_key).limit(1);
-    let status = client.database().query(filter).await?.first().is_some();
-
-    if !status {
-        let param = TagKind::custom("param");
-        let tag = Tag::custom(param.clone(), vec!["target", public_key.to_hex().as_str()]);
-        let sort_tag = Tag::custom(param, vec!["sort", "personalizedPagerank"]);
-        let builder = EventBuilder::job_request(req_kind)?.tags(vec![tag, sort_tag]);
-
-        if let Err(e) = client.send_event_builder_to(DVM_RELAYS, builder).await {
-            log::error!("Failed to send verification request: {e}");
-        }
-    }
+    client.database().save_event(&event).await?;
 
     Ok(())
 }
 
-async fn handle_metadata(buffer: HashSet<PublicKey>) {
+async fn get_unwrapped(gift_wrap: EventId) -> Result<Event, Error> {
+    let client = get_client();
+    let filter = Filter::new()
+        .kind(Kind::Custom(9001))
+        .event(gift_wrap)
+        .limit(1);
+
+    if let Some(event) = client.database().query(filter).await?.first_owned() {
+        let parsed = Event::from_json(event.content)?;
+        Ok(parsed)
+    } else {
+        Err(anyhow!("Event not found"))
+    }
+}
+
+async fn sync_metadata(buffer: HashSet<PublicKey>) {
     let client = get_client();
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
