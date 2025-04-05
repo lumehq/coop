@@ -5,9 +5,9 @@ pub const APP_ID: &str = "su.reya.coop";
 pub const BOOTSTRAP_RELAYS: [&str; 5] = [
     "wss://relay.damus.io",
     "wss://relay.primal.net",
-    "wss://purplepag.es",
     "wss://user.kindpag.es",
     "wss://relaydiscovery.com",
+    "wss://purplepag.es",
 ];
 
 /// Subscriptions

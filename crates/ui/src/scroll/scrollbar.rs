@@ -36,8 +36,8 @@ pub(crate) const WIDTH: Pixels = px(12.);
 const MIN_THUMB_SIZE: f32 = 80.;
 const THUMB_RADIUS: Pixels = Pixels(4.0);
 const THUMB_INSET: Pixels = Pixels(3.);
-const FADE_OUT_DURATION: f32 = 3.0;
-const FADE_OUT_DELAY: f32 = 2.0;
+const FADE_OUT_DURATION: f32 = 2.0;
+const FADE_OUT_DELAY: f32 = 1.2;
 
 pub trait ScrollHandleOffsetable {
     fn offset(&self) -> Point<Pixels>;
