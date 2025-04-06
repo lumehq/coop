@@ -150,8 +150,19 @@ fn main() {
                                     }
                                 }
                                 Kind::ContactList => {
-                                    let pk = event.tags.public_keys().copied().collect::<Vec<_>>();
-                                    batch_tx.send(pk).await.ok();
+                                    if let Ok(signer) = client.signer().await {
+                                        if let Ok(public_key) = signer.get_public_key().await {
+                                            if public_key == event.pubkey {
+                                                let pubkeys = event
+                                                    .tags
+                                                    .public_keys()
+                                                    .copied()
+                                                    .collect::<Vec<_>>();
+
+                                                batch_tx.send(pubkeys).await.ok();
+                                            }
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
@@ -283,10 +294,17 @@ async fn sync_metadata(buffer: HashSet<PublicKey>) {
     let client = get_client();
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
+    let kinds = vec![
+        Kind::Metadata,
+        Kind::ContactList,
+        Kind::InboxRelays,
+        Kind::UserStatus,
+    ];
+
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
-        .limit(100)
-        .kinds(vec![Kind::Metadata, Kind::InboxRelays, Kind::UserStatus]);
+        .limit(buffer.len() * kinds.len())
+        .kinds(kinds);
 
     if let Err(e) = client
         .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))

@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, collections::HashMap, sync::Arc};
+use std::{cmp::Reverse, collections::HashMap};
 
 use anyhow::anyhow;
 use common::{last_seen::LastSeen, utils::room_hash};
@@ -48,28 +48,7 @@ impl ChatRegistry {
                 if let Ok(profiles) = load_metadata.await {
                     cx.update(|cx| {
                         this.update(cx, |this, cx| {
-                            // Update the room's name if it's not already set
-                            if this.name.is_none() {
-                                let mut name = profiles
-                                    .iter()
-                                    .take(2)
-                                    .map(|profile| profile.name.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(", ");
-
-                                if profiles.len() > 2 {
-                                    name = format!("{}, +{}", name, profiles.len() - 2);
-                                }
-
-                                this.name = Some(name.into())
-                            };
-
-                            // Extend the room's members with the new profiles
-                            let mut new_members = SmallVec::new();
-                            new_members.extend(profiles);
-                            this.members = Arc::new(new_members);
-
-                            cx.notify();
+                            this.update_members(profiles, cx);
                         })
                         .ok();
                     })
@@ -90,7 +69,9 @@ impl ChatRegistry {
         let client = get_client();
         let room_ids = self.room_ids(cx);
 
-        let task: Task<Result<Vec<(Event, usize)>, Error>> = cx.background_spawn(async move {
+        type LoadResult = Result<Vec<(Event, usize, bool)>, Error>;
+
+        let task: Task<LoadResult> = cx.background_spawn(async move {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -106,7 +87,7 @@ impl ChatRegistry {
             let recv_events = client.database().query(recv).await?;
             let events = send_events.merge(recv_events);
 
-            let mut room_counts: HashMap<u64, (Event, usize)> = HashMap::new();
+            let mut room_map: HashMap<u64, (Event, usize, bool)> = HashMap::new();
 
             for event in events
                 .into_iter()
@@ -115,16 +96,22 @@ impl ChatRegistry {
                 let hash = room_hash(&event);
 
                 if !room_ids.iter().any(|id| id == &hash) {
-                    room_counts
+                    let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
+                    let is_trust = client.database().count(filter).await? >= 1;
+
+                    room_map
                         .entry(hash)
-                        .and_modify(|(_, count)| *count += 1)
-                        .or_insert((event, 1));
+                        .and_modify(|(_, count, trusted)| {
+                            *count += 1;
+                            *trusted = is_trust;
+                        })
+                        .or_insert((event, 1, is_trust));
                 }
             }
 
-            let result: Vec<(Event, usize)> = room_counts
+            let result: Vec<(Event, usize, bool)> = room_map
                 .into_values()
-                .sorted_by_key(|(ev, _)| Reverse(ev.created_at))
+                .sorted_by_key(|(ev, _, _)| Reverse(ev.created_at))
                 .collect();
 
             Ok(result)
@@ -134,12 +121,14 @@ impl ChatRegistry {
             if let Ok(events) = task.await {
                 let rooms: Vec<Entity<Room>> = events
                     .into_iter()
-                    .map(|(event, count)| {
+                    .map(|(event, count, trusted)| {
                         let kind = if count > 2 {
-                            // If frequency is greater than 2, mark this room as ongoing
+                            // If frequency count is greater than 2, mark this room as ongoing
                             RoomKind::Ongoing
+                        } else if trusted {
+                            RoomKind::Trusted
                         } else {
-                            RoomKind::default()
+                            RoomKind::Unknown
                         };
 
                         cx.new(|_| Room::new(&event, kind)).unwrap()
@@ -167,7 +156,7 @@ impl ChatRegistry {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
-    /// Get all rooms
+    /// Get all rooms.
     pub fn rooms(&self, cx: &App) -> HashMap<RoomKind, Vec<&Entity<Room>>> {
         let mut groups = HashMap::new();
         groups.insert(RoomKind::Ongoing, Vec::new());
@@ -182,7 +171,7 @@ impl ChatRegistry {
         groups
     }
 
-    /// Get rooms by their kind
+    /// Get rooms by their kind.
     pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<&Entity<Room>> {
         self.rooms
             .iter()
@@ -203,6 +192,7 @@ impl ChatRegistry {
             .cloned()
     }
 
+    /// Push a room to the list.
     pub fn push(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
         let room = cx.new(|_| room);
 
@@ -220,6 +210,7 @@ impl ChatRegistry {
         }
     }
 
+    /// Push a message to a room.
     pub fn push_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
 

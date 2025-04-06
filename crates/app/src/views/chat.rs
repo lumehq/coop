@@ -467,7 +467,7 @@ impl Panel for Chat {
                                 .child(img(face).size_4())
                         })),
                 )
-                .when_some(this.name(), |this, name| this.child(name))
+                .when_some(this.subject(), |this, name| this.child(name))
                 .into_any()
         })
     }

@@ -31,7 +31,7 @@ pub struct Room {
     pub id: u64,
     pub last_seen: LastSeen,
     /// Subject of the room
-    pub name: Option<SharedString>,
+    pub subject: Option<SharedString>,
     /// All members of the room
     pub members: Arc<SmallVec<[NostrProfile; 2]>>,
     /// Kind
@@ -55,7 +55,7 @@ impl Room {
         let last_seen = LastSeen(event.created_at);
 
         // Get the subject from the event's tags
-        let name = if let Some(tag) = event.tags.find(TagKind::Subject) {
+        let subject = if let Some(tag) = event.tags.find(TagKind::Subject) {
             tag.content().map(|s| s.to_owned().into())
         } else {
             None
@@ -69,7 +69,7 @@ impl Room {
         Self {
             id,
             last_seen,
-            name,
+            subject,
             kind,
             members: Arc::new(SmallVec::with_capacity(pubkeys.len())),
             pubkeys,
@@ -100,8 +100,8 @@ impl Room {
     }
 
     /// Get room's display name
-    pub fn name(&self) -> Option<SharedString> {
-        self.name.clone()
+    pub fn subject(&self) -> Option<SharedString> {
+        self.subject.clone()
     }
 
     /// Get room's kind
@@ -128,6 +128,31 @@ impl Room {
     /// Get room's last seen as ago format
     pub fn ago(&self) -> SharedString {
         self.last_seen.ago()
+    }
+
+    pub fn update_members(&mut self, profiles: Vec<NostrProfile>, cx: &mut Context<Self>) {
+        // Update the room's name if it's not already set
+        if self.subject.is_none() {
+            // Merge all members into a single name
+            let mut name = profiles
+                .iter()
+                .take(2)
+                .map(|profile| profile.name.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            // Create a specific name for group
+            if profiles.len() > 2 {
+                name = format!("{}, +{}", name, profiles.len() - 2);
+            }
+
+            self.subject = Some(name.into());
+        };
+
+        // Update the room's members
+        self.members = Arc::new(profiles.into());
+
+        cx.notify();
     }
 
     /// Verify messaging_relays for all room's members

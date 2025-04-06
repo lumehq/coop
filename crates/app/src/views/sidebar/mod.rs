@@ -145,7 +145,7 @@ impl Sidebar {
             };
 
             let label = if room.is_group() {
-                room.name().unwrap_or("Unnamed".into())
+                room.subject().unwrap_or("Unnamed".into())
             } else {
                 member.name.clone()
             };
@@ -201,11 +201,14 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let registry = ChatRegistry::global(cx);
-        let rooms = registry.read(cx).rooms(cx);
+        let registry = ChatRegistry::global(cx).read(cx);
+        let rooms = registry.rooms(cx);
+        let loading = registry.loading();
+
         let ongoing = rooms.get(&RoomKind::Ongoing);
         let trusted = rooms.get(&RoomKind::Trusted);
         let unknown = rooms.get(&RoomKind::Unknown);
+
         div()
             .scrollable(cx.entity_id(), ScrollbarAxis::Vertical)
             .size_full()
@@ -219,50 +222,56 @@ impl Render for Sidebar {
                     this.render_compose(window, cx);
                 },
             )))
-            .when_some(ongoing, |this, rooms| {
-                this.child(
-                    Folder::new("Ongoing")
-                        .icon(IconName::FolderFill)
-                        .active_icon(IconName::FolderOpenFill)
-                        .collapsed(self.ongoing)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.ongoing(cx);
-                        }))
-                        .children(Self::render_items(rooms, cx)),
-                )
-            })
-            .child(
-                Parent::new("Incoming")
-                    .icon(IconName::FolderFill)
-                    .active_icon(IconName::FolderOpenFill)
-                    .collapsed(self.incoming)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.incoming(cx);
-                    }))
-                    .when_some(trusted, |this, rooms| {
+            .map(|this| {
+                if loading {
+                    this.children(self.render_skeleton(6))
+                } else {
+                    this.when_some(ongoing, |this, rooms| {
                         this.child(
-                            Folder::new("Trusted")
+                            Folder::new("Ongoing")
                                 .icon(IconName::FolderFill)
                                 .active_icon(IconName::FolderOpenFill)
-                                .collapsed(self.trusted)
+                                .collapsed(self.ongoing)
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.trusted(cx);
+                                    this.ongoing(cx);
                                 }))
                                 .children(Self::render_items(rooms, cx)),
                         )
                     })
-                    .when_some(unknown, |this, rooms| {
-                        this.child(
-                            Folder::new("Unknown")
-                                .icon(IconName::FolderFill)
-                                .active_icon(IconName::FolderOpenFill)
-                                .collapsed(self.unknown)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.unknown(cx);
-                                }))
-                                .children(Self::render_items(rooms, cx)),
-                        )
-                    }),
-            )
+                    .child(
+                        Parent::new("Incoming")
+                            .icon(IconName::FolderFill)
+                            .active_icon(IconName::FolderOpenFill)
+                            .collapsed(self.incoming)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.incoming(cx);
+                            }))
+                            .when_some(trusted, |this, rooms| {
+                                this.child(
+                                    Folder::new("Trusted")
+                                        .icon(IconName::FolderFill)
+                                        .active_icon(IconName::FolderOpenFill)
+                                        .collapsed(self.trusted)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.trusted(cx);
+                                        }))
+                                        .children(Self::render_items(rooms, cx)),
+                                )
+                            })
+                            .when_some(unknown, |this, rooms| {
+                                this.child(
+                                    Folder::new("Unknown")
+                                        .icon(IconName::FolderFill)
+                                        .active_icon(IconName::FolderOpenFill)
+                                        .collapsed(self.unknown)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.unknown(cx);
+                                        }))
+                                        .children(Self::render_items(rooms, cx)),
+                                )
+                            }),
+                    )
+                }
+            })
     }
 }
