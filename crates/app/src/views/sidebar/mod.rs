@@ -1,23 +1,28 @@
-use chats::{room::Room, ChatRegistry};
-use compose::Compose;
+use chats::{
+    room::{Room, RoomKind},
+    ChatRegistry,
+};
+use compose::{Compose, ComposeButton};
+use folder::{Folder, FolderItem, Parent};
 use gpui::{
-    div, img, percentage, prelude::FluentBuilder, px, relative, uniform_list, AnyElement, App,
-    AppContext, Context, Div, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window,
+    div, img, prelude::FluentBuilder, px, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, SharedString, Styled,
+    Window,
 };
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
+    scroll::ScrollbarAxis,
     skeleton::Skeleton,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
+    ContextModal, Disableable, IconName, StyledExt,
 };
 
 use crate::chat_space::{AddPanel, PanelKind};
 
 mod compose;
+mod folder;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
@@ -26,8 +31,10 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
 pub struct Sidebar {
     name: SharedString,
     focus_handle: FocusHandle,
-    label: SharedString,
-    is_collapsed: bool,
+    ongoing: bool,
+    incoming: bool,
+    trusted: bool,
+    unknown: bool,
 }
 
 impl Sidebar {
@@ -37,13 +44,14 @@ impl Sidebar {
 
     fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
-        let label = SharedString::from("Inbox");
 
         Self {
-            name: "Sidebar".into(),
-            is_collapsed: false,
+            name: "Chat Sidebar".into(),
+            ongoing: false,
+            incoming: false,
+            trusted: true,
+            unknown: true,
             focus_handle,
-            label,
         }
     }
 
@@ -80,63 +88,37 @@ impl Sidebar {
         })
     }
 
-    fn render_room(&self, ix: usize, room: &Entity<Room>, cx: &Context<Self>) -> Stateful<Div> {
-        let room = room.read(cx);
-
-        div()
-            .id(ix)
-            .px_1()
-            .h_8()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .text_xs()
-            .rounded(px(cx.theme().radius))
-            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::FOUR)))
-            .child(div().flex_1().truncate().font_medium().map(|this| {
-                if room.is_group() {
-                    this.flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .flex()
-                                .justify_center()
-                                .items_center()
-                                .size_6()
-                                .rounded_full()
-                                .bg(cx.theme().accent.step(cx, ColorScaleStep::THREE))
-                                .child(Icon::new(IconName::GroupFill).size_3().text_color(
-                                    cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
-                                )),
-                        )
-                        .when_some(room.name(), |this, name| this.child(name))
-                } else {
-                    this.when_some(room.first_member(), |this, member| {
-                        this.flex()
-                            .items_center()
-                            .gap_2()
-                            .child(img(member.avatar.clone()).size_6().flex_shrink_0())
-                            .child(member.name.clone())
-                    })
-                }
-            }))
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(room.ago()),
-            )
-            .on_click({
-                let id = room.id;
-
-                cx.listener(move |this, _, window, cx| {
-                    this.open(id, window, cx);
-                })
-            })
+    fn open_room(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        window.dispatch_action(
+            Box::new(AddPanel::new(
+                PanelKind::Room(id),
+                ui::dock_area::dock::DockPlacement::Center,
+            )),
+            cx,
+        );
     }
 
+    fn ongoing(&mut self, cx: &mut Context<Self>) {
+        self.ongoing = !self.ongoing;
+        cx.notify();
+    }
+
+    fn incoming(&mut self, cx: &mut Context<Self>) {
+        self.incoming = !self.incoming;
+        cx.notify();
+    }
+
+    fn trusted(&mut self, cx: &mut Context<Self>) {
+        self.trusted = !self.trusted;
+        cx.notify();
+    }
+
+    fn unknown(&mut self, cx: &mut Context<Self>) {
+        self.unknown = !self.unknown;
+        cx.notify();
+    }
+
+    #[allow(dead_code)]
     fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
@@ -151,20 +133,49 @@ impl Sidebar {
         })
     }
 
-    fn open(&self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        window.dispatch_action(
-            Box::new(AddPanel::new(
-                PanelKind::Room(id),
-                ui::dock_area::dock::DockPlacement::Center,
-            )),
-            cx,
-        );
+    fn render_items(rooms: &Vec<&Entity<Room>>, cx: &Context<Self>) -> Vec<FolderItem> {
+        let mut items = Vec::with_capacity(rooms.len());
+
+        for room in rooms {
+            let room = room.read(cx);
+            let room_id = room.id;
+            let ago = room.last_seen().ago();
+            let Some(member) = room.first_member() else {
+                continue;
+            };
+
+            let label = if room.is_group() {
+                room.subject().unwrap_or("Unnamed".into())
+            } else {
+                member.name.clone()
+            };
+
+            let img = if !room.is_group() {
+                Some(img(member.avatar.clone()))
+            } else {
+                None
+            };
+
+            let item = FolderItem::new(room_id as usize)
+                .label(label)
+                .description(ago)
+                .img(img)
+                .on_click({
+                    cx.listener(move |this, _, window, cx| {
+                        this.open_room(room_id, window, cx);
+                    })
+                });
+
+            items.push(item);
+        }
+
+        items
     }
 }
 
 impl Panel for Sidebar {
     fn panel_id(&self) -> SharedString {
-        "Sidebar".into()
+        self.name.clone()
     }
 
     fn title(&self, _cx: &App) -> AnyElement {
@@ -190,150 +201,77 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let entity = cx.entity();
+        let registry = ChatRegistry::global(cx).read(cx);
+        let rooms = registry.rooms(cx);
+        let loading = registry.loading();
+
+        let ongoing = rooms.get(&RoomKind::Ongoing);
+        let trusted = rooms.get(&RoomKind::Trusted);
+        let unknown = rooms.get(&RoomKind::Unknown);
 
         div()
+            .scrollable(cx.entity_id(), ScrollbarAxis::Vertical)
+            .size_full()
             .flex()
             .flex_col()
-            .size_full()
-            .child(
-                div()
-                    .px_2()
-                    .py_3()
-                    .w_full()
-                    .flex_shrink_0()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
+            .gap_3()
+            .px_2()
+            .py_3()
+            .child(ComposeButton::new("New Message").on_click(cx.listener(
+                |this, _, window, cx| {
+                    this.render_compose(window, cx);
+                },
+            )))
+            .map(|this| {
+                if loading {
+                    this.children(self.render_skeleton(6))
+                } else {
+                    this.when_some(ongoing, |this, rooms| {
+                        this.child(
+                            Folder::new("Ongoing")
+                                .icon(IconName::FolderFill)
+                                .active_icon(IconName::FolderOpenFill)
+                                .collapsed(self.ongoing)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.ongoing(cx);
+                                }))
+                                .children(Self::render_items(rooms, cx)),
+                        )
+                    })
                     .child(
-                        div()
-                            .id("new_message")
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_1()
-                            .h_7()
-                            .text_xs()
-                            .font_semibold()
-                            .rounded(px(cx.theme().radius))
-                            .child(
-                                div()
-                                    .size_6()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded_full()
-                                    .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
-                                    .child(
-                                        Icon::new(IconName::ComposeFill)
-                                            .small()
-                                            .text_color(cx.theme().base.darken(cx)),
-                                    ),
-                            )
-                            .child("New Message")
-                            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                // Open compose modal
-                                this.render_compose(window, cx);
-                            })),
-                    )
-                    .child(Empty),
-            )
-            .child(
-                div()
-                    .px_2()
-                    .w_full()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .id("inbox_header")
-                            .px_1()
-                            .h_7()
-                            .flex()
-                            .items_center()
-                            .flex_shrink_0()
-                            .rounded(px(cx.theme().radius))
-                            .text_xs()
-                            .font_semibold()
-                            .child(
-                                Icon::new(IconName::ChevronDown)
-                                    .size_6()
-                                    .when(self.is_collapsed, |this| {
-                                        this.rotate(percentage(270. / 360.))
-                                    }),
-                            )
-                            .child(self.label.clone())
-                            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                            .on_click(cx.listener(move |view, _event, _window, cx| {
-                                view.is_collapsed = !view.is_collapsed;
-                                cx.notify();
-                            })),
-                    )
-                    .when(!self.is_collapsed, |this| {
-                        this.flex_1().w_full().map(|this| {
-                            let state = ChatRegistry::global(cx);
-                            let is_loading = state.read(cx).is_loading();
-                            let len = state.read(cx).rooms().len();
-
-                            if is_loading {
-                                this.children(self.render_skeleton(5))
-                            } else if state.read(cx).rooms().is_empty() {
+                        Parent::new("Incoming")
+                            .icon(IconName::FolderFill)
+                            .active_icon(IconName::FolderOpenFill)
+                            .collapsed(self.incoming)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.incoming(cx);
+                            }))
+                            .when_some(trusted, |this, rooms| {
                                 this.child(
-                                    div()
-                                        .px_1()
-                                        .w_full()
-                                        .h_20()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_center()
-                                        .rounded(px(cx.theme().radius))
-                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_semibold()
-                                                .line_height(relative(1.2))
-                                                .child("No chats"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::ELEVEN),
-                                                )
-                                                .child("Recent chats will appear here."),
-                                        ),
+                                    Folder::new("Trusted")
+                                        .icon(IconName::FolderFill)
+                                        .active_icon(IconName::FolderOpenFill)
+                                        .collapsed(self.trusted)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.trusted(cx);
+                                        }))
+                                        .children(Self::render_items(rooms, cx)),
                                 )
-                            } else {
+                            })
+                            .when_some(unknown, |this, rooms| {
                                 this.child(
-                                    uniform_list(
-                                        entity,
-                                        "rooms",
-                                        len,
-                                        move |this, range, _, cx| {
-                                            let mut items = vec![];
-
-                                            for ix in range {
-                                                if let Some(room) = state.read(cx).rooms().get(ix) {
-                                                    items.push(this.render_room(ix, room, cx));
-                                                }
-                                            }
-
-                                            items
-                                        },
-                                    )
-                                    .size_full(),
+                                    Folder::new("Unknown")
+                                        .icon(IconName::FolderFill)
+                                        .active_icon(IconName::FolderOpenFill)
+                                        .collapsed(self.unknown)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.unknown(cx);
+                                        }))
+                                        .children(Self::render_items(rooms, cx)),
                                 )
-                            }
-                        })
-                    }),
-            )
+                            }),
+                    )
+                }
+            })
     }
 }

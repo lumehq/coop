@@ -1,17 +1,20 @@
-use chats::{room::Room, ChatRegistry};
+use chats::{
+    room::{Room, RoomKind},
+    ChatRegistry,
+};
 use common::{profile::NostrProfile, utils::random_name};
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
-    AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, TextAlign,
-    Window,
+    AppContext, ClickEvent, Context, Div, Entity, FocusHandle, InteractiveElement, IntoElement,
+    ParentElement, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Task, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, rc::Rc, time::Duration};
 use ui::{
     button::{Button, ButtonRounded},
     input::{InputEvent, TextInput},
@@ -153,7 +156,7 @@ impl Compose {
             let signer = client.signer().await?;
             // [IMPORTANT]
             // Make sure this event is never send,
-            // this event existed just use for convert to Coop's Chat Room later.
+            // this event existed just use for convert to Coop's Room later.
             let event = EventBuilder::private_msg_rumor(*pubkeys.last().unwrap(), "")
                 .tags(tags)
                 .sign(&signer)
@@ -165,17 +168,16 @@ impl Compose {
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(event) = event.await {
                 cx.update(|window, cx| {
-                    // Stop loading spinner
                     this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
                     })
                     .ok();
 
                     let chats = ChatRegistry::global(cx);
-                    let room = Room::new(&event, cx);
+                    let room = Room::new(&event, RoomKind::Ongoing);
 
-                    chats.update(cx, |state, cx| {
-                        match state.push_room(room, cx) {
+                    chats.update(cx, |chats, cx| {
+                        match chats.push(room, cx) {
                             Ok(_) => {
                                 // TODO: automatically open newly created chat panel
                                 window.close_modal(cx);
@@ -498,5 +500,66 @@ impl Render for Compose {
                         }
                     }),
             )
+    }
+}
+
+type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+#[derive(IntoElement)]
+pub struct ComposeButton {
+    base: Div,
+    label: SharedString,
+    handler: Handler,
+}
+
+impl ComposeButton {
+    pub fn new(label: impl Into<SharedString>) -> Self {
+        Self {
+            base: div(),
+            label: label.into(),
+            handler: Rc::new(|_, _, _| {}),
+        }
+    }
+
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.handler = Rc::new(handler);
+        self
+    }
+}
+
+impl RenderOnce for ComposeButton {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let handler = self.handler.clone();
+
+        self.base
+            .id("compose")
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_1()
+            .h_7()
+            .text_xs()
+            .font_semibold()
+            .rounded(px(cx.theme().radius))
+            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+            .child(
+                div()
+                    .size_6()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+                    .child(
+                        Icon::new(IconName::ComposeFill)
+                            .small()
+                            .text_color(cx.theme().base.darken(cx)),
+                    ),
+            )
+            .child(self.label.clone())
+            .on_click(move |ev, window, cx| handler(ev, window, cx))
     }
 }

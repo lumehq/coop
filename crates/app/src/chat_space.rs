@@ -134,7 +134,7 @@ impl ChatSpace {
         );
 
         self.dock.update(cx, |this, cx| {
-            this.set_left_dock(left, Some(px(240.)), true, window, cx);
+            this.set_left_dock(left, Some(px(260.)), true, window, cx);
             this.set_center(center, window, cx);
         });
     }

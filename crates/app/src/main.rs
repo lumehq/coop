@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Error};
 use asset::Assets;
 use chats::ChatRegistry;
 use futures::{select, FutureExt};
@@ -16,8 +17,8 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Event, Filter, Keys, Kind, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId,
+    pool::prelude::ReqExitPolicy, Event, EventBuilder, EventId, Filter, JsonUtil, Keys, Kind,
+    PublicKey, RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, Tag,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -44,7 +45,7 @@ fn main() {
     _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let (event_tx, event_rx) = smol::channel::bounded::<Signal>(1024);
-    let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(100);
+    let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(500);
 
     // Initialize nostr client
     let client = get_client();
@@ -68,8 +69,8 @@ fn main() {
     // Handle batch metadata
     app.background_executor()
         .spawn(async move {
-            const BATCH_SIZE: usize = 20;
-            const BATCH_TIMEOUT: Duration = Duration::from_millis(500);
+            const BATCH_SIZE: usize = 500;
+            const BATCH_TIMEOUT: Duration = Duration::from_millis(300);
 
             let mut batch: HashSet<PublicKey> = HashSet::new();
 
@@ -82,7 +83,7 @@ fn main() {
                             Ok(keys) => {
                                 batch.extend(keys);
                                 if batch.len() >= BATCH_SIZE {
-                                    handle_metadata(mem::take(&mut batch)).await;
+                                    sync_metadata(mem::take(&mut batch)).await;
                                 }
                             }
                             Err(_) => break,
@@ -90,7 +91,7 @@ fn main() {
                     }
                     _ = timeout => {
                         if !batch.is_empty() {
-                            handle_metadata(mem::take(&mut batch)).await;
+                            sync_metadata(mem::take(&mut batch)).await;
                         }
                     }
                 }
@@ -115,40 +116,60 @@ fn main() {
                         } => {
                             match event.kind {
                                 Kind::GiftWrap => {
-                                    if let Ok(gift) = client.unwrap_gift_wrap(&event).await {
-                                        // Sign the rumor with the generated keys,
-                                        // this event will be used for internal only,
-                                        // and NEVER send to relays.
-                                        if let Ok(event) = gift.rumor.sign_with_keys(&rng_keys) {
-                                            let mut pubkeys = vec![];
-                                            pubkeys.extend(event.tags.public_keys());
-                                            pubkeys.push(event.pubkey);
-
-                                            // Save the event to the database, use for query directly.
-                                            _ = client.database().save_event(&event).await;
-
-                                            // Send this event to the GPUI
-                                            if new_id == *subscription_id {
-                                                _ = event_tx.send(Signal::Event(event)).await;
+                                    let event = match get_unwrapped(event.id).await {
+                                        Ok(event) => event,
+                                        Err(_) => match client.unwrap_gift_wrap(&event).await {
+                                            Ok(unwrap) => {
+                                                match unwrap.rumor.sign_with_keys(&rng_keys) {
+                                                    Ok(ev) => {
+                                                        set_unwrapped(event.id, &ev, &rng_keys)
+                                                            .await
+                                                            .ok();
+                                                        ev
+                                                    }
+                                                    Err(_) => continue,
+                                                }
                                             }
+                                            Err(_) => continue,
+                                        },
+                                    };
 
-                                            // Send all pubkeys to the batch
-                                            _ = batch_tx.send(pubkeys).await;
-                                        }
+                                    let mut pubkeys = vec![];
+                                    pubkeys.extend(event.tags.public_keys());
+                                    pubkeys.push(event.pubkey);
+
+                                    // Send all pubkeys to the batch to sync metadata
+                                    batch_tx.send(pubkeys).await.ok();
+
+                                    // Save the event to the database, use for query directly.
+                                    client.database().save_event(&event).await.ok();
+
+                                    // Send this event to the GPUI
+                                    if new_id == *subscription_id {
+                                        event_tx.send(Signal::Event(event)).await.ok();
                                     }
                                 }
                                 Kind::ContactList => {
-                                    let pubkeys =
-                                        event.tags.public_keys().copied().collect::<HashSet<_>>();
+                                    if let Ok(signer) = client.signer().await {
+                                        if let Ok(public_key) = signer.get_public_key().await {
+                                            if public_key == event.pubkey {
+                                                let pubkeys = event
+                                                    .tags
+                                                    .public_keys()
+                                                    .copied()
+                                                    .collect::<Vec<_>>();
 
-                                    handle_metadata(pubkeys).await;
+                                                batch_tx.send(pubkeys).await.ok();
+                                            }
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
                         }
                         RelayMessage::EndOfStoredEvents(subscription_id) => {
                             if all_id == *subscription_id {
-                                _ = event_tx.send(Signal::Eose).await;
+                                event_tx.send(Signal::Eose).await.ok();
                             }
                         }
                         _ => {}
@@ -221,7 +242,7 @@ fn main() {
                         cx.update(|window, cx| {
                             match signal {
                                 Signal::Eose => {
-                                    chats.update(cx, |this, cx| this.load_chat_rooms(window, cx));
+                                    chats.update(cx, |this, cx| this.load_rooms(window, cx));
                                 }
                                 Signal::Event(event) => {
                                     chats.update(cx, |this, cx| {
@@ -242,17 +263,48 @@ fn main() {
     });
 }
 
-async fn handle_metadata(buffer: HashSet<PublicKey>) {
+async fn set_unwrapped(root: EventId, event: &Event, keys: &Keys) -> Result<(), Error> {
     let client = get_client();
+    let event = EventBuilder::new(Kind::Custom(9001), event.as_json())
+        .tags(vec![Tag::event(root)])
+        .sign(keys)
+        .await?;
 
-    let opts = SubscribeAutoCloseOptions::default()
-        .exit_policy(ReqExitPolicy::ExitOnEOSE)
-        .idle_timeout(Some(Duration::from_secs(1)));
+    client.database().save_event(&event).await?;
+
+    Ok(())
+}
+
+async fn get_unwrapped(gift_wrap: EventId) -> Result<Event, Error> {
+    let client = get_client();
+    let filter = Filter::new()
+        .kind(Kind::Custom(9001))
+        .event(gift_wrap)
+        .limit(1);
+
+    if let Some(event) = client.database().query(filter).await?.first_owned() {
+        let parsed = Event::from_json(event.content)?;
+        Ok(parsed)
+    } else {
+        Err(anyhow!("Event not found"))
+    }
+}
+
+async fn sync_metadata(buffer: HashSet<PublicKey>) {
+    let client = get_client();
+    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+    let kinds = vec![
+        Kind::Metadata,
+        Kind::ContactList,
+        Kind::InboxRelays,
+        Kind::UserStatus,
+    ];
 
     let filter = Filter::new()
         .authors(buffer.iter().cloned())
-        .limit(100)
-        .kinds(vec![Kind::Metadata, Kind::UserStatus]);
+        .limit(buffer.len() * kinds.len())
+        .kinds(kinds);
 
     if let Err(e) = client
         .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
