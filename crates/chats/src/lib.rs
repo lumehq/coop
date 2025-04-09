@@ -177,7 +177,7 @@ impl ChatRegistry {
                                     } else {
                                         RoomKind::Unknown
                                     };
-                                    Some(cx.new(|_| Room::new(&event, kind)))
+                                    Some(cx.new(|_| Room::new(&event).kind(kind)))
                                 } else {
                                     None
                                 }
@@ -256,7 +256,7 @@ impl ChatRegistry {
             self.rooms
                 .sort_by_key(|room| Reverse(room.read(cx).last_seen));
         } else {
-            let new_room = cx.new(|_| Room::new(&event, RoomKind::default()));
+            let new_room = cx.new(|_| Room::new(&event));
 
             // Push the new room to the front of the list
             self.rooms.insert(0, new_room);

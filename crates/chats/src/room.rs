@@ -51,7 +51,7 @@ impl PartialEq for Room {
 
 impl Room {
     /// Create a new room from an Nostr Event
-    pub fn new(event: &Event, kind: RoomKind) -> Self {
+    pub fn new(event: &Event) -> Self {
         let id = room_hash(event);
         let last_seen = LastSeen(event.created_at);
 
@@ -73,15 +73,15 @@ impl Room {
             id,
             last_seen,
             subject,
-            kind,
             members,
+            kind: RoomKind::Unknown,
         }
     }
 
-    /// Update room's kind
-    pub fn kind(&mut self, kind: RoomKind, cx: &mut Context<Self>) {
+    /// Set room's kind
+    pub fn kind(mut self, kind: RoomKind) -> Self {
         self.kind = kind;
-        cx.notify();
+        self
     }
 
     /// Update room's last seen
