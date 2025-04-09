@@ -51,7 +51,7 @@ impl ChatRegistry {
                     cx.update(|cx| {
                         for (public_key, metadata) in data.into_iter() {
                             Self::global(cx).update(cx, |this, cx| {
-                                this.add_profile(public_key, metadata.unwrap_or_default(), cx);
+                                this.add_profile(public_key, metadata, cx);
                             })
                         }
                     })
@@ -69,9 +69,9 @@ impl ChatRegistry {
         }
     }
 
-    /// Get the IDs of all rooms.
-    pub fn room_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
-        self.rooms.iter().map(|room| room.read(cx).id).collect()
+    /// Get the global loading status
+    pub fn loading(&self) -> bool {
+        self.loading
     }
 
     /// Get a room by its ID.
@@ -105,9 +105,9 @@ impl ChatRegistry {
             .collect()
     }
 
-    /// Get the loading status of the rooms.
-    pub fn loading(&self) -> bool {
-        self.loading
+    /// Get the IDs of all rooms.
+    pub fn room_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
+        self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
     /// Load all rooms from the database.
@@ -199,15 +199,20 @@ impl ChatRegistry {
     }
 
     /// Add profile to the list
-    pub fn add_profile(&mut self, pubkey: PublicKey, metadata: Metadata, cx: &mut Context<Self>) {
+    pub fn add_profile(
+        &mut self,
+        public_key: PublicKey,
+        metadata: Option<Metadata>,
+        cx: &mut Context<Self>,
+    ) {
         self.profiles.update(cx, |this, _cx| {
-            this.entry(pubkey)
+            this.entry(public_key)
                 .and_modify(|entry| {
                     if entry.is_none() {
-                        *entry = Some(metadata.clone());
+                        *entry = metadata.clone();
                     }
                 })
-                .or_insert_with(|| Some(metadata));
+                .or_insert_with(|| metadata);
         });
     }
 

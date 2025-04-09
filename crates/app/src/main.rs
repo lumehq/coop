@@ -36,7 +36,7 @@ enum Signal {
     /// Receive event
     Event(Event),
     /// Receive metadata
-    Metadata(Box<(PublicKey, Metadata)>),
+    Metadata(Box<(PublicKey, Option<Metadata>)>),
     /// Receive EOSE
     Eose,
 }
@@ -153,15 +153,12 @@ fn main() {
                                     }
                                 }
                                 Kind::Metadata => {
-                                    if let Ok(metadata) = Metadata::from_json(&event.content) {
-                                        event_tx
-                                            .send(Signal::Metadata(Box::new((
-                                                event.pubkey,
-                                                metadata,
-                                            ))))
-                                            .await
-                                            .ok();
-                                    }
+                                    let metadata = Metadata::from_json(&event.content).ok();
+
+                                    event_tx
+                                        .send(Signal::Metadata(Box::new((event.pubkey, metadata))))
+                                        .await
+                                        .ok();
                                 }
                                 Kind::ContactList => {
                                     if let Ok(signer) = client.signer().await {
