@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{message::RoomMessage, room::Room, ChatRegistry};
-use common::utils::nip96_upload;
+use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
@@ -141,7 +141,10 @@ impl Chat {
                                     .room
                                     .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
 
-                                this.push_system_message(format!("{} {}", profile.name, ALERT), cx);
+                                this.push_system_message(
+                                    format!("{} {}", profile.shared_name(), ALERT),
+                                    cx,
+                                );
                             }
                         });
                     })
@@ -364,7 +367,7 @@ impl Chat {
                                     this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
                                 }),
                         )
-                        .child(img(item.author.avatar.clone()).size_8().flex_shrink_0())
+                        .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
                         .child(
                             div()
                                 .flex()
@@ -378,7 +381,7 @@ impl Chat {
                                         .gap_2()
                                         .text_xs()
                                         .child(
-                                            div().font_semibold().child(item.author.name.clone()),
+                                            div().font_semibold().child(item.author.shared_name()),
                                         )
                                         .child(div().child(item.ago()).text_color(
                                             cx.theme().base.step(cx, ColorScaleStep::ELEVEN),

@@ -1,5 +1,4 @@
 use chrono::{Local, TimeZone};
-use common::profile::NostrProfile;
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
@@ -18,8 +17,8 @@ use nostr_sdk::prelude::*;
 pub struct Message {
     pub id: EventId,
     pub content: String,
-    pub author: NostrProfile,
-    pub mentions: Vec<NostrProfile>,
+    pub author: Profile,
+    pub mentions: Vec<Profile>,
     pub created_at: Timestamp,
 }
 
@@ -36,7 +35,7 @@ impl Message {
     /// # Returns
     ///
     /// A new `Message` instance
-    pub fn new(id: EventId, content: String, author: NostrProfile, created_at: Timestamp) -> Self {
+    pub fn new(id: EventId, content: String, author: Profile, created_at: Timestamp) -> Self {
         Self {
             id,
             content,
@@ -55,7 +54,7 @@ impl Message {
     /// # Returns
     ///
     /// The same message with updated mentions
-    pub fn with_mentions(mut self, mentions: impl IntoIterator<Item = NostrProfile>) -> Self {
+    pub fn with_mentions(mut self, mentions: impl IntoIterator<Item = Profile>) -> Self {
         self.mentions.extend(mentions);
         self
     }

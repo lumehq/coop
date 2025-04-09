@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, collections::HashMap};
 
 use anyhow::{anyhow, Error};
-use common::{profile::NostrProfile, utils::room_hash};
+use common::room_hash;
 use global::get_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use itertools::Itertools;
@@ -248,14 +248,14 @@ impl ChatRegistry {
     }
 
     /// Get a user profile by public key
-    pub fn profile(&self, public_key: &PublicKey, cx: &App) -> NostrProfile {
+    pub fn profile(&self, public_key: &PublicKey, cx: &App) -> Profile {
         let metadata = if let Some(profile) = self.profiles.read(cx).get(public_key) {
             profile.clone().unwrap_or_default()
         } else {
             Metadata::default()
         };
 
-        NostrProfile::new(*public_key).metadata(&metadata)
+        Profile::new(*public_key, metadata)
     }
 
     /// Add a new room to the registry

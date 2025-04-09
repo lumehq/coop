@@ -2,35 +2,14 @@ use global::constants::IMAGE_SERVICE;
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NostrProfile {
-    pub public_key: PublicKey,
-    pub avatar: SharedString,
-    pub name: SharedString,
+pub trait SharedProfile {
+    fn shared_avatar(&self) -> SharedString;
+    fn shared_name(&self) -> SharedString;
 }
 
-impl NostrProfile {
-    pub fn new(public_key: PublicKey) -> Self {
-        Self {
-            public_key,
-            name: Default::default(),
-            avatar: Default::default(),
-        }
-    }
-
-    pub fn metadata(&mut self, metadata: &Metadata) -> Self {
-        let name = Self::extract_name(&self.public_key, metadata);
-        let avatar = Self::extract_avatar(metadata);
-
-        Self {
-            public_key: self.public_key,
-            avatar,
-            name,
-        }
-    }
-
-    fn extract_avatar(metadata: &Metadata) -> SharedString {
-        metadata
+impl SharedProfile for Profile {
+    fn shared_avatar(&self) -> SharedString {
+        self.metadata()
             .picture
             .as_ref()
             .filter(|picture| !picture.is_empty())
@@ -44,20 +23,20 @@ impl NostrProfile {
             .unwrap_or_else(|| "brand/avatar.png".into())
     }
 
-    fn extract_name(public_key: &PublicKey, metadata: &Metadata) -> SharedString {
-        if let Some(display_name) = metadata.display_name.as_ref() {
+    fn shared_name(&self) -> SharedString {
+        if let Some(display_name) = self.metadata().display_name.as_ref() {
             if !display_name.is_empty() {
                 return display_name.into();
             }
         }
 
-        if let Some(name) = metadata.name.as_ref() {
+        if let Some(name) = self.metadata().name.as_ref() {
             if !name.is_empty() {
                 return name.into();
             }
         }
 
-        let pubkey = public_key.to_hex();
+        let pubkey = self.public_key().to_hex();
 
         format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..]).into()
     }

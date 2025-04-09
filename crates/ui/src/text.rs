@@ -1,4 +1,4 @@
-use common::profile::NostrProfile;
+use common::profile::SharedProfile;
 use gpui::{
     AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
     SharedString, StyledText, UnderlineStyle, Window,
@@ -43,7 +43,7 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new(content: String, profiles: &[NostrProfile]) -> Self {
+    pub fn new(content: String, profiles: &[Profile]) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
         let mut link_ranges = Vec::new();
@@ -154,7 +154,7 @@ impl RichText {
 
 pub fn render_plain_text_mut(
     content: &str,
-    profiles: &[NostrProfile],
+    profiles: &[Profile],
     text: &mut String,
     highlights: &mut Vec<(Range<usize>, Highlight)>,
     link_ranges: &mut Vec<Range<usize>>,
@@ -164,9 +164,9 @@ pub fn render_plain_text_mut(
     text.push_str(content);
 
     // Create a profile lookup using PublicKey directly
-    let profile_lookup: HashMap<&PublicKey, &NostrProfile> = profiles
+    let profile_lookup: HashMap<PublicKey, Profile> = profiles
         .iter()
-        .map(|profile| (&profile.public_key, profile))
+        .map(|profile| (profile.public_key(), profile.clone()))
         .collect();
 
     // Process regular URLs using linkify
@@ -263,18 +263,18 @@ pub fn render_plain_text_mut(
             let profile_match = if entity_without_prefix.starts_with("npub") {
                 PublicKey::from_bech32(entity_without_prefix)
                     .ok()
-                    .and_then(|pubkey| profile_lookup.get(&pubkey).copied())
+                    .and_then(|pubkey| profile_lookup.get(&pubkey).cloned())
             } else if entity_without_prefix.starts_with("nprofile") {
                 Nip19Profile::from_bech32(entity_without_prefix)
                     .ok()
-                    .and_then(|profile| profile_lookup.get(&profile.public_key).copied())
+                    .and_then(|profile| profile_lookup.get(&profile.public_key).cloned())
             } else {
                 None
             };
 
             if let Some(profile) = profile_match {
                 // Profile found - create a mention
-                let display_name = format!("@{}", profile.name);
+                let display_name = format!("@{}", profile.shared_name());
 
                 // Replace mention with profile name
                 text.replace_range(range.clone(), &display_name);

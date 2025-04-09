@@ -1,6 +1,6 @@
 use account::Account;
 use async_utility::task::spawn;
-use common::utils::nip96_upload;
+use common::nip96_upload;
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, prelude::FluentBuilder, px, relative, AnyElement, App, AppContext, Context, Entity,

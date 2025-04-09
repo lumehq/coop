@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use common::profile::NostrProfile;
 use global::{
     constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID},
     get_client,
@@ -20,7 +19,7 @@ pub fn init(cx: &mut App) {
 
 #[derive(Debug, Clone)]
 pub struct Account {
-    pub profile: Option<NostrProfile>,
+    pub profile: Option<Profile>,
 }
 
 impl Account {
@@ -36,7 +35,7 @@ impl Account {
     where
         S: NostrSigner + 'static,
     {
-        let task: Task<Result<NostrProfile, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
             let client = get_client();
             // Use user's signer for main signer
             _ = client.set_signer(signer).await;
@@ -52,7 +51,7 @@ impl Account {
                 .await?
                 .unwrap_or_default();
 
-            Ok(NostrProfile::new(public_key).metadata(&metadata))
+            Ok(Profile::new(public_key, metadata))
         });
 
         cx.spawn_in(window, async move |this, cx| match task.await {
@@ -80,14 +79,14 @@ impl Account {
         let client = get_client();
         let keys = Keys::generate();
 
-        let task: Task<Result<NostrProfile, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
             let public_key = keys.public_key();
             // Update signer
             client.set_signer(keys).await;
             // Set metadata
             client.set_metadata(&metadata).await?;
 
-            Ok(NostrProfile::new(public_key).metadata(&metadata))
+            Ok(Profile::new(public_key, metadata))
         });
 
         cx.spawn_in(window, async move |this, cx| {
@@ -116,7 +115,7 @@ impl Account {
         };
 
         let client = get_client();
-        let user = profile.public_key;
+        let user = profile.public_key();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let metadata = Filter::new()

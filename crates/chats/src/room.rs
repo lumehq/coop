@@ -3,10 +3,7 @@ use std::sync::Arc;
 use account::Account;
 use anyhow::Error;
 use chrono::{Local, TimeZone};
-use common::{
-    profile::NostrProfile,
-    utils::{compare, room_hash},
-};
+use common::{compare, profile::SharedProfile, room_hash};
 use global::get_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
@@ -139,8 +136,8 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// The NostrProfile associated with the given public key
-    pub fn profile_by_pubkey(&self, public_key: &PublicKey, cx: &App) -> NostrProfile {
+    /// The Profile associated with the given public key
+    pub fn profile_by_pubkey(&self, public_key: &PublicKey, cx: &App) -> Profile {
         ChatRegistry::global(cx).read(cx).profile(public_key, cx)
     }
 
@@ -152,15 +149,15 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// The NostrProfile of the first member in the room
-    pub fn first_member(&self, cx: &App) -> NostrProfile {
+    /// The Profile of the first member in the room
+    pub fn first_member(&self, cx: &App) -> Profile {
         let account = Account::global(cx).read(cx);
         let profile = account.profile.clone().unwrap();
 
         if let Some(public_key) = self
             .members
             .iter()
-            .filter(|&pubkey| pubkey != &profile.public_key)
+            .filter(|&pubkey| pubkey != &profile.public_key())
             .collect::<Vec<_>>()
             .first()
         {
@@ -180,7 +177,7 @@ impl Room {
     ///
     /// A vector of SharedString containing all members' avatars
     pub fn avatars(&self, cx: &App) -> Vec<SharedString> {
-        let profiles: Vec<NostrProfile> = self
+        let profiles: Vec<Profile> = self
             .members
             .iter()
             .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
@@ -188,7 +185,7 @@ impl Room {
 
         profiles
             .iter()
-            .map(|member| member.avatar.clone())
+            .map(|member| member.shared_avatar())
             .collect()
     }
 
@@ -214,7 +211,7 @@ impl Room {
             let mut name = profiles
                 .iter()
                 .take(2)
-                .map(|profile| profile.name.to_string())
+                .map(|profile| profile.shared_name())
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -224,7 +221,7 @@ impl Room {
 
             name.into()
         } else {
-            self.first_member(cx).name
+            self.first_member(cx).shared_name()
         }
     }
 
@@ -260,7 +257,7 @@ impl Room {
     /// - For a group chat: None
     pub fn display_image(&self, cx: &App) -> Option<SharedString> {
         if !self.is_group() {
-            Some(self.first_member(cx).avatar.clone())
+            Some(self.first_member(cx).shared_avatar())
         } else {
             None
         }
@@ -411,7 +408,7 @@ impl Room {
         let client = get_client();
         let pubkeys = Arc::clone(&self.members);
 
-        let profiles: Vec<NostrProfile> = pubkeys
+        let profiles: Vec<Profile> = pubkeys
             .iter()
             .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
             .collect();
@@ -449,11 +446,9 @@ impl Room {
 
                 let author = profiles
                     .iter()
-                    .find(|profile| profile.public_key == event.pubkey)
+                    .find(|profile| profile.public_key() == event.pubkey)
                     .cloned()
-                    .unwrap_or_else(|| {
-                        NostrProfile::new(event.pubkey).metadata(&Metadata::default())
-                    });
+                    .unwrap_or_else(|| Profile::new(event.pubkey, Metadata::default()));
 
                 let pubkey_tokens = tokens
                     .filter_map(|token| match token {
@@ -470,11 +465,9 @@ impl Room {
                     mentions.push(
                         profiles
                             .iter()
-                            .find(|profile| profile.public_key == pubkey)
+                            .find(|profile| profile.public_key() == pubkey)
                             .cloned()
-                            .unwrap_or_else(|| {
-                                NostrProfile::new(pubkey).metadata(&Metadata::default())
-                            }),
+                            .unwrap_or_else(|| Profile::new(pubkey, Metadata::default())),
                     );
                 }
 
@@ -501,7 +494,7 @@ impl Room {
     /// Processes the event and emits an IncomingEvent to the UI when complete
     pub fn emit_message(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let pubkeys = self.members.clone();
-        let profiles: Vec<NostrProfile> = pubkeys
+        let profiles: Vec<Profile> = pubkeys
             .iter()
             .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
             .collect();
@@ -516,9 +509,9 @@ impl Room {
 
             let author = profiles
                 .iter()
-                .find(|profile| profile.public_key == event.pubkey)
+                .find(|profile| profile.public_key() == event.pubkey)
                 .cloned()
-                .unwrap_or_else(|| NostrProfile::new(event.pubkey).metadata(&Metadata::default()));
+                .unwrap_or_else(|| Profile::new(event.pubkey, Metadata::default()));
 
             let pubkey_tokens = tokens
                 .filter_map(|token| match token {
@@ -535,11 +528,9 @@ impl Room {
                 mentions.push(
                     profiles
                         .iter()
-                        .find(|profile| profile.public_key == pubkey)
+                        .find(|profile| profile.public_key() == pubkey)
                         .cloned()
-                        .unwrap_or_else(|| {
-                            NostrProfile::new(pubkey).metadata(&Metadata::default())
-                        }),
+                        .unwrap_or_else(|| Profile::new(pubkey, Metadata::default())),
                 );
             }
 

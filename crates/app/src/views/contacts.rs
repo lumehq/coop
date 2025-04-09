@@ -1,10 +1,11 @@
-use common::profile::NostrProfile;
+use common::profile::SharedProfile;
 use global::get_client;
 use gpui::{
     div, img, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, Context,
     Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, Styled, Window,
 };
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use ui::{
     button::Button,
@@ -20,7 +21,7 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Contacts> {
 }
 
 pub struct Contacts {
-    contacts: Entity<Option<Vec<NostrProfile>>>,
+    contacts: Entity<Option<Vec<Profile>>>,
     // Panel
     name: SharedString,
     closable: bool,
@@ -35,7 +36,7 @@ impl Contacts {
 
         cx.spawn(async move |cx| {
             let client = get_client();
-            let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
+            let (tx, rx) = oneshot::channel::<Vec<Profile>>();
 
             cx.background_executor()
                 .spawn(async move {
@@ -43,15 +44,7 @@ impl Contacts {
                     let public_key = signer.get_public_key().await.unwrap();
 
                     if let Ok(profiles) = client.database().contacts(public_key).await {
-                        let members: Vec<NostrProfile> = profiles
-                            .into_iter()
-                            .map(|profile| {
-                                NostrProfile::new(profile.public_key())
-                                    .metadata(&profile.metadata())
-                            })
-                            .collect();
-
-                        _ = tx.send(members);
+                        _ = tx.send(profiles.into_iter().collect_vec());
                     }
                 })
                 .detach();
@@ -142,9 +135,9 @@ impl Render for Contacts {
                                                 .child(
                                                     div()
                                                         .flex_shrink_0()
-                                                        .child(img(item.avatar).size_6()),
+                                                        .child(img(item.shared_avatar()).size_6()),
                                                 )
-                                                .child(item.name),
+                                                .child(item.shared_name()),
                                         )
                                         .hover(|this| {
                                             this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
