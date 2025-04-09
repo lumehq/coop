@@ -139,7 +139,7 @@ impl Sidebar {
         for room in rooms {
             let room = room.read(cx);
             let id = room.id;
-            let ago = room.last_seen.ago();
+            let ago = room.ago();
             let label = room.display_name(cx);
             let img = room.display_image(cx).map(img);
 

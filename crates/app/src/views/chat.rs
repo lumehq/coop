@@ -380,15 +380,9 @@ impl Chat {
                                         .child(
                                             div().font_semibold().child(item.author.name.clone()),
                                         )
-                                        .child(
-                                            div()
-                                                .child(item.created_at.human_readable())
-                                                .text_color(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::ELEVEN),
-                                                ),
-                                        ),
+                                        .child(div().child(item.ago()).text_color(
+                                            cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                                        )),
                                 )
                                 .child(div().text_sm().child(text.element(
                                     "body".into(),

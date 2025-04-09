@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, collections::HashMap};
 
 use anyhow::{anyhow, Error};
-use common::{last_seen::LastSeen, profile::NostrProfile, utils::room_hash};
+use common::{profile::NostrProfile, utils::room_hash};
 use global::get_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use itertools::Itertools;
@@ -11,6 +11,7 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::room::Room;
 
+mod constants;
 pub mod message;
 pub mod room;
 
@@ -22,27 +23,45 @@ struct GlobalChatRegistry(Entity<ChatRegistry>);
 
 impl Global for GlobalChatRegistry {}
 
+/// Main registry for managing chat rooms and user profiles
+///
+/// The ChatRegistry is responsible for:
+/// - Managing chat rooms and their states
+/// - Tracking user profiles
+/// - Loading room data from the lmdb
+/// - Handling messages and room creation
 pub struct ChatRegistry {
+    /// Collection of all chat rooms
     rooms: Vec<Entity<Room>>,
+
+    /// Map of user public keys to their profile metadata
     profiles: Entity<HashMap<PublicKey, Option<Metadata>>>,
+
+    /// Indicates if rooms are currently being loaded
     loading: bool,
+
+    /// Subscriptions for observing changes
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl ChatRegistry {
+    /// Retrieve the global ChatRegistry instance
     pub fn global(cx: &App) -> Entity<Self> {
         cx.global::<GlobalChatRegistry>().0.clone()
     }
 
+    /// Set the global ChatRegistry instance
     pub fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalChatRegistry(state));
     }
 
+    /// Create a new ChatRegistry instance
     fn new(cx: &mut Context<Self>) -> Self {
         let profiles = cx.new(|_| HashMap::new());
         let mut subscriptions = smallvec![];
 
+        // Observe new Room creations to collect profile metadata
         subscriptions.push(cx.observe_new::<Room>(|this, _, cx| {
             let task = this.metadata(cx);
 
@@ -82,7 +101,7 @@ impl ChatRegistry {
             .cloned()
     }
 
-    /// Get all rooms.
+    /// Get all rooms grouped by their kind.
     pub fn rooms(&self, cx: &App) -> HashMap<RoomKind, Vec<&Entity<Room>>> {
         let mut groups = HashMap::new();
         groups.insert(RoomKind::Ongoing, Vec::new());
@@ -110,7 +129,13 @@ impl ChatRegistry {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
-    /// Load all rooms from the database.
+    /// Load all rooms from the lmdb.
+    ///
+    /// This method:
+    /// 1. Fetches all private direct messages from the lmdb
+    /// 2. Groups them by ID
+    /// 3. Determines each room's type based on message frequency and trust status
+    /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         type Rooms = Vec<(Event, usize, bool)>;
 
@@ -119,10 +144,12 @@ impl ChatRegistry {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
+            // Get messages sent by the user
             let send = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
                 .author(public_key);
 
+            // Get messages received by the user
             let recv = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
                 .pubkey(public_key);
@@ -133,6 +160,7 @@ impl ChatRegistry {
 
             let mut room_map: HashMap<u64, (Event, usize, bool)> = HashMap::new();
 
+            // Process each event and group by room hash
             for event in events
                 .into_iter()
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
@@ -151,6 +179,7 @@ impl ChatRegistry {
                     .or_insert((event, 1, is_trust));
             }
 
+            // Sort rooms by creation date (newest first)
             let result: Vec<(Event, usize, bool)> = room_map
                 .into_values()
                 .sorted_by_key(|(ev, _, _)| Reverse(ev.created_at))
@@ -185,7 +214,7 @@ impl ChatRegistry {
                             .collect();
 
                         this.rooms.extend(rooms);
-                        this.rooms.sort_by_key(|r| Reverse(r.read(cx).last_seen));
+                        this.rooms.sort_by_key(|r| Reverse(r.read(cx).created_at));
                         this.loading = false;
 
                         cx.notify();
@@ -198,7 +227,9 @@ impl ChatRegistry {
         .detach();
     }
 
-    /// Add profile to the list
+    /// Add a user profile to the registry
+    ///
+    /// Only adds the profile if it doesn't already exist or is currently none
     pub fn add_profile(
         &mut self,
         public_key: PublicKey,
@@ -216,7 +247,7 @@ impl ChatRegistry {
         });
     }
 
-    /// Get profile by public key
+    /// Get a user profile by public key
     pub fn profile(&self, public_key: &PublicKey, cx: &App) -> NostrProfile {
         let metadata = if let Some(profile) = self.profiles.read(cx).get(public_key) {
             profile.clone().unwrap_or_default()
@@ -227,7 +258,9 @@ impl ChatRegistry {
         NostrProfile::new(*public_key).metadata(&metadata)
     }
 
-    /// Push a room to the list.
+    /// Add a new room to the registry
+    ///
+    /// Returns an error if the room already exists
     pub fn push(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
         let room = cx.new(|_| room);
 
@@ -245,21 +278,22 @@ impl ChatRegistry {
         }
     }
 
-    /// Push a new message to specified room.
+    /// Push a new message to a room
     ///
-    /// Create a new room if it doesn't exist.
+    /// If the room doesn't exist, it will be created.
+    /// Updates room ordering based on the most recent messages.
     pub fn push_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             room.update(cx, |this, cx| {
-                this.last_seen(LastSeen(event.created_at), cx);
+                this.created_at(event.created_at, cx);
                 this.emit_message(event, window, cx);
             });
 
             // Re-sort rooms by last seen
             self.rooms
-                .sort_by_key(|room| Reverse(room.read(cx).last_seen));
+                .sort_by_key(|room| Reverse(room.read(cx).created_at));
         } else {
             let new_room = cx.new(|_| Room::new(&event));
 
