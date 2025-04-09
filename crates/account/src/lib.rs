@@ -44,6 +44,7 @@ impl Account {
             // Verify nostr signer and get public key
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
+            log::info!("Logged in with public key: {:?}", public_key);
 
             // Fetch user's metadata
             let metadata = client
@@ -51,7 +52,7 @@ impl Account {
                 .await?
                 .unwrap_or_default();
 
-            Ok(NostrProfile::new(public_key, metadata))
+            Ok(NostrProfile::new(public_key).metadata(&metadata))
         });
 
         cx.spawn_in(window, async move |this, cx| match task.await {
@@ -86,7 +87,7 @@ impl Account {
             // Set metadata
             client.set_metadata(&metadata).await?;
 
-            Ok(NostrProfile::new(public_key, metadata))
+            Ok(NostrProfile::new(public_key).metadata(&metadata))
         });
 
         cx.spawn_in(window, async move |this, cx| {

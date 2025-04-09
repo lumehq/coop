@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+account = { path = "../account" }
 common = { path = "../common" }
 global = { path = "../global" }
 ui = { path = "../ui" }

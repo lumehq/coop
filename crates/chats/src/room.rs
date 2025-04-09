@@ -1,5 +1,6 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
+use account::Account;
 use anyhow::Error;
 use common::{
     last_seen::LastSeen,
@@ -10,9 +11,11 @@ use global::get_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use smallvec::SmallVec;
 
-use crate::message::{Message, RoomMessage};
+use crate::{
+    message::{Message, RoomMessage},
+    ChatRegistry,
+};
 
 #[derive(Debug, Clone)]
 pub struct IncomingEvent {
@@ -33,11 +36,9 @@ pub struct Room {
     /// Subject of the room
     pub subject: Option<SharedString>,
     /// All members of the room
-    pub members: Arc<SmallVec<[NostrProfile; 2]>>,
+    pub members: Arc<Vec<PublicKey>>,
     /// Kind
     pub kind: RoomKind,
-    /// All public keys of the room members
-    pubkeys: Vec<PublicKey>,
 }
 
 impl EventEmitter<IncomingEvent> for Room {}
@@ -54,6 +55,13 @@ impl Room {
         let id = room_hash(event);
         let last_seen = LastSeen(event.created_at);
 
+        // Get all pubkeys from the event's tags
+        let mut pubkeys: Vec<PublicKey> = event.tags.public_keys().cloned().collect();
+        pubkeys.push(event.pubkey);
+
+        // Convert pubkeys into members
+        let members = Arc::new(pubkeys.into_iter().unique().sorted().collect());
+
         // Get the subject from the event's tags
         let subject = if let Some(tag) = event.tags.find(TagKind::Subject) {
             tag.content().map(|s| s.to_owned().into())
@@ -61,79 +69,79 @@ impl Room {
             None
         };
 
-        // Get all public keys from the event's tags
-        let mut pubkeys = vec![];
-        pubkeys.extend(event.tags.public_keys().collect::<HashSet<_>>());
-        pubkeys.push(event.pubkey);
-
         Self {
             id,
             last_seen,
             subject,
             kind,
-            members: Arc::new(SmallVec::with_capacity(pubkeys.len())),
-            pubkeys,
+            members,
         }
     }
 
-    /// Get room's id
-    pub fn id(&self) -> u64 {
-        self.id
+    /// Update room's kind
+    pub fn kind(&mut self, kind: RoomKind, cx: &mut Context<Self>) {
+        self.kind = kind;
+        cx.notify();
     }
 
-    /// Get room's member by public key
-    pub fn member(&self, public_key: &PublicKey) -> Option<NostrProfile> {
-        self.members
-            .iter()
-            .find(|m| &m.public_key == public_key)
-            .cloned()
-    }
-
-    /// Get room's first member's public key
-    pub fn first_member(&self) -> Option<&NostrProfile> {
-        self.members.first()
-    }
-
-    /// Collect room's member's public keys
-    pub fn public_keys(&self) -> Vec<PublicKey> {
-        self.pubkeys.clone()
-    }
-
-    /// Get room's display name
-    pub fn subject(&self) -> Option<SharedString> {
-        self.subject.clone()
-    }
-
-    /// Get room's kind
-    pub fn kind(&self) -> RoomKind {
-        self.kind
-    }
-
-    /// Determine if room is a group
-    pub fn is_group(&self) -> bool {
-        self.members.len() > 2
-    }
-
-    /// Get room's last seen
-    pub fn last_seen(&self) -> LastSeen {
-        self.last_seen
-    }
-
-    /// Set room's last seen
-    pub fn set_last_seen(&mut self, last_seen: LastSeen, cx: &mut Context<Self>) {
+    /// Update room's last seen
+    pub fn last_seen(&mut self, last_seen: LastSeen, cx: &mut Context<Self>) {
         self.last_seen = last_seen;
         cx.notify();
     }
 
-    /// Get room's last seen as ago format
-    pub fn ago(&self) -> SharedString {
-        self.last_seen.ago()
+    /// Get member's profile by public key
+    pub fn profile_by_pubkey(&self, public_key: &PublicKey, cx: &App) -> NostrProfile {
+        ChatRegistry::global(cx).read(cx).profile(public_key, cx)
     }
 
-    pub fn update_members(&mut self, profiles: Vec<NostrProfile>, cx: &mut Context<Self>) {
-        // Update the room's name if it's not already set
-        if self.subject.is_none() {
-            // Merge all members into a single name
+    /// Get the first member's profile
+    ///
+    /// Note: first member always != current user
+    pub fn first_member(&self, cx: &App) -> NostrProfile {
+        let account = Account::global(cx).read(cx);
+        let profile = account.profile.clone().unwrap();
+
+        if let Some(public_key) = self
+            .members
+            .iter()
+            .filter(|&pubkey| pubkey != &profile.public_key)
+            .collect::<Vec<_>>()
+            .first()
+        {
+            self.profile_by_pubkey(public_key, cx)
+        } else {
+            profile
+        }
+    }
+
+    /// Get all members avatar urls
+    ///
+    /// Used for displaying the room's facepill in the UI.
+    pub fn avatars(&self, cx: &App) -> Vec<SharedString> {
+        let profiles: Vec<NostrProfile> = self
+            .members
+            .iter()
+            .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
+            .collect();
+
+        profiles
+            .iter()
+            .map(|member| member.avatar.clone())
+            .collect()
+    }
+
+    /// Get all members names
+    ///
+    /// Used for displaying the room's name in the UI.
+    pub fn names(&self, cx: &App) -> SharedString {
+        if self.is_group() {
+            let profiles = self
+                .members
+                .iter()
+                .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
+                .collect::<Vec<_>>();
+
             let mut name = profiles
                 .iter()
                 .take(2)
@@ -141,32 +149,72 @@ impl Room {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            // Create a specific name for group
             if profiles.len() > 2 {
                 name = format!("{}, +{}", name, profiles.len() - 2);
             }
 
-            self.subject = Some(name.into());
-        };
+            name.into()
+        } else {
+            self.first_member(cx).name
+        }
+    }
 
-        // Update the room's members
-        self.members = Arc::new(profiles.into());
+    /// Get the display name of the room.
+    pub fn display_name(&self, cx: &App) -> SharedString {
+        if let Some(subject) = self.subject.as_ref() {
+            subject.clone()
+        } else {
+            self.names(cx)
+        }
+    }
 
-        cx.notify();
+    /// Get the display image of the room.
+    pub fn display_image(&self, cx: &App) -> Option<SharedString> {
+        if !self.is_group() {
+            Some(self.first_member(cx).avatar.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Determine if room has more than two members
+    pub fn is_group(&self) -> bool {
+        self.members.len() > 2
+    }
+
+    /// Get metadata from database for all members
+    #[allow(clippy::type_complexity)]
+    pub fn metadata(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<Vec<(PublicKey, Option<Metadata>)>, Error>> {
+        let client = get_client();
+        let public_keys = self.members.clone();
+
+        cx.background_spawn(async move {
+            let mut output = vec![];
+
+            for public_key in public_keys.iter() {
+                let metadata = client.database().metadata(*public_key).await?;
+                output.push((*public_key, metadata));
+            }
+
+            Ok(output)
+        })
     }
 
     /// Verify messaging_relays for all room's members
     pub fn messaging_relays(&self, cx: &App) -> Task<Result<Vec<(PublicKey, bool)>, Error>> {
         let client = get_client();
-        let pubkeys = self.public_keys();
+        let pubkeys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
             let mut result = Vec::with_capacity(pubkeys.len());
 
-            for pubkey in pubkeys.into_iter() {
+            for pubkey in pubkeys.iter() {
                 let filter = Filter::new()
                     .kind(Kind::InboxRelays)
-                    .author(pubkey)
+                    .author(*pubkey)
                     .limit(1);
 
                 let is_ready = client
@@ -177,7 +225,7 @@ impl Room {
                     .and_then(|events| events.first_owned())
                     .is_some();
 
-                result.push((pubkey, is_ready));
+                result.push((*pubkey, is_ready));
             }
 
             Ok(result)
@@ -187,7 +235,7 @@ impl Room {
     /// Send message to all room's members
     pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
         let client = get_client();
-        let pubkeys = self.public_keys();
+        let pubkeys = self.members.clone();
 
         cx.background_spawn(async move {
             let signer = client.signer().await?;
@@ -218,48 +266,20 @@ impl Room {
         })
     }
 
-    /// Load metadata for all members
-    pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<Vec<NostrProfile>, Error>> {
-        let client = get_client();
-        let pubkeys = self.public_keys();
-
-        cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let signer_pubkey = signer.get_public_key().await?;
-            let mut profiles = Vec::with_capacity(pubkeys.len());
-
-            for public_key in pubkeys.into_iter() {
-                let metadata = client
-                    .database()
-                    .metadata(public_key)
-                    .await?
-                    .unwrap_or_default();
-
-                // Convert metadata to profile
-                let profile = NostrProfile::new(public_key, metadata);
-
-                if public_key == signer_pubkey {
-                    // Room's owner always push to the end of the vector
-                    profiles.push(profile);
-                } else {
-                    profiles.insert(0, profile);
-                }
-            }
-
-            Ok(profiles)
-        })
-    }
-
     /// Load room messages
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<RoomMessage>, Error>> {
         let client = get_client();
-        let pubkeys = self.public_keys();
-        let members = Arc::clone(&self.members);
+        let pubkeys = Arc::clone(&self.members);
+
+        let profiles: Vec<NostrProfile> = pubkeys
+            .iter()
+            .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
+            .collect();
 
         let filter = Filter::new()
             .kind(Kind::PrivateDirectMessage)
-            .authors(pubkeys.clone())
-            .pubkeys(pubkeys.clone());
+            .authors(pubkeys.to_vec())
+            .pubkeys(pubkeys.to_vec());
 
         cx.background_spawn(async move {
             let mut messages = vec![];
@@ -285,11 +305,13 @@ impl Room {
                 let content = event.content.clone();
                 let tokens = parser.parse(&content);
 
-                let author = members
+                let author = profiles
                     .iter()
                     .find(|profile| profile.public_key == event.pubkey)
                     .cloned()
-                    .unwrap_or_else(|| NostrProfile::new(event.pubkey, Metadata::default()));
+                    .unwrap_or_else(|| {
+                        NostrProfile::new(event.pubkey).metadata(&Metadata::default())
+                    });
 
                 let pubkey_tokens = tokens
                     .filter_map(|token| match token {
@@ -303,19 +325,15 @@ impl Room {
                     .collect::<Vec<_>>();
 
                 for pubkey in pubkey_tokens {
-                    if let Some(profile) =
-                        members.iter().find(|profile| profile.public_key == pubkey)
-                    {
-                        mentions.push(profile.clone());
-                    } else {
-                        let metadata = client
-                            .database()
-                            .metadata(pubkey)
-                            .await?
-                            .unwrap_or_default();
-
-                        mentions.push(NostrProfile::new(pubkey, metadata));
-                    }
+                    mentions.push(
+                        profiles
+                            .iter()
+                            .find(|profile| profile.public_key == pubkey)
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                NostrProfile::new(pubkey).metadata(&Metadata::default())
+                            }),
+                    );
                 }
 
                 let message = Message::new(event.id, content, author, mentions, event.created_at);
@@ -330,8 +348,11 @@ impl Room {
 
     /// Emit message to GPUI
     pub fn emit_message(&self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
-        let client = get_client();
-        let members = Arc::clone(&self.members);
+        let pubkeys = self.members.clone();
+        let profiles: Vec<NostrProfile> = pubkeys
+            .iter()
+            .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
+            .collect();
 
         let task: Task<Result<RoomMessage, Error>> = cx.background_spawn(async move {
             let parser = NostrParser::new();
@@ -339,11 +360,11 @@ impl Room {
             let tokens = parser.parse(&content);
             let mut mentions = vec![];
 
-            let author = members
+            let author = profiles
                 .iter()
                 .find(|profile| profile.public_key == event.pubkey)
                 .cloned()
-                .unwrap_or_else(|| NostrProfile::new(event.pubkey, Metadata::default()));
+                .unwrap_or_else(|| NostrProfile::new(event.pubkey).metadata(&Metadata::default()));
 
             let pubkey_tokens = tokens
                 .filter_map(|token| match token {
@@ -357,20 +378,15 @@ impl Room {
                 .collect::<Vec<_>>();
 
             for pubkey in pubkey_tokens {
-                if let Some(profile) = members
-                    .iter()
-                    .find(|profile| profile.public_key == event.pubkey)
-                {
-                    mentions.push(profile.clone());
-                } else {
-                    let metadata = client
-                        .database()
-                        .metadata(pubkey)
-                        .await?
-                        .unwrap_or_default();
-
-                    mentions.push(NostrProfile::new(pubkey, metadata));
-                }
+                mentions.push(
+                    profiles
+                        .iter()
+                        .find(|profile| profile.public_key == pubkey)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            NostrProfile::new(pubkey).metadata(&Metadata::default())
+                        }),
+                );
             }
 
             let message = Message::new(event.id, content, author, mentions, event.created_at);

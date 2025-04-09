@@ -46,7 +46,8 @@ impl Contacts {
                         let members: Vec<NostrProfile> = profiles
                             .into_iter()
                             .map(|profile| {
-                                NostrProfile::new(profile.public_key(), profile.metadata())
+                                NostrProfile::new(profile.public_key())
+                                    .metadata(&profile.metadata())
                             })
                             .collect();
 

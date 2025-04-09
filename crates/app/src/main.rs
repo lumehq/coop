@@ -18,7 +18,8 @@ use gpui::{point, SharedString, TitlebarOptions};
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
     pool::prelude::ReqExitPolicy, Event, EventBuilder, EventId, Filter, JsonUtil, Keys, Kind,
-    PublicKey, RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, Tag,
+    Metadata, PublicKey, RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions,
+    SubscriptionId, Tag,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -34,6 +35,8 @@ actions!(coop, [Quit]);
 enum Signal {
     /// Receive event
     Event(Event),
+    /// Receive metadata
+    Metadata(Box<(PublicKey, Metadata)>),
     /// Receive EOSE
     Eose,
 }
@@ -149,6 +152,17 @@ fn main() {
                                         event_tx.send(Signal::Event(event)).await.ok();
                                     }
                                 }
+                                Kind::Metadata => {
+                                    if let Ok(metadata) = Metadata::from_json(&event.content) {
+                                        event_tx
+                                            .send(Signal::Metadata(Box::new((
+                                                event.pubkey,
+                                                metadata,
+                                            ))))
+                                            .await
+                                            .ok();
+                                    }
+                                }
                                 Kind::ContactList => {
                                     if let Ok(signer) = client.signer().await {
                                         if let Ok(public_key) = signer.get_public_key().await {
@@ -241,12 +255,21 @@ fn main() {
                     while let Ok(signal) = event_rx.recv().await {
                         cx.update(|window, cx| {
                             match signal {
-                                Signal::Eose => {
-                                    chats.update(cx, |this, cx| this.load_rooms(window, cx));
-                                }
                                 Signal::Event(event) => {
                                     chats.update(cx, |this, cx| {
                                         this.push_message(event, window, cx)
+                                    });
+                                }
+                                Signal::Metadata(data) => {
+                                    chats.update(cx, |this, cx| {
+                                        this.add_profile(data.0, data.1, cx)
+                                    });
+                                }
+                                Signal::Eose => {
+                                    chats.update(cx, |this, cx| {
+                                        // This function maybe called multiple times
+                                        // TODO: only handle the last EOSE signal
+                                        this.load_rooms(window, cx)
                                     });
                                 }
                             };

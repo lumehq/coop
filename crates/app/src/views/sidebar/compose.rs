@@ -90,7 +90,9 @@ impl Compose {
             if let Ok(profiles) = client.database().contacts(public_key).await {
                 let members: Vec<NostrProfile> = profiles
                     .into_iter()
-                    .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
+                    .map(|profile| {
+                        NostrProfile::new(profile.public_key()).metadata(&profile.metadata())
+                    })
                     .collect();
 
                 _ = tx.send(members);
@@ -225,7 +227,7 @@ impl Compose {
                     .await?
                     .unwrap_or_default();
 
-                Ok(NostrProfile::new(public_key, metadata))
+                Ok(NostrProfile::new(public_key).metadata(&metadata))
             })
         } else {
             let Ok(public_key) = PublicKey::parse(&content) else {
@@ -240,7 +242,7 @@ impl Compose {
                     .await?
                     .unwrap_or_default();
 
-                Ok(NostrProfile::new(public_key, metadata))
+                Ok(NostrProfile::new(public_key).metadata(&metadata))
             })
         };
 

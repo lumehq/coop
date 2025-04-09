@@ -10,14 +10,22 @@ pub struct NostrProfile {
 }
 
 impl NostrProfile {
-    pub fn new(public_key: PublicKey, metadata: Metadata) -> Self {
-        let name = Self::extract_name(&public_key, &metadata);
-        let avatar = Self::extract_avatar(&metadata);
-
+    pub fn new(public_key: PublicKey) -> Self {
         Self {
             public_key,
-            name,
+            name: Default::default(),
+            avatar: Default::default(),
+        }
+    }
+
+    pub fn metadata(&mut self, metadata: &Metadata) -> Self {
+        let name = Self::extract_name(&self.public_key, metadata);
+        let avatar = Self::extract_avatar(metadata);
+
+        Self {
+            public_key: self.public_key,
             avatar,
+            name,
         }
     }
 

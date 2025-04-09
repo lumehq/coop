@@ -27,14 +27,7 @@ pub fn room_hash(event: &Event) -> u64 {
 
     // Add all public keys from event
     pubkeys.push(&event.pubkey);
-    pubkeys.extend(
-        event
-            .tags
-            .public_keys()
-            .unique()
-            .sorted()
-            .collect::<Vec<_>>(),
-    );
+    pubkeys.extend(event.tags.public_keys().collect::<Vec<_>>());
 
     // Generate unique hash
     pubkeys
