@@ -1,3 +1,4 @@
+use anyhow::Error;
 use chats::{
     room::{Room, RoomKind},
     ChatRegistry,
@@ -10,12 +11,15 @@ use gpui::{
     ParentElement, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
     Subscription, Task, TextAlign, Window,
 };
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
-use std::{collections::HashSet, rc::Rc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashSet},
+    rc::Rc,
+    time::Duration,
+};
 use ui::{
     button::{Button, ButtonRounded},
     input::{InputEvent, TextInput},
@@ -81,21 +85,17 @@ impl Compose {
             },
         ));
 
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<Vec<Profile>>();
-
-        cx.background_spawn(async move {
-            let signer = client.signer().await.unwrap();
-            let public_key = signer.get_public_key().await.unwrap();
-
-            if let Ok(profiles) = client.database().contacts(public_key).await {
-                _ = tx.send(profiles.into_iter().collect_vec());
-            }
-        })
-        .detach();
-
         cx.spawn(async move |this, cx| {
-            if let Ok(contacts) = rx.await {
+            let task: Task<Result<BTreeSet<Profile>, Error>> = cx.background_spawn(async move {
+                let client = get_client();
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                let profiles = client.database().contacts(public_key).await?;
+
+                Ok(profiles)
+            });
+
+            if let Ok(contacts) = task.await {
                 cx.update(|cx| {
                     this.update(cx, |this, cx| {
                         this.contacts.update(cx, |this, cx| {
@@ -103,6 +103,7 @@ impl Compose {
                             cx.notify();
                         });
                     })
+                    .ok()
                 })
                 .ok();
             }

@@ -1,9 +1,12 @@
+use std::collections::BTreeSet;
+
+use anyhow::Error;
 use common::profile::SharedProfile;
 use global::get_client;
 use gpui::{
     div, img, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, Context,
     Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, Styled, Window,
+    Render, SharedString, Styled, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -21,7 +24,7 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Contacts> {
 }
 
 pub struct Contacts {
-    contacts: Entity<Option<Vec<Profile>>>,
+    contacts: Option<Vec<Profile>>,
     // Panel
     name: SharedString,
     closable: bool,
@@ -30,41 +33,42 @@ pub struct Contacts {
 }
 
 impl Contacts {
-    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let contacts = cx.new(|_| None);
-        let async_contact = contacts.clone();
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::view(window, cx))
+    }
 
-        cx.spawn(async move |cx| {
+    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        cx.spawn(async move |this, cx| {
             let client = get_client();
-            let (tx, rx) = oneshot::channel::<Vec<Profile>>();
 
-            cx.background_executor()
-                .spawn(async move {
-                    let signer = client.signer().await.unwrap();
-                    let public_key = signer.get_public_key().await.unwrap();
+            let task: Task<Result<BTreeSet<Profile>, Error>> = cx.background_spawn(async move {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                let profiles = client.database().contacts(public_key).await?;
 
-                    if let Ok(profiles) = client.database().contacts(public_key).await {
-                        _ = tx.send(profiles.into_iter().collect_vec());
-                    }
+                Ok(profiles)
+            });
+
+            if let Ok(contacts) = task.await {
+                cx.update(|cx| {
+                    this.update(cx, |this, cx| {
+                        this.contacts = Some(contacts.into_iter().collect_vec());
+                        cx.notify();
+                    })
+                    .ok();
                 })
-                .detach();
-
-            if let Ok(contacts) = rx.await {
-                _ = cx.update_entity(&async_contact, |this, cx| {
-                    *this = Some(contacts);
-                    cx.notify();
-                });
+                .ok();
             }
         })
         .detach();
 
-        cx.new(|cx| Self {
-            contacts,
+        Self {
+            contacts: None,
             name: "Contacts".into(),
             closable: true,
             zoomable: true,
             focus_handle: cx.focus_handle(),
-        })
+        }
     }
 }
 
@@ -105,7 +109,7 @@ impl Focusable for Contacts {
 impl Render for Contacts {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div().size_full().pt_2().px_2().map(|this| {
-            if let Some(contacts) = self.contacts.read(cx).clone() {
+            if let Some(contacts) = self.contacts.clone() {
                 this.child(
                     uniform_list(
                         cx.entity().clone(),
