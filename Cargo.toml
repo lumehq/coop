@@ -4,8 +4,9 @@ members = ["crates/*"]
 default-members = ["crates/app"]
 
 [workspace.package]
-publish = false
+version = "1.0.0"
 edition = "2021"
+publish = false
 
 [workspace.dependencies]
 coop = { path = "crates/*" }

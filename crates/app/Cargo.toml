@@ -1,6 +1,6 @@
 [package]
 name = "coop"
-version = "0.1.4"
+version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
