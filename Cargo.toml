@@ -4,7 +4,7 @@ members = ["crates/*"]
 default-members = ["crates/app"]
 
 [workspace.package]
-version = "1.0.0"
+version = "0.1.4"
 edition = "2021"
 publish = false
 
