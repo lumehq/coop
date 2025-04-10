@@ -18,6 +18,7 @@ reqwest_client = { git = "https://github.com/zed-industries/zed" }
 nostr = { git = "https://github.com/rust-nostr/nostr", features = ["parser"] }
 nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
 nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
+nostr-keyring = { git = "https://github.com/rust-nostr/nostr" }
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"lmdb",
 	"nip96",

@@ -1,4 +1,5 @@
 use account::Account;
+use common::profile::SharedProfile;
 use global::get_client;
 use gpui::{
     actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
@@ -172,7 +173,7 @@ impl ChatSpace {
             .icon(Icon::new(IconName::ChevronDownSmall))
             .when_some(
                 Account::global(cx).read(cx).profile.as_ref(),
-                |this, profile| this.child(img(profile.avatar.clone()).size_5()),
+                |this, profile| this.child(img(profile.shared_avatar()).size_5()),
             )
             .popup_menu(move |this, _, _cx| {
                 this.menu(

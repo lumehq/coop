@@ -138,31 +138,18 @@ impl Sidebar {
 
         for room in rooms {
             let room = room.read(cx);
-            let room_id = room.id;
-            let ago = room.last_seen().ago();
-            let Some(member) = room.first_member() else {
-                continue;
-            };
+            let id = room.id;
+            let ago = room.ago();
+            let label = room.display_name(cx);
+            let img = room.display_image(cx).map(img);
 
-            let label = if room.is_group() {
-                room.subject().unwrap_or("Unnamed".into())
-            } else {
-                member.name.clone()
-            };
-
-            let img = if !room.is_group() {
-                Some(img(member.avatar.clone()))
-            } else {
-                None
-            };
-
-            let item = FolderItem::new(room_id as usize)
+            let item = FolderItem::new(id as usize)
                 .label(label)
                 .description(ago)
                 .img(img)
                 .on_click({
                     cx.listener(move |this, _, window, cx| {
-                        this.open_room(room_id, window, cx);
+                        this.open_room(id, window, cx);
                     })
                 });
 

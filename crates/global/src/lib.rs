@@ -19,9 +19,12 @@ pub fn get_client() -> &'static Client {
         // Client options
         let opts = Options::new()
             // NIP-65
+            // Coop is don't really need to enable this option,
+            // but this will help the client discover user's messaging relays efficiently.
             .gossip(true)
             // Skip all very slow relays
-            .max_avg_latency(Duration::from_secs(2));
+            // Note: max delay is 800ms
+            .max_avg_latency(Duration::from_millis(800));
 
         // Setup Nostr Client
         ClientBuilder::default().database(lmdb).opts(opts).build()

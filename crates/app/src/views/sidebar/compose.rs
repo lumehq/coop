@@ -1,8 +1,9 @@
+use anyhow::Error;
 use chats::{
     room::{Room, RoomKind},
     ChatRegistry,
 };
-use common::{profile::NostrProfile, utils::random_name};
+use common::{profile::SharedProfile, random_name};
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
@@ -14,7 +15,11 @@ use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
-use std::{collections::HashSet, rc::Rc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashSet},
+    rc::Rc,
+    time::Duration,
+};
 use ui::{
     button::{Button, ButtonRounded},
     input::{InputEvent, TextInput},
@@ -33,7 +38,7 @@ impl_internal_actions!(contacts, [SelectContact]);
 pub struct Compose {
     title_input: Entity<TextInput>,
     user_input: Entity<TextInput>,
-    contacts: Entity<Vec<NostrProfile>>,
+    contacts: Entity<Vec<Profile>>,
     selected: Entity<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
     is_loading: bool,
@@ -80,26 +85,17 @@ impl Compose {
             },
         ));
 
-        let client = get_client();
-        let (tx, rx) = oneshot::channel::<Vec<NostrProfile>>();
-
-        cx.background_spawn(async move {
-            let signer = client.signer().await.unwrap();
-            let public_key = signer.get_public_key().await.unwrap();
-
-            if let Ok(profiles) = client.database().contacts(public_key).await {
-                let members: Vec<NostrProfile> = profiles
-                    .into_iter()
-                    .map(|profile| NostrProfile::new(profile.public_key(), profile.metadata()))
-                    .collect();
-
-                _ = tx.send(members);
-            }
-        })
-        .detach();
-
         cx.spawn(async move |this, cx| {
-            if let Ok(contacts) = rx.await {
+            let task: Task<Result<BTreeSet<Profile>, Error>> = cx.background_spawn(async move {
+                let client = get_client();
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                let profiles = client.database().contacts(public_key).await?;
+
+                Ok(profiles)
+            });
+
+            if let Ok(contacts) = task.await {
                 cx.update(|cx| {
                     this.update(cx, |this, cx| {
                         this.contacts.update(cx, |this, cx| {
@@ -107,6 +103,7 @@ impl Compose {
                             cx.notify();
                         });
                     })
+                    .ok()
                 })
                 .ok();
             }
@@ -174,7 +171,7 @@ impl Compose {
                     .ok();
 
                     let chats = ChatRegistry::global(cx);
-                    let room = Room::new(&event, RoomKind::Ongoing);
+                    let room = Room::new(&event).kind(RoomKind::Ongoing);
 
                     chats.update(cx, |chats, cx| {
                         match chats.push(room, cx) {
@@ -215,7 +212,7 @@ impl Compose {
         // Show loading spinner
         self.set_loading(true, cx);
 
-        let task: Task<Result<NostrProfile, anyhow::Error>> = if content.contains("@") {
+        let task: Task<Result<Profile, anyhow::Error>> = if content.contains("@") {
             cx.background_spawn(async move {
                 let profile = nip05::profile(&content, None).await?;
                 let public_key = profile.public_key;
@@ -225,7 +222,7 @@ impl Compose {
                     .await?
                     .unwrap_or_default();
 
-                Ok(NostrProfile::new(public_key, metadata))
+                Ok(Profile::new(public_key, metadata))
             })
         } else {
             let Ok(public_key) = PublicKey::parse(&content) else {
@@ -240,7 +237,7 @@ impl Compose {
                     .await?
                     .unwrap_or_default();
 
-                Ok(NostrProfile::new(public_key, metadata))
+                Ok(Profile::new(public_key, metadata))
             })
         };
 
@@ -249,7 +246,7 @@ impl Compose {
                 Ok(profile) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            let public_key = profile.public_key;
+                            let public_key = profile.public_key();
 
                             this.contacts.update(cx, |this, cx| {
                                 this.insert(0, profile);
@@ -441,7 +438,7 @@ impl Render for Compose {
 
                                         for ix in range {
                                             let item = contacts.get(ix).unwrap().clone();
-                                            let is_select = selected.contains(&item.public_key);
+                                            let is_select = selected.contains(&item.public_key());
 
                                             items.push(
                                                 div()
@@ -458,12 +455,10 @@ impl Render for Compose {
                                                             .items_center()
                                                             .gap_2()
                                                             .text_xs()
-                                                            .child(
-                                                                div().flex_shrink_0().child(
-                                                                    img(item.avatar).size_6(),
-                                                                ),
-                                                            )
-                                                            .child(item.name),
+                                                            .child(div().flex_shrink_0().child(
+                                                                img(item.shared_avatar()).size_6(),
+                                                            ))
+                                                            .child(item.shared_name()),
                                                     )
                                                     .when(is_select, |this| {
                                                         this.child(
@@ -484,7 +479,7 @@ impl Render for Compose {
                                                     .on_click(move |_, window, cx| {
                                                         window.dispatch_action(
                                                             Box::new(SelectContact(
-                                                                item.public_key,
+                                                                item.public_key(),
                                                             )),
                                                             cx,
                                                         );

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{message::RoomMessage, room::Room, ChatRegistry};
-use common::utils::nip96_upload;
+use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
@@ -27,7 +27,7 @@ use ui::{
 const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
 
 pub fn init(id: &u64, window: &mut Window, cx: &mut App) -> Result<Arc<Entity<Chat>>, Error> {
-    if let Some(room) = ChatRegistry::global(cx).read(cx).get(id, cx) {
+    if let Some(room) = ChatRegistry::global(cx).read(cx).room(id, cx) {
         Ok(Arc::new(Chat::new(id, room, window, cx)))
     } else {
         Err(anyhow!("Chat Room not found."))
@@ -137,14 +137,14 @@ impl Chat {
                     this.update(cx, |this, cx| {
                         result.into_iter().for_each(|item| {
                             if !item.1 {
-                                if let Some(profile) =
-                                    this.room.read_with(cx, |this, _| this.member(&item.0))
-                                {
-                                    this.push_system_message(
-                                        format!("{} {}", profile.name, ALERT),
-                                        cx,
-                                    );
-                                }
+                                let profile = this
+                                    .room
+                                    .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
+
+                                this.push_system_message(
+                                    format!("{} {}", profile.shared_name(), ALERT),
+                                    cx,
+                                );
                             }
                         });
                     })
@@ -367,7 +367,7 @@ impl Chat {
                                     this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
                                 }),
                         )
-                        .child(img(item.author.avatar.clone()).size_8().flex_shrink_0())
+                        .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
                         .child(
                             div()
                                 .flex()
@@ -381,17 +381,11 @@ impl Chat {
                                         .gap_2()
                                         .text_xs()
                                         .child(
-                                            div().font_semibold().child(item.author.name.clone()),
+                                            div().font_semibold().child(item.author.shared_name()),
                                         )
-                                        .child(
-                                            div()
-                                                .child(item.created_at.human_readable())
-                                                .text_color(
-                                                    cx.theme()
-                                                        .base
-                                                        .step(cx, ColorScaleStep::ELEVEN),
-                                                ),
-                                        ),
+                                        .child(div().child(item.ago()).text_color(
+                                            cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                                        )),
                                 )
                                 .child(div().text_sm().child(text.element(
                                     "body".into(),
@@ -445,11 +439,7 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room.read_with(cx, |this, _| {
-            let facepill: Vec<SharedString> = this
-                .members
-                .iter()
-                .map(|member| member.avatar.clone())
-                .collect();
+            let facepill: Vec<SharedString> = this.avatars(cx);
 
             div()
                 .flex()
@@ -461,13 +451,19 @@ impl Panel for Chat {
                         .flex_row_reverse()
                         .items_center()
                         .justify_start()
-                        .children(facepill.into_iter().enumerate().rev().map(|(ix, face)| {
-                            div()
-                                .when(ix > 0, |div| div.ml_neg_1())
-                                .child(img(face).size_4())
-                        })),
+                        .children(
+                            facepill
+                                .into_iter()
+                                .enumerate()
+                                .rev()
+                                .map(|(ix, facepill)| {
+                                    div()
+                                        .when(ix > 0, |div| div.ml_neg_1())
+                                        .child(img(facepill).size_4())
+                                }),
+                        ),
                 )
-                .when_some(this.subject(), |this, name| this.child(name))
+                .child(this.display_name(cx))
                 .into_any()
         })
     }

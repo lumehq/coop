@@ -161,7 +161,7 @@ impl Element for Switch {
                                             if !self.disabled
                                                 && prev_checked
                                                     .borrow()
-                                                    .map_or(false, |prev| prev != checked)
+                                                    .is_some_and(|prev| prev != checked)
                                             {
                                                 let dur = Duration::from_secs_f64(0.15);
                                                 cx.spawn(async move |cx| {

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use account::Account;
-use common::utils::create_qr;
+use common::create_qr;
 use global::get_client_keys;
 use gpui::{
     div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
