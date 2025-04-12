@@ -142,6 +142,7 @@ impl AutoUpdater {
                 let filename = match OS {
                     "macos" => Ok("Coop.dmg"),
                     "linux" => Ok("Coop.tar.gz"),
+                    "windows" => Ok("CoopUpdateInstaller.exe"),
                     _ => Err(anyhow!("not supported: {:?}", OS)),
                 }?;
 
@@ -173,6 +174,7 @@ impl AutoUpdater {
                         match OS {
                             "macos" => this.install_release_macos(temp_dir, downloaded_asset, cx),
                             "linux" => this.install_release_linux(temp_dir, downloaded_asset, cx),
+                            "windows" => this.install_release_windows(downloaded_asset, cx),
                             _ => {}
                         }
                     })
@@ -272,7 +274,7 @@ impl AutoUpdater {
             let from = extracted.join(&app_folder_name);
             let mut to = home_dir.join(".local");
 
-            let expected_suffix = format!("{}/libexec/zed-editor", app_folder_name);
+            let expected_suffix = format!("{}/libexec/coop", app_folder_name);
 
             if let Some(prefix) = running_app_path
                 .to_str()
@@ -290,13 +292,45 @@ impl AutoUpdater {
 
             anyhow::ensure!(
                 output.status.success(),
-                "failed to copy Zed update from {:?} to {:?}: {:?}",
+                "failed to copy Coop update from {:?} to {:?}: {:?}",
                 from,
                 to,
                 String::from_utf8_lossy(&output.stderr)
             );
 
             Ok(to.join(expected_suffix))
+        });
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(binary_path) = task.await {
+                cx.update(|cx| {
+                    this.update(cx, |this, cx| {
+                        this.status = AutoUpdateStatus::Updated { binary_path };
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn install_release_windows(&mut self, asset: PathBuf, cx: &mut Context<Self>) {
+        let task: Task<Result<PathBuf, Error>> = cx.background_spawn(async move {
+            let output = Command::new(asset)
+                .arg("/verysilent")
+                .arg("/update=true")
+                .arg("!desktopicon")
+                .arg("!quicklaunchicon")
+                .output()
+                .await?;
+            anyhow::ensure!(
+                output.status.success(),
+                "failed to start installer: {:?}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            Ok(std::env::current_exe()?)
         });
 
         cx.spawn(async move |this, cx| {
