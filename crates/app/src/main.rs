@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Error};
 use asset::Assets;
+use auto_update::AutoUpdater;
 use chats::ChatRegistry;
 use futures::{select, FutureExt};
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
 use global::{
-    constants::{ALL_MESSAGES_SUB_ID, APP_ID, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID},
+    constants::{ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID},
     get_client,
 };
 use gpui::{
@@ -17,9 +18,9 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use nostr_sdk::{
-    pool::prelude::ReqExitPolicy, Event, EventBuilder, EventId, Filter, JsonUtil, Keys, Kind,
-    Metadata, PublicKey, RelayMessage, RelayPoolNotification, SubscribeAutoCloseOptions,
-    SubscriptionId, Tag,
+    nips::nip01::Coordinate, pool::prelude::ReqExitPolicy, Client, Event, EventBuilder, EventId,
+    Filter, JsonUtil, Keys, Kind, Metadata, PublicKey, RelayMessage, RelayPoolNotification,
+    SubscribeAutoCloseOptions, SubscriptionId, Tag,
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
@@ -37,8 +38,10 @@ enum Signal {
     Event(Event),
     /// Receive metadata
     Metadata(Box<(PublicKey, Option<Metadata>)>),
-    /// Receive EOSE
+    /// Receive eose
     Eose,
+    /// Receive app updates
+    AppUpdates(Event),
 }
 
 fn main() {
@@ -47,11 +50,12 @@ fn main() {
     // Fix crash on startup
     _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    let (event_tx, event_rx) = smol::channel::bounded::<Signal>(1024);
+    let (event_tx, event_rx) = smol::channel::bounded::<Signal>(2048);
     let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(500);
 
     // Initialize nostr client
     let client = get_client();
+    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
     // Initialize application
     let app = Application::new()
@@ -60,12 +64,36 @@ fn main() {
 
     // Connect to default relays
     app.background_executor()
-        .spawn(async {
+        .spawn(async move {
             for relay in BOOTSTRAP_RELAYS.into_iter() {
-                _ = client.add_relay(relay).await;
+                if let Err(e) = client.add_relay(relay).await {
+                    log::error!("Failed to add relay {}: {}", relay, e);
+                }
             }
 
-            _ = client.connect().await
+            // Establish connection to bootstrap relays
+            client.connect().await;
+
+            log::info!("Connected to bootstrap relays");
+            log::info!("Subscribing to app updates...");
+
+            let coordinate = Coordinate {
+                kind: Kind::Custom(32267),
+                public_key: PublicKey::from_hex(APP_PUBKEY).expect("App Pubkey is invalid"),
+                identifier: APP_ID.into(),
+            };
+
+            let filter = Filter::new()
+                .kind(Kind::ArticlesCurationSet)
+                .coordinate(&coordinate)
+                .limit(1);
+
+            if let Err(e) = client
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                .await
+            {
+                log::error!("Failed to subscribe for app updates: {}", e);
+            }
         })
         .detach();
 
@@ -86,7 +114,7 @@ fn main() {
                             Ok(keys) => {
                                 batch.extend(keys);
                                 if batch.len() >= BATCH_SIZE {
-                                    sync_metadata(mem::take(&mut batch)).await;
+                                    sync_metadata(mem::take(&mut batch), client, opts).await;
                                 }
                             }
                             Err(_) => break,
@@ -94,7 +122,7 @@ fn main() {
                     }
                     _ = timeout => {
                         if !batch.is_empty() {
-                            sync_metadata(mem::take(&mut batch)).await;
+                            sync_metadata(mem::take(&mut batch), client, opts).await;
                         }
                     }
                 }
@@ -175,6 +203,23 @@ fn main() {
                                         }
                                     }
                                 }
+                                Kind::ReleaseArtifactSet => {
+                                    let filter = Filter::new()
+                                        .ids(event.tags.event_ids().copied())
+                                        .kind(Kind::FileMetadata);
+
+                                    if let Err(e) = client
+                                        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                                        .await
+                                    {
+                                        log::error!("Failed to subscribe for file metadata: {}", e);
+                                    } else {
+                                        event_tx
+                                            .send(Signal::AppUpdates(event.into_owned()))
+                                            .await
+                                            .ok();
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -241,13 +286,20 @@ fn main() {
             cx.new(|cx| {
                 // Initialize components
                 ui::init(cx);
+
+                // Initialize auto update
+                auto_update::init(cx);
+
                 // Initialize chat state
                 chats::init(cx);
+
                 // Initialize account state
                 account::init(cx);
+
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
                     let chats = cx.update(|_, cx| ChatRegistry::global(cx)).unwrap();
+                    let auto_updater = cx.update(|_, cx| AutoUpdater::global(cx)).unwrap();
 
                     while let Ok(signal) = event_rx.recv().await {
                         cx.update(|window, cx| {
@@ -268,6 +320,12 @@ fn main() {
                                         // TODO: only handle the last EOSE signal
                                         this.load_rooms(window, cx)
                                     });
+                                }
+                                Signal::AppUpdates(event) => {
+                                    // TODO: add settings for auto updates
+                                    auto_updater.update(cx, |this, cx| {
+                                        this.update(event, cx);
+                                    })
                                 }
                             };
                         })
@@ -310,10 +368,11 @@ async fn get_unwrapped(gift_wrap: EventId) -> Result<Event, Error> {
     }
 }
 
-async fn sync_metadata(buffer: HashSet<PublicKey>) {
-    let client = get_client();
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
+async fn sync_metadata(
+    buffer: HashSet<PublicKey>,
+    client: &Client,
+    opts: SubscribeAutoCloseOptions,
+) {
     let kinds = vec![
         Kind::Metadata,
         Kind::ContactList,

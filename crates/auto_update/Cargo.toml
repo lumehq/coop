@@ -1,0 +1,18 @@
+[package]
+name = "auto_update"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+common = { path = "../common" }
+global = { path = "../global" }
+
+gpui.workspace = true
+nostr-sdk.workspace = true
+anyhow.workspace = true
+smol.workspace = true
+log.workspace = true
+
+tempfile = "3.19.1"
+reqwest = { version = "0.12", features = ["stream"] }
