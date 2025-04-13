@@ -157,6 +157,10 @@ impl Login {
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_logging_in {
+            return;
+        };
+
         self.set_logging_in(true, cx);
 
         let content = self.key_input.read(cx).text();

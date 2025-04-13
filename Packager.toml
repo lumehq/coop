@@ -4,11 +4,12 @@ product-name = "Coop"
 identifier = "su.reya.coop"
 resources = ["assets/*/*", "Cargo.toml", "./LICENSE", "./README.md"]
 icons = [
-  "assets/brand/32x32.png",
-  "assets/brand/128x128.png",
-  "assets/brand/128x128@2x.png",
-  "assets/brand/icon.icns",
-  "assets/brand/icon.ico",
+  "crates/coop/resources/32x32.png",
+  "crates/coop/resources/128x128.png",
+  "crates/coop/resources/128x128@2x.png",
+  "crates/coop/resources/app-icon.icns",
+  "crates/coop/resources/app-icon.png",
+  "crates/coop/resources/app-icon.ico",
 ]
 before-packaging-command = "cargo build --release"
 out-dir = "./target/release"

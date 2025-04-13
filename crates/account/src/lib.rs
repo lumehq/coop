@@ -14,19 +14,12 @@ struct GlobalAccount(Entity<Account>);
 impl Global for GlobalAccount {}
 
 pub fn init(cx: &mut App) {
-    Account::set_global(
-        cx.new(|_| Account {
-            profile: None,
-            loading: false,
-        }),
-        cx,
-    );
+    Account::set_global(cx.new(|_| Account { profile: None }), cx);
 }
 
 #[derive(Debug, Clone)]
 pub struct Account {
     pub profile: Option<Profile>,
-    loading: bool,
 }
 
 impl Account {
@@ -42,12 +35,6 @@ impl Account {
     where
         S: NostrSigner + 'static,
     {
-        if self.loading {
-            return;
-        }
-
-        self.set_loading(true, cx);
-
         let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
             let client = get_client();
             // Use user's signer for main signer
@@ -72,7 +59,6 @@ impl Account {
                 cx.update(|_, cx| {
                     this.update(cx, |this, cx| {
                         this.profile = Some(profile);
-                        this.set_loading(false, cx);
                         this.subscribe(cx);
                         cx.notify();
                     })
@@ -177,10 +163,5 @@ impl Account {
             }
         })
         .detach();
-    }
-
-    fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
-        self.loading = loading;
-        cx.notify();
     }
 }

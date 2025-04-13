@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-default-members = ["crates/app"]
+default-members = ["crates/coop"]
 
 [workspace.package]
 version = "0.1.4"
@@ -29,6 +29,7 @@ nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 	"nip05",
 ] }
 
+# Others
 smol = "2"
 oneshot = "0.1.10"
 serde = { version = "1.0", features = ["derive"] }
