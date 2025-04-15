@@ -1,8 +1,7 @@
 use account::Account;
-use common::profile::SharedProfile;
 use global::get_client;
 use gpui::{
-    actions, div, img, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
+    actions, div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
     Task, Window,
 };
@@ -12,9 +11,8 @@ use std::sync::Arc;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{dock::DockPlacement, panel::PanelView, DockArea, DockItem},
-    popup_menu::PopupMenuExt,
     theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
-    ContextModal, Icon, IconName, Root, Sizable, TitleBar,
+    ContextModal, IconName, Root, Sizable, TitleBar,
 };
 
 use crate::views::{chat, contacts, profile, relays, settings, welcome};
@@ -61,12 +59,11 @@ impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let account = Account::global(cx);
         let dock = cx.new(|cx| DockArea::new(window, cx));
-        let titlebar = false;
 
         cx.new(|cx| {
             let mut this = Self {
                 dock,
-                titlebar,
+                titlebar: false,
                 subscriptions: smallvec![cx.observe_in(
                     &account,
                     window,
@@ -163,34 +160,6 @@ impl ChatSpace {
                     Theme::change(Appearance::Dark, Some(window), cx);
                 }
             }))
-    }
-
-    fn render_account_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Button::new("account")
-            .ghost()
-            .xsmall()
-            .reverse()
-            .icon(Icon::new(IconName::ChevronDownSmall))
-            .when_some(
-                Account::global(cx).read(cx).profile.as_ref(),
-                |this, profile| this.child(img(profile.shared_avatar()).size_5()),
-            )
-            .popup_menu(move |this, _, _cx| {
-                this.menu(
-                    "Profile",
-                    Box::new(AddPanel::new(PanelKind::Profile, DockPlacement::Right)),
-                )
-                .menu(
-                    "Contacts",
-                    Box::new(AddPanel::new(PanelKind::Contacts, DockPlacement::Right)),
-                )
-                .menu(
-                    "Settings",
-                    Box::new(AddPanel::new(PanelKind::Settings, DockPlacement::Center)),
-                )
-                .separator()
-                .menu("Change account", Box::new(Logout))
-            })
     }
 
     fn render_relays_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -320,8 +289,7 @@ impl Render for ChatSpace {
                                         .gap_2()
                                         .px_2()
                                         .child(self.render_appearance_btn(cx))
-                                        .child(self.render_relays_btn(cx))
-                                        .child(self.render_account_btn(cx)),
+                                        .child(self.render_relays_btn(cx)),
                                 ),
                         )
                     })

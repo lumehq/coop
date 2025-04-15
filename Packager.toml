@@ -1,8 +1,13 @@
 name = "coop"
 description = "Coop is a cross-platform Nostr client designed for secure communication focus on simplicity and customizability."
 product-name = "Coop"
+version = "0.1.4"
+category = "SocialNetworking"
 identifier = "su.reya.coop"
 resources = ["assets/*/*", "Cargo.toml", "./LICENSE", "./README.md"]
+binaries = [ { path = "coop", main = true } ]
+before-packaging-command = "cargo build --release"
+out-dir = "./target/release"
 icons = [
   "crates/coop/resources/32x32.png",
   "crates/coop/resources/128x128.png",
@@ -10,9 +15,4 @@ icons = [
   "crates/coop/resources/app-icon.icns",
   "crates/coop/resources/app-icon.png",
   "crates/coop/resources/app-icon.ico",
-]
-before-packaging-command = "cargo build --release"
-out-dir = "./target/release"
-binaries = [
-	{ path = "coop", main = true },
 ]
