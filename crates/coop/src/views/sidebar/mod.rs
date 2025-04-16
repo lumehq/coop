@@ -75,7 +75,6 @@ impl Sidebar {
                         Button::new("create_dm_btn")
                             .label(label)
                             .primary()
-                            .bold()
                             .w_full()
                             .loading(is_submitting)
                             .disabled(is_submitting)

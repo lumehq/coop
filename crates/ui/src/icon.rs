@@ -11,6 +11,7 @@ use gpui::{
 #[derive(IntoElement, Clone)]
 pub enum IconName {
     AddressBook,
+    ArrowIn,
     ArrowDown,
     ArrowLeft,
     ArrowRight,
@@ -38,9 +39,7 @@ pub enum IconName {
     Loader,
     LoaderCircle,
     MailboxFill,
-    Maximize,
     Menu,
-    Minimize,
     Moon,
     Palette,
     PanelBottom,
@@ -55,6 +54,8 @@ pub enum IconName {
     PlusCircleFill,
     Relays,
     ResizeCorner,
+    Sidebar,
+    SidebarFill,
     Search,
     Settings,
     SortAscending,
@@ -75,6 +76,7 @@ impl IconName {
     pub fn path(self) -> SharedString {
         match self {
             Self::AddressBook => "icons/address-book.svg",
+            Self::ArrowIn => "icons/arrows-in.svg",
             Self::ArrowDown => "icons/arrow-down.svg",
             Self::ArrowLeft => "icons/arrow-left.svg",
             Self::ArrowRight => "icons/arrow-right.svg",
@@ -102,9 +104,7 @@ impl IconName {
             Self::Loader => "icons/loader.svg",
             Self::LoaderCircle => "icons/loader-circle.svg",
             Self::MailboxFill => "icons/mailbox-fill.svg",
-            Self::Maximize => "icons/maximize.svg",
             Self::Menu => "icons/menu.svg",
-            Self::Minimize => "icons/minimize.svg",
             Self::Moon => "icons/moon.svg",
             Self::Palette => "icons/palette.svg",
             Self::PanelBottom => "icons/panel-bottom.svg",
@@ -119,6 +119,8 @@ impl IconName {
             Self::PlusCircleFill => "icons/plus-circle-fill.svg",
             Self::Relays => "icons/relays.svg",
             Self::ResizeCorner => "icons/resize-corner.svg",
+            Self::Sidebar => "icons/sidebar.svg",
+            Self::SidebarFill => "icons/sidebar-fill.svg",
             Self::Search => "icons/search.svg",
             Self::Settings => "icons/settings.svg",
             Self::SortAscending => "icons/sort-ascending.svg",

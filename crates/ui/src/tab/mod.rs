@@ -81,36 +81,38 @@ impl RenderOnce for Tab {
         let (text_color, bg_color, hover_bg_color) = match (self.selected, self.disabled) {
             (true, false) => (
                 cx.theme().base.step(cx, ColorScaleStep::TWELVE),
-                cx.theme().base.step(cx, ColorScaleStep::THREE),
+                cx.theme().base.step(cx, ColorScaleStep::FIVE),
                 cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
             (false, false) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                cx.theme().base.step(cx, ColorScaleStep::ONE),
+                cx.theme().transparent,
                 cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
             // disabled
             (true, true) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                cx.theme().base.step(cx, ColorScaleStep::ONE),
+                cx.theme().transparent,
                 cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
             (false, true) => (
                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                cx.theme().base.step(cx, ColorScaleStep::ONE),
+                cx.theme().transparent,
                 cx.theme().base.step(cx, ColorScaleStep::FOUR),
             ),
         };
 
         self.base
             .h(px(30.))
+            .px_2()
             .relative()
             .flex()
             .items_center()
             .flex_shrink_0()
             .cursor_pointer()
             .overflow_hidden()
-            .text_sm()
+            .text_xs()
+            .text_ellipsis()
             .text_color(text_color)
             .bg(bg_color)
             .rounded(px(cx.theme().radius))
@@ -118,16 +120,7 @@ impl RenderOnce for Tab {
             .when_some(self.prefix, |this, prefix| {
                 this.child(prefix).text_color(text_color)
             })
-            .child(
-                div()
-                    .px_3()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .text_ellipsis()
-                    .text_xs()
-                    .child(self.label),
-            )
+            .child(self.label)
             .when_some(self.suffix, |this, suffix| this.child(suffix))
     }
 }

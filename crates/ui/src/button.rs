@@ -357,7 +357,7 @@ impl RenderOnce for Button {
                         Size::XSmall => this.h_6().px_0p5(),
                         Size::Small => this.h_7().px_2(),
                         Size::Large => this.h_10().px_3(),
-                        _ => this.h_8().px_3(),
+                        _ => this.h_9().px_2(),
                     }
                 }
             })
@@ -437,7 +437,7 @@ impl RenderOnce for Button {
                     .id("label")
                     .items_center()
                     .justify_center()
-                    .text_xs()
+                    .text_sm()
                     .map(|this| match self.size {
                         Size::XSmall => this.gap_0p5(),
                         Size::Small => this.gap_1(),

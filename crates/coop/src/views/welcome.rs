@@ -92,8 +92,8 @@ impl Render for Welcome {
                     .child(
                         div()
                             .child("coop on nostr.")
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::FOUR))
-                            .font_black()
+                            .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
+                            .font_semibold()
                             .text_sm(),
                     ),
             )

@@ -205,7 +205,7 @@ impl RenderOnce for Folder {
                     .on_click(move |ev, window, cx| handler(ev, window, cx)),
             )
             .when(!self.collapsed, |this| {
-                this.child(div().flex().flex_col().gap_2().pl_6().children(self.items))
+                this.child(div().flex().flex_col().gap_1().pl_6().children(self.items))
             })
     }
 }
