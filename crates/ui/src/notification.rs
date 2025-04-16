@@ -221,10 +221,9 @@ impl Render for Notification {
                 NotificationType::Info => {
                     Icon::new(IconName::Info).text_color(blue().step(cx, ColorScaleStep::NINE))
                 }
-                NotificationType::Error => {
-                    Icon::new(IconName::CircleX).text_color(red().step(cx, ColorScaleStep::NINE))
-                }
-                NotificationType::Success => Icon::new(IconName::CircleCheck)
+                NotificationType::Error => Icon::new(IconName::CloseCircle)
+                    .text_color(red().step(cx, ColorScaleStep::NINE)),
+                NotificationType::Success => Icon::new(IconName::CheckCircle)
                     .text_color(green().step(cx, ColorScaleStep::NINE)),
                 NotificationType::Warning => Icon::new(IconName::TriangleAlert)
                     .text_color(yellow().step(cx, ColorScaleStep::NINE)),

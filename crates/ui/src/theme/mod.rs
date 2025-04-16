@@ -148,7 +148,7 @@ impl Theme {
         Theme {
             base: color_scales.gray,
             accent: color_scales.yellow,
-            font_size: 16.0,
+            font_size: 15.0,
             font_family: if cfg!(target_os = "macos") {
                 ".SystemUIFont".into()
             } else if cfg!(target_os = "windows") {

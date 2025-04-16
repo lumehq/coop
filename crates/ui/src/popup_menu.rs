@@ -677,7 +677,7 @@ impl Render for PopupMenu {
                                                                         .justify_between()
                                                                         .child(label.clone())
                                                                         .child(
-                                                                            IconName::ChevronRight,
+                                                                            IconName::CaretRight,
                                                                         ),
                                                                 ),
                                                         )

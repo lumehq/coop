@@ -20,7 +20,6 @@ use std::{
     time::Duration,
 };
 use ui::{
-    button::{Button, ButtonRounded},
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Icon, IconName, Sizable, Size, StyledExt,
@@ -57,7 +56,7 @@ impl Compose {
             let name = random_name(2);
             let mut input = TextInput::new(window, cx)
                 .appearance(false)
-                .text_size(Size::XSmall);
+                .text_size(Size::Small);
 
             input.set_placeholder("Family... . (Optional)");
             input.set_text(name, window, cx);
@@ -343,15 +342,13 @@ impl Render for Compose {
             .gap_1()
             .child(
                 div()
-                    .px_2()
-                    .text_xs()
+                    .text_sm()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .child(DESCRIPTION),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
                 this.child(
                     div()
-                        .px_2()
                         .text_xs()
                         .text_color(cx.theme().danger)
                         .child(msg.clone()),
@@ -361,13 +358,12 @@ impl Render for Compose {
                 div().flex().flex_col().child(
                     div()
                         .h_10()
-                        .px_2()
                         .border_b_1()
                         .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().text_xs().font_semibold().child("Title:"))
+                        .child(div().text_sm().font_semibold().child("Title:"))
                         .child(self.title_input.clone()),
                 ),
             )
@@ -376,25 +372,9 @@ impl Render for Compose {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().px_2().text_xs().font_semibold().child("To:"))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .child(
-                                Button::new("add_user_to_compose_btn")
-                                    .icon(IconName::Plus)
-                                    .small()
-                                    .rounded(ButtonRounded::Size(px(9999.)))
-                                    .loading(self.is_loading)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.add(window, cx);
-                                    })),
-                            )
-                            .child(self.user_input.clone()),
-                    )
+                    .mt_1()
+                    .child(div().text_sm().font_semibold().child("To:"))
+                    .child(self.user_input.clone())
                     .map(|this| {
                         let contacts = self.contacts.read(cx).clone();
                         let view = cx.entity();
@@ -443,30 +423,35 @@ impl Render for Compose {
                                                 div()
                                                     .id(ix)
                                                     .w_full()
-                                                    .h_9()
+                                                    .h_10()
                                                     .px_2()
                                                     .flex()
                                                     .items_center()
                                                     .justify_between()
+                                                    .rounded(px(cx.theme().radius))
                                                     .child(
                                                         div()
                                                             .flex()
                                                             .items_center()
-                                                            .gap_2()
-                                                            .text_xs()
-                                                            .child(div().flex_shrink_0().child(
-                                                                img(item.shared_avatar()).size_6(),
-                                                            ))
+                                                            .gap_3()
+                                                            .text_sm()
+                                                            .child(
+                                                                img(item.shared_avatar())
+                                                                    .size_7()
+                                                                    .flex_shrink_0(),
+                                                            )
                                                             .child(item.shared_name()),
                                                     )
                                                     .when(is_select, |this| {
                                                         this.child(
-                                                            Icon::new(IconName::CircleCheck)
-                                                                .size_3()
-                                                                .text_color(cx.theme().base.step(
-                                                                    cx,
-                                                                    ColorScaleStep::TWELVE,
-                                                                )),
+                                                            Icon::new(IconName::CheckCircleFill)
+                                                                .small()
+                                                                .text_color(
+                                                                    cx.theme().accent.step(
+                                                                        cx,
+                                                                        ColorScaleStep::NINE,
+                                                                    ),
+                                                                ),
                                                         )
                                                     })
                                                     .hover(|this| {
@@ -489,7 +474,8 @@ impl Render for Compose {
                                         items
                                     },
                                 )
-                                .min_h(px(250.)),
+                                .pb_4()
+                                .min_h(px(280.)),
                             )
                         }
                     }),

@@ -6,7 +6,7 @@ use gpui::{
 };
 use ui::{
     theme::{scale::ColorScaleStep, ActiveTheme},
-    Icon, Sizable,
+    Icon,
 };
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -22,7 +22,7 @@ pub struct SidebarButton {
 impl SidebarButton {
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
-            base: div().flex().items_center().gap_3().px_2().h_6(),
+            base: div().flex().items_center().gap_3().px_3().h_8(),
             label: label.into(),
             icon: None,
             handler: Rc::new(|_, _, _| {}),
@@ -50,7 +50,7 @@ impl RenderOnce for SidebarButton {
         self.base
             .id(self.label.clone())
             .rounded(px(cx.theme().radius))
-            .when_some(self.icon, |this, icon| this.child(icon.small()))
+            .when_some(self.icon, |this, icon| this.child(icon))
             .child(self.label.clone())
             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
             .on_click(move |ev, window, cx| handler(ev, window, cx))

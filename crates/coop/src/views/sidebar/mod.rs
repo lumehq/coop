@@ -13,7 +13,7 @@ use gpui::{
     SharedString, Styled, Window,
 };
 use ui::{
-    button::{Button, ButtonRounded, ButtonVariants},
+    button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
     scroll::ScrollbarAxis,
@@ -71,23 +71,18 @@ impl Sidebar {
                 .width(px(420.))
                 .child(compose.clone())
                 .footer(
-                    div()
-                        .p_2()
-                        .border_t_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                        .child(
-                            Button::new("create_dm_btn")
-                                .label(label)
-                                .primary()
-                                .bold()
-                                .rounded(ButtonRounded::Large)
-                                .w_full()
-                                .loading(is_submitting)
-                                .disabled(is_submitting)
-                                .on_click(window.listener_for(&compose, |this, _, window, cx| {
-                                    this.compose(window, cx)
-                                })),
-                        ),
+                    div().child(
+                        Button::new("create_dm_btn")
+                            .label(label)
+                            .primary()
+                            .bold()
+                            .w_full()
+                            .loading(is_submitting)
+                            .disabled(is_submitting)
+                            .on_click(window.listener_for(&compose, |this, _, window, cx| {
+                                this.compose(window, cx)
+                            })),
+                    ),
                 )
         })
     }
@@ -207,7 +202,7 @@ impl Render for Sidebar {
             .size_full()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap_3()
             .p_2()
             .when_some(account, |this, profile| {
                 this.child(
@@ -217,11 +212,11 @@ impl Render for Sidebar {
                         .flex()
                         .gap_2()
                         .items_center()
-                        .text_xs()
+                        .text_sm()
                         .font_semibold()
                         .rounded(px(cx.theme().radius))
                         .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
-                        .child(img(profile.shared_avatar()).size_5())
+                        .child(img(profile.shared_avatar()).size_7())
                         .child(profile.shared_name()),
                 )
             })
@@ -230,8 +225,8 @@ impl Render for Sidebar {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .text_xs()
-                    .font_semibold()
+                    .text_sm()
+                    .font_medium()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .child(
                         SidebarButton::new("New Message")
@@ -240,13 +235,19 @@ impl Render for Sidebar {
                                 this.render_compose(window, cx);
                             })),
                     )
-                    .child(SidebarButton::new("Contacts").icon(IconName::UsersThreeFill)),
+                    .child(
+                        SidebarButton::new("Contacts")
+                            .icon(IconName::AddressBook)
+                            .on_click(cx.listener(|_, _, _, _| {
+                                // TODO: open contacts panel
+                            })),
+                    ),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
+                    .gap_2()
                     .child(
                         div()
                             .px_2()
@@ -262,7 +263,7 @@ impl Render for Sidebar {
                             this.when_some(ongoing, |this, rooms| {
                                 this.child(
                                     Folder::new("Ongoing")
-                                        .icon(IconName::FolderFill)
+                                        .icon(IconName::Folder)
                                         .collapsed(self.ongoing)
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.ongoing(cx);
@@ -272,7 +273,7 @@ impl Render for Sidebar {
                             })
                             .child(
                                 Parent::new("Incoming")
-                                    .icon(IconName::FolderFill)
+                                    .icon(IconName::Folder)
                                     .collapsed(self.incoming)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.incoming(cx);
@@ -280,7 +281,7 @@ impl Render for Sidebar {
                                     .when_some(trusted, |this, rooms| {
                                         this.child(
                                             Folder::new("Trusted")
-                                                .icon(IconName::FolderFill)
+                                                .icon(IconName::Folder)
                                                 .collapsed(self.trusted)
                                                 .on_click(cx.listener(move |this, _, _, cx| {
                                                     this.trusted(cx);
@@ -291,7 +292,7 @@ impl Render for Sidebar {
                                     .when_some(unknown, |this, rooms| {
                                         this.child(
                                             Folder::new("Unknown")
-                                                .icon(IconName::FolderFill)
+                                                .icon(IconName::Folder)
                                                 .collapsed(self.unknown)
                                                 .on_click(cx.listener(move |this, _, _, cx| {
                                                     this.unknown(cx);

@@ -261,7 +261,7 @@ fn main() {
             }),
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
-                size(px(900.0), px(680.0)),
+                size(px(920.0), px(700.0)),
                 cx,
             ))),
             #[cfg(target_os = "linux")]

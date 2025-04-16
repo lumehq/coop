@@ -1,14 +1,14 @@
 use crate::{
     animation::cubic_bezier,
-    button::{Button, ButtonVariants as _},
+    button::{Button, ButtonCustomVariant, ButtonVariants as _},
     theme::{scale::ColorScaleStep, ActiveTheme as _},
     v_flex, ContextModal, IconName, Sizable as _, StyledExt,
 };
 use gpui::{
-    actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement,
-    IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
-    Styled, Window,
+    actions, anchored, div, point, prelude::FluentBuilder, px, Animation, AnimationExt as _,
+    AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement,
+    KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString, Styled,
+    Window,
 };
 use std::{rc::Rc, time::Duration};
 
@@ -45,9 +45,9 @@ impl Modal {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-            .rounded_lg()
-            .shadow_xl();
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::SEVEN))
+            .rounded_xl()
+            .shadow_md();
 
         Self {
             base,
@@ -190,19 +190,48 @@ impl RenderOnce for Modal {
                             .top(y)
                             .w(self.width)
                             .when_some(self.max_width, |this, w| this.max_w(w))
-                            .when_some(self.title, |this, title| {
-                                this.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .h_10()
-                                        .px_2()
-                                        .text_sm()
-                                        .font_semibold()
-                                        .line_height(relative(1.))
-                                        .child(title),
-                                )
-                            })
+                            .px_4()
+                            .pb_4()
+                            .child(
+                                div()
+                                    .h_12()
+                                    .mb_2()
+                                    .border_b_1()
+                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .when_some(self.title, |this, title| {
+                                        this.child(div().font_semibold().child(title))
+                                    })
+                                    .when(self.closable, |this| {
+                                        this.child(
+                                            Button::new(SharedString::from(format!(
+                                                "modal-close-{layer_ix}"
+                                            )))
+                                            .small()
+                                            .icon(IconName::CloseCircleFill)
+                                            .custom(
+                                                ButtonCustomVariant::new(window, cx)
+                                                    .foreground(
+                                                        cx.theme()
+                                                            .base
+                                                            .step(cx, ColorScaleStep::NINE),
+                                                    )
+                                                    .color(cx.theme().transparent)
+                                                    .hover(cx.theme().transparent)
+                                                    .active(cx.theme().transparent)
+                                                    .border(cx.theme().transparent),
+                                            )
+                                            .on_click(move |_, window, cx| {
+                                                on_close(&ClickEvent::default(), window, cx);
+                                                window.close_modal(cx);
+                                            }),
+                                        )
+                                    }),
+                            )
+                            .child(self.content)
+                            .children(self.footer)
                             .when(self.keyboard, |this| {
                                 this.on_action({
                                     let on_close = self.on_close.clone();
@@ -216,27 +245,6 @@ impl RenderOnce for Modal {
                                     }
                                 })
                             })
-                            .when(self.closable, |this| {
-                                this.child(
-                                    Button::new(SharedString::from(format!(
-                                        "modal-close-{layer_ix}"
-                                    )))
-                                    .absolute()
-                                    .top_2()
-                                    .right_2()
-                                    .small()
-                                    .ghost()
-                                    .icon(IconName::Close)
-                                    .on_click(
-                                        move |_, window, cx| {
-                                            on_close(&ClickEvent::default(), window, cx);
-                                            window.close_modal(cx);
-                                        },
-                                    ),
-                                )
-                            })
-                            .child(self.content)
-                            .children(self.footer)
                             .with_animation(
                                 "slide-down",
                                 Animation::new(Duration::from_secs_f64(0.25))
