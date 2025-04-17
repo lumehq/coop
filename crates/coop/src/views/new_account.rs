@@ -19,10 +19,6 @@ use ui::{
     Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
-use crate::chat_space::ChatSpace;
-
-use super::onboarding;
-
 const STEAM_ID_DESCRIPTION: &str =
     "Steam ID is used to get your currently playing game and update your status.";
 
@@ -52,26 +48,26 @@ impl NewAccount {
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .text_size(Size::XSmall)
+                .text_size(Size::Small)
                 .placeholder("Alice")
         });
 
         let avatar_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .text_size(Size::XSmall)
+                .text_size(Size::Small)
                 .small()
                 .placeholder("https://example.com/avatar.jpg")
         });
 
         let steam_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .text_size(Size::XSmall)
+                .text_size(Size::Small)
                 .placeholder("76561199810385277")
         });
 
         let bio_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .text_size(Size::XSmall)
+                .text_size(Size::Small)
                 .multi_line()
                 .placeholder("A short introduce about you.")
         });
@@ -188,11 +184,6 @@ impl NewAccount {
         self.is_uploading = status;
         cx.notify();
     }
-
-    fn back(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let panel = onboarding::init(window, cx);
-        ChatSpace::set_center_panel(panel, window, cx);
-    }
 }
 
 impl Panel for NewAccount {
@@ -238,13 +229,13 @@ impl Render for NewAccount {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap_8()
+            .gap_10()
             .child(
                 div()
                     .text_center()
                     .text_lg()
                     .font_semibold()
-                    .line_height(relative(1.2))
+                    .line_height(relative(1.3))
                     .child("Create New Account"),
             )
             .child(
@@ -295,7 +286,7 @@ impl Render for NewAccount {
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .text_xs()
+                            .text_sm()
                             .child("Name *:")
                             .child(self.name_input.clone()),
                     )
@@ -304,7 +295,7 @@ impl Render for NewAccount {
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .text_xs()
+                            .text_sm()
                             .child("Bio:")
                             .child(self.bio_input.clone()),
                     )
@@ -313,7 +304,7 @@ impl Render for NewAccount {
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .text_xs()
+                            .text_sm()
                             .child("Steam ID:")
                             .child(self.steam_input.clone())
                             .child(
@@ -340,18 +331,6 @@ impl Render for NewAccount {
                                 this.submit(window, cx);
                             })),
                     ),
-            )
-            .child(
-                div().absolute().left_2().top_10().w_16().child(
-                    Button::new("back")
-                        .label("Back")
-                        .icon(Icon::new(IconName::ArrowLeft))
-                        .ghost()
-                        .small()
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.back(window, cx);
-                        })),
-                ),
             )
     }
 }

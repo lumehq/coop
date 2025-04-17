@@ -451,7 +451,6 @@ impl RenderOnce for Button {
                     .when(self.loading, |this| {
                         this.child(
                             Indicator::new()
-                                .with_size(self.size)
                                 .when_some(self.loading_icon, |this, icon| this.icon(icon)),
                         )
                     })

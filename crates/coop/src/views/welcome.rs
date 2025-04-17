@@ -42,7 +42,7 @@ impl Panel for Welcome {
     }
 
     fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
+        "👋".into_any_element()
     }
 
     fn closable(&self, _cx: &App) -> bool {

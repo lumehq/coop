@@ -162,17 +162,7 @@ impl ChatSpace {
             }))
     }
 
-    fn render_relays_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Button::new("relays")
-            .xsmall()
-            .ghost()
-            .icon(IconName::Relays)
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.render_edit_relays(window, cx);
-            }))
-    }
-
-    fn render_edit_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+    fn _render_edit_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
         let relays = relays::init(window, cx);
 
         window.open_modal(cx, move |this, window, cx| {
@@ -288,8 +278,7 @@ impl Render for ChatSpace {
                                         .justify_end()
                                         .gap_2()
                                         .px_2()
-                                        .child(self.render_appearance_btn(cx))
-                                        .child(self.render_relays_btn(cx)),
+                                        .child(self.render_appearance_btn(cx)),
                                 ),
                         )
                     })
