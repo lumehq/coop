@@ -25,8 +25,9 @@ use ui::{
     ContextModal, Icon, IconName, Sizable, Size, StyledExt,
 };
 
-const DESCRIPTION: &str =
-    "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
+    cx.new(|cx| Compose::new(window, cx))
+}
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 struct SelectContact(PublicKey);
@@ -334,6 +335,9 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        const DESCRIPTION: &str =
+            "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
+
         div()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_action_select))
@@ -363,7 +367,7 @@ impl Render for Compose {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().text_sm().font_semibold().child("Title:"))
+                        .child(div().pb_0p5().text_sm().font_semibold().child("Title:"))
                         .child(self.title_input.clone()),
                 ),
             )

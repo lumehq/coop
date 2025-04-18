@@ -1,29 +1,41 @@
 use account::Account;
-use global::get_client;
 use gpui::{
-    actions, div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
-    Task, Window,
+    div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use std::sync::Arc;
 use ui::{
-    button::{Button, ButtonRounded, ButtonVariants},
+    button::{Button, ButtonVariants},
     dock_area::{dock::DockPlacement, panel::PanelView, DockArea, DockItem},
-    theme::{scale::ColorScaleStep, ActiveTheme, Appearance, Theme},
-    ContextModal, IconName, Root, Sizable, TitleBar,
+    theme::{ActiveTheme, Appearance, Theme},
+    ContextModal, Disableable, IconName, Root, Sizable, TitleBar,
 };
 
-use crate::views::{chat, contacts, profile, relays, settings, welcome};
+use crate::views::{chat, compose, contacts, profile, relays, welcome};
 use crate::views::{onboarding, sidebar};
+
+const MODAL_WIDTH: f32 = 420.;
+const SIDEBAR_WIDTH: f32 = 280.;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
     Room(u64),
+    // More kind will be added here
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub enum ModalKind {
     Profile,
-    Contacts,
-    Settings,
+    Compose,
+    Contact,
+    Relay,
+}
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct ToggleModal {
+    pub modal: ModalKind,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -39,10 +51,7 @@ impl AddPanel {
 }
 
 // Dock actions
-impl_internal_actions!(dock, [AddPanel]);
-
-// Account actions
-actions!(account, [Logout]);
+impl_internal_actions!(dock, [AddPanel, ToggleModal]);
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
@@ -61,20 +70,24 @@ impl ChatSpace {
         let dock = cx.new(|cx| DockArea::new(window, cx));
 
         cx.new(|cx| {
+            let mut subscriptions = smallvec![];
+
+            subscriptions.push(cx.observe_in(
+                &account,
+                window,
+                |this: &mut ChatSpace, account, window, cx| {
+                    if account.read(cx).profile.is_some() {
+                        this.open_chats(window, cx);
+                    } else {
+                        this.open_onboarding(window, cx);
+                    }
+                },
+            ));
+
             let mut this = Self {
                 dock,
+                subscriptions,
                 titlebar: false,
-                subscriptions: smallvec![cx.observe_in(
-                    &account,
-                    window,
-                    |this: &mut ChatSpace, account, window, cx| {
-                        if account.read(cx).profile.is_some() {
-                            this.open_chats(window, cx);
-                        } else {
-                            this.open_onboarding(window, cx);
-                        }
-                    },
-                )],
             };
 
             if Account::global(cx).read(cx).profile.is_some() {
@@ -132,7 +145,7 @@ impl ChatSpace {
         );
 
         self.dock.update(cx, |this, cx| {
-            this.set_left_dock(left, Some(px(280.)), true, window, cx);
+            this.set_left_dock(left, Some(px(SIDEBAR_WIDTH)), true, window, cx);
             this.set_center(center, window, cx);
         });
     }
@@ -162,36 +175,6 @@ impl ChatSpace {
             }))
     }
 
-    fn _render_edit_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = relays::init(window, cx);
-
-        window.open_modal(cx, move |this, window, cx| {
-            let is_loading = relays.read(cx).loading();
-
-            this.width(px(420.))
-                .title("Edit your Messaging Relays")
-                .child(relays.clone())
-                .footer(
-                    div()
-                        .p_2()
-                        .border_t_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                        .child(
-                            Button::new("update_inbox_relays_btn")
-                                .label("Update")
-                                .primary()
-                                .bold()
-                                .rounded(ButtonRounded::Large)
-                                .w_full()
-                                .loading(is_loading)
-                                .on_click(window.listener_for(&relays, |this, _, window, cx| {
-                                    this.update(window, cx);
-                                })),
-                        ),
-                )
-        });
-    }
-
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
         match &action.panel {
             PanelKind::Room(id) => {
@@ -205,49 +188,73 @@ impl ChatSpace {
                     Err(e) => window.push_notification(e.to_string(), cx),
                 }
             }
-            PanelKind::Profile => {
-                let panel = profile::init(window, cx);
-
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, window, cx);
-                });
-            }
-            PanelKind::Contacts => {
-                let panel = Arc::new(contacts::init(window, cx));
-
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, window, cx);
-                });
-            }
-            PanelKind::Settings => {
-                let panel = Arc::new(settings::init(window, cx));
-
-                self.dock.update(cx, |dock_area, cx| {
-                    dock_area.add_panel(panel, action.position, window, cx);
-                });
-            }
         };
     }
 
-    fn on_logout_action(&mut self, _action: &Logout, window: &mut Window, cx: &mut Context<Self>) {
-        let client = get_client();
-        let reset: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-            client.reset().await;
-            Ok(())
-        });
+    fn on_modal_action(
+        &mut self,
+        action: &ToggleModal,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match action.modal {
+            ModalKind::Profile => {
+                let profile = profile::init(window, cx);
 
-        cx.spawn_in(window, async move |_, cx| {
-            if reset.await.is_ok() {
-                cx.update(|_, cx| {
-                    Account::global(cx).update(cx, |this, cx| {
-                        this.profile = None;
-                        cx.notify();
-                    });
+                window.open_modal(cx, move |modal, _, _| {
+                    modal
+                        .title("Profile")
+                        .width(px(MODAL_WIDTH))
+                        .child(profile.clone())
                 })
-                .ok();
-            };
-        })
-        .detach();
+            }
+            ModalKind::Compose => {
+                let compose = compose::init(window, cx);
+
+                window.open_modal(cx, move |modal, window, cx| {
+                    let label = compose.read(cx).label(window, cx);
+                    let is_submitting = compose.read(cx).is_submitting();
+
+                    modal
+                        .title("Direct Messages")
+                        .width(px(MODAL_WIDTH))
+                        .child(compose.clone())
+                        .footer(
+                            div().child(
+                                Button::new("create_dm_btn")
+                                    .label(label)
+                                    .primary()
+                                    .w_full()
+                                    .loading(is_submitting)
+                                    .disabled(is_submitting)
+                                    .on_click(
+                                        window.listener_for(&compose, |this, _, window, cx| {
+                                            this.compose(window, cx)
+                                        }),
+                                    ),
+                            ),
+                        )
+                })
+            }
+            ModalKind::Contact => {
+                let contacts = contacts::init(window, cx);
+
+                window.open_modal(cx, move |this, _window, _cx| {
+                    this.width(px(420.))
+                        .title("Contacts")
+                        .child(contacts.clone())
+                });
+            }
+            ModalKind::Relay => {
+                let relays = relays::init(window, cx);
+
+                window.open_modal(cx, move |this, _, _| {
+                    this.width(px(420.))
+                        .title("Edit your Messaging Relays")
+                        .child(relays.clone())
+                });
+            }
+        }
     }
 }
 
@@ -291,6 +298,6 @@ impl Render for ChatSpace {
             .children(modal_layer)
             // Actions
             .on_action(cx.listener(Self::on_panel_action))
-            .on_action(cx.listener(Self::on_logout_action))
+            .on_action(cx.listener(Self::on_modal_action))
     }
 }

@@ -574,7 +574,7 @@ impl Render for PopupMenu {
                                             .py_0()
                                             .px_2()
                                             .rounded_md()
-                                            .text_xs()
+                                            .text_sm()
                                             .on_mouse_enter(cx.listener(
                                                 move |this, _, _window, cx| {
                                                     this.hovered_menu_ix = Some(ix);

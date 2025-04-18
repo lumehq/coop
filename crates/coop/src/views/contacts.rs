@@ -19,6 +19,8 @@ use ui::{
     Sizable,
 };
 
+const MIN_HEIGHT: f32 = 280.;
+
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Contacts> {
     Contacts::new(window, cx)
 }
@@ -108,51 +110,56 @@ impl Focusable for Contacts {
 
 impl Render for Contacts {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().pt_2().px_2().map(|this| {
+        let entity = cx.entity().clone();
+
+        div().map(|this| {
             if let Some(contacts) = self.contacts.clone() {
                 this.child(
                     uniform_list(
-                        cx.entity().clone(),
+                        entity,
                         "contacts",
                         contacts.len(),
                         move |_, range, _window, cx| {
-                            let mut items = Vec::new();
+                            let mut items = Vec::with_capacity(contacts.len());
 
                             for ix in range {
-                                let item = contacts.get(ix).unwrap().clone();
-
-                                items.push(
-                                    div()
-                                        .w_full()
-                                        .h_9()
-                                        .px_2()
-                                        .flex()
-                                        .items_center()
-                                        .justify_between()
-                                        .rounded(px(cx.theme().radius))
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap_2()
-                                                .text_xs()
-                                                .child(
-                                                    div()
-                                                        .flex_shrink_0()
-                                                        .child(img(item.shared_avatar()).size_6()),
-                                                )
-                                                .child(item.shared_name()),
-                                        )
-                                        .hover(|this| {
-                                            this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                                        }),
-                                );
+                                if let Some(item) = contacts.get(ix) {
+                                    items.push(
+                                        div()
+                                            .w_full()
+                                            .h_9()
+                                            .px_2()
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .rounded(px(cx.theme().radius))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .text_xs()
+                                                    .child(
+                                                        div().flex_shrink_0().child(
+                                                            img(item.shared_avatar()).size_6(),
+                                                        ),
+                                                    )
+                                                    .child(item.shared_name()),
+                                            )
+                                            .hover(|this| {
+                                                this.bg(cx
+                                                    .theme()
+                                                    .base
+                                                    .step(cx, ColorScaleStep::THREE))
+                                            }),
+                                    );
+                                }
                             }
 
                             items
                         },
                     )
-                    .h_full(),
+                    .min_h(px(MIN_HEIGHT)),
                 )
             } else {
                 this.flex()

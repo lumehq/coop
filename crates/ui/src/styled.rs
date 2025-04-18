@@ -198,9 +198,10 @@ impl<T: Styled> StyleSized<T> for T {
 
     fn input_h(self, size: Size) -> Self {
         match size {
-            Size::Large => self.h_12(),
+            Size::Small => self.h_7(),
             Size::Medium => self.h_9(),
-            _ => self.h(px(28.)),
+            Size::Large => self.h_12(),
+            _ => self.h(px(24.)),
         }
         .input_text_size(size)
     }
