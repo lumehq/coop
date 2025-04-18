@@ -3,7 +3,7 @@ use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
 use gpui::{
     div, prelude::FluentBuilder, px, uniform_list, App, AppContext, Context, Entity, FocusHandle,
     InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign,
-    Window,
+    UniformList, Window,
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -11,10 +11,11 @@ use ui::{
     button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, IconName, Sizable,
+    ContextModal, Disableable, IconName, Sizable,
 };
 
-const MESSAGE: &str = "In order to receive messages from others, you need to setup Messaging Relays. You can use the recommend relays or add more.";
+const MIN_HEIGHT: f32 = 200.0;
+const MESSAGE: &str = "In order to receive messages from others, you need to setup at least one Messaging Relay. You can use the recommend relays or add more.";
 const HELP_TEXT: &str = "Please add some relays.";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
@@ -32,7 +33,12 @@ pub struct Relays {
 
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let client = get_client();
+        let input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .text_size(ui::Size::XSmall)
+                .small()
+                .placeholder("wss://example.com")
+        });
 
         let relays = cx.new(|cx| {
             let relays = vec![
@@ -41,6 +47,7 @@ impl Relays {
             ];
 
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
+                let client = get_client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
 
@@ -82,13 +89,6 @@ impl Relays {
             relays
         });
 
-        let input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(ui::Size::XSmall)
-                .small()
-                .placeholder("wss://example.com")
-        });
-
         cx.new(|cx| {
             let mut subscriptions = smallvec![];
 
@@ -113,11 +113,9 @@ impl Relays {
     }
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Show loading spinner
         self.set_loading(true, cx);
 
         let relays = self.relays.read(cx).clone();
-
         let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
@@ -189,10 +187,6 @@ impl Relays {
         .detach();
     }
 
-    pub fn loading(&self) -> bool {
-        self.is_loading
-    }
-
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.is_loading = status;
         cx.notify();
@@ -225,116 +219,136 @@ impl Relays {
             cx.notify();
         });
     }
+
+    fn render_list(
+        &mut self,
+        relays: Vec<RelayUrl>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> UniformList {
+        let view = cx.entity();
+        let total = relays.len();
+
+        uniform_list(view, "relays", total, move |_, range, _window, cx| {
+            let mut items = Vec::new();
+
+            for ix in range {
+                let item = relays.get(ix).unwrap().clone().to_string();
+
+                items.push(
+                    div().group("").w_full().h_9().py_0p5().child(
+                        div()
+                            .px_2()
+                            .h_full()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .rounded(px(cx.theme().radius))
+                            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                            .text_xs()
+                            .child(item)
+                            .child(
+                                Button::new("remove_{ix}")
+                                    .icon(IconName::Close)
+                                    .xsmall()
+                                    .ghost()
+                                    .invisible()
+                                    .group_hover("", |this| this.visible())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.remove(ix, window, cx)
+                                    })),
+                            ),
+                    ),
+                )
+            }
+
+            items
+        })
+        .w_full()
+        .min_h(px(MIN_HEIGHT))
+    }
+
+    fn render_empty(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .h_20()
+            .mb_2()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_sm()
+            .text_align(TextAlign::Center)
+            .child(HELP_TEXT)
+    }
 }
 
 impl Render for Relays {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus_handle)
+            .w_full()
+            .h_full()
             .flex()
             .flex_col()
-            .gap_2()
-            .w_full()
+            .justify_between()
             .child(
                 div()
-                    .px_2()
-                    .text_xs()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .child(MESSAGE),
-            )
-            .child(
-                div()
-                    .px_2()
-                    .w_full()
+                    .flex_1()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .w_full()
-                            .gap_2()
-                            .child(self.input.clone())
-                            .child(
-                                Button::new("add_relay_btn")
-                                    .icon(IconName::Plus)
-                                    .small()
-                                    .rounded(px(cx.theme().radius))
-                                    .on_click(
-                                        cx.listener(|this, _, window, cx| this.add(window, cx)),
-                                    ),
-                            ),
+                            .text_sm()
+                            .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                            .child(MESSAGE),
                     )
-                    .map(|this| {
-                        let view = cx.entity();
-                        let relays = self.relays.read(cx).clone();
-                        let total = relays.len();
-
-                        if !relays.is_empty() {
-                            this.child(
-                                uniform_list(
-                                    view,
-                                    "relays",
-                                    total,
-                                    move |_, range, _window, cx| {
-                                        let mut items = Vec::new();
-
-                                        for ix in range {
-                                            let item = relays.get(ix).unwrap().clone().to_string();
-
-                                            items.push(
-                                                div().group("").w_full().h_9().py_0p5().child(
-                                                    div()
-                                                        .px_2()
-                                                        .h_full()
-                                                        .w_full()
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_between()
-                                                        .rounded(px(cx.theme().radius))
-                                                        .bg(cx
-                                                            .theme()
-                                                            .base
-                                                            .step(cx, ColorScaleStep::THREE))
-                                                        .text_xs()
-                                                        .child(item)
-                                                        .child(
-                                                            Button::new("remove_{ix}")
-                                                                .icon(IconName::Close)
-                                                                .xsmall()
-                                                                .ghost()
-                                                                .invisible()
-                                                                .group_hover("", |this| {
-                                                                    this.visible()
-                                                                })
-                                                                .on_click(cx.listener(
-                                                                    move |this, _, window, cx| {
-                                                                        this.remove(ix, window, cx)
-                                                                    },
-                                                                )),
-                                                        ),
-                                                ),
-                                            )
-                                        }
-
-                                        items
-                                    },
-                                )
-                                .w_full()
-                                .min_h(px(120.)),
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .w_full()
+                                    .gap_2()
+                                    .child(self.input.clone())
+                                    .child(
+                                        Button::new("add_relay_btn")
+                                            .icon(IconName::Plus)
+                                            .label("Add")
+                                            .small()
+                                            .ghost()
+                                            .rounded(px(cx.theme().radius))
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.add(window, cx)
+                                            })),
+                                    ),
                             )
-                        } else {
-                            this.h_20()
-                                .mb_2()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_xs()
-                                .text_align(TextAlign::Center)
-                                .child(HELP_TEXT)
-                        }
-                    }),
+                            .map(|this| {
+                                let relays = self.relays.read(cx).clone();
+
+                                if !relays.is_empty() {
+                                    this.child(self.render_list(relays, window, cx))
+                                } else {
+                                    this.child(self.render_empty(window, cx))
+                                }
+                            }),
+                    ),
+            )
+            .child(
+                Button::new("submti")
+                    .label("Update")
+                    .primary()
+                    .w_full()
+                    .loading(self.is_loading)
+                    .disabled(self.is_loading)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.update(window, cx);
+                    })),
             )
     }
 }

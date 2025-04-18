@@ -407,19 +407,19 @@ impl TabPanel {
         let build_popup_menu = move |this, cx: &App| view.read(cx).popup_menu(this, cx);
 
         h_flex()
-            .gap_2()
+            .gap_1()
             .occlude()
             .items_center()
             .children(
                 self.toolbar_buttons(window, cx)
                     .into_iter()
-                    .map(|btn| btn.xsmall().ghost()),
+                    .map(|btn| btn.small().ghost()),
             )
             .when(self.is_zoomed, |this| {
                 this.child(
                     Button::new("zoom")
-                        .icon(IconName::Minimize)
-                        .xsmall()
+                        .icon(IconName::ArrowIn)
+                        .small()
                         .ghost()
                         .tooltip("Zoom Out")
                         .on_click(cx.listener(|view, _, window, cx| {
@@ -430,7 +430,7 @@ impl TabPanel {
             .child(
                 Button::new("menu")
                     .icon(IconName::Ellipsis)
-                    .xsmall()
+                    .small()
                     .ghost()
                     .popup_menu({
                         let zoomable = state.zoomable;
@@ -451,7 +451,7 @@ impl TabPanel {
             )
     }
 
-    fn render_dock_toggle_button(
+    fn _render_dock_toggle_button(
         &self,
         placement: DockPlacement,
         _window: &mut Window,
@@ -517,7 +517,7 @@ impl TabPanel {
         Some(
             Button::new(SharedString::from(format!("toggle-dock:{:?}", placement)))
                 .icon(icon)
-                .xsmall()
+                .small()
                 .ghost()
                 .tooltip(match is_open {
                     true => "Collapse",
@@ -547,9 +547,6 @@ impl TabPanel {
         };
 
         let panel_style = dock_area.read(cx).panel_style;
-        let left_dock_button = self.render_dock_toggle_button(DockPlacement::Left, window, cx);
-        let bottom_dock_button = self.render_dock_toggle_button(DockPlacement::Bottom, window, cx);
-        let right_dock_button = self.render_dock_toggle_button(DockPlacement::Right, window, cx);
 
         if self.panels.len() == 1 && panel_style == PanelStyle::Default {
             let panel = self.panels.first().unwrap();
@@ -565,21 +562,6 @@ impl TabPanel {
                 .h(px(30.))
                 .py_2()
                 .px_3()
-                .when(left_dock_button.is_some(), |this| this.pl_2())
-                .when(right_dock_button.is_some(), |this| this.pr_2())
-                .when(
-                    left_dock_button.is_some() || bottom_dock_button.is_some(),
-                    |this| {
-                        this.child(
-                            h_flex()
-                                .flex_shrink_0()
-                                .mr_1()
-                                .gap_1()
-                                .children(left_dock_button)
-                                .children(bottom_dock_button),
-                        )
-                    },
-                )
                 .child(
                     div()
                         .id("tab")
@@ -612,8 +594,7 @@ impl TabPanel {
                         .flex_shrink_0()
                         .ml_1()
                         .gap_1()
-                        .child(self.render_toolbar(state, window, cx))
-                        .children(right_dock_button),
+                        .child(self.render_toolbar(state, window, cx)),
                 )
                 .into_any_element();
         }
@@ -622,22 +603,6 @@ impl TabPanel {
 
         TabBar::new("tab-bar")
             .track_scroll(self.tab_bar_scroll_handle.clone())
-            .when(
-                left_dock_button.is_some() || bottom_dock_button.is_some(),
-                |this| {
-                    this.prefix(
-                        h_flex()
-                            .items_center()
-                            .top_0()
-                            // Right -1 for avoid border overlap with the first tab
-                            .right(-px(1.))
-                            .h_full()
-                            .px_2()
-                            .children(left_dock_button)
-                            .children(bottom_dock_button),
-                    )
-                },
-            )
             .children(self.panels.iter().enumerate().filter_map(|(ix, panel)| {
                 let mut active = state.active_panel.as_ref() == Some(panel);
                 let disabled = self.is_collapsed;
@@ -723,8 +688,7 @@ impl TabPanel {
                     .h_full()
                     .px_2()
                     .gap_1()
-                    .child(self.render_toolbar(state, window, cx))
-                    .when_some(right_dock_button, |this, btn| this.child(btn)),
+                    .child(self.render_toolbar(state, window, cx)),
             )
             .into_any_element()
     }

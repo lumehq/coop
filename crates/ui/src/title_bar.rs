@@ -1,8 +1,4 @@
-use crate::{
-    h_flex,
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    Icon, IconName, InteractiveElementExt as _, Sizable as _,
-};
+use crate::{h_flex, theme::ActiveTheme, Icon, IconName, InteractiveElementExt as _, Sizable as _};
 use gpui::{
     black, div, prelude::FluentBuilder as _, px, relative, white, AnyElement, App, ClickEvent, Div,
     Element, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
@@ -251,7 +247,7 @@ impl RenderOnce for TitleBar {
                 .items_center()
                 .justify_between()
                 .h(HEIGHT)
-                .bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
+                .bg(cx.theme().transparent)
                 .when(window.is_fullscreen(), |this| this.pl(px(12.)))
                 .on_double_click(|_, window, _cx| window.zoom_window())
                 .child(

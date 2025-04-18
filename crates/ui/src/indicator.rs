@@ -16,7 +16,7 @@ pub struct Indicator {
 impl Indicator {
     pub fn new() -> Self {
         Self {
-            size: Size::Medium,
+            size: Size::Small,
             speed: Duration::from_secs_f64(0.8),
             icon: Icon::new(IconName::Loader),
             color: None,

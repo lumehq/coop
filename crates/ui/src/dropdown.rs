@@ -661,9 +661,9 @@ where
                                     Some(icon) => icon,
                                     None => {
                                         if self.open {
-                                            IconName::ChevronUp
+                                            IconName::CaretUp
                                         } else {
-                                            IconName::ChevronDown
+                                            IconName::CaretDown
                                         }
                                     }
                                 };

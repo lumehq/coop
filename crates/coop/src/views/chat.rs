@@ -14,14 +14,14 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use std::{collections::HashMap, sync::Arc};
 use ui::{
-    button::{Button, ButtonRounded, ButtonVariants},
+    button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     input::{InputEvent, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
     text::RichText,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, ContextModal, Icon, IconName, Sizable, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, Size, StyledExt,
 };
 
 const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
@@ -58,8 +58,7 @@ impl Chat {
         let attaches = cx.new(|_| None);
         let input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .appearance(false)
-                .text_size(ui::Size::Small)
+                .text_size(Size::Small)
                 .placeholder("Message...")
         });
 
@@ -343,11 +342,12 @@ impl Chat {
 
         div()
             .group("")
+            .w_full()
             .relative()
             .flex()
             .gap_3()
-            .w_full()
-            .p_2()
+            .px_3()
+            .py_2()
             .map(|this| match message {
                 RoomMessage::User(item) => {
                     let text = text_data
@@ -355,6 +355,7 @@ impl Chat {
                         .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
 
                     this.hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
+                        .text_sm()
                         .child(
                             div()
                                 .absolute()
@@ -379,19 +380,18 @@ impl Chat {
                                         .flex()
                                         .items_baseline()
                                         .gap_2()
-                                        .text_xs()
                                         .child(
                                             div().font_semibold().child(item.author.shared_name()),
                                         )
-                                        .child(div().child(item.ago()).text_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                                        )),
+                                        .child(
+                                            div()
+                                                .text_color(
+                                                    cx.theme().base.step(cx, ColorScaleStep::NINE),
+                                                )
+                                                .child(item.ago()),
+                                        ),
                                 )
-                                .child(div().text_sm().child(text.element(
-                                    "body".into(),
-                                    window,
-                                    cx,
-                                ))),
+                                .child(text.element("body".into(), window, cx)),
                         )
                 }
                 RoomMessage::System(content) => this
@@ -407,7 +407,7 @@ impl Chat {
                             .group_hover("", |this| this.bg(cx.theme().danger)),
                     )
                     .child(img("brand/avatar.png").size_8().flex_shrink_0())
-                    .text_xs()
+                    .text_sm()
                     .text_color(cx.theme().danger)
                     .child(content.clone()),
                 RoomMessage::Announcement => this
@@ -419,12 +419,12 @@ impl Chat {
                     .justify_center()
                     .text_center()
                     .text_xs()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
                     .line_height(relative(1.3))
                     .child(
                         svg()
                             .path("brand/coop.svg")
-                            .size_8()
+                            .size_10()
                             .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                     )
                     .child(ROOM_DESCRIPTION),
@@ -444,7 +444,7 @@ impl Panel for Chat {
             div()
                 .flex()
                 .items_center()
-                .gap_1()
+                .gap_1p5()
                 .child(
                     div()
                         .flex()
@@ -459,7 +459,7 @@ impl Panel for Chat {
                                 .map(|(ix, facepill)| {
                                     div()
                                         .when(ix > 0, |div| div.ml_neg_1())
-                                        .child(img(facepill).size_4())
+                                        .child(img(facepill).size_5())
                                 }),
                         ),
                 )
@@ -491,7 +491,7 @@ impl Render for Chat {
             .size_full()
             .child(list(self.list_state.clone()).flex_1())
             .child(
-                div().flex_shrink_0().p_2().child(
+                div().flex_shrink_0().px_3().py_2().child(
                     div()
                         .flex()
                         .flex_col()
@@ -539,7 +539,6 @@ impl Render for Chat {
                         .child(
                             div()
                                 .w_full()
-                                .h_9()
                                 .flex()
                                 .items_center()
                                 .gap_2()
@@ -550,30 +549,10 @@ impl Render for Chat {
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             this.upload_media(window, cx);
                                         }))
+                                        .disabled(self.is_uploading)
                                         .loading(self.is_uploading),
                                 )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .flex()
-                                        .items_center()
-                                        .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                                        .rounded(px(cx.theme().radius))
-                                        .pl_2()
-                                        .pr_1()
-                                        .child(self.input.clone())
-                                        .child(
-                                            Button::new("send")
-                                                .ghost()
-                                                .xsmall()
-                                                .bold()
-                                                .rounded(ButtonRounded::Medium)
-                                                .label("SEND")
-                                                .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.send_message(window, cx)
-                                                })),
-                                        ),
-                                ),
+                                .child(self.input.clone()),
                         ),
                 ),
             )

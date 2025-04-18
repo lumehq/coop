@@ -42,7 +42,7 @@ impl Panel for Welcome {
     }
 
     fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
+        "👋".into_any_element()
     }
 
     fn closable(&self, _cx: &App) -> bool {
@@ -92,8 +92,8 @@ impl Render for Welcome {
                     .child(
                         div()
                             .child("coop on nostr.")
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::FOUR))
-                            .font_black()
+                            .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
+                            .font_semibold()
                             .text_sm(),
                     ),
             )

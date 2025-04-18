@@ -16,7 +16,7 @@ use super::{login, new_account};
 
 const LOGO_URL: &str = "brand/coop.svg";
 const TITLE: &str = "Welcome to Coop!";
-const SUBTITLE: &str = "a Nostr client for secure communication.";
+const SUBTITLE: &str = "Secure Communication on Nostr.";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -97,7 +97,7 @@ impl Render for Onboarding {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap_8()
+            .gap_10()
             .child(
                 div()
                     .flex()
@@ -107,7 +107,7 @@ impl Render for Onboarding {
                     .child(
                         svg()
                             .path(LOGO_URL)
-                            .size_12()
+                            .size_16()
                             .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                     )
                     .child(
@@ -115,14 +115,13 @@ impl Render for Onboarding {
                             .text_center()
                             .child(
                                 div()
-                                    .text_lg()
+                                    .text_xl()
                                     .font_semibold()
-                                    .line_height(relative(1.2))
+                                    .line_height(relative(1.3))
                                     .child(TITLE),
                             )
                             .child(
                                 div()
-                                    .text_sm()
                                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                                     .child(SUBTITLE),
                             ),

@@ -17,12 +17,8 @@ use ui::{
     notification::Notification,
     popup_menu::PopupMenu,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
+    ContextModal, Disableable, Sizable, Size, StyledExt,
 };
-
-use crate::chat_space::ChatSpace;
-
-use super::onboarding;
 
 const INPUT_INVALID: &str = "You must provide a valid Private Key or Bunker.";
 
@@ -60,12 +56,12 @@ impl Login {
 
         let key_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .text_size(Size::XSmall)
+                .text_size(Size::Small)
                 .placeholder("nsec... or bunker://...")
         });
 
         let connect_relay = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).text_size(Size::XSmall).small();
+            let mut input = TextInput::new(window, cx).text_size(Size::Small).small();
             input.set_text("wss://relay.nsec.app", window, cx);
             input
         });
@@ -233,11 +229,6 @@ impl Login {
         self.is_logging_in = status;
         cx.notify();
     }
-
-    fn back(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let panel = onboarding::init(window, cx);
-        ChatSpace::set_center_panel(panel, window, cx);
-    }
 }
 
 impl Panel for Login {
@@ -299,14 +290,13 @@ impl Render for Login {
                                     .child(
                                         div()
                                             .text_center()
-                                            .text_lg()
+                                            .text_xl()
                                             .font_semibold()
-                                            .line_height(relative(1.2))
+                                            .line_height(relative(1.3))
                                             .child("Welcome Back!"),
                                     )
                                     .child(
                                         div()
-                                            .text_sm()
                                             .text_color(
                                                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                                             )
@@ -365,7 +355,6 @@ impl Render for Login {
                                     .text_center()
                                     .child(
                                         div()
-                                            .text_sm()
                                             .font_semibold()
                                             .line_height(relative(1.2))
                                             .text_color(
@@ -375,7 +364,7 @@ impl Render for Login {
                                     )
                                     .child(
                                         div()
-                                            .text_xs()
+                                            .text_sm()
                                             .text_color(
                                                 cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
                                             )
@@ -423,18 +412,6 @@ impl Render for Login {
                                     ),
                             ),
                     ),
-            )
-            .child(
-                div().absolute().left_2().top_10().w_16().child(
-                    Button::new("back")
-                        .label("Back")
-                        .icon(Icon::new(IconName::ArrowLeft))
-                        .ghost()
-                        .small()
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.back(window, cx);
-                        })),
-                ),
             )
     }
 }

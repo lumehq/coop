@@ -1568,6 +1568,7 @@ impl Render for TextInput {
         let suffix = self.suffix.as_ref().map(|build| build(window, cx));
 
         div()
+            .flex_1()
             .flex()
             .id("input")
             .key_context(CONTEXT)

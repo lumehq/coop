@@ -7,9 +7,9 @@ use common::{profile::SharedProfile, random_name};
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
-    AppContext, ClickEvent, Context, Div, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Task, TextAlign, Window,
+    AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, TextAlign,
+    Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -17,18 +17,18 @@ use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use std::{
     collections::{BTreeSet, HashSet},
-    rc::Rc,
     time::Duration,
 };
 use ui::{
-    button::{Button, ButtonRounded},
+    button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Icon, IconName, Sizable, Size, StyledExt,
+    ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
-const DESCRIPTION: &str =
-    "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
+    cx.new(|cx| Compose::new(window, cx))
+}
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 struct SelectContact(PublicKey);
@@ -58,7 +58,7 @@ impl Compose {
             let name = random_name(2);
             let mut input = TextInput::new(window, cx)
                 .appearance(false)
-                .text_size(Size::XSmall);
+                .text_size(Size::Small);
 
             input.set_placeholder("Family... . (Optional)");
             input.set_text(name, window, cx);
@@ -193,18 +193,6 @@ impl Compose {
         .detach();
     }
 
-    pub fn label(&self, _window: &Window, cx: &App) -> SharedString {
-        if self.selected.read(cx).len() > 1 {
-            "Create Group DM".into()
-        } else {
-            "Create DM".into()
-        }
-    }
-
-    pub fn is_submitting(&self) -> bool {
-        self.is_submitting
-    }
-
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
         let content = self.user_input.read(cx).text().to_string();
@@ -336,6 +324,15 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        const DESCRIPTION: &str =
+            "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
+
+        let label: SharedString = if self.selected.read(cx).len() > 1 {
+            "Create Group DM".into()
+        } else {
+            "Create DM".into()
+        };
+
         div()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_action_select))
@@ -344,15 +341,13 @@ impl Render for Compose {
             .gap_1()
             .child(
                 div()
-                    .px_2()
-                    .text_xs()
+                    .text_sm()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .child(DESCRIPTION),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
                 this.child(
                     div()
-                        .px_2()
                         .text_xs()
                         .text_color(cx.theme().danger)
                         .child(msg.clone()),
@@ -362,13 +357,12 @@ impl Render for Compose {
                 div().flex().flex_col().child(
                     div()
                         .h_10()
-                        .px_2()
                         .border_b_1()
                         .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().text_xs().font_semibold().child("Title:"))
+                        .child(div().pb_0p5().text_sm().font_semibold().child("Title:"))
                         .child(self.title_input.clone()),
                 ),
             )
@@ -377,25 +371,9 @@ impl Render for Compose {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().px_2().text_xs().font_semibold().child("To:"))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .child(
-                                Button::new("add_user_to_compose_btn")
-                                    .icon(IconName::Plus)
-                                    .small()
-                                    .rounded(ButtonRounded::Size(px(9999.)))
-                                    .loading(self.is_loading)
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.add(window, cx);
-                                    })),
-                            )
-                            .child(self.user_input.clone()),
-                    )
+                    .mt_1()
+                    .child(div().text_sm().font_semibold().child("To:"))
+                    .child(self.user_input.clone())
                     .map(|this| {
                         let contacts = self.contacts.read(cx).clone();
                         let view = cx.entity();
@@ -444,30 +422,35 @@ impl Render for Compose {
                                                 div()
                                                     .id(ix)
                                                     .w_full()
-                                                    .h_9()
+                                                    .h_10()
                                                     .px_2()
                                                     .flex()
                                                     .items_center()
                                                     .justify_between()
+                                                    .rounded(px(cx.theme().radius))
                                                     .child(
                                                         div()
                                                             .flex()
                                                             .items_center()
-                                                            .gap_2()
-                                                            .text_xs()
-                                                            .child(div().flex_shrink_0().child(
-                                                                img(item.shared_avatar()).size_6(),
-                                                            ))
+                                                            .gap_3()
+                                                            .text_sm()
+                                                            .child(
+                                                                img(item.shared_avatar())
+                                                                    .size_7()
+                                                                    .flex_shrink_0(),
+                                                            )
                                                             .child(item.shared_name()),
                                                     )
                                                     .when(is_select, |this| {
                                                         this.child(
-                                                            Icon::new(IconName::CircleCheck)
-                                                                .size_3()
-                                                                .text_color(cx.theme().base.step(
-                                                                    cx,
-                                                                    ColorScaleStep::TWELVE,
-                                                                )),
+                                                            Icon::new(IconName::CheckCircleFill)
+                                                                .small()
+                                                                .text_color(
+                                                                    cx.theme().accent.step(
+                                                                        cx,
+                                                                        ColorScaleStep::NINE,
+                                                                    ),
+                                                                ),
                                                         )
                                                     })
                                                     .hover(|this| {
@@ -490,71 +473,22 @@ impl Render for Compose {
                                         items
                                     },
                                 )
-                                .min_h(px(250.)),
+                                .pb_4()
+                                .min_h(px(280.)),
                             )
                         }
                     }),
             )
-    }
-}
-
-type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
-
-#[derive(IntoElement)]
-pub struct ComposeButton {
-    base: Div,
-    label: SharedString,
-    handler: Handler,
-}
-
-impl ComposeButton {
-    pub fn new(label: impl Into<SharedString>) -> Self {
-        Self {
-            base: div(),
-            label: label.into(),
-            handler: Rc::new(|_, _, _| {}),
-        }
-    }
-
-    pub fn on_click(
-        mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.handler = Rc::new(handler);
-        self
-    }
-}
-
-impl RenderOnce for ComposeButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let handler = self.handler.clone();
-
-        self.base
-            .id("compose")
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_1()
-            .h_7()
-            .text_xs()
-            .font_semibold()
-            .rounded(px(cx.theme().radius))
-            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
             .child(
-                div()
-                    .size_6()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
-                    .child(
-                        Icon::new(IconName::ComposeFill)
-                            .small()
-                            .text_color(cx.theme().base.darken(cx)),
-                    ),
+                div().mt_2().child(
+                    Button::new("create_dm_btn")
+                        .label(label)
+                        .primary()
+                        .w_full()
+                        .loading(self.is_submitting)
+                        .disabled(self.is_submitting)
+                        .on_click(cx.listener(|this, _, window, cx| this.compose(window, cx))),
+                ),
             )
-            .child(self.label.clone())
-            .on_click(move |ev, window, cx| handler(ev, window, cx))
     }
 }
