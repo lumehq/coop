@@ -10,7 +10,7 @@ use ui::{
     button::{Button, ButtonVariants},
     dock_area::{dock::DockPlacement, panel::PanelView, DockArea, DockItem},
     theme::{ActiveTheme, Appearance, Theme},
-    ContextModal, Disableable, IconName, Root, Sizable, TitleBar,
+    ContextModal, IconName, Root, Sizable, TitleBar,
 };
 
 use crate::views::{chat, compose, contacts, profile, relays, welcome};
@@ -18,6 +18,12 @@ use crate::views::{onboarding, sidebar};
 
 const MODAL_WIDTH: f32 = 420.;
 const SIDEBAR_WIDTH: f32 = 280.;
+
+impl_internal_actions!(dock, [AddPanel, ToggleModal]);
+
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
+    ChatSpace::new(window, cx)
+}
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -48,13 +54,6 @@ impl AddPanel {
     pub fn new(panel: PanelKind, position: DockPlacement) -> Self {
         Self { panel, position }
     }
-}
-
-// Dock actions
-impl_internal_actions!(dock, [AddPanel, ToggleModal]);
-
-pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
-    ChatSpace::new(window, cx)
 }
 
 pub struct ChatSpace {
@@ -211,36 +210,18 @@ impl ChatSpace {
             ModalKind::Compose => {
                 let compose = compose::init(window, cx);
 
-                window.open_modal(cx, move |modal, window, cx| {
-                    let label = compose.read(cx).label(window, cx);
-                    let is_submitting = compose.read(cx).is_submitting();
-
+                window.open_modal(cx, move |modal, _, _| {
                     modal
                         .title("Direct Messages")
                         .width(px(MODAL_WIDTH))
                         .child(compose.clone())
-                        .footer(
-                            div().child(
-                                Button::new("create_dm_btn")
-                                    .label(label)
-                                    .primary()
-                                    .w_full()
-                                    .loading(is_submitting)
-                                    .disabled(is_submitting)
-                                    .on_click(
-                                        window.listener_for(&compose, |this, _, window, cx| {
-                                            this.compose(window, cx)
-                                        }),
-                                    ),
-                            ),
-                        )
                 })
             }
             ModalKind::Contact => {
                 let contacts = contacts::init(window, cx);
 
                 window.open_modal(cx, move |this, _window, _cx| {
-                    this.width(px(420.))
+                    this.width(px(MODAL_WIDTH))
                         .title("Contacts")
                         .child(contacts.clone())
                 });
@@ -249,12 +230,12 @@ impl ChatSpace {
                 let relays = relays::init(window, cx);
 
                 window.open_modal(cx, move |this, _, _| {
-                    this.width(px(420.))
+                    this.width(px(MODAL_WIDTH))
                         .title("Edit your Messaging Relays")
                         .child(relays.clone())
                 });
             }
-        }
+        };
     }
 }
 

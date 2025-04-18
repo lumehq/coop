@@ -6,9 +6,11 @@ use chats::{
 };
 use common::profile::SharedProfile;
 use folder::{Folder, FolderItem, Parent};
+use global::get_client;
 use gpui::{
-    div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    actions, div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, Styled, Task, Window,
 };
 use ui::{
     button::{Button, ButtonVariants},
@@ -27,6 +29,8 @@ use crate::chat_space::{AddPanel, ModalKind, PanelKind, ToggleModal};
 
 mod button;
 mod folder;
+
+actions!(profile, [Logout]);
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
@@ -79,7 +83,6 @@ impl Sidebar {
         cx.notify();
     }
 
-    #[allow(dead_code)]
     fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
@@ -121,6 +124,28 @@ impl Sidebar {
         }
 
         items
+    }
+
+    fn on_logout(&mut self, _: &Logout, window: &mut Window, cx: &mut Context<Self>) {
+        let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
+            let client = get_client();
+            _ = client.reset().await;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |_, cx| {
+            if task.await.is_ok() {
+                cx.update(|_, cx| {
+                    Account::global(cx).update(cx, |this, cx| {
+                        this.profile = None;
+                        cx.notify();
+                    });
+                })
+                .ok();
+            };
+        })
+        .detach();
     }
 }
 
@@ -164,6 +189,7 @@ impl Render for Sidebar {
 
         div()
             .scrollable(cx.entity_id(), ScrollbarAxis::Vertical)
+            .on_action(cx.listener(Self::on_logout))
             .size_full()
             .flex()
             .flex_col()
@@ -207,19 +233,8 @@ impl Render for Sidebar {
                                             modal: ModalKind::Relay,
                                         }),
                                     )
-                                    .menu(
-                                        "Settings",
-                                        Box::new(ToggleModal {
-                                            modal: ModalKind::Profile,
-                                        }),
-                                    )
                                     .separator()
-                                    .menu(
-                                        "Logout",
-                                        Box::new(ToggleModal {
-                                            modal: ModalKind::Profile,
-                                        }),
-                                    )
+                                    .menu("Logout", Box::new(Logout))
                                 }),
                         ),
                 )

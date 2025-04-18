@@ -20,9 +20,10 @@ use std::{
     time::Duration,
 };
 use ui::{
+    button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
-    ContextModal, Icon, IconName, Sizable, Size, StyledExt,
+    ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
@@ -192,18 +193,6 @@ impl Compose {
         .detach();
     }
 
-    pub fn label(&self, _window: &Window, cx: &App) -> SharedString {
-        if self.selected.read(cx).len() > 1 {
-            "Create Group DM".into()
-        } else {
-            "Create DM".into()
-        }
-    }
-
-    pub fn is_submitting(&self) -> bool {
-        self.is_submitting
-    }
-
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
         let content = self.user_input.read(cx).text().to_string();
@@ -337,6 +326,12 @@ impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         const DESCRIPTION: &str =
             "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
+
+        let label: SharedString = if self.selected.read(cx).len() > 1 {
+            "Create Group DM".into()
+        } else {
+            "Create DM".into()
+        };
 
         div()
             .track_focus(&self.focus_handle)
@@ -483,6 +478,17 @@ impl Render for Compose {
                             )
                         }
                     }),
+            )
+            .child(
+                div().mt_2().child(
+                    Button::new("create_dm_btn")
+                        .label(label)
+                        .primary()
+                        .w_full()
+                        .loading(self.is_submitting)
+                        .disabled(self.is_submitting)
+                        .on_click(cx.listener(|this, _, window, cx| this.compose(window, cx))),
+                ),
             )
     }
 }

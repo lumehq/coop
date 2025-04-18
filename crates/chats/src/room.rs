@@ -152,7 +152,9 @@ impl Room {
     /// The Profile of the first member in the room
     pub fn first_member(&self, cx: &App) -> Profile {
         let account = Account::global(cx).read(cx);
-        let profile = account.profile.clone().unwrap();
+        let Some(profile) = account.profile.clone() else {
+            return self.profile_by_pubkey(&self.members[0], cx);
+        };
 
         if let Some(public_key) = self
             .members
