@@ -178,6 +178,7 @@ impl Login {
             }
         } else if content.starts_with("bunker://") {
             let keys = get_client_keys().to_owned();
+
             let Ok(uri) = NostrConnectURI::parse(content.as_ref()) else {
                 self.set_error_message("Bunker URL is not valid".to_owned(), cx);
                 self.set_logging_in(false, cx);
@@ -196,8 +197,8 @@ impl Login {
                 }
             }
         } else {
-            self.set_logging_in(false, cx);
             window.push_notification(Notification::error(INPUT_INVALID), cx);
+            self.set_logging_in(false, cx);
         };
     }
 

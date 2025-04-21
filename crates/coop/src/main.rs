@@ -27,7 +27,7 @@ use std::{collections::HashSet, mem, sync::Arc, time::Duration};
 use ui::{theme::Theme, Root};
 
 pub(crate) mod asset;
-pub(crate) mod chat_space;
+pub(crate) mod chatspace;
 pub(crate) mod views;
 
 actions!(coop, [Quit]);
@@ -84,7 +84,7 @@ fn main() {
             };
 
             let filter = Filter::new()
-                .kind(Kind::ArticlesCurationSet)
+                .kind(Kind::ReleaseArtifactSet)
                 .coordinate(&coordinate)
                 .limit(1);
 
@@ -334,7 +334,7 @@ fn main() {
                 })
                 .detach();
 
-                Root::new(chat_space::init(window, cx).into(), window, cx)
+                Root::new(chatspace::init(window, cx).into(), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");

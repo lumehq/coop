@@ -10,13 +10,7 @@ use ui::{
     Icon, IconName, StyledExt,
 };
 
-use crate::chat_space::ChatSpace;
-
-use super::{login, new_account};
-
-const LOGO_URL: &str = "brand/coop.svg";
-const TITLE: &str = "Welcome to Coop!";
-const SUBTITLE: &str = "Secure Communication on Nostr.";
+use crate::chatspace;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -42,16 +36,6 @@ impl Onboarding {
             focus_handle: cx.focus_handle(),
         }
     }
-
-    fn open_new_account(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let new_account = new_account::init(window, cx);
-        ChatSpace::set_center_panel(new_account, window, cx);
-    }
-
-    fn open_login(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let login = login::init(window, cx);
-        ChatSpace::set_center_panel(login, window, cx);
-    }
 }
 
 impl Panel for Onboarding {
@@ -74,10 +58,6 @@ impl Panel for Onboarding {
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
         menu.track_focus(&self.focus_handle)
     }
-
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
-    }
 }
 
 impl EventEmitter<PanelEvent> for Onboarding {}
@@ -90,6 +70,9 @@ impl Focusable for Onboarding {
 
 impl Render for Onboarding {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        const TITLE: &str = "Welcome to Coop!";
+        const SUBTITLE: &str = "Secure Communication on Nostr.";
+
         div()
             .py_4()
             .size_full()
@@ -106,7 +89,7 @@ impl Render for Onboarding {
                     .gap_4()
                     .child(
                         svg()
-                            .path(LOGO_URL)
+                            .path("brand/coop.svg")
                             .size_16()
                             .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                     )
@@ -139,8 +122,8 @@ impl Render for Onboarding {
                             .label("Start Messaging")
                             .primary()
                             .reverse()
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_new_account(window, cx);
+                            .on_click(cx.listener(move |_, _, window, cx| {
+                                chatspace::new_account(window, cx);
                             })),
                     )
                     .child(
@@ -148,8 +131,8 @@ impl Render for Onboarding {
                             .label("Already have an account? Log in.")
                             .ghost()
                             .underline()
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_login(window, cx);
+                            .on_click(cx.listener(move |_, _, window, cx| {
+                                chatspace::login(window, cx);
                             })),
                     ),
             )

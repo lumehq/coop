@@ -3,7 +3,7 @@ use async_utility::task::spawn;
 use common::nip96_upload;
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
-    div, img, prelude::FluentBuilder, px, relative, AnyElement, App, AppContext, Context, Entity,
+    div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
     EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
     Render, SharedString, Styled, Window,
 };
@@ -19,9 +19,6 @@ use ui::{
     Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
-const STEAM_ID_DESCRIPTION: &str =
-    "Steam ID is used to get your currently playing game and update your status.";
-
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
 }
@@ -30,7 +27,6 @@ pub struct NewAccount {
     name_input: Entity<TextInput>,
     avatar_input: Entity<TextInput>,
     bio_input: Entity<TextInput>,
-    steam_input: Entity<TextInput>,
     is_uploading: bool,
     is_submitting: bool,
     // Panel
@@ -59,12 +55,6 @@ impl NewAccount {
                 .placeholder("https://example.com/avatar.jpg")
         });
 
-        let steam_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
-                .placeholder("76561199810385277")
-        });
-
         let bio_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(Size::Small)
@@ -75,7 +65,6 @@ impl NewAccount {
         Self {
             name_input,
             avatar_input,
-            steam_input,
             bio_input,
             is_uploading: false,
             is_submitting: false,
@@ -92,12 +81,8 @@ impl NewAccount {
         let avatar = self.avatar_input.read(cx).text().to_string();
         let name = self.name_input.read(cx).text().to_string();
         let bio = self.bio_input.read(cx).text().to_string();
-        let steam = self.steam_input.read(cx).text().to_string();
 
-        let mut metadata = Metadata::new()
-            .display_name(name)
-            .about(bio)
-            .custom_field("steam", steam);
+        let mut metadata = Metadata::new().display_name(name).about(bio);
 
         if let Ok(url) = Url::from_str(&avatar) {
             metadata = metadata.picture(url);
@@ -126,6 +111,7 @@ impl NewAccount {
                             this.update(cx, |this, cx| {
                                 this.set_uploading(false, cx);
                             })
+                            .ok();
                         })
                         .ok();
 
@@ -298,21 +284,6 @@ impl Render for NewAccount {
                             .text_sm()
                             .child("Bio:")
                             .child(self.bio_input.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .text_sm()
-                            .child("Steam ID:")
-                            .child(self.steam_input.clone())
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                                    .child(STEAM_ID_DESCRIPTION),
-                            ),
                     )
                     .child(
                         div()

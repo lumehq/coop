@@ -25,7 +25,7 @@ use ui::{
     IconName, Sizable, StyledExt,
 };
 
-use crate::chat_space::{AddPanel, ModalKind, PanelKind, ToggleModal};
+use crate::chatspace::{AddPanel, ModalKind, PanelKind, ToggleModal};
 
 mod button;
 mod folder;

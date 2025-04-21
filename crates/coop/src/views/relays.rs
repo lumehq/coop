@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
 use gpui::{
     div, prelude::FluentBuilder, px, uniform_list, App, AppContext, Context, Entity, FocusHandle,
@@ -41,11 +41,6 @@ impl Relays {
         });
 
         let relays = cx.new(|cx| {
-            let relays = vec![
-                RelayUrl::parse("wss://auth.nostr1.com").unwrap(),
-                RelayUrl::parse("wss://relay.0xchat.com").unwrap(),
-            ];
-
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
                 let client = get_client();
                 let signer = client.signer().await?;
@@ -59,16 +54,18 @@ impl Relays {
                 if let Some(event) = client.database().query(filter).await?.first_owned() {
                     let relays = event
                         .tags
-                        .filter_standardized(TagKind::Relay)
-                        .filter_map(|t| match t {
-                            TagStandard::Relay(url) => Some(url.to_owned()),
-                            _ => None,
-                        })
+                        .filter(TagKind::Relay)
+                        .filter_map(|tag| RelayUrl::parse(tag.content()?).ok())
                         .collect::<Vec<_>>();
 
                     Ok(relays)
                 } else {
-                    Err(anyhow!("Messaging Relays not found."))
+                    let relays = vec![
+                        RelayUrl::parse("wss://auth.nostr1.com")?,
+                        RelayUrl::parse("wss://relay.0xchat.com")?,
+                    ];
+
+                    Ok(relays)
                 }
             });
 
@@ -86,7 +83,7 @@ impl Relays {
             })
             .detach();
 
-            relays
+            vec![]
         });
 
         cx.new(|cx| {

@@ -337,13 +337,7 @@ impl Room {
                     .author(*pubkey)
                     .limit(1);
 
-                let is_ready = client
-                    .database()
-                    .query(filter)
-                    .await
-                    .ok()
-                    .and_then(|events| events.first_owned())
-                    .is_some();
+                let is_ready = client.database().query(filter).await?.first().is_some();
 
                 result.push((*pubkey, is_ready));
             }

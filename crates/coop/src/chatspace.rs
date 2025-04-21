@@ -1,8 +1,11 @@
 use account::Account;
+use anyhow::Error;
+use global::get_client;
 use gpui::{
     div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
 };
+use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use std::sync::Arc;
@@ -13,7 +16,7 @@ use ui::{
     ContextModal, IconName, Root, Sizable, TitleBar,
 };
 
-use crate::views::{chat, compose, contacts, profile, relays, welcome};
+use crate::views::{chat, compose, contacts, login, new_account, profile, relays, welcome};
 use crate::views::{onboarding, sidebar};
 
 const MODAL_WIDTH: f32 = 420.;
@@ -23,6 +26,16 @@ impl_internal_actions!(dock, [AddPanel, ToggleModal]);
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
+}
+
+pub fn login(window: &mut Window, cx: &mut App) {
+    let panel = login::init(window, cx);
+    ChatSpace::set_center_panel(panel, window, cx);
+}
+
+pub fn new_account(window: &mut Window, cx: &mut App) {
+    let panel = new_account::init(window, cx);
+    ChatSpace::set_center_panel(panel, window, cx);
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -37,6 +50,7 @@ pub enum ModalKind {
     Compose,
     Contact,
     Relay,
+    SetupRelay,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -65,10 +79,17 @@ pub struct ChatSpace {
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let account = Account::global(cx);
-        let dock = cx.new(|cx| DockArea::new(window, cx));
+        let dock = cx.new(|cx| {
+            let panel = Arc::new(onboarding::init(window, cx));
+            let center = DockItem::panel(panel);
+            let mut dock = DockArea::new(window, cx);
+            // Initialize the dock area with the center panel
+            dock.set_center(center, window, cx);
+            dock
+        });
 
         cx.new(|cx| {
+            let account = Account::global(cx);
             let mut subscriptions = smallvec![];
 
             subscriptions.push(cx.observe_in(
@@ -83,35 +104,17 @@ impl ChatSpace {
                 },
             ));
 
-            let mut this = Self {
+            Self {
                 dock,
                 subscriptions,
                 titlebar: false,
-            };
-
-            if Account::global(cx).read(cx).profile.is_some() {
-                this.open_chats(window, cx);
-            } else {
-                this.open_onboarding(window, cx);
             }
-
-            this
         })
     }
 
-    pub fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
-        if let Some(Some(root)) = window.root::<Root>() {
-            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
-                let panel = Arc::new(panel);
-                let center = DockItem::panel(panel);
-
-                chatspace.update(cx, |this, cx| {
-                    this.dock.update(cx, |this, cx| {
-                        this.set_center(center, window, cx);
-                    });
-                });
-            }
-        }
+    fn show_titlebar(&mut self, cx: &mut Context<Self>) {
+        self.titlebar = true;
+        cx.notify();
     }
 
     fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -147,31 +150,44 @@ impl ChatSpace {
             this.set_left_dock(left, Some(px(SIDEBAR_WIDTH)), true, window, cx);
             this.set_center(center, window, cx);
         });
-    }
 
-    fn show_titlebar(&mut self, cx: &mut Context<Self>) {
-        self.titlebar = true;
-        cx.notify();
-    }
+        cx.defer_in(window, |this, window, cx| {
+            let verify_messaging_relays = this.verify_messaging_relays(cx);
 
-    fn render_appearance_btn(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Button::new("appearance")
-            .xsmall()
-            .ghost()
-            .map(|this| {
-                if cx.theme().appearance.is_dark() {
-                    this.icon(IconName::Sun)
-                } else {
-                    this.icon(IconName::Moon)
+            cx.spawn_in(window, async move |_, cx| {
+                if let Ok(status) = verify_messaging_relays.await {
+                    if !status {
+                        cx.update(|window, cx| {
+                            window.dispatch_action(
+                                Box::new(ToggleModal {
+                                    modal: ModalKind::SetupRelay,
+                                }),
+                                cx,
+                            );
+                        })
+                        .ok();
+                    }
                 }
             })
-            .on_click(cx.listener(|_, _, window, cx| {
-                if cx.theme().appearance.is_dark() {
-                    Theme::change(Appearance::Light, Some(window), cx);
-                } else {
-                    Theme::change(Appearance::Dark, Some(window), cx);
-                }
-            }))
+            .detach();
+        });
+    }
+
+    fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
+        cx.background_spawn(async move {
+            let client = get_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
+
+            let exist = client.database().query(filter).await?.first().is_some();
+
+            Ok(exist)
+        })
     }
 
     fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
@@ -235,7 +251,31 @@ impl ChatSpace {
                         .child(relays.clone())
                 });
             }
+            ModalKind::SetupRelay => {
+                let relays = relays::init(window, cx);
+
+                window.open_modal(cx, move |this, _, _| {
+                    this.width(px(MODAL_WIDTH))
+                        .title("Your Messaging Relays are not configured")
+                        .child(relays.clone())
+                });
+            }
         };
+    }
+
+    fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                let panel = Arc::new(panel);
+                let center = DockItem::panel(panel);
+
+                chatspace.update(cx, |this, cx| {
+                    this.dock.update(cx, |this, cx| {
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
     }
 }
 
@@ -266,7 +306,33 @@ impl Render for ChatSpace {
                                         .justify_end()
                                         .gap_2()
                                         .px_2()
-                                        .child(self.render_appearance_btn(cx)),
+                                        .child(
+                                            Button::new("appearance")
+                                                .xsmall()
+                                                .ghost()
+                                                .map(|this| {
+                                                    if cx.theme().appearance.is_dark() {
+                                                        this.icon(IconName::Sun)
+                                                    } else {
+                                                        this.icon(IconName::Moon)
+                                                    }
+                                                })
+                                                .on_click(cx.listener(|_, _, window, cx| {
+                                                    if cx.theme().appearance.is_dark() {
+                                                        Theme::change(
+                                                            Appearance::Light,
+                                                            Some(window),
+                                                            cx,
+                                                        );
+                                                    } else {
+                                                        Theme::change(
+                                                            Appearance::Dark,
+                                                            Some(window),
+                                                            cx,
+                                                        );
+                                                    }
+                                                })),
+                                        ),
                                 ),
                         )
                     })
