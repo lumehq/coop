@@ -22,8 +22,6 @@ use crate::views::{onboarding, sidebar};
 const MODAL_WIDTH: f32 = 420.;
 const SIDEBAR_WIDTH: f32 = 280.;
 
-impl_internal_actions!(dock, [AddPanel, ToggleModal]);
-
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
 }
@@ -57,6 +55,8 @@ pub enum ModalKind {
 pub struct ToggleModal {
     pub modal: ModalKind,
 }
+
+impl_internal_actions!(dock, [AddPanel, ToggleModal]);
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct AddPanel {
@@ -263,7 +263,7 @@ impl ChatSpace {
         };
     }
 
-    fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
+    pub(crate) fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
         if let Some(Some(root)) = window.root::<Root>() {
             if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
                 let panel = Arc::new(panel);

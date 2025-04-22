@@ -4,12 +4,14 @@ use chats::{message::RoomMessage, room::Room, ChatRegistry};
 use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
-    div, img, list, prelude::FluentBuilder, px, relative, svg, white, AnyElement, App, AppContext,
-    Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ListAlignment, ListState, ObjectFit, ParentElement, PathPromptOptions, Render,
-    SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, relative, svg, white,
+    AnyElement, App, AppContext, Context, Element, Empty, Entity, EventEmitter, Flatten,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
+    ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
+    StyledImage, Subscription, Window,
 };
 use nostr_sdk::prelude::*;
+use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use std::{collections::HashMap, sync::Arc};
@@ -24,7 +26,15 @@ use ui::{
     v_flex, ContextModal, Disableable, Icon, IconName, Size, StyledExt,
 };
 
+use crate::views::subject;
+
 const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
+const DESC: &str = "This conversation is private. Only members can see each other's messages.";
+
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+pub struct ChangeSubject(pub String);
+
+impl_internal_actions!(chat, [ChangeSubject]);
 
 pub fn init(id: &u64, window: &mut Window, cx: &mut App) -> Result<Arc<Entity<Chat>>, Error> {
     if let Some(room) = ChatRegistry::global(cx).read(cx).room(id, cx) {
@@ -99,7 +109,7 @@ impl Chat {
                     this.update(cx, |this, cx| {
                         this.render_message(ix, window, cx).into_any_element()
                     })
-                    .unwrap()
+                    .unwrap_or(Empty.into_any())
                 }
             });
 
@@ -216,7 +226,7 @@ impl Chat {
             return;
         }
 
-        // Disable input when sending message
+        // temporarily disable message input
         self.input.update(cx, |this, cx| {
             this.set_loading(true, window, cx);
             this.set_disabled(true, window, cx);
@@ -226,27 +236,38 @@ impl Chat {
         let task = room.send_message(content, cx);
 
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(msgs) = task.await {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        // Reset message input
-                        cx.update_entity(&this.input, |this, cx| {
-                            this.set_loading(false, window, cx);
-                            this.set_disabled(false, window, cx);
-                            this.set_text("", window, cx);
-                            cx.notify();
-                        });
+            match task.await {
+                Ok(reports) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            // Reset message input
+                            this.input.update(cx, |this, cx| {
+                                this.set_loading(false, window, cx);
+                                this.set_disabled(false, window, cx);
+                                this.set_text("", window, cx);
+                                cx.notify();
+                            });
+                        })
+                        .ok();
+
+                        for item in reports.into_iter() {
+                            window.push_notification(
+                                Notification::error(item).title("Message Failed to Send"),
+                                cx,
+                            );
+                        }
                     })
                     .ok();
-
-                    for item in msgs.into_iter() {
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
                         window.push_notification(
-                            Notification::error(item).title("Message Failed to Send"),
+                            Notification::error(e.to_string()).title("Message Failed to Send"),
                             cx,
                         );
-                    }
-                })
-                .ok();
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
@@ -265,12 +286,15 @@ impl Chat {
         cx.spawn_in(window, async move |this, cx| {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
-                    let path = paths.pop().unwrap();
+                    let Some(path) = paths.pop() else {
+                        return;
+                    };
 
                     if let Ok(file_data) = fs::read(path).await {
                         let client = get_client();
                         let (tx, rx) = oneshot::channel::<Url>();
 
+                        // spawn task via async_utility
                         spawn(async move {
                             if let Ok(url) = nip96_upload(client, file_data).await {
                                 _ = tx.send(url);
@@ -280,7 +304,6 @@ impl Chat {
                         if let Ok(url) = rx.await {
                             cx.update(|_, cx| {
                                 this.update(cx, |this, cx| {
-                                    // Stop loading spinner
                                     this.set_loading(false, cx);
 
                                     this.attaches.update(cx, |this, cx| {
@@ -299,13 +322,13 @@ impl Chat {
                     }
                 }
                 Ok(None) => {
-                    // Stop loading spinner
-                    if let Some(view) = this.upgrade() {
-                        cx.update_entity(&view, |this, cx| {
+                    cx.update(|_, cx| {
+                        this.update(cx, |this, cx| {
                             this.set_loading(false, cx);
                         })
-                        .unwrap();
-                    }
+                        .ok();
+                    })
+                    .ok();
                 }
                 Err(_) => {}
             }
@@ -316,9 +339,10 @@ impl Chat {
     fn remove_media(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
         self.attaches.update(cx, |model, cx| {
             if let Some(urls) = model.as_mut() {
-                let ix = urls.iter().position(|x| x == url).unwrap();
-                urls.remove(ix);
-                cx.notify();
+                if let Some(ix) = urls.iter().position(|x| x == url) {
+                    urls.remove(ix);
+                    cx.notify();
+                }
             }
         });
     }
@@ -334,10 +358,10 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        const ROOM_DESCRIPTION: &str =
-        "This conversation is private. Only members of this chat can see each other's messages.";
+        let Some(message) = self.messages.read(cx).get(ix) else {
+            return div().into_element();
+        };
 
-        let message = self.messages.read(cx).get(ix).unwrap();
         let text_data = &mut self.text_data;
 
         div()
@@ -427,7 +451,7 @@ impl Chat {
                             .size_10()
                             .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
                     )
-                    .child(ROOM_DESCRIPTION),
+                    .child(DESC),
             })
     }
 }
@@ -472,8 +496,28 @@ impl Panel for Chat {
         menu.track_focus(&self.focus_handle)
     }
 
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
+    fn toolbar_buttons(&self, _window: &Window, cx: &App) -> Vec<Button> {
+        let id = self.room.read(cx).id;
+        let subject = self
+            .room
+            .read(cx)
+            .subject
+            .as_ref()
+            .map(|subject| subject.to_string());
+
+        let button = Button::new("subject")
+            .icon(IconName::EditFill)
+            .tooltip("Change Subject")
+            .on_click(move |_, window, cx| {
+                let subject = subject::init(id, subject.clone(), window, cx);
+
+                window.open_modal(cx, move |this, _window, _cx| {
+                    this.title("Change the subject of the conversation")
+                        .child(subject.clone())
+                });
+            });
+
+        vec![button]
     }
 }
 

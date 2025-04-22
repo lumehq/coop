@@ -283,8 +283,7 @@ impl Render for Relays {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .track_focus(&self.focus_handle)
-            .w_full()
-            .h_full()
+            .size_full()
             .flex()
             .flex_col()
             .justify_between()

@@ -288,19 +288,20 @@ impl ChatRegistry {
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             room.update(cx, |this, cx| {
                 this.created_at(event.created_at, cx);
-                this.emit_message(event, window, cx);
+
+                cx.defer_in(window, |this, window, cx| {
+                    this.emit_message(event, window, cx);
+                });
             });
 
-            // Re-sort rooms by last seen
-            self.rooms
-                .sort_by_key(|room| Reverse(room.read(cx).created_at));
+            cx.defer_in(window, |this, _, cx| {
+                this.rooms
+                    .sort_by_key(|room| Reverse(room.read(cx).created_at));
+            });
         } else {
-            let new_room = cx.new(|_| Room::new(&event));
-
             // Push the new room to the front of the list
-            self.rooms.insert(0, new_room);
+            self.rooms.insert(0, cx.new(|_| Room::new(&event)));
+            cx.notify();
         }
-
-        cx.notify();
     }
 }

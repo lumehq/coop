@@ -1,8 +1,9 @@
-use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
-    div, px, relative, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
+    div, relative, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
     SharedString, Styled, Window,
 };
+
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 
 pub struct Tooltip {
     text: SharedString,
@@ -21,15 +22,15 @@ impl Render for Tooltip {
             div()
                 .font_family(".SystemUIFont")
                 .m_3()
+                .p_2()
                 .border_1()
-                .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-                .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                .shadow_md()
-                .rounded(px(6.))
-                .py_1()
-                .px_2()
-                .text_xs()
-                .line_height(relative(1.))
+                .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
+                .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                .shadow_lg()
+                .rounded_lg()
+                .text_sm()
+                .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                .line_height(relative(1.25))
                 .child(self.text.clone()),
         )
     }

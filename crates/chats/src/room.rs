@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use account::Account;
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use common::{compare, profile::SharedProfile, room_hash};
 use global::get_client;
@@ -285,6 +285,17 @@ impl Room {
         cx.notify();
     }
 
+    /// Updates the subject of the room
+    ///
+    /// # Arguments
+    ///
+    /// * `subject` - The new subject to set
+    /// * `cx` - The context to notify about the update
+    pub fn subject(&mut self, subject: String, cx: &mut Context<Self>) {
+        self.subject = Some(subject.into());
+        cx.notify();
+    }
+
     /// Fetches metadata for all members in the room
     ///
     /// # Arguments
@@ -358,15 +369,21 @@ impl Room {
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
     pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
-        let client = get_client();
+        let account = Account::global(cx).read(cx);
+
+        let Some(profile) = account.profile.clone() else {
+            return Task::ready(Err(anyhow!("User is not logged in")));
+        };
+
+        let public_key = profile.public_key();
+        let subject = self.subject.clone();
         let pubkeys = self.members.clone();
 
         cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+            let client = get_client();
             let mut report = vec![];
 
-            let tags: Vec<Tag> = pubkeys
+            let mut tags: Vec<Tag> = pubkeys
                 .iter()
                 .filter_map(|pubkey| {
                     if pubkey != &public_key {
@@ -376,6 +393,12 @@ impl Room {
                     }
                 })
                 .collect();
+
+            if let Some(subject) = subject {
+                tags.push(Tag::from_standardized(TagStandard::Subject(
+                    subject.to_string(),
+                )));
+            }
 
             for pubkey in pubkeys.iter() {
                 if let Err(e) = client

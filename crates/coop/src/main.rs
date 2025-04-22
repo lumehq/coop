@@ -298,11 +298,11 @@ fn main() {
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
-                    let chats = cx.update(|_, cx| ChatRegistry::global(cx)).unwrap();
-                    let auto_updater = cx.update(|_, cx| AutoUpdater::global(cx)).unwrap();
-
                     while let Ok(signal) = event_rx.recv().await {
                         cx.update(|window, cx| {
+                            let chats = ChatRegistry::global(cx);
+                            let auto_updater = AutoUpdater::global(cx);
+
                             match signal {
                                 Signal::Event(event) => {
                                     chats.update(cx, |this, cx| {
