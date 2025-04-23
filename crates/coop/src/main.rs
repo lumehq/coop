@@ -28,6 +28,7 @@ use ui::{theme::Theme, Root};
 
 pub(crate) mod asset;
 pub(crate) mod chatspace;
+pub(crate) mod lru_cache;
 pub(crate) mod views;
 
 actions!(coop, [Quit]);

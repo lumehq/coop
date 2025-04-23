@@ -2,8 +2,9 @@ use account::Account;
 use anyhow::Error;
 use global::get_client;
 use gpui::{
-    div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
+    div, image_cache, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
+    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
+    Task, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -16,9 +17,14 @@ use ui::{
     ContextModal, IconName, Root, Sizable, TitleBar,
 };
 
-use crate::views::{chat, compose, contacts, login, new_account, profile, relays, welcome};
-use crate::views::{onboarding, sidebar};
+use crate::{
+    lru_cache::cache_provider,
+    views::{
+        chat, compose, contacts, login, new_account, onboarding, profile, relays, sidebar, welcome,
+    },
+};
 
+const CACHE_SIZE: usize = 200;
 const MODAL_WIDTH: f32 = 420.;
 const SIDEBAR_WIDTH: f32 = 280.;
 
@@ -288,56 +294,62 @@ impl Render for ChatSpace {
             .relative()
             .size_full()
             .child(
-                div()
-                    .flex()
-                    .flex_col()
+                image_cache(cache_provider("image-cache", CACHE_SIZE))
                     .size_full()
-                    // Title Bar
-                    .when(self.titlebar, |this| {
-                        this.child(
-                            TitleBar::new()
-                                // Left side
-                                .child(div())
-                                // Right side
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .justify_end()
-                                        .gap_2()
-                                        .px_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .size_full()
+                            // Title Bar
+                            .when(self.titlebar, |this| {
+                                this.child(
+                                    TitleBar::new()
+                                        // Left side
+                                        .child(div())
+                                        // Right side
                                         .child(
-                                            Button::new("appearance")
-                                                .xsmall()
-                                                .ghost()
-                                                .map(|this| {
-                                                    if cx.theme().appearance.is_dark() {
-                                                        this.icon(IconName::Sun)
-                                                    } else {
-                                                        this.icon(IconName::Moon)
-                                                    }
-                                                })
-                                                .on_click(cx.listener(|_, _, window, cx| {
-                                                    if cx.theme().appearance.is_dark() {
-                                                        Theme::change(
-                                                            Appearance::Light,
-                                                            Some(window),
-                                                            cx,
-                                                        );
-                                                    } else {
-                                                        Theme::change(
-                                                            Appearance::Dark,
-                                                            Some(window),
-                                                            cx,
-                                                        );
-                                                    }
-                                                })),
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .justify_end()
+                                                .gap_2()
+                                                .px_2()
+                                                .child(
+                                                    Button::new("appearance")
+                                                        .xsmall()
+                                                        .ghost()
+                                                        .map(|this| {
+                                                            if cx.theme().appearance.is_dark() {
+                                                                this.icon(IconName::Sun)
+                                                            } else {
+                                                                this.icon(IconName::Moon)
+                                                            }
+                                                        })
+                                                        .on_click(cx.listener(
+                                                            |_, _, window, cx| {
+                                                                if cx.theme().appearance.is_dark() {
+                                                                    Theme::change(
+                                                                        Appearance::Light,
+                                                                        Some(window),
+                                                                        cx,
+                                                                    );
+                                                                } else {
+                                                                    Theme::change(
+                                                                        Appearance::Dark,
+                                                                        Some(window),
+                                                                        cx,
+                                                                    );
+                                                                }
+                                                            },
+                                                        )),
+                                                ),
                                         ),
-                                ),
-                        )
-                    })
-                    // Dock
-                    .child(self.dock.clone()),
+                                )
+                            })
+                            // Dock
+                            .child(self.dock.clone()),
+                    ),
             )
             // Notifications
             .child(div().absolute().top_8().children(notification_layer))

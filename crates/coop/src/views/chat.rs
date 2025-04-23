@@ -226,7 +226,6 @@ impl Chat {
             return;
         }
 
-        // temporarily disable message input
         self.input.update(cx, |this, cx| {
             this.set_loading(true, window, cx);
             this.set_disabled(true, window, cx);
@@ -235,39 +234,35 @@ impl Chat {
         let room = self.room.read(cx);
         let task = room.send_message(content, cx);
 
-        cx.spawn_in(window, async move |this, cx| {
-            match task.await {
-                Ok(reports) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            // Reset message input
-                            this.input.update(cx, |this, cx| {
-                                this.set_loading(false, window, cx);
-                                this.set_disabled(false, window, cx);
-                                this.set_text("", window, cx);
-                                cx.notify();
-                            });
-                        })
-                        .ok();
-
-                        for item in reports.into_iter() {
-                            window.push_notification(
-                                Notification::error(item).title("Message Failed to Send"),
-                                cx,
-                            );
-                        }
+        cx.spawn_in(window, async move |this, cx| match task.await {
+            Ok(reports) => {
+                cx.update(|window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.input.update(cx, |this, cx| {
+                            this.set_loading(false, window, cx);
+                            this.set_disabled(false, window, cx);
+                            this.set_text("", window, cx);
+                        });
                     })
                     .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
+
+                    for item in reports.into_iter() {
                         window.push_notification(
-                            Notification::error(e.to_string()).title("Message Failed to Send"),
+                            Notification::error(item).title("Message Failed to Send"),
                             cx,
                         );
-                    })
-                    .ok();
-                }
+                    }
+                })
+                .ok();
+            }
+            Err(e) => {
+                cx.update(|window, cx| {
+                    window.push_notification(
+                        Notification::error(e.to_string()).title("Message Failed to Send"),
+                        cx,
+                    );
+                })
+                .ok();
             }
         })
         .detach();
