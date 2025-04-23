@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use account::Account;
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use chrono::{Local, TimeZone};
 use common::{compare, profile::SharedProfile, room_hash};
 use global::get_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use smol::channel::Receiver;
 
 use crate::{
     constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE},
@@ -18,6 +19,12 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct IncomingEvent {
     pub event: RoomMessage,
+}
+
+#[derive(Debug)]
+pub enum SendStatus {
+    Sent(EventId),
+    Failed(Error),
 }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, Default)]
@@ -368,20 +375,17 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
-    pub fn send_message(&self, content: String, cx: &App) -> Task<Result<Vec<String>, Error>> {
-        let account = Account::global(cx).read(cx);
-
-        let Some(profile) = account.profile.clone() else {
-            return Task::ready(Err(anyhow!("User is not logged in")));
-        };
-
+    pub fn send_message(&self, content: String, cx: &App) -> Option<Receiver<SendStatus>> {
+        let profile = Account::global(cx).read(cx).profile.clone()?;
         let public_key = profile.public_key();
+
         let subject = self.subject.clone();
         let pubkeys = self.members.clone();
 
+        let (tx, rx) = smol::channel::bounded::<SendStatus>(pubkeys.len());
+
         cx.background_spawn(async move {
             let client = get_client();
-            let mut report = vec![];
 
             let mut tags: Vec<Tag> = pubkeys
                 .iter()
@@ -401,16 +405,26 @@ impl Room {
             }
 
             for pubkey in pubkeys.iter() {
-                if let Err(e) = client
+                match client
                     .send_private_msg(*pubkey, &content, tags.clone())
                     .await
                 {
-                    report.push(e.to_string());
+                    Ok(output) => {
+                        if let Err(e) = tx.send(SendStatus::Sent(output.val)).await {
+                            log::error!("Failed to send message to {}: {}", pubkey, e);
+                        }
+                    }
+                    Err(e) => {
+                        if let Err(e) = tx.send(SendStatus::Failed(e.into())).await {
+                            log::error!("Failed to send message to {}: {}", pubkey, e);
+                        }
+                    }
                 }
             }
-
-            Ok(report)
         })
+        .detach();
+
+        Some(rx)
     }
 
     /// Loads all messages for this room from the database

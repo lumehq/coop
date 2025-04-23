@@ -1,6 +1,10 @@
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
-use chats::{message::RoomMessage, room::Room, ChatRegistry};
+use chats::{
+    message::RoomMessage,
+    room::{Room, SendStatus},
+    ChatRegistry,
+};
 use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
@@ -221,11 +225,13 @@ impl Chat {
             content = format!("{}\n{}", content, merged)
         }
 
+        // Check if content is empty
         if content.is_empty() {
             window.push_notification("Cannot send an empty message", cx);
             return;
         }
 
+        // Update input state
         self.input.update(cx, |this, cx| {
             this.set_loading(true, window, cx);
             this.set_disabled(true, window, cx);
@@ -234,35 +240,43 @@ impl Chat {
         let room = self.room.read(cx);
         let task = room.send_message(content, cx);
 
-        cx.spawn_in(window, async move |this, cx| match task.await {
-            Ok(reports) => {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.input.update(cx, |this, cx| {
-                            this.set_loading(false, window, cx);
-                            this.set_disabled(false, window, cx);
-                            this.set_text("", window, cx);
-                        });
+        cx.spawn_in(window, async move |this, cx| {
+            let mut received = false;
+
+            match task {
+                Some(rx) => {
+                    while let Ok(message) = rx.recv().await {
+                        if let SendStatus::Failed(error) = message {
+                            cx.update(|window, cx| {
+                                window.push_notification(
+                                    Notification::error(error.to_string())
+                                        .title("Message Failed to Send"),
+                                    cx,
+                                );
+                            })
+                            .ok();
+                        } else if !received {
+                            cx.update(|window, cx| {
+                                this.update(cx, |this, cx| {
+                                    this.input.update(cx, |this, cx| {
+                                        this.set_loading(false, window, cx);
+                                        this.set_disabled(false, window, cx);
+                                        this.set_text("", window, cx);
+                                    });
+                                    received = true;
+                                })
+                                .ok();
+                            })
+                            .ok();
+                        }
+                    }
+                }
+                None => {
+                    cx.update(|window, cx| {
+                        window.push_notification(Notification::error("User is not logged in"), cx);
                     })
                     .ok();
-
-                    for item in reports.into_iter() {
-                        window.push_notification(
-                            Notification::error(item).title("Message Failed to Send"),
-                            cx,
-                        );
-                    }
-                })
-                .ok();
-            }
-            Err(e) => {
-                cx.update(|window, cx| {
-                    window.push_notification(
-                        Notification::error(e.to_string()).title("Message Failed to Send"),
-                        cx,
-                    );
-                })
-                .ok();
+                }
             }
         })
         .detach();
