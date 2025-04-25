@@ -30,6 +30,7 @@ nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
 ] }
 
 # Others
+emojis = "0.6.4"
 smol = "2"
 oneshot = "0.1.10"
 serde = { version = "1.0", features = ["derive"] }

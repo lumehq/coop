@@ -64,7 +64,7 @@ pub trait StyledExt: Styled + Sized {
 
     /// Set as Popover style
     fn popover_style(self, cx: &mut App) -> Self {
-        self.bg(cx.theme().background)
+        self.bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
             .border_1()
             .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
             .shadow_lg()
