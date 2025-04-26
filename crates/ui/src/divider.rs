@@ -1,8 +1,9 @@
-use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce,
     SharedString, Styled,
 };
+
+use crate::theme::{scale::ColorScaleStep, ActiveTheme};
 
 /// A divider that can be either vertical or horizontal.
 #[derive(IntoElement)]

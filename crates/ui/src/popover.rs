@@ -1,12 +1,14 @@
-use crate::{Selectable, StyledExt as _};
+use std::{cell::RefCell, rc::Rc};
+
 use gpui::{
     actions, anchored, deferred, div, prelude::FluentBuilder as _, px, AnyElement, App, Bounds,
     Context, Corner, DismissEvent, DispatchPhase, Element, ElementId, Entity, EventEmitter,
     FocusHandle, Focusable, GlobalElementId, Hitbox, InteractiveElement as _, IntoElement,
     KeyBinding, LayoutId, ManagedView, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
-    Render, Style, StyleRefinement, Styled, Window,
+    Render, ScrollHandle, StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
 };
-use std::{cell::RefCell, rc::Rc};
+
+use crate::{Selectable, StyledExt as _};
 
 const CONTEXT: &str = "Popover";
 
@@ -20,7 +22,10 @@ type PopoverChild<T> = Rc<dyn Fn(&mut Window, &mut Context<T>) -> AnyElement>;
 
 pub struct PopoverContent {
     focus_handle: FocusHandle,
+    scroll_handle: ScrollHandle,
     max_width: Option<Pixels>,
+    max_height: Option<Pixels>,
+    scrollable: bool,
     child: PopoverChild<Self>,
 }
 
@@ -30,16 +35,30 @@ impl PopoverContent {
         B: Fn(&mut Window, &mut Context<Self>) -> AnyElement + 'static,
     {
         let focus_handle = cx.focus_handle();
+        let scroll_handle = ScrollHandle::default();
 
         Self {
             focus_handle,
+            scroll_handle,
             child: Rc::new(content),
             max_width: None,
+            max_height: None,
+            scrollable: false,
         }
     }
 
     pub fn max_w(mut self, max_width: Pixels) -> Self {
         self.max_width = Some(max_width);
+        self
+    }
+
+    pub fn max_h(mut self, max_height: Pixels) -> Self {
+        self.max_height = Some(max_height);
+        self
+    }
+
+    pub fn scrollable(mut self) -> Self {
+        self.scrollable = true;
         self
     }
 }
@@ -55,11 +74,16 @@ impl Focusable for PopoverContent {
 impl Render for PopoverContent {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .id("popup-content")
             .track_focus(&self.focus_handle)
             .key_context(CONTEXT)
             .on_action(cx.listener(|_, _: &Escape, _, cx| cx.emit(DismissEvent)))
             .p_2()
+            .when(self.scrollable, |this| {
+                this.overflow_y_scroll().track_scroll(&self.scroll_handle)
+            })
             .when_some(self.max_width, |this, v| this.max_w(v))
+            .when_some(self.max_height, |this, v| this.max_h(v))
             .child(self.child.clone()(window, cx))
     }
 }

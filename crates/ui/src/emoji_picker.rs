@@ -1,0 +1,136 @@
+use std::rc::Rc;
+
+use gpui::{
+    div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Corner, Element,
+    InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, WeakEntity, Window,
+};
+use serde::Deserialize;
+
+use crate::{
+    button::{Button, ButtonVariants},
+    input::TextInput,
+    popover::{Popover, PopoverContent},
+    theme::{scale::ColorScaleStep, ActiveTheme},
+    Icon,
+};
+
+#[derive(PartialEq, Clone, Debug, Deserialize)]
+pub struct EmitEmoji(pub SharedString);
+
+impl_internal_actions!(emoji, [EmitEmoji]);
+
+#[derive(IntoElement)]
+pub struct EmojiPicker {
+    icon: Option<Icon>,
+    anchor: Option<Corner>,
+    input: WeakEntity<TextInput>,
+    emojis: Rc<Vec<SharedString>>,
+}
+
+impl EmojiPicker {
+    pub fn new(input: WeakEntity<TextInput>) -> Self {
+        let mut emojis: Vec<SharedString> = vec![];
+
+        emojis.extend(
+            emojis::Group::SmileysAndEmotion
+                .emojis()
+                .map(|e| SharedString::from(e.as_str()))
+                .collect::<Vec<SharedString>>(),
+        );
+
+        emojis.extend(
+            emojis::Group::Symbols
+                .emojis()
+                .map(|e| SharedString::from(e.as_str()))
+                .collect::<Vec<SharedString>>(),
+        );
+
+        Self {
+            input,
+            emojis: emojis.into(),
+            anchor: None,
+            icon: None,
+        }
+    }
+
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn anchor(mut self, corner: Corner) -> Self {
+        self.anchor = Some(corner);
+        self
+    }
+}
+
+impl RenderOnce for EmojiPicker {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        Popover::new("emoji-picker")
+            .map(|this| {
+                if let Some(corner) = self.anchor {
+                    this.anchor(corner)
+                } else {
+                    this.anchor(gpui::Corner::BottomLeft)
+                }
+            })
+            .trigger(
+                Button::new("emoji-trigger")
+                    .when_some(self.icon, |this, icon| this.icon(icon))
+                    .ghost(),
+            )
+            .content(move |window, cx| {
+                let emojis = self.emojis.clone();
+                let input = self.input.clone();
+
+                cx.new(|cx| {
+                    PopoverContent::new(window, cx, move |_window, cx| {
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_2()
+                            .children(emojis.iter().map(|e| {
+                                div()
+                                    .id(e.clone())
+                                    .flex_auto()
+                                    .size_10()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(cx.theme().radius))
+                                    .child(e.clone())
+                                    .hover(|this| {
+                                        this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                                    })
+                                    .on_click({
+                                        let item = e.clone();
+                                        let input = input.upgrade();
+
+                                        move |_, window, cx| {
+                                            if let Some(input) = input.as_ref() {
+                                                input.update(cx, |this, cx| {
+                                                    let current = this.text();
+                                                    let new_text = if current.is_empty() {
+                                                        format!("{}", item)
+                                                    } else if current.ends_with(" ") {
+                                                        format!("{}{}", current, item)
+                                                    } else {
+                                                        format!("{} {}", current, item)
+                                                    };
+                                                    this.set_text(new_text, window, cx);
+                                                });
+                                            }
+                                        }
+                                    })
+                            }))
+                            .into_any()
+                    })
+                    .scrollable()
+                    .max_h(px(300.))
+                    .max_w(px(300.))
+                })
+            })
+    }
+}

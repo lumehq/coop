@@ -40,6 +40,8 @@ pub struct Room {
     pub created_at: Timestamp,
     /// Subject of the room
     pub subject: Option<SharedString>,
+    /// Picture of the room
+    pub picture: Option<SharedString>,
     /// All members of the room
     pub members: Arc<Vec<PublicKey>>,
     /// Kind
@@ -82,10 +84,18 @@ impl Room {
             None
         };
 
+        // Get the picture from the event's tags
+        let picture = if let Some(tag) = event.tags.find(TagKind::custom("picture")) {
+            tag.content().map(|s| s.to_owned().into())
+        } else {
+            None
+        };
+
         Self {
             id,
             created_at,
             subject,
+            picture,
             members,
             kind: RoomKind::Unknown,
         }
@@ -303,6 +313,17 @@ impl Room {
         cx.notify();
     }
 
+    /// Updates the picture of the room
+    ///
+    /// # Arguments
+    ///
+    /// * `picture` - The new subject to set
+    /// * `cx` - The context to notify about the update
+    pub fn picture(&mut self, picture: String, cx: &mut Context<Self>) {
+        self.picture = Some(picture.into());
+        cx.notify();
+    }
+
     /// Fetches metadata for all members in the room
     ///
     /// # Arguments
@@ -380,6 +401,7 @@ impl Room {
         let public_key = profile.public_key();
 
         let subject = self.subject.clone();
+        let picture = self.picture.clone();
         let pubkeys = self.members.clone();
 
         let (tx, rx) = smol::channel::bounded::<SendStatus>(pubkeys.len());
@@ -398,10 +420,16 @@ impl Room {
                 })
                 .collect();
 
+            // Add subject tag if it's present
             if let Some(subject) = subject {
                 tags.push(Tag::from_standardized(TagStandard::Subject(
                     subject.to_string(),
                 )));
+            }
+
+            // Add picture tag if it's present
+            if let Some(picture) = picture {
+                tags.push(Tag::custom(TagKind::custom("picture"), vec![picture]));
             }
 
             for pubkey in pubkeys.iter() {

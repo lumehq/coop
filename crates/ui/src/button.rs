@@ -348,7 +348,7 @@ impl RenderOnce for Button {
                         Size::Size(px) => this.size(px),
                         Size::XSmall => this.size_5(),
                         Size::Small => this.size_6(),
-                        _ => this.size_8(),
+                        _ => this.size_9(),
                     }
                 } else {
                     // Normal Button

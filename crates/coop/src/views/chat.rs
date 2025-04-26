@@ -22,6 +22,7 @@ use std::{collections::HashMap, sync::Arc};
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
+    emoji_picker::EmojiPicker,
     input::{InputEvent, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
@@ -594,16 +595,31 @@ impl Render for Chat {
                                 .w_full()
                                 .flex()
                                 .items_center()
-                                .gap_2()
+                                .gap_2p5()
                                 .child(
-                                    Button::new("upload")
-                                        .icon(Icon::new(IconName::Upload))
-                                        .ghost()
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.upload_media(window, cx);
-                                        }))
-                                        .disabled(self.is_uploading)
-                                        .loading(self.is_uploading),
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .text_color(
+                                            cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+                                        )
+                                        .child(
+                                            Button::new("upload")
+                                                .icon(Icon::new(IconName::Upload))
+                                                .ghost()
+                                                .disabled(self.is_uploading)
+                                                .loading(self.is_uploading)
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.upload_media(window, cx);
+                                                    },
+                                                )),
+                                        )
+                                        .child(
+                                            EmojiPicker::new(self.input.downgrade())
+                                                .icon(IconName::EmojiFill),
+                                        ),
                                 )
                                 .child(self.input.clone()),
                         ),
