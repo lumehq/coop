@@ -616,7 +616,10 @@ impl Render for Chat {
                                                     },
                                                 )),
                                         )
-                                        .child(EmojiPicker::new()),
+                                        .child(
+                                            EmojiPicker::new(self.input.downgrade())
+                                                .icon(IconName::EmojiFill),
+                                        ),
                                 )
                                 .child(self.input.clone()),
                         ),
