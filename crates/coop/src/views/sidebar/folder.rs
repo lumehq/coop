@@ -7,6 +7,7 @@ use gpui::{
 };
 use ui::{
     theme::{scale::ColorScaleStep, ActiveTheme},
+    tooltip::Tooltip,
     Collapsible, Icon, IconName, Sizable, StyledExt,
 };
 
@@ -16,6 +17,7 @@ type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 pub struct Parent {
     base: Div,
     icon: Option<Icon>,
+    tooltip: Option<SharedString>,
     label: SharedString,
     items: Vec<Folder>,
     collapsed: bool,
@@ -28,6 +30,7 @@ impl Parent {
             base: div().flex().flex_col().gap_2(),
             label: label.into(),
             icon: None,
+            tooltip: None,
             items: Vec::new(),
             collapsed: false,
             handler: Rc::new(|_, _, _| {}),
@@ -36,6 +39,11 @@ impl Parent {
 
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
         self
     }
 
@@ -105,6 +113,11 @@ impl RenderOnce for Parent {
                             .when_some(self.icon, |this, icon| this.child(icon.small()))
                             .child(self.label.clone()),
                     )
+                    .when_some(self.tooltip.clone(), |this, tooltip| {
+                        this.tooltip(move |window, cx| {
+                            Tooltip::new(tooltip.clone(), window, cx).into()
+                        })
+                    })
                     .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
                     .on_click(move |ev, window, cx| handler(ev, window, cx)),
             )
@@ -118,6 +131,7 @@ impl RenderOnce for Parent {
 pub struct Folder {
     base: Div,
     icon: Option<Icon>,
+    tooltip: Option<SharedString>,
     label: SharedString,
     items: Vec<FolderItem>,
     collapsed: bool,
@@ -130,6 +144,7 @@ impl Folder {
             base: div().flex().flex_col().gap_2(),
             label: label.into(),
             icon: None,
+            tooltip: None,
             items: Vec::new(),
             collapsed: false,
             handler: Rc::new(|_, _, _| {}),
@@ -138,6 +153,11 @@ impl Folder {
 
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
         self
     }
 
@@ -201,6 +221,11 @@ impl RenderOnce for Folder {
                             .when_some(self.icon, |this, icon| this.child(icon.small()))
                             .child(self.label.clone()),
                     )
+                    .when_some(self.tooltip.clone(), |this, tooltip| {
+                        this.tooltip(move |window, cx| {
+                            Tooltip::new(tooltip.clone(), window, cx).into()
+                        })
+                    })
                     .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
                     .on_click(move |ev, window, cx| handler(ev, window, cx)),
             )
