@@ -50,7 +50,13 @@ impl RenderOnce for SidebarButton {
         self.base
             .id(self.label.clone())
             .rounded(px(cx.theme().radius))
-            .when_some(self.icon, |this, icon| this.child(icon))
+            .when_some(self.icon, |this, icon| {
+                this.child(
+                    div()
+                        .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                        .child(icon),
+                )
+            })
             .child(self.label.clone())
             .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
             .on_click(move |ev, window, cx| handler(ev, window, cx))

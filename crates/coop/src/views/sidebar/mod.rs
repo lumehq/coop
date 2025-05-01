@@ -22,7 +22,6 @@ use ui::{
         panel::{Panel, PanelEvent},
     },
     popup_menu::{PopupMenu, PopupMenuExt},
-    scroll::ScrollbarAxis,
     skeleton::Skeleton,
     theme::{scale::ColorScaleStep, ActiveTheme},
     IconName, Sizable, StyledExt,
@@ -266,26 +265,25 @@ impl Render for Sidebar {
                     .gap_1()
                     .text_sm()
                     .font_medium()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .child(
-                        SidebarButton::new("New Message")
-                            .icon(IconName::PlusCircleFill)
+                        SidebarButton::new("Find")
+                            .icon(IconName::Search)
                             .on_click(cx.listener(|_, _, window, cx| {
                                 window.dispatch_action(
                                     Box::new(ToggleModal {
-                                        modal: ModalKind::Compose,
+                                        modal: ModalKind::Search,
                                     }),
                                     cx,
                                 );
                             })),
                     )
                     .child(
-                        SidebarButton::new("Contacts")
-                            .icon(IconName::AddressBook)
+                        SidebarButton::new("Message")
+                            .icon(IconName::PlusCircleFill)
                             .on_click(cx.listener(|_, _, window, cx| {
                                 window.dispatch_action(
                                     Box::new(ToggleModal {
-                                        modal: ModalKind::Contact,
+                                        modal: ModalKind::Compose,
                                     }),
                                     cx,
                                 );
@@ -313,9 +311,9 @@ impl Render for Sidebar {
                                     .tooltip("Toggle chat folders")
                                     .map(|this| {
                                         if self.split_into_folders {
-                                            this.icon(IconName::ToggleFill)
+                                            this.icon(IconName::FilterFill)
                                         } else {
-                                            this.icon(IconName::Toggle)
+                                            this.icon(IconName::Filter)
                                         }
                                     })
                                     .small()

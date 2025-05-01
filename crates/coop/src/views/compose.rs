@@ -116,10 +116,10 @@ impl Compose {
             contacts,
             selected,
             error_message,
+            subscriptions,
             is_loading: false,
             is_submitting: false,
             focus_handle: cx.focus_handle(),
-            subscriptions,
         }
     }
 

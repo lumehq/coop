@@ -1,6 +1,5 @@
 pub mod chat;
 pub mod compose;
-pub mod contacts;
 pub mod login;
 pub mod new_account;
 pub mod onboarding;
