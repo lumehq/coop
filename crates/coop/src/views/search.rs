@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Error;
+use async_utility::task::spawn;
 use chats::{
     room::{Room, RoomKind},
     ChatRegistry,
@@ -43,7 +44,7 @@ impl Search {
         let input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(ui::Size::Small)
-                .placeholder("alice")
+                .placeholder("type something...")
         });
 
         cx.new(|cx| {
@@ -96,13 +97,24 @@ impl Search {
                 .collect_vec();
 
             let mut users = vec![];
+            let (tx, rx) = smol::channel::bounded::<Profile>(events.len());
 
-            for event in events.into_iter() {
-                let metadata = Metadata::from_json(event.content)?;
+            spawn(async move {
+                for event in events.into_iter() {
+                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
 
-                if metadata.nip05.is_some() {
-                    users.push(Profile::new(event.pubkey, metadata));
+                    if let Some(target) = metadata.nip05.as_ref() {
+                        if let Ok(verify) = nip05::verify(&event.pubkey, target, None).await {
+                            if verify {
+                                _ = tx.send(Profile::new(event.pubkey, metadata)).await;
+                            }
+                        }
+                    }
                 }
+            });
+
+            while let Ok(profile) = rx.recv().await {
+                users.push(profile);
             }
 
             Ok(users)
@@ -200,8 +212,9 @@ impl Render for Search {
             .flex()
             .flex_col()
             .gap_3()
+            .mt_3()
             .child(
-                div().px_2().child(
+                div().px_3().child(
                     div()
                         .flex()
                         .gap_1()
@@ -314,14 +327,20 @@ impl Render for Search {
                                                                 },
                                                             )),
                                                     ),
-                                            ),
+                                            )
+                                            .hover(|this| {
+                                                this.bg(cx
+                                                    .theme()
+                                                    .base
+                                                    .step(cx, ColorScaleStep::THREE))
+                                            }),
                                     );
                                 }
 
                                 items
                             },
                         )
-                        .min_h(px(250.)),
+                        .min_h(px(150.)),
                     )
                 }
             }))

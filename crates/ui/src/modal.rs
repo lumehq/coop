@@ -1,16 +1,18 @@
+use std::{rc::Rc, time::Duration};
+
+use gpui::{
+    actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
+    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement,
+    IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
+    Styled, Window,
+};
+
 use crate::{
     animation::cubic_bezier,
     button::{Button, ButtonCustomVariant, ButtonVariants as _},
     theme::{scale::ColorScaleStep, ActiveTheme as _},
-    v_flex, ContextModal, IconName, Sizable as _, StyledExt,
+    v_flex, ContextModal, IconName, StyledExt,
 };
-use gpui::{
-    actions, anchored, div, point, prelude::FluentBuilder, px, Animation, AnimationExt as _,
-    AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement,
-    KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString, Styled,
-    Window,
-};
-use std::{rc::Rc, time::Duration};
 
 actions!(modal, [Escape]);
 
@@ -185,51 +187,52 @@ impl RenderOnce for Modal {
                             .track_focus(&self.focus_handle)
                             .absolute()
                             .occlude()
-                            .relative()
                             .left(x)
                             .top(y)
                             .w(self.width)
                             .when_some(self.max_width, |this, w| this.max_w(w))
-                            .px_4()
-                            .pb_4()
-                            .child(
-                                div()
-                                    .h_12()
-                                    .mb_2()
-                                    .border_b_1()
-                                    .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .when_some(self.title, |this, title| {
-                                        this.child(div().font_semibold().child(title))
-                                    })
-                                    .when(self.closable, |this| {
-                                        this.child(
-                                            Button::new(SharedString::from(format!(
-                                                "modal-close-{layer_ix}"
-                                            )))
-                                            .small()
-                                            .icon(IconName::CloseCircleFill)
-                                            .custom(
-                                                ButtonCustomVariant::new(window, cx)
-                                                    .foreground(
-                                                        cx.theme()
-                                                            .base
-                                                            .step(cx, ColorScaleStep::NINE),
-                                                    )
-                                                    .color(cx.theme().transparent)
-                                                    .hover(cx.theme().transparent)
-                                                    .active(cx.theme().transparent)
-                                                    .border(cx.theme().transparent),
+                            .when_some(self.title, |this, title| {
+                                this.child(
+                                    div()
+                                        .h_12()
+                                        .px_3()
+                                        .mb_2()
+                                        .flex()
+                                        .items_center()
+                                        .font_semibold()
+                                        .border_b_1()
+                                        .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
+                                        .line_height(relative(1.))
+                                        .child(title),
+                                )
+                            })
+                            .when(self.closable, |this| {
+                                this.child(
+                                    Button::new(SharedString::from(format!(
+                                        "modal-close-{layer_ix}"
+                                    )))
+                                    .icon(IconName::CloseCircleFill)
+                                    .absolute()
+                                    .top_1p5()
+                                    .right_2()
+                                    .custom(
+                                        ButtonCustomVariant::new(window, cx)
+                                            .foreground(
+                                                cx.theme().base.step(cx, ColorScaleStep::NINE),
                                             )
-                                            .on_click(move |_, window, cx| {
-                                                on_close(&ClickEvent::default(), window, cx);
-                                                window.close_modal(cx);
-                                            }),
-                                        )
-                                    }),
-                            )
+                                            .color(cx.theme().transparent)
+                                            .hover(cx.theme().transparent)
+                                            .active(cx.theme().transparent)
+                                            .border(cx.theme().transparent),
+                                    )
+                                    .on_click(
+                                        move |_, window, cx| {
+                                            on_close(&ClickEvent::default(), window, cx);
+                                            window.close_modal(cx);
+                                        },
+                                    ),
+                                )
+                            })
                             .child(self.content)
                             .children(self.footer)
                             .when(self.keyboard, |this| {

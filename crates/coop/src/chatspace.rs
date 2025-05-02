@@ -244,7 +244,10 @@ impl ChatSpace {
                 let search = search::init(window, cx);
 
                 window.open_modal(cx, move |modal, _, _| {
-                    modal.width(px(MODAL_WIDTH)).child(search.clone())
+                    modal
+                        .closable(false)
+                        .width(px(MODAL_WIDTH))
+                        .child(search.clone())
                 })
             }
             ModalKind::Relay => {
