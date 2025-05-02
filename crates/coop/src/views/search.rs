@@ -231,6 +231,15 @@ impl Render for Search {
                         ),
                 ),
             )
+            .when_some(self.error.read(cx).as_ref(), |this, error| {
+                this.child(
+                    div()
+                        .px_3()
+                        .text_xs()
+                        .text_color(cx.theme().danger)
+                        .child(error.clone()),
+                )
+            })
             .child(div().map(|this| {
                 let result = self.result.read(cx).clone();
 
