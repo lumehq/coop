@@ -1,11 +1,11 @@
 pub mod chat;
 pub mod compose;
-pub mod contacts;
 pub mod login;
 pub mod new_account;
 pub mod onboarding;
 pub mod profile;
 pub mod relays;
+pub mod search;
 pub mod sidebar;
 pub mod subject;
 pub mod welcome;

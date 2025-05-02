@@ -68,7 +68,6 @@ impl Compose {
         let user_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(ui::Size::Small)
-                .small()
                 .placeholder("npub1...")
         });
 
@@ -116,10 +115,10 @@ impl Compose {
             contacts,
             selected,
             error_message,
+            subscriptions,
             is_loading: false,
             is_submitting: false,
             focus_handle: cx.focus_handle(),
-            subscriptions,
         }
     }
 
@@ -180,9 +179,10 @@ impl Compose {
                                 window.close_modal(cx);
                             }
                             Err(e) => {
-                                _ = this.update(cx, |this, cx| {
+                                this.update(cx, |this, cx| {
                                     this.set_error(Some(e.to_string().into()), cx);
-                                });
+                                })
+                                .ok();
                             }
                         }
                     });
@@ -341,6 +341,7 @@ impl Render for Compose {
             .gap_1()
             .child(
                 div()
+                    .px_3()
                     .text_sm()
                     .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
                     .child(DESCRIPTION),
@@ -348,13 +349,14 @@ impl Render for Compose {
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
                 this.child(
                     div()
+                        .px_3()
                         .text_xs()
                         .text_color(cx.theme().danger)
                         .child(msg.clone()),
                 )
             })
             .child(
-                div().flex().flex_col().child(
+                div().px_3().flex().flex_col().child(
                     div()
                         .h_10()
                         .border_b_1()
@@ -372,8 +374,15 @@ impl Render for Compose {
                     .flex_col()
                     .gap_2()
                     .mt_1()
-                    .child(div().text_sm().font_semibold().child("To:"))
-                    .child(self.user_input.clone())
+                    .child(
+                        div()
+                            .px_3()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(div().text_sm().font_semibold().child("To:"))
+                            .child(self.user_input.clone()),
+                    )
                     .map(|this| {
                         let contacts = self.contacts.read(cx).clone();
                         let view = cx.entity();
@@ -423,11 +432,10 @@ impl Render for Compose {
                                                     .id(ix)
                                                     .w_full()
                                                     .h_10()
-                                                    .px_2()
+                                                    .px_3()
                                                     .flex()
                                                     .items_center()
                                                     .justify_between()
-                                                    .rounded(px(cx.theme().radius))
                                                     .child(
                                                         div()
                                                             .flex()
@@ -480,7 +488,7 @@ impl Render for Compose {
                     }),
             )
             .child(
-                div().mt_2().child(
+                div().p_3().child(
                     Button::new("create_dm_btn")
                         .label(label)
                         .primary()

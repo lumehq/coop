@@ -20,7 +20,7 @@ use ui::{
 use crate::{
     lru_cache::cache_provider,
     views::{
-        chat, compose, contacts, login, new_account, onboarding, profile, relays, sidebar, welcome,
+        chat, compose, login, new_account, onboarding, profile, relays, search, sidebar, welcome,
     },
 };
 
@@ -52,8 +52,9 @@ pub enum PanelKind {
 pub enum ModalKind {
     Profile,
     Compose,
-    Contact,
+    Search,
     Relay,
+    Onboarding,
     SetupRelay,
 }
 
@@ -239,14 +240,15 @@ impl ChatSpace {
                         .child(compose.clone())
                 })
             }
-            ModalKind::Contact => {
-                let contacts = contacts::init(window, cx);
+            ModalKind::Search => {
+                let search = search::init(window, cx);
 
-                window.open_modal(cx, move |this, _window, _cx| {
-                    this.width(px(MODAL_WIDTH))
-                        .title("Contacts")
-                        .child(contacts.clone())
-                });
+                window.open_modal(cx, move |modal, _, _| {
+                    modal
+                        .closable(false)
+                        .width(px(MODAL_WIDTH))
+                        .child(search.clone())
+                })
             }
             ModalKind::Relay => {
                 let relays = relays::init(window, cx);
@@ -266,6 +268,7 @@ impl ChatSpace {
                         .child(relays.clone())
                 });
             }
+            _ => {}
         };
     }
 

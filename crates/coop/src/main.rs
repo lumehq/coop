@@ -6,7 +6,10 @@ use futures::{select, FutureExt};
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
 use global::{
-    constants::{ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID},
+    constants::{
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID,
+        SEARCH_RELAYS,
+    },
     get_client,
 };
 use gpui::{
@@ -67,6 +70,12 @@ fn main() {
     app.background_executor()
         .spawn(async move {
             for relay in BOOTSTRAP_RELAYS.into_iter() {
+                if let Err(e) = client.add_relay(relay).await {
+                    log::error!("Failed to add relay {}: {}", relay, e);
+                }
+            }
+
+            for relay in SEARCH_RELAYS.into_iter() {
                 if let Err(e) = client.add_relay(relay).await {
                     log::error!("Failed to add relay {}: {}", relay, e);
                 }
