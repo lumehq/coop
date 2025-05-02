@@ -354,7 +354,7 @@ impl RenderOnce for Button {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
-                        Size::XSmall => this.h_6().px_0p5(),
+                        Size::XSmall => this.h_6().px_1p5(),
                         Size::Small => this.h_7().px_2(),
                         Size::Large => this.h_10().px_3(),
                         _ => this.h_9().px_2(),

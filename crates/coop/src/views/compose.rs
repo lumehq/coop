@@ -68,7 +68,6 @@ impl Compose {
         let user_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .text_size(ui::Size::Small)
-                .small()
                 .placeholder("npub1...")
         });
 
@@ -180,9 +179,10 @@ impl Compose {
                                 window.close_modal(cx);
                             }
                             Err(e) => {
-                                _ = this.update(cx, |this, cx| {
+                                this.update(cx, |this, cx| {
                                     this.set_error(Some(e.to_string().into()), cx);
-                                });
+                                })
+                                .ok();
                             }
                         }
                     });

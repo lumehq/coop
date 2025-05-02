@@ -278,7 +278,7 @@ impl Render for Sidebar {
                             })),
                     )
                     .child(
-                        SidebarButton::new("Message")
+                        SidebarButton::new("New Chat")
                             .icon(IconName::PlusCircleFill)
                             .on_click(cx.listener(|_, _, window, cx| {
                                 window.dispatch_action(
