@@ -129,6 +129,7 @@ impl ChatSpace {
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
+            this.reset(window, cx);
             this.set_center(center, window, cx);
         });
     }

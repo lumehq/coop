@@ -390,6 +390,14 @@ impl DockArea {
         self.update_toggle_button_tab_panels(window, cx);
     }
 
+    /// Reset all docks
+    pub fn reset(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.left_dock = None;
+        self.right_dock = None;
+        self.bottom_dock = None;
+        cx.notify();
+    }
+
     /// Set locked state of the dock area, if locked, the dock area cannot be split or move, but allows to resize panels.
     pub fn set_locked(&mut self, locked: bool, _window: &mut Window, _cx: &mut App) {
         self.is_locked = locked;
