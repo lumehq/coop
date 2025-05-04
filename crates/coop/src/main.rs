@@ -286,6 +286,7 @@ fn main() {
         // Open a window with default options
         cx.open_window(opts, |window, cx| {
             // Automatically sync theme with system appearance
+            #[cfg(not(target_os = "linux"))]
             window
                 .observe_window_appearance(|window, cx| {
                     Theme::sync_system_appearance(Some(window), cx);

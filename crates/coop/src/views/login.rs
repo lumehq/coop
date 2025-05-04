@@ -29,10 +29,10 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
 pub struct Login {
     // Inputs
     key_input: Entity<TextInput>,
-    error_message: Entity<Option<SharedString>>,
+    error: Entity<Option<SharedString>>,
     is_logging_in: bool,
     // Nostr Connect
-    qr: Option<Arc<Image>>,
+    qr: Entity<Option<Arc<Image>>>,
     connect_relay: Entity<TextInput>,
     connect_client: Entity<Option<NostrConnectURI>>,
     // Panel
@@ -42,6 +42,7 @@ pub struct Login {
     focus_handle: FocusHandle,
     #[allow(unused)]
     subscriptions: SmallVec<[Subscription; 3]>,
+    clients: SmallVec<[NostrConnect; 3]>,
 }
 
 impl Login {
@@ -50,9 +51,12 @@ impl Login {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let connect_client: Entity<Option<NostrConnectURI>> = cx.new(|_| None);
+        let error = cx.new(|_| None);
+        let qr = cx.new(|_| None);
+
+        let clients = smallvec![];
         let mut subscriptions = smallvec![];
-        let error_message = cx.new(|_| None);
-        let connect_client = cx.new(|_: &mut Context<'_, Option<NostrConnectURI>>| None);
 
         let key_input = cx.new(|cx| {
             TextInput::new(window, cx)
@@ -61,7 +65,7 @@ impl Login {
         });
 
         let connect_relay = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).text_size(Size::Small).small();
+            let mut input = TextInput::new(window, cx).text_size(Size::XSmall).small();
             input.set_text("wss://relay.nsec.app", window, cx);
             input
         });
@@ -89,17 +93,27 @@ impl Login {
         subscriptions.push(
             cx.observe_in(&connect_client, window, |this, uri, window, cx| {
                 let keys = get_client_keys().to_owned();
-                let account = Account::global(cx);
 
                 if let Some(uri) = uri.read(cx).clone() {
                     if let Ok(qr) = create_qr(uri.to_string().as_str()) {
-                        this.qr = Some(qr);
-                        cx.notify();
+                        this.qr.update(cx, |this, cx| {
+                            *this = Some(qr);
+                            cx.notify();
+                        });
                     }
 
-                    match NostrConnect::new(uri, keys, Duration::from_secs(300), None) {
+                    for client in std::mem::take(&mut this.clients).into_iter() {
+                        cx.background_spawn(async move {
+                            client.shutdown().await;
+                        })
+                        .detach();
+                    }
+
+                    match NostrConnect::new(uri, keys, Duration::from_secs(200), None) {
                         Ok(signer) => {
-                            account.update(cx, |this, cx| {
+                            this.clients.push(signer.clone());
+
+                            Account::global(cx).update(cx, |this, cx| {
                                 this.login(signer, window, cx);
                             });
                         }
@@ -111,27 +125,16 @@ impl Login {
             }),
         );
 
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             cx.background_executor()
-                .timer(Duration::from_millis(500))
+                .timer(Duration::from_millis(300))
                 .await;
 
-            cx.update(|cx| {
+            cx.update(|window, cx| {
                 this.update(cx, |this, cx| {
-                    let Ok(relay_url) =
-                        RelayUrl::parse(this.connect_relay.read(cx).text().to_string().as_str())
-                    else {
-                        return;
-                    };
-
-                    let client_pubkey = get_client_keys().public_key();
-                    let uri = NostrConnectURI::client(client_pubkey, vec![relay_url], "Coop");
-
-                    this.connect_client.update(cx, |this, cx| {
-                        *this = Some(uri);
-                        cx.notify();
-                    });
+                    this.change_relay(window, cx);
                 })
+                .ok();
             })
             .ok();
         })
@@ -142,8 +145,9 @@ impl Login {
             connect_relay,
             connect_client,
             subscriptions,
-            error_message,
-            qr: None,
+            clients,
+            error,
+            qr,
             is_logging_in: false,
             name: "Login".into(),
             closable: true,
@@ -172,33 +176,21 @@ impl Login {
                     });
                 }
                 Err(e) => {
-                    self.set_error_message(e.to_string(), cx);
-                    self.set_logging_in(false, cx);
+                    self.set_error(e.to_string(), cx);
                 }
             }
         } else if content.starts_with("bunker://") {
-            let keys = get_client_keys().to_owned();
-
             let Ok(uri) = NostrConnectURI::parse(content.as_ref()) else {
-                self.set_error_message("Bunker URL is not valid".to_owned(), cx);
-                self.set_logging_in(false, cx);
+                self.set_error("Bunker URL is not valid".to_owned(), cx);
                 return;
             };
 
-            match NostrConnect::new(uri, keys, Duration::from_secs(120), None) {
-                Ok(signer) => {
-                    account.update(cx, |this, cx| {
-                        this.login(signer, window, cx);
-                    });
-                }
-                Err(e) => {
-                    self.set_error_message(e.to_string(), cx);
-                    self.set_logging_in(false, cx);
-                }
-            }
+            self.connect_client.update(cx, |this, cx| {
+                *this = Some(uri);
+                cx.notify();
+            });
         } else {
-            window.push_notification(Notification::error(INPUT_INVALID), cx);
-            self.set_logging_in(false, cx);
+            self.set_error(INPUT_INVALID.into(), cx);
         };
     }
 
@@ -219,8 +211,9 @@ impl Login {
         });
     }
 
-    fn set_error_message(&mut self, message: String, cx: &mut Context<Self>) {
-        self.error_message.update(cx, |this, cx| {
+    fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
+        self.set_logging_in(false, cx);
+        self.error.update(cx, |this, cx| {
             *this = Some(SharedString::new(message));
             cx.notify();
         });
@@ -320,18 +313,15 @@ impl Render for Login {
                                                 this.login(window, cx);
                                             })),
                                     )
-                                    .when_some(
-                                        self.error_message.read(cx).clone(),
-                                        |this, error| {
-                                            this.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_center()
-                                                    .text_color(cx.theme().danger)
-                                                    .child(error),
-                                            )
-                                        },
-                                    ),
+                                    .when_some(self.error.read(cx).clone(), |this, error| {
+                                        this.child(
+                                            div()
+                                                .text_xs()
+                                                .text_center()
+                                                .text_color(cx.theme().danger)
+                                                .child(error),
+                                        )
+                                    }),
                             ),
                     ),
             )
@@ -372,12 +362,12 @@ impl Render for Login {
                                             .child("Use Nostr Connect apps to scan the code"),
                                     ),
                             )
-                            .when_some(self.qr.clone(), |this, qr| {
+                            .when_some(self.qr.read(cx).clone(), |this, qr| {
                                 this.child(
                                     div()
                                         .mb_2()
                                         .p_2()
-                                        .size_64()
+                                        .size_72()
                                         .flex()
                                         .flex_col()
                                         .items_center()

@@ -38,12 +38,9 @@ impl Account {
     {
         let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
             let client = get_client();
-            // Use user's signer for main signer
-            _ = client.set_signer(signer).await;
-
-            // Verify nostr signer and get public key
-            let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
+
+            client.set_signer(signer).await;
             log::info!("Logged in with public key: {:?}", public_key);
 
             // Fetch user's metadata
