@@ -40,8 +40,8 @@ impl Account {
             let client = get_client();
             let public_key = signer.get_public_key().await?;
 
+            // Update signer
             client.set_signer(signer).await;
-            log::info!("Logged in with public key: {:?}", public_key);
 
             // Fetch user's metadata
             let metadata = client

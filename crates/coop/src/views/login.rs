@@ -20,7 +20,17 @@ use ui::{
     ContextModal, Disableable, Sizable, Size, StyledExt,
 };
 
-const INPUT_INVALID: &str = "You must provide a valid Private Key or Bunker.";
+#[derive(Debug, Clone)]
+struct CoopAuthUrlHandler;
+
+impl AuthUrlHandler for CoopAuthUrlHandler {
+    fn on_auth_url(&self, auth_url: Url) -> BoxedFuture<Result<()>> {
+        Box::pin(async move {
+            webbrowser::open(auth_url.as_str())?;
+            Ok(())
+        })
+    }
+}
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
@@ -35,14 +45,15 @@ pub struct Login {
     qr: Entity<Option<Arc<Image>>>,
     connect_relay: Entity<TextInput>,
     connect_client: Entity<Option<NostrConnectURI>>,
+    // Keep track of all signers created by nostr connect
+    signers: SmallVec<[NostrConnect; 3]>,
     // Panel
     name: SharedString,
     closable: bool,
     zoomable: bool,
     focus_handle: FocusHandle,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 3]>,
-    clients: SmallVec<[NostrConnect; 3]>,
+    subscriptions: SmallVec<[Subscription; 4]>,
 }
 
 impl Login {
@@ -55,7 +66,7 @@ impl Login {
         let error = cx.new(|_| None);
         let qr = cx.new(|_| None);
 
-        let clients = smallvec![];
+        let signers = smallvec![];
         let mut subscriptions = smallvec![];
 
         let key_input = cx.new(|cx| {
@@ -102,16 +113,21 @@ impl Login {
                         });
                     }
 
-                    for client in std::mem::take(&mut this.clients).into_iter() {
+                    // Shutdown all previous nostr connect clients
+                    for client in std::mem::take(&mut this.signers).into_iter() {
                         cx.background_spawn(async move {
                             client.shutdown().await;
                         })
                         .detach();
                     }
 
+                    // Create a new nostr connect client
                     match NostrConnect::new(uri, keys, Duration::from_secs(200), None) {
-                        Ok(signer) => {
-                            this.clients.push(signer.clone());
+                        Ok(mut signer) => {
+                            // Handle auth url
+                            signer.auth_url_handler(CoopAuthUrlHandler);
+                            // Store this signer for further clean up
+                            this.signers.push(signer.clone());
 
                             Account::global(cx).update(cx, |this, cx| {
                                 this.login(signer, window, cx);
@@ -145,7 +161,7 @@ impl Login {
             connect_relay,
             connect_client,
             subscriptions,
-            clients,
+            signers,
             error,
             qr,
             is_logging_in: false,
@@ -190,7 +206,7 @@ impl Login {
                 cx.notify();
             });
         } else {
-            self.set_error(INPUT_INVALID.into(), cx);
+            self.set_error("You must provide a valid Private Key or Bunker.".into(), cx);
         };
     }
 
