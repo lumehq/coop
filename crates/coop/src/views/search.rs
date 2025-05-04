@@ -2,10 +2,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use async_utility::task::spawn;
-use chats::{
-    room::{Room, RoomKind},
-    ChatRegistry,
-};
+use chats::ChatRegistry;
 use common::profile::SharedProfile;
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
@@ -18,11 +15,14 @@ use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use ui::{
     button::{Button, ButtonVariants},
+    dock_area::dock::DockPlacement,
     indicator::Indicator,
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, IconName, Sizable,
 };
+
+use crate::chatspace::{AddPanel, PanelKind};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Search> {
     Search::new(window, cx)
@@ -167,28 +167,25 @@ impl Search {
             Ok(event)
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(event) = event.await {
+        cx.spawn_in(window, async move |this, cx| match event.await {
+            Ok(event) => {
                 cx.update(|window, cx| {
-                    let chats = ChatRegistry::global(cx);
-                    let room = Room::new(&event).kind(RoomKind::Ongoing);
-
-                    chats.update(cx, |chats, cx| {
-                        match chats.push(room, cx) {
-                            Ok(_) => {
-                                // TODO: automatically open newly created chat panel
-                                window.close_modal(cx);
-                            }
-                            Err(e) => {
-                                this.update(cx, |this, cx| {
-                                    this.error.update(cx, |this, cx| {
-                                        *this = Some(e.to_string().into());
-                                        cx.notify();
-                                    });
-                                })
-                                .ok();
-                            }
-                        }
+                    ChatRegistry::global(cx).update(cx, |chats, cx| {
+                        let id = chats.push(&event, window, cx);
+                        window.close_modal(cx);
+                        window.dispatch_action(
+                            Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
+                            cx,
+                        );
+                    });
+                })
+                .ok();
+            }
+            Err(e) => {
+                this.update(cx, |this, cx| {
+                    this.error.update(cx, |this, cx| {
+                        *this = Some(e.to_string().into());
+                        cx.notify();
                     });
                 })
                 .ok();

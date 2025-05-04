@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, collections::HashMap};
 
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use common::room_hash;
 use global::get_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
@@ -8,6 +8,7 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use smallvec::{smallvec, SmallVec};
+use ui::ContextModal;
 
 use crate::room::Room;
 
@@ -261,21 +262,18 @@ impl ChatRegistry {
     /// Add a new room to the registry
     ///
     /// Returns an error if the room already exists
-    pub fn push(&mut self, room: Room, cx: &mut Context<Self>) -> Result<(), anyhow::Error> {
-        let room = cx.new(|_| room);
+    pub fn push(&mut self, event: &Event, window: &mut Window, cx: &mut Context<Self>) -> u64 {
+        let room = Room::new(event).kind(RoomKind::Ongoing);
+        let id = room.id;
 
-        if !self
-            .rooms
-            .iter()
-            .any(|current| current.read(cx) == room.read(cx))
-        {
-            self.rooms.insert(0, room);
+        if !self.rooms.iter().any(|r| r.read(cx) == &room) {
+            self.rooms.insert(0, cx.new(|_| room));
             cx.notify();
-
-            Ok(())
         } else {
-            Err(anyhow!("Room already exists"))
+            window.push_notification("Room already exists", cx);
         }
+
+        id
     }
 
     /// Push a new message to a room

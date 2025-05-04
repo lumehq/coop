@@ -1,8 +1,5 @@
 use anyhow::Error;
-use chats::{
-    room::{Room, RoomKind},
-    ChatRegistry,
-};
+use chats::ChatRegistry;
 use common::{profile::SharedProfile, random_name};
 use global::get_client;
 use gpui::{
@@ -21,10 +18,13 @@ use std::{
 };
 use ui::{
     button::{Button, ButtonVariants},
+    dock_area::dock::DockPlacement,
     input::{InputEvent, TextInput},
     theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
+
+use crate::chatspace::{AddPanel, PanelKind};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
@@ -161,31 +161,23 @@ impl Compose {
             Ok(event)
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(event) = event.await {
+        cx.spawn_in(window, async move |this, cx| match event.await {
+            Ok(event) => {
                 cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_submitting(false, cx);
-                    })
-                    .ok();
-
-                    let chats = ChatRegistry::global(cx);
-                    let room = Room::new(&event).kind(RoomKind::Ongoing);
-
-                    chats.update(cx, |chats, cx| {
-                        match chats.push(room, cx) {
-                            Ok(_) => {
-                                // TODO: automatically open newly created chat panel
-                                window.close_modal(cx);
-                            }
-                            Err(e) => {
-                                this.update(cx, |this, cx| {
-                                    this.set_error(Some(e.to_string().into()), cx);
-                                })
-                                .ok();
-                            }
-                        }
+                    ChatRegistry::global(cx).update(cx, |chats, cx| {
+                        let id = chats.push(&event, window, cx);
+                        window.close_modal(cx);
+                        window.dispatch_action(
+                            Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
+                            cx,
+                        );
                     });
+                })
+                .ok();
+            }
+            Err(e) => {
+                this.update(cx, |this, cx| {
+                    this.set_error(Some(e.to_string().into()), cx);
                 })
                 .ok();
             }

@@ -47,7 +47,7 @@ impl Modal {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::SEVEN))
+            .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
             .rounded_xl()
             .shadow_md();
 
@@ -169,9 +169,9 @@ impl RenderOnce for Modal {
                     .w(view_size.width)
                     .h(view_size.height)
                     .when(self.overlay, |this| {
-                        this.bg(cx.theme().base.step_alpha(cx, ColorScaleStep::EIGHT))
+                        this.bg(cx.theme().base.step_alpha(cx, ColorScaleStep::TWO))
                     })
-                    .when(self.closable, |this| {
+                    .when(self.keyboard, |this| {
                         this.on_mouse_down(MouseButton::Left, {
                             let on_close = self.on_close.clone();
                             move |_, window, cx| {

@@ -284,6 +284,8 @@ impl Render for Relays {
         div()
             .track_focus(&self.focus_handle)
             .size_full()
+            .px_3()
+            .pb_3()
             .flex()
             .flex_col()
             .justify_between()

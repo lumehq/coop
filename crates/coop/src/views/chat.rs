@@ -28,7 +28,7 @@ use ui::{
     popup_menu::PopupMenu,
     text::RichText,
     theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, ContextModal, Disableable, Icon, IconName, Size, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
 use crate::views::subject;
@@ -473,31 +473,33 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room.read_with(cx, |this, _| {
-            let facepill: Vec<SharedString> = this.avatars(cx);
+            let label = this.display_name(cx);
+            let url = this.display_image(cx);
 
             div()
                 .flex()
                 .items_center()
                 .gap_1p5()
-                .child(
-                    div()
-                        .flex()
-                        .flex_row_reverse()
-                        .items_center()
-                        .justify_start()
-                        .children(
-                            facepill
-                                .into_iter()
-                                .enumerate()
-                                .rev()
-                                .map(|(ix, facepill)| {
-                                    div()
-                                        .when(ix > 0, |div| div.ml_neg_1())
-                                        .child(img(facepill).size_5())
-                                }),
-                        ),
-                )
-                .child(this.display_name(cx))
+                .map(|this| {
+                    if let Some(url) = url {
+                        this.child(img(url).size_5().flex_shrink_0())
+                    } else {
+                        this.child(
+                            div()
+                                .flex_shrink_0()
+                                .flex()
+                                .justify_center()
+                                .items_center()
+                                .size_5()
+                                .rounded_full()
+                                .bg(cx.theme().accent.step(cx, ColorScaleStep::THREE))
+                                .child(Icon::new(IconName::UsersThreeFill).xsmall().text_color(
+                                    cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
+                                )),
+                        )
+                    }
+                })
+                .child(label)
                 .into_any()
         })
     }

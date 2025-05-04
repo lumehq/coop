@@ -80,6 +80,8 @@ impl Render for Subject {
             .flex()
             .flex_col()
             .gap_3()
+            .px_3()
+            .pb_3()
             .child(
                 div()
                     .flex()

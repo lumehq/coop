@@ -306,6 +306,7 @@ impl RenderOnce for FolderItem {
                         } else {
                             this.child(
                                 div()
+                                    .flex_shrink_0()
                                     .flex()
                                     .justify_center()
                                     .items_center()
