@@ -873,9 +873,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.20"
+version = "1.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04da6a0d40b948dfc4fa8f5bbf402b0fc1a64a28dbf7d12ffd683550f2c1b63a"
+checksum = "8691782945451c1c383942c4874dbe63814f61cb57ef773cda2972682b7bb3c0"
 dependencies = [
  "jobserver",
  "libc",
@@ -1136,7 +1136,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1526,7 +1526,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2317,7 +2317,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2409,7 +2409,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2633,7 +2633,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2650,7 +2650,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -3214,9 +3214,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.13"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
+checksum = "a25169bd5913a4b437588a7e3d127cd6e90127b60e0ffbd834a38f1599e016b8"
 
 [[package]]
 name = "libredox"
@@ -3391,7 +3391,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3589,7 +3589,7 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 [[package]]
 name = "nostr"
 version = "0.41.0"
-source = "git+https://github.com/rust-nostr/nostr#5a2e66874c6e6cb0f5b8bcb50c1d37aecd7a5d90"
+source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
 dependencies = [
  "aes",
  "base64",
@@ -3614,7 +3614,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.41.0"
-source = "git+https://github.com/rust-nostr/nostr#5a2e66874c6e6cb0f5b8bcb50c1d37aecd7a5d90"
+source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3626,7 +3626,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.41.0"
-source = "git+https://github.com/rust-nostr/nostr#5a2e66874c6e6cb0f5b8bcb50c1d37aecd7a5d90"
+source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3637,7 +3637,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.41.0"
-source = "git+https://github.com/rust-nostr/nostr#5a2e66874c6e6cb0f5b8bcb50c1d37aecd7a5d90"
+source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
 dependencies = [
  "async-utility",
  "heed",
@@ -3650,7 +3650,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.41.0"
-source = "git+https://github.com/rust-nostr/nostr#5a2e66874c6e6cb0f5b8bcb50c1d37aecd7a5d90"
+source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3666,7 +3666,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.41.0"
-source = "git+https://github.com/rust-nostr/nostr#5a2e66874c6e6cb0f5b8bcb50c1d37aecd7a5d90"
+source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4821,9 +4821,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
+checksum = "928fca9cf2aa042393a8325b9ead81d2f0df4cb12e1e24cef072922ccd99c5af"
 dependencies = [
  "bitflags 2.9.0",
 ]
@@ -4842,7 +4842,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "derive_refineable",
  "workspace-hack",
@@ -4981,7 +4981,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5451,7 +5451,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "anyhow",
  "serde",
@@ -5774,7 +5774,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "arrayvec",
  "log",
@@ -6684,7 +6684,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#afeb3d4fd94fae5cfc635e8a4f6eb56c8aae67fd"
+source = "git+https://github.com/zed-industries/zed#45fe158bc9179d1357617f9fa2cc6c3c203daa6b"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7620,9 +7620,9 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winnow"
-version = "0.7.7"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb8234a863ea0e8cd7284fcdd4f145233eb00fee02bbdd9861aec44e6477bc5"
+checksum = "d9fb597c990f03753e08d3c29efbfcf2019a003b4bf4ba19225c158e1549f0f3"
 dependencies = [
  "memchr",
 ]
@@ -7731,16 +7731,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ef33da6b1660b4ddbfb3aef0ade110c8b8a781a3b6382fa5f2b5b040fd55f61"
 
 [[package]]
-name = "xdg-home"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec1cdab258fb55c0da61328dc52c8764709b249011b2cad0454c72f0bf10a1f6"
-dependencies = [
- "libc",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "xim"
 version = "0.4.0"
 source = "git+https://github.com/XDeme1/xim-rs?rev=d50d461764c2213655cd9cf65a0ea94c70d3c4fd#d50d461764c2213655cd9cf65a0ea94c70d3c4fd"
@@ -7836,13 +7826,12 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "5.5.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59c333f648ea1b647bc95dc1d34807c8e25ed7a6feff3394034dc4776054b236"
+checksum = "2522b82023923eecb0b366da727ec883ace092e7887b61d3da5139f26b44da58"
 dependencies = [
  "async-broadcast",
  "async-executor",
- "async-fs",
  "async-io",
  "async-lock",
  "async-process",
@@ -7859,12 +7848,10 @@ dependencies = [
  "ordered-stream",
  "serde",
  "serde_repr",
- "static_assertions",
  "tracing",
  "uds_windows",
  "windows-sys 0.59.0",
  "winnow",
- "xdg-home",
  "zbus_macros",
  "zbus_names",
  "zvariant",
@@ -7872,9 +7859,9 @@ dependencies = [
 
 [[package]]
 name = "zbus_macros"
-version = "5.5.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f325ad10eb0d0a3eb060203494c3b7ec3162a01a59db75d2deee100339709fc0"
+checksum = "05d2e12843c75108c00c618c2e8ef9675b50b6ec095b36dc965f2e5aed463c15"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -8032,14 +8019,13 @@ dependencies = [
 
 [[package]]
 name = "zvariant"
-version = "5.4.0"
+version = "5.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2df9ee044893fcffbdc25de30546edef3e32341466811ca18421e3cd6c5a3ac"
+checksum = "557e89d54880377a507c94cd5452f20e35d14325faf9d2958ebeadce0966c1b2"
 dependencies = [
  "endi",
  "enumflags2",
  "serde",
- "static_assertions",
  "url",
  "winnow",
  "zvariant_derive",
@@ -8048,9 +8034,9 @@ dependencies = [
 
 [[package]]
 name = "zvariant_derive"
-version = "5.4.0"
+version = "5.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74170caa85b8b84cc4935f2d56a57c7a15ea6185ccdd7eadb57e6edd90f94b2f"
+checksum = "757779842a0d242061d24c28be589ce392e45350dfb9186dfd7a042a2e19870c"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

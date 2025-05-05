@@ -16,11 +16,11 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Nostr
-nostr = { git = "https://github.com/rust-nostr/nostr", features = ["parser"] }
-nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
-nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
-nostr-keyring = { git = "https://github.com/rust-nostr/nostr" }
-nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
+nostr = { git = "https://github.com/reyamir/nostr", branch = "fix/use-nip44-for-nip46", features = ["parser"] }
+nostr-relay-builder = { git = "https://github.com/reyamir/nostr", branch = "fix/use-nip44-for-nip46" }
+nostr-connect = { git = "https://github.com/reyamir/nostr", branch = "fix/use-nip44-for-nip46" }
+nostr-keyring = { git = "https://github.com/reyamir/nostr", branch = "fix/use-nip44-for-nip46" }
+nostr-sdk = { git = "https://github.com/reyamir/nostr", branch = "fix/use-nip44-for-nip46", features = [
 	"lmdb",
 	"nip96",
 	"nip59",

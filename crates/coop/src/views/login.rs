@@ -397,7 +397,7 @@ impl Render for Login {
                                             )
                                         })
                                         .bg(cx.theme().background)
-                                        .child(img(qr).h_56()),
+                                        .child(img(qr).h_64()),
                                 )
                             })
                             .child(
@@ -412,7 +412,7 @@ impl Render for Login {
                                         Button::new("change")
                                             .label("Change")
                                             .ghost()
-                                            .small()
+                                            .xsmall()
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.change_relay(window, cx);
                                             })),
