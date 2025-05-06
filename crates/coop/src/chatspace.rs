@@ -1,5 +1,5 @@
-use account::Account;
 use anyhow::Error;
+use app_state::AppState;
 use global::get_client;
 use gpui::{
     div, image_cache, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
@@ -96,14 +96,14 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let account = Account::global(cx);
+            let app_state = AppState::global(cx);
             let mut subscriptions = smallvec![];
 
             subscriptions.push(cx.observe_in(
-                &account,
+                &app_state,
                 window,
-                |this: &mut ChatSpace, account, window, cx| {
-                    if account.read(cx).profile.is_some() {
+                |this: &mut ChatSpace, app_state, window, cx| {
+                    if app_state.read(cx).account.is_some() {
                         this.open_chats(window, cx);
                     } else {
                         this.open_onboarding(window, cx);

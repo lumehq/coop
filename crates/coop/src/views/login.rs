@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use account::Account;
+use app_state::AppState;
 use common::create_qr;
 use global::get_client_keys;
 use gpui::{
@@ -129,7 +129,7 @@ impl Login {
                             // Store this signer for further clean up
                             this.signers.push(signer.clone());
 
-                            Account::global(cx).update(cx, |this, cx| {
+                            AppState::global(cx).update(cx, |this, cx| {
                                 this.login(signer, window, cx);
                             });
                         }
@@ -180,7 +180,7 @@ impl Login {
         self.set_logging_in(true, cx);
 
         let content = self.key_input.read(cx).text();
-        let account = Account::global(cx);
+        let account = AppState::global(cx);
 
         if content.starts_with("nsec1") {
             match SecretKey::parse(content.as_ref()) {

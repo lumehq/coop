@@ -13,7 +13,7 @@ ui = { path = "../ui" }
 common = { path = "../common" }
 global = { path = "../global" }
 chats = { path = "../chats" }
-account = { path = "../account" }
+app_state = { path = "../app_state" }
 auto_update = { path = "../auto_update" }
 
 gpui.workspace = true

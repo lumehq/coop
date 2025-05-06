@@ -298,14 +298,14 @@ fn main() {
                 // Initialize components
                 ui::init(cx);
 
+                // Initialize app state
+                app_state::init(cx);
+
                 // Initialize auto update
                 auto_update::init(cx);
 
                 // Initialize chat state
                 chats::init(cx);
-
-                // Initialize account state
-                account::init(cx);
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {

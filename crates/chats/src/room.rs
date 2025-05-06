@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use account::Account;
 use anyhow::Error;
+use app_state::AppState;
 use chrono::{Local, TimeZone};
 use common::{compare, profile::SharedProfile, room_hash};
 use global::get_client;
@@ -168,8 +168,8 @@ impl Room {
     ///
     /// The Profile of the first member in the room
     pub fn first_member(&self, cx: &App) -> Profile {
-        let account = Account::global(cx).read(cx);
-        let Some(profile) = account.profile.clone() else {
+        let app_state = AppState::global(cx).read(cx);
+        let Some(profile) = app_state.account.clone() else {
             return self.profile_by_pubkey(&self.members[0], cx);
         };
 
@@ -397,8 +397,8 @@ impl Room {
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
     pub fn send_message(&self, content: String, cx: &App) -> Option<Receiver<SendStatus>> {
-        let profile = Account::global(cx).read(cx).profile.clone()?;
-        let public_key = profile.public_key();
+        let account = AppState::global(cx).read(cx).account.clone()?;
+        let public_key = account.public_key();
 
         let subject = self.subject.clone();
         let picture = self.picture.clone();

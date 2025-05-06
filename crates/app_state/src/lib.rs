@@ -9,26 +9,26 @@ use gpui::{App, AppContext, Context, Entity, Global, Task, Window};
 use nostr_sdk::prelude::*;
 use ui::{notification::Notification, ContextModal};
 
-struct GlobalAccount(Entity<Account>);
+struct GlobalAppState(Entity<AppState>);
 
-impl Global for GlobalAccount {}
+impl Global for GlobalAppState {}
 
 pub fn init(cx: &mut App) {
-    Account::set_global(cx.new(|_| Account { profile: None }), cx);
+    AppState::set_global(cx.new(|_| AppState { account: None }), cx);
 }
 
 #[derive(Debug, Clone)]
-pub struct Account {
-    pub profile: Option<Profile>,
+pub struct AppState {
+    pub account: Option<Profile>,
 }
 
-impl Account {
+impl AppState {
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalAccount>().0.clone()
+        cx.global::<GlobalAppState>().0.clone()
     }
 
-    pub fn set_global(account: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalAccount(account));
+    pub fn set_global(app_state: Entity<Self>, cx: &mut App) {
+        cx.set_global(GlobalAppState(app_state));
     }
 
     /// Login to the account using the given signer.
@@ -56,11 +56,7 @@ impl Account {
             Ok(profile) => {
                 cx.update(|window, cx| {
                     this.update(cx, |this, cx| {
-                        this.profile(profile, cx);
-
-                        cx.defer_in(window, |this, _, cx| {
-                            this.subscribe(cx);
-                        });
+                        this.account(profile, window, cx);
                     })
                     .ok();
                 })
@@ -143,11 +139,7 @@ impl Account {
             if let Ok(profile) = task.await {
                 cx.update(|window, cx| {
                     this.update(cx, |this, cx| {
-                        this.profile(profile, cx);
-
-                        cx.defer_in(window, |this, _, cx| {
-                            this.subscribe(cx);
-                        });
+                        this.account(profile, window, cx);
                     })
                     .ok();
                 })
@@ -162,15 +154,18 @@ impl Account {
         .detach();
     }
 
-    /// Sets the profile for the account.
-    pub fn profile(&mut self, profile: Profile, cx: &mut Context<Self>) {
-        self.profile = Some(profile);
+    /// Sets the activate account.
+    pub fn account(&mut self, profile: Profile, window: &mut Window, cx: &mut Context<Self>) {
+        self.account = Some(profile);
         cx.notify();
+        cx.defer_in(window, |this, _, cx| {
+            this.subscribe(cx);
+        });
     }
 
     /// Subscribes to the current account's metadata.
     pub fn subscribe(&self, cx: &mut Context<Self>) {
-        let Some(profile) = self.profile.as_ref() else {
+        let Some(profile) = self.account.as_ref() else {
             return;
         };
 

@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, collections::HashSet};
 
-use account::Account;
+use app_state::AppState;
 use button::SidebarButton;
 use chats::{
     room::{Room, RoomKind},
@@ -115,8 +115,8 @@ impl Sidebar {
         cx.spawn_in(window, async move |_, cx| {
             if task.await.is_ok() {
                 cx.update(|_, cx| {
-                    Account::global(cx).update(cx, |this, cx| {
-                        this.profile = None;
+                    AppState::global(cx).update(cx, |this, cx| {
+                        this.account = None;
                         cx.notify();
                     });
                 })
@@ -198,7 +198,7 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let account = Account::global(cx).read(cx).profile.as_ref();
+        let account = AppState::global(cx).read(cx).account.as_ref();
         let registry = ChatRegistry::global(cx).read(cx);
 
         let rooms = registry.rooms(cx);
@@ -267,18 +267,6 @@ impl Render for Sidebar {
                     .text_sm()
                     .font_medium()
                     .child(
-                        SidebarButton::new("Find")
-                            .icon(IconName::Search)
-                            .on_click(cx.listener(|_, _, window, cx| {
-                                window.dispatch_action(
-                                    Box::new(ToggleModal {
-                                        modal: ModalKind::Search,
-                                    }),
-                                    cx,
-                                );
-                            })),
-                    )
-                    .child(
                         SidebarButton::new("New Chat")
                             .icon(IconName::PlusCircleFill)
                             .on_click(cx.listener(|_, _, window, cx| {
@@ -289,7 +277,17 @@ impl Render for Sidebar {
                                     cx,
                                 );
                             })),
-                    ),
+                    )
+                    .child(SidebarButton::new("Find").icon(IconName::Search).on_click(
+                        cx.listener(|_, _, window, cx| {
+                            window.dispatch_action(
+                                Box::new(ToggleModal {
+                                    modal: ModalKind::Search,
+                                }),
+                                cx,
+                            );
+                        }),
+                    )),
             )
             .child(
                 div()
