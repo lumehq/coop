@@ -3589,7 +3589,7 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 [[package]]
 name = "nostr"
 version = "0.41.0"
-source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
+source = "git+https://github.com/rust-nostr/nostr?branch=nip46#63609d9c7e62b16c26fa59b255284f3a292bea24"
 dependencies = [
  "aes",
  "base64",
@@ -3614,7 +3614,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.41.0"
-source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
+source = "git+https://github.com/rust-nostr/nostr?branch=nip46#63609d9c7e62b16c26fa59b255284f3a292bea24"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3626,7 +3626,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.41.0"
-source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
+source = "git+https://github.com/rust-nostr/nostr?branch=nip46#63609d9c7e62b16c26fa59b255284f3a292bea24"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3637,7 +3637,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.41.0"
-source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
+source = "git+https://github.com/rust-nostr/nostr?branch=nip46#63609d9c7e62b16c26fa59b255284f3a292bea24"
 dependencies = [
  "async-utility",
  "heed",
@@ -3650,7 +3650,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.41.0"
-source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
+source = "git+https://github.com/rust-nostr/nostr?branch=nip46#63609d9c7e62b16c26fa59b255284f3a292bea24"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3666,7 +3666,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.41.0"
-source = "git+https://github.com/reyamir/nostr?branch=fix%2Fuse-nip44-for-nip46#ed430f727470af6911419442eb7f0a61fa76e5fe"
+source = "git+https://github.com/rust-nostr/nostr?branch=nip46#63609d9c7e62b16c26fa59b255284f3a292bea24"
 dependencies = [
  "async-utility",
  "nostr",
