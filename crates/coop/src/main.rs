@@ -110,7 +110,7 @@ fn main() {
     // Handle batch metadata
     app.background_executor()
         .spawn(async move {
-            const BATCH_SIZE: usize = 500;
+            const BATCH_SIZE: usize = 20;
             const BATCH_TIMEOUT: Duration = Duration::from_millis(300);
 
             let mut batch: HashSet<PublicKey> = HashSet::new();
@@ -143,7 +143,7 @@ fn main() {
     // Handle notifications
     app.background_executor()
         .spawn(async move {
-            let rng_keys = Keys::generate();
+            let keys = Keys::generate();
             let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
             let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
             let mut notifications = client.notifications();
@@ -161,12 +161,12 @@ fn main() {
                                         Ok(event) => event,
                                         Err(_) => match client.unwrap_gift_wrap(&event).await {
                                             Ok(unwrap) => {
-                                                match unwrap.rumor.sign_with_keys(&rng_keys) {
-                                                    Ok(ev) => {
-                                                        set_unwrapped(event.id, &ev, &rng_keys)
+                                                match unwrap.rumor.sign_with_keys(&keys) {
+                                                    Ok(unwrapped) => {
+                                                        set_unwrapped(event.id, &unwrapped, &keys)
                                                             .await
                                                             .ok();
-                                                        ev
+                                                        unwrapped
                                                     }
                                                     Err(_) => continue,
                                                 }
@@ -286,6 +286,7 @@ fn main() {
         // Open a window with default options
         cx.open_window(opts, |window, cx| {
             // Automatically sync theme with system appearance
+            #[cfg(not(target_os = "linux"))]
             window
                 .observe_window_appearance(|window, cx| {
                     Theme::sync_system_appearance(Some(window), cx);

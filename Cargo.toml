@@ -16,18 +16,10 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Nostr
-nostr = { git = "https://github.com/rust-nostr/nostr", features = ["parser"] }
-nostr-relay-builder = { git = "https://github.com/rust-nostr/nostr" }
-nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
-nostr-keyring = { git = "https://github.com/rust-nostr/nostr" }
-nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
-	"lmdb",
-	"nip96",
-	"nip59",
-	"nip49",
-	"nip44",
-	"nip05",
-] }
+nostr = { git = "https://github.com/rust-nostr/nostr", branch = "nip46", features = ["parser"] }
+nostr-sdk = { git = "https://github.com/rust-nostr/nostr", branch = "nip46", features = ["lmdb", "nip96", "nip59", "nip49", "nip44", "nip05"] }
+nostr-connect = { git = "https://github.com/rust-nostr/nostr", branch = "nip46" }
+nostr-keyring = { git = "https://github.com/rust-nostr/nostr", branch = "nip46" }
 
 # Others
 emojis = "0.6.4"

@@ -244,6 +244,7 @@ impl Render for Profile {
             .flex()
             .flex_col()
             .gap_3()
+            .px_3()
             .child(
                 div()
                     .w_full()
@@ -313,7 +314,7 @@ impl Render for Profile {
                     .child(self.bio_input.clone()),
             )
             .child(
-                div().mt_2().w_full().child(
+                div().p_3().child(
                     Button::new("submit")
                         .label("Update")
                         .primary()
