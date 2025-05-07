@@ -1,35 +1,23 @@
-use crate::{
-    indicator::Indicator,
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    tooltip::Tooltip,
-    Disableable, Icon, Selectable, Sizable, Size, StyledExt,
-};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, relative, AnyElement, App, ClickEvent, Corners, Div,
-    Edges, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
-    RenderOnce, SharedString, StatefulInteractiveElement as _, Styled, Window,
+    div, prelude::FluentBuilder as _, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, Styled, Window,
+};
+use theme::ActiveTheme;
+
+use crate::{
+    indicator::Indicator, tooltip::Tooltip, Disableable, Icon, Selectable, Sizable, Size, StyledExt,
 };
 
 pub enum ButtonRounded {
-    None,
-    Small,
-    Medium,
-    Large,
-    Size(Pixels),
-}
-
-impl From<Pixels> for ButtonRounded {
-    fn from(px: Pixels) -> Self {
-        ButtonRounded::Size(px)
-    }
+    Normal,
+    Full,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ButtonCustomVariant {
     color: Hsla,
     foreground: Hsla,
-    border: Hsla,
-    shadow: bool,
     hover: Hsla,
     active: Hsla,
 }
@@ -66,12 +54,10 @@ pub trait ButtonVariants: Sized {
 impl ButtonCustomVariant {
     pub fn new(_window: &Window, cx: &App) -> Self {
         Self {
-            color: cx.theme().accent.step(cx, ColorScaleStep::NINE),
-            foreground: cx.theme().accent.step(cx, ColorScaleStep::ONE),
-            border: cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            hover: cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            active: cx.theme().accent.step(cx, ColorScaleStep::ELEVEN),
-            shadow: true,
+            color: cx.theme().element_background,
+            foreground: cx.theme().element_foreground,
+            hover: cx.theme().element_hover,
+            active: cx.theme().element_active,
         }
     }
 
@@ -85,11 +71,6 @@ impl ButtonCustomVariant {
         self
     }
 
-    pub fn border(mut self, color: Hsla) -> Self {
-        self.border = color;
-        self
-    }
-
     pub fn hover(mut self, color: Hsla) -> Self {
         self.hover = color;
         self
@@ -97,11 +78,6 @@ impl ButtonCustomVariant {
 
     pub fn active(mut self, color: Hsla) -> Self {
         self.active = color;
-        self
-    }
-
-    pub fn shadow(mut self, shadow: bool) -> Self {
-        self.shadow = shadow;
         self
     }
 }
@@ -149,12 +125,9 @@ pub struct Button {
     disabled: bool,
     variant: ButtonVariant,
     rounded: ButtonRounded,
-    border_corners: Corners<bool>,
-    border_edges: Edges<bool>,
     size: Size,
     reverse: bool,
     bold: bool,
-    centered: bool,
     tooltip: Option<SharedString>,
     on_click: OnClick,
     loading: bool,
@@ -179,9 +152,7 @@ impl Button {
             disabled: false,
             selected: false,
             variant: ButtonVariant::default(),
-            rounded: ButtonRounded::Medium,
-            border_corners: Corners::all(true),
-            border_edges: Edges::all(true),
+            rounded: ButtonRounded::Normal,
             size: Size::Medium,
             tooltip: None,
             on_click: None,
@@ -189,7 +160,6 @@ impl Button {
             loading: false,
             reverse: false,
             bold: false,
-            centered: true,
             children: Vec::new(),
             loading_icon: None,
         }
@@ -198,18 +168,6 @@ impl Button {
     /// Set the border radius of the Button.
     pub fn rounded(mut self, rounded: impl Into<ButtonRounded>) -> Self {
         self.rounded = rounded.into();
-        self
-    }
-
-    /// Set the border corners side of the Button.
-    pub(crate) fn border_corners(mut self, corners: impl Into<Corners<bool>>) -> Self {
-        self.border_corners = corners.into();
-        self
-    }
-
-    /// Set the border edges of the Button.
-    pub(crate) fn border_edges(mut self, edges: impl Into<Edges<bool>>) -> Self {
-        self.border_edges = edges.into();
         self
     }
 
@@ -240,11 +198,6 @@ impl Button {
     /// Set reverse the position between icon and label.
     pub fn reverse(mut self) -> Self {
         self.reverse = true;
-        self
-    }
-
-    pub fn not_centered(mut self) -> Self {
-        self.centered = false;
         self
     }
 
@@ -335,11 +288,12 @@ impl RenderOnce for Button {
             .id(self.id)
             .flex()
             .items_center()
-            .when(self.centered, |this| this.justify_center())
+            .justify_center()
             .cursor_pointer()
             .overflow_hidden()
-            .when(cx.theme().shadow && normal_style.shadow, |this| {
-                this.shadow_sm()
+            .map(|this| match self.rounded {
+                ButtonRounded::Normal => this.rounded(cx.theme().radius),
+                ButtonRounded::Full => this.rounded_full(),
             })
             .when(!style.no_padding(), |this| {
                 if self.label.is_none() && self.children.is_empty() {
@@ -361,50 +315,20 @@ impl RenderOnce for Button {
                     }
                 }
             })
-            .when(
-                self.border_corners.top_left && self.border_corners.bottom_left,
-                |this| match self.rounded {
-                    ButtonRounded::Small => this.rounded_l(px(cx.theme().radius * 0.5)),
-                    ButtonRounded::Medium => this.rounded_l(px(cx.theme().radius)),
-                    ButtonRounded::Large => this.rounded_l(px(cx.theme().radius * 1.6)),
-                    ButtonRounded::Size(px) => this.rounded_l(px),
-                    ButtonRounded::None => this.rounded_none(),
-                },
-            )
-            .when(
-                self.border_corners.top_right && self.border_corners.bottom_right,
-                |this| match self.rounded {
-                    ButtonRounded::Small => this.rounded_r(px(cx.theme().radius * 0.5)),
-                    ButtonRounded::Medium => this.rounded_r(px(cx.theme().radius)),
-                    ButtonRounded::Large => this.rounded_r(px(cx.theme().radius * 1.6)),
-                    ButtonRounded::Size(px) => this.rounded_r(px),
-                    ButtonRounded::None => this.rounded_none(),
-                },
-            )
-            .when(self.border_edges.left, |this| this.border_l_1())
-            .when(self.border_edges.right, |this| this.border_r_1())
-            .when(self.border_edges.top, |this| this.border_t_1())
-            .when(self.border_edges.bottom, |this| this.border_b_1())
-            .text_color(normal_style.fg)
             .when(self.selected, |this| {
                 let selected_style = style.selected(window, cx);
-                this.bg(selected_style.bg)
-                    .border_color(selected_style.border)
-                    .text_color(selected_style.fg)
+                this.bg(selected_style.bg).text_color(selected_style.fg)
             })
             .when(!self.disabled && !self.selected, |this| {
-                this.border_color(normal_style.border)
-                    .bg(normal_style.bg)
+                this.bg(normal_style.bg)
                     .when(normal_style.underline, |this| this.text_decoration_1())
                     .hover(|this| {
                         let hover_style = style.hovered(window, cx);
-                        this.bg(hover_style.bg).border_color(hover_style.border)
+                        this.bg(hover_style.bg)
                     })
                     .active(|this| {
                         let active_style = style.active(window, cx);
-                        this.bg(active_style.bg)
-                            .border_color(active_style.border)
-                            .text_color(active_style.fg)
+                        this.bg(active_style.bg).text_color(active_style.fg)
                     })
             })
             .when_some(
@@ -427,9 +351,9 @@ impl RenderOnce for Button {
                 this.cursor_not_allowed()
                     .bg(disabled_style.bg)
                     .text_color(disabled_style.fg)
-                    .border_color(disabled_style.border)
                     .shadow_none()
             })
+            .text_color(normal_style.fg)
             .child({
                 div()
                     .flex()
@@ -474,45 +398,26 @@ impl RenderOnce for Button {
 
 struct ButtonVariantStyle {
     bg: Hsla,
-    border: Hsla,
     fg: Hsla,
     underline: bool,
-    shadow: bool,
 }
 
 impl ButtonVariant {
     fn bg_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
-            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::NINE),
+            ButtonVariant::Primary => cx.theme().element_background,
             ButtonVariant::Custom(colors) => colors.color,
-            _ => cx.theme().transparent,
+            _ => cx.theme().ghost_element_background,
         }
     }
 
     fn text_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
-            ButtonVariant::Primary => match cx.theme().accent.name().to_string().as_str() {
-                "Sky" => cx.theme().base.darken(cx),
-                "Mint" => cx.theme().base.darken(cx),
-                "Lime" => cx.theme().base.darken(cx),
-                "Amber" => cx.theme().base.darken(cx),
-                "Yellow" => cx.theme().base.darken(cx),
-                _ => cx.theme().accent.step(cx, ColorScaleStep::ONE),
-            },
-            ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
+            ButtonVariant::Primary => cx.theme().element_foreground,
+            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Ghost => cx.theme().text_muted,
             ButtonVariant::Custom(colors) => colors.foreground,
-            _ => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
-        }
-    }
-
-    fn border_color(&self, _window: &Window, cx: &App) -> Hsla {
-        match self {
-            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::NINE),
-            ButtonVariant::Ghost | ButtonVariant::Link | ButtonVariant::Text => {
-                cx.theme().transparent
-            }
-            ButtonVariant::Custom(colors) => colors.border,
+            _ => cx.theme().text,
         }
     }
 
@@ -520,142 +425,79 @@ impl ButtonVariant {
         matches!(self, ButtonVariant::Link)
     }
 
-    fn shadow(&self, _window: &Window, _cx: &App) -> bool {
-        match self {
-            ButtonVariant::Primary => true,
-            ButtonVariant::Custom(c) => c.shadow,
-            _ => false,
-        }
-    }
-
     fn normal(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = self.bg_color(window, cx);
-        let border = self.border_color(window, cx);
         let fg = self.text_color(window, cx);
         let underline = self.underline(window, cx);
-        let shadow = self.shadow(window, cx);
 
-        ButtonVariantStyle {
-            bg,
-            border,
-            fg,
-            underline,
-            shadow,
-        }
+        ButtonVariantStyle { bg, fg, underline }
     }
 
     fn hovered(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::FOUR),
-            ButtonVariant::Link => cx.theme().transparent,
-            ButtonVariant::Text => cx.theme().transparent,
+            ButtonVariant::Primary => cx.theme().element_hover,
+            ButtonVariant::Ghost => cx.theme().ghost_element_hover,
+            ButtonVariant::Link => cx.theme().ghost_element_background,
+            ButtonVariant::Text => cx.theme().ghost_element_background,
             ButtonVariant::Custom(colors) => colors.hover,
         };
-        let border = self.border_color(window, cx);
         let fg = match self {
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::TWELVE),
-            ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::TEN),
+            ButtonVariant::Ghost => cx.theme().text,
+            ButtonVariant::Link => cx.theme().text_accent,
             _ => self.text_color(window, cx),
         };
         let underline = self.underline(window, cx);
-        let shadow = self.shadow(window, cx);
 
-        ButtonVariantStyle {
-            bg,
-            border,
-            fg,
-            underline,
-            shadow,
-        }
+        ButtonVariantStyle { bg, fg, underline }
     }
 
     fn active(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::THREE),
-            ButtonVariant::Link => cx.theme().transparent,
-            ButtonVariant::Text => cx.theme().transparent,
+            ButtonVariant::Primary => cx.theme().element_active,
+            ButtonVariant::Ghost => cx.theme().ghost_element_active,
             ButtonVariant::Custom(colors) => colors.active,
+            _ => cx.theme().ghost_element_background,
         };
-
         let fg = match self {
-            ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::NINE),
-            ButtonVariant::Text => cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Text => cx.theme().text,
             _ => self.text_color(window, cx),
         };
-
-        let border = self.border_color(window, cx);
         let underline = self.underline(window, cx);
-        let shadow = self.shadow(window, cx);
 
-        ButtonVariantStyle {
-            bg,
-            border,
-            fg,
-            underline,
-            shadow,
-        }
+        ButtonVariantStyle { bg, fg, underline }
     }
 
     fn selected(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Primary => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Ghost => cx.theme().base.step(cx, ColorScaleStep::THREE),
-            ButtonVariant::Link => cx.theme().transparent,
-            ButtonVariant::Text => cx.theme().transparent,
+            ButtonVariant::Primary => cx.theme().element_selected,
+            ButtonVariant::Ghost => cx.theme().ghost_element_selected,
             ButtonVariant::Custom(colors) => colors.active,
+            _ => cx.theme().ghost_element_background,
         };
-
         let fg = match self {
-            ButtonVariant::Link => cx.theme().accent.step(cx, ColorScaleStep::TEN),
-            ButtonVariant::Text => cx.theme().accent.step(cx, ColorScaleStep::TEN),
+            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Text => cx.theme().text,
             _ => self.text_color(window, cx),
         };
-
-        let border = self.border_color(window, cx);
         let underline = self.underline(window, cx);
-        let shadow = self.shadow(window, cx);
 
-        ButtonVariantStyle {
-            bg,
-            border,
-            fg,
-            underline,
-            shadow,
-        }
+        ButtonVariantStyle { bg, fg, underline }
     }
 
     fn disabled(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Link | ButtonVariant::Ghost | ButtonVariant::Text => {
-                cx.theme().transparent
+                cx.theme().ghost_element_disabled
             }
-            _ => cx.theme().base.step(cx, ColorScaleStep::THREE),
+            _ => cx.theme().element_disabled,
         };
-
         let fg = match self {
-            ButtonVariant::Primary => match cx.theme().accent.name().to_string().as_str() {
-                "Sky" => cx.theme().base.darken(cx),
-                "Mint" => cx.theme().base.darken(cx),
-                "Lime" => cx.theme().base.darken(cx),
-                "Amber" => cx.theme().base.darken(cx),
-                "Yellow" => cx.theme().base.darken(cx),
-                _ => cx.theme().accent.step(cx, ColorScaleStep::ONE),
-            },
-            _ => cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
+            ButtonVariant::Primary => cx.theme().text_muted, // TODO: use a different color?
+            _ => cx.theme().text_muted,
         };
-
-        let border = bg;
         let underline = self.underline(window, cx);
-        let shadow = false;
 
-        ButtonVariantStyle {
-            bg,
-            border,
-            fg,
-            underline,
-            shadow,
-        }
+        ButtonVariantStyle { bg, fg, underline }
     }
 }

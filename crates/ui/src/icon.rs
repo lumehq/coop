@@ -1,12 +1,11 @@
-use crate::{
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    Sizable, Size,
-};
 use gpui::{
     prelude::FluentBuilder as _, svg, AnyElement, App, AppContext, Entity, Hsla, IntoElement,
     Radians, Render, RenderOnce, SharedString, StyleRefinement, Styled, Svg, Transformation,
     Window,
 };
+use theme::ActiveTheme;
+
+use crate::{Sizable, Size};
 
 #[derive(IntoElement, Clone)]
 pub enum IconName {
@@ -295,9 +294,7 @@ impl Render for Icon {
         _window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
-        let text_color = self
-            .text_color
-            .unwrap_or_else(|| cx.theme().base.step(cx, ColorScaleStep::ELEVEN));
+        let text_color = self.text_color.unwrap_or_else(|| cx.theme().icon);
 
         svg()
             .flex_none()

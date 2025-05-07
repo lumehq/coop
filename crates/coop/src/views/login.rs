@@ -4,19 +4,19 @@ use account::Account;
 use common::create_qr;
 use global::get_client_keys;
 use gpui::{
-    div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
+    div, img, prelude::FluentBuilder, red, relative, AnyElement, App, AppContext, Context, Entity,
     EventEmitter, FocusHandle, Focusable, Image, IntoElement, ParentElement, Render, SharedString,
     Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     input::{InputEvent, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, Sizable, Size, StyledExt,
 };
 
@@ -307,9 +307,7 @@ impl Render for Login {
                                     )
                                     .child(
                                         div()
-                                            .text_color(
-                                                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                                            )
+                                            .text_color(cx.theme().text_muted)
                                             .child("Continue with Private Key or Bunker"),
                                     ),
                             )
@@ -334,7 +332,7 @@ impl Render for Login {
                                             div()
                                                 .text_xs()
                                                 .text_center()
-                                                .text_color(cx.theme().danger)
+                                                .text_color(red())
                                                 .child(error),
                                         )
                                     }),
@@ -348,7 +346,7 @@ impl Render for Login {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                    .bg(cx.theme().surface_background)
                     .child(
                         div()
                             .flex()
@@ -364,17 +362,13 @@ impl Render for Login {
                                         div()
                                             .font_semibold()
                                             .line_height(relative(1.2))
-                                            .text_color(
-                                                cx.theme().base.step(cx, ColorScaleStep::TWELVE),
-                                            )
+                                            .text_color(cx.theme().text)
                                             .child("Continue with Nostr Connect"),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
-                                            .text_color(
-                                                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                                            )
+                                            .text_color(cx.theme().text_muted)
                                             .child("Use Nostr Connect apps to scan the code"),
                                     ),
                             )
@@ -391,10 +385,10 @@ impl Render for Login {
                                         .gap_2()
                                         .rounded_2xl()
                                         .shadow_md()
-                                        .when(cx.theme().appearance.is_dark(), |this| {
-                                            this.shadow_none().border_1().border_color(
-                                                cx.theme().base.step(cx, ColorScaleStep::SIX),
-                                            )
+                                        .when(cx.theme().mode.is_dark(), |this| {
+                                            this.shadow_none()
+                                                .border_1()
+                                                .border_color(cx.theme().border)
                                         })
                                         .bg(cx.theme().background)
                                         .child(img(qr).h_64()),

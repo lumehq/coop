@@ -1,15 +1,12 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, percentage, prelude::FluentBuilder, px, App, ClickEvent, Div, Img, InteractiveElement,
+    div, percentage, prelude::FluentBuilder, App, ClickEvent, Div, Img, InteractiveElement,
     IntoElement, ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
     Window,
 };
-use ui::{
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    tooltip::Tooltip,
-    Collapsible, Icon, IconName, Sizable, StyledExt,
-};
+use theme::ActiveTheme;
+use ui::{tooltip::Tooltip, Collapsible, Icon, IconName, Sizable, StyledExt};
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -96,9 +93,9 @@ impl RenderOnce for Parent {
                     .gap_2()
                     .px_2()
                     .h_8()
-                    .rounded(px(cx.theme().radius))
+                    .rounded(cx.theme().radius)
                     .text_sm()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .text_color(cx.theme().text_muted)
                     .font_medium()
                     .child(
                         Icon::new(IconName::CaretDown)
@@ -118,7 +115,7 @@ impl RenderOnce for Parent {
                             Tooltip::new(tooltip.clone(), window, cx).into()
                         })
                     })
-                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                    .hover(|this| this.bg(cx.theme().elevated_surface_background))
                     .on_click(move |ev, window, cx| handler(ev, window, cx)),
             )
             .when(!self.collapsed, |this| {
@@ -204,9 +201,9 @@ impl RenderOnce for Folder {
                     .gap_2()
                     .px_2()
                     .h_8()
-                    .rounded(px(cx.theme().radius))
+                    .rounded(cx.theme().radius)
                     .text_sm()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .text_color(cx.theme().text_muted)
                     .font_medium()
                     .child(
                         Icon::new(IconName::CaretDown)
@@ -226,7 +223,7 @@ impl RenderOnce for Folder {
                             Tooltip::new(tooltip.clone(), window, cx).into()
                         })
                     })
-                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+                    .hover(|this| this.bg(cx.theme().elevated_surface_background))
                     .on_click(move |ev, window, cx| handler(ev, window, cx)),
             )
             .when(!self.collapsed, |this| {
@@ -291,7 +288,7 @@ impl RenderOnce for FolderItem {
             .items_center()
             .justify_between()
             .text_sm()
-            .rounded(px(cx.theme().radius))
+            .rounded(cx.theme().radius)
             .child(
                 div()
                     .flex_1()
@@ -312,11 +309,11 @@ impl RenderOnce for FolderItem {
                                     .items_center()
                                     .size_5()
                                     .rounded_full()
-                                    .bg(cx.theme().accent.step(cx, ColorScaleStep::THREE))
+                                    .bg(cx.theme().element_disabled)
                                     .child(
-                                        Icon::new(IconName::UsersThreeFill).xsmall().text_color(
-                                            cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
-                                        ),
+                                        Icon::new(IconName::UsersThreeFill)
+                                            .xsmall()
+                                            .text_color(cx.theme().text_accent),
                                     ),
                             )
                         }
@@ -328,11 +325,11 @@ impl RenderOnce for FolderItem {
                     div()
                         .flex_shrink_0()
                         .text_xs()
-                        .text_color(cx.theme().base.step(cx, ColorScaleStep::TEN))
+                        .text_color(cx.theme().text_placeholder)
                         .child(description),
                 )
             })
-            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+            .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |ev, window, cx| handler(ev, window, cx))
     }
 }

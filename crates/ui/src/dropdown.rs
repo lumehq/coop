@@ -5,11 +5,11 @@ use gpui::{
     Pixels, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
     WeakEntity, Window,
 };
+use theme::ActiveTheme;
 
 use crate::{
     h_flex,
     list::{self, List, ListDelegate, ListItem},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, Icon, IconName, Sizable, Size, StyleSized, StyledExt,
 };
 
@@ -216,7 +216,7 @@ where
             h_flex()
                 .justify_center()
                 .py_6()
-                .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                .text_color(cx.theme().text_muted)
                 .child(Icon::new(IconName::Inbox).size(px(28.)))
                 .into_any_element()
         }
@@ -545,18 +545,15 @@ where
                 .when_some(self.title_prefix.clone(), |this, prefix| this.child(prefix))
                 .child(title.clone())
         } else {
-            div()
-                .text_color(cx.theme().accent.step(cx, ColorScaleStep::ELEVEN))
-                .child(
-                    self.placeholder
-                        .clone()
-                        .unwrap_or_else(|| "Please select".into()),
-                )
+            div().text_color(cx.theme().text_accent).child(
+                self.placeholder
+                    .clone()
+                    .unwrap_or_else(|| "Please select".into()),
+            )
         };
 
         title.when(self.disabled, |this| {
-            this.cursor_not_allowed()
-                .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+            this.cursor_not_allowed().text_color(cx.theme().text_muted)
         })
     }
 }
@@ -623,9 +620,9 @@ where
                     .justify_between()
                     .bg(cx.theme().background)
                     .border_1()
-                    .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
-                    .rounded(px(cx.theme().radius))
-                    .when(cx.theme().shadow, |this| this.shadow_sm())
+                    .border_color(cx.theme().border)
+                    .rounded(cx.theme().radius)
+                    .shadow_sm()
                     .map(|this| {
                         if self.disabled {
                             this.cursor_not_allowed()
@@ -672,10 +669,8 @@ where
                                     Icon::new(icon)
                                         .xsmall()
                                         .text_color(match self.disabled {
-                                            true => cx.theme().base.step(cx, ColorScaleStep::TEN),
-                                            false => {
-                                                cx.theme().base.step(cx, ColorScaleStep::ELEVEN)
-                                            }
+                                            true => cx.theme().icon_muted,
+                                            false => cx.theme().icon,
                                         })
                                         .when(self.disabled, |this| this.cursor_not_allowed()),
                                 )
@@ -706,10 +701,8 @@ where
                                         .mt_1p5()
                                         .bg(cx.theme().background)
                                         .border_1()
-                                        .border_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::SEVEN),
-                                        )
-                                        .rounded(px(cx.theme().radius))
+                                        .border_color(cx.theme().border_focused)
+                                        .rounded(cx.theme().radius)
                                         .shadow_md()
                                         .on_mouse_down_out(|_, _, cx| {
                                             cx.dispatch_action(&Escape);

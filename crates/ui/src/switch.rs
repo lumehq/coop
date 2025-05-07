@@ -1,14 +1,13 @@
-use crate::{
-    h_flex,
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    Disableable, Side, Sizable, Size,
-};
+use std::{cell::RefCell, rc::Rc, time::Duration};
+
 use gpui::{
     div, prelude::FluentBuilder as _, px, Animation, AnimationExt as _, AnyElement, App, Element,
     ElementId, GlobalElementId, InteractiveElement, IntoElement, LayoutId, ParentElement as _,
     SharedString, Styled as _, Window,
 };
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use theme::ActiveTheme;
+
+use crate::{h_flex, Disableable, Side, Sizable, Size};
 
 type OnClick = Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>;
 
@@ -110,11 +109,8 @@ impl Element for Switch {
             let on_click = self.on_click.clone();
 
             let (bg, toggle_bg) = match self.checked {
-                true => (
-                    theme.accent.step(cx, ColorScaleStep::NINE),
-                    theme.background,
-                ),
-                false => (theme.base.step(cx, ColorScaleStep::THREE), theme.background),
+                true => (theme.icon_accent, theme.background),
+                false => (theme.element_background, theme.background),
             };
 
             let (bg, toggle_bg) = match self.disabled {
@@ -126,10 +122,12 @@ impl Element for Switch {
                 Size::XSmall | Size::Small => (px(28.), px(16.)),
                 _ => (px(36.), px(20.)),
             };
+
             let bar_width = match self.size {
                 Size::XSmall | Size::Small => px(12.),
                 _ => px(16.),
             };
+
             let inset = px(2.);
 
             let mut element = div()
@@ -150,7 +148,7 @@ impl Element for Switch {
                                 .flex()
                                 .items_center()
                                 .border(inset)
-                                .border_color(theme.transparent)
+                                .border_color(theme.border_transparent)
                                 .bg(bg)
                                 .when(!self.disabled, |this| this.cursor_pointer())
                                 .child(

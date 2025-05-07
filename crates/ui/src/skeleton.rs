@@ -1,9 +1,10 @@
-use crate::theme::{scale::ColorScaleStep, ActiveTheme};
+use std::time::Duration;
+
 use gpui::{
     bounce, div, ease_in_out, Animation, AnimationExt, Div, IntoElement, ParentElement as _,
     RenderOnce, Styled,
 };
-use std::time::Duration;
+use theme::ActiveTheme;
 
 #[derive(IntoElement)]
 pub struct Skeleton {
@@ -34,7 +35,7 @@ impl RenderOnce for Skeleton {
     fn render(self, _window: &mut gpui::Window, cx: &mut gpui::App) -> impl IntoElement {
         div().child(
             self.base
-                .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                .bg(cx.theme().ghost_element_disabled)
                 .with_animation(
                     "skeleton",
                     Animation::new(Duration::from_secs(2))

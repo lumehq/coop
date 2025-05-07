@@ -1,8 +1,10 @@
-use crate::theme::scale::ColorScaleStep;
-use crate::theme::ActiveTheme;
+use gpui::{
+    div, prelude::FluentBuilder, px, AnyElement, App, Div, ElementId, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, Stateful, StatefulInteractiveElement, Styled, Window,
+};
+use theme::ActiveTheme;
+
 use crate::Selectable;
-use gpui::prelude::FluentBuilder;
-use gpui::*;
 
 pub mod tab_bar;
 
@@ -80,25 +82,24 @@ impl RenderOnce for Tab {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (text_color, bg_color, hover_bg_color) = match (self.selected, self.disabled) {
             (true, false) => (
-                cx.theme().base.step(cx, ColorScaleStep::TWELVE),
-                cx.theme().base.step(cx, ColorScaleStep::FIVE),
-                cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                cx.theme().text,
+                cx.theme().tab_active_background,
+                cx.theme().tab_hover_background,
             ),
             (false, false) => (
-                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                cx.theme().transparent,
-                cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                cx.theme().text_muted,
+                cx.theme().ghost_element_background,
+                cx.theme().tab_hover_background,
             ),
-            // disabled
             (true, true) => (
-                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                cx.theme().transparent,
-                cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                cx.theme().text_muted,
+                cx.theme().ghost_element_background,
+                cx.theme().tab_hover_background,
             ),
             (false, true) => (
-                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                cx.theme().transparent,
-                cx.theme().base.step(cx, ColorScaleStep::FOUR),
+                cx.theme().text_muted,
+                cx.theme().ghost_element_background,
+                cx.theme().tab_hover_background,
             ),
         };
 
@@ -115,7 +116,7 @@ impl RenderOnce for Tab {
             .text_ellipsis()
             .text_color(text_color)
             .bg(bg_color)
-            .rounded(px(cx.theme().radius))
+            .rounded(cx.theme().radius)
             .hover(|this| this.bg(hover_bg_color))
             .when_some(self.prefix, |this, prefix| {
                 this.child(prefix).text_color(text_color)

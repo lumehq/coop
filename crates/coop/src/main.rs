@@ -27,7 +27,8 @@ use nostr_sdk::{
 };
 use smol::Timer;
 use std::{collections::HashSet, mem, sync::Arc, time::Duration};
-use ui::{theme::Theme, Root};
+use theme::Theme;
+use ui::Root;
 
 pub(crate) mod asset;
 pub(crate) mod chatspace;
@@ -286,7 +287,6 @@ fn main() {
         // Open a window with default options
         cx.open_window(opts, |window, cx| {
             // Automatically sync theme with system appearance
-            #[cfg(not(target_os = "linux"))]
             window
                 .observe_window_appearance(|window, cx| {
                     Theme::sync_system_appearance(Some(window), cx);

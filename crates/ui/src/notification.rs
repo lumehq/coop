@@ -1,26 +1,23 @@
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    theme::{
-        colors::{blue, green, red, yellow},
-        scale::ColorScaleStep,
-        ActiveTheme as _,
-    },
-    v_flex, Icon, IconName, Sizable as _, StyledExt,
-};
-use gpui::{
-    div, prelude::FluentBuilder, px, Animation, AnimationExt, App, AppContext, ClickEvent, Context,
-    DismissEvent, ElementId, Entity, EventEmitter, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    Window,
-};
-use smol::Timer;
 use std::{
     any::TypeId,
     collections::{HashMap, VecDeque},
     sync::Arc,
     time::Duration,
+};
+
+use gpui::{
+    blue, div, green, prelude::FluentBuilder, px, red, yellow, Animation, AnimationExt, App,
+    AppContext, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window,
+};
+use smol::Timer;
+use theme::ActiveTheme;
+
+use crate::{
+    animation::cubic_bezier,
+    button::{Button, ButtonVariants as _},
+    h_flex, v_flex, Icon, IconName, Sizable as _, StyledExt,
 };
 
 pub enum NotificationType {
@@ -57,7 +54,7 @@ pub struct Notification {
     ///
     /// None means the notification will be added to the end of the list.
     id: NotificationId,
-    type_: NotificationType,
+    kind: NotificationType,
     title: Option<SharedString>,
     message: SharedString,
     icon: Option<Icon>,
@@ -110,7 +107,7 @@ impl Notification {
             id: id.into(),
             title: None,
             message: message.into(),
-            type_: NotificationType::Info,
+            kind: NotificationType::Info,
             icon: None,
             autohide: true,
             on_click: None,
@@ -169,7 +166,7 @@ impl Notification {
 
     /// Set the type of the notification, default is NotificationType::Info.
     pub fn with_type(mut self, type_: NotificationType) -> Self {
-        self.type_ = type_;
+        self.kind = type_;
         self
     }
 
@@ -217,16 +214,13 @@ impl Render for Notification {
         let closing = self.closing;
         let icon = match self.icon.clone() {
             Some(icon) => icon,
-            None => match self.type_ {
-                NotificationType::Info => {
-                    Icon::new(IconName::Info).text_color(blue().step(cx, ColorScaleStep::NINE))
+            None => match self.kind {
+                NotificationType::Info => Icon::new(IconName::Info).text_color(blue()),
+                NotificationType::Error => Icon::new(IconName::CloseCircle).text_color(red()),
+                NotificationType::Success => Icon::new(IconName::CheckCircle).text_color(green()),
+                NotificationType::Warning => {
+                    Icon::new(IconName::TriangleAlert).text_color(yellow())
                 }
-                NotificationType::Error => Icon::new(IconName::CloseCircle)
-                    .text_color(red().step(cx, ColorScaleStep::NINE)),
-                NotificationType::Success => Icon::new(IconName::CheckCircle)
-                    .text_color(green().step(cx, ColorScaleStep::NINE)),
-                NotificationType::Warning => Icon::new(IconName::TriangleAlert)
-                    .text_color(yellow().step(cx, ColorScaleStep::NINE)),
             },
         };
 
@@ -237,9 +231,9 @@ impl Render for Notification {
             .relative()
             .w_72()
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
-            .bg(cx.theme().background)
-            .rounded(px(cx.theme().radius))
+            .border_color(cx.theme().border)
+            .bg(cx.theme().surface_background)
+            .rounded(cx.theme().radius)
             .shadow_md()
             .p_2()
             .gap_3()

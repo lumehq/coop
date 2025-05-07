@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{
@@ -8,7 +10,7 @@ use chats::{
 use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
-    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, relative, svg, white,
+    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
     AnyElement, App, AppContext, Context, Element, Empty, Entity, EventEmitter, Flatten,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
     ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
@@ -18,7 +20,7 @@ use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use std::{collections::HashMap, sync::Arc};
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
@@ -27,7 +29,6 @@ use ui::{
     notification::Notification,
     popup_menu::PopupMenu,
     text::RichText,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
@@ -388,7 +389,7 @@ impl Chat {
                         .entry(item.id)
                         .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
 
-                    this.hover(|this| this.bg(cx.theme().accent.step(cx, ColorScaleStep::ONE)))
+                    this.hover(|this| this.bg(cx.theme().surface_background))
                         .text_sm()
                         .child(
                             div()
@@ -397,10 +398,8 @@ impl Chat {
                                 .top_0()
                                 .w(px(2.))
                                 .h_full()
-                                .bg(cx.theme().transparent)
-                                .group_hover("", |this| {
-                                    this.bg(cx.theme().accent.step(cx, ColorScaleStep::NINE))
-                                }),
+                                .bg(cx.theme().border_transparent)
+                                .group_hover("", |this| this.bg(cx.theme().element_active)),
                         )
                         .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
                         .child(
@@ -419,9 +418,7 @@ impl Chat {
                                         )
                                         .child(
                                             div()
-                                                .text_color(
-                                                    cx.theme().base.step(cx, ColorScaleStep::NINE),
-                                                )
+                                                .text_color(cx.theme().text_placeholder)
                                                 .child(item.ago()),
                                         ),
                                 )
@@ -437,12 +434,12 @@ impl Chat {
                             .top_0()
                             .w(px(2.))
                             .h_full()
-                            .bg(cx.theme().transparent)
-                            .group_hover("", |this| this.bg(cx.theme().danger)),
+                            .bg(cx.theme().border_transparent)
+                            .group_hover("", |this| this.bg(red())),
                     )
                     .child(img("brand/avatar.png").size_8().flex_shrink_0())
                     .text_sm()
-                    .text_color(cx.theme().danger)
+                    .text_color(red())
                     .child(content.clone()),
                 RoomMessage::Announcement => this
                     .w_full()
@@ -453,13 +450,13 @@ impl Chat {
                     .justify_center()
                     .text_center()
                     .text_xs()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
+                    .text_color(cx.theme().text_placeholder)
                     .line_height(relative(1.3))
                     .child(
                         svg()
                             .path("brand/coop.svg")
                             .size_10()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                            .text_color(cx.theme().elevated_surface_background),
                     )
                     .child(DESC),
             })
@@ -492,10 +489,12 @@ impl Panel for Chat {
                                 .items_center()
                                 .size_5()
                                 .rounded_full()
-                                .bg(cx.theme().accent.step(cx, ColorScaleStep::THREE))
-                                .child(Icon::new(IconName::UsersThreeFill).xsmall().text_color(
-                                    cx.theme().accent.step(cx, ColorScaleStep::TWELVE),
-                                )),
+                                .bg(cx.theme().element_disabled)
+                                .child(
+                                    Icon::new(IconName::UsersThreeFill)
+                                        .xsmall()
+                                        .text_color(cx.theme().icon_accent),
+                                ),
                         )
                     }
                 })
@@ -567,7 +566,7 @@ impl Render for Chat {
                                         ))
                                         .size_16()
                                         .shadow_lg()
-                                        .rounded(px(cx.theme().radius))
+                                        .rounded(cx.theme().radius)
                                         .object_fit(ObjectFit::ScaleDown),
                                     )
                                     .child(
@@ -580,7 +579,7 @@ impl Render for Chat {
                                             .items_center()
                                             .justify_center()
                                             .rounded_full()
-                                            .bg(cx.theme().danger)
+                                            .bg(red())
                                             .child(
                                                 Icon::new(IconName::Close)
                                                     .size_2()
@@ -603,9 +602,7 @@ impl Render for Chat {
                                         .flex()
                                         .items_center()
                                         .gap_1()
-                                        .text_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                                        )
+                                        .text_color(cx.theme().text_muted)
                                         .child(
                                             Button::new("upload")
                                                 .icon(Icon::new(IconName::Upload))

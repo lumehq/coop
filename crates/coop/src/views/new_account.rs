@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use account::Account;
 use async_utility::task::spawn;
 use common::nip96_upload;
@@ -9,13 +11,12 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
-use std::str::FromStr;
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     input::TextInput,
     popup_menu::PopupMenu,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
@@ -290,7 +291,7 @@ impl Render for NewAccount {
                             .my_2()
                             .w_full()
                             .h_px()
-                            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                            .bg(cx.theme().elevated_surface_background),
                     )
                     .child(
                         Button::new("submit")

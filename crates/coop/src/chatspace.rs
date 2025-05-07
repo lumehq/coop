@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use account::Account;
 use anyhow::Error;
 use global::get_client;
@@ -9,11 +11,10 @@ use gpui::{
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
-use std::sync::Arc;
+use theme::{ActiveTheme, Theme, ThemeMode};
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::{dock::DockPlacement, panel::PanelView, DockArea, DockItem},
-    theme::{ActiveTheme, Appearance, Theme},
     ContextModal, IconName, Root, Sizable, TitleBar,
 };
 
@@ -324,7 +325,7 @@ impl Render for ChatSpace {
                                                         .xsmall()
                                                         .ghost()
                                                         .map(|this| {
-                                                            if cx.theme().appearance.is_dark() {
+                                                            if cx.theme().mode.is_dark() {
                                                                 this.icon(IconName::Sun)
                                                             } else {
                                                                 this.icon(IconName::Moon)
@@ -332,15 +333,15 @@ impl Render for ChatSpace {
                                                         })
                                                         .on_click(cx.listener(
                                                             |_, _, window, cx| {
-                                                                if cx.theme().appearance.is_dark() {
+                                                                if cx.theme().mode.is_dark() {
                                                                     Theme::change(
-                                                                        Appearance::Light,
+                                                                        ThemeMode::Light,
                                                                         Some(window),
                                                                         cx,
                                                                     );
                                                                 } else {
                                                                     Theme::change(
-                                                                        Appearance::Dark,
+                                                                        ThemeMode::Dark,
                                                                         Some(window),
                                                                         cx,
                                                                     );

@@ -2,16 +2,16 @@ use async_utility::task::spawn;
 use common::nip96_upload;
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
-    div, img, prelude::FluentBuilder, px, App, AppContext, Context, Entity, Flatten, IntoElement,
+    div, img, prelude::FluentBuilder, App, AppContext, Context, Entity, Flatten, IntoElement,
     ParentElement, PathPromptOptions, Render, Styled, Task, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
 use std::{str::FromStr, time::Duration};
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     input::TextInput,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, IconName, Sizable, Size,
 };
 
@@ -249,8 +249,8 @@ impl Render for Profile {
                 div()
                     .w_full()
                     .h_32()
-                    .bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
-                    .rounded(px(cx.theme().radius))
+                    .bg(cx.theme().surface_background)
+                    .rounded(cx.theme().radius)
                     .flex()
                     .flex_col()
                     .items_center()

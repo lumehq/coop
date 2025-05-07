@@ -1,6 +1,14 @@
-use super::scale::{ColorScaleSet, ColorScales};
-use crate::theme::scale::ColorScale;
 use gpui::{hsla, Hsla, Rgba};
+
+use crate::scale::{ColorScale, ColorScaleSet, ColorScales};
+
+pub(crate) fn neutral() -> ColorScaleSet {
+    gray()
+}
+
+pub(crate) fn brand() -> ColorScaleSet {
+    yellow()
+}
 
 /// Make a [gpui::Hsla] color.
 ///

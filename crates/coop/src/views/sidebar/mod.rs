@@ -15,6 +15,7 @@ use gpui::{
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use itertools::Itertools;
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonCustomVariant, ButtonVariants},
     dock_area::{
@@ -23,7 +24,6 @@ use ui::{
     },
     popup_menu::{PopupMenu, PopupMenuExt},
     skeleton::Skeleton,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     IconName, Sizable, StyledExt,
 };
 
@@ -305,7 +305,7 @@ impl Render for Sidebar {
                             .items_center()
                             .text_xs()
                             .font_semibold()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
+                            .text_color(cx.theme().text_placeholder)
                             .child("Messages")
                             .child(
                                 Button::new("menu")
@@ -320,13 +320,10 @@ impl Render for Sidebar {
                                     .small()
                                     .custom(
                                         ButtonCustomVariant::new(window, cx)
-                                            .foreground(
-                                                cx.theme().base.step(cx, ColorScaleStep::NINE),
-                                            )
-                                            .color(cx.theme().transparent)
-                                            .hover(cx.theme().transparent)
-                                            .active(cx.theme().transparent)
-                                            .border(cx.theme().transparent),
+                                            .foreground(cx.theme().text_placeholder)
+                                            .color(cx.theme().ghost_element_background)
+                                            .hover(cx.theme().ghost_element_background)
+                                            .active(cx.theme().ghost_element_background),
                                     )
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.split_into_folders(cx);

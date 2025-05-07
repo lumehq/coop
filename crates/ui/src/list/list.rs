@@ -1,9 +1,5 @@
-use crate::{
-    input::{InputEvent, TextInput},
-    scroll::{Scrollbar, ScrollbarState},
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, Icon, IconName, Size,
-};
+use std::{cell::Cell, rc::Rc, time::Duration};
+
 use gpui::{
     actions, div, prelude::FluentBuilder, px, uniform_list, AnyElement, App, AppContext, Context,
     Entity, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding, Length,
@@ -11,7 +7,13 @@ use gpui::{
     Subscription, Task, UniformListScrollHandle, Window,
 };
 use smol::Timer;
-use std::{cell::Cell, rc::Rc, time::Duration};
+use theme::ActiveTheme;
+
+use crate::{
+    input::{InputEvent, TextInput},
+    scroll::{Scrollbar, ScrollbarState},
+    v_flex, Icon, IconName, Size,
+};
 
 actions!(list, [Cancel, Confirm, SelectPrev, SelectNext]);
 
@@ -122,10 +124,7 @@ where
         let query_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .appearance(false)
-                .prefix(|_window, cx| {
-                    Icon::new(IconName::Search)
-                        .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                })
+                .prefix(|_window, cx| Icon::new(IconName::Search).text_color(cx.theme().text_muted))
                 .placeholder("Search...")
                 .cleanable()
         });
@@ -379,9 +378,9 @@ where
                             .left(px(0.))
                             .right(px(0.))
                             .bottom(px(0.))
-                            .bg(cx.theme().accent.step(cx, ColorScaleStep::SIX))
+                            .bg(cx.theme().element_background)
                             .border_1()
-                            .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE)),
+                            .border_color(cx.theme().border_selected),
                     )
                 })
             })
@@ -394,7 +393,7 @@ where
                         .right(px(0.))
                         .bottom(px(0.))
                         .border_1()
-                        .border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE)),
+                        .border_color(cx.theme().element_active),
                 )
             })
             .on_mouse_down(
@@ -471,7 +470,7 @@ where
                             _ => this.py_1().px_2(),
                         })
                         .border_b_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                        .border_color(cx.theme().border)
                         .child(input),
                 )
             })

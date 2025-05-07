@@ -2,8 +2,7 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce,
     SharedString, Styled,
 };
-
-use crate::theme::{scale::ColorScaleStep, ActiveTheme};
+use theme::ActiveTheme;
 
 /// A divider that can be either vertical or horizontal.
 #[derive(IntoElement)]
@@ -65,9 +64,7 @@ impl RenderOnce for Divider {
                         Axis::Vertical => this.w(px(2.)).h_full(),
                         Axis::Horizontal => this.h(px(2.)).w_full(),
                     })
-                    .bg(self
-                        .color
-                        .unwrap_or(cx.theme().base.step(cx, ColorScaleStep::FIVE))),
+                    .bg(self.color.unwrap_or(cx.theme().border_variant)),
             )
             .when_some(self.label, |this, label| {
                 this.child(

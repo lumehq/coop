@@ -1,8 +1,24 @@
+pub use event::InteractiveElementExt;
+pub use focusable::FocusableCycle;
+pub use icon::*;
+pub use root::{ContextModal, Root};
+pub use styled::*;
+pub use title_bar::*;
+pub use window_border::{window_border, WindowBorder};
+
+pub use crate::Disableable;
+
+mod event;
+mod focusable;
+mod icon;
+mod root;
+mod styled;
+mod title_bar;
+mod window_border;
+
 pub mod animation;
 pub mod button;
-pub mod button_group;
 pub mod checkbox;
-pub mod clipboard;
 pub mod context_menu;
 pub mod divider;
 pub mod dock_area;
@@ -16,33 +32,13 @@ pub mod modal;
 pub mod notification;
 pub mod popover;
 pub mod popup_menu;
-pub mod progress;
-pub mod radio;
 pub mod resizable;
 pub mod scroll;
 pub mod skeleton;
 pub mod switch;
 pub mod tab;
 pub mod text;
-pub mod theme;
 pub mod tooltip;
-
-pub use crate::Disableable;
-pub use event::InteractiveElementExt;
-pub use focusable::FocusableCycle;
-pub use icon::*;
-pub use root::{ContextModal, Root};
-pub use styled::*;
-pub use title_bar::*;
-pub use window_border::{window_border, WindowBorder};
-
-mod event;
-mod focusable;
-mod icon;
-mod root;
-mod styled;
-mod title_bar;
-mod window_border;
 
 /// Initialize the UI module.
 ///

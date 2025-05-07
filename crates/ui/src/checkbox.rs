@@ -1,13 +1,11 @@
-use crate::{
-    h_flex,
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, Disableable, IconName, Selectable,
-};
 use gpui::{
     div, prelude::FluentBuilder as _, relative, svg, App, ElementId, InteractiveElement,
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _,
     Styled as _, Window,
 };
+use theme::ActiveTheme;
+
+use crate::{h_flex, v_flex, Disableable, IconName, Selectable};
 
 type OnClick = Option<Box<dyn Fn(&bool, &mut Window, &mut App) + 'static>>;
 
@@ -68,15 +66,9 @@ impl Selectable for Checkbox {
 impl RenderOnce for Checkbox {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (color, icon_color) = if self.disabled {
-            (
-                cx.theme().base.step(cx, ColorScaleStep::THREE),
-                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-            )
+            (cx.theme().ghost_element_disabled, cx.theme().text_muted)
         } else {
-            (
-                cx.theme().accent.step(cx, ColorScaleStep::NINE),
-                cx.theme().accent.step(cx, ColorScaleStep::ONE),
-            )
+            (cx.theme().text_accent, cx.theme().surface_background)
         };
 
         h_flex()
@@ -93,7 +85,7 @@ impl RenderOnce for Checkbox {
                     .size_4()
                     .flex_shrink_0()
                     .map(|this| match self.checked {
-                        false => this.bg(cx.theme().transparent),
+                        false => this.bg(cx.theme().ghost_element_background),
                         _ => this.bg(color),
                     })
                     .child(
@@ -111,22 +103,21 @@ impl RenderOnce for Checkbox {
             )
             .map(|this| {
                 if let Some(label) = self.label {
-                    this.text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                        .child(
-                            div()
-                                .w_full()
-                                .overflow_x_hidden()
-                                .text_ellipsis()
-                                .line_height(relative(1.))
-                                .child(label),
-                        )
+                    this.text_color(cx.theme().text_muted).child(
+                        div()
+                            .w_full()
+                            .overflow_x_hidden()
+                            .text_ellipsis()
+                            .line_height(relative(1.))
+                            .child(label),
+                    )
                 } else {
                     this
                 }
             })
             .when(self.disabled, |this| {
                 this.cursor_not_allowed()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::TEN))
+                    .text_color(cx.theme().text_placeholder)
             })
             .when_some(
                 self.on_click.filter(|_| !self.disabled),

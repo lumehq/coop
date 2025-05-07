@@ -1,3 +1,5 @@
+use std::{cell::Cell, ops::Range, rc::Rc};
+
 use gpui::{
     actions, div, point, prelude::FluentBuilder as _, px, AnyElement, App, AppContext, Bounds,
     ClipboardItem, Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
@@ -6,7 +8,7 @@ use gpui::{
     ScrollWheelEvent, SharedString, Styled as _, Subscription, UTF16Selection, Window, WrappedLine,
 };
 use smallvec::SmallVec;
-use std::{cell::Cell, ops::Range, rc::Rc};
+use theme::ActiveTheme;
 use unicode_segmentation::*;
 
 use super::{blink_cursor::BlinkCursor, change::Change, element::TextElement};
@@ -14,7 +16,6 @@ use crate::{
     history::History,
     indicator::Indicator,
     scroll::{Scrollbar, ScrollbarAxis, ScrollbarState},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     Sizable, Size, StyleSized, StyledExt,
 };
 
@@ -1624,9 +1625,8 @@ impl Render for TextInput {
             .cursor_text()
             .when(self.multi_line, |this| this.h_auto())
             .when(self.appearance, |this| {
-                this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                    .rounded(px(cx.theme().radius))
-                    .when(cx.theme().shadow, |this| this.shadow_sm())
+                this.bg(cx.theme().elevated_surface_background)
+                    .rounded(cx.theme().radius)
                     .when(focused, |this| this.outline(window, cx))
                     .when(prefix.is_none(), |this| this.input_pl(self.size))
                     .when(suffix.is_none(), |this| this.input_pr(self.size))
@@ -1642,7 +1642,7 @@ impl Render for TextInput {
                     .child(TextElement::new(cx.entity().clone())),
             )
             .when(self.loading, |this| {
-                this.child(Indicator::new().color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN)))
+                this.child(Indicator::new().color(cx.theme().text_muted))
             })
             .children(suffix)
             .when(self.is_multi_line(), |this| {

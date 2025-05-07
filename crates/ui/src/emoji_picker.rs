@@ -6,12 +6,12 @@ use gpui::{
     StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use serde::Deserialize;
+use theme::ActiveTheme;
 
 use crate::{
     button::{Button, ButtonVariants},
     input::TextInput,
     popover::{Popover, PopoverContent},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     Icon,
 };
 
@@ -99,11 +99,9 @@ impl RenderOnce for EmojiPicker {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .rounded(px(cx.theme().radius))
+                                    .rounded(cx.theme().radius)
                                     .child(e.clone())
-                                    .hover(|this| {
-                                        this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
-                                    })
+                                    .hover(|this| this.bg(cx.theme().ghost_element_hover))
                                     .on_click({
                                         let item = e.clone();
                                         let input = input.upgrade();

@@ -6,19 +6,19 @@ use chats::ChatRegistry;
 use common::profile::SharedProfile;
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
-    div, img, prelude::FluentBuilder, px, relative, uniform_list, App, AppContext, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
-    Task, Window,
+    div, img, prelude::FluentBuilder, px, red, relative, uniform_list, App, AppContext, Context,
+    Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled,
+    Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::dock::DockPlacement,
     indicator::Indicator,
     input::{InputEvent, TextInput},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, IconName, Sizable,
 };
 
@@ -202,8 +202,6 @@ impl Search {
 
 impl Render for Search {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mute_color = cx.theme().base.step(cx, ColorScaleStep::NINE);
-
         div()
             .size_full()
             .flex()
@@ -233,7 +231,7 @@ impl Render for Search {
                     div()
                         .px_3()
                         .text_xs()
-                        .text_color(cx.theme().danger)
+                        .text_color(red())
                         .child(error.clone()),
                 )
             })
@@ -254,7 +252,7 @@ impl Render for Search {
                         .items_center()
                         .justify_center()
                         .text_sm()
-                        .text_color(mute_color)
+                        .text_color(cx.theme().text_muted)
                         .child("No one with that query could be found.")
                 } else {
                     this.child(
@@ -278,7 +276,7 @@ impl Render for Search {
                                             .flex()
                                             .items_center()
                                             .justify_between()
-                                            .rounded(px(cx.theme().radius))
+                                            .rounded(cx.theme().radius)
                                             .child(
                                                 div()
                                                     .flex()
@@ -305,7 +303,10 @@ impl Render for Search {
                                                                     this.child(
                                                                         div()
                                                                             .text_xs()
-                                                                            .text_color(mute_color)
+                                                                            .text_color(
+                                                                                cx.theme()
+                                                                                    .text_muted,
+                                                                            )
                                                                             .child(nip05),
                                                                     )
                                                                 },
@@ -335,10 +336,7 @@ impl Render for Search {
                                                     ),
                                             )
                                             .hover(|this| {
-                                                this.bg(cx
-                                                    .theme()
-                                                    .base
-                                                    .step(cx, ColorScaleStep::THREE))
+                                                this.bg(cx.theme().elevated_surface_background)
                                             }),
                                     );
                                 }

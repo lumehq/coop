@@ -3,10 +3,10 @@ use gpui::{
     div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     ParentElement, Render, Styled, Window,
 };
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     input::TextInput,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Size,
 };
 
@@ -90,7 +90,7 @@ impl Render for Subject {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                            .text_color(cx.theme().text_muted)
                             .child("Subject:"),
                     )
                     .child(self.input.clone())
@@ -98,7 +98,7 @@ impl Render for Subject {
                         div()
                             .text_xs()
                             .italic()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
+                            .text_color(cx.theme().text_placeholder)
                             .child(HELP_TEXT),
                     ),
             )

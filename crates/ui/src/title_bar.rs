@@ -1,15 +1,20 @@
-use crate::{h_flex, theme::ActiveTheme, Icon, IconName, InteractiveElementExt as _, Sizable as _};
+use std::rc::Rc;
+
 use gpui::{
     black, div, prelude::FluentBuilder as _, px, relative, white, AnyElement, App, ClickEvent, Div,
     Element, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
     RenderOnce, Rgba, Stateful, StatefulInteractiveElement as _, Style, Styled, Window,
 };
-use std::rc::Rc;
+use theme::ActiveTheme;
+
+use crate::{h_flex, Icon, IconName, InteractiveElementExt as _, Sizable as _};
 
 const HEIGHT: Pixels = px(34.);
 const TITLE_BAR_HEIGHT: Pixels = px(34.);
+
 #[cfg(target_os = "macos")]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
+
 #[cfg(not(target_os = "macos"))]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(12.);
 
@@ -105,7 +110,7 @@ impl Control {
     }
 
     fn fg(&self, _window: &Window, cx: &App) -> Hsla {
-        if cx.theme().appearance.is_dark() {
+        if cx.theme().mode.is_dark() {
             white()
         } else {
             black()
@@ -113,7 +118,7 @@ impl Control {
     }
 
     fn hover_fg(&self, _window: &Window, cx: &App) -> Hsla {
-        if self.is_close() || cx.theme().appearance.is_dark() {
+        if self.is_close() || cx.theme().mode.is_dark() {
             white()
         } else {
             black()
@@ -128,7 +133,7 @@ impl Control {
                 b: 32.0 / 255.0,
                 a: 1.0,
             }
-        } else if cx.theme().appearance.is_dark() {
+        } else if cx.theme().mode.is_dark() {
             Rgba {
                 r: 0.9,
                 g: 0.9,
@@ -247,7 +252,7 @@ impl RenderOnce for TitleBar {
                 .items_center()
                 .justify_between()
                 .h(HEIGHT)
-                .bg(cx.theme().transparent)
+                .bg(cx.theme().title_bar)
                 .when(window.is_fullscreen(), |this| this.pl(px(12.)))
                 .on_double_click(|_, window, _cx| window.zoom_window())
                 .child(

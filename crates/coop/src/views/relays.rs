@@ -7,10 +7,10 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     input::{InputEvent, TextInput},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, IconName, Sizable,
 };
 
@@ -241,8 +241,8 @@ impl Relays {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .rounded(px(cx.theme().radius))
-                            .bg(cx.theme().base.step(cx, ColorScaleStep::THREE))
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().elevated_surface_background)
                             .text_xs()
                             .child(item)
                             .child(
@@ -298,7 +298,7 @@ impl Render for Relays {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                            .text_color(cx.theme().text_muted)
                             .child(MESSAGE),
                     )
                     .child(
@@ -320,7 +320,7 @@ impl Render for Relays {
                                             .label("Add")
                                             .small()
                                             .ghost()
-                                            .rounded(px(cx.theme().radius))
+                                            .rounded_md()
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.add(window, cx)
                                             })),

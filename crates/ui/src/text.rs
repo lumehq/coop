@@ -8,8 +8,7 @@ use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{collections::HashMap, ops::Range, sync::Arc};
-
-use crate::theme::{scale::ColorScaleStep, ActiveTheme};
+use theme::ActiveTheme;
 
 static NOSTR_URI_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"nostr:(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+").unwrap());
@@ -78,7 +77,7 @@ impl RichText {
     }
 
     pub fn element(&self, id: ElementId, window: &mut Window, cx: &App) -> AnyElement {
-        let link_color = cx.theme().accent.step(cx, ColorScaleStep::ELEVEN);
+        let link_color = cx.theme().text_accent;
 
         InteractiveText::new(
             id,

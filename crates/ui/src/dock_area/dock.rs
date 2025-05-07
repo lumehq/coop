@@ -1,16 +1,17 @@
+use std::sync::Arc;
+
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext, Axis, Context, Element, Entity,
     InteractiveElement as _, IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
     Point, Render, StatefulInteractiveElement, Style, Styled as _, WeakEntity, Window,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use theme::ActiveTheme;
 
 use super::{DockArea, DockItem};
 use crate::{
     dock_area::{panel::PanelView, tab_panel::TabPanel},
     resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE},
-    theme::{scale::ColorScaleStep, ActiveTheme as _},
     AxisExt as _, StyledExt,
 };
 
@@ -268,7 +269,7 @@ impl Dock {
             .child(
                 div()
                     .rounded_full()
-                    .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::SIX)))
+                    .hover(|this| this.bg(cx.theme().border_variant))
                     .when(axis.is_horizontal(), |this| this.h_full().w(HANDLE_SIZE))
                     .when(axis.is_vertical(), |this| this.w_full().h(HANDLE_SIZE)),
             )

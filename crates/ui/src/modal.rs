@@ -6,11 +6,11 @@ use gpui::{
     IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
     Styled, Window,
 };
+use theme::ActiveTheme;
 
 use crate::{
     animation::cubic_bezier,
     button::{Button, ButtonCustomVariant, ButtonVariants as _},
-    theme::{scale::ColorScaleStep, ActiveTheme as _},
     v_flex, ContextModal, IconName, StyledExt,
 };
 
@@ -47,7 +47,7 @@ impl Modal {
         let base = v_flex()
             .bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
+            .border_color(cx.theme().border)
             .rounded_xl()
             .shadow_md();
 
@@ -168,9 +168,7 @@ impl RenderOnce for Modal {
                     .occlude()
                     .w(view_size.width)
                     .h(view_size.height)
-                    .when(self.overlay, |this| {
-                        this.bg(cx.theme().base.step_alpha(cx, ColorScaleStep::TWO))
-                    })
+                    .when(self.overlay, |this| this.bg(cx.theme().overlay))
                     .when(self.keyboard, |this| {
                         this.on_mouse_down(MouseButton::Left, {
                             let on_close = self.on_close.clone();
@@ -201,7 +199,7 @@ impl RenderOnce for Modal {
                                         .items_center()
                                         .font_semibold()
                                         .border_b_1()
-                                        .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
+                                        .border_color(cx.theme().border)
                                         .line_height(relative(1.))
                                         .child(title),
                                 )
@@ -217,13 +215,10 @@ impl RenderOnce for Modal {
                                     .right_2()
                                     .custom(
                                         ButtonCustomVariant::new(window, cx)
-                                            .foreground(
-                                                cx.theme().base.step(cx, ColorScaleStep::NINE),
-                                            )
-                                            .color(cx.theme().transparent)
-                                            .hover(cx.theme().transparent)
-                                            .active(cx.theme().transparent)
-                                            .border(cx.theme().transparent),
+                                            .foreground(cx.theme().icon_muted)
+                                            .color(cx.theme().ghost_element_background)
+                                            .hover(cx.theme().ghost_element_background)
+                                            .active(cx.theme().ghost_element_background),
                                     )
                                     .on_click(
                                         move |_, window, cx| {

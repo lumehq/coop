@@ -1,13 +1,11 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, px, App, ClickEvent, Div, InteractiveElement, IntoElement,
+    div, prelude::FluentBuilder, App, ClickEvent, Div, InteractiveElement, IntoElement,
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use ui::{
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    Icon,
-};
+use theme::ActiveTheme;
+use ui::Icon;
 
 type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -49,16 +47,12 @@ impl RenderOnce for SidebarButton {
 
         self.base
             .id(self.label.clone())
-            .rounded(px(cx.theme().radius))
+            .rounded(cx.theme().radius)
             .when_some(self.icon, |this, icon| {
-                this.child(
-                    div()
-                        .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                        .child(icon),
-                )
+                this.child(div().text_color(cx.theme().text_muted).child(icon))
             })
             .child(self.label.clone())
-            .hover(|this| this.bg(cx.theme().base.step(cx, ColorScaleStep::THREE)))
+            .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |ev, window, cx| handler(ev, window, cx))
     }
 }

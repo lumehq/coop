@@ -2,11 +2,11 @@ use gpui::{
     div, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
     Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     Icon, IconName, StyledExt,
 };
 
@@ -91,7 +91,7 @@ impl Render for Onboarding {
                         svg()
                             .path("brand/coop.svg")
                             .size_16()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                            .text_color(cx.theme().elevated_surface_background),
                     )
                     .child(
                         div()
@@ -103,11 +103,7 @@ impl Render for Onboarding {
                                     .line_height(relative(1.3))
                                     .child(TITLE),
                             )
-                            .child(
-                                div()
-                                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                                    .child(SUBTITLE),
-                            ),
+                            .child(div().text_color(cx.theme().text_muted).child(SUBTITLE)),
                     ),
             )
             .child(

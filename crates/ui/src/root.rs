@@ -1,14 +1,16 @@
-use crate::{
-    modal::Modal,
-    notification::{Notification, NotificationList},
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    window_border,
-};
+use std::rc::Rc;
+
 use gpui::{
     div, AnyView, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     ParentElement as _, Render, Styled, Window,
 };
-use std::rc::Rc;
+use theme::ActiveTheme;
+
+use crate::{
+    modal::Modal,
+    notification::{Notification, NotificationList},
+    window_border,
+};
 
 /// Extension trait for [`WindowContext`] and [`ViewContext`] to add drawer functionality.
 pub trait ContextModal: Sized {
@@ -230,8 +232,8 @@ impl Render for Root {
                 .relative()
                 .size_full()
                 .font_family(".SystemUIFont")
-                .bg(cx.theme().base.step(cx, ColorScaleStep::ONE))
-                .text_color(cx.theme().base.step(cx, ColorScaleStep::TWELVE))
+                .bg(cx.theme().background)
+                .text_color(cx.theme().text)
                 .child(self.view.clone()),
         )
     }

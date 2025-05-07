@@ -2,11 +2,11 @@ use gpui::{
     div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
     IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
+use theme::ActiveTheme;
 use ui::{
     button::Button,
     dock_area::panel::{Panel, PanelEvent},
     popup_menu::PopupMenu,
-    theme::{scale::ColorScaleStep, ActiveTheme},
     StyledExt,
 };
 
@@ -87,12 +87,12 @@ impl Render for Welcome {
                         svg()
                             .path("brand/coop.svg")
                             .size_12()
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::THREE)),
+                            .text_color(cx.theme().elevated_surface_background),
                     )
                     .child(
                         div()
                             .child("coop on nostr.")
-                            .text_color(cx.theme().base.step(cx, ColorScaleStep::NINE))
+                            .text_color(cx.theme().text_placeholder)
                             .font_semibold()
                             .text_sm(),
                     ),

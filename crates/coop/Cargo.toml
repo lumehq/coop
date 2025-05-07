@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 ui = { path = "../ui" }
+theme = { path = "../theme" }
 common = { path = "../common" }
 global = { path = "../global" }
 chats = { path = "../chats" }

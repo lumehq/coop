@@ -1,3 +1,12 @@
+use gpui::{
+    div, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
+    DismissEvent, DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+};
+use std::sync::Arc;
+use theme::ActiveTheme;
+
 use super::{
     panel::PanelView, stack_panel::StackPanel, ClosePanel, DockArea, PanelEvent, PanelStyle,
     ToggleZoom,
@@ -8,16 +17,8 @@ use crate::{
     h_flex,
     popup_menu::{PopupMenu, PopupMenuExt},
     tab::{tab_bar::TabBar, Tab},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     v_flex, AxisExt, IconName, Placement, Selectable, Sizable, StyledExt,
 };
-use gpui::{
-    div, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
-    DismissEvent, DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
-};
-use std::sync::Arc;
 
 #[derive(Clone)]
 struct TabState {
@@ -53,11 +54,11 @@ impl Render for DragPanel {
             .justify_center()
             .overflow_hidden()
             .whitespace_nowrap()
-            .rounded(px(cx.theme().radius))
+            .rounded(cx.theme().radius)
             .text_xs()
             .shadow_lg()
             .bg(cx.theme().background)
-            .text_color(cx.theme().accent.step(cx, ColorScaleStep::TWELVE))
+            .text_color(cx.theme().text_accent)
             .child(self.panel.title(cx))
     }
 }
@@ -639,9 +640,7 @@ impl TabPanel {
                                     this.rounded_l_none()
                                         .border_l_2()
                                         .border_r_0()
-                                        .border_color(
-                                            cx.theme().base.step(cx, ColorScaleStep::FIVE),
-                                        )
+                                        .border_color(cx.theme().border)
                                 })
                                 .on_drop(cx.listener(
                                     move |this, drag: &DragPanel, window, cx| {
@@ -660,10 +659,10 @@ impl TabPanel {
                     .h_full()
                     .flex_grow()
                     .min_w_16()
-                    .rounded(px(cx.theme().radius))
+                    .rounded(cx.theme().radius)
                     .when(state.droppable, |this| {
                         this.drag_over::<DragPanel>(|this, _, _, cx| {
-                            this.bg(cx.theme().base.step(cx, ColorScaleStep::TWO))
+                            this.bg(cx.theme().surface_background)
                         })
                         .on_drop(cx.listener(
                             move |this, drag: &DragPanel, window, cx| {
@@ -718,8 +717,8 @@ impl TabPanel {
                     .size_full()
                     .rounded_lg()
                     .shadow_sm()
-                    .when(cx.theme().appearance.is_dark(), |this| this.shadow_lg())
-                    .bg(cx.theme().background)
+                    .when(cx.theme().mode.is_dark(), |this| this.shadow_lg())
+                    .bg(cx.theme().panel_background)
                     .overflow_hidden()
                     .child(
                         active_panel
@@ -738,8 +737,8 @@ impl TabPanel {
                                 div()
                                     .rounded_lg()
                                     .border_1()
-                                    .border_color(cx.theme().accent.step(cx, ColorScaleStep::FOUR))
-                                    .bg(cx.theme().accent.step_alpha(cx, ColorScaleStep::THREE))
+                                    .border_color(cx.theme().element_disabled)
+                                    .bg(cx.theme().drop_target_background)
                                     .size_full(),
                             )
                             .map(|this| match self.will_split_placement {

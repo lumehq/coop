@@ -1,9 +1,14 @@
+use std::{
+    collections::{BTreeSet, HashSet},
+    time::Duration,
+};
+
 use anyhow::Error;
 use chats::ChatRegistry;
 use common::{profile::SharedProfile, random_name};
 use global::get_client;
 use gpui::{
-    div, img, impl_internal_actions, prelude::FluentBuilder, px, relative, uniform_list, App,
+    div, img, impl_internal_actions, prelude::FluentBuilder, px, red, relative, uniform_list, App,
     AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, TextAlign,
     Window,
@@ -12,15 +17,11 @@ use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
-use std::{
-    collections::{BTreeSet, HashSet},
-    time::Duration,
-};
+use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::dock::DockPlacement,
     input::{InputEvent, TextInput},
-    theme::{scale::ColorScaleStep, ActiveTheme},
     ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
@@ -335,24 +336,18 @@ impl Render for Compose {
                 div()
                     .px_3()
                     .text_sm()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
+                    .text_color(cx.theme().text_muted)
                     .child(DESCRIPTION),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
-                this.child(
-                    div()
-                        .px_3()
-                        .text_xs()
-                        .text_color(cx.theme().danger)
-                        .child(msg.clone()),
-                )
+                this.child(div().px_3().text_xs().text_color(red()).child(msg.clone()))
             })
             .child(
                 div().px_3().flex().flex_col().child(
                     div()
                         .h_10()
                         .border_b_1()
-                        .border_color(cx.theme().base.step(cx, ColorScaleStep::FIVE))
+                        .border_color(cx.theme().border)
                         .flex()
                         .items_center()
                         .gap_1()
@@ -399,9 +394,7 @@ impl Render for Compose {
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(
-                                                cx.theme().base.step(cx, ColorScaleStep::ELEVEN),
-                                            )
+                                            .text_color(cx.theme().text_muted)
                                             .child("Your recently contacts will appear here."),
                                     ),
                             )
@@ -445,19 +438,13 @@ impl Render for Compose {
                                                         this.child(
                                                             Icon::new(IconName::CheckCircleFill)
                                                                 .small()
-                                                                .text_color(
-                                                                    cx.theme().accent.step(
-                                                                        cx,
-                                                                        ColorScaleStep::NINE,
-                                                                    ),
-                                                                ),
+                                                                .text_color(cx.theme().icon_accent),
                                                         )
                                                     })
                                                     .hover(|this| {
                                                         this.bg(cx
                                                             .theme()
-                                                            .base
-                                                            .step(cx, ColorScaleStep::THREE))
+                                                            .elevated_surface_background)
                                                     })
                                                     .on_click(move |_, window, cx| {
                                                         window.dispatch_action(

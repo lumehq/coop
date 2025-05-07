@@ -1,12 +1,5 @@
-use crate::{
-    button::Button,
-    h_flex,
-    list::ListItem,
-    popover::Popover,
-    scroll::{Scrollbar, ScrollbarState},
-    theme::{scale::ColorScaleStep, ActiveTheme},
-    v_flex, Icon, IconName, Selectable, Sizable as _, StyledExt,
-};
+use std::{cell::Cell, ops::Deref, rc::Rc};
+
 use gpui::{
     actions, anchored, canvas, div, prelude::FluentBuilder, px, rems, Action, AnyElement, App,
     AppContext, Bounds, Context, Corner, DismissEvent, Edges, Entity, EventEmitter, FocusHandle,
@@ -14,7 +7,16 @@ use gpui::{
     Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription,
     WeakEntity, Window,
 };
-use std::{cell::Cell, ops::Deref, rc::Rc};
+use theme::ActiveTheme;
+
+use crate::{
+    button::Button,
+    h_flex,
+    list::ListItem,
+    popover::Popover,
+    scroll::{Scrollbar, ScrollbarState},
+    v_flex, Icon, IconName, Selectable, Sizable as _, StyledExt,
+};
 
 actions!(menu, [Confirm, Dismiss, SelectNext, SelectPrev]);
 
@@ -456,14 +458,12 @@ impl PopupMenu {
     ) -> Option<impl IntoElement> {
         if let Some(action) = action {
             if let Some(keybinding) = window.bindings_for_action(action.deref()).first() {
-                let el = div()
-                    .text_color(cx.theme().base.step(cx, ColorScaleStep::ELEVEN))
-                    .children(
-                        keybinding
-                            .keystrokes()
-                            .iter()
-                            .map(|key| key_shortcut(key.clone())),
-                    );
+                let el = div().text_color(cx.theme().text_muted).children(
+                    keybinding
+                        .keystrokes()
+                        .iter()
+                        .map(|key| key_shortcut(key.clone())),
+                );
 
                 return Some(el);
             }
@@ -590,10 +590,7 @@ impl Render for PopupMenu {
                                                         .h(px(1.))
                                                         .mx_neg_1()
                                                         .my_0p5()
-                                                        .bg(cx
-                                                            .theme()
-                                                            .base
-                                                            .step(cx, ColorScaleStep::TWO)),
+                                                        .bg(cx.theme().border_variant),
                                                 )
                                             }
                                             PopupMenuItem::ElementItem { render, .. } => this

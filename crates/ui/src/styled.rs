@@ -1,10 +1,10 @@
-use crate::{
-    scroll::{Scrollable, ScrollbarAxis},
-    theme::{scale::ColorScaleStep, ActiveTheme},
-};
+use std::fmt::{self, Display, Formatter};
+
 use gpui::{div, px, App, Axis, Div, Element, ElementId, EntityId, Pixels, Styled, Window};
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Display, Formatter};
+use theme::ActiveTheme;
+
+use crate::scroll::{Scrollable, ScrollbarAxis};
 
 /// Returns a `Div` as horizontal flex layout.
 pub fn h_flex() -> Div {
@@ -39,7 +39,7 @@ pub trait StyledExt: Styled + Sized {
 
     /// Render a border with a width of 1px, color ring color
     fn outline(self, _window: &Window, cx: &App) -> Self {
-        self.border_color(cx.theme().accent.step(cx, ColorScaleStep::NINE))
+        self.border_color(cx.theme().ring)
     }
 
     /// Wraps the element in a ScrollView.
@@ -66,7 +66,7 @@ pub trait StyledExt: Styled + Sized {
     fn popover_style(self, cx: &mut App) -> Self {
         self.bg(cx.theme().background)
             .border_1()
-            .border_color(cx.theme().base.step(cx, ColorScaleStep::SIX))
+            .border_color(cx.theme().border)
             .shadow_lg()
             .rounded_lg()
     }
