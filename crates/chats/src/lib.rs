@@ -1,4 +1,7 @@
-use std::{cmp::Reverse, collections::HashMap};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, HashMap},
+};
 
 use anyhow::Error;
 use common::room_hash;
@@ -34,13 +37,10 @@ impl Global for GlobalChatRegistry {}
 pub struct ChatRegistry {
     /// Collection of all chat rooms
     rooms: Vec<Entity<Room>>,
-
     /// Map of user public keys to their profile metadata
-    profiles: Entity<HashMap<PublicKey, Option<Metadata>>>,
-
+    profiles: Entity<BTreeMap<PublicKey, Option<Metadata>>>,
     /// Indicates if rooms are currently being loaded
     loading: bool,
-
     /// Subscriptions for observing changes
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
@@ -59,7 +59,7 @@ impl ChatRegistry {
 
     /// Create a new ChatRegistry instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let profiles = cx.new(|_| HashMap::new());
+        let profiles = cx.new(|_| BTreeMap::new());
         let mut subscriptions = smallvec![];
 
         // Observe new Room creations to collect profile metadata

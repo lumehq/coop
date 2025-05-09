@@ -130,7 +130,7 @@ impl RenderOnce for ListItem {
         let is_active = self.selected || self.confirmed;
 
         self.base
-            .text_color(cx.theme().text_muted)
+            .text_color(cx.theme().text)
             .relative()
             .items_center()
             .justify_between()
@@ -147,7 +147,7 @@ impl RenderOnce for ListItem {
             })
             .when(is_active, |this| this.bg(cx.theme().element_active))
             .when(!is_active && !self.disabled, |this| {
-                this.hover(|this| this.bg(cx.theme().surface_background))
+                this.hover(|this| this.bg(cx.theme().elevated_surface_background))
             })
             // Mouse enter
             .when_some(self.on_mouse_enter, |this, on_mouse_enter| {

@@ -53,11 +53,6 @@ impl Subject {
         let registry = ChatRegistry::global(cx).read(cx);
         let subject = self.input.read(cx).text();
 
-        if subject.is_empty() {
-            window.push_notification("Subject cannot be empty", cx);
-            return;
-        }
-
         if let Some(room) = registry.room(&self.id, cx) {
             room.update(cx, |this, cx| {
                 this.subject = Some(subject);

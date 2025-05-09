@@ -148,22 +148,19 @@ impl Chat {
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(result) = task.await {
-                cx.update(|_, cx| {
-                    this.update(cx, |this, cx| {
-                        result.into_iter().for_each(|item| {
-                            if !item.1 {
-                                let profile = this
-                                    .room
-                                    .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
+                this.update(cx, |this, cx| {
+                    result.into_iter().for_each(|item| {
+                        if !item.1 {
+                            let profile = this
+                                .room
+                                .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
 
-                                this.push_system_message(
-                                    format!("{} {}", profile.shared_name(), ALERT),
-                                    cx,
-                                );
-                            }
-                        });
-                    })
-                    .ok();
+                            this.push_system_message(
+                                format!("{} {}", profile.shared_name(), ALERT),
+                                cx,
+                            );
+                        }
+                    });
                 })
                 .ok();
             }
