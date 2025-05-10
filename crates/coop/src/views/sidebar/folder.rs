@@ -299,7 +299,7 @@ impl RenderOnce for FolderItem {
                     .font_medium()
                     .map(|this| {
                         if let Some(img) = self.img {
-                            this.child(img.size_5().flex_shrink_0())
+                            this.child(img.size_6().flex_shrink_0())
                         } else {
                             this.child(
                                 div()

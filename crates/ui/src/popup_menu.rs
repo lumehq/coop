@@ -590,7 +590,7 @@ impl Render for PopupMenu {
                                                         .h(px(1.))
                                                         .mx_neg_1()
                                                         .my_0p5()
-                                                        .bg(cx.theme().border_variant),
+                                                        .bg(cx.theme().border_disabled),
                                                 )
                                             }
                                             PopupMenuItem::ElementItem { render, .. } => this

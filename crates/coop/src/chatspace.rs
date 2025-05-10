@@ -20,9 +20,7 @@ use ui::{
 
 use crate::{
     lru_cache::cache_provider,
-    views::{
-        chat, compose, login, new_account, onboarding, profile, relays, search, sidebar, welcome,
-    },
+    views::{chat, compose, login, new_account, onboarding, profile, relays, sidebar, welcome},
 };
 
 const CACHE_SIZE: usize = 200;
@@ -53,7 +51,6 @@ pub enum PanelKind {
 pub enum ModalKind {
     Profile,
     Compose,
-    Search,
     Relay,
     Onboarding,
     SetupRelay,
@@ -240,16 +237,6 @@ impl ChatSpace {
                         .title("Direct Messages")
                         .width(px(MODAL_WIDTH))
                         .child(compose.clone())
-                })
-            }
-            ModalKind::Search => {
-                let search = search::init(window, cx);
-
-                window.open_modal(cx, move |modal, _, _| {
-                    modal
-                        .closable(false)
-                        .width(px(MODAL_WIDTH))
-                        .child(search.clone())
                 })
             }
             ModalKind::Relay => {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use gpui::{Hsla, SharedString};
 
 /// A collection of colors that are used to style the UI.
