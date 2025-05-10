@@ -1,7 +1,6 @@
 use std::{cmp::Reverse, collections::HashSet};
 
 use account::Account;
-use button::SidebarButton;
 use chats::{
     room::{Room, RoomKind},
     ChatRegistry,
@@ -17,11 +16,12 @@ use gpui::{
 use itertools::Itertools;
 use theme::ActiveTheme;
 use ui::{
-    button::{Button, ButtonCustomVariant, ButtonVariants},
+    button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants},
     dock_area::{
         dock::DockPlacement,
         panel::{Panel, PanelEvent},
     },
+    input::TextInput,
     popup_menu::{PopupMenu, PopupMenuExt},
     skeleton::Skeleton,
     IconName, Sizable, StyledExt,
@@ -29,7 +29,6 @@ use ui::{
 
 use crate::chatspace::{AddPanel, ModalKind, PanelKind, ToggleModal};
 
-mod button;
 mod folder;
 
 actions!(profile, [Logout]);
@@ -52,6 +51,7 @@ pub enum SubItem {
 
 pub struct Sidebar {
     name: SharedString,
+    find_input: Entity<TextInput>,
     split_into_folders: bool,
     active_items: HashSet<Item>,
     active_subitems: HashSet<SubItem>,
@@ -64,7 +64,7 @@ impl Sidebar {
         cx.new(|cx| Self::view(window, cx))
     }
 
-    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let scroll_handle = ScrollHandle::default();
 
@@ -75,9 +75,26 @@ impl Sidebar {
         active_subitems.insert(SubItem::Trusted);
         active_subitems.insert(SubItem::Unknown);
 
+        let find_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .small()
+                .text_size(ui::Size::XSmall)
+                .suffix(|window, cx| {
+                    Button::new("find").icon(IconName::Search).small().custom(
+                        ButtonCustomVariant::new(window, cx)
+                            .active(gpui::transparent_black())
+                            .color(gpui::transparent_black())
+                            .hover(gpui::transparent_black())
+                            .foreground(cx.theme().text_placeholder),
+                    )
+                })
+                .placeholder("Find or start a conversation")
+        });
+
         Self {
             name: "Chat Sidebar".into(),
             split_into_folders: false,
+            find_input,
             active_items,
             active_subitems,
             focus_handle,
@@ -214,14 +231,13 @@ impl Render for Sidebar {
             .flex()
             .flex_col()
             .gap_3()
-            .pt_1()
-            .px_2()
-            .pb_2()
+            .py_1()
             .when_some(account, |this, profile| {
                 this.child(
                     div()
+                        .px_3()
                         .h_7()
-                        .px_1p5()
+                        .flex_none()
                         .flex()
                         .justify_between()
                         .items_center()
@@ -236,74 +252,73 @@ impl Render for Sidebar {
                                 .child(profile.shared_name()),
                         )
                         .child(
-                            Button::new("user_dropdown")
-                                .icon(IconName::Ellipsis)
-                                .small()
-                                .ghost()
-                                .popup_menu(|this, _window, _cx| {
-                                    this.menu(
-                                        "Profile",
-                                        Box::new(ToggleModal {
-                                            modal: ModalKind::Profile,
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    Button::new("user")
+                                        .icon(IconName::Ellipsis)
+                                        .small()
+                                        .ghost()
+                                        .rounded(ButtonRounded::Full)
+                                        .popup_menu(|this, _window, _cx| {
+                                            this.menu(
+                                                "Profile",
+                                                Box::new(ToggleModal {
+                                                    modal: ModalKind::Profile,
+                                                }),
+                                            )
+                                            .menu(
+                                                "Relays",
+                                                Box::new(ToggleModal {
+                                                    modal: ModalKind::Relay,
+                                                }),
+                                            )
+                                            .separator()
+                                            .menu("Logout", Box::new(Logout))
                                         }),
-                                    )
-                                    .menu(
-                                        "Relays",
-                                        Box::new(ToggleModal {
-                                            modal: ModalKind::Relay,
-                                        }),
-                                    )
-                                    .separator()
-                                    .menu("Logout", Box::new(Logout))
-                                }),
+                                )
+                                .child(
+                                    Button::new("compose")
+                                        .icon(IconName::PlusFill)
+                                        .tooltip("Create DM or Group DM")
+                                        .small()
+                                        .primary()
+                                        .rounded(ButtonRounded::Full)
+                                        .on_click(cx.listener(|_, _, window, cx| {
+                                            window.dispatch_action(
+                                                Box::new(ToggleModal {
+                                                    modal: ModalKind::Compose,
+                                                }),
+                                                cx,
+                                            );
+                                        })),
+                                ),
                         ),
                 )
             })
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .text_sm()
-                    .font_medium()
-                    .child(
-                        SidebarButton::new("Find")
-                            .icon(IconName::Search)
-                            .on_click(cx.listener(|_, _, window, cx| {
-                                window.dispatch_action(
-                                    Box::new(ToggleModal {
-                                        modal: ModalKind::Search,
-                                    }),
-                                    cx,
-                                );
-                            })),
-                    )
-                    .child(
-                        SidebarButton::new("New Chat")
-                            .icon(IconName::PlusCircleFill)
-                            .on_click(cx.listener(|_, _, window, cx| {
-                                window.dispatch_action(
-                                    Box::new(ToggleModal {
-                                        modal: ModalKind::Compose,
-                                    }),
-                                    cx,
-                                );
-                            })),
-                    ),
+                    .px_3()
+                    .h_7()
+                    .flex_none()
+                    .child(self.find_input.clone()),
             )
             .child(
                 div()
+                    .px_1()
                     .flex()
                     .flex_col()
-                    .gap_2()
+                    .gap_1()
                     .child(
                         div()
-                            .pl_2()
-                            .pr_1()
+                            .mb_1()
+                            .px_2()
                             .flex()
                             .justify_between()
                             .items_center()
-                            .text_xs()
+                            .text_sm()
                             .font_semibold()
                             .text_color(cx.theme().text_placeholder)
                             .child("Messages")

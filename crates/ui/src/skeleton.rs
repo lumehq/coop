@@ -35,7 +35,7 @@ impl RenderOnce for Skeleton {
     fn render(self, _window: &mut gpui::Window, cx: &mut gpui::App) -> impl IntoElement {
         div().child(
             self.base
-                .bg(cx.theme().ghost_element_disabled)
+                .bg(cx.theme().ghost_element_active)
                 .with_animation(
                     "skeleton",
                     Animation::new(Duration::from_secs(2))
