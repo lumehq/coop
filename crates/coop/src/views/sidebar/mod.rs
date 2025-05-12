@@ -39,7 +39,7 @@ use crate::chatspace::{AddPanel, ModalKind, PanelKind, ToggleModal};
 
 mod folder;
 
-const FIND_DELAY: u64 = 400;
+const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
@@ -238,6 +238,11 @@ impl Sidebar {
     fn search(&mut self, cx: &mut Context<Self>) {
         let query = self.find_input.read(cx).text();
         let result = ChatRegistry::get_global(cx).search(query.as_ref(), cx);
+
+        // Return if query is empty
+        if query.is_empty() {
+            return;
+        }
 
         // Return if search is in progress
         if self.finding {
