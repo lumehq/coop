@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use gpui::{hsla, Hsla, Rgba};
 
 use crate::scale::{ColorScale, ColorScaleSet, ColorScales};

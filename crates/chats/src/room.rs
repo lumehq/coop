@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use account::Account;
 use anyhow::Error;
@@ -27,7 +27,7 @@ pub enum SendStatus {
     Failed(Error),
 }
 
-#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RoomKind {
     Ongoing,
     Trusted,
@@ -35,6 +35,7 @@ pub enum RoomKind {
     Unknown,
 }
 
+#[derive(Debug)]
 pub struct Room {
     pub id: u64,
     pub created_at: Timestamp,
@@ -48,13 +49,27 @@ pub struct Room {
     pub kind: RoomKind,
 }
 
-impl EventEmitter<IncomingEvent> for Room {}
+impl Ord for Room {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.created_at.cmp(&other.created_at)
+    }
+}
+
+impl PartialOrd for Room {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for Room {}
 
 impl PartialEq for Room {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
+
+impl EventEmitter<IncomingEvent> for Room {}
 
 impl Room {
     /// Creates a new Room instance from a Nostr event
@@ -184,28 +199,6 @@ impl Room {
         } else {
             profile
         }
-    }
-
-    /// Gets all avatars for members in the room
-    ///
-    /// # Arguments
-    ///
-    /// * `cx` - The App context
-    ///
-    /// # Returns
-    ///
-    /// A vector of SharedString containing all members' avatars
-    pub fn avatars(&self, cx: &App) -> Vec<SharedString> {
-        let profiles: Vec<Profile> = self
-            .members
-            .iter()
-            .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
-            .collect();
-
-        profiles
-            .iter()
-            .map(|member| member.shared_avatar())
-            .collect()
     }
 
     /// Gets a formatted string of member names

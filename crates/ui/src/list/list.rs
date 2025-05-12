@@ -286,10 +286,10 @@ where
         }
     }
 
-    fn set_loading(&mut self, loading: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_loading(&mut self, loading: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.loading = loading;
         if let Some(input) = &self.query_input {
-            input.update(cx, |input, cx| input.set_loading(loading, window, cx))
+            input.update(cx, |input, cx| input.set_loading(loading, cx))
         }
         cx.notify();
     }

@@ -1,7 +1,11 @@
-use std::{cmp::Reverse, collections::HashMap};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet, HashMap},
+};
 
 use anyhow::Error;
 use common::room_hash;
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use global::get_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use itertools::Itertools;
@@ -33,14 +37,11 @@ impl Global for GlobalChatRegistry {}
 /// - Handling messages and room creation
 pub struct ChatRegistry {
     /// Collection of all chat rooms
-    rooms: Vec<Entity<Room>>,
-
+    rooms: BTreeSet<Entity<Room>>,
     /// Map of user public keys to their profile metadata
-    profiles: Entity<HashMap<PublicKey, Option<Metadata>>>,
-
+    profiles: Entity<BTreeMap<PublicKey, Option<Metadata>>>,
     /// Indicates if rooms are currently being loaded
-    loading: bool,
-
+    pub loading: bool,
     /// Subscriptions for observing changes
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
@@ -52,6 +53,11 @@ impl ChatRegistry {
         cx.global::<GlobalChatRegistry>().0.clone()
     }
 
+    /// Retrieve the ChatRegistry instance
+    pub fn get_global(cx: &App) -> &Self {
+        cx.global::<GlobalChatRegistry>().0.read(cx)
+    }
+
     /// Set the global ChatRegistry instance
     pub fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalChatRegistry(state));
@@ -59,7 +65,7 @@ impl ChatRegistry {
 
     /// Create a new ChatRegistry instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let profiles = cx.new(|_| HashMap::new());
+        let profiles = cx.new(|_| BTreeMap::new());
         let mut subscriptions = smallvec![];
 
         // Observe new Room creations to collect profile metadata
@@ -82,16 +88,11 @@ impl ChatRegistry {
         }));
 
         Self {
-            rooms: vec![],
+            rooms: BTreeSet::new(),
             loading: true,
             profiles,
             subscriptions,
         }
-    }
-
-    /// Get the global loading status
-    pub fn loading(&self) -> bool {
-        self.loading
     }
 
     /// Get a room by its ID.
@@ -103,31 +104,41 @@ impl ChatRegistry {
     }
 
     /// Get all rooms grouped by their kind.
-    pub fn rooms(&self, cx: &App) -> HashMap<RoomKind, Vec<&Entity<Room>>> {
-        let mut groups = HashMap::new();
+    pub fn rooms(&self, cx: &App) -> BTreeMap<RoomKind, Vec<Entity<Room>>> {
+        let mut groups = BTreeMap::new();
         groups.insert(RoomKind::Ongoing, Vec::new());
         groups.insert(RoomKind::Trusted, Vec::new());
         groups.insert(RoomKind::Unknown, Vec::new());
 
         for room in self.rooms.iter() {
             let kind = room.read(cx).kind;
-            groups.entry(kind).or_insert_with(Vec::new).push(room);
+            groups
+                .entry(kind)
+                .or_insert_with(Vec::new)
+                .push(room.to_owned());
         }
 
         groups
     }
 
-    /// Get rooms by their kind.
-    pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<&Entity<Room>> {
-        self.rooms
-            .iter()
-            .filter(|room| room.read(cx).kind == kind)
-            .collect()
-    }
-
     /// Get the IDs of all rooms.
     pub fn room_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
+    }
+
+    /// Search rooms by their name.
+    pub fn search(&self, query: &str, cx: &App) -> Vec<Entity<Room>> {
+        let matcher = SkimMatcherV2::default();
+
+        self.rooms
+            .iter()
+            .filter(|room| {
+                matcher
+                    .fuzzy_match(room.read(cx).display_name(cx).as_ref(), query)
+                    .is_some()
+            })
+            .cloned()
+            .collect()
     }
 
     /// Load all rooms from the lmdb.
@@ -215,7 +226,6 @@ impl ChatRegistry {
                             .collect();
 
                         this.rooms.extend(rooms);
-                        this.rooms.sort_by_key(|r| Reverse(r.read(cx).created_at));
                         this.loading = false;
 
                         cx.notify();
@@ -259,18 +269,37 @@ impl ChatRegistry {
         Profile::new(*public_key, metadata)
     }
 
-    /// Add a new room to the registry
+    /// Parse a Nostr event into a Room and push it to the registry
     ///
-    /// Returns an error if the room already exists
-    pub fn push(&mut self, event: &Event, window: &mut Window, cx: &mut Context<Self>) -> u64 {
+    /// Returns the ID of the new room
+    pub fn push_event(
+        &mut self,
+        event: &Event,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> u64 {
         let room = Room::new(event).kind(RoomKind::Ongoing);
         let id = room.id;
 
-        if !self.rooms.iter().any(|r| r.read(cx) == &room) {
-            self.rooms.insert(0, cx.new(|_| room));
+        if !self.rooms.iter().any(|this| this.read(cx) == &room) {
+            self.rooms.insert(cx.new(|_| room));
             cx.notify();
         } else {
             window.push_notification("Room already exists", cx);
+        }
+
+        id
+    }
+
+    /// Parse a nostr event into Room and push to the registry
+    ///
+    /// Returns the ID of the new room
+    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) -> u64 {
+        let id = room.read(cx).id;
+
+        if !self.rooms.iter().any(|this| this.read(cx) == room.read(cx)) {
+            self.rooms.insert(room);
+            cx.notify();
         }
 
         id
@@ -291,14 +320,9 @@ impl ChatRegistry {
                     this.emit_message(event, window, cx);
                 });
             });
-
-            cx.defer_in(window, |this, _, cx| {
-                this.rooms
-                    .sort_by_key(|room| Reverse(room.read(cx).created_at));
-            });
         } else {
             // Push the new room to the front of the list
-            self.rooms.insert(0, cx.new(|_| Room::new(&event)));
+            self.rooms.insert(cx.new(|_| Room::new(&event)));
             cx.notify();
         }
     }

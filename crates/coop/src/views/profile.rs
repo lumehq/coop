@@ -314,7 +314,7 @@ impl Render for Profile {
                     .child(self.bio_input.clone()),
             )
             .child(
-                div().p_3().child(
+                div().py_3().child(
                     Button::new("submit")
                         .label("Update")
                         .primary()

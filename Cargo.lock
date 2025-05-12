@@ -966,6 +966,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
+ "fuzzy-matcher",
  "global",
  "gpui",
  "itertools 0.13.0",
@@ -1136,7 +1137,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1171,13 +1172,14 @@ version = "0.1.5"
 dependencies = [
  "anyhow",
  "chrono",
+ "futures",
  "global",
  "gpui",
  "itertools 0.13.0",
  "nostr-sdk",
  "qrcode-generator",
- "random_name_generator",
  "smallvec",
+ "smol",
 ]
 
 [[package]]
@@ -1527,7 +1529,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2170,6 +2172,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2318,7 +2329,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2410,7 +2421,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2634,7 +2645,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2651,7 +2662,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -3110,12 +3121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "joinery"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72167d68f5fce3b8655487b8038691a3c9984ee769590f93f2a631f4ad64e4f5"
-
-[[package]]
 name = "jpeg-decoder"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3392,7 +3397,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -4700,23 +4705,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "random_name_generator"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83f35cf4ff1039c849a4d890c6aa4332df47f9def1e9398ef1e5959bc7f89992"
-dependencies = [
- "anyhow",
- "bitflags 2.9.0",
- "clap",
- "lazy_static",
- "log",
- "rand 0.8.5",
- "regex",
- "rust-embed",
- "titlecase",
-]
-
-[[package]]
 name = "rangemap"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4843,7 +4831,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "derive_refineable",
  "workspace-hack",
@@ -4982,7 +4970,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5168,11 +5156,12 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.11.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "917ce264624a4b4db1c364dcc35bfca9ded014d0a958cd47ad3e960e988ea51c"
+checksum = "229a4a4c221013e7e1f1a043678c5cc39fe5171437c88fb47151a21e6f5b5c79"
 dependencies = [
  "web-time",
+ "zeroize",
 ]
 
 [[package]]
@@ -5452,7 +5441,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "anyhow",
  "serde",
@@ -5775,7 +5764,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "arrayvec",
  "log",
@@ -6195,17 +6184,6 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
-
-[[package]]
-name = "titlecase"
-version = "2.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38397a8cdb017cfeb48bf6c154d6de975ac69ffeed35980fde199d2ee0842042"
-dependencies = [
- "joinery",
- "lazy_static",
- "regex",
-]
 
 [[package]]
 name = "tokio"
@@ -6695,7 +6673,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#ab3e5cdc6cf416181fe009d13476ed5e779f7c24"
+source = "git+https://github.com/zed-industries/zed#d6c7cdd60ff3cbede868b7c73d92ce808f7b9ee3"
 dependencies = [
  "anyhow",
  "async-fs",

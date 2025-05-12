@@ -24,12 +24,12 @@ impl_internal_actions!(emoji, [EmitEmoji]);
 pub struct EmojiPicker {
     icon: Option<Icon>,
     anchor: Option<Corner>,
-    input: WeakEntity<TextInput>,
+    target_input: WeakEntity<TextInput>,
     emojis: Rc<Vec<SharedString>>,
 }
 
 impl EmojiPicker {
-    pub fn new(input: WeakEntity<TextInput>) -> Self {
+    pub fn new(target_input: WeakEntity<TextInput>) -> Self {
         let mut emojis: Vec<SharedString> = vec![];
 
         emojis.extend(
@@ -39,15 +39,8 @@ impl EmojiPicker {
                 .collect::<Vec<SharedString>>(),
         );
 
-        emojis.extend(
-            emojis::Group::Symbols
-                .emojis()
-                .map(|e| SharedString::from(e.as_str()))
-                .collect::<Vec<SharedString>>(),
-        );
-
         Self {
-            input,
+            target_input,
             emojis: emojis.into(),
             anchor: None,
             icon: None,
@@ -82,7 +75,7 @@ impl RenderOnce for EmojiPicker {
             )
             .content(move |window, cx| {
                 let emojis = self.emojis.clone();
-                let input = self.input.clone();
+                let input = self.target_input.clone();
 
                 cx.new(|cx| {
                     PopoverContent::new(window, cx, move |_window, cx| {

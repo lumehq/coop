@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use chats::ChatRegistry;
-use common::{profile::SharedProfile, random_name};
+use common::profile::SharedProfile;
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, red, relative, uniform_list, App,
@@ -56,14 +56,10 @@ impl Compose {
         let error_message = cx.new(|_| None);
 
         let title_input = cx.new(|cx| {
-            let name = random_name(2);
-            let mut input = TextInput::new(window, cx)
+            TextInput::new(window, cx)
                 .appearance(false)
-                .text_size(Size::Small);
-
-            input.set_placeholder("Family... . (Optional)");
-            input.set_text(name, window, cx);
-            input
+                .placeholder("Family... . (Optional)")
+                .text_size(Size::Small)
         });
 
         let user_input = cx.new(|cx| {
@@ -151,6 +147,7 @@ impl Compose {
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
+
             // [IMPORTANT]
             // Make sure this event is never send,
             // this event existed just use for convert to Coop's Room later.
@@ -166,7 +163,7 @@ impl Compose {
             Ok(event) => {
                 cx.update(|window, cx| {
                     ChatRegistry::global(cx).update(cx, |chats, cx| {
-                        let id = chats.push(&event, window, cx);
+                        let id = chats.push_event(&event, window, cx);
                         window.close_modal(cx);
                         window.dispatch_action(
                             Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
@@ -351,7 +348,7 @@ impl Render for Compose {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().pb_0p5().text_sm().font_semibold().child("Title:"))
+                        .child(div().pb_0p5().text_sm().font_semibold().child("Subject:"))
                         .child(self.title_input.clone()),
                 ),
             )

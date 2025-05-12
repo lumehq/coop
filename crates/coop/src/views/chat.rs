@@ -148,22 +148,19 @@ impl Chat {
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(result) = task.await {
-                cx.update(|_, cx| {
-                    this.update(cx, |this, cx| {
-                        result.into_iter().for_each(|item| {
-                            if !item.1 {
-                                let profile = this
-                                    .room
-                                    .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
+                this.update(cx, |this, cx| {
+                    result.into_iter().for_each(|item| {
+                        if !item.1 {
+                            let profile = this
+                                .room
+                                .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
 
-                                this.push_system_message(
-                                    format!("{} {}", profile.shared_name(), ALERT),
-                                    cx,
-                                );
-                            }
-                        });
-                    })
-                    .ok();
+                            this.push_system_message(
+                                format!("{} {}", profile.shared_name(), ALERT),
+                                cx,
+                            );
+                        }
+                    });
                 })
                 .ok();
             }
@@ -235,8 +232,8 @@ impl Chat {
 
         // Update input state
         self.input.update(cx, |this, cx| {
-            this.set_loading(true, window, cx);
-            this.set_disabled(true, window, cx);
+            this.set_loading(true, cx);
+            this.set_disabled(true, cx);
         });
 
         let room = self.room.read(cx);
@@ -261,8 +258,8 @@ impl Chat {
                             cx.update(|window, cx| {
                                 this.update(cx, |this, cx| {
                                     this.input.update(cx, |this, cx| {
-                                        this.set_loading(false, window, cx);
-                                        this.set_disabled(false, window, cx);
+                                        this.set_loading(false, cx);
+                                        this.set_disabled(false, cx);
                                         this.set_text("", window, cx);
                                     });
                                     received = true;

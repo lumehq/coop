@@ -20,12 +20,10 @@ use ui::{
 
 use crate::{
     lru_cache::cache_provider,
-    views::{
-        chat, compose, login, new_account, onboarding, profile, relays, search, sidebar, welcome,
-    },
+    views::{chat, compose, login, new_account, onboarding, profile, relays, sidebar, welcome},
 };
 
-const CACHE_SIZE: usize = 200;
+const IMAGE_CACHE_SIZE: usize = 200;
 const MODAL_WIDTH: f32 = 420.;
 const SIDEBAR_WIDTH: f32 = 280.;
 
@@ -53,7 +51,6 @@ pub enum PanelKind {
 pub enum ModalKind {
     Profile,
     Compose,
-    Search,
     Relay,
     Onboarding,
     SetupRelay,
@@ -242,16 +239,6 @@ impl ChatSpace {
                         .child(compose.clone())
                 })
             }
-            ModalKind::Search => {
-                let search = search::init(window, cx);
-
-                window.open_modal(cx, move |modal, _, _| {
-                    modal
-                        .closable(false)
-                        .width(px(MODAL_WIDTH))
-                        .child(search.clone())
-                })
-            }
             ModalKind::Relay => {
                 let relays = relays::init(window, cx);
 
@@ -299,7 +286,7 @@ impl Render for ChatSpace {
             .relative()
             .size_full()
             .child(
-                image_cache(cache_provider("image-cache", CACHE_SIZE))
+                image_cache(cache_provider("image-cache", IMAGE_CACHE_SIZE))
                     .size_full()
                     .child(
                         div()
