@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
 };
 
 use anyhow::Error;
@@ -37,7 +37,7 @@ impl Global for GlobalChatRegistry {}
 /// - Handling messages and room creation
 pub struct ChatRegistry {
     /// Collection of all chat rooms
-    rooms: Vec<Entity<Room>>,
+    rooms: BTreeSet<Entity<Room>>,
     /// Map of user public keys to their profile metadata
     profiles: Entity<BTreeMap<PublicKey, Option<Metadata>>>,
     /// Indicates if rooms are currently being loaded
@@ -88,7 +88,7 @@ impl ChatRegistry {
         }));
 
         Self {
-            rooms: vec![],
+            rooms: BTreeSet::new(),
             loading: true,
             profiles,
             subscriptions,
@@ -104,8 +104,8 @@ impl ChatRegistry {
     }
 
     /// Get all rooms grouped by their kind.
-    pub fn rooms(&self, cx: &App) -> HashMap<RoomKind, Vec<Entity<Room>>> {
-        let mut groups = HashMap::new();
+    pub fn rooms(&self, cx: &App) -> BTreeMap<RoomKind, Vec<Entity<Room>>> {
+        let mut groups = BTreeMap::new();
         groups.insert(RoomKind::Ongoing, Vec::new());
         groups.insert(RoomKind::Trusted, Vec::new());
         groups.insert(RoomKind::Unknown, Vec::new());
@@ -119,14 +119,6 @@ impl ChatRegistry {
         }
 
         groups
-    }
-
-    /// Get rooms by their kind.
-    pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<&Entity<Room>> {
-        self.rooms
-            .iter()
-            .filter(|room| room.read(cx).kind == kind)
-            .collect()
     }
 
     /// Get the IDs of all rooms.
@@ -234,7 +226,6 @@ impl ChatRegistry {
                             .collect();
 
                         this.rooms.extend(rooms);
-                        this.rooms.sort_by_key(|r| Reverse(r.read(cx).created_at));
                         this.loading = false;
 
                         cx.notify();
@@ -291,7 +282,7 @@ impl ChatRegistry {
         let id = room.id;
 
         if !self.rooms.iter().any(|this| this.read(cx) == &room) {
-            self.rooms.insert(0, cx.new(|_| room));
+            self.rooms.insert(cx.new(|_| room));
             cx.notify();
         } else {
             window.push_notification("Room already exists", cx);
@@ -307,7 +298,7 @@ impl ChatRegistry {
         let id = room.read(cx).id;
 
         if !self.rooms.iter().any(|this| this.read(cx) == room.read(cx)) {
-            self.rooms.insert(0, room);
+            self.rooms.insert(room);
             cx.notify();
         }
 
@@ -329,14 +320,9 @@ impl ChatRegistry {
                     this.emit_message(event, window, cx);
                 });
             });
-
-            cx.defer_in(window, |this, _, cx| {
-                this.rooms
-                    .sort_by_key(|room| Reverse(room.read(cx).created_at));
-            });
         } else {
             // Push the new room to the front of the list
-            self.rooms.insert(0, cx.new(|_| Room::new(&event)));
+            self.rooms.insert(cx.new(|_| Room::new(&event)));
             cx.notify();
         }
     }

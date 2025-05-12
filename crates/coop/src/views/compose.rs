@@ -145,7 +145,8 @@ impl Compose {
         let tags = Tags::from_list(tag_list);
 
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
-            let signer = Keys::generate();
+            let client = get_client();
+            let signer = client.signer().await?;
 
             // [IMPORTANT]
             // Make sure this event is never send,

@@ -202,7 +202,7 @@ impl ThemeColor {
             elevated_surface_background: neutral().dark().step_3(),
             surface_background: neutral().dark().step_2(),
             background: neutral().dark().step_1(),
-            element_foreground: brand().dark().step_12(),
+            element_foreground: brand().dark().step_1(),
             element_background: brand().dark().step_9(),
             element_hover: brand().dark_alpha().step_10(),
             element_active: brand().dark().step_10(),

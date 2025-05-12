@@ -27,7 +27,7 @@ pub enum SendStatus {
     Failed(Error),
 }
 
-#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RoomKind {
     Ongoing,
     Trusted,

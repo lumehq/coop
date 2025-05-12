@@ -202,10 +202,12 @@ impl Sidebar {
                 .collect_vec();
 
             let mut rooms = BTreeSet::new();
-            let keys = Keys::generate();
             let (tx, rx) = smol::channel::bounded::<Room>(10);
 
             spawn(async move {
+                let client = get_client();
+                let signer = client.signer().await.unwrap();
+
                 for event in events.into_iter() {
                     let metadata = Metadata::from_json(event.content).unwrap_or_default();
 
@@ -213,7 +215,7 @@ impl Sidebar {
                         if let Ok(verify) = nip05::verify(&event.pubkey, target, None).await {
                             if verify {
                                 if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
-                                    .sign(&keys)
+                                    .sign(&signer)
                                     .await
                                 {
                                     let room = Room::new(&event);
