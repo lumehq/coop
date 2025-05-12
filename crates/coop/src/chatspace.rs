@@ -23,7 +23,7 @@ use crate::{
     views::{chat, compose, login, new_account, onboarding, profile, relays, sidebar, welcome},
 };
 
-const CACHE_SIZE: usize = 200;
+const IMAGE_CACHE_SIZE: usize = 200;
 const MODAL_WIDTH: f32 = 420.;
 const SIDEBAR_WIDTH: f32 = 280.;
 
@@ -286,7 +286,7 @@ impl Render for ChatSpace {
             .relative()
             .size_full()
             .child(
-                image_cache(cache_provider("image-cache", CACHE_SIZE))
+                image_cache(cache_provider("image-cache", IMAGE_CACHE_SIZE))
                     .size_full()
                     .child(
                         div()

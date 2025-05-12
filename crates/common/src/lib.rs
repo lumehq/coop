@@ -10,6 +10,7 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use qrcode_generator::QrCodeEcc;
 
+pub mod debounced_delay;
 pub mod profile;
 
 pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {

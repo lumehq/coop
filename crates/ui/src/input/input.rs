@@ -464,13 +464,13 @@ impl TextInput {
     }
 
     /// Set the disabled state of the input field.
-    pub fn set_disabled(&mut self, disabled: bool, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
         self.disabled = disabled;
         cx.notify();
     }
 
     /// Set the masked state of the input field.
-    pub fn set_masked(&mut self, masked: bool, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         self.masked = masked;
         cx.notify();
     }
@@ -576,7 +576,7 @@ impl TextInput {
     }
 
     /// Set true to show indicator at the input right.
-    pub fn set_loading(&mut self, loading: bool, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
         self.loading = loading;
         cx.notify();
     }

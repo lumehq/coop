@@ -145,8 +145,8 @@ impl Compose {
         let tags = Tags::from_list(tag_list);
 
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
-            let client = get_client();
-            let signer = client.signer().await?;
+            let signer = Keys::generate();
+
             // [IMPORTANT]
             // Make sure this event is never send,
             // this event existed just use for convert to Coop's Room later.
@@ -162,7 +162,7 @@ impl Compose {
             Ok(event) => {
                 cx.update(|window, cx| {
                     ChatRegistry::global(cx).update(cx, |chats, cx| {
-                        let id = chats.push(&event, window, cx);
+                        let id = chats.push_event(&event, window, cx);
                         window.close_modal(cx);
                         window.dispatch_action(
                             Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),

@@ -13,5 +13,7 @@ anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
 smallvec.workspace = true
+smol.workspace = true
+futures.workspace = true
 
 qrcode-generator = "5.0.0"

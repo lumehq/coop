@@ -27,6 +27,10 @@ impl Account {
         cx.global::<GlobalAccount>().0.clone()
     }
 
+    pub fn get_global(cx: &App) -> &Self {
+        cx.global::<GlobalAccount>().0.read(cx)
+    }
+
     pub fn set_global(account: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalAccount(account));
     }
@@ -160,6 +164,11 @@ impl Account {
             }
         })
         .detach();
+    }
+
+    /// Get the reference to profile.
+    pub fn profile_ref(&self) -> Option<&Profile> {
+        self.profile.as_ref()
     }
 
     /// Sets the profile for the account.

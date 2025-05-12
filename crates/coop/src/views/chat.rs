@@ -232,8 +232,8 @@ impl Chat {
 
         // Update input state
         self.input.update(cx, |this, cx| {
-            this.set_loading(true, window, cx);
-            this.set_disabled(true, window, cx);
+            this.set_loading(true, cx);
+            this.set_disabled(true, cx);
         });
 
         let room = self.room.read(cx);
@@ -258,8 +258,8 @@ impl Chat {
                             cx.update(|window, cx| {
                                 this.update(cx, |this, cx| {
                                     this.input.update(cx, |this, cx| {
-                                        this.set_loading(false, window, cx);
-                                        this.set_disabled(false, window, cx);
+                                        this.set_loading(false, cx);
+                                        this.set_disabled(false, cx);
                                         this.set_text("", window, cx);
                                     });
                                     received = true;
