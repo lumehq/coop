@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use colors::{brand, hsl, neutral};
-use gpui::{black, px, white, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance};
+use gpui::{px, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance};
 
 mod colors;
 mod scale;
@@ -126,6 +126,8 @@ pub struct ThemeColor {
     pub title_bar_border: Hsla,
     /// Background color. Used for modal's overlay.
     pub overlay: Hsla,
+    /// Background color. Used for cursor.
+    pub cursor: Hsla,
     /// Window border color.
     ///
     /// # Platform specific:
@@ -176,7 +178,7 @@ impl ThemeColor {
             scrollbar_thumb_border: gpui::transparent_black(),
             scrollbar_track_background: gpui::transparent_black(),
             scrollbar_track_border: neutral().light().step_5(),
-            panel_background: white(),
+            panel_background: gpui::white(),
             ring: brand().light().step_8(),
             tab_active_background: neutral().light().step_5(),
             tab_hover_background: neutral().light().step_4(),
@@ -184,6 +186,7 @@ impl ThemeColor {
             title_bar: gpui::transparent_black(),
             title_bar_border: gpui::transparent_black(),
             overlay: neutral().light_alpha().step_3(),
+            cursor: brand().light().step_11(),
             window_border: hsl(240.0, 5.9, 78.0),
         }
     }
@@ -226,7 +229,7 @@ impl ThemeColor {
             scrollbar_thumb_border: gpui::transparent_black(),
             scrollbar_track_background: gpui::transparent_black(),
             scrollbar_track_border: neutral().dark().step_5(),
-            panel_background: black(),
+            panel_background: gpui::black(),
             ring: brand().dark().step_8(),
             tab_active_background: neutral().dark().step_5(),
             tab_hover_background: neutral().dark().step_4(),
@@ -234,6 +237,7 @@ impl ThemeColor {
             title_bar: gpui::transparent_black(),
             title_bar_border: gpui::transparent_black(),
             overlay: neutral().dark_alpha().step_3(),
+            cursor: brand().dark().step_11(),
             window_border: hsl(240.0, 3.7, 28.0),
         }
     }

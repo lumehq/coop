@@ -10,6 +10,7 @@ use super::TextInput;
 
 const RIGHT_MARGIN: Pixels = px(5.);
 const BOTTOM_MARGIN: Pixels = px(20.);
+const CURSOR_THICKNESS: Pixels = px(2.);
 
 pub(super) struct TextElement {
     input: Entity<TextInput>,
@@ -148,9 +149,9 @@ impl TextElement {
                             bounds.left() + cursor_pos.x,
                             bounds.top() + cursor_pos.y + ((line_height - cursor_height) / 2.),
                         ),
-                        size(px(1.), cursor_height),
+                        size(CURSOR_THICKNESS, cursor_height),
                     ),
-                    cx.theme().element_active,
+                    cx.theme().cursor,
                 ))
             };
         }
