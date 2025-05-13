@@ -186,7 +186,7 @@ impl ThemeColor {
             title_bar: gpui::transparent_black(),
             title_bar_border: gpui::transparent_black(),
             overlay: neutral().light_alpha().step_3(),
-            cursor: brand().light().step_11(),
+            cursor: hsl(200., 100., 50.),
             window_border: hsl(240.0, 5.9, 78.0),
         }
     }
@@ -237,7 +237,7 @@ impl ThemeColor {
             title_bar: gpui::transparent_black(),
             title_bar_border: gpui::transparent_black(),
             overlay: neutral().dark_alpha().step_3(),
-            cursor: brand().dark().step_11(),
+            cursor: hsl(200., 100., 50.),
             window_border: hsl(240.0, 3.7, 28.0),
         }
     }

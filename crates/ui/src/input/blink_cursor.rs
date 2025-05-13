@@ -53,6 +53,7 @@ impl BlinkCursor {
 
         cx.spawn(async move |this, cx| {
             Timer::after(INTERVAL).await;
+
             if let Some(this) = this.upgrade() {
                 this.update(cx, |this, cx| this.blink(epoch, cx)).ok();
             }

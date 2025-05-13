@@ -141,7 +141,7 @@ impl TextElement {
             if input.show_cursor(window, cx) {
                 // cursor blink
                 let cursor_height =
-                    window.text_style().font_size.to_pixels(window.rem_size()) + px(2.);
+                    window.text_style().font_size.to_pixels(window.rem_size()) + px(4.);
 
                 cursor = Some(fill(
                     Bounds::new(
