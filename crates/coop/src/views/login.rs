@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use account::Account;
-use common::create_qr;
+use common::string_to_qr;
 use global::get_client_keys;
 use gpui::{
     div, img, prelude::FluentBuilder, red, relative, AnyElement, App, AppContext, Context, Entity,
@@ -106,7 +106,7 @@ impl Login {
                 let keys = get_client_keys().to_owned();
 
                 if let Some(uri) = uri.read(cx).clone() {
-                    if let Ok(qr) = create_qr(uri.to_string().as_str()) {
+                    if let Ok(qr) = string_to_qr(uri.to_string().as_str()) {
                         this.qr.update(cx, |this, cx| {
                             *this = Some(qr);
                             cx.notify();

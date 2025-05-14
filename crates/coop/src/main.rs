@@ -317,26 +317,23 @@ fn main() {
                             match signal {
                                 Signal::Event(event) => {
                                     chats.update(cx, |this, cx| {
-                                        this.push_message(event, window, cx)
+                                        this.push_message(event, window, cx);
                                     });
                                 }
                                 Signal::Metadata(data) => {
                                     chats.update(cx, |this, cx| {
-                                        this.add_profile(data.0, data.1, cx)
+                                        this.add_profile(data.0, data.1, cx);
                                     });
                                 }
                                 Signal::Eose => {
                                     chats.update(cx, |this, cx| {
-                                        // This function maybe called multiple times
-                                        // TODO: only handle the last EOSE signal
-                                        this.load_rooms(window, cx)
+                                        this.load_rooms(window, cx);
                                     });
                                 }
                                 Signal::AppUpdates(event) => {
-                                    // TODO: add settings for auto updates
                                     auto_updater.update(cx, |this, cx| {
                                         this.update(event, cx);
-                                    })
+                                    });
                                 }
                             };
                         })

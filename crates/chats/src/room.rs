@@ -267,11 +267,13 @@ impl Room {
     /// An Option<SharedString> containing the avatar:
     /// - For a direct message: the other person's avatar
     /// - For a group chat: None
-    pub fn display_image(&self, cx: &App) -> Option<SharedString> {
-        if !self.is_group() {
-            Some(self.first_member(cx).shared_avatar())
+    pub fn display_image(&self, cx: &App) -> SharedString {
+        if let Some(picture) = self.picture.as_ref() {
+            picture.clone()
+        } else if !self.is_group() {
+            self.first_member(cx).shared_avatar()
         } else {
-            None
+            "brand/group.png".into()
         }
     }
 
@@ -327,12 +329,12 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<(PublicKey, Option<Metadata>)>, Error>
     #[allow(clippy::type_complexity)]
-    pub fn metadata(
+    pub fn load_metadata(
         &self,
         cx: &mut Context<Self>,
     ) -> Task<Result<Vec<(PublicKey, Option<Metadata>)>, Error>> {
         let client = get_client();
-        let public_keys = self.members.clone();
+        let public_keys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
             let mut output = vec![];
