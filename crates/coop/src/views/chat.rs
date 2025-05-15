@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{
-    message::RoomMessage,
-    room::{Room, SendStatus},
+    message::{Message, RoomMessage},
+    room::Room,
     ChatRegistry,
 };
 use common::{nip96_upload, profile::SharedProfile};
@@ -16,6 +16,7 @@ use gpui::{
     ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
     StyledImage, Subscription, Window,
 };
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
@@ -63,7 +64,7 @@ pub struct Chat {
     input: Entity<TextInput>,
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
-    is_uploading: bool,
+    uploading: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
@@ -84,19 +85,21 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Self, _, event, window, cx| {
+                move |this: &mut Self, input, event, window, cx| {
                     if let InputEvent::PressEnter = event {
-                        this.send_message(window, cx);
+                        if input.read(cx).text().is_empty() {
+                            window.push_notification("Cannot send an empty message", cx);
+                        } else {
+                            this.send_message(window, cx);
+                        }
                     }
                 },
             ));
 
-            subscriptions.push(cx.subscribe_in(
-                &room,
-                window,
-                move |this, _, event, _window, cx| {
+            subscriptions.push(
+                cx.subscribe_in(&room, window, move |this, _, inc, _window, cx| {
                     let old_len = this.messages.read(cx).len();
-                    let message = event.event.clone();
+                    let message = RoomMessage::user(inc.event.clone());
 
                     cx.update_entity(&this.messages, |this, cx| {
                         this.extend(vec![message]);
@@ -104,8 +107,8 @@ impl Chat {
                     });
 
                     this.list_state.splice(old_len..old_len, 1);
-                },
-            ));
+                }),
+            );
 
             // Initialize list state
             // [item_count] always equal to 1 at the beginning
@@ -121,7 +124,7 @@ impl Chat {
 
             let this = Self {
                 focus_handle: cx.focus_handle(),
-                is_uploading: false,
+                uploading: false,
                 id: id.to_string().into(),
                 text_data: HashMap::new(),
                 room,
@@ -168,13 +171,14 @@ impl Chat {
         .detach();
     }
 
+    /// Load all messages belonging to this room
     fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
         let task = room.load_messages(cx);
 
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(events) = task.await {
-                cx.update(|_, cx| {
+            match task.await {
+                Ok(events) => {
                     this.update(cx, |this, cx| {
                         let old_len = this.messages.read(cx).len();
                         let new_len = events.len();
@@ -191,11 +195,79 @@ impl Chat {
                         cx.notify();
                     })
                     .ok();
-                })
-                .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
+    }
+
+    /// Get user input message including all attachments
+    fn message(&self, cx: &Context<Self>) -> String {
+        let mut content = self.input.read(cx).text().to_string();
+
+        // Get all attaches and merge its with message
+        if let Some(attaches) = self.attaches.read(cx).as_ref() {
+            if !attaches.is_empty() {
+                content = format!(
+                    "{}\n{}",
+                    content,
+                    attaches
+                        .iter()
+                        .map(|url| url.to_string())
+                        .collect_vec()
+                        .join("\n")
+                )
+            }
+        }
+
+        content
+    }
+
+    fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.input.update(cx, |this, cx| {
+            this.set_loading(true, cx);
+            this.set_disabled(true, cx);
+        });
+
+        let content = self.message(cx);
+        let room = self.room.read(cx);
+
+        if let Some(message) = room.create_temp_message(&content, cx) {
+            let task = room.send_message_in_background(&content, message.created_at, cx);
+
+            // Optimistically update message list
+            self.push_user_message(message, cx);
+
+            // Reset the input state
+            self.input.update(cx, |this, cx| {
+                this.set_loading(true, cx);
+                this.set_disabled(true, cx);
+                this.set_text("", window, cx);
+            });
+
+            // Continue sending the message in the background
+            if let Some(send_message) = task {
+                send_message.detach_and_log_err(cx);
+            }
+        }
+    }
+
+    fn push_user_message(&self, message: Message, cx: &mut Context<Self>) {
+        let old_len = self.messages.read(cx).len();
+        let message = RoomMessage::user(message);
+
+        cx.update_entity(&self.messages, |this, cx| {
+            this.extend(vec![message]);
+            cx.notify();
+        });
+
+        self.list_state.splice(old_len..old_len, 1);
     }
 
     fn push_system_message(&self, content: String, cx: &mut Context<Self>) {
@@ -210,86 +282,18 @@ impl Chat {
         self.list_state.splice(old_len..old_len, 1);
     }
 
-    fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mut content = self.input.read(cx).text().to_string();
-
-        // Get all attaches and merge its with message
-        if let Some(attaches) = self.attaches.read(cx).as_ref() {
-            let merged = attaches
-                .iter()
-                .map(|url| url.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            content = format!("{}\n{}", content, merged)
-        }
-
-        // Check if content is empty
-        if content.is_empty() {
-            window.push_notification("Cannot send an empty message", cx);
+    fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.uploading {
             return;
         }
 
-        // Update input state
-        self.input.update(cx, |this, cx| {
-            this.set_loading(true, cx);
-            this.set_disabled(true, cx);
-        });
+        self.uploading(true, cx);
 
-        let room = self.room.read(cx);
-        let task = room.send_message(content, cx);
-
-        cx.spawn_in(window, async move |this, cx| {
-            let mut received = false;
-
-            match task {
-                Some(rx) => {
-                    while let Ok(message) = rx.recv().await {
-                        if let SendStatus::Failed(error) = message {
-                            cx.update(|window, cx| {
-                                window.push_notification(
-                                    Notification::error(error.to_string())
-                                        .title("Message Failed to Send"),
-                                    cx,
-                                );
-                            })
-                            .ok();
-                        } else if !received {
-                            cx.update(|window, cx| {
-                                this.update(cx, |this, cx| {
-                                    this.input.update(cx, |this, cx| {
-                                        this.set_loading(false, cx);
-                                        this.set_disabled(false, cx);
-                                        this.set_text("", window, cx);
-                                    });
-                                    received = true;
-                                })
-                                .ok();
-                            })
-                            .ok();
-                        }
-                    }
-                }
-                None => {
-                    cx.update(|window, cx| {
-                        window.push_notification(Notification::error("User is not logged in"), cx);
-                    })
-                    .ok();
-                }
-            }
-        })
-        .detach();
-    }
-
-    fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
         });
-
-        // Show loading spinner
-        self.set_loading(true, cx);
 
         cx.spawn_in(window, async move |this, cx| {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
@@ -310,31 +314,24 @@ impl Chat {
                         });
 
                         if let Ok(url) = rx.await {
-                            cx.update(|_, cx| {
-                                this.update(cx, |this, cx| {
-                                    this.set_loading(false, cx);
-
-                                    this.attaches.update(cx, |this, cx| {
-                                        if let Some(model) = this.as_mut() {
-                                            model.push(url);
-                                        } else {
-                                            *this = Some(vec![url]);
-                                        }
-                                        cx.notify();
-                                    });
-                                })
-                                .ok();
+                            this.update(cx, |this, cx| {
+                                this.uploading(false, cx);
+                                this.attaches.update(cx, |this, cx| {
+                                    if let Some(model) = this.as_mut() {
+                                        model.push(url);
+                                    } else {
+                                        *this = Some(vec![url]);
+                                    }
+                                    cx.notify();
+                                });
                             })
                             .ok();
                         }
                     }
                 }
                 Ok(None) => {
-                    cx.update(|_, cx| {
-                        this.update(cx, |this, cx| {
-                            this.set_loading(false, cx);
-                        })
-                        .ok();
+                    this.update(cx, |this, cx| {
+                        this.uploading(false, cx);
                     })
                     .ok();
                 }
@@ -355,8 +352,8 @@ impl Chat {
         });
     }
 
-    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_uploading = status;
+    fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.uploading = status;
         cx.notify();
     }
 
@@ -584,8 +581,8 @@ impl Render for Chat {
                                             Button::new("upload")
                                                 .icon(Icon::new(IconName::Upload))
                                                 .ghost()
-                                                .disabled(self.is_uploading)
-                                                .loading(self.is_uploading)
+                                                .disabled(self.uploading)
+                                                .loading(self.uploading)
                                                 .on_click(cx.listener(
                                                     move |this, _, window, cx| {
                                                         this.upload_media(window, cx);

@@ -163,7 +163,7 @@ impl Compose {
             Ok(event) => {
                 cx.update(|window, cx| {
                     ChatRegistry::global(cx).update(cx, |chats, cx| {
-                        let id = chats.push_event(&event, window, cx);
+                        let id = chats.event_to_room(&event, window, cx);
                         window.close_modal(cx);
                         window.dispatch_action(
                             Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),

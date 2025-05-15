@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, HashMap},
 };
 
+use account::Account;
 use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
@@ -41,6 +42,8 @@ pub struct ChatRegistry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
     /// Indicates if rooms are currently being loaded
+    ///
+    /// Always equal to `true` when the app starts
     pub wait_for_eose: bool,
     /// Subscriptions for observing changes
     #[allow(dead_code)]
@@ -154,10 +157,28 @@ impl ChatRegistry {
         // [bool] is used to determine if the room is trusted
         type Rooms = Vec<(Event, usize, bool)>;
 
+        // If the user is not logged in, do nothing
+        let Some(user) = Account::get_global(cx).profile_ref() else {
+            return;
+        };
+
+        let client = get_client();
+        let public_key = user.public_key();
+
         let task: Task<Result<Rooms, Error>> = cx.background_spawn(async move {
-            let client = get_client();
-            let filter = Filter::new().kind(Kind::PrivateDirectMessage);
-            let events = client.database().query(filter).await?;
+            // Get messages sent by the user
+            let send = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .author(public_key);
+
+            // Get messages received by the user
+            let recv = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .pubkey(public_key);
+
+            let send_events = client.database().query(send).await?;
+            let recv_events = client.database().query(recv).await?;
+            let events = send_events.merge(recv_events);
 
             let mut room_map: HashMap<u64, (Event, usize, bool)> = HashMap::new();
 
@@ -257,10 +278,24 @@ impl ChatRegistry {
         Profile::new(*public_key, metadata)
     }
 
-    /// Parse a Nostr event into a Room and push it to the registry
+    /// Push a Room Entity to the global registry
+    ///
+    /// Returns the ID of the room
+    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) -> u64 {
+        let id = room.read(cx).id;
+
+        if !self.rooms.iter().any(|this| this.read(cx) == room.read(cx)) {
+            self.rooms.insert(0, room);
+            cx.notify();
+        }
+
+        id
+    }
+
+    /// Parse a Nostr event into a Coop Room and push it to the global registry
     ///
     /// Returns the ID of the new room
-    pub fn push_event(
+    pub fn event_to_room(
         &mut self,
         event: &Event,
         window: &mut Window,
@@ -279,31 +314,17 @@ impl ChatRegistry {
         id
     }
 
-    /// Parse a nostr event into Room and push to the registry
-    ///
-    /// Returns the ID of the new room
-    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) -> u64 {
-        let id = room.read(cx).id;
-
-        if !self.rooms.iter().any(|this| this.read(cx) == room.read(cx)) {
-            self.rooms.insert(0, room);
-            cx.notify();
-        }
-
-        id
-    }
-
-    /// Push a new message to a room
+    /// Parse a Nostr event into a Coop Message and push it to the belonging room
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn push_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             room.update(cx, |this, cx| {
                 this.created_at(event.created_at, cx);
-
+                // Emit the new message to the room
                 cx.defer_in(window, |this, window, cx| {
                     this.emit_message(event, window, cx);
                 });
