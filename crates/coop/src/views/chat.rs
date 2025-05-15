@@ -246,9 +246,9 @@ impl Chat {
 
             // Reset the input state
             self.input.update(cx, |this, cx| {
-                this.set_loading(true, cx);
-                this.set_disabled(true, cx);
                 this.set_text("", window, cx);
+                this.set_loading(false, cx);
+                this.set_disabled(false, cx);
             });
 
             // Continue sending the message in the background

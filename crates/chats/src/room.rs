@@ -477,6 +477,16 @@ impl Room {
     ///
     /// Processes the event and emits an Incoming to the UI when complete
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
+        // Skip if the user is not logged in
+        let Some(current_user) = Account::get_global(cx).profile.as_ref() else {
+            return;
+        };
+
+        // Skip incoming messages from the current user
+        if current_user.public_key() == event.pubkey {
+            return;
+        }
+
         let author = ChatRegistry::get_global(cx).profile(&event.pubkey, cx);
         let mentions = extract_mentions(&event.content, cx);
         let message =
