@@ -30,7 +30,7 @@ use ui::{
     notification::Notification,
     popup_menu::PopupMenu,
     text::RichText,
-    v_flex, ContextModal, Disableable, Icon, IconName, Size, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
 };
 
 use crate::views::subject;
@@ -97,6 +97,23 @@ impl Chat {
 
             subscriptions.push(
                 cx.subscribe_in(&room, window, move |this, _, inc, _window, cx| {
+                    let created_at = &inc.event.created_at.to_string()[..5];
+                    let content = inc.event.content.as_str();
+                    let author = inc.event.author.public_key();
+
+                    // Check if the incoming message is the same as the new message created by optimistic update
+                    if this.messages.read(cx).iter().any(|msg| {
+                        if let RoomMessage::User(m) = msg {
+                            created_at == &m.created_at.to_string()[..5]
+                                && m.content == content
+                                && m.author.public_key() == author
+                        } else {
+                            false
+                        }
+                    }) {
+                        return;
+                    }
+
                     let old_len = this.messages.read(cx).len();
                     let message = RoomMessage::user(inc.event.clone());
 
@@ -368,12 +385,6 @@ impl Chat {
             .entry(item.id)
             .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
 
-        let text_color = if item.errors.is_empty() {
-            cx.theme().text
-        } else {
-            cx.theme().text_muted
-        };
-
         div()
             .group("")
             .w_full()
@@ -383,8 +394,6 @@ impl Chat {
             .px_3()
             .py_2()
             .hover(|this| this.bg(cx.theme().surface_background))
-            .text_sm()
-            .text_color(text_color)
             .child(
                 div()
                     .absolute()
@@ -407,6 +416,7 @@ impl Chat {
                             .flex()
                             .items_baseline()
                             .gap_2()
+                            .text_sm()
                             .child(
                                 div()
                                     .font_semibold()
@@ -419,7 +429,20 @@ impl Chat {
                                     .child(item.ago()),
                             ),
                     )
-                    .child(texts.element("body".into(), window, cx)),
+                    .child(texts.element("body".into(), window, cx))
+                    .when(!item.errors.is_empty(), |this| {
+                        this.text_color(cx.theme().text_muted).child(
+                            div()
+                                .id("")
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .text_color(gpui::red())
+                                .text_sm()
+                                .child(Icon::new(IconName::Info).small())
+                                .child("Failed to send message. Click to see details."),
+                        )
+                    }),
             )
     }
 
