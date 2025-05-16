@@ -18,8 +18,9 @@ pub struct Message {
     pub id: EventId,
     pub content: String,
     pub author: Profile,
-    pub mentions: Vec<Profile>,
     pub created_at: Timestamp,
+    pub mentions: Vec<Profile>,
+    pub errors: Vec<String>,
 }
 
 impl Message {
@@ -42,21 +43,8 @@ impl Message {
             author,
             created_at,
             mentions: vec![],
+            errors: vec![],
         }
-    }
-
-    /// Adds or replaces mentions in the message
-    ///
-    /// # Arguments
-    ///
-    /// * `mentions` - New list of mentioned profiles
-    ///
-    /// # Returns
-    ///
-    /// The same message with updated mentions
-    pub fn with_mentions(mut self, mentions: impl IntoIterator<Item = Profile>) -> Self {
-        self.mentions.extend(mentions);
-        self
     }
 
     /// Formats the message timestamp as a human-readable relative time
@@ -84,6 +72,34 @@ impl Message {
             _ => format!("{}, {time_format}", input_time.format("%d/%m/%y")),
         }
         .into()
+    }
+
+    /// Adds or replaces mentions in the message
+    ///
+    /// # Arguments
+    ///
+    /// * `mentions` - New list of mentioned profiles
+    ///
+    /// # Returns
+    ///
+    /// The same message with updated mentions
+    pub fn with_mentions(mut self, mentions: impl IntoIterator<Item = Profile>) -> Self {
+        self.mentions.extend(mentions);
+        self
+    }
+
+    /// Adds or replaces errors in the message
+    ///
+    /// # Arguments
+    ///
+    /// * `errors` - New list of errors
+    ///
+    /// # Returns
+    ///
+    /// The same message with updated errors
+    pub fn with_errors(mut self, errors: impl IntoIterator<Item = String>) -> Self {
+        self.errors.extend(errors);
+        self
     }
 }
 

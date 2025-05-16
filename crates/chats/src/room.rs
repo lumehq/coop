@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, sync::Arc};
 
 use account::Account;
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use common::{compare, profile::SharedProfile, room_hash};
 use global::get_client;
@@ -86,6 +86,7 @@ impl Room {
 
         // Get all pubkeys from the event's tags
         let mut pubkeys: Vec<PublicKey> = event.tags.public_keys().cloned().collect();
+        // The author is always put at the end of the vector
         pubkeys.push(event.pubkey);
 
         // Convert pubkeys into members
@@ -477,16 +478,6 @@ impl Room {
     ///
     /// Processes the event and emits an Incoming to the UI when complete
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
-        // Skip if the user is not logged in
-        let Some(current_user) = Account::get_global(cx).profile.as_ref() else {
-            return;
-        };
-
-        // Skip incoming messages from the current user
-        if current_user.public_key() == event.pubkey {
-            return;
-        }
-
         let author = ChatRegistry::get_global(cx).profile(&event.pubkey, cx);
         let mentions = extract_mentions(&event.content, cx);
         let message =
@@ -539,21 +530,17 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
-    pub fn send_message_in_background(
-        &self,
-        content: &str,
-        created_at: Timestamp,
-        cx: &App,
-    ) -> Option<Task<Result<(), Error>>> {
+    pub fn send_in_background(&self, content: &str, cx: &App) -> Task<Result<Vec<String>, Error>> {
         let content = content.to_owned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
 
-        Some(cx.background_spawn(async move {
+        cx.background_spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
+            let mut reports = vec![];
 
             let mut tags: Vec<Tag> = public_keys
                 .iter()
@@ -578,23 +565,31 @@ impl Room {
                 tags.push(Tag::custom(TagKind::custom("picture"), vec![picture]));
             }
 
-            for receiver in public_keys.iter() {
-                // This message should never be sent directly to relays
-                let rumor = EventBuilder::private_msg_rumor(*receiver, &content)
-                    .tags(tags.clone())
-                    .custom_created_at(created_at)
-                    .build(public_key);
+            let Some((current_user, receivers)) = public_keys.split_last() else {
+                return Err(anyhow!("Something is wrong. Cannot get receivers list."));
+            };
 
-                // Only the gift-wrapped version of this message should be sent to relays
-                let event = EventBuilder::gift_wrap(&signer, receiver, rumor, []).await?;
-
-                if let Err(e) = client.send_custom_private_msg(event).await {
-                    log::error!("Failed to send message to {}: {}", public_key, e);
+            for receiver in receivers.iter() {
+                if let Err(e) = client
+                    .send_private_msg(*receiver, &content, tags.clone())
+                    .await
+                {
+                    reports.push(e.to_string());
                 }
             }
 
-            Ok(())
-        }))
+            // Only send a backup message to current user if there are no issues when sending to others
+            if reports.is_empty() {
+                if let Err(e) = client
+                    .send_private_msg(*current_user, &content, tags.clone())
+                    .await
+                {
+                    reports.push(e.to_string());
+                }
+            }
+
+            Ok(reports)
+        })
     }
 }
 

@@ -11,7 +11,7 @@ use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
-    AnyElement, App, AppContext, Context, Element, Empty, Entity, EventEmitter, Flatten,
+    AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
     ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
     StyledImage, Subscription, Window,
@@ -35,7 +35,6 @@ use ui::{
 
 use crate::views::subject;
 
-const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
 const DESC: &str = "This conversation is private. Only members can see each other's messages.";
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -122,7 +121,7 @@ impl Chat {
                 }
             });
 
-            let this = Self {
+            Self {
                 focus_handle: cx.focus_handle(),
                 uploading: false,
                 id: id.to_string().into(),
@@ -133,46 +132,12 @@ impl Chat {
                 input,
                 attaches,
                 subscriptions,
-            };
-
-            // Verify messaging relays of all members
-            this.verify_messaging_relays(window, cx);
-
-            // Load all messages from database
-            this.load_messages(window, cx);
-
-            this
-        })
-    }
-
-    fn verify_messaging_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let room = self.room.read(cx);
-        let task = room.messaging_relays(cx);
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(result) = task.await {
-                this.update(cx, |this, cx| {
-                    result.into_iter().for_each(|item| {
-                        if !item.1 {
-                            let profile = this
-                                .room
-                                .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
-
-                            this.push_system_message(
-                                format!("{} {}", profile.shared_name(), ALERT),
-                                cx,
-                            );
-                        }
-                    });
-                })
-                .ok();
             }
         })
-        .detach();
     }
 
     /// Load all messages belonging to this room
-    fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
         let task = room.load_messages(cx);
 
@@ -237,24 +202,46 @@ impl Chat {
 
         let content = self.message(cx);
         let room = self.room.read(cx);
+        let temp_message = room.create_temp_message(&content, cx);
+        let send_message = room.send_in_background(&content, cx);
 
-        if let Some(message) = room.create_temp_message(&content, cx) {
-            let task = room.send_message_in_background(&content, message.created_at, cx);
-
+        if let Some(message) = temp_message {
+            let id = message.id;
             // Optimistically update message list
             self.push_user_message(message, cx);
 
             // Reset the input state
             self.input.update(cx, |this, cx| {
-                this.set_text("", window, cx);
                 this.set_loading(false, cx);
                 this.set_disabled(false, cx);
+                this.set_text("", window, cx);
             });
 
             // Continue sending the message in the background
-            if let Some(send_message) = task {
-                send_message.detach_and_log_err(cx);
-            }
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok(reports) = send_message.await {
+                    if !reports.is_empty() {
+                        this.update(cx, |this, cx| {
+                            this.messages.update(cx, |this, cx| {
+                                if let Some(msg) = this.iter_mut().find(|msg| {
+                                    if let RoomMessage::User(m) = msg {
+                                        m.id == id
+                                    } else {
+                                        false
+                                    }
+                                }) {
+                                    if let RoomMessage::User(m) = msg {
+                                        m.errors.extend(reports);
+                                    }
+                                    cx.notify();
+                                }
+                            });
+                        })
+                        .ok();
+                    }
+                }
+            })
+            .detach();
         }
     }
 
@@ -270,6 +257,7 @@ impl Chat {
         self.list_state.splice(old_len..old_len, 1);
     }
 
+    #[allow(dead_code)]
     fn push_system_message(&self, content: String, cx: &mut Context<Self>) {
         let old_len = self.messages.read(cx).len();
         let message = RoomMessage::system(content.into());
@@ -367,7 +355,24 @@ impl Chat {
             return div().into_element();
         };
 
-        let text_data = &mut self.text_data;
+        match message {
+            RoomMessage::User(item) => self.render_user_msg(item, window, cx),
+            RoomMessage::System(content) => self.render_system_msg(content, cx),
+            RoomMessage::Announcement => self.render_announcement_msg(cx),
+        }
+    }
+
+    fn render_user_msg(&mut self, item: &Message, window: &mut Window, cx: &Context<Self>) -> Div {
+        let texts = self
+            .text_data
+            .entry(item.id)
+            .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
+
+        let text_color = if item.errors.is_empty() {
+            cx.theme().text
+        } else {
+            cx.theme().text_muted
+        };
 
         div()
             .group("")
@@ -377,83 +382,99 @@ impl Chat {
             .gap_3()
             .px_3()
             .py_2()
-            .map(|this| match message {
-                RoomMessage::User(item) => {
-                    let text = text_data
-                        .entry(item.id)
-                        .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
-
-                    this.hover(|this| this.bg(cx.theme().surface_background))
-                        .text_sm()
-                        .child(
-                            div()
-                                .absolute()
-                                .left_0()
-                                .top_0()
-                                .w(px(2.))
-                                .h_full()
-                                .bg(cx.theme().border_transparent)
-                                .group_hover("", |this| this.bg(cx.theme().element_active)),
-                        )
-                        .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_initial()
-                                .overflow_hidden()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_baseline()
-                                        .gap_2()
-                                        .child(
-                                            div().font_semibold().child(item.author.shared_name()),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_color(cx.theme().text_placeholder)
-                                                .child(item.ago()),
-                                        ),
-                                )
-                                .child(text.element("body".into(), window, cx)),
-                        )
-                }
-                RoomMessage::System(content) => this
-                    .items_center()
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .top_0()
-                            .w(px(2.))
-                            .h_full()
-                            .bg(cx.theme().border_transparent)
-                            .group_hover("", |this| this.bg(red())),
-                    )
-                    .child(img("brand/avatar.png").size_8().flex_shrink_0())
-                    .text_sm()
-                    .text_color(red())
-                    .child(content.clone()),
-                RoomMessage::Announcement => this
-                    .w_full()
-                    .h_32()
+            .hover(|this| this.bg(cx.theme().surface_background))
+            .text_sm()
+            .text_color(text_color)
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().border_transparent)
+                    .group_hover("", |this| this.bg(cx.theme().element_active)),
+            )
+            .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
+            .child(
+                div()
                     .flex()
                     .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .text_center()
-                    .text_xs()
-                    .text_color(cx.theme().text_placeholder)
-                    .line_height(relative(1.3))
+                    .flex_initial()
+                    .overflow_hidden()
                     .child(
-                        svg()
-                            .path("brand/coop.svg")
-                            .size_10()
-                            .text_color(cx.theme().elevated_surface_background),
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .font_semibold()
+                                    .text_color(cx.theme().text)
+                                    .child(item.author.shared_name()),
+                            )
+                            .child(
+                                div()
+                                    .text_color(cx.theme().text_placeholder)
+                                    .child(item.ago()),
+                            ),
                     )
-                    .child(DESC),
-            })
+                    .child(texts.element("body".into(), window, cx)),
+            )
+    }
+
+    fn render_system_msg(&mut self, content: &SharedString, cx: &Context<Self>) -> Div {
+        div()
+            .group("")
+            .w_full()
+            .relative()
+            .flex()
+            .gap_3()
+            .px_3()
+            .py_2()
+            .items_center()
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().border_transparent)
+                    .group_hover("", |this| this.bg(red())),
+            )
+            .child(img("brand/avatar.png").size_8().flex_shrink_0())
+            .text_sm()
+            .text_color(red())
+            .child(content.clone())
+    }
+
+    fn render_announcement_msg(&mut self, cx: &Context<Self>) -> Div {
+        div()
+            .group("")
+            .w_full()
+            .relative()
+            .flex()
+            .gap_3()
+            .px_3()
+            .py_2()
+            .w_full()
+            .h_32()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .text_center()
+            .text_xs()
+            .text_color(cx.theme().text_placeholder)
+            .line_height(relative(1.3))
+            .child(
+                svg()
+                    .path("brand/coop.svg")
+                    .size_10()
+                    .text_color(cx.theme().elevated_surface_background),
+            )
+            .child(DESC)
     }
 }
 

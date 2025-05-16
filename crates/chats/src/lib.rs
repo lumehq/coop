@@ -329,6 +329,7 @@ impl ChatRegistry {
                     this.emit_message(event, window, cx);
                 });
             });
+            cx.notify();
         } else {
             // Push the new room to the front of the list
             self.rooms.insert(0, cx.new(|_| Room::new(&event)));
