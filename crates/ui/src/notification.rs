@@ -216,11 +216,9 @@ impl Render for Notification {
             Some(icon) => icon,
             None => match self.kind {
                 NotificationType::Info => Icon::new(IconName::Info).text_color(blue()),
+                NotificationType::Warning => Icon::new(IconName::Info).text_color(yellow()),
                 NotificationType::Error => Icon::new(IconName::CloseCircle).text_color(red()),
                 NotificationType::Success => Icon::new(IconName::CheckCircle).text_color(green()),
-                NotificationType::Warning => {
-                    Icon::new(IconName::TriangleAlert).text_color(yellow())
-                }
             },
         };
 

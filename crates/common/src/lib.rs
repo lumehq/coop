@@ -5,7 +5,7 @@ use std::{
 };
 
 use global::constants::NIP96_SERVER;
-use gpui::Image;
+use gpui::{Image, ImageFormat};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use qrcode_generator::QrCodeEcc;
@@ -42,13 +42,9 @@ pub fn room_hash(event: &Event) -> u64 {
     hasher.finish()
 }
 
-pub fn create_qr(data: &str) -> Result<Arc<Image>, anyhow::Error> {
-    let qr = qrcode_generator::to_png_to_vec_from_str(data, QrCodeEcc::Medium, 256)?;
-    let img = Arc::new(Image {
-        format: gpui::ImageFormat::Png,
-        bytes: qr.clone(),
-        id: 1,
-    });
+pub fn string_to_qr(data: &str) -> Result<Arc<Image>, anyhow::Error> {
+    let bytes = qrcode_generator::to_png_to_vec_from_str(data, QrCodeEcc::Medium, 256)?;
+    let img = Arc::new(Image::from_bytes(ImageFormat::Png, bytes));
 
     Ok(img)
 }

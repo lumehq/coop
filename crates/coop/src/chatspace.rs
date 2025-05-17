@@ -20,7 +20,10 @@ use ui::{
 
 use crate::{
     lru_cache::cache_provider,
-    views::{chat, compose, login, new_account, onboarding, profile, relays, sidebar, welcome},
+    views::{
+        chat::{self, Chat},
+        compose, login, new_account, onboarding, profile, relays, sidebar, welcome,
+    },
 };
 
 const IMAGE_CACHE_SIZE: usize = 200;
@@ -79,7 +82,7 @@ pub struct ChatSpace {
     titlebar: bool,
     dock: Entity<DockArea>,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl ChatSpace {
@@ -108,6 +111,12 @@ impl ChatSpace {
                     }
                 },
             ));
+
+            subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
+                if let Some(window) = window {
+                    this.load_messages(window, cx);
+                }
+            }));
 
             Self {
                 dock,

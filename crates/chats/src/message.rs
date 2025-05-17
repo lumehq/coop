@@ -2,6 +2,8 @@ use chrono::{Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
+use crate::room::SendError;
+
 /// # Message
 ///
 /// Represents a message in the application.
@@ -18,8 +20,9 @@ pub struct Message {
     pub id: EventId,
     pub content: String,
     pub author: Profile,
-    pub mentions: Vec<Profile>,
     pub created_at: Timestamp,
+    pub mentions: Vec<Profile>,
+    pub errors: Option<Vec<SendError>>,
 }
 
 impl Message {
@@ -42,21 +45,8 @@ impl Message {
             author,
             created_at,
             mentions: vec![],
+            errors: None,
         }
-    }
-
-    /// Adds or replaces mentions in the message
-    ///
-    /// # Arguments
-    ///
-    /// * `mentions` - New list of mentioned profiles
-    ///
-    /// # Returns
-    ///
-    /// The same message with updated mentions
-    pub fn with_mentions(mut self, mentions: impl IntoIterator<Item = Profile>) -> Self {
-        self.mentions.extend(mentions);
-        self
     }
 
     /// Formats the message timestamp as a human-readable relative time
@@ -84,6 +74,34 @@ impl Message {
             _ => format!("{}, {time_format}", input_time.format("%d/%m/%y")),
         }
         .into()
+    }
+
+    /// Adds or replaces mentions in the message
+    ///
+    /// # Arguments
+    ///
+    /// * `mentions` - New list of mentioned profiles
+    ///
+    /// # Returns
+    ///
+    /// The same message with updated mentions
+    pub fn with_mentions(mut self, mentions: impl IntoIterator<Item = Profile>) -> Self {
+        self.mentions.extend(mentions);
+        self
+    }
+
+    /// Adds or replaces errors in the message
+    ///
+    /// # Arguments
+    ///
+    /// * `errors` - New list of errors
+    ///
+    /// # Returns
+    ///
+    /// The same message with updated errors
+    pub fn with_errors(mut self, errors: Vec<SendError>) -> Self {
+        self.errors = Some(errors);
+        self
     }
 }
 
