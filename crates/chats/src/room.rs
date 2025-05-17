@@ -16,14 +16,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Incoming {
-    pub event: Message,
-}
+pub struct Incoming(pub Message);
 
-#[derive(Debug)]
-pub enum SendStatus {
-    Sent(EventId),
-    Failed(Error),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SendError {
+    pub profile: Profile,
+    pub message: String,
 }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -483,7 +481,7 @@ impl Room {
         let message =
             Message::new(event.id, event.content, author, event.created_at).with_mentions(mentions);
 
-        cx.emit(Incoming { event: message });
+        cx.emit(Incoming(message));
     }
 
     /// Creates a temporary message for optimistic updates
@@ -519,7 +517,7 @@ impl Room {
         )
     }
 
-    /// Sends a message to all members in the room
+    /// Sends a message to all members in the background task
     ///
     /// # Arguments
     ///
@@ -530,8 +528,8 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
-    pub fn send_in_background(&self, content: &str, cx: &App) -> Task<Result<Vec<String>, Error>> {
-        let content = content.to_owned();
+    pub fn send_in_background(&self, msg: &str, cx: &App) -> Task<Result<Vec<SendError>, Error>> {
+        let content = msg.to_owned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
@@ -574,7 +572,18 @@ impl Room {
                     .send_private_msg(*receiver, &content, tags.clone())
                     .await
                 {
-                    reports.push(e.to_string());
+                    let metadata = client
+                        .database()
+                        .metadata(*receiver)
+                        .await?
+                        .unwrap_or_default();
+                    let profile = Profile::new(*receiver, metadata);
+                    let report = SendError {
+                        profile,
+                        message: e.to_string(),
+                    };
+
+                    reports.push(report);
                 }
             }
 
@@ -584,7 +593,17 @@ impl Room {
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await
                 {
-                    reports.push(e.to_string());
+                    let metadata = client
+                        .database()
+                        .metadata(*current_user)
+                        .await?
+                        .unwrap_or_default();
+                    let profile = Profile::new(*current_user, metadata);
+                    let report = SendError {
+                        profile,
+                        message: e.to_string(),
+                    };
+                    reports.push(report);
                 }
             }
 

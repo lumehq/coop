@@ -2,6 +2,8 @@ use chrono::{Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
+use crate::room::SendError;
+
 /// # Message
 ///
 /// Represents a message in the application.
@@ -20,7 +22,7 @@ pub struct Message {
     pub author: Profile,
     pub created_at: Timestamp,
     pub mentions: Vec<Profile>,
-    pub errors: Vec<String>,
+    pub errors: Option<Vec<SendError>>,
 }
 
 impl Message {
@@ -43,7 +45,7 @@ impl Message {
             author,
             created_at,
             mentions: vec![],
-            errors: vec![],
+            errors: None,
         }
     }
 
@@ -97,8 +99,8 @@ impl Message {
     /// # Returns
     ///
     /// The same message with updated errors
-    pub fn with_errors(mut self, errors: impl IntoIterator<Item = String>) -> Self {
-        self.errors.extend(errors);
+    pub fn with_errors(mut self, errors: Vec<SendError>) -> Self {
+        self.errors = Some(errors);
         self
     }
 }

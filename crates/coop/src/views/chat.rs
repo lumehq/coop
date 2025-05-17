@@ -96,10 +96,10 @@ impl Chat {
             ));
 
             subscriptions.push(
-                cx.subscribe_in(&room, window, move |this, _, inc, _window, cx| {
-                    let created_at = &inc.event.created_at.to_string()[..5];
-                    let content = inc.event.content.as_str();
-                    let author = inc.event.author.public_key();
+                cx.subscribe_in(&room, window, move |this, _, incoming, _w, cx| {
+                    let created_at = &incoming.0.created_at.to_string()[..5];
+                    let content = incoming.0.content.as_str();
+                    let author = incoming.0.author.public_key();
 
                     // Check if the incoming message is the same as the new message created by optimistic update
                     if this.messages.read(cx).iter().any(|msg| {
@@ -115,7 +115,7 @@ impl Chat {
                     }
 
                     let old_len = this.messages.read(cx).len();
-                    let message = RoomMessage::user(inc.event.clone());
+                    let message = RoomMessage::user(incoming.0.clone());
 
                     cx.update_entity(&this.messages, |this, cx| {
                         this.extend(vec![message]);
@@ -247,8 +247,8 @@ impl Chat {
                                         false
                                     }
                                 }) {
-                                    if let RoomMessage::User(m) = msg {
-                                        m.errors.extend(reports);
+                                    if let RoomMessage::User(this) = msg {
+                                        this.errors = Some(reports)
                                     }
                                     cx.notify();
                                 }
@@ -430,17 +430,42 @@ impl Chat {
                             ),
                     )
                     .child(texts.element("body".into(), window, cx))
-                    .when(!item.errors.is_empty(), |this| {
-                        this.text_color(cx.theme().text_muted).child(
+                    .when_some(item.errors.clone(), |this, errors| {
+                        this.child(
                             div()
                                 .id("")
                                 .flex()
                                 .items_center()
                                 .gap_1()
                                 .text_color(gpui::red())
-                                .text_sm()
+                                .text_xs()
+                                .italic()
                                 .child(Icon::new(IconName::Info).small())
-                                .child("Failed to send message. Click to see details."),
+                                .child("Failed to send message. Click to see details.")
+                                .on_click(move |_, window, cx| {
+                                    let errors = errors.clone();
+
+                                    window.open_modal(cx, move |this, _window, cx| {
+                                        this.title("Error Logs").child(
+                                            div().flex().flex_col().gap_2().px_3().pb_3().children(
+                                                errors.clone().into_iter().map(|error| {
+                                                    div()
+                                                        .text_sm()
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_baseline()
+                                                                .gap_1()
+                                                                .text_color(cx.theme().text_muted)
+                                                                .child("Send to:")
+                                                                .child(error.profile.shared_name()),
+                                                        )
+                                                        .child(error.message)
+                                                }),
+                                            ),
+                                        )
+                                    });
+                                }),
                         )
                     }),
             )
