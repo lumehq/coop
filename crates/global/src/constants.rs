@@ -2,23 +2,37 @@ pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 pub const APP_PUBKEY: &str = "b1813fb01274b32cc5db6d1198e7c79dda0fb430899f63c7064f651a41d44f2b";
 
-/// Bootstrap relays
+/// Bootstrap Relays.
 pub const BOOTSTRAP_RELAYS: [&str; 4] = [
     "wss://relay.damus.io",
     "wss://relay.primal.net",
     "wss://user.kindpag.es",
     "wss://relaydiscovery.com",
 ];
-
-/// Search relays
+/// Search Relays.
 pub const SEARCH_RELAYS: [&str; 1] = ["wss://relay.nostr.band"];
 
-/// Subscriptions
+/// Unique ID for new message subscription.
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
+/// Unique ID for all messages subscription.
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
 
-/// Image Resizer Service
+/// Total metadata requests will be grouped.
+pub const METADATA_BATCH_LIMIT: usize = 200;
+/// Maximum timeout for grouping metadata requests.
+pub const METADATA_BATCH_TIMEOUT: u64 = 300;
+
+/// Default width for all modals.
+pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
+/// Default width of the sidebar.
+pub const DEFAULT_SIDEBAR_WIDTH: f32 = 280.;
+
+/// Total remote images will be cached
+pub const IMAGE_CACHE_LIMIT: usize = 50;
+
+/// Image Resizer Service.
+/// Use for resize all remote images (ex: avatar, banner,...) on-the-fly.
 pub const IMAGE_SERVICE: &str = "https://wsrv.nl";
 
-/// NIP96 Media Server
+/// NIP96 Media Server.
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";

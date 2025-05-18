@@ -521,6 +521,7 @@ impl Render for Sidebar {
             .child(
                 div()
                     .px_1()
+                    .w_full()
                     .flex()
                     .flex_col()
                     .gap_1()
@@ -528,6 +529,7 @@ impl Render for Sidebar {
                         div()
                             .mb_1()
                             .px_2()
+                            .w_full()
                             .flex()
                             .justify_between()
                             .items_center()
@@ -559,7 +561,7 @@ impl Render for Sidebar {
                             ),
                     )
                     .when(chats.wait_for_eose, |this| {
-                        this.px_2().children(self.render_skeleton(6))
+                        this.children(self.render_skeleton(6))
                     })
                     .map(|this| {
                         if let Some(rooms) = local_result {

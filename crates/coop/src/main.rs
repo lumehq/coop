@@ -7,8 +7,8 @@ use futures::{select, FutureExt};
 use global::constants::APP_NAME;
 use global::{
     constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, NEW_MESSAGE_SUB_ID,
-        SEARCH_RELAYS,
+        ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
+        METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
     },
     get_client,
 };
@@ -111,20 +111,18 @@ fn main() {
     // Handle batch metadata
     app.background_executor()
         .spawn(async move {
-            const BATCH_SIZE: usize = 20;
-            const BATCH_TIMEOUT: Duration = Duration::from_millis(300);
-
             let mut batch: HashSet<PublicKey> = HashSet::new();
 
             loop {
-                let mut timeout = Box::pin(Timer::after(BATCH_TIMEOUT).fuse());
+                let mut timeout =
+                    Box::pin(Timer::after(Duration::from_millis(METADATA_BATCH_TIMEOUT)).fuse());
 
                 select! {
                     pubkeys = batch_rx.recv().fuse() => {
                         match pubkeys {
                             Ok(keys) => {
                                 batch.extend(keys);
-                                if batch.len() >= BATCH_SIZE {
+                                if batch.len() >= METADATA_BATCH_LIMIT {
                                     sync_metadata(mem::take(&mut batch), client, opts).await;
                                 }
                             }

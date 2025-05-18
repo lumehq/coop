@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use account::Account;
 use anyhow::Error;
-use global::get_client;
+use global::{
+    constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH, IMAGE_CACHE_LIMIT},
+    get_client,
+};
 use gpui::{
     div, image_cache, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
     Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
@@ -25,10 +28,6 @@ use crate::{
         compose, login, new_account, onboarding, profile, relays, sidebar, welcome,
     },
 };
-
-const IMAGE_CACHE_SIZE: usize = 200;
-const MODAL_WIDTH: f32 = 420.;
-const SIDEBAR_WIDTH: f32 = 280.;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
@@ -162,7 +161,7 @@ impl ChatSpace {
         );
 
         self.dock.update(cx, |this, cx| {
-            this.set_left_dock(left, Some(px(SIDEBAR_WIDTH)), true, window, cx);
+            this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
             this.set_center(center, window, cx);
         });
 
@@ -234,7 +233,7 @@ impl ChatSpace {
                 window.open_modal(cx, move |modal, _, _| {
                     modal
                         .title("Profile")
-                        .width(px(MODAL_WIDTH))
+                        .width(px(DEFAULT_MODAL_WIDTH))
                         .child(profile.clone())
                 })
             }
@@ -244,7 +243,7 @@ impl ChatSpace {
                 window.open_modal(cx, move |modal, _, _| {
                     modal
                         .title("Direct Messages")
-                        .width(px(MODAL_WIDTH))
+                        .width(px(DEFAULT_MODAL_WIDTH))
                         .child(compose.clone())
                 })
             }
@@ -252,7 +251,7 @@ impl ChatSpace {
                 let relays = relays::init(window, cx);
 
                 window.open_modal(cx, move |this, _, _| {
-                    this.width(px(MODAL_WIDTH))
+                    this.width(px(DEFAULT_MODAL_WIDTH))
                         .title("Edit your Messaging Relays")
                         .child(relays.clone())
                 });
@@ -261,7 +260,7 @@ impl ChatSpace {
                 let relays = relays::init(window, cx);
 
                 window.open_modal(cx, move |this, _, _| {
-                    this.width(px(MODAL_WIDTH))
+                    this.width(px(DEFAULT_MODAL_WIDTH))
                         .title("Your Messaging Relays are not configured")
                         .child(relays.clone())
                 });
@@ -295,7 +294,7 @@ impl Render for ChatSpace {
             .relative()
             .size_full()
             .child(
-                image_cache(cache_provider("image-cache", IMAGE_CACHE_SIZE))
+                image_cache(cache_provider("image-cache", IMAGE_CACHE_LIMIT))
                     .size_full()
                     .child(
                         div()
