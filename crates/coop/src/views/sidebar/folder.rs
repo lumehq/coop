@@ -264,8 +264,8 @@ impl FolderItem {
         self
     }
 
-    pub fn img(mut self, img: Option<Img>) -> Self {
-        self.img = img;
+    pub fn img(mut self, img: Img) -> Self {
+        self.img = Some(img);
         self
     }
 
@@ -286,49 +286,43 @@ impl RenderOnce for FolderItem {
             .id(self.ix)
             .flex()
             .items_center()
-            .justify_between()
+            .gap_2()
             .text_sm()
             .rounded(cx.theme().radius)
+            .child(div().size_6().flex_none().map(|this| {
+                if let Some(img) = self.img {
+                    this.child(img.size_6().flex_none())
+                } else {
+                    this.child(
+                        div()
+                            .size_6()
+                            .flex_none()
+                            .flex()
+                            .justify_center()
+                            .items_center()
+                            .rounded_full()
+                            .bg(cx.theme().element_background),
+                    )
+                }
+            }))
             .child(
                 div()
                     .flex_1()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .truncate()
-                    .font_medium()
-                    .map(|this| {
-                        if let Some(img) = self.img {
-                            this.child(img.size_6().flex_shrink_0())
-                        } else {
-                            this.child(
-                                div()
-                                    .flex_shrink_0()
-                                    .flex()
-                                    .justify_center()
-                                    .items_center()
-                                    .size_5()
-                                    .rounded_full()
-                                    .bg(cx.theme().element_disabled)
-                                    .child(
-                                        Icon::new(IconName::UsersThreeFill)
-                                            .xsmall()
-                                            .text_color(cx.theme().text_accent),
-                                    ),
-                            )
-                        }
+                    .justify_between()
+                    .when_some(self.label, |this, label| {
+                        this.child(div().truncate().text_ellipsis().font_medium().child(label))
                     })
-                    .when_some(self.label, |this, label| this.child(label)),
+                    .when_some(self.description, |this, description| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_placeholder)
+                                .child(description),
+                        )
+                    }),
             )
-            .when_some(self.description, |this, description| {
-                this.child(
-                    div()
-                        .flex_shrink_0()
-                        .text_xs()
-                        .text_color(cx.theme().text_placeholder)
-                        .child(description),
-                )
-            })
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |ev, window, cx| handler(ev, window, cx))
     }

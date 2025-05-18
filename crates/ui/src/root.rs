@@ -7,6 +7,7 @@ use gpui::{
 use theme::ActiveTheme;
 
 use crate::{
+    input::InputState,
     modal::Modal,
     notification::{Notification, NotificationList},
     window_border,
@@ -36,6 +37,12 @@ pub trait ContextModal: Sized {
 
     /// Clear all notifications
     fn clear_notifications(&mut self, cx: &mut App);
+
+    /// Return current focused Input entity.
+    fn focused_input(&mut self, cx: &mut App) -> Option<Entity<InputState>>;
+
+    /// Returns true if there is a focused Input entity.
+    fn has_focused_input(&mut self, cx: &mut App) -> bool;
 }
 
 impl ContextModal for Window {
@@ -110,12 +117,20 @@ impl ContextModal for Window {
         let entity = Root::read(self, cx).notification.clone();
         Rc::new(entity.read(cx).notifications())
     }
+
+    fn has_focused_input(&mut self, cx: &mut App) -> bool {
+        Root::read(self, cx).focused_input.is_some()
+    }
+
+    fn focused_input(&mut self, cx: &mut App) -> Option<Entity<InputState>> {
+        Root::read(self, cx).focused_input.clone()
+    }
 }
 
 type Builder = Rc<dyn Fn(Modal, &mut Window, &mut App) -> Modal + 'static>;
 
 #[derive(Clone)]
-struct ActiveModal {
+pub struct ActiveModal {
     focus_handle: FocusHandle,
     builder: Builder,
 }
@@ -124,11 +139,13 @@ struct ActiveModal {
 ///
 /// It is used to manage the Modal, and Notification.
 pub struct Root {
+    pub active_modals: Vec<ActiveModal>,
+    pub notification: Entity<NotificationList>,
+    pub focused_input: Option<Entity<InputState>>,
     /// Used to store the focus handle of the previous view.
+    ///
     /// When the Modal closes, we will focus back to the previous view.
     previous_focus_handle: Option<FocusHandle>,
-    active_modals: Vec<ActiveModal>,
-    pub notification: Entity<NotificationList>,
     view: AnyView,
 }
 
@@ -136,6 +153,7 @@ impl Root {
     pub fn new(view: AnyView, window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             previous_focus_handle: None,
+            focused_input: None,
             active_modals: Vec::new(),
             notification: cx.new(|cx| NotificationList::new(window, cx)),
             view,

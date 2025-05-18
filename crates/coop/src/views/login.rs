@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use account::Account;
-use common::create_qr;
+use common::string_to_qr;
 use global::get_client_keys;
 use gpui::{
     div, img, prelude::FluentBuilder, red, relative, AnyElement, App, AppContext, Context, Entity,
@@ -14,10 +14,10 @@ use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
-    input::{InputEvent, TextInput},
+    input::{InputEvent, InputState, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
-    ContextModal, Disableable, Sizable, Size, StyledExt,
+    ContextModal, Disableable, Sizable, StyledExt,
 };
 
 #[derive(Debug, Clone)]
@@ -38,12 +38,12 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
 
 pub struct Login {
     // Inputs
-    key_input: Entity<TextInput>,
+    key_input: Entity<InputState>,
     error: Entity<Option<SharedString>>,
     is_logging_in: bool,
     // Nostr Connect
     qr: Entity<Option<Arc<Image>>>,
-    connect_relay: Entity<TextInput>,
+    connect_relay: Entity<InputState>,
     connect_client: Entity<Option<NostrConnectURI>>,
     // Keep track of all signers created by nostr connect
     signers: SmallVec<[NostrConnect; 3]>,
@@ -66,26 +66,19 @@ impl Login {
         let error = cx.new(|_| None);
         let qr = cx.new(|_| None);
 
+        let key_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
+        let connect_relay =
+            cx.new(|cx| InputState::new(window, cx).default_value("wss://relay.nsec.app"));
+
         let signers = smallvec![];
         let mut subscriptions = smallvec![];
-
-        let key_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
-                .placeholder("nsec... or bunker://...")
-        });
-
-        let connect_relay = cx.new(|cx| {
-            let mut input = TextInput::new(window, cx).text_size(Size::XSmall).small();
-            input.set_text("wss://relay.nsec.app", window, cx);
-            input
-        });
 
         subscriptions.push(cx.subscribe_in(
             &key_input,
             window,
             move |this, _, event, window, cx| {
-                if let InputEvent::PressEnter = event {
+                if let InputEvent::PressEnter { .. } = event {
                     this.login(window, cx);
                 }
             },
@@ -95,7 +88,7 @@ impl Login {
             &connect_relay,
             window,
             move |this, _, event, window, cx| {
-                if let InputEvent::PressEnter = event {
+                if let InputEvent::PressEnter { .. } = event {
                     this.change_relay(window, cx);
                 }
             },
@@ -106,7 +99,7 @@ impl Login {
                 let keys = get_client_keys().to_owned();
 
                 if let Some(uri) = uri.read(cx).clone() {
-                    if let Ok(qr) = create_qr(uri.to_string().as_str()) {
+                    if let Ok(qr) = string_to_qr(uri.to_string().as_str()) {
                         this.qr.update(cx, |this, cx| {
                             *this = Some(qr);
                             cx.notify();
@@ -179,7 +172,7 @@ impl Login {
 
         self.set_logging_in(true, cx);
 
-        let content = self.key_input.read(cx).text();
+        let content = self.key_input.read(cx).value();
         let account = Account::global(cx);
 
         if content.starts_with("nsec1") {
@@ -212,7 +205,7 @@ impl Login {
 
     fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(relay_url) =
-            RelayUrl::parse(self.connect_relay.read(cx).text().to_string().as_str())
+            RelayUrl::parse(self.connect_relay.read(cx).value().to_string().as_str())
         else {
             window.push_notification(Notification::error("Relay URL is not valid."), cx);
             return;
@@ -316,7 +309,7 @@ impl Render for Login {
                                     .flex()
                                     .flex_col()
                                     .gap_3()
-                                    .child(self.key_input.clone())
+                                    .child(TextInput::new(&self.key_input))
                                     .child(
                                         Button::new("login")
                                             .label("Continue")
@@ -401,7 +394,7 @@ impl Render for Login {
                                     .items_center()
                                     .justify_center()
                                     .gap_1()
-                                    .child(self.connect_relay.clone())
+                                    .child(TextInput::new(&self.connect_relay).xsmall())
                                     .child(
                                         Button::new("change")
                                             .label("Change")

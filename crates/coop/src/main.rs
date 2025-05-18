@@ -315,28 +315,25 @@ fn main() {
                             let auto_updater = AutoUpdater::global(cx);
 
                             match signal {
+                                Signal::Eose => {
+                                    chats.update(cx, |this, cx| {
+                                        this.load_rooms(window, cx);
+                                    });
+                                }
                                 Signal::Event(event) => {
                                     chats.update(cx, |this, cx| {
-                                        this.push_message(event, window, cx)
+                                        this.event_to_message(event, window, cx);
                                     });
                                 }
                                 Signal::Metadata(data) => {
                                     chats.update(cx, |this, cx| {
-                                        this.add_profile(data.0, data.1, cx)
-                                    });
-                                }
-                                Signal::Eose => {
-                                    chats.update(cx, |this, cx| {
-                                        // This function maybe called multiple times
-                                        // TODO: only handle the last EOSE signal
-                                        this.load_rooms(window, cx)
+                                        this.add_profile(data.0, data.1, cx);
                                     });
                                 }
                                 Signal::AppUpdates(event) => {
-                                    // TODO: add settings for auto updates
                                     auto_updater.update(cx, |this, cx| {
                                         this.update(event, cx);
-                                    })
+                                    });
                                 }
                             };
                         })

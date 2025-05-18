@@ -3,19 +3,20 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{
-    message::RoomMessage,
-    room::{Room, SendStatus},
+    message::{Message, RoomMessage},
+    room::Room,
     ChatRegistry,
 };
 use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
-    AnyElement, App, AppContext, Context, Element, Empty, Entity, EventEmitter, Flatten,
+    AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
     ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
     StyledImage, Subscription, Window,
 };
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
@@ -25,16 +26,15 @@ use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     emoji_picker::EmojiPicker,
-    input::{InputEvent, TextInput},
+    input::{InputEvent, InputState, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
     text::RichText,
-    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
 use crate::views::subject;
 
-const ALERT: &str = "has not set up Messaging (DM) Relays, so they will NOT receive your messages.";
 const DESC: &str = "This conversation is private. Only members can see each other's messages.";
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -60,10 +60,10 @@ pub struct Chat {
     text_data: HashMap<EventId, RichText>,
     list_state: ListState,
     // New Message
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
-    is_uploading: bool,
+    uploading: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
@@ -73,9 +73,13 @@ impl Chat {
         let messages = cx.new(|_| vec![RoomMessage::announcement()]);
         let attaches = cx.new(|_| None);
         let input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
+            InputState::new(window, cx)
                 .placeholder("Message...")
+                .multi_line()
+                .prevent_new_line_on_enter()
+                .rows(1)
+                .clean_on_escape()
+                .max_rows(20)
         });
 
         cx.new(|cx| {
@@ -84,19 +88,38 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Self, _, event, window, cx| {
-                    if let InputEvent::PressEnter = event {
-                        this.send_message(window, cx);
+                move |this: &mut Self, input, event, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
+                        if input.read(cx).value().trim().is_empty() {
+                            window.push_notification("Cannot send an empty message", cx);
+                        } else {
+                            this.send_message(window, cx);
+                        }
                     }
                 },
             ));
 
-            subscriptions.push(cx.subscribe_in(
-                &room,
-                window,
-                move |this, _, event, _window, cx| {
+            subscriptions.push(
+                cx.subscribe_in(&room, window, move |this, _, incoming, _w, cx| {
+                    let created_at = &incoming.0.created_at.to_string()[..5];
+                    let content = incoming.0.content.as_str();
+                    let author = incoming.0.author.public_key();
+
+                    // Check if the incoming message is the same as the new message created by optimistic update
+                    if this.messages.read(cx).iter().any(|msg| {
+                        if let RoomMessage::User(m) = msg {
+                            created_at == &m.created_at.to_string()[..5]
+                                && m.content == content
+                                && m.author.public_key() == author
+                        } else {
+                            false
+                        }
+                    }) {
+                        return;
+                    }
+
                     let old_len = this.messages.read(cx).len();
-                    let message = event.event.clone();
+                    let message = RoomMessage::user(incoming.0.clone());
 
                     cx.update_entity(&this.messages, |this, cx| {
                         this.extend(vec![message]);
@@ -104,8 +127,8 @@ impl Chat {
                     });
 
                     this.list_state.splice(old_len..old_len, 1);
-                },
-            ));
+                }),
+            );
 
             // Initialize list state
             // [item_count] always equal to 1 at the beginning
@@ -119,9 +142,9 @@ impl Chat {
                 }
             });
 
-            let this = Self {
+            Self {
                 focus_handle: cx.focus_handle(),
-                is_uploading: false,
+                uploading: false,
                 id: id.to_string().into(),
                 text_data: HashMap::new(),
                 room,
@@ -130,51 +153,18 @@ impl Chat {
                 input,
                 attaches,
                 subscriptions,
-            };
-
-            // Verify messaging relays of all members
-            this.verify_messaging_relays(window, cx);
-
-            // Load all messages from database
-            this.load_messages(window, cx);
-
-            this
-        })
-    }
-
-    fn verify_messaging_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let room = self.room.read(cx);
-        let task = room.messaging_relays(cx);
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(result) = task.await {
-                this.update(cx, |this, cx| {
-                    result.into_iter().for_each(|item| {
-                        if !item.1 {
-                            let profile = this
-                                .room
-                                .read_with(cx, |this, _| this.profile_by_pubkey(&item.0, cx));
-
-                            this.push_system_message(
-                                format!("{} {}", profile.shared_name(), ALERT),
-                                cx,
-                            );
-                        }
-                    });
-                })
-                .ok();
             }
         })
-        .detach();
     }
 
-    fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Load all messages belonging to this room
+    pub(crate) fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
         let task = room.load_messages(cx);
 
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(events) = task.await {
-                cx.update(|_, cx| {
+            match task.await {
+                Ok(events) => {
                     this.update(cx, |this, cx| {
                         let old_len = this.messages.read(cx).len();
                         let new_len = events.len();
@@ -191,13 +181,104 @@ impl Chat {
                         cx.notify();
                     })
                     .ok();
-                })
-                .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
     }
 
+    /// Get user input message including all attachments
+    fn message(&self, cx: &Context<Self>) -> String {
+        let mut content = self.input.read(cx).value().trim().to_string();
+
+        // Get all attaches and merge its with message
+        if let Some(attaches) = self.attaches.read(cx).as_ref() {
+            if !attaches.is_empty() {
+                content = format!(
+                    "{}\n{}",
+                    content,
+                    attaches
+                        .iter()
+                        .map(|url| url.to_string())
+                        .collect_vec()
+                        .join("\n")
+                )
+            }
+        }
+
+        content
+    }
+
+    fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.input.update(cx, |this, cx| {
+            this.set_loading(true, cx);
+            this.set_disabled(true, cx);
+        });
+
+        let content = self.message(cx);
+        let room = self.room.read(cx);
+        let temp_message = room.create_temp_message(&content, cx);
+        let send_message = room.send_in_background(&content, cx);
+
+        if let Some(message) = temp_message {
+            let id = message.id;
+            // Optimistically update message list
+            self.push_user_message(message, cx);
+
+            // Reset the input state
+            self.input.update(cx, |this, cx| {
+                this.set_loading(false, cx);
+                this.set_disabled(false, cx);
+                this.set_value("", window, cx);
+            });
+
+            // Continue sending the message in the background
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok(reports) = send_message.await {
+                    if !reports.is_empty() {
+                        this.update(cx, |this, cx| {
+                            this.messages.update(cx, |this, cx| {
+                                if let Some(msg) = this.iter_mut().find(|msg| {
+                                    if let RoomMessage::User(m) = msg {
+                                        m.id == id
+                                    } else {
+                                        false
+                                    }
+                                }) {
+                                    if let RoomMessage::User(this) = msg {
+                                        this.errors = Some(reports)
+                                    }
+                                    cx.notify();
+                                }
+                            });
+                        })
+                        .ok();
+                    }
+                }
+            })
+            .detach();
+        }
+    }
+
+    fn push_user_message(&self, message: Message, cx: &mut Context<Self>) {
+        let old_len = self.messages.read(cx).len();
+        let message = RoomMessage::user(message);
+
+        cx.update_entity(&self.messages, |this, cx| {
+            this.extend(vec![message]);
+            cx.notify();
+        });
+
+        self.list_state.splice(old_len..old_len, 1);
+    }
+
+    #[allow(dead_code)]
     fn push_system_message(&self, content: String, cx: &mut Context<Self>) {
         let old_len = self.messages.read(cx).len();
         let message = RoomMessage::system(content.into());
@@ -210,86 +291,18 @@ impl Chat {
         self.list_state.splice(old_len..old_len, 1);
     }
 
-    fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mut content = self.input.read(cx).text().to_string();
-
-        // Get all attaches and merge its with message
-        if let Some(attaches) = self.attaches.read(cx).as_ref() {
-            let merged = attaches
-                .iter()
-                .map(|url| url.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            content = format!("{}\n{}", content, merged)
-        }
-
-        // Check if content is empty
-        if content.is_empty() {
-            window.push_notification("Cannot send an empty message", cx);
+    fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.uploading {
             return;
         }
 
-        // Update input state
-        self.input.update(cx, |this, cx| {
-            this.set_loading(true, cx);
-            this.set_disabled(true, cx);
-        });
+        self.uploading(true, cx);
 
-        let room = self.room.read(cx);
-        let task = room.send_message(content, cx);
-
-        cx.spawn_in(window, async move |this, cx| {
-            let mut received = false;
-
-            match task {
-                Some(rx) => {
-                    while let Ok(message) = rx.recv().await {
-                        if let SendStatus::Failed(error) = message {
-                            cx.update(|window, cx| {
-                                window.push_notification(
-                                    Notification::error(error.to_string())
-                                        .title("Message Failed to Send"),
-                                    cx,
-                                );
-                            })
-                            .ok();
-                        } else if !received {
-                            cx.update(|window, cx| {
-                                this.update(cx, |this, cx| {
-                                    this.input.update(cx, |this, cx| {
-                                        this.set_loading(false, cx);
-                                        this.set_disabled(false, cx);
-                                        this.set_text("", window, cx);
-                                    });
-                                    received = true;
-                                })
-                                .ok();
-                            })
-                            .ok();
-                        }
-                    }
-                }
-                None => {
-                    cx.update(|window, cx| {
-                        window.push_notification(Notification::error("User is not logged in"), cx);
-                    })
-                    .ok();
-                }
-            }
-        })
-        .detach();
-    }
-
-    fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
         });
-
-        // Show loading spinner
-        self.set_loading(true, cx);
 
         cx.spawn_in(window, async move |this, cx| {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
@@ -300,45 +313,51 @@ impl Chat {
 
                     if let Ok(file_data) = fs::read(path).await {
                         let client = get_client();
-                        let (tx, rx) = oneshot::channel::<Url>();
+                        let (tx, rx) = oneshot::channel::<Option<Url>>();
 
-                        // spawn task via async_utility
+                        // Spawn task via async utility instead of GPUI context
                         spawn(async move {
-                            if let Ok(url) = nip96_upload(client, file_data).await {
-                                _ = tx.send(url);
-                            }
+                            let url = match nip96_upload(client, file_data).await {
+                                Ok(url) => Some(url),
+                                Err(e) => {
+                                    log::error!("Upload error: {e}");
+                                    None
+                                }
+                            };
+
+                            _ = tx.send(url);
                         });
 
-                        if let Ok(url) = rx.await {
-                            cx.update(|_, cx| {
-                                this.update(cx, |this, cx| {
-                                    this.set_loading(false, cx);
-
-                                    this.attaches.update(cx, |this, cx| {
-                                        if let Some(model) = this.as_mut() {
-                                            model.push(url);
-                                        } else {
-                                            *this = Some(vec![url]);
-                                        }
-                                        cx.notify();
-                                    });
-                                })
-                                .ok();
+                        if let Ok(Some(url)) = rx.await {
+                            this.update(cx, |this, cx| {
+                                this.uploading(false, cx);
+                                this.attaches.update(cx, |this, cx| {
+                                    if let Some(model) = this.as_mut() {
+                                        model.push(url);
+                                    } else {
+                                        *this = Some(vec![url]);
+                                    }
+                                    cx.notify();
+                                });
+                            })
+                            .ok();
+                        } else {
+                            this.update(cx, |this, cx| {
+                                this.uploading(false, cx);
                             })
                             .ok();
                         }
                     }
                 }
                 Ok(None) => {
-                    cx.update(|_, cx| {
-                        this.update(cx, |this, cx| {
-                            this.set_loading(false, cx);
-                        })
-                        .ok();
+                    this.update(cx, |this, cx| {
+                        this.uploading(false, cx);
                     })
                     .ok();
                 }
-                Err(_) => {}
+                Err(e) => {
+                    log::error!("System error: {e}")
+                }
             }
         })
         .detach();
@@ -355,8 +374,8 @@ impl Chat {
         });
     }
 
-    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_uploading = status;
+    fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.uploading = status;
         cx.notify();
     }
 
@@ -370,7 +389,18 @@ impl Chat {
             return div().into_element();
         };
 
-        let text_data = &mut self.text_data;
+        match message {
+            RoomMessage::User(item) => self.render_user_msg(item, window, cx),
+            RoomMessage::System(content) => self.render_system_msg(content, cx),
+            RoomMessage::Announcement => self.render_announcement_msg(cx),
+        }
+    }
+
+    fn render_user_msg(&mut self, item: &Message, window: &mut Window, cx: &Context<Self>) -> Div {
+        let texts = self
+            .text_data
+            .entry(item.id)
+            .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
 
         div()
             .group("")
@@ -380,83 +410,136 @@ impl Chat {
             .gap_3()
             .px_3()
             .py_2()
-            .map(|this| match message {
-                RoomMessage::User(item) => {
-                    let text = text_data
-                        .entry(item.id)
-                        .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
-
-                    this.hover(|this| this.bg(cx.theme().surface_background))
-                        .text_sm()
-                        .child(
-                            div()
-                                .absolute()
-                                .left_0()
-                                .top_0()
-                                .w(px(2.))
-                                .h_full()
-                                .bg(cx.theme().border_transparent)
-                                .group_hover("", |this| this.bg(cx.theme().element_active)),
-                        )
-                        .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_initial()
-                                .overflow_hidden()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_baseline()
-                                        .gap_2()
-                                        .child(
-                                            div().font_semibold().child(item.author.shared_name()),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_color(cx.theme().text_placeholder)
-                                                .child(item.ago()),
-                                        ),
-                                )
-                                .child(text.element("body".into(), window, cx)),
-                        )
-                }
-                RoomMessage::System(content) => this
-                    .items_center()
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .top_0()
-                            .w(px(2.))
-                            .h_full()
-                            .bg(cx.theme().border_transparent)
-                            .group_hover("", |this| this.bg(red())),
-                    )
-                    .child(img("brand/avatar.png").size_8().flex_shrink_0())
-                    .text_sm()
-                    .text_color(red())
-                    .child(content.clone()),
-                RoomMessage::Announcement => this
-                    .w_full()
-                    .h_32()
+            .hover(|this| this.bg(cx.theme().surface_background))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().border_transparent)
+                    .group_hover("", |this| this.bg(cx.theme().element_active)),
+            )
+            .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
+            .child(
+                div()
                     .flex()
                     .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .text_center()
-                    .text_xs()
-                    .text_color(cx.theme().text_placeholder)
-                    .line_height(relative(1.3))
+                    .flex_initial()
+                    .overflow_hidden()
                     .child(
-                        svg()
-                            .path("brand/coop.svg")
-                            .size_10()
-                            .text_color(cx.theme().elevated_surface_background),
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap_2()
+                            .text_sm()
+                            .child(
+                                div()
+                                    .font_semibold()
+                                    .text_color(cx.theme().text)
+                                    .child(item.author.shared_name()),
+                            )
+                            .child(
+                                div()
+                                    .text_color(cx.theme().text_placeholder)
+                                    .child(item.ago()),
+                            ),
                     )
-                    .child(DESC),
-            })
+                    .child(texts.element("body".into(), window, cx))
+                    .when_some(item.errors.clone(), |this, errors| {
+                        this.child(
+                            div()
+                                .id("")
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .text_color(gpui::red())
+                                .text_xs()
+                                .italic()
+                                .child(Icon::new(IconName::Info).small())
+                                .child("Failed to send message. Click to see details.")
+                                .on_click(move |_, window, cx| {
+                                    let errors = errors.clone();
+
+                                    window.open_modal(cx, move |this, _window, cx| {
+                                        this.title("Error Logs").child(
+                                            div().flex().flex_col().gap_2().px_3().pb_3().children(
+                                                errors.clone().into_iter().map(|error| {
+                                                    div()
+                                                        .text_sm()
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_baseline()
+                                                                .gap_1()
+                                                                .text_color(cx.theme().text_muted)
+                                                                .child("Send to:")
+                                                                .child(error.profile.shared_name()),
+                                                        )
+                                                        .child(error.message)
+                                                }),
+                                            ),
+                                        )
+                                    });
+                                }),
+                        )
+                    }),
+            )
+    }
+
+    fn render_system_msg(&mut self, content: &SharedString, cx: &Context<Self>) -> Div {
+        div()
+            .group("")
+            .w_full()
+            .relative()
+            .flex()
+            .gap_3()
+            .px_3()
+            .py_2()
+            .items_center()
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().border_transparent)
+                    .group_hover("", |this| this.bg(red())),
+            )
+            .child(img("brand/avatar.png").size_8().flex_shrink_0())
+            .text_sm()
+            .text_color(red())
+            .child(content.clone())
+    }
+
+    fn render_announcement_msg(&mut self, cx: &Context<Self>) -> Div {
+        div()
+            .group("")
+            .w_full()
+            .relative()
+            .flex()
+            .gap_3()
+            .px_3()
+            .py_2()
+            .w_full()
+            .h_32()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .text_center()
+            .text_xs()
+            .text_color(cx.theme().text_placeholder)
+            .line_height(relative(1.3))
+            .child(
+                svg()
+                    .path("brand/coop.svg")
+                    .size_10()
+                    .text_color(cx.theme().elevated_surface_background),
+            )
+            .child(DESC)
     }
 }
 
@@ -474,27 +557,7 @@ impl Panel for Chat {
                 .flex()
                 .items_center()
                 .gap_1p5()
-                .map(|this| {
-                    if let Some(url) = url {
-                        this.child(img(url).size_5().flex_shrink_0())
-                    } else {
-                        this.child(
-                            div()
-                                .flex_shrink_0()
-                                .flex()
-                                .justify_center()
-                                .items_center()
-                                .size_5()
-                                .rounded_full()
-                                .bg(cx.theme().element_disabled)
-                                .child(
-                                    Icon::new(IconName::UsersThreeFill)
-                                        .xsmall()
-                                        .text_color(cx.theme().icon_accent),
-                                ),
-                        )
-                    }
-                })
+                .child(img(url).size_5().flex_shrink_0())
                 .child(label)
                 .into_any()
         })
@@ -592,7 +655,7 @@ impl Render for Chat {
                             div()
                                 .w_full()
                                 .flex()
-                                .items_center()
+                                .items_end()
                                 .gap_2p5()
                                 .child(
                                     div()
@@ -604,8 +667,8 @@ impl Render for Chat {
                                             Button::new("upload")
                                                 .icon(Icon::new(IconName::Upload))
                                                 .ghost()
-                                                .disabled(self.is_uploading)
-                                                .loading(self.is_uploading)
+                                                .disabled(self.uploading)
+                                                .loading(self.uploading)
                                                 .on_click(cx.listener(
                                                     move |this, _, window, cx| {
                                                         this.upload_media(window, cx);
@@ -617,7 +680,7 @@ impl Render for Chat {
                                                 .icon(IconName::EmojiFill),
                                         ),
                                 )
-                                .child(self.input.clone()),
+                                .child(TextInput::new(&self.input)),
                         ),
                 ),
             )

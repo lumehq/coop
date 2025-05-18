@@ -21,8 +21,8 @@ use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::dock::DockPlacement,
-    input::{InputEvent, TextInput},
-    ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
+    input::{InputEvent, InputState, TextInput},
+    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
 use crate::chatspace::{AddPanel, PanelKind};
@@ -37,8 +37,8 @@ struct SelectContact(PublicKey);
 impl_internal_actions!(contacts, [SelectContact]);
 
 pub struct Compose {
-    title_input: Entity<TextInput>,
-    user_input: Entity<TextInput>,
+    title_input: Entity<InputState>,
+    user_input: Entity<InputState>,
     contacts: Entity<Vec<Profile>>,
     selected: Entity<HashSet<PublicKey>>,
     focus_handle: FocusHandle,
@@ -55,18 +55,9 @@ impl Compose {
         let selected = cx.new(|_| HashSet::new());
         let error_message = cx.new(|_| None);
 
-        let title_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .appearance(false)
-                .placeholder("Family... . (Optional)")
-                .text_size(Size::Small)
-        });
-
-        let user_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(ui::Size::Small)
-                .placeholder("npub1...")
-        });
+        let user_input = cx.new(|cx| InputState::new(window, cx).placeholder("npub1..."));
+        let title_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Family...(Optional)"));
 
         let mut subscriptions = smallvec![];
 
@@ -75,7 +66,7 @@ impl Compose {
             &user_input,
             window,
             move |this, _, input_event, window, cx| {
-                if let InputEvent::PressEnter = input_event {
+                if let InputEvent::PressEnter { .. } = input_event {
                     this.add(window, cx);
                 }
             },
@@ -135,10 +126,10 @@ impl Compose {
         let mut tag_list: Vec<Tag> = pubkeys.iter().map(|pk| Tag::public_key(*pk)).collect();
 
         // Add subject if it is present
-        if !self.title_input.read(cx).text().is_empty() {
+        if !self.title_input.read(cx).value().is_empty() {
             tag_list.push(Tag::custom(
                 TagKind::Subject,
-                vec![self.title_input.read(cx).text().to_string()],
+                vec![self.title_input.read(cx).value().to_string()],
             ));
         }
 
@@ -163,7 +154,7 @@ impl Compose {
             Ok(event) => {
                 cx.update(|window, cx| {
                     ChatRegistry::global(cx).update(cx, |chats, cx| {
-                        let id = chats.push_event(&event, window, cx);
+                        let id = chats.event_to_room(&event, window, cx);
                         window.close_modal(cx);
                         window.dispatch_action(
                             Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
@@ -185,7 +176,7 @@ impl Compose {
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = get_client();
-        let content = self.user_input.read(cx).text().to_string();
+        let content = self.user_input.read(cx).value().to_string();
 
         // Show loading spinner
         self.set_loading(true, cx);
@@ -241,8 +232,7 @@ impl Compose {
 
                             // Clear input
                             this.user_input.update(cx, |this, cx| {
-                                this.set_text("", window, cx);
-                                cx.notify();
+                                this.set_value("", window, cx);
                             });
                         })
                         .ok();
@@ -349,7 +339,7 @@ impl Render for Compose {
                         .items_center()
                         .gap_1()
                         .child(div().pb_0p5().text_sm().font_semibold().child("Subject:"))
-                        .child(self.title_input.clone()),
+                        .child(TextInput::new(&self.title_input).small().appearance(false)),
                 ),
             )
             .child(
@@ -365,7 +355,7 @@ impl Render for Compose {
                             .flex_col()
                             .gap_2()
                             .child(div().text_sm().font_semibold().child("To:"))
-                            .child(self.user_input.clone()),
+                            .child(TextInput::new(&self.user_input).small()),
                     )
                     .map(|this| {
                         let contacts = self.contacts.read(cx).clone();

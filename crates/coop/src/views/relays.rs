@@ -10,7 +10,7 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
-    input::{InputEvent, TextInput},
+    input::{InputEvent, InputState, TextInput},
     ContextModal, Disableable, IconName, Sizable,
 };
 
@@ -24,7 +24,7 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
 
 pub struct Relays {
     relays: Entity<Vec<RelayUrl>>,
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     focus_handle: FocusHandle,
     is_loading: bool,
     #[allow(dead_code)]
@@ -33,13 +33,7 @@ pub struct Relays {
 
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(ui::Size::XSmall)
-                .small()
-                .placeholder("wss://example.com")
-        });
-
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
                 let client = get_client();
@@ -92,8 +86,8 @@ impl Relays {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Relays, _, input_event, window, cx| {
-                    if let InputEvent::PressEnter = input_event {
+                move |this: &mut Relays, _, event, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
                         this.add(window, cx);
                     }
                 },
@@ -190,7 +184,7 @@ impl Relays {
     }
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self.input.read(cx).text().to_string();
+        let value = self.input.read(cx).value().to_string();
 
         if !value.starts_with("ws") {
             return;
@@ -205,7 +199,7 @@ impl Relays {
             });
 
             self.input.update(cx, |this, cx| {
-                this.set_text("", window, cx);
+                this.set_value("", window, cx);
             });
         }
     }
@@ -313,7 +307,7 @@ impl Render for Relays {
                                     .items_center()
                                     .w_full()
                                     .gap_2()
-                                    .child(self.input.clone())
+                                    .child(TextInput::new(&self.input).small())
                                     .child(
                                         Button::new("add_relay_btn")
                                             .icon(IconName::Plus)

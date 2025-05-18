@@ -11,8 +11,8 @@ use std::{str::FromStr, time::Duration};
 use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
-    input::TextInput,
-    ContextModal, Disableable, IconName, Sizable, Size,
+    input::{InputState, TextInput},
+    ContextModal, Disableable, IconName, Sizable,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Profile> {
@@ -21,38 +21,23 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Profile> {
 
 pub struct Profile {
     profile: Option<Metadata>,
-    name_input: Entity<TextInput>,
-    avatar_input: Entity<TextInput>,
-    bio_input: Entity<TextInput>,
-    website_input: Entity<TextInput>,
+    name_input: Entity<InputState>,
+    avatar_input: Entity<InputState>,
+    bio_input: Entity<InputState>,
+    website_input: Entity<InputState>,
     is_loading: bool,
     is_submitting: bool,
 }
 
 impl Profile {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let name_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
-                .placeholder("Alice")
-        });
-
-        let avatar_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::XSmall)
-                .small()
-                .placeholder("https://example.com/avatar.jpg")
-        });
-
-        let website_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
-                .placeholder("https://your-website.com")
-        });
-
+        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
+        let avatar_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+        let website_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
         let bio_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
+            InputState::new(window, cx)
                 .multi_line()
                 .placeholder("A short introduce about you.")
         });
@@ -85,26 +70,25 @@ impl Profile {
                         this.update(cx, |this: &mut Profile, cx| {
                             this.avatar_input.update(cx, |this, cx| {
                                 if let Some(avatar) = metadata.picture.as_ref() {
-                                    this.set_text(avatar, window, cx);
+                                    this.set_value(avatar, window, cx);
                                 }
                             });
                             this.bio_input.update(cx, |this, cx| {
                                 if let Some(bio) = metadata.about.as_ref() {
-                                    this.set_text(bio, window, cx);
+                                    this.set_value(bio, window, cx);
                                 }
                             });
                             this.name_input.update(cx, |this, cx| {
                                 if let Some(display_name) = metadata.display_name.as_ref() {
-                                    this.set_text(display_name, window, cx);
+                                    this.set_value(display_name, window, cx);
                                 }
                             });
                             this.website_input.update(cx, |this, cx| {
                                 if let Some(website) = metadata.website.as_ref() {
-                                    this.set_text(website, window, cx);
+                                    this.set_value(website, window, cx);
                                 }
                             });
                             this.profile = Some(metadata);
-
                             cx.notify();
                         })
                         .ok();
@@ -155,7 +139,7 @@ impl Profile {
                                 // Set avatar input
                                 avatar_input
                                     .update(cx, |this, cx| {
-                                        this.set_text(url.to_string(), window, cx);
+                                        this.set_value(url.to_string(), window, cx);
                                     })
                                     .ok();
                             })
@@ -183,10 +167,10 @@ impl Profile {
         // Show loading spinner
         self.set_submitting(true, cx);
 
-        let avatar = self.avatar_input.read(cx).text().to_string();
-        let name = self.name_input.read(cx).text().to_string();
-        let bio = self.bio_input.read(cx).text().to_string();
-        let website = self.website_input.read(cx).text().to_string();
+        let avatar = self.avatar_input.read(cx).value().to_string();
+        let name = self.name_input.read(cx).value().to_string();
+        let bio = self.bio_input.read(cx).value().to_string();
+        let website = self.website_input.read(cx).value().to_string();
 
         let old_metadata = if let Some(metadata) = self.profile.as_ref() {
             metadata.clone()
@@ -257,16 +241,14 @@ impl Render for Profile {
                     .justify_center()
                     .gap_2()
                     .map(|this| {
-                        let picture = self.avatar_input.read(cx).text();
-
+                        let picture = self.avatar_input.read(cx).value();
                         if picture.is_empty() {
                             this.child(img("brand/avatar.png").size_10().flex_shrink_0())
                         } else {
                             this.child(
                                 img(format!(
                                     "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                                    IMAGE_SERVICE,
-                                    self.avatar_input.read(cx).text()
+                                    IMAGE_SERVICE, picture
                                 ))
                                 .size_10()
                                 .flex_shrink_0(),
@@ -293,7 +275,7 @@ impl Render for Profile {
                     .gap_1()
                     .text_sm()
                     .child("Name:")
-                    .child(self.name_input.clone()),
+                    .child(TextInput::new(&self.name_input).small()),
             )
             .child(
                 div()
@@ -302,7 +284,7 @@ impl Render for Profile {
                     .gap_1()
                     .text_sm()
                     .child("Website:")
-                    .child(self.website_input.clone()),
+                    .child(TextInput::new(&self.website_input).small()),
             )
             .child(
                 div()
@@ -311,7 +293,7 @@ impl Render for Profile {
                     .gap_1()
                     .text_sm()
                     .child("Bio:")
-                    .child(self.bio_input.clone()),
+                    .child(TextInput::new(&self.bio_input).small()),
             )
             .child(
                 div().py_3().child(

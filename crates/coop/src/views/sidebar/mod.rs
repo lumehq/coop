@@ -1,5 +1,4 @@
 use std::{
-    cmp::Reverse,
     collections::{BTreeSet, HashSet},
     time::Duration,
 };
@@ -29,7 +28,7 @@ use ui::{
         dock::DockPlacement,
         panel::{Panel, PanelEvent},
     },
-    input::{InputEvent, TextInput},
+    input::{InputEvent, InputState, TextInput},
     popup_menu::{PopupMenu, PopupMenuExt},
     skeleton::Skeleton,
     IconName, Sizable, StyledExt,
@@ -61,13 +60,13 @@ pub enum SubItem {
 pub struct Sidebar {
     name: SharedString,
     // Search
-    find_input: Entity<TextInput>,
+    find_input: Entity<InputState>,
     find_debouncer: DebouncedDelay<Self>,
     finding: bool,
     local_result: Entity<Option<Vec<Entity<Room>>>>,
     global_result: Entity<Option<Vec<Entity<Room>>>>,
     // Layout
-    split_into_folders: bool,
+    folders: bool,
     active_items: HashSet<Item>,
     active_subitems: HashSet<SubItem>,
     // GPUI
@@ -95,32 +94,16 @@ impl Sidebar {
 
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let find_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .small()
-                .text_size(ui::Size::XSmall)
-                .suffix(|window, cx| {
-                    Button::new("find")
-                        .icon(IconName::Search)
-                        .tooltip("Press Enter to search")
-                        .small()
-                        .custom(
-                            ButtonCustomVariant::new(window, cx)
-                                .active(gpui::transparent_black())
-                                .color(gpui::transparent_black())
-                                .hover(gpui::transparent_black())
-                                .foreground(cx.theme().text_placeholder),
-                        )
-                })
-                .placeholder("Find or start a conversation")
-        });
+
+        let find_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
 
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
             cx.subscribe_in(&find_input, window, |this, _, event, _, cx| {
                 match event {
-                    InputEvent::PressEnter => this.search(cx),
+                    InputEvent::PressEnter { .. } => this.search(cx),
                     InputEvent::Change(text) => {
                         // Clear the result when input is empty
                         if text.is_empty() {
@@ -141,7 +124,7 @@ impl Sidebar {
 
         Self {
             name: "Chat Sidebar".into(),
-            split_into_folders: false,
+            folders: false,
             find_debouncer: DebouncedDelay::new(),
             finding: false,
             find_input,
@@ -170,7 +153,7 @@ impl Sidebar {
     }
 
     fn toggle_folder(&mut self, cx: &mut Context<Self>) {
-        self.split_into_folders = !self.split_into_folders;
+        self.folders = !self.folders;
         cx.notify();
     }
 
@@ -184,7 +167,7 @@ impl Sidebar {
     }
 
     fn nip50_search(&self, cx: &App) -> Task<Result<BTreeSet<Room>, Error>> {
-        let query = self.find_input.read(cx).text();
+        let query = self.find_input.read(cx).value().clone();
 
         cx.background_spawn(async move {
             let client = get_client();
@@ -236,7 +219,7 @@ impl Sidebar {
     }
 
     fn search(&mut self, cx: &mut Context<Self>) {
-        let query = self.find_input.read(cx).text();
+        let query = self.find_input.read(cx).value();
         let result = ChatRegistry::get_global(cx).search(query.as_ref(), cx);
 
         // Return if query is empty
@@ -336,7 +319,7 @@ impl Sidebar {
             div()
                 .h_8()
                 .w_full()
-                .px_1()
+                .px_2()
                 .flex()
                 .items_center()
                 .gap_2()
@@ -428,11 +411,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let account = Account::get_global(cx).profile_ref();
-        let registry = ChatRegistry::get_global(cx);
-
-        // Get all rooms
-        let rooms = registry.rooms(cx);
-        let loading = registry.loading;
+        let chats = ChatRegistry::get_global(cx);
 
         // Get search result
         let local_result = self.local_result.read(cx);
@@ -513,11 +492,21 @@ impl Render for Sidebar {
                 )
             })
             .child(
-                div()
-                    .px_3()
-                    .h_7()
-                    .flex_none()
-                    .child(self.find_input.clone()),
+                div().px_3().h_7().flex_none().child(
+                    TextInput::new(&self.find_input).small().suffix(
+                        Button::new("find")
+                            .icon(IconName::Search)
+                            .tooltip("Press Enter to search")
+                            .small()
+                            .custom(
+                                ButtonCustomVariant::new(window, cx)
+                                    .active(gpui::transparent_black())
+                                    .color(gpui::transparent_black())
+                                    .hover(gpui::transparent_black())
+                                    .foreground(cx.theme().text_placeholder),
+                            ),
+                    ),
+                ),
             )
             .when_some(global_result.as_ref(), |this, rooms| {
                 this.child(
@@ -550,7 +539,7 @@ impl Render for Sidebar {
                                 Button::new("menu")
                                     .tooltip("Toggle chat folders")
                                     .map(|this| {
-                                        if self.split_into_folders {
+                                        if self.folders {
                                             this.icon(IconName::FilterFill)
                                         } else {
                                             this.icon(IconName::Filter)
@@ -569,35 +558,28 @@ impl Render for Sidebar {
                                     })),
                             ),
                     )
-                    .when(loading, |this| this.children(self.render_skeleton(6)))
+                    .when(chats.wait_for_eose, |this| {
+                        this.px_2().children(self.render_skeleton(6))
+                    })
                     .map(|this| {
                         if let Some(rooms) = local_result {
                             this.children(Self::render_items(rooms, cx))
-                        } else if !self.split_into_folders {
-                            let rooms = rooms
-                                .values()
-                                .flat_map(|v| v.iter().cloned())
-                                .sorted_by_key(|e| Reverse(e.read(cx).created_at))
-                                .collect_vec();
-
-                            this.children(Self::render_items(&rooms, cx))
+                        } else if !self.folders {
+                            this.children(Self::render_items(&chats.rooms, cx))
                         } else {
-                            let ongoing = rooms.get(&RoomKind::Ongoing);
-                            let trusted = rooms.get(&RoomKind::Trusted);
-                            let unknown = rooms.get(&RoomKind::Unknown);
-
-                            this.when_some(ongoing, |this, rooms| {
-                                this.child(
-                                    Folder::new("Ongoing")
-                                        .icon(IconName::Folder)
-                                        .tooltip("All ongoing conversations")
-                                        .collapsed(!self.active_items.contains(&Item::Ongoing))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.toggle_item(Item::Ongoing, cx);
-                                        }))
-                                        .children(Self::render_items(rooms, cx)),
-                                )
-                            })
+                            this.child(
+                                Folder::new("Ongoing")
+                                    .icon(IconName::Folder)
+                                    .tooltip("All ongoing conversations")
+                                    .collapsed(!self.active_items.contains(&Item::Ongoing))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.toggle_item(Item::Ongoing, cx);
+                                    }))
+                                    .children(Self::render_items(
+                                        &chats.rooms_by_kind(RoomKind::Ongoing, cx),
+                                        cx,
+                                    )),
+                            )
                             .child(
                                 Parent::new("Incoming")
                                     .icon(IconName::Folder)
@@ -606,38 +588,36 @@ impl Render for Sidebar {
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.toggle_item(Item::Incoming, cx);
                                     }))
-                                    .when_some(trusted, |this, rooms| {
-                                        this.child(
-                                            Folder::new("Trusted")
-                                                .icon(IconName::Folder)
-                                                .tooltip("Incoming messages from trusted contacts")
-                                                .collapsed(
-                                                    !self
-                                                        .active_subitems
-                                                        .contains(&SubItem::Trusted),
-                                                )
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    this.toggle_subitem(SubItem::Trusted, cx);
-                                                }))
-                                                .children(Self::render_items(rooms, cx)),
-                                        )
-                                    })
-                                    .when_some(unknown, |this, rooms| {
-                                        this.child(
-                                            Folder::new("Unknown")
-                                                .icon(IconName::Folder)
-                                                .tooltip("Incoming messages from unknowns")
-                                                .collapsed(
-                                                    !self
-                                                        .active_subitems
-                                                        .contains(&SubItem::Unknown),
-                                                )
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    this.toggle_subitem(SubItem::Unknown, cx);
-                                                }))
-                                                .children(Self::render_items(rooms, cx)),
-                                        )
-                                    }),
+                                    .child(
+                                        Folder::new("Trusted")
+                                            .icon(IconName::Folder)
+                                            .tooltip("Incoming messages from trusted contacts")
+                                            .collapsed(
+                                                !self.active_subitems.contains(&SubItem::Trusted),
+                                            )
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.toggle_subitem(SubItem::Trusted, cx);
+                                            }))
+                                            .children(Self::render_items(
+                                                &chats.rooms_by_kind(RoomKind::Trusted, cx),
+                                                cx,
+                                            )),
+                                    )
+                                    .child(
+                                        Folder::new("Unknown")
+                                            .icon(IconName::Folder)
+                                            .tooltip("Incoming messages from unknowns")
+                                            .collapsed(
+                                                !self.active_subitems.contains(&SubItem::Unknown),
+                                            )
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.toggle_subitem(SubItem::Unknown, cx);
+                                            }))
+                                            .children(Self::render_items(
+                                                &chats.rooms_by_kind(RoomKind::Unknown, cx),
+                                                cx,
+                                            )),
+                                    ),
                             )
                         }
                     }),
