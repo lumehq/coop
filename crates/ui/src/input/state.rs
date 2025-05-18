@@ -1022,8 +1022,6 @@ impl InputState {
         let changed_rows = ((self.scroll_size.height - self.input_bounds.size.height)
             / self.last_line_height) as isize;
 
-        println!("changed rows: {}", changed_rows);
-
         self.rows = (self.rows as isize + changed_rows)
             .clamp(self.min_rows as isize, max_rows as isize)
             .max(0) as usize;
