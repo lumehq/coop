@@ -77,7 +77,9 @@ impl Chat {
                 .placeholder("Message...")
                 .multi_line()
                 .prevent_new_line_on_enter()
-                .max_rows(10)
+                .rows(1)
+                .clean_on_escape()
+                .max_rows(20)
         });
 
         cx.new(|cx| {

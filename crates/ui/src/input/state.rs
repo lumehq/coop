@@ -281,14 +281,14 @@ impl InputState {
             loading: false,
             pattern: None,
             validate: None,
-            rows: 2,
-            min_rows: 1,
+            rows: 3,
+            min_rows: 3,
             max_rows: None,
             height: None,
             last_layout: None,
             last_bounds: None,
             last_selected_range: None,
-            last_line_height: px(20.),
+            last_line_height: px(19.),
             last_cursor_offset: None,
             scroll_handle: ScrollHandle::new(),
             scrollbar_state: Rc::new(Cell::new(ScrollbarState::default())),
@@ -719,7 +719,12 @@ impl InputState {
         self.move_to(offset, window, cx);
     }
 
-    pub(super) fn new_line(&mut self, _: &NewLine, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn shift_to_new_line(
+        &mut self,
+        _: &NewLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.is_multi_line() {
             let is_eof = self.selected_range.end == self.text.len();
             self.replace_text_in_range(None, "\n", window, cx);
@@ -1009,12 +1014,15 @@ impl InputState {
         if !self.is_multi_line() {
             return;
         }
+
         let Some(max_rows) = self.max_rows else {
             return;
         };
 
         let changed_rows = ((self.scroll_size.height - self.input_bounds.size.height)
             / self.last_line_height) as isize;
+
+        println!("changed rows: {}", changed_rows);
 
         self.rows = (self.rows as isize + changed_rows)
             .clamp(self.min_rows as isize, max_rows as isize)
@@ -1604,6 +1612,7 @@ impl EntityInputHandler for InputState {
 
         let pending_text: SharedString =
             (self.text[0..range.start].to_owned() + new_text + &self.text[range.end..]).into();
+
         // Check if the new text is valid
         if !self.is_valid_input(&pending_text) {
             return;
@@ -1614,12 +1623,15 @@ impl EntityInputHandler for InputState {
         let new_pos = (range.start + new_text_len).min(mask_text.len());
 
         self.push_history(&range, new_text, window, cx);
+
         self.text = mask_text;
         self.selected_range = new_pos..new_pos;
         self.marked_range.take();
+
         self.update_preferred_x_offset(cx);
         self.update_scroll_offset(None, cx);
         self.check_to_auto_grow(window, cx);
+
         cx.emit(InputEvent::Change(self.unmask_value()));
         cx.notify();
     }
@@ -1738,8 +1750,8 @@ impl Render for InputState {
         div()
             .id("text-element")
             .flex_1()
-            .when(self.is_multi_line(), |this| this.h_full())
             .flex_grow()
+            .when(self.is_multi_line(), |this| this.h_full())
             .overflow_x_hidden()
             .child(TextElement::new(cx.entity().clone()).placeholder(self.placeholder.clone()))
     }

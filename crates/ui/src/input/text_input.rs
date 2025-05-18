@@ -192,7 +192,7 @@ impl RenderOnce for TextInput {
                     .on_action(window.listener_for(&self.state, InputState::down))
                     .on_action(window.listener_for(&self.state, InputState::select_up))
                     .on_action(window.listener_for(&self.state, InputState::select_down))
-                    .on_action(window.listener_for(&self.state, InputState::new_line))
+                    .on_action(window.listener_for(&self.state, InputState::shift_to_new_line))
             })
             .on_action(window.listener_for(&self.state, InputState::select_all))
             .on_action(window.listener_for(&self.state, InputState::select_to_start_of_line))
@@ -226,12 +226,12 @@ impl RenderOnce for TextInput {
             .size_full()
             .line_height(LINE_HEIGHT)
             .cursor_text()
+            .input_py(self.size)
+            .input_h(self.size)
             .when(state.multi_line, |this| {
                 this.h_auto()
                     .when_some(self.height, |this, height| this.h(height))
             })
-            .input_py(self.size)
-            .input_h(self.size)
             .when(self.appearance, |this| {
                 this.bg(bg)
                     .rounded(cx.theme().radius)
