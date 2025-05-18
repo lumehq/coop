@@ -10,7 +10,7 @@ use theme::ActiveTheme;
 
 use crate::{
     button::{Button, ButtonVariants},
-    input::TextInput,
+    input::InputState,
     popover::{Popover, PopoverContent},
     Icon,
 };
@@ -24,12 +24,12 @@ impl_internal_actions!(emoji, [EmitEmoji]);
 pub struct EmojiPicker {
     icon: Option<Icon>,
     anchor: Option<Corner>,
-    target_input: WeakEntity<TextInput>,
+    target_input: WeakEntity<InputState>,
     emojis: Rc<Vec<SharedString>>,
 }
 
 impl EmojiPicker {
-    pub fn new(target_input: WeakEntity<TextInput>) -> Self {
+    pub fn new(target_input: WeakEntity<InputState>) -> Self {
         let mut emojis: Vec<SharedString> = vec![];
 
         emojis.extend(
@@ -102,7 +102,7 @@ impl RenderOnce for EmojiPicker {
                                         move |_, window, cx| {
                                             if let Some(input) = input.as_ref() {
                                                 input.update(cx, |this, cx| {
-                                                    let current = this.text();
+                                                    let current = this.value();
                                                     let new_text = if current.is_empty() {
                                                         format!("{}", item)
                                                     } else if current.ends_with(" ") {
@@ -110,7 +110,7 @@ impl RenderOnce for EmojiPicker {
                                                     } else {
                                                         format!("{} {}", current, item)
                                                     };
-                                                    this.set_text(new_text, window, cx);
+                                                    this.set_value(new_text, window, cx);
                                                 });
                                             }
                                         }

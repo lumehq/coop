@@ -1,24 +1,35 @@
 use gpui::{
     fill, point, px, relative, size, App, Bounds, Corners, Element, ElementId, ElementInputHandler,
     Entity, GlobalElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent, PaintQuad, Path,
-    Pixels, Point, Style, TextRun, UnderlineStyle, Window, WrappedLine,
+    Pixels, Point, SharedString, Style, TextAlign, TextRun, UnderlineStyle, Window, WrappedLine,
 };
 use smallvec::SmallVec;
 use theme::ActiveTheme;
 
-use super::TextInput;
+use super::InputState;
+use crate::Root;
 
 const RIGHT_MARGIN: Pixels = px(5.);
 const BOTTOM_MARGIN: Pixels = px(20.);
 const CURSOR_THICKNESS: Pixels = px(2.);
 
 pub(super) struct TextElement {
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
+    placeholder: SharedString,
 }
 
 impl TextElement {
-    pub(super) fn new(input: Entity<TextInput>) -> Self {
-        Self { input }
+    pub(super) fn new(input: Entity<InputState>) -> Self {
+        Self {
+            input,
+            placeholder: SharedString::default(),
+        }
+    }
+
+    /// Set the placeholder text of the input field.
+    pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.placeholder = placeholder.into();
+        self
     }
 
     fn paint_mouse_listeners(&mut self, window: &mut Window, _: &mut App) {
@@ -142,7 +153,6 @@ impl TextElement {
                 // cursor blink
                 let cursor_height =
                     window.text_style().font_size.to_pixels(window.rem_size()) + px(4.);
-
                 cursor = Some(fill(
                     Bounds::new(
                         point(
@@ -301,6 +311,31 @@ impl IntoElement for TextElement {
     }
 }
 
+/// A debug function to print points as SVG path.
+#[allow(unused)]
+fn print_points_as_svg_path(line_corners: &Vec<Corners<Point<Pixels>>>, points: &[Point<Pixels>]) {
+    for corners in line_corners {
+        println!(
+            "tl: ({}, {}), tr: ({}, {}), bl: ({}, {}), br: ({}, {})",
+            corners.top_left.x.0 as i32,
+            corners.top_left.y.0 as i32,
+            corners.top_right.x.0 as i32,
+            corners.top_right.y.0 as i32,
+            corners.bottom_left.x.0 as i32,
+            corners.bottom_left.y.0 as i32,
+            corners.bottom_right.x.0 as i32,
+            corners.bottom_right.y.0 as i32,
+        );
+    }
+
+    if !points.is_empty() {
+        println!("M{},{}", points[0].x.0 as i32, points[0].y.0 as i32);
+        for p in points.iter().skip(1) {
+            println!("L{},{}", p.x.0 as i32, p.y.0 as i32);
+        }
+    }
+}
+
 impl Element for TextElement {
     type RequestLayoutState = ();
     type PrepaintState = PrepaintState;
@@ -319,11 +354,19 @@ impl Element for TextElement {
         let mut style = Style::default();
         style.size.width = relative(1.).into();
         if self.input.read(cx).is_multi_line() {
-            style.size.height = relative(1.).into();
-            style.min_size.height = (input.rows.max(1) as f32 * window.line_height()).into();
+            style.flex_grow = 1.0;
+            if let Some(h) = input.height {
+                style.size.height = h.into();
+                style.min_size.height = window.line_height().into();
+            } else {
+                style.size.height = relative(1.).into();
+                style.min_size.height = (input.rows.max(1) as f32 * window.line_height()).into();
+            }
         } else {
+            // For single-line inputs, the minimum height should be the line height
             style.size.height = window.line_height().into();
         };
+
         (window.request_layout(style, [], cx), ())
     }
 
@@ -339,7 +382,7 @@ impl Element for TextElement {
         let line_height = window.line_height();
         let input = self.input.read(cx);
         let text = input.text.clone();
-        let placeholder = input.placeholder.clone();
+        let placeholder = self.placeholder.clone();
         let style = window.text_style();
         let mut bounds = bounds;
 
@@ -388,7 +431,6 @@ impl Element for TextElement {
         };
 
         let font_size = style.font_size.to_pixels(window.rem_size());
-
         let wrap_width = if multi_line {
             Some(bounds.size.width - RIGHT_MARGIN)
         } else {
@@ -465,6 +507,32 @@ impl Element for TextElement {
             cx,
         );
 
+        // Set Root focused_input when self is focused
+        if focused {
+            let state = self.input.clone();
+
+            if Root::read(window, cx).focused_input.as_ref() != Some(&state) {
+                Root::update(window, cx, |root, _, cx| {
+                    root.focused_input = Some(state);
+                    cx.notify();
+                });
+            }
+        }
+
+        // And reset focused_input when next_frame start
+        window.on_next_frame({
+            let state = self.input.clone();
+
+            move |window, cx| {
+                if !focused && Root::read(window, cx).focused_input.as_ref() == Some(&state) {
+                    Root::update(window, cx, |root, _, cx| {
+                        root.focused_input = None;
+                        cx.notify();
+                    });
+                }
+            }
+        });
+
         // Paint selections
         if let Some(path) = prepaint.selection_path.take() {
             window.paint_path(path, cx.theme().element_disabled);
@@ -475,7 +543,6 @@ impl Element for TextElement {
         let origin = bounds.origin;
 
         let mut offset_y = px(0.);
-
         if self.input.read(cx).masked {
             // Move down offset for vertical centering the *****
             if cfg!(target_os = "macos") {
@@ -484,10 +551,9 @@ impl Element for TextElement {
                 offset_y = px(2.5);
             }
         }
-
         for line in prepaint.lines.iter() {
             let p = point(origin.x, origin.y + offset_y);
-            _ = line.paint(p, line_height, gpui::TextAlign::Left, None, window, cx);
+            _ = line.paint(p, line_height, TextAlign::Left, None, window, cx);
             offset_y += line.size(line_height).height;
         }
 

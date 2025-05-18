@@ -16,6 +16,7 @@ mod styled;
 mod title_bar;
 mod window_border;
 
+pub(crate) mod actions;
 pub mod animation;
 pub mod button;
 pub mod checkbox;

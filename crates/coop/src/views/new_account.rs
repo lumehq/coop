@@ -15,9 +15,9 @@ use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
-    input::TextInput,
+    input::{InputState, TextInput},
     popup_menu::PopupMenu,
-    Disableable, Icon, IconName, Sizable, Size, StyledExt,
+    Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
@@ -25,9 +25,9 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
 }
 
 pub struct NewAccount {
-    name_input: Entity<TextInput>,
-    avatar_input: Entity<TextInput>,
-    bio_input: Entity<TextInput>,
+    name_input: Entity<InputState>,
+    avatar_input: Entity<InputState>,
+    bio_input: Entity<InputState>,
     is_uploading: bool,
     is_submitting: bool,
     // Panel
@@ -43,22 +43,11 @@ impl NewAccount {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let name_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
-                .placeholder("Alice")
-        });
-
-        let avatar_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
-                .small()
-                .placeholder("https://example.com/avatar.jpg")
-        });
-
+        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
+        let avatar_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
         let bio_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
+            InputState::new(window, cx)
                 .multi_line()
                 .placeholder("A short introduce about you.")
         });
@@ -79,9 +68,9 @@ impl NewAccount {
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_submitting(true, cx);
 
-        let avatar = self.avatar_input.read(cx).text().to_string();
-        let name = self.name_input.read(cx).text().to_string();
-        let bio = self.bio_input.read(cx).text().to_string();
+        let avatar = self.avatar_input.read(cx).value().to_string();
+        let name = self.name_input.read(cx).value().to_string();
+        let bio = self.bio_input.read(cx).value().to_string();
 
         let mut metadata = Metadata::new().display_name(name).about(bio);
 
@@ -140,7 +129,7 @@ impl NewAccount {
                                 // Set avatar input
                                 avatar_input
                                     .update(cx, |this, cx| {
-                                        this.set_text(url.to_string(), window, cx);
+                                        this.set_value(url.to_string(), window, cx);
                                     })
                                     .ok();
                             })
@@ -241,14 +230,14 @@ impl Render for NewAccount {
                             .justify_center()
                             .gap_2()
                             .map(|this| {
-                                if self.avatar_input.read(cx).text().is_empty() {
+                                if self.avatar_input.read(cx).value().is_empty() {
                                     this.child(img("brand/avatar.png").size_10().flex_shrink_0())
                                 } else {
                                     this.child(
                                         img(format!(
                                             "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
                                             IMAGE_SERVICE,
-                                            self.avatar_input.read(cx).text()
+                                            self.avatar_input.read(cx).value()
                                         ))
                                         .size_10()
                                         .flex_shrink_0(),
@@ -275,7 +264,7 @@ impl Render for NewAccount {
                             .gap_1()
                             .text_sm()
                             .child("Name *:")
-                            .child(self.name_input.clone()),
+                            .child(TextInput::new(&self.name_input).small()),
                     )
                     .child(
                         div()
@@ -284,7 +273,7 @@ impl Render for NewAccount {
                             .gap_1()
                             .text_sm()
                             .child("Bio:")
-                            .child(self.bio_input.clone()),
+                            .child(TextInput::new(&self.bio_input).small()),
                     )
                     .child(
                         div()

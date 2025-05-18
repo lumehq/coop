@@ -1,5 +1,6 @@
-use gpui::{Context, Timer};
 use std::time::Duration;
+
+use gpui::{Context, Timer};
 
 static INTERVAL: Duration = Duration::from_millis(500);
 static PAUSE_DELAY: Duration = Duration::from_millis(300);

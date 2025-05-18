@@ -6,8 +6,8 @@ use gpui::{
 use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
-    input::TextInput,
-    ContextModal, Size,
+    input::{InputState, TextInput},
+    ContextModal, Sizable,
 };
 
 pub fn init(
@@ -21,7 +21,7 @@ pub fn init(
 
 pub struct Subject {
     id: u64,
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     focus_handle: FocusHandle,
 }
 
@@ -33,11 +33,9 @@ impl Subject {
         cx: &mut App,
     ) -> Entity<Self> {
         let input = cx.new(|cx| {
-            let mut this = TextInput::new(window, cx).text_size(Size::Small);
+            let mut this = InputState::new(window, cx).placeholder("Exciting Project...");
             if let Some(text) = subject.clone() {
-                this.set_text(text, window, cx);
-            } else {
-                this.set_placeholder("prepare for holidays...");
+                this.set_value(text, window, cx);
             }
             this
         });
@@ -51,7 +49,7 @@ impl Subject {
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let registry = ChatRegistry::global(cx).read(cx);
-        let subject = self.input.read(cx).text();
+        let subject = self.input.read(cx).value().clone();
 
         if let Some(room) = registry.room(&self.id, cx) {
             room.update(cx, |this, cx| {
@@ -88,7 +86,7 @@ impl Render for Subject {
                             .text_color(cx.theme().text_muted)
                             .child("Subject:"),
                     )
-                    .child(self.input.clone())
+                    .child(TextInput::new(&self.input).small())
                     .child(
                         div()
                             .text_xs()

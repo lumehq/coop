@@ -26,11 +26,11 @@ use ui::{
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     emoji_picker::EmojiPicker,
-    input::{InputEvent, TextInput},
+    input::{InputEvent, InputState, TextInput},
     notification::Notification,
     popup_menu::PopupMenu,
     text::RichText,
-    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, Size, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
 
 use crate::views::subject;
@@ -60,7 +60,7 @@ pub struct Chat {
     text_data: HashMap<EventId, RichText>,
     list_state: ListState,
     // New Message
-    input: Entity<TextInput>,
+    input: Entity<InputState>,
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     uploading: bool,
@@ -73,9 +73,11 @@ impl Chat {
         let messages = cx.new(|_| vec![RoomMessage::announcement()]);
         let attaches = cx.new(|_| None);
         let input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .text_size(Size::Small)
+            InputState::new(window, cx)
                 .placeholder("Message...")
+                .multi_line()
+                .prevent_new_line_on_enter()
+                .max_rows(10)
         });
 
         cx.new(|cx| {
@@ -85,8 +87,8 @@ impl Chat {
                 &input,
                 window,
                 move |this: &mut Self, input, event, window, cx| {
-                    if let InputEvent::PressEnter = event {
-                        if input.read(cx).text().is_empty() {
+                    if let InputEvent::PressEnter { .. } = event {
+                        if input.read(cx).value().trim().is_empty() {
                             window.push_notification("Cannot send an empty message", cx);
                         } else {
                             this.send_message(window, cx);
@@ -191,7 +193,7 @@ impl Chat {
 
     /// Get user input message including all attachments
     fn message(&self, cx: &Context<Self>) -> String {
-        let mut content = self.input.read(cx).text().to_string();
+        let mut content = self.input.read(cx).value().trim().to_string();
 
         // Get all attaches and merge its with message
         if let Some(attaches) = self.attaches.read(cx).as_ref() {
@@ -231,7 +233,7 @@ impl Chat {
             self.input.update(cx, |this, cx| {
                 this.set_loading(false, cx);
                 this.set_disabled(false, cx);
-                this.set_text("", window, cx);
+                this.set_value("", window, cx);
             });
 
             // Continue sending the message in the background
@@ -309,16 +311,22 @@ impl Chat {
 
                     if let Ok(file_data) = fs::read(path).await {
                         let client = get_client();
-                        let (tx, rx) = oneshot::channel::<Url>();
+                        let (tx, rx) = oneshot::channel::<Option<Url>>();
 
-                        // spawn task via async_utility
+                        // Spawn task via async utility instead of GPUI context
                         spawn(async move {
-                            if let Ok(url) = nip96_upload(client, file_data).await {
-                                _ = tx.send(url);
-                            }
+                            let url = match nip96_upload(client, file_data).await {
+                                Ok(url) => Some(url),
+                                Err(e) => {
+                                    log::error!("Upload error: {e}");
+                                    None
+                                }
+                            };
+
+                            _ = tx.send(url);
                         });
 
-                        if let Ok(url) = rx.await {
+                        if let Ok(Some(url)) = rx.await {
                             this.update(cx, |this, cx| {
                                 this.uploading(false, cx);
                                 this.attaches.update(cx, |this, cx| {
@@ -331,6 +339,11 @@ impl Chat {
                                 });
                             })
                             .ok();
+                        } else {
+                            this.update(cx, |this, cx| {
+                                this.uploading(false, cx);
+                            })
+                            .ok();
                         }
                     }
                 }
@@ -340,7 +353,9 @@ impl Chat {
                     })
                     .ok();
                 }
-                Err(_) => {}
+                Err(e) => {
+                    log::error!("System error: {e}")
+                }
             }
         })
         .detach();
@@ -638,7 +653,7 @@ impl Render for Chat {
                             div()
                                 .w_full()
                                 .flex()
-                                .items_center()
+                                .items_end()
                                 .gap_2p5()
                                 .child(
                                     div()
@@ -663,7 +678,7 @@ impl Render for Chat {
                                                 .icon(IconName::EmojiFill),
                                         ),
                                 )
-                                .child(self.input.clone()),
+                                .child(TextInput::new(&self.input)),
                         ),
                 ),
             )

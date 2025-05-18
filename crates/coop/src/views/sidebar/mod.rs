@@ -28,7 +28,7 @@ use ui::{
         dock::DockPlacement,
         panel::{Panel, PanelEvent},
     },
-    input::{InputEvent, TextInput},
+    input::{InputEvent, InputState, TextInput},
     popup_menu::{PopupMenu, PopupMenuExt},
     skeleton::Skeleton,
     IconName, Sizable, StyledExt,
@@ -60,7 +60,7 @@ pub enum SubItem {
 pub struct Sidebar {
     name: SharedString,
     // Search
-    find_input: Entity<TextInput>,
+    find_input: Entity<InputState>,
     find_debouncer: DebouncedDelay<Self>,
     finding: bool,
     local_result: Entity<Option<Vec<Entity<Room>>>>,
@@ -94,32 +94,16 @@ impl Sidebar {
 
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let find_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .small()
-                .text_size(ui::Size::XSmall)
-                .suffix(|window, cx| {
-                    Button::new("find")
-                        .icon(IconName::Search)
-                        .tooltip("Press Enter to search")
-                        .small()
-                        .custom(
-                            ButtonCustomVariant::new(window, cx)
-                                .active(gpui::transparent_black())
-                                .color(gpui::transparent_black())
-                                .hover(gpui::transparent_black())
-                                .foreground(cx.theme().text_placeholder),
-                        )
-                })
-                .placeholder("Find or start a conversation")
-        });
+
+        let find_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
 
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
             cx.subscribe_in(&find_input, window, |this, _, event, _, cx| {
                 match event {
-                    InputEvent::PressEnter => this.search(cx),
+                    InputEvent::PressEnter { .. } => this.search(cx),
                     InputEvent::Change(text) => {
                         // Clear the result when input is empty
                         if text.is_empty() {
@@ -183,7 +167,7 @@ impl Sidebar {
     }
 
     fn nip50_search(&self, cx: &App) -> Task<Result<BTreeSet<Room>, Error>> {
-        let query = self.find_input.read(cx).text();
+        let query = self.find_input.read(cx).value().clone();
 
         cx.background_spawn(async move {
             let client = get_client();
@@ -235,7 +219,7 @@ impl Sidebar {
     }
 
     fn search(&mut self, cx: &mut Context<Self>) {
-        let query = self.find_input.read(cx).text();
+        let query = self.find_input.read(cx).value();
         let result = ChatRegistry::get_global(cx).search(query.as_ref(), cx);
 
         // Return if query is empty
@@ -508,11 +492,21 @@ impl Render for Sidebar {
                 )
             })
             .child(
-                div()
-                    .px_3()
-                    .h_7()
-                    .flex_none()
-                    .child(self.find_input.clone()),
+                div().px_3().h_7().flex_none().child(
+                    TextInput::new(&self.find_input).small().suffix(
+                        Button::new("find")
+                            .icon(IconName::Search)
+                            .tooltip("Press Enter to search")
+                            .small()
+                            .custom(
+                                ButtonCustomVariant::new(window, cx)
+                                    .active(gpui::transparent_black())
+                                    .color(gpui::transparent_black())
+                                    .hover(gpui::transparent_black())
+                                    .foreground(cx.theme().text_placeholder),
+                            ),
+                    ),
+                ),
             )
             .when_some(global_result.as_ref(), |this, rooms| {
                 this.child(

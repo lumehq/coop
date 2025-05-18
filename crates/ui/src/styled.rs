@@ -135,7 +135,7 @@ pub trait Sizable: Sized {
 
 #[allow(unused)]
 pub trait StyleSized<T: Styled> {
-    fn input_text_size(self, size: Size) -> Self;
+    fn input_font_size(self, size: Size) -> Self;
     fn input_size(self, size: Size) -> Self;
     fn input_pl(self, size: Size) -> Self;
     fn input_pr(self, size: Size) -> Self;
@@ -150,12 +150,12 @@ pub trait StyleSized<T: Styled> {
 }
 
 impl<T: Styled> StyleSized<T> for T {
-    fn input_text_size(self, size: Size) -> Self {
+    fn input_font_size(self, size: Size) -> Self {
         match size {
             Size::XSmall => self.text_xs(),
             Size::Small => self.text_sm(),
-            Size::Medium => self.text_base(),
-            Size::Large => self.text_lg(),
+            Size::Medium => self.text_sm(),
+            Size::Large => self.text_base(),
             Size::Size(size) => self.text_size(size),
         }
     }
@@ -203,11 +203,11 @@ impl<T: Styled> StyleSized<T> for T {
             Size::Large => self.h_12(),
             _ => self.h(px(24.)),
         }
-        .input_text_size(size)
+        .input_font_size(size)
     }
 
     fn list_size(self, size: Size) -> Self {
-        self.list_px(size).list_py(size).input_text_size(size)
+        self.list_px(size).list_py(size).input_font_size(size)
     }
 
     fn list_px(self, size: Size) -> Self {
