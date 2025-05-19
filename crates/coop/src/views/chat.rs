@@ -78,6 +78,7 @@ impl Chat {
                 .multi_line()
                 .prevent_new_line_on_enter()
                 .rows(1)
+                .auto_grow()
                 .clean_on_escape()
                 .max_rows(20)
         });
