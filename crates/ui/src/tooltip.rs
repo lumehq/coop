@@ -23,11 +23,11 @@ impl Render for Tooltip {
                 .p_2()
                 .border_1()
                 .border_color(cx.theme().border)
-                .bg(cx.theme().background)
+                .bg(cx.theme().surface_background)
                 .shadow_md()
                 .rounded_lg()
                 .text_sm()
-                .text_color(cx.theme().text)
+                .text_color(cx.theme().text_muted)
                 .line_height(relative(1.25))
                 .child(self.text.clone()),
         )

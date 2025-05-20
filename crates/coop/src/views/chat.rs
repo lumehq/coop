@@ -61,6 +61,7 @@ pub struct Chat {
     list_state: ListState,
     // New Message
     input: Entity<InputState>,
+    reply_to: Entity<Option<Message>>,
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     uploading: bool,
@@ -72,6 +73,7 @@ impl Chat {
     pub fn new(id: &u64, room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let messages = cx.new(|_| vec![RoomMessage::announcement()]);
         let attaches = cx.new(|_| None);
+        let reply_to = cx.new(|_| None);
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Message...")
@@ -152,6 +154,7 @@ impl Chat {
                 messages,
                 list_state,
                 input,
+                reply_to,
                 attaches,
                 subscriptions,
             }
@@ -222,10 +225,16 @@ impl Chat {
             this.set_disabled(true, cx);
         });
 
+        // Get the message which includes all attachments
         let content = self.message(cx);
+        // Get reply_to if it's present
+        let reply_to = self.reply_to.read(cx).as_ref().map(|m| m.id);
+        // Get the current room entity
         let room = self.room.read(cx);
-        let temp_message = room.create_temp_message(&content, cx);
-        let send_message = room.send_in_background(&content, cx);
+        // Create a temporary message for optimistic update
+        let temp_message = room.create_temp_message(&content, reply_to, cx);
+        // Create a task for sending the message in the background
+        let send_message = room.send_in_background(&content, reply_to, cx);
 
         if let Some(message) = temp_message {
             let id = message.id;
@@ -290,6 +299,20 @@ impl Chat {
         });
 
         self.list_state.splice(old_len..old_len, 1);
+    }
+
+    fn reply_to(&mut self, message: Message, cx: &mut Context<Self>) {
+        self.reply_to.update(cx, |this, cx| {
+            *this = Some(message);
+            cx.notify();
+        });
+    }
+
+    fn remove_reply_to(&mut self, cx: &mut Context<Self>) {
+        self.reply_to.update(cx, |this, cx| {
+            *this = None;
+            cx.notify();
+        });
     }
 
     fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -405,88 +428,132 @@ impl Chat {
 
         div()
             .group("")
-            .w_full()
             .relative()
-            .flex()
-            .gap_3()
+            .w_full()
+            .py_1()
             .px_3()
-            .py_2()
-            .hover(|this| this.bg(cx.theme().surface_background))
             .child(
                 div()
+                    .flex()
+                    .gap_3()
+                    .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_initial()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_baseline()
+                                    .gap_2()
+                                    .text_sm()
+                                    .child(
+                                        div()
+                                            .font_semibold()
+                                            .text_color(cx.theme().text)
+                                            .child(item.author.shared_name()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_placeholder)
+                                            .child(item.ago()),
+                                    ),
+                            )
+                            .child(texts.element("body".into(), window, cx))
+                            .when_some(item.errors.clone(), |this, errors| {
+                                this.child(
+                                    div()
+                                        .id("")
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .text_color(gpui::red())
+                                        .text_xs()
+                                        .italic()
+                                        .child(Icon::new(IconName::Info).small())
+                                        .child("Failed to send message. Click to see details.")
+                                        .on_click(move |_, window, cx| {
+                                            let errors = errors.clone();
+
+                                            window.open_modal(cx, move |this, _window, cx| {
+                                                this.title("Error Logs").child(
+                                                    div()
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap_2()
+                                                        .px_3()
+                                                        .pb_3()
+                                                        .children(errors.clone().into_iter().map(
+                                                            |error| {
+                                                                div()
+                                                                    .text_sm()
+                                                                    .child(
+                                                                        div()
+                                                                            .flex()
+                                                                            .items_baseline()
+                                                                            .gap_1()
+                                                                            .text_color(
+                                                                                cx.theme()
+                                                                                    .text_muted,
+                                                                            )
+                                                                            .child("Send to:")
+                                                                            .child(
+                                                                                error
+                                                                                    .profile
+                                                                                    .shared_name(),
+                                                                            ),
+                                                                    )
+                                                                    .child(error.message)
+                                                            },
+                                                        )),
+                                                )
+                                            });
+                                        }),
+                                )
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .group_hover("", |this| this.bg(cx.theme().element_active))
                     .absolute()
                     .left_0()
                     .top_0()
                     .w(px(2.))
                     .h_full()
-                    .bg(cx.theme().border_transparent)
-                    .group_hover("", |this| this.bg(cx.theme().element_active)),
+                    .bg(cx.theme().border_transparent),
             )
-            .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
             .child(
                 div()
+                    .group_hover("", |this| this.visible())
+                    .invisible()
+                    .absolute()
+                    .right_4()
+                    .top_neg_2()
+                    .shadow_sm()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().background)
+                    .p_0p5()
                     .flex()
-                    .flex_col()
-                    .flex_initial()
-                    .overflow_hidden()
                     .child(
-                        div()
-                            .flex()
-                            .items_baseline()
-                            .gap_2()
-                            .text_sm()
-                            .child(
-                                div()
-                                    .font_semibold()
-                                    .text_color(cx.theme().text)
-                                    .child(item.author.shared_name()),
-                            )
-                            .child(
-                                div()
-                                    .text_color(cx.theme().text_placeholder)
-                                    .child(item.ago()),
-                            ),
-                    )
-                    .child(texts.element("body".into(), window, cx))
-                    .when_some(item.errors.clone(), |this, errors| {
-                        this.child(
-                            div()
-                                .id("")
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .text_color(gpui::red())
-                                .text_xs()
-                                .italic()
-                                .child(Icon::new(IconName::Info).small())
-                                .child("Failed to send message. Click to see details.")
-                                .on_click(move |_, window, cx| {
-                                    let errors = errors.clone();
-
-                                    window.open_modal(cx, move |this, _window, cx| {
-                                        this.title("Error Logs").child(
-                                            div().flex().flex_col().gap_2().px_3().pb_3().children(
-                                                errors.clone().into_iter().map(|error| {
-                                                    div()
-                                                        .text_sm()
-                                                        .child(
-                                                            div()
-                                                                .flex()
-                                                                .items_baseline()
-                                                                .gap_1()
-                                                                .text_color(cx.theme().text_muted)
-                                                                .child("Send to:")
-                                                                .child(error.profile.shared_name()),
-                                                        )
-                                                        .child(error.message)
-                                                }),
-                                            ),
-                                        )
-                                    });
-                                }),
-                        )
-                    }),
+                        Button::new("reply")
+                            .icon(IconName::Reply)
+                            .tooltip("Reply")
+                            .small()
+                            .ghost()
+                            .on_click({
+                                let message = item.clone();
+                                cx.listener(move |this, _, _, cx| {
+                                    this.reply_to(message.clone(), cx);
+                                })
+                            }),
+                    ),
             )
+            .hover(|this| this.bg(cx.theme().surface_background))
     }
 
     fn render_system_msg(&mut self, content: &SharedString, cx: &Context<Self>) -> Div {
@@ -607,83 +674,139 @@ impl Render for Chat {
             .size_full()
             .child(list(self.list_state.clone()).flex_1())
             .child(
-                div().flex_shrink_0().px_3().py_2().child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .when_some(self.attaches.read(cx).as_ref(), |this, attaches| {
-                            this.gap_1p5().children(attaches.iter().map(|url| {
-                                let url = url.clone();
-                                let path: SharedString = url.to_string().into();
+                div()
+                    .flex_shrink_0()
+                    .w_full()
+                    .relative()
+                    .px_3()
+                    .py_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .when_some(self.attaches.read(cx).as_ref(), |this, attaches| {
+                                this.gap_1p5().children(attaches.iter().map(|url| {
+                                    let url = url.clone();
+                                    let path: SharedString = url.to_string().into();
 
-                                div()
-                                    .id(path.clone())
-                                    .relative()
-                                    .w_16()
-                                    .child(
-                                        img(format!(
-                                            "{}/?url={}&w=128&h=128&fit=cover&n=-1",
-                                            IMAGE_SERVICE, path
-                                        ))
-                                        .size_16()
-                                        .shadow_lg()
-                                        .rounded(cx.theme().radius)
-                                        .object_fit(ObjectFit::ScaleDown),
-                                    )
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .top_neg_2()
-                                            .right_neg_2()
-                                            .size_4()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .rounded_full()
-                                            .bg(red())
-                                            .child(
-                                                Icon::new(IconName::Close)
-                                                    .size_2()
-                                                    .text_color(white()),
-                                            ),
-                                    )
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.remove_media(&url, window, cx);
-                                    }))
-                            }))
-                        })
-                        .child(
-                            div()
-                                .w_full()
-                                .flex()
-                                .items_end()
-                                .gap_2p5()
-                                .child(
                                     div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .text_color(cx.theme().text_muted)
+                                        .id(path.clone())
+                                        .relative()
+                                        .w_16()
                                         .child(
-                                            Button::new("upload")
-                                                .icon(Icon::new(IconName::Upload))
-                                                .ghost()
-                                                .disabled(self.uploading)
-                                                .loading(self.uploading)
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.upload_media(window, cx);
-                                                    },
-                                                )),
+                                            img(format!(
+                                                "{}/?url={}&w=128&h=128&fit=cover&n=-1",
+                                                IMAGE_SERVICE, path
+                                            ))
+                                            .size_16()
+                                            .shadow_lg()
+                                            .rounded(cx.theme().radius)
+                                            .object_fit(ObjectFit::ScaleDown),
                                         )
                                         .child(
-                                            EmojiPicker::new(self.input.downgrade())
-                                                .icon(IconName::EmojiFill),
+                                            div()
+                                                .absolute()
+                                                .top_neg_2()
+                                                .right_neg_2()
+                                                .size_4()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded_full()
+                                                .bg(red())
+                                                .child(
+                                                    Icon::new(IconName::Close)
+                                                        .size_2()
+                                                        .text_color(white()),
+                                                ),
+                                        )
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.remove_media(&url, window, cx);
+                                        }))
+                                }))
+                            })
+                            .when_some(self.reply_to.read(cx).as_ref(), |this, reply_to| {
+                                this.gap_1p5().child(
+                                    div()
+                                        .w_full()
+                                        .pl_2()
+                                        .border_l_2()
+                                        .border_color(cx.theme().element_active)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_baseline()
+                                                        .gap_1()
+                                                        .text_xs()
+                                                        .text_color(cx.theme().text_muted)
+                                                        .child("Replying to:")
+                                                        .child(
+                                                            div()
+                                                                .text_color(cx.theme().text_accent)
+                                                                .child(
+                                                                    reply_to.author.shared_name(),
+                                                                ),
+                                                        ),
+                                                )
+                                                .child(
+                                                    Button::new("remove-reply")
+                                                        .icon(IconName::Close)
+                                                        .xsmall()
+                                                        .ghost()
+                                                        .on_click(cx.listener(
+                                                            move |this, _, _, cx| {
+                                                                this.remove_reply_to(cx);
+                                                            },
+                                                        )),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .text_sm()
+                                                .text_ellipsis()
+                                                .line_clamp(1)
+                                                .child(reply_to.content.clone()),
                                         ),
                                 )
-                                .child(TextInput::new(&self.input)),
-                        ),
-                ),
+                            })
+                            .child(
+                                div()
+                                    .w_full()
+                                    .flex()
+                                    .items_end()
+                                    .gap_2p5()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(
+                                                Button::new("upload")
+                                                    .icon(Icon::new(IconName::Upload))
+                                                    .ghost()
+                                                    .disabled(self.uploading)
+                                                    .loading(self.uploading)
+                                                    .on_click(cx.listener(
+                                                        move |this, _, window, cx| {
+                                                            this.upload_media(window, cx);
+                                                        },
+                                                    )),
+                                            )
+                                            .child(
+                                                EmojiPicker::new(self.input.downgrade())
+                                                    .icon(IconName::EmojiFill),
+                                            ),
+                                    )
+                                    .child(TextInput::new(&self.input)),
+                            ),
+                    ),
             )
     }
 }

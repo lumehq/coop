@@ -499,13 +499,24 @@ impl Room {
     ///
     /// Returns `Some(Message)` containing the temporary message if the current user's profile is available,
     /// or `None` if no account is found.
-    pub fn create_temp_message(&self, content: &str, cx: &App) -> Option<Message> {
+    pub fn create_temp_message(
+        &self,
+        content: &str,
+        reply_to: Option<EventId>,
+        cx: &App,
+    ) -> Option<Message> {
         let profile = Account::get_global(cx).profile.clone()?;
         let public_key = profile.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
+        // Add event reference if it's present (replying to another event)
+        let mut event = if let Some(id) = reply_to {
+            builder.tags(vec![Tag::event(id)]).build(public_key)
+        } else {
+            builder.build(public_key)
+        };
+
         // Create a unsigned event to convert to Coop Message
-        let mut event = builder.build(public_key);
         event.ensure_id();
 
         // Extract all mentions from content
@@ -528,8 +539,13 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
-    pub fn send_in_background(&self, msg: &str, cx: &App) -> Task<Result<Vec<SendError>, Error>> {
-        let content = msg.to_owned();
+    pub fn send_in_background(
+        &self,
+        content: &str,
+        reply_to: Option<EventId>,
+        cx: &App,
+    ) -> Task<Result<Vec<SendError>, Error>> {
+        let content = content.to_owned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
@@ -550,6 +566,11 @@ impl Room {
                     }
                 })
                 .collect();
+
+            // Add event reference if it's present (replying to another event)
+            if let Some(id) = reply_to {
+                tags.push(Tag::event(id));
+            }
 
             // Add subject tag if it's present
             if let Some(subject) = subject {
