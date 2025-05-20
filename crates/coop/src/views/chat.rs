@@ -240,6 +240,8 @@ impl Chat {
             let id = message.id;
             // Optimistically update message list
             self.push_user_message(message, cx);
+            // Remove reply to
+            self.remove_reply_to(cx);
 
             // Reset the input state
             self.input.update(cx, |this, cx| {
@@ -439,6 +441,7 @@ impl Chat {
                     .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
                     .child(
                         div()
+                            .flex_1()
                             .flex()
                             .flex_col()
                             .flex_initial()
@@ -461,6 +464,43 @@ impl Chat {
                                             .child(item.ago()),
                                     ),
                             )
+                            .when_some(item.reply_to.as_ref(), |this, reply_to| {
+                                match self.messages.read(cx).iter().find(|msg| {
+                                    if let RoomMessage::User(m) = msg {
+                                        reply_to == &m.id
+                                    } else {
+                                        false
+                                    }
+                                }) {
+                                    Some(RoomMessage::User(message)) => this.w_full().child(
+                                        div()
+                                            .w_full()
+                                            .px_2()
+                                            .border_l_2()
+                                            .border_color(cx.theme().element_active)
+                                            .text_sm()
+                                            .child(
+                                                div()
+                                                    .text_color(cx.theme().text_accent)
+                                                    .child(message.author.shared_name()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .text_ellipsis()
+                                                    .line_clamp(1)
+                                                    .child(message.content.clone()),
+                                            )
+                                            .hover(|this| {
+                                                this.bg(cx.theme().elevated_surface_background)
+                                            })
+                                            .group_hover("", |this| {
+                                                this.border_color(cx.theme().element_selected)
+                                            }),
+                                    ),
+                                    _ => this.child(div().text_sm().child("Message not found.")),
+                                }
+                            })
                             .child(texts.element("body".into(), window, cx))
                             .when_some(item.errors.clone(), |this, errors| {
                                 this.child(

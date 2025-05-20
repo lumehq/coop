@@ -12,9 +12,11 @@ use crate::room::SendError;
 ///
 /// - `id`: The unique identifier for the message
 /// - `content`: The text content of the message
-/// - `author`: Profile information about who created the message
+/// - `author`: Profile information about the message creator
+/// - `created_at`: Timestamp of when the message was created
 /// - `mentions`: List of profiles mentioned in the message
-/// - `created_at`: Timestamp when the message was created
+/// - `reply_to`: The message that this message replies to
+/// - `errors`: List of errors that occurred when sending this message
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     pub id: EventId,
@@ -22,6 +24,7 @@ pub struct Message {
     pub author: Profile,
     pub created_at: Timestamp,
     pub mentions: Vec<Profile>,
+    pub reply_to: Option<EventId>,
     pub errors: Option<Vec<SendError>>,
 }
 
@@ -44,6 +47,7 @@ impl Message {
             content,
             author,
             created_at,
+            reply_to: None,
             mentions: vec![],
             errors: None,
         }
@@ -74,6 +78,20 @@ impl Message {
             _ => format!("{}, {time_format}", input_time.format("%d/%m/%y")),
         }
         .into()
+    }
+
+    /// Sets the message this message is replying to
+    ///
+    /// # Arguments
+    ///
+    /// * `reply_to` - The EventId of the message being replied to, or None to clear the reply
+    ///
+    /// # Returns
+    ///
+    /// The same message with updated reply_to field
+    pub fn with_reply(mut self, reply_to: Option<EventId>) -> Self {
+        self.reply_to = reply_to;
+        self
     }
 
     /// Adds or replaces mentions in the message

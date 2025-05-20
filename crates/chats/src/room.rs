@@ -427,6 +427,14 @@ impl Room {
                 let tokens = parser.parse(&content);
                 let mut mentions = vec![];
 
+                let reply_to = event
+                    .tags
+                    .event_ids()
+                    .copied()
+                    .collect_vec()
+                    .into_iter()
+                    .nth(0);
+
                 let author = profiles
                     .iter()
                     .find(|profile| profile.public_key() == event.pubkey)
@@ -454,7 +462,9 @@ impl Room {
                     );
                 }
 
-                let message = Message::new(id, content, author, created_at).with_mentions(mentions);
+                let message = Message::new(id, content, author, created_at)
+                    .with_reply(reply_to)
+                    .with_mentions(mentions);
                 let room_message = RoomMessage::user(message);
 
                 messages.push(room_message);
@@ -477,9 +487,22 @@ impl Room {
     /// Processes the event and emits an Incoming to the UI when complete
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
         let author = ChatRegistry::get_global(cx).profile(&event.pubkey, cx);
+
+        // Extract all mentions from content
         let mentions = extract_mentions(&event.content, cx);
-        let message =
-            Message::new(event.id, event.content, author, event.created_at).with_mentions(mentions);
+
+        // Extract reply_to if present
+        let reply_to = event
+            .tags
+            .event_ids()
+            .copied()
+            .collect_vec()
+            .into_iter()
+            .nth(0);
+
+        let message = Message::new(event.id, event.content, author, event.created_at)
+            .with_reply(reply_to)
+            .with_mentions(mentions);
 
         cx.emit(Incoming(message));
     }
@@ -522,8 +545,18 @@ impl Room {
         // Extract all mentions from content
         let mentions = extract_mentions(&event.content, cx);
 
+        // Extract reply_to if present
+        let reply_to = event
+            .tags
+            .event_ids()
+            .copied()
+            .collect_vec()
+            .into_iter()
+            .nth(0);
+
         Some(
             Message::new(event.id.unwrap(), event.content, profile, event.created_at)
+                .with_reply(reply_to)
                 .with_mentions(mentions),
         )
     }
