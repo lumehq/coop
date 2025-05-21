@@ -11,7 +11,7 @@ use nostr_sdk::prelude::*;
 
 use crate::{
     constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE},
-    message::{Message, RoomMessage},
+    message::Message,
     ChatRegistry,
 };
 
@@ -388,7 +388,7 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<RoomMessage>, Error> containing
     /// all messages for this room
-    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<RoomMessage>, Error>> {
+    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Message>, Error>> {
         let client = get_client();
         let pubkeys = Arc::clone(&self.members);
         let profiles: Vec<Profile> = pubkeys
@@ -421,19 +421,26 @@ impl Room {
                 .collect::<Vec<_>>();
 
             for event in events.into_iter() {
-                let id = event.id;
-                let created_at = event.created_at;
                 let content = event.content.clone();
                 let tokens = parser.parse(&content);
                 let mut mentions = vec![];
+                let mut replies_to = vec![];
 
-                let reply_to = event
-                    .tags
-                    .event_ids()
-                    .copied()
-                    .collect_vec()
-                    .into_iter()
-                    .nth(0);
+                for tag in event.tags.filter(TagKind::e()) {
+                    if let Some(content) = tag.content() {
+                        if let Ok(id) = EventId::from_hex(content) {
+                            replies_to.push(id);
+                        }
+                    }
+                }
+
+                for tag in event.tags.filter(TagKind::q()) {
+                    if let Some(content) = tag.content() {
+                        if let Ok(id) = EventId::from_hex(content) {
+                            replies_to.push(id);
+                        }
+                    }
+                }
 
                 let author = profiles
                     .iter()
@@ -462,12 +469,17 @@ impl Room {
                     );
                 }
 
-                let message = Message::new(id, content, author, created_at)
-                    .with_reply(reply_to)
-                    .with_mentions(mentions);
-                let room_message = RoomMessage::user(message);
-
-                messages.push(room_message);
+                if let Ok(message) = Message::builder()
+                    .id(event.id)
+                    .content(content)
+                    .author(author)
+                    .created_at(event.created_at)
+                    .replies_to(replies_to)
+                    .mentions(mentions)
+                    .build()
+                {
+                    messages.push(message);
+                }
             }
 
             Ok(messages)
@@ -492,19 +504,35 @@ impl Room {
         let mentions = extract_mentions(&event.content, cx);
 
         // Extract reply_to if present
-        let reply_to = event
-            .tags
-            .event_ids()
-            .copied()
-            .collect_vec()
-            .into_iter()
-            .nth(0);
+        let mut replies_to = vec![];
 
-        let message = Message::new(event.id, event.content, author, event.created_at)
-            .with_reply(reply_to)
-            .with_mentions(mentions);
+        for tag in event.tags.filter(TagKind::e()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
 
-        cx.emit(Incoming(message));
+        for tag in event.tags.filter(TagKind::q()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        if let Ok(message) = Message::builder()
+            .id(event.id)
+            .content(event.content)
+            .author(author)
+            .created_at(event.created_at)
+            .replies_to(replies_to)
+            .mentions(mentions)
+            .build()
+        {
+            cx.emit(Incoming(message));
+        }
     }
 
     /// Creates a temporary message for optimistic updates
@@ -528,8 +556,8 @@ impl Room {
         reply_to: Option<EventId>,
         cx: &App,
     ) -> Option<Message> {
-        let profile = Account::get_global(cx).profile.clone()?;
-        let public_key = profile.public_key();
+        let author = Account::get_global(cx).profile.clone()?;
+        let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
         // Add event reference if it's present (replying to another event)
@@ -546,19 +574,33 @@ impl Room {
         let mentions = extract_mentions(&event.content, cx);
 
         // Extract reply_to if present
-        let reply_to = event
-            .tags
-            .event_ids()
-            .copied()
-            .collect_vec()
-            .into_iter()
-            .nth(0);
+        let mut replies_to = vec![];
 
-        Some(
-            Message::new(event.id.unwrap(), event.content, profile, event.created_at)
-                .with_reply(reply_to)
-                .with_mentions(mentions),
-        )
+        for tag in event.tags.filter(TagKind::e()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        for tag in event.tags.filter(TagKind::q()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        Message::builder()
+            .id(event.id.unwrap())
+            .content(event.content)
+            .author(author)
+            .created_at(event.created_at)
+            .replies_to(replies_to)
+            .mentions(mentions)
+            .build()
+            .ok()
     }
 
     /// Sends a message to all members in the background task

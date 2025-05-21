@@ -1,17 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
-use chats::{
-    message::{Message, RoomMessage},
-    room::Room,
-    ChatRegistry,
-};
+use chats::{message::Message, room::Room, ChatRegistry};
 use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
-    AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
+    AnyElement, App, AppContext, Context, Element, Empty, Entity, EventEmitter, Flatten,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
     ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
     StyledImage, Subscription, Window,
@@ -35,8 +31,6 @@ use ui::{
 
 use crate::views::subject;
 
-const DESC: &str = "This conversation is private. Only members can see each other's messages.";
-
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct ChangeSubject(pub String);
 
@@ -56,7 +50,7 @@ pub struct Chat {
     focus_handle: FocusHandle,
     // Chat Room
     room: Entity<Room>,
-    messages: Entity<Vec<RoomMessage>>,
+    messages: Entity<Vec<Rc<RefCell<Message>>>>,
     text_data: HashMap<EventId, RichText>,
     list_state: ListState,
     // New Message
@@ -71,9 +65,21 @@ pub struct Chat {
 
 impl Chat {
     pub fn new(id: &u64, room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let messages = cx.new(|_| vec![RoomMessage::announcement()]);
         let attaches = cx.new(|_| None);
         let reply_to = cx.new(|_| None);
+
+        let messages = cx.new(|_| {
+            let message = Message::builder()
+                .content(
+                    "This conversation is private. Only members can see each other's messages."
+                        .into(),
+                )
+                .build_rc()
+                .unwrap();
+
+            vec![message]
+        });
+
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Message...")
@@ -104,25 +110,13 @@ impl Chat {
 
             subscriptions.push(
                 cx.subscribe_in(&room, window, move |this, _, incoming, _w, cx| {
-                    let created_at = &incoming.0.created_at.to_string()[..5];
-                    let content = incoming.0.content.as_str();
-                    let author = incoming.0.author.public_key();
-
                     // Check if the incoming message is the same as the new message created by optimistic update
-                    if this.messages.read(cx).iter().any(|msg| {
-                        if let RoomMessage::User(m) = msg {
-                            created_at == &m.created_at.to_string()[..5]
-                                && m.content == content
-                                && m.author.public_key() == author
-                        } else {
-                            false
-                        }
-                    }) {
+                    if this.prevent_duplicate_message(&incoming.0, cx) {
                         return;
                     }
 
                     let old_len = this.messages.read(cx).len();
-                    let message = RoomMessage::user(incoming.0.clone());
+                    let message = incoming.0.clone().into_rc();
 
                     cx.update_entity(&this.messages, |this, cx| {
                         this.extend(vec![message]);
@@ -164,18 +158,18 @@ impl Chat {
     /// Load all messages belonging to this room
     pub(crate) fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
         let room = self.room.read(cx);
-        let task = room.load_messages(cx);
+        let load_messages = room.load_messages(cx);
 
         cx.spawn_in(window, async move |this, cx| {
-            match task.await {
-                Ok(events) => {
+            match load_messages.await {
+                Ok(messages) => {
                     this.update(cx, |this, cx| {
                         let old_len = this.messages.read(cx).len();
-                        let new_len = events.len();
+                        let new_len = messages.len();
 
                         // Extend the messages list with the new events
                         this.messages.update(cx, |this, cx| {
-                            this.extend(events);
+                            this.extend(messages.into_iter().map(|e| e.into_rc()));
                             cx.notify();
                         });
 
@@ -219,6 +213,19 @@ impl Chat {
         content
     }
 
+    fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
+        let min_timestamp = new_msg.created_at.as_u64().saturating_sub(2);
+
+        self.messages.read(cx).iter().any(|existing| {
+            let existing = existing.borrow();
+            // Check if messages are within the time window
+            (existing.created_at.as_u64() >= min_timestamp) &&
+            // Compare content and author
+            (existing.content == new_msg.content) &&
+            (existing.author == new_msg.author)
+        })
+    }
+
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.input.update(cx, |this, cx| {
             this.set_loading(true, cx);
@@ -228,7 +235,7 @@ impl Chat {
         // Get the message which includes all attachments
         let content = self.message(cx);
         // Get reply_to if it's present
-        let reply_to = self.reply_to.read(cx).as_ref().map(|m| m.id);
+        let reply_to = self.reply_to.read(cx).as_ref().map(|m| m.id.unwrap());
         // Get the current room entity
         let room = self.room.read(cx);
         // Create a temporary message for optimistic update
@@ -256,16 +263,10 @@ impl Chat {
                     if !reports.is_empty() {
                         this.update(cx, |this, cx| {
                             this.messages.update(cx, |this, cx| {
-                                if let Some(msg) = this.iter_mut().find(|msg| {
-                                    if let RoomMessage::User(m) = msg {
-                                        m.id == id
-                                    } else {
-                                        false
-                                    }
+                                if let Some(msg) = id.and_then(|id| {
+                                    this.iter().find(|msg| msg.borrow().id == Some(id)).cloned()
                                 }) {
-                                    if let RoomMessage::User(this) = msg {
-                                        this.errors = Some(reports)
-                                    }
+                                    msg.borrow_mut().errors = Some(reports);
                                     cx.notify();
                                 }
                             });
@@ -280,20 +281,7 @@ impl Chat {
 
     fn push_user_message(&self, message: Message, cx: &mut Context<Self>) {
         let old_len = self.messages.read(cx).len();
-        let message = RoomMessage::user(message);
-
-        cx.update_entity(&self.messages, |this, cx| {
-            this.extend(vec![message]);
-            cx.notify();
-        });
-
-        self.list_state.splice(old_len..old_len, 1);
-    }
-
-    #[allow(dead_code)]
-    fn push_system_message(&self, content: String, cx: &mut Context<Self>) {
-        let old_len = self.messages.read(cx).len();
-        let message = RoomMessage::system(content.into());
+        let message = message.into_rc();
 
         cx.update_entity(&self.messages, |this, cx| {
             this.extend(vec![message]);
@@ -405,6 +393,87 @@ impl Chat {
         cx.notify();
     }
 
+    fn render_attach(&mut self, url: &Url, cx: &Context<Self>) -> impl IntoElement {
+        let url = url.clone();
+        let path: SharedString = url.to_string().into();
+
+        div()
+            .id(path.clone())
+            .relative()
+            .w_16()
+            .child(
+                img(format!(
+                    "{}/?url={}&w=128&h=128&fit=cover&n=-1",
+                    IMAGE_SERVICE, path
+                ))
+                .size_16()
+                .shadow_lg()
+                .rounded(cx.theme().radius)
+                .object_fit(ObjectFit::ScaleDown),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_neg_2()
+                    .right_neg_2()
+                    .size_4()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(red())
+                    .child(Icon::new(IconName::Close).size_2().text_color(white())),
+            )
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.remove_media(&url, window, cx);
+            }))
+    }
+
+    fn render_reply(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .w_full()
+            .pl_2()
+            .border_l_2()
+            .border_color(cx.theme().element_active)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child("Replying to:")
+                            .child(
+                                div()
+                                    .text_color(cx.theme().text_accent)
+                                    .child(message.author.as_ref().unwrap().shared_name()),
+                            ),
+                    )
+                    .child(
+                        Button::new("remove-reply")
+                            .icon(IconName::Close)
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.remove_reply_to(cx);
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .text_sm()
+                    .text_ellipsis()
+                    .line_clamp(1)
+                    .child(message.content.clone()),
+            )
+    }
+
     fn render_message(
         &mut self,
         ix: usize,
@@ -415,18 +484,42 @@ impl Chat {
             return div().into_element();
         };
 
-        match message {
-            RoomMessage::User(item) => self.render_user_msg(item, window, cx),
-            RoomMessage::System(content) => self.render_system_msg(content, cx),
-            RoomMessage::Announcement => self.render_announcement_msg(cx),
-        }
-    }
+        let message = message.borrow();
 
-    fn render_user_msg(&mut self, item: &Message, window: &mut Window, cx: &Context<Self>) -> Div {
+        // Message without ID, Author probably the placeholder
+        let (Some(id), Some(author)) = (message.id, message.author.as_ref()) else {
+            return div()
+                .group("")
+                .w_full()
+                .relative()
+                .flex()
+                .gap_3()
+                .px_3()
+                .py_2()
+                .w_full()
+                .h_32()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .text_center()
+                .text_xs()
+                .text_color(cx.theme().text_placeholder)
+                .line_height(relative(1.3))
+                .child(
+                    svg()
+                        .path("brand/coop.svg")
+                        .size_10()
+                        .text_color(cx.theme().elevated_surface_background),
+                )
+                .child(message.content.clone())
+                .into_element();
+        };
+
         let texts = self
             .text_data
-            .entry(item.id)
-            .or_insert_with(|| RichText::new(item.content.to_owned(), &item.mentions));
+            .entry(id)
+            .or_insert_with(|| RichText::new(message.content.to_string(), &message.mentions));
 
         div()
             .group("")
@@ -438,7 +531,7 @@ impl Chat {
                 div()
                     .flex()
                     .gap_3()
-                    .child(img(item.author.shared_avatar()).size_8().flex_shrink_0())
+                    .child(img(author.shared_avatar()).size_8().flex_shrink_0())
                     .child(
                         div()
                             .flex_1()
@@ -456,53 +549,71 @@ impl Chat {
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
-                                            .child(item.author.shared_name()),
+                                            .child(author.shared_name()),
                                     )
                                     .child(
                                         div()
                                             .text_color(cx.theme().text_placeholder)
-                                            .child(item.ago()),
+                                            .child(message.ago()),
                                     ),
                             )
-                            .when_some(item.reply_to.as_ref(), |this, reply_to| {
-                                match self.messages.read(cx).iter().find(|msg| {
-                                    if let RoomMessage::User(m) = msg {
-                                        reply_to == &m.id
-                                    } else {
-                                        false
-                                    }
-                                }) {
-                                    Some(RoomMessage::User(message)) => this.w_full().child(
-                                        div()
-                                            .w_full()
-                                            .px_2()
-                                            .border_l_2()
-                                            .border_color(cx.theme().element_active)
-                                            .text_sm()
-                                            .child(
-                                                div()
-                                                    .text_color(cx.theme().text_accent)
-                                                    .child(message.author.shared_name()),
-                                            )
-                                            .child(
+                            .when_some(message.replies_to.as_ref(), |this, replies| {
+                                this.children({
+                                    let mut items = vec![];
+
+                                    for id in replies.iter() {
+                                        if let Some(message) = self
+                                            .messages
+                                            .read(cx)
+                                            .iter()
+                                            .find(|msg| msg.borrow().id == Some(*id))
+                                            .cloned()
+                                        {
+                                            let message = message.borrow();
+                                            items.push(
                                                 div()
                                                     .w_full()
-                                                    .text_ellipsis()
-                                                    .line_clamp(1)
-                                                    .child(message.content.clone()),
-                                            )
-                                            .hover(|this| {
-                                                this.bg(cx.theme().elevated_surface_background)
-                                            })
-                                            .group_hover("", |this| {
-                                                this.border_color(cx.theme().element_selected)
-                                            }),
-                                    ),
-                                    _ => this.child(div().text_sm().child("Message not found.")),
-                                }
+                                                    .px_2()
+                                                    .border_l_2()
+                                                    .border_color(cx.theme().element_active)
+                                                    .text_sm()
+                                                    .child(
+                                                        div()
+                                                            .text_color(cx.theme().text_accent)
+                                                            .child(
+                                                                message
+                                                                    .author
+                                                                    .as_ref()
+                                                                    .unwrap()
+                                                                    .shared_name(),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .w_full()
+                                                            .text_ellipsis()
+                                                            .line_clamp(1)
+                                                            .child(message.content.clone()),
+                                                    )
+                                                    .hover(|this| {
+                                                        this.bg(cx
+                                                            .theme()
+                                                            .elevated_surface_background)
+                                                    })
+                                                    .group_hover("", |this| {
+                                                        this.border_color(
+                                                            cx.theme().element_selected,
+                                                        )
+                                                    }),
+                                            );
+                                        }
+                                    }
+
+                                    items
+                                })
                             })
                             .child(texts.element("body".into(), window, cx))
-                            .when_some(item.errors.clone(), |this, errors| {
+                            .when_some(message.errors.clone(), |this, errors| {
                                 this.child(
                                     div()
                                         .id("")
@@ -586,7 +697,7 @@ impl Chat {
                             .small()
                             .ghost()
                             .on_click({
-                                let message = item.clone();
+                                let message = message.clone();
                                 cx.listener(move |this, _, _, cx| {
                                     this.reply_to(message.clone(), cx);
                                 })
@@ -594,60 +705,6 @@ impl Chat {
                     ),
             )
             .hover(|this| this.bg(cx.theme().surface_background))
-    }
-
-    fn render_system_msg(&mut self, content: &SharedString, cx: &Context<Self>) -> Div {
-        div()
-            .group("")
-            .w_full()
-            .relative()
-            .flex()
-            .gap_3()
-            .px_3()
-            .py_2()
-            .items_center()
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .w(px(2.))
-                    .h_full()
-                    .bg(cx.theme().border_transparent)
-                    .group_hover("", |this| this.bg(red())),
-            )
-            .child(img("brand/avatar.png").size_8().flex_shrink_0())
-            .text_sm()
-            .text_color(red())
-            .child(content.clone())
-    }
-
-    fn render_announcement_msg(&mut self, cx: &Context<Self>) -> Div {
-        div()
-            .group("")
-            .w_full()
-            .relative()
-            .flex()
-            .gap_3()
-            .px_3()
-            .py_2()
-            .w_full()
-            .h_32()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .text_center()
-            .text_xs()
-            .text_color(cx.theme().text_placeholder)
-            .line_height(relative(1.3))
-            .child(
-                svg()
-                    .path("brand/coop.svg")
-                    .size_10()
-                    .text_color(cx.theme().elevated_surface_background),
-            )
-            .child(DESC)
     }
 }
 
@@ -724,96 +781,12 @@ impl Render for Chat {
                         div()
                             .flex()
                             .flex_col()
-                            .when_some(self.attaches.read(cx).as_ref(), |this, attaches| {
-                                this.gap_1p5().children(attaches.iter().map(|url| {
-                                    let url = url.clone();
-                                    let path: SharedString = url.to_string().into();
-
-                                    div()
-                                        .id(path.clone())
-                                        .relative()
-                                        .w_16()
-                                        .child(
-                                            img(format!(
-                                                "{}/?url={}&w=128&h=128&fit=cover&n=-1",
-                                                IMAGE_SERVICE, path
-                                            ))
-                                            .size_16()
-                                            .shadow_lg()
-                                            .rounded(cx.theme().radius)
-                                            .object_fit(ObjectFit::ScaleDown),
-                                        )
-                                        .child(
-                                            div()
-                                                .absolute()
-                                                .top_neg_2()
-                                                .right_neg_2()
-                                                .size_4()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .rounded_full()
-                                                .bg(red())
-                                                .child(
-                                                    Icon::new(IconName::Close)
-                                                        .size_2()
-                                                        .text_color(white()),
-                                                ),
-                                        )
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.remove_media(&url, window, cx);
-                                        }))
-                                }))
+                            .when_some(self.attaches.read(cx).as_ref(), |this, urls| {
+                                this.gap_1p5()
+                                    .children(urls.iter().map(|url| self.render_attach(url, cx)))
                             })
-                            .when_some(self.reply_to.read(cx).as_ref(), |this, reply_to| {
-                                this.gap_1p5().child(
-                                    div()
-                                        .w_full()
-                                        .pl_2()
-                                        .border_l_2()
-                                        .border_color(cx.theme().element_active)
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .justify_between()
-                                                .child(
-                                                    div()
-                                                        .flex()
-                                                        .items_baseline()
-                                                        .gap_1()
-                                                        .text_xs()
-                                                        .text_color(cx.theme().text_muted)
-                                                        .child("Replying to:")
-                                                        .child(
-                                                            div()
-                                                                .text_color(cx.theme().text_accent)
-                                                                .child(
-                                                                    reply_to.author.shared_name(),
-                                                                ),
-                                                        ),
-                                                )
-                                                .child(
-                                                    Button::new("remove-reply")
-                                                        .icon(IconName::Close)
-                                                        .xsmall()
-                                                        .ghost()
-                                                        .on_click(cx.listener(
-                                                            move |this, _, _, cx| {
-                                                                this.remove_reply_to(cx);
-                                                            },
-                                                        )),
-                                                ),
-                                        )
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .text_sm()
-                                                .text_ellipsis()
-                                                .line_clamp(1)
-                                                .child(reply_to.content.clone()),
-                                        ),
-                                )
+                            .when_some(self.reply_to.read(cx).as_ref(), |this, message| {
+                                this.gap_1p5().child(self.render_reply(message, cx))
                             })
                             .child(
                                 div()
