@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet}
 };
 
 use account::Account;
@@ -181,6 +181,7 @@ impl ChatRegistry {
             let events = send_events.merge(recv_events);
 
             let mut room_map: HashMap<u64, (Event, usize, bool)> = HashMap::new();
+            let mut trusted_keys: HashSet<PublicKey> = HashSet::new();
 
             // Process each event and group by room hash
             for event in events
@@ -189,10 +190,18 @@ impl ChatRegistry {
             {
                 let hash = room_hash(&event);
 
-                // Check if room's author is seen in any contact list
-                let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
-                // If room's author is seen at least once, mark as trusted
-                let is_trust = client.database().count(filter).await? >= 1;
+                let mut is_trust = trusted_keys.contains(&event.pubkey);
+
+                if is_trust == false {
+                    // Check if room's author is seen in any contact list
+                    let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
+                    // If room's author is seen at least once, mark as trusted
+                    is_trust = client.database().count(filter).await? >= 1;
+
+                    if is_trust {
+                        trusted_keys.insert(event.pubkey);
+                    }
+                }
 
                 room_map
                     .entry(hash)
