@@ -90,8 +90,8 @@ impl Chat {
                 .multi_line()
                 .prevent_new_line_on_enter()
                 .rows(1)
-                .max_rows(20)
-                .auto_grow()
+                .multi_line()
+                .auto_grow(1, 20)
                 .clean_on_escape()
         });
 

@@ -4,6 +4,7 @@ mod element;
 mod mask_pattern;
 mod state;
 mod text_input;
+mod text_wrapper;
 
 pub(crate) mod clear_button;
 

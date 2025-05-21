@@ -61,12 +61,11 @@ impl TextElement {
         let mut cursor = None;
 
         // If the input has a fixed height (Otherwise is auto-grow), we need to add a bottom margin to the input.
-        let bottom_margin = if input.auto_grow {
-            px(0.)
+        let bottom_margin = if input.is_auto_grow() {
+            px(0.) + line_height
         } else {
             BOTTOM_MARGIN_ROWS * line_height + line_height
         };
-
         // The cursor corresponds to the current cursor position in the text no only the line.
         let mut cursor_pos = None;
         let mut cursor_start = None;
@@ -160,7 +159,7 @@ impl TextElement {
             if input.show_cursor(window, cx) {
                 // cursor blink
                 let cursor_height =
-                    window.text_style().font_size.to_pixels(window.rem_size()) + px(4.);
+                    window.text_style().font_size.to_pixels(window.rem_size()) + px(2.);
                 cursor = Some(fill(
                     Bounds::new(
                         point(
@@ -224,9 +223,13 @@ impl TextElement {
                     (end.y / line_height).ceil() as usize - (start.y / line_height).ceil() as usize;
 
                 let mut end_x = end.x;
+
                 if wrapped_lines > 0 {
                     end_x = line_wrap_width;
                 }
+
+                // Ensure at least 6px width for the selection for empty lines.
+                end_x = end_x.max(start.x + px(6.));
 
                 line_corners.push(Corners {
                     top_left: line_origin + point(start.x, start.y),
@@ -363,28 +366,14 @@ impl Element for TextElement {
 
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-
         if self.input.read(cx).is_multi_line() {
             style.flex_grow = 1.0;
-            if let Some(h) = input.height {
+            if let Some(h) = input.mode.height() {
                 style.size.height = h.into();
                 style.min_size.height = line_height.into();
             } else {
-                // Check to auto grow
-                let rows = if input.auto_grow {
-                    let rows = (input.scroll_size.height / line_height) as usize;
-                    let max_rows = input
-                        .max_rows
-                        .unwrap_or(usize::MAX)
-                        .min(rows)
-                        .max(input.min_rows);
-                    rows.clamp(input.min_rows, max_rows)
-                } else {
-                    input.rows
-                };
-
                 style.size.height = relative(1.).into();
-                style.min_size.height = (rows.max(1) as f32 * line_height).into();
+                style.min_size.height = (input.mode.rows() * line_height).into();
             }
         } else {
             // For single-line inputs, the minimum height should be the line height
@@ -534,7 +523,6 @@ impl Element for TextElement {
         // Set Root focused_input when self is focused
         if focused {
             let state = self.input.clone();
-
             if Root::read(window, cx).focused_input.as_ref() != Some(&state) {
                 Root::update(window, cx, |root, _, cx| {
                     root.focused_input = Some(state);
@@ -546,7 +534,6 @@ impl Element for TextElement {
         // And reset focused_input when next_frame start
         window.on_next_frame({
             let state = self.input.clone();
-
             move |window, cx| {
                 if !focused && Root::read(window, cx).focused_input.as_ref() == Some(&state) {
                     Root::update(window, cx, |root, _, cx| {
@@ -593,7 +580,6 @@ impl Element for TextElement {
             .map(|l| l.width())
             .max()
             .unwrap_or_default();
-
         let height = offset_y;
         let scroll_size = size(width, height);
 
@@ -602,12 +588,15 @@ impl Element for TextElement {
             input.last_bounds = Some(bounds);
             input.last_cursor_offset = Some(input.cursor_offset());
             input.last_line_height = line_height;
-            input.input_bounds = input_bounds;
+
+            input.set_input_bounds(input_bounds, cx);
+
             input.last_selected_range = Some(selected_range);
             input.scroll_size = scroll_size;
             input
                 .scroll_handle
                 .set_offset(prepaint.cursor_scroll_offset);
+
             cx.notify();
         });
 
