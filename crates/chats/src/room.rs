@@ -11,7 +11,7 @@ use nostr_sdk::prelude::*;
 
 use crate::{
     constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE},
-    message::{Message, RoomMessage},
+    message::Message,
     ChatRegistry,
 };
 
@@ -388,7 +388,7 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<RoomMessage>, Error> containing
     /// all messages for this room
-    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<RoomMessage>, Error>> {
+    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Message>, Error>> {
         let client = get_client();
         let pubkeys = Arc::clone(&self.members);
         let profiles: Vec<Profile> = pubkeys
@@ -421,11 +421,26 @@ impl Room {
                 .collect::<Vec<_>>();
 
             for event in events.into_iter() {
-                let id = event.id;
-                let created_at = event.created_at;
                 let content = event.content.clone();
                 let tokens = parser.parse(&content);
                 let mut mentions = vec![];
+                let mut replies_to = vec![];
+
+                for tag in event.tags.filter(TagKind::e()) {
+                    if let Some(content) = tag.content() {
+                        if let Ok(id) = EventId::from_hex(content) {
+                            replies_to.push(id);
+                        }
+                    }
+                }
+
+                for tag in event.tags.filter(TagKind::q()) {
+                    if let Some(content) = tag.content() {
+                        if let Ok(id) = EventId::from_hex(content) {
+                            replies_to.push(id);
+                        }
+                    }
+                }
 
                 let author = profiles
                     .iter()
@@ -454,10 +469,17 @@ impl Room {
                     );
                 }
 
-                let message = Message::new(id, content, author, created_at).with_mentions(mentions);
-                let room_message = RoomMessage::user(message);
-
-                messages.push(room_message);
+                if let Ok(message) = Message::builder()
+                    .id(event.id)
+                    .content(content)
+                    .author(author)
+                    .created_at(event.created_at)
+                    .replies_to(replies_to)
+                    .mentions(mentions)
+                    .build()
+                {
+                    messages.push(message);
+                }
             }
 
             Ok(messages)
@@ -477,11 +499,40 @@ impl Room {
     /// Processes the event and emits an Incoming to the UI when complete
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
         let author = ChatRegistry::get_global(cx).profile(&event.pubkey, cx);
-        let mentions = extract_mentions(&event.content, cx);
-        let message =
-            Message::new(event.id, event.content, author, event.created_at).with_mentions(mentions);
 
-        cx.emit(Incoming(message));
+        // Extract all mentions from content
+        let mentions = extract_mentions(&event.content, cx);
+
+        // Extract reply_to if present
+        let mut replies_to = vec![];
+
+        for tag in event.tags.filter(TagKind::e()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        for tag in event.tags.filter(TagKind::q()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        if let Ok(message) = Message::builder()
+            .id(event.id)
+            .content(event.content)
+            .author(author)
+            .created_at(event.created_at)
+            .replies_to(replies_to)
+            .mentions(mentions)
+            .build()
+        {
+            cx.emit(Incoming(message));
+        }
     }
 
     /// Creates a temporary message for optimistic updates
@@ -499,22 +550,69 @@ impl Room {
     ///
     /// Returns `Some(Message)` containing the temporary message if the current user's profile is available,
     /// or `None` if no account is found.
-    pub fn create_temp_message(&self, content: &str, cx: &App) -> Option<Message> {
-        let profile = Account::get_global(cx).profile.clone()?;
-        let public_key = profile.public_key();
+    pub fn create_temp_message(
+        &self,
+        content: &str,
+        replies: Option<&Vec<Message>>,
+        cx: &App,
+    ) -> Option<Message> {
+        let author = Account::get_global(cx).profile.clone()?;
+        let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
+        // Add event reference if it's present (replying to another event)
+        let mut refs = vec![];
+
+        if let Some(replies) = replies {
+            if replies.len() == 1 {
+                refs.push(Tag::event(replies[0].id.unwrap()))
+            } else {
+                for message in replies.iter() {
+                    refs.push(Tag::custom(TagKind::q(), vec![message.id.unwrap()]))
+                }
+            }
+        }
+
+        let mut event = if !refs.is_empty() {
+            builder.tags(refs).build(public_key)
+        } else {
+            builder.build(public_key)
+        };
+
         // Create a unsigned event to convert to Coop Message
-        let mut event = builder.build(public_key);
         event.ensure_id();
 
         // Extract all mentions from content
         let mentions = extract_mentions(&event.content, cx);
 
-        Some(
-            Message::new(event.id.unwrap(), event.content, profile, event.created_at)
-                .with_mentions(mentions),
-        )
+        // Extract reply_to if present
+        let mut replies_to = vec![];
+
+        for tag in event.tags.filter(TagKind::e()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        for tag in event.tags.filter(TagKind::q()) {
+            if let Some(content) = tag.content() {
+                if let Ok(id) = EventId::from_hex(content) {
+                    replies_to.push(id);
+                }
+            }
+        }
+
+        Message::builder()
+            .id(event.id.unwrap())
+            .content(event.content)
+            .author(author)
+            .created_at(event.created_at)
+            .replies_to(replies_to)
+            .mentions(mentions)
+            .build()
+            .ok()
     }
 
     /// Sends a message to all members in the background task
@@ -528,8 +626,14 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<String>, Error> where the
     /// strings contain error messages for any failed sends
-    pub fn send_in_background(&self, msg: &str, cx: &App) -> Task<Result<Vec<SendError>, Error>> {
-        let content = msg.to_owned();
+    pub fn send_in_background(
+        &self,
+        content: &str,
+        replies: Option<&Vec<Message>>,
+        cx: &App,
+    ) -> Task<Result<Vec<SendError>, Error>> {
+        let content = content.to_owned();
+        let replies = replies.cloned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
@@ -550,6 +654,17 @@ impl Room {
                     }
                 })
                 .collect();
+
+            // Add event reference if it's present (replying to another event)
+            if let Some(replies) = replies {
+                if replies.len() == 1 {
+                    tags.push(Tag::event(replies[0].id.unwrap()))
+                } else {
+                    for message in replies.iter() {
+                        tags.push(Tag::custom(TagKind::q(), vec![message.id.unwrap()]))
+                    }
+                }
+            }
 
             // Add subject tag if it's present
             if let Some(subject) = subject {
