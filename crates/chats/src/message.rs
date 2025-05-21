@@ -5,17 +5,29 @@ use std::{cell::RefCell, iter::IntoIterator, rc::Rc};
 
 use crate::room::SendError;
 
+/// Represents a message in the chat system.
+///
+/// Contains information about the message content, author, creation time,
+/// mentions, replies, and any errors that occurred during sending.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
+    /// Unique identifier of the message (EventId from nostr_sdk)
     pub id: Option<EventId>,
+    /// Author profile information
     pub author: Option<Profile>,
+    /// The content/text of the message
     pub content: SharedString,
+    /// When the message was created
     pub created_at: Timestamp,
+    /// List of mentioned profiles in the message
     pub mentions: Vec<Profile>,
+    /// List of EventIds this message is replying to
     pub replies_to: Option<Vec<EventId>>,
+    /// Any errors that occurred while sending this message
     pub errors: Option<Vec<SendError>>,
 }
 
+/// Builder pattern implementation for constructing Message objects.
 #[derive(Debug, Default)]
 pub struct MessageBuilder {
     id: Option<EventId>,
@@ -28,35 +40,42 @@ pub struct MessageBuilder {
 }
 
 impl MessageBuilder {
+    /// Creates a new MessageBuilder with default values
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets the message ID
     pub fn id(mut self, id: EventId) -> Self {
         self.id = Some(id);
         self
     }
 
+    /// Sets the message author
     pub fn author(mut self, author: Profile) -> Self {
         self.author = Some(author);
         self
     }
 
+    /// Sets the message content
     pub fn content(mut self, content: String) -> Self {
         self.content = Some(content);
         self
     }
 
+    /// Sets the creation timestamp
     pub fn created_at(mut self, created_at: Timestamp) -> Self {
         self.created_at = Some(created_at);
         self
     }
 
+    /// Adds a single mention to the message
     pub fn mention(mut self, mention: Profile) -> Self {
         self.mentions.push(mention);
         self
     }
 
+    /// Adds multiple mentions to the message
     pub fn mentions<I>(mut self, mentions: I) -> Self
     where
         I: IntoIterator<Item = Profile>,
@@ -65,11 +84,13 @@ impl MessageBuilder {
         self
     }
 
+    /// Sets a single message this is replying to
     pub fn reply_to(mut self, reply_to: EventId) -> Self {
         self.replies_to = Some(vec![reply_to]);
         self
     }
 
+    /// Sets multiple messages this is replying to
     pub fn replies_to<I>(mut self, replies_to: I) -> Self
     where
         I: IntoIterator<Item = EventId>,
@@ -81,6 +102,7 @@ impl MessageBuilder {
         self
     }
 
+    /// Adds errors that occurred during sending
     pub fn errors<I>(mut self, errors: I) -> Self
     where
         I: IntoIterator<Item = SendError>,
@@ -89,10 +111,12 @@ impl MessageBuilder {
         self
     }
 
+    /// Builds the message wrapped in an Rc<RefCell<Message>>
     pub fn build_rc(self) -> Result<Rc<RefCell<Message>>, String> {
         self.build().map(|m| Rc::new(RefCell::new(m)))
     }
 
+    /// Builds the message
     pub fn build(self) -> Result<Message, String> {
         Ok(Message {
             id: self.id,
@@ -107,18 +131,22 @@ impl MessageBuilder {
 }
 
 impl Message {
+    /// Creates a new MessageBuilder
     pub fn builder() -> MessageBuilder {
         MessageBuilder::new()
     }
 
+    /// Converts the message into an Rc<RefCell<Message>>
     pub fn into_rc(self) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(self))
     }
 
+    /// Builds a message from a builder and wraps it in Rc<RefCell>
     pub fn build_rc(builder: MessageBuilder) -> Result<Rc<RefCell<Self>>, String> {
         builder.build().map(|m| Rc::new(RefCell::new(m)))
     }
 
+    /// Returns a human-readable string representing how long ago the message was created
     pub fn ago(&self) -> SharedString {
         let input_time = match Local.timestamp_opt(self.created_at.as_u64() as i64, 0) {
             chrono::LocalResult::Single(time) => time,

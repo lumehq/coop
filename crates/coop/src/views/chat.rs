@@ -2,12 +2,16 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
-use chats::{message::Message, room::Room, ChatRegistry};
+use chats::{
+    message::Message,
+    room::{Room, SendError},
+    ChatRegistry,
+};
 use common::{nip96_upload, profile::SharedProfile};
 use global::{constants::IMAGE_SERVICE, get_client};
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
-    AnyElement, App, AppContext, Context, Element, Empty, Entity, EventEmitter, Flatten,
+    AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
     ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
     StyledImage, Subscription, Window,
@@ -55,7 +59,7 @@ pub struct Chat {
     list_state: ListState,
     // New Message
     input: Entity<InputState>,
-    reply_to: Entity<Option<Message>>,
+    replies_to: Entity<Option<Vec<Message>>>,
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     uploading: bool,
@@ -66,7 +70,7 @@ pub struct Chat {
 impl Chat {
     pub fn new(id: &u64, room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let attaches = cx.new(|_| None);
-        let reply_to = cx.new(|_| None);
+        let replies_to = cx.new(|_| None);
 
         let messages = cx.new(|_| {
             let message = Message::builder()
@@ -86,9 +90,9 @@ impl Chat {
                 .multi_line()
                 .prevent_new_line_on_enter()
                 .rows(1)
+                .max_rows(20)
                 .auto_grow()
                 .clean_on_escape()
-                .max_rows(20)
         });
 
         cx.new(|cx| {
@@ -148,7 +152,7 @@ impl Chat {
                 messages,
                 list_state,
                 input,
-                reply_to,
+                replies_to,
                 attaches,
                 subscriptions,
             }
@@ -234,21 +238,21 @@ impl Chat {
 
         // Get the message which includes all attachments
         let content = self.message(cx);
-        // Get reply_to if it's present
-        let reply_to = self.reply_to.read(cx).as_ref().map(|m| m.id.unwrap());
+        // Get replies_to if it's present
+        let replies = self.replies_to.read(cx).as_ref();
         // Get the current room entity
         let room = self.room.read(cx);
         // Create a temporary message for optimistic update
-        let temp_message = room.create_temp_message(&content, reply_to, cx);
+        let temp_message = room.create_temp_message(&content, replies, cx);
         // Create a task for sending the message in the background
-        let send_message = room.send_in_background(&content, reply_to, cx);
+        let send_message = room.send_in_background(&content, replies, cx);
 
         if let Some(message) = temp_message {
             let id = message.id;
             // Optimistically update message list
-            self.push_user_message(message, cx);
-            // Remove reply to
-            self.remove_reply_to(cx);
+            self.insert_message(message, cx);
+            // Remove all replies
+            self.remove_all_replies(cx);
 
             // Reset the input state
             self.input.update(cx, |this, cx| {
@@ -279,7 +283,7 @@ impl Chat {
         }
     }
 
-    fn push_user_message(&self, message: Message, cx: &mut Context<Self>) {
+    fn insert_message(&self, message: Message, cx: &mut Context<Self>) {
         let old_len = self.messages.read(cx).len();
         let message = message.into_rc();
 
@@ -291,15 +295,41 @@ impl Chat {
         self.list_state.splice(old_len..old_len, 1);
     }
 
-    fn reply_to(&mut self, message: Message, cx: &mut Context<Self>) {
-        self.reply_to.update(cx, |this, cx| {
-            *this = Some(message);
+    fn scroll_to(&self, id: EventId, cx: &Context<Self>) {
+        if let Some(ix) = self
+            .messages
+            .read(cx)
+            .iter()
+            .position(|m| m.borrow().id == Some(id))
+        {
+            self.list_state.scroll_to_reveal_item(ix);
+        }
+    }
+
+    fn reply(&mut self, message: Message, cx: &mut Context<Self>) {
+        self.replies_to.update(cx, |this, cx| {
+            if let Some(replies) = this {
+                replies.push(message);
+            } else {
+                *this = Some(vec![message])
+            }
             cx.notify();
         });
     }
 
-    fn remove_reply_to(&mut self, cx: &mut Context<Self>) {
-        self.reply_to.update(cx, |this, cx| {
+    fn remove_reply(&mut self, id: EventId, cx: &mut Context<Self>) {
+        self.replies_to.update(cx, |this, cx| {
+            if let Some(replies) = this {
+                if let Some(ix) = replies.iter().position(|m| m.id == Some(id)) {
+                    replies.remove(ix);
+                    cx.notify();
+                }
+            }
+        });
+    }
+
+    fn remove_all_replies(&mut self, cx: &mut Context<Self>) {
+        self.replies_to.update(cx, |this, cx| {
             *this = None;
             cx.notify();
         });
@@ -459,9 +489,12 @@ impl Chat {
                             .icon(IconName::Close)
                             .xsmall()
                             .ghost()
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.remove_reply_to(cx);
-                            })),
+                            .on_click({
+                                let id = message.id.unwrap();
+                                cx.listener(move |this, _, _, cx| {
+                                    this.remove_reply(id, cx);
+                                })
+                            }),
                     ),
             )
             .child(
@@ -481,7 +514,7 @@ impl Chat {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let Some(message) = self.messages.read(cx).get(ix) else {
-            return div().into_element();
+            return div().id(ix);
         };
 
         let message = message.borrow();
@@ -489,6 +522,7 @@ impl Chat {
         // Message without ID, Author probably the placeholder
         let (Some(id), Some(author)) = (message.id, message.author.as_ref()) else {
             return div()
+                .id(ix)
                 .group("")
                 .w_full()
                 .relative()
@@ -512,8 +546,7 @@ impl Chat {
                         .size_10()
                         .text_color(cx.theme().elevated_surface_background),
                 )
-                .child(message.content.clone())
-                .into_element();
+                .child(message.content.clone());
         };
 
         let texts = self
@@ -522,6 +555,7 @@ impl Chat {
             .or_insert_with(|| RichText::new(message.content.to_string(), &message.mentions));
 
         div()
+            .id(ix)
             .group("")
             .relative()
             .w_full()
@@ -558,10 +592,10 @@ impl Chat {
                                     ),
                             )
                             .when_some(message.replies_to.as_ref(), |this, replies| {
-                                this.children({
+                                this.w_full().children({
                                     let mut items = vec![];
 
-                                    for id in replies.iter() {
+                                    for (ix, id) in replies.iter().enumerate() {
                                         if let Some(message) = self
                                             .messages
                                             .read(cx)
@@ -570,12 +604,14 @@ impl Chat {
                                             .cloned()
                                         {
                                             let message = message.borrow();
+
                                             items.push(
                                                 div()
+                                                    .id(ix)
                                                     .w_full()
                                                     .px_2()
                                                     .border_l_2()
-                                                    .border_color(cx.theme().element_active)
+                                                    .border_color(cx.theme().element_selected)
                                                     .text_sm()
                                                     .child(
                                                         div()
@@ -600,10 +636,11 @@ impl Chat {
                                                             .theme()
                                                             .elevated_surface_background)
                                                     })
-                                                    .group_hover("", |this| {
-                                                        this.border_color(
-                                                            cx.theme().element_selected,
-                                                        )
+                                                    .on_click({
+                                                        let id = message.id.unwrap();
+                                                        cx.listener(move |this, _, _, cx| {
+                                                            this.scroll_to(id, cx)
+                                                        })
                                                     }),
                                             );
                                         }
@@ -629,81 +666,29 @@ impl Chat {
                                             let errors = errors.clone();
 
                                             window.open_modal(cx, move |this, _window, cx| {
-                                                this.title("Error Logs").child(
-                                                    div()
-                                                        .flex()
-                                                        .flex_col()
-                                                        .gap_2()
-                                                        .px_3()
-                                                        .pb_3()
-                                                        .children(errors.clone().into_iter().map(
-                                                            |error| {
-                                                                div()
-                                                                    .text_sm()
-                                                                    .child(
-                                                                        div()
-                                                                            .flex()
-                                                                            .items_baseline()
-                                                                            .gap_1()
-                                                                            .text_color(
-                                                                                cx.theme()
-                                                                                    .text_muted,
-                                                                            )
-                                                                            .child("Send to:")
-                                                                            .child(
-                                                                                error
-                                                                                    .profile
-                                                                                    .shared_name(),
-                                                                            ),
-                                                                    )
-                                                                    .child(error.message)
-                                                            },
-                                                        )),
-                                                )
+                                                this.title("Error Logs")
+                                                    .child(message_errors(errors.clone(), cx))
                                             });
                                         }),
                                 )
                             }),
                     ),
             )
-            .child(
-                div()
-                    .group_hover("", |this| this.bg(cx.theme().element_active))
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .w(px(2.))
-                    .h_full()
-                    .bg(cx.theme().border_transparent),
-            )
-            .child(
-                div()
-                    .group_hover("", |this| this.visible())
-                    .invisible()
-                    .absolute()
-                    .right_4()
-                    .top_neg_2()
-                    .shadow_sm()
-                    .rounded_md()
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .bg(cx.theme().background)
-                    .p_0p5()
-                    .flex()
-                    .child(
-                        Button::new("reply")
-                            .icon(IconName::Reply)
-                            .tooltip("Reply")
-                            .small()
-                            .ghost()
-                            .on_click({
-                                let message = message.clone();
-                                cx.listener(move |this, _, _, cx| {
-                                    this.reply_to(message.clone(), cx);
-                                })
-                            }),
-                    ),
-            )
+            .child(message_border(cx))
+            .child(message_actions(
+                vec![Button::new("reply")
+                    .icon(IconName::Reply)
+                    .tooltip("Reply")
+                    .small()
+                    .ghost()
+                    .on_click({
+                        let message = message.clone();
+                        cx.listener(move |this, _, _, cx| {
+                            this.reply(message.clone(), cx);
+                        })
+                    })],
+                cx,
+            ))
             .hover(|this| this.bg(cx.theme().surface_background))
     }
 }
@@ -785,8 +770,16 @@ impl Render for Chat {
                                 this.gap_1p5()
                                     .children(urls.iter().map(|url| self.render_attach(url, cx)))
                             })
-                            .when_some(self.reply_to.read(cx).as_ref(), |this, message| {
-                                this.gap_1p5().child(self.render_reply(message, cx))
+                            .when_some(self.replies_to.read(cx).as_ref(), |this, messages| {
+                                this.gap_1p5().children({
+                                    let mut items = vec![];
+
+                                    for message in messages.iter() {
+                                        items.push(self.render_reply(message, cx));
+                                    }
+
+                                    items
+                                })
                             })
                             .child(
                                 div()
@@ -822,4 +815,56 @@ impl Render for Chat {
                     ),
             )
     }
+}
+
+fn message_border(cx: &App) -> Div {
+    div()
+        .group_hover("", |this| this.bg(cx.theme().element_active))
+        .absolute()
+        .left_0()
+        .top_0()
+        .w(px(2.))
+        .h_full()
+        .bg(cx.theme().border_transparent)
+}
+
+fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .px_3()
+        .pb_3()
+        .children(errors.into_iter().map(|error| {
+            div()
+                .text_sm()
+                .child(
+                    div()
+                        .flex()
+                        .items_baseline()
+                        .gap_1()
+                        .text_color(cx.theme().text_muted)
+                        .child("Send to:")
+                        .child(error.profile.shared_name()),
+                )
+                .child(error.message)
+        }))
+}
+
+fn message_actions(buttons: Vec<Button>, cx: &App) -> Div {
+    div()
+        .group_hover("", |this| this.visible())
+        .invisible()
+        .absolute()
+        .right_4()
+        .top_neg_2()
+        .shadow_sm()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(cx.theme().background)
+        .p_0p5()
+        .flex()
+        .gap_0p5()
+        .children(buttons)
 }

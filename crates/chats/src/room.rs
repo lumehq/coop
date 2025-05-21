@@ -553,7 +553,7 @@ impl Room {
     pub fn create_temp_message(
         &self,
         content: &str,
-        reply_to: Option<EventId>,
+        replies: Option<&Vec<Message>>,
         cx: &App,
     ) -> Option<Message> {
         let author = Account::get_global(cx).profile.clone()?;
@@ -561,8 +561,20 @@ impl Room {
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
         // Add event reference if it's present (replying to another event)
-        let mut event = if let Some(id) = reply_to {
-            builder.tags(vec![Tag::event(id)]).build(public_key)
+        let mut refs = vec![];
+
+        if let Some(replies) = replies {
+            if replies.len() == 1 {
+                refs.push(Tag::event(replies[0].id.unwrap()))
+            } else {
+                for message in replies.iter() {
+                    refs.push(Tag::custom(TagKind::q(), vec![message.id.unwrap()]))
+                }
+            }
+        }
+
+        let mut event = if !refs.is_empty() {
+            builder.tags(refs).build(public_key)
         } else {
             builder.build(public_key)
         };
@@ -617,10 +629,11 @@ impl Room {
     pub fn send_in_background(
         &self,
         content: &str,
-        reply_to: Option<EventId>,
+        replies: Option<&Vec<Message>>,
         cx: &App,
     ) -> Task<Result<Vec<SendError>, Error>> {
         let content = content.to_owned();
+        let replies = replies.cloned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
@@ -643,8 +656,14 @@ impl Room {
                 .collect();
 
             // Add event reference if it's present (replying to another event)
-            if let Some(id) = reply_to {
-                tags.push(Tag::event(id));
+            if let Some(replies) = replies {
+                if replies.len() == 1 {
+                    tags.push(Tag::event(replies[0].id.unwrap()))
+                } else {
+                    for message in replies.iter() {
+                        tags.push(Tag::custom(TagKind::q(), vec![message.id.unwrap()]))
+                    }
+                }
             }
 
             // Add subject tag if it's present
