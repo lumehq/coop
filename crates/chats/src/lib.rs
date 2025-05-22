@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap, HashSet}
+    collections::{BTreeMap, HashMap, HashSet},
 };
 
 use account::Account;
@@ -115,7 +115,12 @@ impl ChatRegistry {
             .cloned()
     }
 
-    /// Get rooms by its kind.
+    /// Get room by its index.
+    pub fn room_by_ix(&self, ix: usize, _cx: &App) -> Option<&Entity<Room>> {
+        self.rooms.get(ix)
+    }
+
+    /// Get all rooms by their kind.
     pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<Entity<Room>> {
         self.rooms
             .iter()
@@ -189,10 +194,9 @@ impl ChatRegistry {
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
                 let hash = room_hash(&event);
-
                 let mut is_trust = trusted_keys.contains(&event.pubkey);
 
-                if is_trust == false {
+                if !is_trust {
                     // Check if room's author is seen in any contact list
                     let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
                     // If room's author is seen at least once, mark as trusted

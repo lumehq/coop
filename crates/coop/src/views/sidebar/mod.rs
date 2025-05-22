@@ -14,9 +14,9 @@ use common::{debounced_delay::DebouncedDelay, profile::SharedProfile};
 use folder::{Folder, FolderItem, Parent};
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
-    div, img, prelude::FluentBuilder, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    div, img, prelude::FluentBuilder, uniform_list, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -324,7 +324,7 @@ impl Sidebar {
                 .items_center()
                 .gap_2()
                 .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                .child(Skeleton::new().w_20().h_3().rounded_sm())
+                .child(Skeleton::new().w_24().h_3().rounded_sm())
         })
     }
 
@@ -426,12 +426,11 @@ impl Render for Sidebar {
             .flex()
             .flex_col()
             .gap_3()
-            .py_1()
             .when_some(account, |this, profile| {
                 this.child(
                     div()
                         .px_3()
-                        .h_7()
+                        .h_8()
                         .flex_none()
                         .flex()
                         .justify_between()
@@ -522,12 +521,11 @@ impl Render for Sidebar {
                 div()
                     .px_1()
                     .w_full()
+                    .flex_1()
                     .flex()
                     .flex_col()
-                    .gap_1()
                     .child(
                         div()
-                            .mb_1()
                             .px_2()
                             .w_full()
                             .flex()
@@ -561,13 +559,57 @@ impl Render for Sidebar {
                             ),
                     )
                     .when(chats.wait_for_eose, |this| {
-                        this.children(self.render_skeleton(6))
+                        this.gap_1().children(self.render_skeleton(6))
                     })
                     .map(|this| {
                         if let Some(rooms) = local_result {
                             this.children(Self::render_items(rooms, cx))
                         } else if !self.folders {
-                            this.children(Self::render_items(&chats.rooms, cx))
+                            this.h_full().child(
+                                uniform_list(
+                                    cx.entity().clone(),
+                                    "rooms",
+                                    chats.rooms.len(),
+                                    |_this, range, _window, cx| {
+                                        let mut items = vec![];
+
+                                        for ix in range {
+                                            let Some(room) =
+                                                ChatRegistry::get_global(cx).room_by_ix(ix, cx)
+                                            else {
+                                                continue;
+                                            };
+
+                                            let room = room.read(cx);
+                                            let id = room.id;
+                                            let ago = room.ago();
+                                            let label = room.display_name(cx);
+                                            let img = room.display_image(cx).map(img);
+
+                                            let item = FolderItem::new(id as usize)
+                                                .label(label)
+                                                .description(ago)
+                                                .img(img)
+                                                .on_click({
+                                                    cx.listener(move |_, _, window, cx| {
+                                                        window.dispatch_action(
+                                                            Box::new(AddPanel::new(
+                                                                PanelKind::Room(id),
+                                                                DockPlacement::Center,
+                                                            )),
+                                                            cx,
+                                                        );
+                                                    })
+                                                });
+
+                                            items.push(item);
+                                        }
+
+                                        items
+                                    },
+                                )
+                                .h_full(),
+                            )
                         } else {
                             this.child(
                                 Folder::new("Ongoing")
