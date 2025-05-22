@@ -565,7 +565,7 @@ impl Render for Sidebar {
                         if let Some(rooms) = local_result {
                             this.children(Self::render_items(rooms, cx))
                         } else if !self.folders {
-                            this.h_full().child(
+                            this.child(
                                 uniform_list(
                                     cx.entity().clone(),
                                     "rooms",

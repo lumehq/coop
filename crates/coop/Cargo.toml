@@ -36,5 +36,4 @@ futures.workspace = true
 oneshot.workspace = true
 
 webbrowser = "1.0.4"
-rustls = "0.23.23"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }

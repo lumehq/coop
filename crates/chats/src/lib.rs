@@ -1,13 +1,13 @@
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
 };
 
 use account::Account;
 use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use global::get_client;
+use global::{get_client, insert_cache_profile};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -37,8 +37,6 @@ impl Global for GlobalChatRegistry {}
 /// - Loading room data from the lmdb
 /// - Handling messages and room creation
 pub struct ChatRegistry {
-    /// Map of user public keys to their profile metadata
-    profiles: Entity<BTreeMap<PublicKey, Option<Metadata>>>,
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
     /// Indicates if rooms are currently being loaded
@@ -68,7 +66,6 @@ impl ChatRegistry {
 
     /// Create a new ChatRegistry instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let profiles = cx.new(|_| BTreeMap::new());
         let mut subscriptions = smallvec![];
 
         // When the ChatRegistry is created, load all rooms from the local database
@@ -83,16 +80,11 @@ impl ChatRegistry {
             if let Some(window) = window {
                 let task = this.load_metadata(cx);
 
-                cx.spawn_in(window, async move |_, cx| {
+                cx.spawn_in(window, async move |_, _| {
                     if let Ok(data) = task.await {
-                        cx.update(|_, cx| {
-                            for (public_key, metadata) in data.into_iter() {
-                                Self::global(cx).update(cx, |this, cx| {
-                                    this.add_profile(public_key, metadata, cx);
-                                })
-                            }
-                        })
-                        .ok();
+                        for (public_key, metadata) in data.into_iter() {
+                            insert_cache_profile(public_key, metadata)
+                        }
                     }
                 })
                 .detach();
@@ -102,7 +94,6 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             wait_for_eose: true,
-            profiles,
             subscriptions,
         }
     }
@@ -258,37 +249,6 @@ impl ChatRegistry {
             }
         })
         .detach();
-    }
-
-    /// Add a user profile to the registry
-    ///
-    /// Only adds the profile if it doesn't already exist or is currently none
-    pub fn add_profile(
-        &mut self,
-        public_key: PublicKey,
-        metadata: Option<Metadata>,
-        cx: &mut Context<Self>,
-    ) {
-        self.profiles.update(cx, |this, _cx| {
-            this.entry(public_key)
-                .and_modify(|entry| {
-                    if entry.is_none() {
-                        *entry = metadata.clone();
-                    }
-                })
-                .or_insert_with(|| metadata);
-        });
-    }
-
-    /// Get a user profile by public key
-    pub fn profile(&self, public_key: &PublicKey, cx: &App) -> Profile {
-        let metadata = if let Some(profile) = self.profiles.read(cx).get(public_key) {
-            profile.clone().unwrap_or_default()
-        } else {
-            Metadata::default()
-        };
-
-        Profile::new(*public_key, metadata)
     }
 
     /// Push a Room Entity to the global registry
