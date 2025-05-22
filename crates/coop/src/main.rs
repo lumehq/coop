@@ -147,6 +147,8 @@ fn main() {
             let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
             let mut notifications = client.notifications();
 
+            let mut processed_events: HashSet<EventId> = HashSet::new();
+
             while let Ok(notification) = notifications.recv().await {
                 if let RelayPoolNotification::Message { message, .. } = notification {
                     match message {
@@ -154,6 +156,9 @@ fn main() {
                             event,
                             subscription_id,
                         } => {
+                            if processed_events.contains(&event.id) { continue }
+                            processed_events.insert(event.id);
+
                             match event.kind {
                                 Kind::GiftWrap => {
                                     let event = match get_unwrapped(event.id).await {
