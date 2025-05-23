@@ -9,7 +9,7 @@ pub mod paths;
 
 /// Represents the global state of the Nostr client, including:
 /// - The Nostr client instance
-/// - Cryptographic keys
+/// - Client keys
 /// - A cache of user profiles (metadata)
 pub struct NostrState {
     keys: Keys,
@@ -96,7 +96,7 @@ pub async fn async_cache_profile(key: &PublicKey) -> Profile {
     Profile::new(*key, metadata)
 }
 
-/// Inserts or updates a profile in the cache. (sync only)
+/// Synchronously inserts or updates a profile in the cache.
 pub fn insert_cache_profile(key: PublicKey, metadata: Option<Metadata>) {
     profiles()
         .write_blocking()
