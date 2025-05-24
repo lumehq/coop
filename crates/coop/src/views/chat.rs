@@ -13,8 +13,8 @@ use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
     AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
-    ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Subscription, Window,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -63,6 +63,7 @@ pub struct Chat {
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     uploading: bool,
+    image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
@@ -144,6 +145,7 @@ impl Chat {
             });
 
             Self {
+                image_cache: RetainAllImageCache::new(cx),
                 focus_handle: cx.focus_handle(),
                 uploading: false,
                 id: id.to_string().into(),
@@ -753,6 +755,7 @@ impl Focusable for Chat {
 impl Render for Chat {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .image_cache(self.image_cache.clone())
             .size_full()
             .child(list(self.list_state.clone()).flex_1())
             .child(

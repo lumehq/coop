@@ -35,9 +35,9 @@ pub trait ButtonVariants: Sized {
         self.with_variant(ButtonVariant::Ghost)
     }
 
-    /// With the link style for the Button.
-    fn link(self) -> Self {
-        self.with_variant(ButtonVariant::Link)
+    /// With the transparent style for the Button.
+    fn transparent(self) -> Self {
+        self.with_variant(ButtonVariant::Transparent)
     }
 
     /// With the text style for the Button, it will no padding look like a normal text.
@@ -87,8 +87,8 @@ impl ButtonCustomVariant {
 pub enum ButtonVariant {
     Primary,
     Ghost,
-    Link,
     Text,
+    Transparent,
     Custom(ButtonCustomVariant),
 }
 
@@ -99,8 +99,8 @@ impl Default for ButtonVariant {
 }
 
 impl ButtonVariant {
-    fn is_link(&self) -> bool {
-        matches!(self, Self::Link)
+    fn is_transparent(&self) -> bool {
+        matches!(self, Self::Transparent)
     }
 
     fn is_text(&self) -> bool {
@@ -108,7 +108,7 @@ impl ButtonVariant {
     }
 
     fn no_padding(&self) -> bool {
-        self.is_link() || self.is_text()
+        self.is_transparent() || self.is_text()
     }
 }
 
@@ -327,7 +327,6 @@ impl RenderOnce for Button {
             })
             .when(!self.disabled && !self.selected, |this| {
                 this.bg(normal_style.bg)
-                    .when(normal_style.underline, |this| this.text_decoration_1())
                     .hover(|this| {
                         let hover_style = style.hovered(window, cx);
                         this.bg(hover_style.bg)
@@ -405,13 +404,14 @@ impl RenderOnce for Button {
 struct ButtonVariantStyle {
     bg: Hsla,
     fg: Hsla,
-    underline: bool,
 }
 
 impl ButtonVariant {
     fn bg_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_background,
+            ButtonVariant::Text => cx.theme().ghost_element_background,
+            ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.color,
             _ => cx.theme().ghost_element_background,
         }
@@ -420,90 +420,85 @@ impl ButtonVariant {
     fn text_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_foreground,
-            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Transparent => cx.theme().text_placeholder,
+            ButtonVariant::Text => cx.theme().text_placeholder,
             ButtonVariant::Ghost => cx.theme().text_muted,
             ButtonVariant::Custom(colors) => colors.foreground,
-            _ => cx.theme().text,
         }
-    }
-
-    fn underline(&self, _window: &Window, _cx: &App) -> bool {
-        matches!(self, ButtonVariant::Link)
     }
 
     fn normal(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = self.bg_color(window, cx);
         let fg = self.text_color(window, cx);
-        let underline = self.underline(window, cx);
 
-        ButtonVariantStyle { bg, fg, underline }
+        ButtonVariantStyle { bg, fg }
     }
 
     fn hovered(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_hover,
             ButtonVariant::Ghost => cx.theme().ghost_element_hover,
-            ButtonVariant::Link => cx.theme().ghost_element_background,
-            ButtonVariant::Text => cx.theme().ghost_element_background,
+            ButtonVariant::Text => cx.theme().element_background,
+            ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.hover,
         };
+
         let fg = match self {
             ButtonVariant::Ghost => cx.theme().text,
-            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Transparent => cx.theme().text_placeholder,
             _ => self.text_color(window, cx),
         };
-        let underline = self.underline(window, cx);
 
-        ButtonVariantStyle { bg, fg, underline }
+        ButtonVariantStyle { bg, fg }
     }
 
     fn active(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_active,
             ButtonVariant::Ghost => cx.theme().ghost_element_active,
+            ButtonVariant::Text => cx.theme().element_background,
+            ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
-            _ => cx.theme().ghost_element_background,
         };
+
         let fg = match self {
-            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Transparent => cx.theme().text_placeholder,
             ButtonVariant::Text => cx.theme().text,
             _ => self.text_color(window, cx),
         };
-        let underline = self.underline(window, cx);
 
-        ButtonVariantStyle { bg, fg, underline }
+        ButtonVariantStyle { bg, fg }
     }
 
     fn selected(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_selected,
             ButtonVariant::Ghost => cx.theme().ghost_element_selected,
+            ButtonVariant::Text => cx.theme().element_background,
+            ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
-            _ => cx.theme().ghost_element_background,
         };
+
         let fg = match self {
-            ButtonVariant::Link => cx.theme().text_accent,
+            ButtonVariant::Transparent => cx.theme().text_placeholder,
             ButtonVariant::Text => cx.theme().text,
             _ => self.text_color(window, cx),
         };
-        let underline = self.underline(window, cx);
 
-        ButtonVariantStyle { bg, fg, underline }
+        ButtonVariantStyle { bg, fg }
     }
 
-    fn disabled(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
+    fn disabled(&self, _window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Link | ButtonVariant::Ghost | ButtonVariant::Text => {
-                cx.theme().ghost_element_disabled
-            }
+            ButtonVariant::Ghost | ButtonVariant::Text => cx.theme().ghost_element_disabled,
             _ => cx.theme().element_disabled,
         };
+
         let fg = match self {
             ButtonVariant::Primary => cx.theme().text_muted, // TODO: use a different color?
             _ => cx.theme().text_muted,
         };
-        let underline = self.underline(window, cx);
 
-        ButtonVariantStyle { bg, fg, underline }
+        ButtonVariantStyle { bg, fg }
     }
 }

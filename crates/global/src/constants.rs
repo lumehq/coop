@@ -27,9 +27,6 @@ pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
 /// Default width of the sidebar.
 pub const DEFAULT_SIDEBAR_WIDTH: f32 = 280.;
 
-/// Total remote images will be cached
-pub const IMAGE_CACHE_LIMIT: usize = 50;
-
 /// Image Resizer Service.
 /// Use for resize all remote images (ex: avatar, banner,...) on-the-fly.
 pub const IMAGE_SERVICE: &str = "https://wsrv.nl";
