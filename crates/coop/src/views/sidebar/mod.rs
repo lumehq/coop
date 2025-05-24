@@ -1,29 +1,23 @@
-use std::{
-    collections::{BTreeSet, HashSet},
-    time::Duration,
-};
+use std::{collections::BTreeSet, ops::Range, time::Duration};
 
 use account::Account;
 use async_utility::task::spawn;
-use chats::{
-    room::{Room, RoomKind},
-    ChatRegistry,
-};
+use chats::{room::Room, ChatRegistry};
 
 use common::{debounced_delay::DebouncedDelay, profile::SharedProfile};
-use folder::{Folder, FolderItem, Parent};
+use element::DisplayRoom;
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
     div, img, prelude::FluentBuilder, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache,
+    SharedString, Styled, Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::{
-    button::{Button, ButtonCustomVariant, ButtonRounded, ButtonVariants},
+    button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{
         dock::DockPlacement,
         panel::{Panel, PanelEvent},
@@ -36,25 +30,13 @@ use ui::{
 
 use crate::chatspace::{AddPanel, ModalKind, PanelKind, ToggleModal};
 
-mod folder;
+mod element;
 
 const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Item {
-    Ongoing,
-    Incoming,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SubItem {
-    Trusted,
-    Unknown,
 }
 
 pub struct Sidebar {
@@ -65,13 +47,9 @@ pub struct Sidebar {
     finding: bool,
     local_result: Entity<Option<Vec<Entity<Room>>>>,
     global_result: Entity<Option<Vec<Entity<Room>>>>,
-    // Layout
-    folders: bool,
-    active_items: HashSet<Item>,
-    active_subitems: HashSet<SubItem>,
     // GPUI
     focus_handle: FocusHandle,
-    scroll_handle: ScrollHandle,
+    image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -82,16 +60,6 @@ impl Sidebar {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let focus_handle = cx.focus_handle();
-        let scroll_handle = ScrollHandle::default();
-
-        let mut active_items = HashSet::with_capacity(2);
-        active_items.insert(Item::Ongoing);
-
-        let mut active_subitems = HashSet::with_capacity(2);
-        active_subitems.insert(SubItem::Trusted);
-        active_subitems.insert(SubItem::Unknown);
-
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
 
@@ -124,37 +92,15 @@ impl Sidebar {
 
         Self {
             name: "Chat Sidebar".into(),
-            folders: false,
+            focus_handle: cx.focus_handle(),
+            image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
             find_input,
             local_result,
             global_result,
-            active_items,
-            active_subitems,
-            focus_handle,
-            scroll_handle,
             subscriptions,
         }
-    }
-
-    fn toggle_item(&mut self, item: Item, cx: &mut Context<Self>) {
-        if !self.active_items.remove(&item) {
-            self.active_items.insert(item);
-        }
-        cx.notify();
-    }
-
-    fn toggle_subitem(&mut self, subitem: SubItem, cx: &mut Context<Self>) {
-        if !self.active_subitems.remove(&subitem) {
-            self.active_subitems.insert(subitem);
-        }
-        cx.notify();
-    }
-
-    fn toggle_folder(&mut self, cx: &mut Context<Self>) {
-        self.folders = !self.folders;
-        cx.notify();
     }
 
     fn debounced_search(&self, cx: &mut Context<Self>) -> Task<()> {
@@ -314,6 +260,69 @@ impl Sidebar {
         }
     }
 
+    fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .px_3()
+            .h_8()
+            .flex_none()
+            .flex()
+            .justify_between()
+            .items_center()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .text_sm()
+                    .font_semibold()
+                    .child(img(profile.shared_avatar()).size_7())
+                    .child(profile.shared_name()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("user")
+                            .icon(IconName::Ellipsis)
+                            .small()
+                            .ghost()
+                            .rounded(ButtonRounded::Full)
+                            .popup_menu(|this, _window, _cx| {
+                                this.menu(
+                                    "Profile",
+                                    Box::new(ToggleModal {
+                                        modal: ModalKind::Profile,
+                                    }),
+                                )
+                                .menu(
+                                    "Relays",
+                                    Box::new(ToggleModal {
+                                        modal: ModalKind::Relay,
+                                    }),
+                                )
+                            }),
+                    )
+                    .child(
+                        Button::new("compose")
+                            .icon(IconName::PlusFill)
+                            .tooltip("Create DM or Group DM")
+                            .small()
+                            .primary()
+                            .rounded(ButtonRounded::Full)
+                            .on_click(cx.listener(|_, _, window, cx| {
+                                window.dispatch_action(
+                                    Box::new(ToggleModal {
+                                        modal: ModalKind::Compose,
+                                    }),
+                                    cx,
+                                );
+                            })),
+                    ),
+            )
+    }
+
     fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
@@ -328,54 +337,43 @@ impl Sidebar {
         })
     }
 
-    fn render_global_items(rooms: &[Entity<Room>], cx: &Context<Self>) -> Vec<FolderItem> {
-        let mut items = Vec::with_capacity(rooms.len());
+    fn render_uniform_item(
+        &self,
+        rooms: &[Entity<Room>],
+        range: Range<usize>,
+        is_search: bool,
+        cx: &Context<Self>,
+    ) -> Vec<impl IntoElement> {
+        let mut items = Vec::with_capacity(range.end - range.start);
 
-        for room in rooms.iter() {
-            let this = room.read(cx);
-            let id = this.id;
-            let label = this.display_name(cx);
-            let img = this.display_image(cx).map(img);
+        for ix in range {
+            if let Some(room) = rooms.get(ix) {
+                let room = room.read(cx);
 
-            let item = FolderItem::new(id as usize)
-                .label(label)
-                .img(img)
-                .on_click({
-                    cx.listener(move |this, _, window, cx| {
+                let id = room.id;
+                let ago = room.ago();
+                let label = room.display_name(cx);
+                let img = room.display_image(cx).map(img);
+
+                let handler = cx.listener(move |this, _event, window, cx| {
+                    if is_search {
                         this.push_room(id, window, cx);
-                    })
-                });
-
-            items.push(item);
-        }
-
-        items
-    }
-
-    fn render_items(rooms: &[Entity<Room>], cx: &Context<Self>) -> Vec<FolderItem> {
-        let mut items = Vec::with_capacity(rooms.len());
-
-        for room in rooms.iter() {
-            let room = room.read(cx);
-            let id = room.id;
-            let ago = room.ago();
-            let label = room.display_name(cx);
-            let img = room.display_image(cx).map(img);
-
-            let item = FolderItem::new(id as usize)
-                .label(label)
-                .description(ago)
-                .img(img)
-                .on_click({
-                    cx.listener(move |_, _, window, cx| {
+                    } else {
                         window.dispatch_action(
                             Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
                             cx,
                         );
-                    })
+                    }
                 });
 
-            items.push(item);
+                items.push(
+                    DisplayRoom::new(ix)
+                        .img(img)
+                        .label(label)
+                        .description(ago)
+                        .on_click(handler),
+                )
+            }
         }
 
         items
@@ -409,112 +407,50 @@ impl Focusable for Sidebar {
 }
 
 impl Render for Sidebar {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let account = Account::get_global(cx).profile_ref();
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::get_global(cx);
-
-        // Get search result
-        let local_result = self.local_result.read(cx);
-        let global_result = self.global_result.read(cx);
+        let (rooms, is_search) = if let Some(rooms) = self.local_result.read(cx) {
+            (rooms.clone(), true)
+        } else {
+            (chats.rooms.clone(), false)
+        };
 
         div()
-            .id("sidebar")
-            .track_focus(&self.focus_handle)
-            .track_scroll(&self.scroll_handle)
-            .overflow_y_scroll()
+            .image_cache(self.image_cache.clone())
             .size_full()
             .flex()
             .flex_col()
             .gap_3()
-            .when_some(account, |this, profile| {
-                this.child(
-                    div()
-                        .px_3()
-                        .h_8()
-                        .flex_none()
-                        .flex()
-                        .justify_between()
-                        .items_center()
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .text_sm()
-                                .font_semibold()
-                                .child(img(profile.shared_avatar()).size_7())
-                                .child(profile.shared_name()),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child(
-                                    Button::new("user")
-                                        .icon(IconName::Ellipsis)
-                                        .small()
-                                        .ghost()
-                                        .rounded(ButtonRounded::Full)
-                                        .popup_menu(|this, _window, _cx| {
-                                            this.menu(
-                                                "Profile",
-                                                Box::new(ToggleModal {
-                                                    modal: ModalKind::Profile,
-                                                }),
-                                            )
-                                            .menu(
-                                                "Relays",
-                                                Box::new(ToggleModal {
-                                                    modal: ModalKind::Relay,
-                                                }),
-                                            )
-                                        }),
-                                )
-                                .child(
-                                    Button::new("compose")
-                                        .icon(IconName::PlusFill)
-                                        .tooltip("Create DM or Group DM")
-                                        .small()
-                                        .primary()
-                                        .rounded(ButtonRounded::Full)
-                                        .on_click(cx.listener(|_, _, window, cx| {
-                                            window.dispatch_action(
-                                                Box::new(ToggleModal {
-                                                    modal: ModalKind::Compose,
-                                                }),
-                                                cx,
-                                            );
-                                        })),
-                                ),
-                        ),
-                )
+            // Account
+            .when_some(Account::get_global(cx).profile_ref(), |this, profile| {
+                this.child(self.render_account(profile, cx))
             })
+            // Search Input
             .child(
                 div().px_3().h_7().flex_none().child(
                     TextInput::new(&self.find_input).small().suffix(
                         Button::new("find")
                             .icon(IconName::Search)
                             .tooltip("Press Enter to search")
-                            .small()
-                            .custom(
-                                ButtonCustomVariant::new(window, cx)
-                                    .active(gpui::transparent_black())
-                                    .color(gpui::transparent_black())
-                                    .hover(gpui::transparent_black())
-                                    .foreground(cx.theme().text_placeholder),
-                            ),
+                            .transparent()
+                            .small(),
                     ),
                 ),
             )
-            .when_some(global_result.as_ref(), |this, rooms| {
+            // Global Search Results
+            .when_some(self.global_result.read(cx).clone(), |this, rooms| {
                 this.child(
-                    div()
-                        .px_1()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .children(Self::render_global_items(rooms, cx)),
+                    div().px_1().h_full().child(
+                        uniform_list(
+                            cx.entity().clone(),
+                            "global-search-results",
+                            rooms.len(),
+                            move |this, range, _, cx| {
+                                this.render_uniform_item(&rooms, range, true, cx)
+                            },
+                        )
+                        .h_full(),
+                    ),
                 )
             })
             .child(
@@ -537,134 +473,26 @@ impl Render for Sidebar {
                             .child("Messages")
                             .child(
                                 Button::new("menu")
-                                    .tooltip("Toggle chat folders")
-                                    .map(|this| {
-                                        if self.folders {
-                                            this.icon(IconName::FilterFill)
-                                        } else {
-                                            this.icon(IconName::Filter)
-                                        }
-                                    })
+                                    .tooltip("Filter Chat Rooms")
+                                    .icon(IconName::Filter)
                                     .small()
-                                    .custom(
-                                        ButtonCustomVariant::new(window, cx)
-                                            .foreground(cx.theme().text_placeholder)
-                                            .color(cx.theme().ghost_element_background)
-                                            .hover(cx.theme().ghost_element_background)
-                                            .active(cx.theme().ghost_element_background),
-                                    )
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.toggle_folder(cx);
-                                    })),
+                                    .text(),
                             ),
                     )
                     .when(chats.wait_for_eose, |this| {
                         this.gap_1().children(self.render_skeleton(6))
                     })
-                    .map(|this| {
-                        if let Some(rooms) = local_result {
-                            this.children(Self::render_items(rooms, cx))
-                        } else if !self.folders {
-                            this.child(
-                                uniform_list(
-                                    cx.entity().clone(),
-                                    "rooms",
-                                    chats.rooms.len(),
-                                    |_this, range, _window, cx| {
-                                        let mut items = vec![];
-
-                                        for ix in range {
-                                            let Some(room) =
-                                                ChatRegistry::get_global(cx).room_by_ix(ix, cx)
-                                            else {
-                                                continue;
-                                            };
-
-                                            let room = room.read(cx);
-                                            let id = room.id;
-                                            let ago = room.ago();
-                                            let label = room.display_name(cx);
-                                            let img = room.display_image(cx).map(img);
-
-                                            let item = FolderItem::new(id as usize)
-                                                .label(label)
-                                                .description(ago)
-                                                .img(img)
-                                                .on_click({
-                                                    cx.listener(move |_, _, window, cx| {
-                                                        window.dispatch_action(
-                                                            Box::new(AddPanel::new(
-                                                                PanelKind::Room(id),
-                                                                DockPlacement::Center,
-                                                            )),
-                                                            cx,
-                                                        );
-                                                    })
-                                                });
-
-                                            items.push(item);
-                                        }
-
-                                        items
-                                    },
-                                )
-                                .h_full(),
-                            )
-                        } else {
-                            this.child(
-                                Folder::new("Ongoing")
-                                    .icon(IconName::Folder)
-                                    .tooltip("All ongoing conversations")
-                                    .collapsed(!self.active_items.contains(&Item::Ongoing))
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.toggle_item(Item::Ongoing, cx);
-                                    }))
-                                    .children(Self::render_items(
-                                        &chats.rooms_by_kind(RoomKind::Ongoing, cx),
-                                        cx,
-                                    )),
-                            )
-                            .child(
-                                Parent::new("Incoming")
-                                    .icon(IconName::Folder)
-                                    .tooltip("Incoming messages")
-                                    .collapsed(!self.active_items.contains(&Item::Incoming))
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.toggle_item(Item::Incoming, cx);
-                                    }))
-                                    .child(
-                                        Folder::new("Trusted")
-                                            .icon(IconName::Folder)
-                                            .tooltip("Incoming messages from trusted contacts")
-                                            .collapsed(
-                                                !self.active_subitems.contains(&SubItem::Trusted),
-                                            )
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                this.toggle_subitem(SubItem::Trusted, cx);
-                                            }))
-                                            .children(Self::render_items(
-                                                &chats.rooms_by_kind(RoomKind::Trusted, cx),
-                                                cx,
-                                            )),
-                                    )
-                                    .child(
-                                        Folder::new("Unknown")
-                                            .icon(IconName::Folder)
-                                            .tooltip("Incoming messages from unknowns")
-                                            .collapsed(
-                                                !self.active_subitems.contains(&SubItem::Unknown),
-                                            )
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                this.toggle_subitem(SubItem::Unknown, cx);
-                                            }))
-                                            .children(Self::render_items(
-                                                &chats.rooms_by_kind(RoomKind::Unknown, cx),
-                                                cx,
-                                            )),
-                                    ),
-                            )
-                        }
-                    }),
+                    .child(
+                        uniform_list(
+                            cx.entity().clone(),
+                            "rooms",
+                            rooms.len(),
+                            move |this, range, _, cx| {
+                                this.render_uniform_item(&rooms, range, is_search, cx)
+                            },
+                        )
+                        .h_full(),
+                    ),
             )
     }
 }
