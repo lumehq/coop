@@ -409,8 +409,9 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::get_global(cx);
-        let (rooms, is_search) = if let Some(rooms) = self.local_result.read(cx) {
-            (rooms.clone(), true)
+
+        let (rooms, is_search) = if let Some(results) = self.local_result.read(cx) {
+            (results.to_owned(), true)
         } else {
             (chats.rooms.clone(), false)
         };
@@ -442,8 +443,8 @@ impl Render for Sidebar {
                 this.child(
                     div().px_1().h_full().child(
                         uniform_list(
-                            cx.entity().clone(),
-                            "global-search-results",
+                            cx.entity(),
+                            "results",
                             rooms.len(),
                             move |this, range, _, cx| {
                                 this.render_uniform_item(&rooms, range, true, cx)
@@ -484,7 +485,7 @@ impl Render for Sidebar {
                     })
                     .child(
                         uniform_list(
-                            cx.entity().clone(),
+                            cx.entity(),
                             "rooms",
                             rooms.len(),
                             move |this, range, _, cx| {

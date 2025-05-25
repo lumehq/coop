@@ -4,7 +4,7 @@ use account::Account;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use common::{compare, profile::SharedProfile, room_hash};
-use global::{async_cache_profile, get_cache_profile, get_client};
+use global::{async_cache_profile, get_cache_profile, get_client, profiles};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -312,22 +312,27 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<(PublicKey, Option<Metadata>)>, Error>
     #[allow(clippy::type_complexity)]
-    pub fn load_metadata(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Task<Result<Vec<(PublicKey, Option<Metadata>)>, Error>> {
+    pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<(), Error>> {
         let client = get_client();
         let public_keys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
-            let mut output = vec![];
-
             for public_key in public_keys.iter() {
                 let metadata = client.database().metadata(*public_key).await?;
-                output.push((*public_key, metadata));
+
+                profiles()
+                    .write()
+                    .await
+                    .entry(*public_key)
+                    .and_modify(|entry| {
+                        if entry.is_none() {
+                            *entry = metadata.clone();
+                        }
+                    })
+                    .or_insert_with(|| metadata);
             }
 
-            Ok(output)
+            Ok(())
         })
     }
 

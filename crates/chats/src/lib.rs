@@ -7,7 +7,7 @@ use account::Account;
 use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use global::{get_client, insert_cache_profile};
+use global::get_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -76,19 +76,8 @@ impl ChatRegistry {
         }));
 
         // When any Room is created, load metadata for all members
-        subscriptions.push(cx.observe_new::<Room>(|this, window, cx| {
-            if let Some(window) = window {
-                let task = this.load_metadata(cx);
-
-                cx.spawn_in(window, async move |_, _| {
-                    if let Ok(data) = task.await {
-                        for (public_key, metadata) in data.into_iter() {
-                            insert_cache_profile(public_key, metadata)
-                        }
-                    }
-                })
-                .detach();
-            }
+        subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
+            this.load_metadata(cx).detach();
         }));
 
         Self {
