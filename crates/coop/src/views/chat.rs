@@ -8,7 +8,7 @@ use chats::{
     ChatRegistry,
 };
 use common::{nip96_upload, profile::SharedProfile};
-use global::{constants::IMAGE_SERVICE, get_client};
+use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
     AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
@@ -430,18 +430,15 @@ impl Chat {
         let path: SharedString = url.to_string().into();
 
         div()
-            .id(path.clone())
+            .id("")
             .relative()
             .w_16()
             .child(
-                img(format!(
-                    "{}/?url={}&w=128&h=128&fit=cover&n=-1",
-                    IMAGE_SERVICE, path
-                ))
-                .size_16()
-                .shadow_lg()
-                .rounded(cx.theme().radius)
-                .object_fit(ObjectFit::ScaleDown),
+                img(path.clone())
+                    .size_16()
+                    .shadow_lg()
+                    .rounded(cx.theme().radius)
+                    .object_fit(ObjectFit::ScaleDown),
             )
             .child(
                 div()
@@ -567,7 +564,12 @@ impl Chat {
                 div()
                     .flex()
                     .gap_3()
-                    .child(img(author.shared_avatar()).size_8().flex_shrink_0())
+                    .child(
+                        img(author.shared_avatar())
+                            .rounded_full()
+                            .size_8()
+                            .flex_shrink_0(),
+                    )
                     .child(
                         div()
                             .flex_1()

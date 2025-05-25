@@ -22,7 +22,7 @@ impl DisplayRoom {
     pub fn new(ix: usize) -> Self {
         Self {
             ix,
-            base: div().h_8().w_full().px_2(),
+            base: div().h_9().w_full().px_1(),
             img: None,
             label: None,
             description: None,
@@ -67,7 +67,7 @@ impl RenderOnce for DisplayRoom {
             .rounded(cx.theme().radius)
             .child(div().size_6().flex_none().map(|this| {
                 if let Some(img) = self.img {
-                    this.child(img.size_6().flex_none())
+                    this.child(img.rounded_full().size_6().flex_none())
                 } else {
                     this.child(
                         div()
@@ -90,6 +90,7 @@ impl RenderOnce for DisplayRoom {
                     .when_some(self.label, |this, label| {
                         this.child(
                             div()
+                                .flex_1()
                                 .line_clamp(1)
                                 .text_ellipsis()
                                 .font_medium()
@@ -99,6 +100,7 @@ impl RenderOnce for DisplayRoom {
                     .when_some(self.description, |this, description| {
                         this.child(
                             div()
+                                .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().text_placeholder)
                                 .child(description),

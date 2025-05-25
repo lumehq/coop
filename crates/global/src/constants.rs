@@ -27,9 +27,5 @@ pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
 /// Default width of the sidebar.
 pub const DEFAULT_SIDEBAR_WIDTH: f32 = 280.;
 
-/// Image Resizer Service.
-/// Use for resize all remote images (ex: avatar, banner,...) on-the-fly.
-pub const IMAGE_SERVICE: &str = "https://wsrv.nl";
-
 /// NIP96 Media Server.
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";

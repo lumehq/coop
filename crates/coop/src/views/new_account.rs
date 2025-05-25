@@ -3,7 +3,7 @@ use std::str::FromStr;
 use account::Account;
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::{constants::IMAGE_SERVICE, get_client};
+use global::get_client;
 use gpui::{
     div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
     EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
@@ -231,16 +231,18 @@ impl Render for NewAccount {
                             .gap_2()
                             .map(|this| {
                                 if self.avatar_input.read(cx).value().is_empty() {
-                                    this.child(img("brand/avatar.png").size_10().flex_shrink_0())
+                                    this.child(
+                                        img("brand/avatar.png")
+                                            .rounded_full()
+                                            .size_10()
+                                            .flex_shrink_0(),
+                                    )
                                 } else {
                                     this.child(
-                                        img(format!(
-                                            "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                                            IMAGE_SERVICE,
-                                            self.avatar_input.read(cx).value()
-                                        ))
-                                        .size_10()
-                                        .flex_shrink_0(),
+                                        img(self.avatar_input.read(cx).value().clone())
+                                            .rounded_full()
+                                            .size_10()
+                                            .flex_shrink_0(),
                                     )
                                 }
                             })

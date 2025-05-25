@@ -98,20 +98,6 @@ impl Default for ButtonVariant {
     }
 }
 
-impl ButtonVariant {
-    fn is_transparent(&self) -> bool {
-        matches!(self, Self::Transparent)
-    }
-
-    fn is_text(&self) -> bool {
-        matches!(self, Self::Text)
-    }
-
-    fn no_padding(&self) -> bool {
-        self.is_transparent() || self.is_text()
-    }
-}
-
 type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>;
 
 /// A Button element.
@@ -295,7 +281,7 @@ impl RenderOnce for Button {
                 ButtonRounded::Normal => this.rounded(cx.theme().radius),
                 ButtonRounded::Full => this.rounded_full(),
             })
-            .when(!style.no_padding(), |this| {
+            .map(|this| {
                 if self.label.is_none() && self.children.is_empty() {
                     // Icon Button
                     match self.size {
@@ -438,7 +424,7 @@ impl ButtonVariant {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_hover,
             ButtonVariant::Ghost => cx.theme().ghost_element_hover,
-            ButtonVariant::Text => cx.theme().element_background,
+            ButtonVariant::Text => gpui::transparent_black(),
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.hover,
         };
@@ -456,7 +442,7 @@ impl ButtonVariant {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_active,
             ButtonVariant::Ghost => cx.theme().ghost_element_active,
-            ButtonVariant::Text => cx.theme().element_background,
+            ButtonVariant::Text => gpui::transparent_black(),
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
         };
@@ -474,7 +460,7 @@ impl ButtonVariant {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_selected,
             ButtonVariant::Ghost => cx.theme().ghost_element_selected,
-            ButtonVariant::Text => cx.theme().element_background,
+            ButtonVariant::Text => gpui::transparent_black(),
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
         };

@@ -1,4 +1,3 @@
-use global::constants::IMAGE_SERVICE;
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
@@ -13,13 +12,7 @@ impl SharedProfile for Profile {
             .picture
             .as_ref()
             .filter(|picture| !picture.is_empty())
-            .map(|picture| {
-                format!(
-                    "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1&default=npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445.blossom.band/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png",
-                    IMAGE_SERVICE, picture
-                )
-                .into()
-            })
+            .map(|picture| picture.into())
             .unwrap_or_else(|| "brand/avatar.png".into())
     }
 

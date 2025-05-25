@@ -275,7 +275,7 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(img(profile.shared_avatar()).size_7())
+                    .child(img(profile.shared_avatar()).rounded_full().size_7())
                     .child(profile.shared_name()),
             )
             .child(
@@ -421,14 +421,14 @@ impl Render for Sidebar {
             .size_full()
             .flex()
             .flex_col()
-            .gap_3()
+            .gap_2()
             // Account
             .when_some(Account::get_global(cx).profile_ref(), |this, profile| {
                 this.child(self.render_account(profile, cx))
             })
             // Search Input
             .child(
-                div().px_3().h_7().flex_none().child(
+                div().px_3().w_full().h_7().flex_none().child(
                     TextInput::new(&self.find_input).small().suffix(
                         Button::new("find")
                             .icon(IconName::Search)
@@ -441,7 +441,7 @@ impl Render for Sidebar {
             // Global Search Results
             .when_some(self.global_result.read(cx).clone(), |this, rooms| {
                 this.child(
-                    div().px_1().h_full().child(
+                    div().px_1().w_full().flex_1().overflow_y_hidden().child(
                         uniform_list(
                             cx.entity(),
                             "results",
@@ -456,22 +456,38 @@ impl Render for Sidebar {
             })
             .child(
                 div()
-                    .px_1()
+                    .px_2()
                     .w_full()
                     .flex_1()
+                    .overflow_y_hidden()
                     .flex()
                     .flex_col()
                     .child(
                         div()
-                            .px_2()
+                            .px_1()
                             .w_full()
+                            .h_9()
                             .flex()
                             .justify_between()
                             .items_center()
                             .text_sm()
-                            .font_semibold()
-                            .text_color(cx.theme().text_placeholder)
-                            .child("Messages")
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_baseline()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_muted)
+                                            .font_semibold()
+                                            .child("Messages"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_placeholder)
+                                            .child(format!("({})", rooms.len())),
+                                    ),
+                            )
                             .child(
                                 Button::new("menu")
                                     .tooltip("Filter Chat Rooms")

@@ -1,6 +1,6 @@
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::{constants::IMAGE_SERVICE, get_client};
+use global::get_client;
 use gpui::{
     div, img, prelude::FluentBuilder, App, AppContext, Context, Entity, Flatten, IntoElement,
     ParentElement, PathPromptOptions, Render, Styled, Task, Window,
@@ -243,15 +243,18 @@ impl Render for Profile {
                     .map(|this| {
                         let picture = self.avatar_input.read(cx).value();
                         if picture.is_empty() {
-                            this.child(img("brand/avatar.png").size_10().flex_shrink_0())
+                            this.child(
+                                img("brand/avatar.png")
+                                    .rounded_full()
+                                    .size_10()
+                                    .flex_shrink_0(),
+                            )
                         } else {
                             this.child(
-                                img(format!(
-                                    "{}/?url={}&w=100&h=100&fit=cover&mask=circle&n=-1",
-                                    IMAGE_SERVICE, picture
-                                ))
-                                .size_10()
-                                .flex_shrink_0(),
+                                img(picture.clone())
+                                    .rounded_full()
+                                    .size_10()
+                                    .flex_shrink_0(),
                             )
                         }
                     })
