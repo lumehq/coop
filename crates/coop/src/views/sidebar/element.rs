@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder, App, ClickEvent, Div, Img, InteractiveElement, IntoElement,
-    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, prelude::FluentBuilder, AnyElement, App, ClickEvent, Div, Img, InteractiveElement,
+    IntoElement, ObjectFit, ParentElement as _, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Window,
 };
 use theme::ActiveTheme;
 use ui::StyledExt;
@@ -22,7 +23,7 @@ impl DisplayRoom {
     pub fn new(ix: usize) -> Self {
         Self {
             ix,
-            base: div().h_9().w_full().px_1(),
+            base: div().h_9().w_full().px_1p5(),
             img: None,
             label: None,
             description: None,
@@ -65,22 +66,26 @@ impl RenderOnce for DisplayRoom {
             .gap_2()
             .text_sm()
             .rounded(cx.theme().radius)
-            .child(div().size_6().flex_none().map(|this| {
-                if let Some(img) = self.img {
-                    this.child(img.rounded_full().size_6().flex_none())
-                } else {
-                    this.child(
-                        div()
-                            .size_6()
-                            .flex_none()
-                            .flex()
-                            .justify_center()
-                            .items_center()
-                            .rounded_full()
-                            .bg(cx.theme().element_background),
-                    )
-                }
-            }))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .size_6()
+                    .rounded_full()
+                    .overflow_hidden()
+                    .map(|this| {
+                        if let Some(img_ele) = self.img {
+                            this.child(
+                                img_ele
+                                    .size_full()
+                                    .rounded_full()
+                                    .object_fit(ObjectFit::Fill)
+                                    .with_fallback(fallback_image),
+                            )
+                        } else {
+                            this.child(fallback_image())
+                        }
+                    }),
+            )
             .child(
                 div()
                     .flex_1()
@@ -110,4 +115,11 @@ impl RenderOnce for DisplayRoom {
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |ev, window, cx| handler(ev, window, cx))
     }
+}
+
+fn fallback_image() -> AnyElement {
+    img("brand/avatar.png")
+        .rounded_full()
+        .size_6()
+        .into_any_element()
 }

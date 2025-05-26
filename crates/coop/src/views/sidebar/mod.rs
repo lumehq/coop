@@ -2,20 +2,22 @@ use std::{collections::BTreeSet, ops::Range, time::Duration};
 
 use account::Account;
 use async_utility::task::spawn;
-use chats::{room::Room, ChatRegistry};
+use chats::{
+    room::{Room, RoomKind},
+    ChatRegistry,
+};
 
 use common::{debounced_delay::DebouncedDelay, profile::SharedProfile};
 use element::DisplayRoom;
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
     div, img, prelude::FluentBuilder, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache,
-    SharedString, Styled, Subscription, Task, Window,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ObjectFit, ParentElement, Render,
+    RetainAllImageCache, SharedString, Styled, StyledImage, Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{
@@ -25,7 +27,7 @@ use ui::{
     input::{InputEvent, InputState, TextInput},
     popup_menu::{PopupMenu, PopupMenuExt},
     skeleton::Skeleton,
-    IconName, Sizable, StyledExt,
+    IconName, Selectable, Sizable, StyledExt,
 };
 
 use crate::chatspace::{AddPanel, ModalKind, PanelKind, ToggleModal};
@@ -47,6 +49,9 @@ pub struct Sidebar {
     finding: bool,
     local_result: Entity<Option<Vec<Entity<Room>>>>,
     global_result: Entity<Option<Vec<Entity<Room>>>>,
+    // Rooms
+    active_filter: Entity<RoomKind>,
+    trusted_only: bool,
     // GPUI
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
@@ -60,6 +65,7 @@ impl Sidebar {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let active_filter = cx.new(|_| RoomKind::Ongoing);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
 
@@ -96,6 +102,8 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
+            trusted_only: false,
+            active_filter,
             find_input,
             local_result,
             global_result,
@@ -245,7 +253,7 @@ impl Sidebar {
         });
     }
 
-    fn push_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_new_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(result) = self.global_result.read(cx).as_ref() {
             if let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() {
                 ChatRegistry::global(cx).update(cx, |this, cx| {
@@ -258,6 +266,22 @@ impl Sidebar {
                 self.clear_search_results(cx);
             }
         }
+    }
+
+    fn filter(&self, kind: &RoomKind, cx: &Context<Self>) -> bool {
+        self.active_filter.read(cx) == kind
+    }
+
+    fn set_filter(&mut self, kind: RoomKind, cx: &mut Context<Self>) {
+        self.active_filter.update(cx, |this, cx| {
+            *this = kind;
+            cx.notify();
+        })
+    }
+
+    fn set_trusted_only(&mut self, cx: &mut Context<Self>) {
+        self.trusted_only = !self.trusted_only;
+        cx.notify();
     }
 
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
@@ -275,7 +299,19 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(img(profile.shared_avatar()).rounded_full().size_7())
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .size_7()
+                            .rounded_full()
+                            .overflow_hidden()
+                            .child(
+                                img(profile.shared_avatar())
+                                    .size_full()
+                                    .rounded_full()
+                                    .object_fit(ObjectFit::Fill),
+                            ),
+                    )
                     .child(profile.shared_name()),
             )
             .child(
@@ -326,14 +362,14 @@ impl Sidebar {
     fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
-                .h_8()
+                .h_9()
                 .w_full()
-                .px_2()
+                .px_1p5()
                 .flex()
                 .items_center()
                 .gap_2()
                 .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                .child(Skeleton::new().w_24().h_3().rounded_sm())
+                .child(Skeleton::new().w_40().h_4().rounded_sm())
         })
     }
 
@@ -357,7 +393,7 @@ impl Sidebar {
 
                 let handler = cx.listener(move |this, _event, window, cx| {
                     if is_search {
-                        this.push_room(id, window, cx);
+                        this.open_new_room(id, window, cx);
                     } else {
                         window.dispatch_action(
                             Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
@@ -413,7 +449,12 @@ impl Render for Sidebar {
         let (rooms, is_search) = if let Some(results) = self.local_result.read(cx) {
             (results.to_owned(), true)
         } else {
-            (chats.rooms.clone(), false)
+            #[allow(clippy::collapsible_else_if)]
+            if self.active_filter.read(cx) == &RoomKind::Ongoing {
+                (chats.ongoing_rooms(cx), false)
+            } else {
+                (chats.request_rooms(self.trusted_only, cx), false)
+            }
         };
 
         div()
@@ -421,7 +462,7 @@ impl Render for Sidebar {
             .size_full()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap_3()
             // Account
             .when_some(Account::get_global(cx).profile_ref(), |this, profile| {
                 this.child(self.render_account(profile, cx))
@@ -462,42 +503,73 @@ impl Render for Sidebar {
                     .overflow_y_hidden()
                     .flex()
                     .flex_col()
+                    .gap_1()
                     .child(
                         div()
+                            .flex_none()
                             .px_1()
                             .w_full()
                             .h_9()
                             .flex()
-                            .justify_between()
                             .items_center()
-                            .text_sm()
+                            .justify_between()
                             .child(
                                 div()
                                     .flex()
-                                    .items_baseline()
-                                    .gap_1()
+                                    .items_center()
+                                    .gap_2()
                                     .child(
-                                        div()
-                                            .text_color(cx.theme().text_muted)
-                                            .font_semibold()
-                                            .child("Messages"),
+                                        Button::new("all")
+                                            .label("All")
+                                            .small()
+                                            .bold()
+                                            .secondary()
+                                            .rounded(ButtonRounded::Full)
+                                            .selected(self.filter(&RoomKind::Ongoing, cx))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.set_filter(RoomKind::Ongoing, cx);
+                                            })),
                                     )
                                     .child(
-                                        div()
-                                            .text_color(cx.theme().text_placeholder)
-                                            .child(format!("({})", rooms.len())),
+                                        Button::new("requests")
+                                            .label("Requests")
+                                            .small()
+                                            .bold()
+                                            .secondary()
+                                            .rounded(ButtonRounded::Full)
+                                            .selected(!self.filter(&RoomKind::Ongoing, cx))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.set_filter(RoomKind::Unknown, cx);
+                                            })),
                                     ),
                             )
-                            .child(
-                                Button::new("menu")
-                                    .tooltip("Filter Chat Rooms")
-                                    .icon(IconName::Filter)
-                                    .small()
-                                    .text(),
-                            ),
+                            .when(!self.filter(&RoomKind::Ongoing, cx), |this| {
+                                this.child(
+                                    Button::new("trusted")
+                                        .tooltip("Only show rooms from trusted contacts")
+                                        .map(|this| {
+                                            if self.trusted_only {
+                                                this.icon(IconName::FilterFill)
+                                            } else {
+                                                this.icon(IconName::Filter)
+                                            }
+                                        })
+                                        .small()
+                                        .transparent()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.set_trusted_only(cx);
+                                        })),
+                                )
+                            }),
                     )
                     .when(chats.wait_for_eose, |this| {
-                        this.gap_1().children(self.render_skeleton(6))
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .children(self.render_skeleton(10)),
+                        )
                     })
                     .child(
                         uniform_list(

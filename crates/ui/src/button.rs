@@ -30,6 +30,11 @@ pub trait ButtonVariants: Sized {
         self.with_variant(ButtonVariant::Primary)
     }
 
+    /// With the secondary style for the Button.
+    fn secondary(self) -> Self {
+        self.with_variant(ButtonVariant::Secondary)
+    }
+
     /// With the ghost style for the Button.
     fn ghost(self) -> Self {
         self.with_variant(ButtonVariant::Ghost)
@@ -38,11 +43,6 @@ pub trait ButtonVariants: Sized {
     /// With the transparent style for the Button.
     fn transparent(self) -> Self {
         self.with_variant(ButtonVariant::Transparent)
-    }
-
-    /// With the text style for the Button, it will no padding look like a normal text.
-    fn text(self) -> Self {
-        self.with_variant(ButtonVariant::Text)
     }
 
     /// With the custom style for the Button.
@@ -86,8 +86,8 @@ impl ButtonCustomVariant {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ButtonVariant {
     Primary,
+    Secondary,
     Ghost,
-    Text,
     Transparent,
     Custom(ButtonCustomVariant),
 }
@@ -307,6 +307,7 @@ impl RenderOnce for Button {
                     }
                 }
             })
+            .text_color(normal_style.fg)
             .when(self.selected, |this| {
                 let selected_style = style.selected(window, cx);
                 this.bg(selected_style.bg).text_color(selected_style.fg)
@@ -344,7 +345,6 @@ impl RenderOnce for Button {
                     .text_color(disabled_style.fg)
                     .shadow_none()
             })
-            .text_color(normal_style.fg)
             .child({
                 div()
                     .flex()
@@ -396,7 +396,7 @@ impl ButtonVariant {
     fn bg_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_background,
-            ButtonVariant::Text => cx.theme().ghost_element_background,
+            ButtonVariant::Secondary => cx.theme().elevated_surface_background,
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.color,
             _ => cx.theme().ghost_element_background,
@@ -406,8 +406,8 @@ impl ButtonVariant {
     fn text_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_foreground,
+            ButtonVariant::Secondary => cx.theme().text_muted,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            ButtonVariant::Text => cx.theme().text_placeholder,
             ButtonVariant::Ghost => cx.theme().text_muted,
             ButtonVariant::Custom(colors) => colors.foreground,
         }
@@ -423,13 +423,14 @@ impl ButtonVariant {
     fn hovered(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_hover,
+            ButtonVariant::Secondary => cx.theme().secondary_hover,
             ButtonVariant::Ghost => cx.theme().ghost_element_hover,
-            ButtonVariant::Text => gpui::transparent_black(),
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.hover,
         };
 
         let fg = match self {
+            ButtonVariant::Secondary => cx.theme().secondary_foreground,
             ButtonVariant::Ghost => cx.theme().text,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
             _ => self.text_color(window, cx),
@@ -441,15 +442,15 @@ impl ButtonVariant {
     fn active(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_active,
+            ButtonVariant::Secondary => cx.theme().secondary_active,
             ButtonVariant::Ghost => cx.theme().ghost_element_active,
-            ButtonVariant::Text => gpui::transparent_black(),
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
         };
 
         let fg = match self {
+            ButtonVariant::Secondary => cx.theme().secondary_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            ButtonVariant::Text => cx.theme().text,
             _ => self.text_color(window, cx),
         };
 
@@ -459,15 +460,15 @@ impl ButtonVariant {
     fn selected(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_selected,
+            ButtonVariant::Secondary => cx.theme().secondary_background,
             ButtonVariant::Ghost => cx.theme().ghost_element_selected,
-            ButtonVariant::Text => gpui::transparent_black(),
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
         };
 
         let fg = match self {
+            ButtonVariant::Secondary => cx.theme().secondary_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            ButtonVariant::Text => cx.theme().text,
             _ => self.text_color(window, cx),
         };
 
@@ -476,7 +477,8 @@ impl ButtonVariant {
 
     fn disabled(&self, _window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Ghost | ButtonVariant::Text => cx.theme().ghost_element_disabled,
+            ButtonVariant::Ghost => cx.theme().ghost_element_disabled,
+            ButtonVariant::Secondary => cx.theme().secondary_disabled,
             _ => cx.theme().element_disabled,
         };
 

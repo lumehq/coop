@@ -56,6 +56,32 @@ pub struct ThemeColor {
     ///
     /// Disabled states are shown when a user cannot interact with an element, like a disabled button or input.
     pub element_disabled: Hsla,
+    /// Text color. Used for the foreground of an secondary element.
+    pub secondary_foreground: Hsla,
+    /// Background color. Used for the background of an secondary element that should have a different background than the surface it's on.
+    ///
+    /// Secondary elements might include: Buttons, Inputs, Checkboxes, Radio Buttons...
+    ///
+    /// For an element that should have the same background as the surface it's on, use `ghost_element_background`.
+    pub secondary_background: Hsla,
+    /// Background color. Used for the hover state of an secondary element that should have a different background than the surface it's on.
+    ///
+    /// Hover states are triggered by the mouse entering an element, or a finger touching an element on a touch screen.
+    pub secondary_hover: Hsla,
+    /// Background color. Used for the active state of an secondary element that should have a different background than the surface it's on.
+    ///
+    /// Active states are triggered by the mouse button being pressed down on an element, or the Return button or other activator being pressed.
+    pub secondary_active: Hsla,
+    /// Background color. Used for the selected state of an secondary element that should have a different background than the surface it's on.
+    ///
+    /// Selected states are triggered by the element being selected (or "activated") by the user.
+    ///
+    /// This could include a selected checkbox, a toggleable button that is toggled on, etc.
+    pub secondary_selected: Hsla,
+    /// Background Color. Used for the disabled state of an secondary element that should have a different background than the surface it's on.
+    ///
+    /// Disabled states are shown when a user cannot interact with an element, like a disabled button or input.
+    pub secondary_disabled: Hsla,
     /// Background color. Used for the area that shows where a dragged element will be dropped.
     pub drop_target_background: Hsla,
     /// Used for the background of a ghost element that should have the same background as the surface it's on.
@@ -160,6 +186,12 @@ impl ThemeColor {
             element_active: brand().light().step_10(),
             element_selected: brand().light().step_11(),
             element_disabled: brand().light_alpha().step_3(),
+            secondary_foreground: brand().light().step_12(),
+            secondary_background: brand().light().step_3(),
+            secondary_hover: brand().light_alpha().step_4(),
+            secondary_active: brand().light().step_5(),
+            secondary_selected: brand().light().step_5(),
+            secondary_disabled: brand().light_alpha().step_3(),
             drop_target_background: brand().light_alpha().step_2(),
             ghost_element_background: gpui::transparent_black(),
             ghost_element_hover: neutral().light_alpha().step_3(),
@@ -211,6 +243,12 @@ impl ThemeColor {
             element_active: brand().dark().step_10(),
             element_selected: brand().dark().step_11(),
             element_disabled: brand().dark_alpha().step_3(),
+            secondary_foreground: brand().dark().step_12(),
+            secondary_background: brand().dark().step_3(),
+            secondary_hover: brand().dark_alpha().step_4(),
+            secondary_active: brand().dark().step_5(),
+            secondary_selected: brand().dark().step_5(),
+            secondary_disabled: brand().dark_alpha().step_3(),
             drop_target_background: brand().dark_alpha().step_2(),
             ghost_element_background: gpui::transparent_black(),
             ghost_element_hover: neutral().dark_alpha().step_3(),

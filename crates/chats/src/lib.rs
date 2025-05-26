@@ -95,16 +95,31 @@ impl ChatRegistry {
             .cloned()
     }
 
-    /// Get room by its index.
+    /// Get room by its position.
     pub fn room_by_ix(&self, ix: usize, _cx: &App) -> Option<&Entity<Room>> {
         self.rooms.get(ix)
     }
 
-    /// Get all rooms by their kind.
-    pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<Entity<Room>> {
+    /// Get all ongoing rooms.
+    pub fn ongoing_rooms(&self, cx: &App) -> Vec<Entity<Room>> {
         self.rooms
             .iter()
-            .filter(|room| room.read(cx).kind == kind)
+            .filter(|room| room.read(cx).kind == RoomKind::Ongoing)
+            .cloned()
+            .collect()
+    }
+
+    /// Get all request rooms.
+    pub fn request_rooms(&self, trusted_only: bool, cx: &App) -> Vec<Entity<Room>> {
+        self.rooms
+            .iter()
+            .filter(|room| {
+                if trusted_only {
+                    room.read(cx).kind == RoomKind::Trusted
+                } else {
+                    room.read(cx).kind != RoomKind::Ongoing
+                }
+            })
             .cloned()
             .collect()
     }
