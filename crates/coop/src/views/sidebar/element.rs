@@ -1,18 +1,17 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, img, prelude::FluentBuilder, AnyElement, App, ClickEvent, Div, Img, InteractiveElement,
-    IntoElement, ObjectFit, ParentElement as _, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Window,
+    div, img, prelude::FluentBuilder, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
+    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::StyledExt;
+use ui::{avatar::Avatar, StyledExt};
 
 #[derive(IntoElement)]
 pub struct DisplayRoom {
     ix: usize,
     base: Div,
-    img: Option<Img>,
+    img: Option<SharedString>,
     label: Option<SharedString>,
     description: Option<SharedString>,
     #[allow(clippy::type_complexity)]
@@ -41,8 +40,8 @@ impl DisplayRoom {
         self
     }
 
-    pub fn img(mut self, img: Img) -> Self {
-        self.img = Some(img);
+    pub fn img(mut self, img: impl Into<SharedString>) -> Self {
+        self.img = Some(img.into());
         self
     }
 
@@ -73,16 +72,15 @@ impl RenderOnce for DisplayRoom {
                     .rounded_full()
                     .overflow_hidden()
                     .map(|this| {
-                        if let Some(img_ele) = self.img {
-                            this.child(
-                                img_ele
-                                    .size_full()
-                                    .rounded_full()
-                                    .object_fit(ObjectFit::Fill)
-                                    .with_fallback(fallback_image),
-                            )
+                        if let Some(path) = self.img {
+                            this.child(Avatar::new(path).size(rems(1.5)))
                         } else {
-                            this.child(fallback_image())
+                            this.child(
+                                img("brand/avatar.png")
+                                    .rounded_full()
+                                    .size_6()
+                                    .into_any_element(),
+                            )
                         }
                     }),
             )
@@ -115,11 +113,4 @@ impl RenderOnce for DisplayRoom {
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |ev, window, cx| handler(ev, window, cx))
     }
-}
-
-fn fallback_image() -> AnyElement {
-    img("brand/avatar.png")
-        .rounded_full()
-        .size_6()
-        .into_any_element()
 }

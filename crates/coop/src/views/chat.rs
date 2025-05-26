@@ -10,10 +10,10 @@ use chats::{
 use common::{nip96_upload, profile::SharedProfile};
 use global::get_client;
 use gpui::{
-    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
-    AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, rems, svg,
+    white, AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter,
+    Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState,
+    ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use itertools::Itertools;
@@ -23,6 +23,7 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
 use ui::{
+    avatar::Avatar,
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     emoji_picker::EmojiPicker,
@@ -564,12 +565,7 @@ impl Chat {
                 div()
                     .flex()
                     .gap_3()
-                    .child(
-                        img(author.shared_avatar())
-                            .rounded_full()
-                            .size_8()
-                            .flex_shrink_0(),
-                    )
+                    .child(Avatar::new(author.shared_avatar()).size(rems(2.)))
                     .child(
                         div()
                             .flex_1()
@@ -711,7 +707,7 @@ impl Panel for Chat {
                 .flex()
                 .items_center()
                 .gap_1p5()
-                .child(img(url).size_5().flex_shrink_0())
+                .child(Avatar::new(url).size(rems(1.25)))
                 .child(label)
                 .into_any()
         })

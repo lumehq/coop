@@ -11,14 +11,15 @@ use common::{debounced_delay::DebouncedDelay, profile::SharedProfile};
 use element::DisplayRoom;
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
-    div, img, prelude::FluentBuilder, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, IntoElement, ObjectFit, ParentElement, Render,
-    RetainAllImageCache, SharedString, Styled, StyledImage, Subscription, Task, Window,
+    div, prelude::FluentBuilder, rems, uniform_list, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache,
+    SharedString, Styled, Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use ui::{
+    avatar::Avatar,
     button::{Button, ButtonRounded, ButtonVariants},
     dock_area::{
         dock::DockPlacement,
@@ -299,19 +300,7 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .size_7()
-                            .rounded_full()
-                            .overflow_hidden()
-                            .child(
-                                img(profile.shared_avatar())
-                                    .size_full()
-                                    .rounded_full()
-                                    .object_fit(ObjectFit::Fill),
-                            ),
-                    )
+                    .child(Avatar::new(profile.shared_avatar()).size(rems(1.75)))
                     .child(profile.shared_name()),
             )
             .child(
@@ -389,7 +378,7 @@ impl Sidebar {
                 let id = room.id;
                 let ago = room.ago();
                 let label = room.display_name(cx);
-                let img = room.display_image(cx).map(img);
+                let img = room.display_image(cx);
 
                 let handler = cx.listener(move |this, _event, window, cx| {
                     if is_search {
