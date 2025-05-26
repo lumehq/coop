@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use chats::ChatRegistry;
-use common::profile::SharedProfile;
+use common::profile::RenderProfile;
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, prelude::FluentBuilder, px, red, relative, uniform_list, App,
@@ -415,11 +415,11 @@ impl Render for Compose {
                                                             .gap_3()
                                                             .text_sm()
                                                             .child(
-                                                                img(item.shared_avatar())
+                                                                img(item.render_avatar())
                                                                     .size_7()
                                                                     .flex_shrink_0(),
                                                             )
-                                                            .child(item.shared_name()),
+                                                            .child(item.render_name()),
                                                     )
                                                     .when(is_select, |this| {
                                                         this.child(

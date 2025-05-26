@@ -7,7 +7,7 @@ use chats::{
     ChatRegistry,
 };
 
-use common::{debounced_delay::DebouncedDelay, profile::SharedProfile};
+use common::{debounced_delay::DebouncedDelay, profile::RenderProfile};
 use element::DisplayRoom;
 use global::{constants::SEARCH_RELAYS, get_client};
 use gpui::{
@@ -300,8 +300,8 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(Avatar::new(profile.shared_avatar()).size(rems(1.75)))
-                    .child(profile.shared_name()),
+                    .child(Avatar::new(profile.render_avatar()).size(rems(1.75)))
+                    .child(profile.render_name()),
             )
             .child(
                 div()

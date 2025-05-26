@@ -3,7 +3,7 @@ use std::{cmp::Ordering, sync::Arc};
 use account::Account;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
-use common::{compare, profile::SharedProfile, room_hash};
+use common::{compare, profile::RenderProfile, room_hash};
 use global::{async_cache_profile, get_cache_profile, get_client, profiles};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
@@ -206,7 +206,7 @@ impl Room {
             let mut name = profiles
                 .iter()
                 .take(2)
-                .map(|profile| profile.shared_name())
+                .map(|profile| profile.render_name())
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -216,7 +216,7 @@ impl Room {
 
             name.into()
         } else {
-            self.first_member(cx).shared_name()
+            self.first_member(cx).render_name()
         }
     }
 
@@ -254,7 +254,7 @@ impl Room {
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
         } else if !self.is_group() {
-            self.first_member(cx).shared_avatar()
+            self.first_member(cx).render_avatar()
         } else {
             "brand/group.png".into()
         }

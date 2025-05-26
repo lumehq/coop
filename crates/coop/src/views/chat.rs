@@ -7,7 +7,7 @@ use chats::{
     room::{Room, SendError},
     ChatRegistry,
 };
-use common::{nip96_upload, profile::SharedProfile};
+use common::{nip96_upload, profile::RenderProfile};
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, rems, svg,
@@ -481,7 +481,7 @@ impl Chat {
                             .child(
                                 div()
                                     .text_color(cx.theme().text_accent)
-                                    .child(message.author.as_ref().unwrap().shared_name()),
+                                    .child(message.author.as_ref().unwrap().render_name()),
                             ),
                     )
                     .child(
@@ -565,7 +565,7 @@ impl Chat {
                 div()
                     .flex()
                     .gap_3()
-                    .child(Avatar::new(author.shared_avatar()).size(rems(2.)))
+                    .child(Avatar::new(author.render_avatar()).size(rems(2.)))
                     .child(
                         div()
                             .flex_1()
@@ -583,7 +583,7 @@ impl Chat {
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
-                                            .child(author.shared_name()),
+                                            .child(author.render_name()),
                                     )
                                     .child(
                                         div()
@@ -621,7 +621,7 @@ impl Chat {
                                                                     .author
                                                                     .as_ref()
                                                                     .unwrap()
-                                                                    .shared_name(),
+                                                                    .render_name(),
                                                             ),
                                                     )
                                                     .child(
@@ -846,7 +846,7 @@ fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
                         .gap_1()
                         .text_color(cx.theme().text_muted)
                         .child("Send to:")
-                        .child(error.profile.shared_name()),
+                        .child(error.profile.render_name()),
                 )
                 .child(error.message)
         }))
