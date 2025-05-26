@@ -21,17 +21,14 @@ use smallvec::{smallvec, SmallVec};
 use ui::{
     avatar::Avatar,
     button::{Button, ButtonRounded, ButtonVariants},
-    dock_area::{
-        dock::DockPlacement,
-        panel::{Panel, PanelEvent},
-    },
+    dock_area::panel::{Panel, PanelEvent},
     input::{InputEvent, InputState, TextInput},
     popup_menu::{PopupMenu, PopupMenuExt},
     skeleton::Skeleton,
-    IconName, Selectable, Sizable, StyledExt,
+    ContextModal, IconName, Selectable, Sizable, StyledExt,
 };
 
-use crate::chatspace::{AddPanel, ModalKind, PanelKind, ToggleModal};
+use crate::chatspace::{ModalKind, ToggleModal};
 
 mod element;
 
@@ -75,8 +72,10 @@ impl Sidebar {
 
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(
-            cx.subscribe_in(&find_input, window, |this, _, event, _, cx| {
+        subscriptions.push(cx.subscribe_in(
+            &find_input,
+            window,
+            |this, _state, event, _window, cx| {
                 match event {
                     InputEvent::PressEnter { .. } => this.search(cx),
                     InputEvent::Change(text) => {
@@ -94,8 +93,8 @@ impl Sidebar {
                     }
                     _ => {}
                 }
-            }),
-        );
+            },
+        ));
 
         Self {
             name: "Chat Sidebar".into(),
@@ -144,7 +143,7 @@ impl Sidebar {
 
             spawn(async move {
                 let client = get_client();
-                let signer = client.signer().await.unwrap();
+                let signer = client.signer().await.expect("signer is required");
 
                 for event in events.into_iter() {
                     let metadata = Metadata::from_json(event.content).unwrap_or_default();
@@ -179,6 +178,14 @@ impl Sidebar {
 
         // Return if query is empty
         if query.is_empty() {
+            return;
+        }
+
+        if query.starts_with("nevent1")
+            || query.starts_with("naddr")
+            || query.starts_with("nsec1")
+            || query.starts_with("note1")
+        {
             return;
         }
 
@@ -254,21 +261,6 @@ impl Sidebar {
         });
     }
 
-    fn open_new_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(result) = self.global_result.read(cx).as_ref() {
-            if let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() {
-                ChatRegistry::global(cx).update(cx, |this, cx| {
-                    this.push_room(room, cx);
-                });
-                window.dispatch_action(
-                    Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
-                    cx,
-                );
-                self.clear_search_results(cx);
-            }
-        }
-    }
-
     fn filter(&self, kind: &RoomKind, cx: &Context<Self>) -> bool {
         self.active_filter.read(cx) == kind
     }
@@ -283,6 +275,30 @@ impl Sidebar {
     fn set_trusted_only(&mut self, cx: &mut Context<Self>) {
         self.trusted_only = !self.trusted_only;
         cx.notify();
+    }
+
+    fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let room = if let Some(room) = ChatRegistry::get_global(cx).room(&id, cx) {
+            room
+        } else {
+            self.clear_search_results(cx);
+
+            let Some(result) = self.global_result.read(cx).as_ref() else {
+                window.push_notification("Failed to open room. Please try again later.", cx);
+                return;
+            };
+
+            let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() else {
+                window.push_notification("Failed to open room. Please try again later.", cx);
+                return;
+            };
+
+            room
+        };
+
+        ChatRegistry::global(cx).update(cx, |this, cx| {
+            this.push_room(room, cx);
+        });
     }
 
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
@@ -366,29 +382,20 @@ impl Sidebar {
         &self,
         rooms: &[Entity<Room>],
         range: Range<usize>,
-        is_search: bool,
         cx: &Context<Self>,
     ) -> Vec<impl IntoElement> {
         let mut items = Vec::with_capacity(range.end - range.start);
 
         for ix in range {
             if let Some(room) = rooms.get(ix) {
-                let room = room.read(cx);
+                let this = room.read(cx);
+                let id = this.id;
+                let ago = this.ago();
+                let label = this.display_name(cx);
+                let img = this.display_image(cx);
 
-                let id = room.id;
-                let ago = room.ago();
-                let label = room.display_name(cx);
-                let img = room.display_image(cx);
-
-                let handler = cx.listener(move |this, _event, window, cx| {
-                    if is_search {
-                        this.open_new_room(id, window, cx);
-                    } else {
-                        window.dispatch_action(
-                            Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
-                            cx,
-                        );
-                    }
+                let handler = cx.listener(move |this, _, window, cx| {
+                    this.open_room(id, window, cx);
                 });
 
                 items.push(
@@ -435,14 +442,14 @@ impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::get_global(cx);
 
-        let (rooms, is_search) = if let Some(results) = self.local_result.read(cx) {
-            (results.to_owned(), true)
+        let rooms = if let Some(results) = self.local_result.read(cx) {
+            results.to_owned()
         } else {
             #[allow(clippy::collapsible_else_if)]
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
-                (chats.ongoing_rooms(cx), false)
+                chats.ongoing_rooms(cx)
             } else {
-                (chats.request_rooms(self.trusted_only, cx), false)
+                chats.request_rooms(self.trusted_only, cx)
             }
         };
 
@@ -476,8 +483,8 @@ impl Render for Sidebar {
                             cx.entity(),
                             "results",
                             rooms.len(),
-                            move |this, range, _, cx| {
-                                this.render_uniform_item(&rooms, range, true, cx)
+                            move |this, range, _window, cx| {
+                                this.render_uniform_item(&rooms, range, cx)
                             },
                         )
                         .h_full(),
@@ -565,8 +572,8 @@ impl Render for Sidebar {
                             cx.entity(),
                             "rooms",
                             rooms.len(),
-                            move |this, range, _, cx| {
-                                this.render_uniform_item(&rooms, range, is_search, cx)
+                            move |this, range, _window, cx| {
+                                this.render_uniform_item(&rooms, range, cx)
                             },
                         )
                         .h_full(),

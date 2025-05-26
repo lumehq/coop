@@ -8,18 +8,20 @@ use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use global::get_client;
-use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
+use gpui::{
+    App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
+};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use smallvec::{smallvec, SmallVec};
-use ui::ContextModal;
 
 use crate::room::Room;
 
-mod constants;
 pub mod message;
 pub mod room;
+
+mod constants;
 
 pub fn init(cx: &mut App) {
     ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
@@ -28,6 +30,9 @@ pub fn init(cx: &mut App) {
 struct GlobalChatRegistry(Entity<ChatRegistry>);
 
 impl Global for GlobalChatRegistry {}
+
+#[derive(Debug)]
+pub struct NewRoom(pub WeakEntity<Room>);
 
 /// Main registry for managing chat rooms and user profiles
 ///
@@ -47,6 +52,8 @@ pub struct ChatRegistry {
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
+
+impl EventEmitter<NewRoom> for ChatRegistry {}
 
 impl ChatRegistry {
     /// Retrieve the Global ChatRegistry instance
@@ -255,40 +262,25 @@ impl ChatRegistry {
         .detach();
     }
 
-    /// Push a Room Entity to the global registry
-    ///
-    /// Returns the ID of the room
-    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) -> u64 {
-        let id = room.read(cx).id;
+    /// Push a new Room to the global registry
+    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
+        let weak_room = if let Some(room) = self
+            .rooms
+            .iter()
+            .find(|this| this.read(cx).id == room.read(cx).id)
+        {
+            room.downgrade()
+        } else {
+            let weak_room = room.downgrade();
 
-        if !self.rooms.iter().any(|this| this.read(cx) == room.read(cx)) {
+            // Add this room to the global registry
             self.rooms.insert(0, room);
             cx.notify();
-        }
 
-        id
-    }
+            weak_room
+        };
 
-    /// Parse a Nostr event into a Coop Room and push it to the global registry
-    ///
-    /// Returns the ID of the new room
-    pub fn event_to_room(
-        &mut self,
-        event: &Event,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> u64 {
-        let room = Room::new(event).kind(RoomKind::Ongoing);
-        let id = room.id;
-
-        if !self.rooms.iter().any(|this| this.read(cx) == &room) {
-            self.rooms.insert(0, cx.new(|_| room));
-            cx.notify();
-        } else {
-            window.push_notification("Room already exists", cx);
-        }
-
-        id
+        cx.emit(NewRoom(weak_room));
     }
 
     /// Parse a Nostr event into a Coop Message and push it to the belonging room

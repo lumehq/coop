@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Error;
-use chats::ChatRegistry;
+use chats::{room::Room, ChatRegistry};
 use common::profile::RenderProfile;
 use global::get_client;
 use gpui::{
@@ -20,12 +20,9 @@ use smol::Timer;
 use theme::ActiveTheme;
 use ui::{
     button::{Button, ButtonVariants},
-    dock_area::dock::DockPlacement,
     input::{InputEvent, InputState, TextInput},
     ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
 };
-
-use crate::chatspace::{AddPanel, PanelKind};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
@@ -153,14 +150,13 @@ impl Compose {
         cx.spawn_in(window, async move |this, cx| match event.await {
             Ok(event) => {
                 cx.update(|window, cx| {
-                    ChatRegistry::global(cx).update(cx, |chats, cx| {
-                        let id = chats.event_to_room(&event, window, cx);
-                        window.close_modal(cx);
-                        window.dispatch_action(
-                            Box::new(AddPanel::new(PanelKind::Room(id), DockPlacement::Center)),
-                            cx,
-                        );
+                    let room = cx.new(|_| Room::new(&event).kind(chats::room::RoomKind::Ongoing));
+
+                    ChatRegistry::global(cx).update(cx, |this, cx| {
+                        this.push_room(room, cx);
                     });
+
+                    window.close_modal(cx);
                 })
                 .ok();
             }
@@ -338,7 +334,7 @@ impl Render for Compose {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().pb_0p5().text_sm().font_semibold().child("Subject:"))
+                        .child(div().text_sm().font_semibold().child("Subject:"))
                         .child(TextInput::new(&self.title_input).small().appearance(false)),
                 ),
             )

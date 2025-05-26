@@ -460,7 +460,7 @@ impl ButtonVariant {
     fn selected(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_selected,
-            ButtonVariant::Secondary => cx.theme().secondary_background,
+            ButtonVariant::Secondary => cx.theme().secondary_selected,
             ButtonVariant::Ghost => cx.theme().ghost_element_selected,
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,

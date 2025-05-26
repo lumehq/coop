@@ -1,11 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
-use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{
     message::Message,
     room::{Room, SendError},
-    ChatRegistry,
 };
 use common::{nip96_upload, profile::RenderProfile};
 use global::get_client;
@@ -41,12 +39,8 @@ pub struct ChangeSubject(pub String);
 
 impl_internal_actions!(chat, [ChangeSubject]);
 
-pub fn init(id: &u64, window: &mut Window, cx: &mut App) -> Result<Arc<Entity<Chat>>, Error> {
-    if let Some(room) = ChatRegistry::global(cx).read(cx).room(id, cx) {
-        Ok(Arc::new(Chat::new(id, room, window, cx)))
-    } else {
-        Err(anyhow!("Chat Room not found."))
-    }
+pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Arc<Entity<Chat>> {
+    Arc::new(Chat::new(room, window, cx))
 }
 
 pub struct Chat {
@@ -70,7 +64,7 @@ pub struct Chat {
 }
 
 impl Chat {
-    pub fn new(id: &u64, room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let attaches = cx.new(|_| None);
         let replies_to = cx.new(|_| None);
 
@@ -149,7 +143,7 @@ impl Chat {
                 image_cache: RetainAllImageCache::new(cx),
                 focus_handle: cx.focus_handle(),
                 uploading: false,
-                id: id.to_string().into(),
+                id: room.read(cx).id.to_string().into(),
                 text_data: HashMap::new(),
                 room,
                 messages,
