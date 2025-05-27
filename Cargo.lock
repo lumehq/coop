@@ -971,7 +971,6 @@ dependencies = [
  "oneshot",
  "smallvec",
  "smol",
- "ui",
 ]
 
 [[package]]
