@@ -532,6 +532,7 @@ impl Render for Sidebar {
                                     .child(
                                         Button::new("all")
                                             .label("All")
+                                            .tooltip("All ongoing conversations")
                                             .small()
                                             .bold()
                                             .secondary()
@@ -544,6 +545,7 @@ impl Render for Sidebar {
                                     .child(
                                         Button::new("requests")
                                             .label("Requests")
+                                            .tooltip("Incoming new conversations")
                                             .small()
                                             .bold()
                                             .secondary()
