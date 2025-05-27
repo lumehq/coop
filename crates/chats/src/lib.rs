@@ -242,7 +242,7 @@ impl ChatRegistry {
                         .filter_map(|(event, count, trusted)| {
                             let hash = room_hash(&event);
                             if !ids.iter().any(|this| this == &hash) {
-                                let kind = if count > 2 {
+                                let kind = if count > 1 {
                                     // If frequency count is greater than 2, mark this room as ongoing
                                     RoomKind::Ongoing
                                 } else if trusted {
