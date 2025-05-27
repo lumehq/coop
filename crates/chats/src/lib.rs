@@ -136,6 +136,12 @@ impl ChatRegistry {
         self.rooms.iter().map(|room| room.read(cx).id).collect()
     }
 
+    /// Sort rooms by their created at.
+    pub fn sort(&mut self, cx: &mut Context<Self>) {
+        self.rooms.sort_by_key(|ev| Reverse(ev.read(cx).created_at));
+        cx.notify();
+    }
+
     /// Search rooms by their name.
     pub fn search(&self, query: &str, cx: &App) -> Vec<Entity<Room>> {
         let matcher = SkimMatcherV2::default();
@@ -291,13 +297,19 @@ impl ChatRegistry {
         let id = room_hash(&event);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
+            // Update room
             room.update(cx, |this, cx| {
                 this.created_at(event.created_at, cx);
+                this.set_ongoing(cx);
                 // Emit the new message to the room
                 cx.defer_in(window, |this, window, cx| {
                     this.emit_message(event, window, cx);
                 });
             });
+
+            // Re-sort the rooms registry by their created at
+            self.sort(cx);
+
             cx.notify();
         } else {
             // Push the new room to the front of the list

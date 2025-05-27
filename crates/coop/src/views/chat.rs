@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use async_utility::task::spawn;
 use chats::{
     message::Message,
-    room::{Room, SendError},
+    room::{Room, RoomKind, SendError},
 };
 use common::{nip96_upload, profile::RenderProfile};
 use global::get_client;
@@ -263,6 +263,13 @@ impl Chat {
                 if let Ok(reports) = send_message.await {
                     if !reports.is_empty() {
                         this.update(cx, |this, cx| {
+                            this.room.update(cx, |this, cx| {
+                                if this.kind != RoomKind::Ongoing {
+                                    this.kind = RoomKind::Ongoing;
+                                    cx.notify();
+                                }
+                            });
+
                             this.messages.update(cx, |this, cx| {
                                 if let Some(msg) = id.and_then(|id| {
                                     this.iter().find(|msg| msg.borrow().id == Some(id)).cloned()
