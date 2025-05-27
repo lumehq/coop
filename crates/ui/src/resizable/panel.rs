@@ -477,9 +477,14 @@ impl Element for ResizePanelGroupElement {
         None
     }
 
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
     fn request_layout(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
@@ -489,6 +494,7 @@ impl Element for ResizePanelGroupElement {
     fn prepaint(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
         _: Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _window: &mut Window,
@@ -499,6 +505,7 @@ impl Element for ResizePanelGroupElement {
     fn paint(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
         _: Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,

@@ -11,10 +11,8 @@ use crate::{h_flex, Icon, IconName, InteractiveElementExt as _, Sizable as _};
 
 const HEIGHT: Pixels = px(34.);
 const TITLE_BAR_HEIGHT: Pixels = px(34.);
-
 #[cfg(target_os = "macos")]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
-
 #[cfg(not(target_os = "macos"))]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(12.);
 
@@ -300,9 +298,14 @@ impl Element for TitleBarElement {
         None
     }
 
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
     fn request_layout(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
@@ -324,6 +327,7 @@ impl Element for TitleBarElement {
     fn prepaint(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
         _: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _window: &mut Window,
@@ -334,6 +338,7 @@ impl Element for TitleBarElement {
     fn paint(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
         bounds: gpui::Bounds<Pixels>,
         _: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,

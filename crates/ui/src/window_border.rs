@@ -7,10 +7,8 @@ use theme::ActiveTheme;
 
 pub(crate) const BORDER_SIZE: Pixels = Pixels(1.0);
 pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
-
 #[cfg(not(target_os = "linux"))]
 pub(crate) const SHADOW_SIZE: Pixels = Pixels(0.0);
-
 #[cfg(target_os = "linux")]
 pub(crate) const SHADOW_SIZE: Pixels = Pixels(12.0);
 
@@ -150,7 +148,7 @@ impl RenderOnce for WindowBorder {
                             .when(!tiling.left, |div| div.border_l(BORDER_SIZE))
                             .when(!tiling.right, |div| div.border_r(BORDER_SIZE))
                             .when(!tiling.is_tiled(), |div| {
-                                div.shadow(smallvec::smallvec![gpui::BoxShadow {
+                                div.shadow(vec![gpui::BoxShadow {
                                     color: Hsla {
                                         h: 0.,
                                         s: 0.,
