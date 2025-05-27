@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap, HashSet}
+    collections::{HashMap, HashSet},
 };
 
 use account::Account;
@@ -8,18 +8,20 @@ use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use global::get_client;
-use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
+use gpui::{
+    App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
+};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use smallvec::{smallvec, SmallVec};
-use ui::ContextModal;
 
 use crate::room::Room;
 
-mod constants;
 pub mod message;
 pub mod room;
+
+mod constants;
 
 pub fn init(cx: &mut App) {
     ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
@@ -29,6 +31,9 @@ struct GlobalChatRegistry(Entity<ChatRegistry>);
 
 impl Global for GlobalChatRegistry {}
 
+#[derive(Debug)]
+pub struct NewRoom(pub WeakEntity<Room>);
+
 /// Main registry for managing chat rooms and user profiles
 ///
 /// The ChatRegistry is responsible for:
@@ -37,8 +42,6 @@ impl Global for GlobalChatRegistry {}
 /// - Loading room data from the lmdb
 /// - Handling messages and room creation
 pub struct ChatRegistry {
-    /// Map of user public keys to their profile metadata
-    profiles: Entity<BTreeMap<PublicKey, Option<Metadata>>>,
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
     /// Indicates if rooms are currently being loaded
@@ -49,6 +52,8 @@ pub struct ChatRegistry {
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
+
+impl EventEmitter<NewRoom> for ChatRegistry {}
 
 impl ChatRegistry {
     /// Retrieve the Global ChatRegistry instance
@@ -68,7 +73,6 @@ impl ChatRegistry {
 
     /// Create a new ChatRegistry instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let profiles = cx.new(|_| BTreeMap::new());
         let mut subscriptions = smallvec![];
 
         // When the ChatRegistry is created, load all rooms from the local database
@@ -79,30 +83,13 @@ impl ChatRegistry {
         }));
 
         // When any Room is created, load metadata for all members
-        subscriptions.push(cx.observe_new::<Room>(|this, window, cx| {
-            if let Some(window) = window {
-                let task = this.load_metadata(cx);
-
-                cx.spawn_in(window, async move |_, cx| {
-                    if let Ok(data) = task.await {
-                        cx.update(|_, cx| {
-                            for (public_key, metadata) in data.into_iter() {
-                                Self::global(cx).update(cx, |this, cx| {
-                                    this.add_profile(public_key, metadata, cx);
-                                })
-                            }
-                        })
-                        .ok();
-                    }
-                })
-                .detach();
-            }
+        subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
+            this.load_metadata(cx).detach();
         }));
 
         Self {
             rooms: vec![],
             wait_for_eose: true,
-            profiles,
             subscriptions,
         }
     }
@@ -115,11 +102,31 @@ impl ChatRegistry {
             .cloned()
     }
 
-    /// Get rooms by its kind.
-    pub fn rooms_by_kind(&self, kind: RoomKind, cx: &App) -> Vec<Entity<Room>> {
+    /// Get room by its position.
+    pub fn room_by_ix(&self, ix: usize, _cx: &App) -> Option<&Entity<Room>> {
+        self.rooms.get(ix)
+    }
+
+    /// Get all ongoing rooms.
+    pub fn ongoing_rooms(&self, cx: &App) -> Vec<Entity<Room>> {
         self.rooms
             .iter()
-            .filter(|room| room.read(cx).kind == kind)
+            .filter(|room| room.read(cx).kind == RoomKind::Ongoing)
+            .cloned()
+            .collect()
+    }
+
+    /// Get all request rooms.
+    pub fn request_rooms(&self, trusted_only: bool, cx: &App) -> Vec<Entity<Room>> {
+        self.rooms
+            .iter()
+            .filter(|room| {
+                if trusted_only {
+                    room.read(cx).kind == RoomKind::Trusted
+                } else {
+                    room.read(cx).kind != RoomKind::Ongoing
+                }
+            })
             .cloned()
             .collect()
     }
@@ -189,10 +196,9 @@ impl ChatRegistry {
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
                 let hash = room_hash(&event);
-
                 let mut is_trust = trusted_keys.contains(&event.pubkey);
 
-                if is_trust == false {
+                if !is_trust {
                     // Check if room's author is seen in any contact list
                     let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
                     // If room's author is seen at least once, mark as trusted
@@ -256,71 +262,25 @@ impl ChatRegistry {
         .detach();
     }
 
-    /// Add a user profile to the registry
-    ///
-    /// Only adds the profile if it doesn't already exist or is currently none
-    pub fn add_profile(
-        &mut self,
-        public_key: PublicKey,
-        metadata: Option<Metadata>,
-        cx: &mut Context<Self>,
-    ) {
-        self.profiles.update(cx, |this, _cx| {
-            this.entry(public_key)
-                .and_modify(|entry| {
-                    if entry.is_none() {
-                        *entry = metadata.clone();
-                    }
-                })
-                .or_insert_with(|| metadata);
-        });
-    }
-
-    /// Get a user profile by public key
-    pub fn profile(&self, public_key: &PublicKey, cx: &App) -> Profile {
-        let metadata = if let Some(profile) = self.profiles.read(cx).get(public_key) {
-            profile.clone().unwrap_or_default()
+    /// Push a new Room to the global registry
+    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
+        let weak_room = if let Some(room) = self
+            .rooms
+            .iter()
+            .find(|this| this.read(cx).id == room.read(cx).id)
+        {
+            room.downgrade()
         } else {
-            Metadata::default()
-        };
+            let weak_room = room.downgrade();
 
-        Profile::new(*public_key, metadata)
-    }
-
-    /// Push a Room Entity to the global registry
-    ///
-    /// Returns the ID of the room
-    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) -> u64 {
-        let id = room.read(cx).id;
-
-        if !self.rooms.iter().any(|this| this.read(cx) == room.read(cx)) {
+            // Add this room to the global registry
             self.rooms.insert(0, room);
             cx.notify();
-        }
 
-        id
-    }
+            weak_room
+        };
 
-    /// Parse a Nostr event into a Coop Room and push it to the global registry
-    ///
-    /// Returns the ID of the new room
-    pub fn event_to_room(
-        &mut self,
-        event: &Event,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> u64 {
-        let room = Room::new(event).kind(RoomKind::Ongoing);
-        let id = room.id;
-
-        if !self.rooms.iter().any(|this| this.read(cx) == &room) {
-            self.rooms.insert(0, cx.new(|_| room));
-            cx.notify();
-        } else {
-            window.push_notification("Room already exists", cx);
-        }
-
-        id
+        cx.emit(NewRoom(weak_room));
     }
 
     /// Parse a Nostr event into a Coop Message and push it to the belonging room

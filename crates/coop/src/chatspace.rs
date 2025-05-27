@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use account::Account;
 use anyhow::Error;
+use chats::ChatRegistry;
 use global::{
-    constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH, IMAGE_CACHE_LIMIT},
+    constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH},
     get_client,
 };
 use gpui::{
-    div, image_cache, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis,
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription,
-    Task, Window,
+    div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -21,13 +21,12 @@ use ui::{
     ContextModal, IconName, Root, Sizable, TitleBar,
 };
 
-use crate::{
-    lru_cache::cache_provider,
-    views::{
-        chat::{self, Chat},
-        compose, login, new_account, onboarding, profile, relays, sidebar, welcome,
-    },
+use crate::views::{
+    chat::{self, Chat},
+    compose, login, new_account, onboarding, profile, relays, sidebar, welcome,
 };
+
+impl_internal_actions!(dock, [ToggleModal]);
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
@@ -63,25 +62,11 @@ pub struct ToggleModal {
     pub modal: ModalKind,
 }
 
-impl_internal_actions!(dock, [AddPanel, ToggleModal]);
-
-#[derive(Clone, PartialEq, Eq, Deserialize)]
-pub struct AddPanel {
-    panel: PanelKind,
-    position: DockPlacement,
-}
-
-impl AddPanel {
-    pub fn new(panel: PanelKind, position: DockPlacement) -> Self {
-        Self { panel, position }
-    }
-}
-
 pub struct ChatSpace {
     titlebar: bool,
     dock: Entity<DockArea>,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl ChatSpace {
@@ -97,6 +82,7 @@ impl ChatSpace {
 
         cx.new(|cx| {
             let account = Account::global(cx);
+            let chats = ChatRegistry::global(cx);
             let mut subscriptions = smallvec![];
 
             subscriptions.push(cx.observe_in(
@@ -107,6 +93,21 @@ impl ChatSpace {
                         this.open_chats(window, cx);
                     } else {
                         this.open_onboarding(window, cx);
+                    }
+                },
+            ));
+
+            subscriptions.push(cx.subscribe_in(
+                &chats,
+                window,
+                |this, _state, event, window, cx| {
+                    if let Some(room) = event.0.upgrade() {
+                        this.dock.update(cx, |this, cx| {
+                            let panel = chat::init(room, window, cx);
+                            this.add_panel(panel, DockPlacement::Center, window, cx);
+                        });
+                    } else {
+                        window.push_notification("Failed to open room. Please retry later.", cx);
                     }
                 },
             ));
@@ -204,22 +205,6 @@ impl ChatSpace {
         })
     }
 
-    fn on_panel_action(&mut self, action: &AddPanel, window: &mut Window, cx: &mut Context<Self>) {
-        match &action.panel {
-            PanelKind::Room(id) => {
-                // User must be logged in to open a room
-                match chat::init(id, window, cx) {
-                    Ok(panel) => {
-                        self.dock.update(cx, |dock_area, cx| {
-                            dock_area.add_panel(panel, action.position, window, cx);
-                        });
-                    }
-                    Err(e) => window.push_notification(e.to_string(), cx),
-                }
-            }
-        };
-    }
-
     fn on_modal_action(
         &mut self,
         action: &ToggleModal,
@@ -294,69 +279,62 @@ impl Render for ChatSpace {
             .relative()
             .size_full()
             .child(
-                image_cache(cache_provider("image-cache", IMAGE_CACHE_LIMIT))
+                div()
+                    .flex()
+                    .flex_col()
                     .size_full()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .size_full()
-                            // Title Bar
-                            .when(self.titlebar, |this| {
-                                this.child(
-                                    TitleBar::new()
-                                        // Left side
-                                        .child(div())
-                                        // Right side
+                    // Title Bar
+                    .when(self.titlebar, |this| {
+                        this.child(
+                            TitleBar::new()
+                                // Left side
+                                .child(div())
+                                // Right side
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_end()
+                                        .gap_2()
+                                        .px_2()
                                         .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .justify_end()
-                                                .gap_2()
-                                                .px_2()
-                                                .child(
-                                                    Button::new("appearance")
-                                                        .xsmall()
-                                                        .ghost()
-                                                        .map(|this| {
-                                                            if cx.theme().mode.is_dark() {
-                                                                this.icon(IconName::Sun)
-                                                            } else {
-                                                                this.icon(IconName::Moon)
-                                                            }
-                                                        })
-                                                        .on_click(cx.listener(
-                                                            |_, _, window, cx| {
-                                                                if cx.theme().mode.is_dark() {
-                                                                    Theme::change(
-                                                                        ThemeMode::Light,
-                                                                        Some(window),
-                                                                        cx,
-                                                                    );
-                                                                } else {
-                                                                    Theme::change(
-                                                                        ThemeMode::Dark,
-                                                                        Some(window),
-                                                                        cx,
-                                                                    );
-                                                                }
-                                                            },
-                                                        )),
-                                                ),
+                                            Button::new("appearance")
+                                                .xsmall()
+                                                .ghost()
+                                                .map(|this| {
+                                                    if cx.theme().mode.is_dark() {
+                                                        this.icon(IconName::Sun)
+                                                    } else {
+                                                        this.icon(IconName::Moon)
+                                                    }
+                                                })
+                                                .on_click(cx.listener(|_, _, window, cx| {
+                                                    if cx.theme().mode.is_dark() {
+                                                        Theme::change(
+                                                            ThemeMode::Light,
+                                                            Some(window),
+                                                            cx,
+                                                        );
+                                                    } else {
+                                                        Theme::change(
+                                                            ThemeMode::Dark,
+                                                            Some(window),
+                                                            cx,
+                                                        );
+                                                    }
+                                                })),
                                         ),
-                                )
-                            })
-                            // Dock
-                            .child(self.dock.clone()),
-                    ),
+                                ),
+                        )
+                    })
+                    // Dock
+                    .child(self.dock.clone()),
             )
             // Notifications
             .child(div().absolute().top_8().children(notification_layer))
             // Modals
             .children(modal_layer)
             // Actions
-            .on_action(cx.listener(Self::on_panel_action))
             .on_action(cx.listener(Self::on_modal_action))
     }
 }

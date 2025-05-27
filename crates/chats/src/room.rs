@@ -3,8 +3,8 @@ use std::{cmp::Ordering, sync::Arc};
 use account::Account;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
-use common::{compare, profile::SharedProfile, room_hash};
-use global::get_client;
+use common::{compare, profile::RenderProfile, room_hash};
+use global::{async_cache_profile, get_cache_profile, get_client, profiles};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -12,7 +12,6 @@ use nostr_sdk::prelude::*;
 use crate::{
     constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE},
     message::Message,
-    ChatRegistry,
 };
 
 #[derive(Debug, Clone)]
@@ -157,20 +156,6 @@ impl Room {
         .into()
     }
 
-    /// Gets the profile for a specific public key
-    ///
-    /// # Arguments
-    ///
-    /// * `public_key` - The public key to get the profile for
-    /// * `cx` - The App context
-    ///
-    /// # Returns
-    ///
-    /// The Profile associated with the given public key
-    pub fn profile_by_pubkey(&self, public_key: &PublicKey, cx: &App) -> Profile {
-        ChatRegistry::global(cx).read(cx).profile(public_key, cx)
-    }
-
     /// Gets the first member in the room that isn't the current user
     ///
     /// # Arguments
@@ -183,7 +168,7 @@ impl Room {
     pub fn first_member(&self, cx: &App) -> Profile {
         let account = Account::global(cx).read(cx);
         let Some(profile) = account.profile.clone() else {
-            return self.profile_by_pubkey(&self.members[0], cx);
+            return get_cache_profile(&self.members[0]);
         };
 
         if let Some(public_key) = self
@@ -193,7 +178,7 @@ impl Room {
             .collect::<Vec<_>>()
             .first()
         {
-            self.profile_by_pubkey(public_key, cx)
+            get_cache_profile(public_key)
         } else {
             profile
         }
@@ -215,13 +200,13 @@ impl Room {
             let profiles = self
                 .members
                 .iter()
-                .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
+                .map(get_cache_profile)
                 .collect::<Vec<_>>();
 
             let mut name = profiles
                 .iter()
                 .take(2)
-                .map(|profile| profile.shared_name())
+                .map(|profile| profile.render_name())
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -231,7 +216,7 @@ impl Room {
 
             name.into()
         } else {
-            self.first_member(cx).shared_name()
+            self.first_member(cx).render_name()
         }
     }
 
@@ -269,7 +254,7 @@ impl Room {
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
         } else if !self.is_group() {
-            self.first_member(cx).shared_avatar()
+            self.first_member(cx).render_avatar()
         } else {
             "brand/group.png".into()
         }
@@ -327,22 +312,27 @@ impl Room {
     ///
     /// A Task that resolves to Result<Vec<(PublicKey, Option<Metadata>)>, Error>
     #[allow(clippy::type_complexity)]
-    pub fn load_metadata(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Task<Result<Vec<(PublicKey, Option<Metadata>)>, Error>> {
+    pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<(), Error>> {
         let client = get_client();
         let public_keys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
-            let mut output = vec![];
-
             for public_key in public_keys.iter() {
                 let metadata = client.database().metadata(*public_key).await?;
-                output.push((*public_key, metadata));
+
+                profiles()
+                    .write()
+                    .await
+                    .entry(*public_key)
+                    .and_modify(|entry| {
+                        if entry.is_none() {
+                            *entry = metadata.clone();
+                        }
+                    })
+                    .or_insert_with(|| metadata);
             }
 
-            Ok(output)
+            Ok(())
         })
     }
 
@@ -391,10 +381,6 @@ impl Room {
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Message>, Error>> {
         let client = get_client();
         let pubkeys = Arc::clone(&self.members);
-        let profiles: Vec<Profile> = pubkeys
-            .iter()
-            .map(|pubkey| ChatRegistry::global(cx).read(cx).profile(pubkey, cx))
-            .collect();
 
         let filter = Filter::new()
             .kind(Kind::PrivateDirectMessage)
@@ -442,12 +428,6 @@ impl Room {
                     }
                 }
 
-                let author = profiles
-                    .iter()
-                    .find(|profile| profile.public_key() == event.pubkey)
-                    .cloned()
-                    .unwrap_or_else(|| Profile::new(event.pubkey, Metadata::default()));
-
                 let pubkey_tokens = tokens
                     .filter_map(|token| match token {
                         Token::Nostr(nip21) => match nip21 {
@@ -459,15 +439,11 @@ impl Room {
                     })
                     .collect::<Vec<_>>();
 
-                for pubkey in pubkey_tokens {
-                    mentions.push(
-                        profiles
-                            .iter()
-                            .find(|profile| profile.public_key() == pubkey)
-                            .cloned()
-                            .unwrap_or_else(|| Profile::new(pubkey, Metadata::default())),
-                    );
+                for pubkey in pubkey_tokens.iter() {
+                    mentions.push(async_cache_profile(pubkey).await);
                 }
+
+                let author = async_cache_profile(&event.pubkey).await;
 
                 if let Ok(message) = Message::builder()
                     .id(event.id)
@@ -498,10 +474,10 @@ impl Room {
     ///
     /// Processes the event and emits an Incoming to the UI when complete
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
-        let author = ChatRegistry::get_global(cx).profile(&event.pubkey, cx);
+        let author = get_cache_profile(&event.pubkey);
 
         // Extract all mentions from content
-        let mentions = extract_mentions(&event.content, cx);
+        let mentions = extract_mentions(&event.content);
 
         // Extract reply_to if present
         let mut replies_to = vec![];
@@ -583,7 +559,7 @@ impl Room {
         event.ensure_id();
 
         // Extract all mentions from content
-        let mentions = extract_mentions(&event.content, cx);
+        let mentions = extract_mentions(&event.content);
 
         // Extract reply_to if present
         let mut replies_to = vec![];
@@ -727,12 +703,10 @@ impl Room {
     }
 }
 
-pub fn extract_mentions(content: &str, cx: &App) -> Vec<Profile> {
+pub fn extract_mentions(content: &str) -> Vec<Profile> {
     let parser = NostrParser::new();
     let tokens = parser.parse(content);
     let mut mentions = vec![];
-
-    let profiles = ChatRegistry::get_global(cx).profiles.read(cx);
 
     let pubkey_tokens = tokens
         .filter_map(|token| match token {
@@ -746,9 +720,7 @@ pub fn extract_mentions(content: &str, cx: &App) -> Vec<Profile> {
         .collect::<Vec<_>>();
 
     for pubkey in pubkey_tokens.into_iter() {
-        if let Some(metadata) = profiles.get(&pubkey).cloned() {
-            mentions.push(Profile::new(pubkey, metadata.unwrap_or_default()));
-        }
+        mentions.push(get_cache_profile(&pubkey));
     }
 
     mentions

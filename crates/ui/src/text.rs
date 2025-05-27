@@ -1,4 +1,4 @@
-use common::profile::SharedProfile;
+use common::profile::RenderProfile;
 use gpui::{
     AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
     SharedString, StyledText, UnderlineStyle, Window,
@@ -273,7 +273,7 @@ pub fn render_plain_text_mut(
 
             if let Some(profile) = profile_match {
                 // Profile found - create a mention
-                let display_name = format!("@{}", profile.shared_name());
+                let display_name = format!("@{}", profile.render_name());
 
                 // Replace mention with profile name
                 text.replace_range(range.clone(), &display_name);

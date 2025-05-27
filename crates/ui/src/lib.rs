@@ -8,16 +8,9 @@ pub use window_border::{window_border, WindowBorder};
 
 pub use crate::Disableable;
 
-mod event;
-mod focusable;
-mod icon;
-mod root;
-mod styled;
-mod title_bar;
-mod window_border;
-
 pub(crate) mod actions;
 pub mod animation;
+pub mod avatar;
 pub mod button;
 pub mod checkbox;
 pub mod context_menu;
@@ -40,6 +33,14 @@ pub mod switch;
 pub mod tab;
 pub mod text;
 pub mod tooltip;
+
+mod event;
+mod focusable;
+mod icon;
+mod root;
+mod styled;
+mod title_bar;
+mod window_border;
 
 /// Initialize the UI module.
 ///

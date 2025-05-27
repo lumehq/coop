@@ -971,7 +971,6 @@ dependencies = [
  "oneshot",
  "smallvec",
  "smol",
- "ui",
 ]
 
 [[package]]
@@ -1243,7 +1242,6 @@ dependencies = [
  "oneshot",
  "reqwest_client",
  "rust-embed",
- "rustls",
  "serde",
  "serde_json",
  "smallvec",
@@ -2277,6 +2275,7 @@ version = "0.1.5"
 dependencies = [
  "dirs 5.0.1",
  "nostr-sdk",
+ "rustls",
  "smol",
  "whoami",
 ]

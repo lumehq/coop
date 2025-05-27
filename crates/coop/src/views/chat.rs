@@ -1,20 +1,18 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
-use anyhow::{anyhow, Error};
 use async_utility::task::spawn;
 use chats::{
     message::Message,
     room::{Room, SendError},
-    ChatRegistry,
 };
-use common::{nip96_upload, profile::SharedProfile};
-use global::{constants::IMAGE_SERVICE, get_client};
+use common::{nip96_upload, profile::RenderProfile};
+use global::get_client;
 use gpui::{
-    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, svg, white,
-    AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
-    ParentElement, PathPromptOptions, Render, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Subscription, Window,
+    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, rems, svg,
+    white, AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter,
+    Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState,
+    ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -23,6 +21,7 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
 use ui::{
+    avatar::Avatar,
     button::{Button, ButtonVariants},
     dock_area::panel::{Panel, PanelEvent},
     emoji_picker::EmojiPicker,
@@ -40,12 +39,8 @@ pub struct ChangeSubject(pub String);
 
 impl_internal_actions!(chat, [ChangeSubject]);
 
-pub fn init(id: &u64, window: &mut Window, cx: &mut App) -> Result<Arc<Entity<Chat>>, Error> {
-    if let Some(room) = ChatRegistry::global(cx).read(cx).room(id, cx) {
-        Ok(Arc::new(Chat::new(id, room, window, cx)))
-    } else {
-        Err(anyhow!("Chat Room not found."))
-    }
+pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Arc<Entity<Chat>> {
+    Arc::new(Chat::new(room, window, cx))
 }
 
 pub struct Chat {
@@ -63,12 +58,13 @@ pub struct Chat {
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     uploading: bool,
+    image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl Chat {
-    pub fn new(id: &u64, room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let attaches = cx.new(|_| None);
         let replies_to = cx.new(|_| None);
 
@@ -144,9 +140,10 @@ impl Chat {
             });
 
             Self {
+                image_cache: RetainAllImageCache::new(cx),
                 focus_handle: cx.focus_handle(),
                 uploading: false,
-                id: id.to_string().into(),
+                id: room.read(cx).id.to_string().into(),
                 text_data: HashMap::new(),
                 room,
                 messages,
@@ -428,18 +425,15 @@ impl Chat {
         let path: SharedString = url.to_string().into();
 
         div()
-            .id(path.clone())
+            .id("")
             .relative()
             .w_16()
             .child(
-                img(format!(
-                    "{}/?url={}&w=128&h=128&fit=cover&n=-1",
-                    IMAGE_SERVICE, path
-                ))
-                .size_16()
-                .shadow_lg()
-                .rounded(cx.theme().radius)
-                .object_fit(ObjectFit::ScaleDown),
+                img(path.clone())
+                    .size_16()
+                    .shadow_lg()
+                    .rounded(cx.theme().radius)
+                    .object_fit(ObjectFit::ScaleDown),
             )
             .child(
                 div()
@@ -481,7 +475,7 @@ impl Chat {
                             .child(
                                 div()
                                     .text_color(cx.theme().text_accent)
-                                    .child(message.author.as_ref().unwrap().shared_name()),
+                                    .child(message.author.as_ref().unwrap().render_name()),
                             ),
                     )
                     .child(
@@ -565,7 +559,7 @@ impl Chat {
                 div()
                     .flex()
                     .gap_3()
-                    .child(img(author.shared_avatar()).size_8().flex_shrink_0())
+                    .child(Avatar::new(author.render_avatar()).size(rems(2.)))
                     .child(
                         div()
                             .flex_1()
@@ -583,7 +577,7 @@ impl Chat {
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
-                                            .child(author.shared_name()),
+                                            .child(author.render_name()),
                                     )
                                     .child(
                                         div()
@@ -621,7 +615,7 @@ impl Chat {
                                                                     .author
                                                                     .as_ref()
                                                                     .unwrap()
-                                                                    .shared_name(),
+                                                                    .render_name(),
                                                             ),
                                                     )
                                                     .child(
@@ -707,7 +701,7 @@ impl Panel for Chat {
                 .flex()
                 .items_center()
                 .gap_1p5()
-                .child(img(url).size_5().flex_shrink_0())
+                .child(Avatar::new(url).size(rems(1.25)))
                 .child(label)
                 .into_any()
         })
@@ -753,6 +747,7 @@ impl Focusable for Chat {
 impl Render for Chat {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .image_cache(self.image_cache.clone())
             .size_full()
             .child(list(self.list_state.clone()).flex_1())
             .child(
@@ -845,7 +840,7 @@ fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
                         .gap_1()
                         .text_color(cx.theme().text_muted)
                         .child("Send to:")
-                        .child(error.profile.shared_name()),
+                        .child(error.profile.render_name()),
                 )
                 .child(error.message)
         }))

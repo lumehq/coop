@@ -8,7 +8,6 @@ publish.workspace = true
 account = { path = "../account" }
 common = { path = "../common" }
 global = { path = "../global" }
-ui = { path = "../ui" }
 
 gpui.workspace = true
 nostr.workspace = true
