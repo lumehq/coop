@@ -144,21 +144,30 @@ impl Sidebar {
             spawn(async move {
                 let client = get_client();
                 let signer = client.signer().await.expect("signer is required");
+                let public_key = signer.get_public_key().await.expect("error");
 
                 for event in events.into_iter() {
                     let metadata = Metadata::from_json(event.content).unwrap_or_default();
 
-                    if let Some(target) = metadata.nip05.as_ref() {
-                        if let Ok(verify) = nip05::verify(&event.pubkey, target, None).await {
-                            if verify {
-                                if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
-                                    .sign(&signer)
-                                    .await
-                                {
-                                    let room = Room::new(&event);
-                                    _ = tx.send(room).await;
-                                }
-                            }
+                    let Some(target) = metadata.nip05.as_ref() else {
+                        continue;
+                    };
+
+                    let Ok(verified) = nip05::verify(&event.pubkey, target, None).await else {
+                        continue;
+                    };
+
+                    if !verified {
+                        continue;
+                    };
+
+                    if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
+                        .build(public_key)
+                        .sign(&Keys::generate())
+                        .await
+                    {
+                        if let Err(e) = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await {
+                            log::error!("{e}")
                         }
                     }
                 }
@@ -281,8 +290,6 @@ impl Sidebar {
         let room = if let Some(room) = ChatRegistry::get_global(cx).room(&id, cx) {
             room
         } else {
-            self.clear_search_results(cx);
-
             let Some(result) = self.global_result.read(cx).as_ref() else {
                 window.push_notification("Failed to open room. Please try again later.", cx);
                 return;
@@ -292,6 +299,9 @@ impl Sidebar {
                 window.push_notification("Failed to open room. Please try again later.", cx);
                 return;
             };
+
+            // Clear all search results
+            self.clear_search_results(cx);
 
             room
         };
@@ -477,19 +487,24 @@ impl Render for Sidebar {
             )
             // Global Search Results
             .when_some(self.global_result.read(cx).clone(), |this, rooms| {
-                this.child(
-                    div().px_1().w_full().flex_1().overflow_y_hidden().child(
-                        uniform_list(
-                            cx.entity(),
-                            "results",
-                            rooms.len(),
-                            move |this, range, _window, cx| {
-                                this.render_uniform_item(&rooms, range, cx)
-                            },
-                        )
-                        .h_full(),
-                    ),
-                )
+                this.child(div().px_2().w_full().flex().flex_col().gap_1().children({
+                    let mut items = Vec::with_capacity(rooms.len());
+
+                    for (ix, room) in rooms.into_iter().enumerate() {
+                        let this = room.read(cx);
+                        let id = this.id;
+                        let label = this.display_name(cx);
+                        let img = this.display_image(cx);
+
+                        let handler = cx.listener(move |this, _, window, cx| {
+                            this.open_room(id, window, cx);
+                        });
+
+                        items.push(DisplayRoom::new(ix).img(img).label(label).on_click(handler))
+                    }
+
+                    items
+                }))
             })
             .child(
                 div()

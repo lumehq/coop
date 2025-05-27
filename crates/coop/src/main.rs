@@ -350,7 +350,7 @@ async fn set_unwrapped(root: EventId, event: &Event, keys: &Keys) -> Result<(), 
     let client = get_client();
     let event = EventBuilder::new(Kind::Custom(9001), event.as_json())
         .tags(vec![Tag::event(root)])
-        .sign(keys)
+        .sign(keys) // keys must be random generated
         .await?;
 
     client.database().save_event(&event).await?;

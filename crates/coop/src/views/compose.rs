@@ -135,13 +135,15 @@ impl Compose {
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
             let client = get_client();
             let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
             // [IMPORTANT]
             // Make sure this event is never send,
             // this event existed just use for convert to Coop's Room later.
             let event = EventBuilder::private_msg_rumor(*pubkeys.last().unwrap(), "")
                 .tags(tags)
-                .sign(&signer)
+                .build(public_key)
+                .sign(&Keys::generate())
                 .await?;
 
             Ok(event)
