@@ -32,7 +32,10 @@ struct GlobalChatRegistry(Entity<ChatRegistry>);
 impl Global for GlobalChatRegistry {}
 
 #[derive(Debug)]
-pub struct NewRoom(pub WeakEntity<Room>);
+pub enum RoomEmitter {
+    Open(WeakEntity<Room>),
+    Request(RoomKind),
+}
 
 /// Main registry for managing chat rooms and user profiles
 ///
@@ -53,7 +56,7 @@ pub struct ChatRegistry {
     subscriptions: SmallVec<[Subscription; 2]>,
 }
 
-impl EventEmitter<NewRoom> for ChatRegistry {}
+impl EventEmitter<RoomEmitter> for ChatRegistry {}
 
 impl ChatRegistry {
     /// Retrieve the Global ChatRegistry instance
@@ -286,7 +289,7 @@ impl ChatRegistry {
             weak_room
         };
 
-        cx.emit(NewRoom(weak_room));
+        cx.emit(RoomEmitter::Open(weak_room));
     }
 
     /// Parse a Nostr event into a Coop Message and push it to the belonging room
@@ -295,12 +298,22 @@ impl ChatRegistry {
     /// Updates room ordering based on the most recent messages.
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
+        let author = event.pubkey;
+
+        let Some(profile) = Account::get_global(cx).profile.to_owned() else {
+            return;
+        };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             // Update room
             room.update(cx, |this, cx| {
                 this.created_at(event.created_at, cx);
-                this.set_ongoing(cx);
+
+                // Set this room is ongoing if the new message is from current user
+                if author == profile.public_key() {
+                    this.set_ongoing(cx);
+                }
+
                 // Emit the new message to the room
                 cx.defer_in(window, |this, window, cx| {
                     this.emit_message(event, window, cx);
@@ -312,8 +325,13 @@ impl ChatRegistry {
 
             cx.notify();
         } else {
+            let room = Room::new(&event).kind(RoomKind::Unknown);
+            let kind = room.kind;
+
             // Push the new room to the front of the list
-            self.rooms.insert(0, cx.new(|_| Room::new(&event)));
+            self.rooms.insert(0, cx.new(|_| room));
+
+            cx.emit(RoomEmitter::Request(kind));
             cx.notify();
         }
     }

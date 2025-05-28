@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use account::Account;
 use anyhow::Error;
-use chats::ChatRegistry;
+use chats::{ChatRegistry, RoomEmitter};
 use global::{
     constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH},
     get_client,
@@ -101,13 +101,16 @@ impl ChatSpace {
                 &chats,
                 window,
                 |this, _state, event, window, cx| {
-                    if let Some(room) = event.0.upgrade() {
-                        this.dock.update(cx, |this, cx| {
-                            let panel = chat::init(room, window, cx);
-                            this.add_panel(panel, DockPlacement::Center, window, cx);
-                        });
-                    } else {
-                        window.push_notification("Failed to open room. Please retry later.", cx);
+                    if let RoomEmitter::Open(room) = event {
+                        if let Some(room) = room.upgrade() {
+                            this.dock.update(cx, |this, cx| {
+                                let panel = chat::init(room, window, cx);
+                                this.add_panel(panel, DockPlacement::Center, window, cx);
+                            });
+                        } else {
+                            window
+                                .push_notification("Failed to open room. Please retry later.", cx);
+                        }
                     }
                 },
             ));
