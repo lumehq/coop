@@ -1,7 +1,7 @@
 use gpui::{
     div, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
     DismissEvent, DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Render, ScrollHandle,
     SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use std::sync::Arc;
@@ -295,24 +295,26 @@ impl TabPanel {
     /// Remove a panel from the tab panel
     pub fn remove_panel(
         &mut self,
-        panel: Arc<dyn PanelView>,
+        panel: &Arc<dyn PanelView>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.detach_panel(panel, window, cx);
         self.remove_self_if_empty(window, cx);
+
         cx.emit(PanelEvent::ZoomOut);
         cx.emit(PanelEvent::LayoutChanged);
     }
 
     fn detach_panel(
         &mut self,
-        panel: Arc<dyn PanelView>,
+        panel: &Arc<dyn PanelView>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let panel_view = panel.view();
         self.panels.retain(|p| p.view() != panel_view);
+
         if self.active_ix >= self.panels.len() {
             self.set_active_ix(self.panels.len().saturating_sub(1), window, cx)
         }
@@ -623,7 +625,16 @@ impl TabPanel {
                         .selected(active)
                         .disabled(disabled)
                         .when(!disabled, |this| {
-                            this.on_click(cx.listener(move |view, _, window, cx| {
+                            this.on_mouse_down(
+                                MouseButton::Middle,
+                                cx.listener({
+                                    let panel = panel.clone();
+                                    move |view, _, window, cx| {
+                                        view.remove_panel(&panel, window, cx);
+                                    }
+                                }),
+                            )
+                            .on_click(cx.listener(move |view, _, window, cx| {
                                 view.set_active_ix(ix, window, cx);
                             }))
                             .when(state.draggable, |this| {
@@ -820,10 +831,10 @@ impl TabPanel {
         // We must to split it to remove_panel, unless it will be crash by error:
         // Cannot update ui::dock::tab_panel::TabPanel while it is already being updated
         if is_same_tab {
-            self.detach_panel(panel.clone(), window, cx);
+            self.detach_panel(&panel, window, cx);
         } else {
             drag.tab_panel.update(cx, |view, cx| {
-                view.detach_panel(panel.clone(), window, cx);
+                view.detach_panel(&panel, window, cx);
                 view.remove_self_if_empty(window, cx);
             });
         }
@@ -1004,7 +1015,7 @@ impl TabPanel {
         cx: &mut Context<Self>,
     ) {
         if let Some(panel) = self.active_panel(cx) {
-            self.remove_panel(panel, window, cx);
+            self.remove_panel(&panel, window, cx);
         }
     }
 }
