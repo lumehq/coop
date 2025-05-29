@@ -1,9 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
+use account::Account;
 use async_utility::task::spawn;
 use chats::{
     message::Message,
-    room::{Room, SendError},
+    room::{Room, RoomKind, SendError},
 };
 use common::{nip96_upload, profile::RenderProfile};
 use global::get_client;
@@ -214,17 +215,39 @@ impl Chat {
         content
     }
 
+    // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let min_timestamp = new_msg.created_at.as_u64().saturating_sub(2);
+        let Some(current_user) = Account::get_global(cx).profile_ref() else {
+            return false;
+        };
 
-        self.messages.read(cx).iter().any(|existing| {
-            let existing = existing.borrow();
-            // Check if messages are within the time window
-            (existing.created_at.as_u64() >= min_timestamp) &&
-            // Compare content and author
-            (existing.content == new_msg.content) &&
-            (existing.author == new_msg.author)
-        })
+        let Some(author) = new_msg.author.as_ref() else {
+            return false;
+        };
+
+        if current_user.public_key() != author.public_key() {
+            return false;
+        }
+
+        let min_timestamp = new_msg.created_at.as_u64().saturating_sub(10);
+
+        self.messages
+            .read(cx)
+            .iter()
+            .filter(|m| {
+                m.borrow()
+                    .author
+                    .as_ref()
+                    .is_some_and(|p| p.public_key() == current_user.public_key())
+            })
+            .any(|existing| {
+                let existing = existing.borrow();
+                // Check if messages are within the time window
+                (existing.created_at.as_u64() >= min_timestamp) &&
+		        // Compare content and author
+		        (existing.content == new_msg.content) &&
+		        (existing.author == new_msg.author)
+            })
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -263,6 +286,13 @@ impl Chat {
                 if let Ok(reports) = send_message.await {
                     if !reports.is_empty() {
                         this.update(cx, |this, cx| {
+                            this.room.update(cx, |this, cx| {
+                                if this.kind != RoomKind::Ongoing {
+                                    this.kind = RoomKind::Ongoing;
+                                    cx.notify();
+                                }
+                            });
+
                             this.messages.update(cx, |this, cx| {
                                 if let Some(msg) = id.and_then(|id| {
                                     this.iter().find(|msg| msg.borrow().id == Some(id)).cloned()

@@ -1,7 +1,4 @@
-use std::{
-    cmp::Reverse,
-    collections::{HashMap, HashSet},
-};
+use std::{cmp::Reverse, collections::BTreeSet};
 
 use account::Account;
 use anyhow::Error;
@@ -32,7 +29,10 @@ struct GlobalChatRegistry(Entity<ChatRegistry>);
 impl Global for GlobalChatRegistry {}
 
 #[derive(Debug)]
-pub struct NewRoom(pub WeakEntity<Room>);
+pub enum RoomEmitter {
+    Open(WeakEntity<Room>),
+    Request(RoomKind),
+}
 
 /// Main registry for managing chat rooms and user profiles
 ///
@@ -53,7 +53,7 @@ pub struct ChatRegistry {
     subscriptions: SmallVec<[Subscription; 2]>,
 }
 
-impl EventEmitter<NewRoom> for ChatRegistry {}
+impl EventEmitter<RoomEmitter> for ChatRegistry {}
 
 impl ChatRegistry {
     /// Retrieve the Global ChatRegistry instance
@@ -131,9 +131,10 @@ impl ChatRegistry {
             .collect()
     }
 
-    /// Get the IDs of all rooms.
-    pub fn room_ids(&self, cx: &mut Context<Self>) -> Vec<u64> {
-        self.rooms.iter().map(|room| room.read(cx).id).collect()
+    /// Sort rooms by their created at.
+    pub fn sort(&mut self, cx: &mut Context<Self>) {
+        self.rooms.sort_by_key(|ev| Reverse(ev.read(cx).created_at));
+        cx.notify();
     }
 
     /// Search rooms by their name.
@@ -159,20 +160,15 @@ impl ChatRegistry {
     /// 3. Determines each room's type based on message frequency and trust status
     /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // [event] is the Nostr Event
-        // [usize] is the total number of messages, used to determine an ongoing conversation
-        // [bool] is used to determine if the room is trusted
-        type Rooms = Vec<(Event, usize, bool)>;
-
         // If the user is not logged in, do nothing
-        let Some(user) = Account::get_global(cx).profile_ref() else {
+        let Some(current_user) = Account::get_global(cx).profile_ref() else {
             return;
         };
 
         let client = get_client();
-        let public_key = user.public_key();
+        let public_key = current_user.public_key();
 
-        let task: Task<Result<Rooms, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             // Get messages sent by the user
             let send = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
@@ -187,15 +183,24 @@ impl ChatRegistry {
             let recv_events = client.database().query(recv).await?;
             let events = send_events.merge(recv_events);
 
-            let mut room_map: HashMap<u64, (Event, usize, bool)> = HashMap::new();
-            let mut trusted_keys: HashSet<PublicKey> = HashSet::new();
+            let mut rooms: BTreeSet<Room> = BTreeSet::new();
+            let mut trusted_keys: BTreeSet<PublicKey> = BTreeSet::new();
 
             // Process each event and group by room hash
             for event in events
                 .into_iter()
+                .sorted_by_key(|event| Reverse(event.created_at))
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
                 let hash = room_hash(&event);
+
+                if rooms.iter().any(|room| room.id == hash) {
+                    continue;
+                }
+
+                let mut public_keys = event.tags.public_keys().copied().collect_vec();
+                public_keys.push(event.pubkey);
+
                 let mut is_trust = trusted_keys.contains(&event.pubkey);
 
                 if !is_trust {
@@ -209,55 +214,50 @@ impl ChatRegistry {
                     }
                 }
 
-                room_map
-                    .entry(hash)
-                    .and_modify(|(_, count, trusted)| {
-                        *count += 1;
-                        *trusted = is_trust;
-                    })
-                    .or_insert((event, 1, is_trust));
+                // Check if current_user has sent a message to this room at least once
+                let filter = Filter::new()
+                    .kind(Kind::PrivateDirectMessage)
+                    .author(public_key)
+                    .pubkeys(public_keys);
+                // If current user has sent a message at least once, mark as ongoing
+                let is_ongoing = client.database().count(filter).await? >= 1;
+
+                if is_ongoing {
+                    rooms.insert(Room::new(&event).kind(RoomKind::Ongoing));
+                } else if is_trust {
+                    rooms.insert(Room::new(&event).kind(RoomKind::Trusted));
+                } else {
+                    rooms.insert(Room::new(&event));
+                }
             }
 
-            // Sort rooms by creation date (newest first)
-            let result: Vec<(Event, usize, bool)> = room_map
-                .into_values()
-                .sorted_by_key(|(ev, _, _)| Reverse(ev.created_at))
-                .collect();
-
-            Ok(result)
+            Ok(rooms)
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(events) = task.await {
-                this.update(cx, |this, cx| {
-                    let ids = this.room_ids(cx);
-                    let rooms: Vec<Entity<Room>> = events
+            let rooms = task
+                .await
+                .expect("Failed to load chat rooms. Please restart the application.");
+
+            this.update(cx, |this, cx| {
+                this.wait_for_eose = false;
+                this.rooms.extend(
+                    rooms
                         .into_iter()
-                        .filter_map(|(event, count, trusted)| {
-                            let hash = room_hash(&event);
-                            if !ids.iter().any(|this| this == &hash) {
-                                let kind = if count > 2 {
-                                    // If frequency count is greater than 2, mark this room as ongoing
-                                    RoomKind::Ongoing
-                                } else if trusted {
-                                    RoomKind::Trusted
-                                } else {
-                                    RoomKind::Unknown
-                                };
-                                Some(cx.new(|_| Room::new(&event).kind(kind)))
+                        .sorted_by_key(|room| Reverse(room.created_at))
+                        .filter_map(|room| {
+                            if !this.rooms.iter().any(|this| this.read(cx).id == room.id) {
+                                Some(cx.new(|_| room))
                             } else {
                                 None
                             }
                         })
-                        .collect();
+                        .collect_vec(),
+                );
 
-                    this.rooms.extend(rooms);
-                    this.wait_for_eose = false;
-
-                    cx.notify();
-                })
-                .ok();
-            }
+                cx.notify();
+            })
+            .ok();
         })
         .detach();
     }
@@ -280,7 +280,7 @@ impl ChatRegistry {
             weak_room
         };
 
-        cx.emit(NewRoom(weak_room));
+        cx.emit(RoomEmitter::Open(weak_room));
     }
 
     /// Parse a Nostr event into a Coop Message and push it to the belonging room
@@ -289,19 +289,40 @@ impl ChatRegistry {
     /// Updates room ordering based on the most recent messages.
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
+        let author = event.pubkey;
+
+        let Some(profile) = Account::get_global(cx).profile.to_owned() else {
+            return;
+        };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
+            // Update room
             room.update(cx, |this, cx| {
                 this.created_at(event.created_at, cx);
+
+                // Set this room is ongoing if the new message is from current user
+                if author == profile.public_key() {
+                    this.set_ongoing(cx);
+                }
+
                 // Emit the new message to the room
                 cx.defer_in(window, |this, window, cx| {
                     this.emit_message(event, window, cx);
                 });
             });
+
+            // Re-sort the rooms registry by their created at
+            self.sort(cx);
+
             cx.notify();
         } else {
+            let room = Room::new(&event).kind(RoomKind::Unknown);
+            let kind = room.kind;
+
             // Push the new room to the front of the list
-            self.rooms.insert(0, cx.new(|_| Room::new(&event)));
+            self.rooms.insert(0, cx.new(|_| room));
+
+            cx.emit(RoomEmitter::Request(kind));
             cx.notify();
         }
     }

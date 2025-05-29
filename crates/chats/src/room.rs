@@ -269,6 +269,18 @@ impl Room {
         self.members.len() > 2
     }
 
+    /// Set the room kind to ongoing
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The context to notify about the update
+    pub fn set_ongoing(&mut self, cx: &mut Context<Self>) {
+        if self.kind != RoomKind::Ongoing {
+            self.kind = RoomKind::Ongoing;
+            cx.notify();
+        }
+    }
+
     /// Updates the creation timestamp of the room
     ///
     /// # Arguments

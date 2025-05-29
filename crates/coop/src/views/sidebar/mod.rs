@@ -4,7 +4,7 @@ use account::Account;
 use async_utility::task::spawn;
 use chats::{
     room::{Room, RoomKind},
-    ChatRegistry,
+    ChatRegistry, RoomEmitter,
 };
 
 use common::{debounced_delay::DebouncedDelay, profile::RenderProfile};
@@ -18,6 +18,7 @@ use gpui::{
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use theme::ActiveTheme;
 use ui::{
     avatar::Avatar,
     button::{Button, ButtonRounded, ButtonVariants},
@@ -48,13 +49,14 @@ pub struct Sidebar {
     local_result: Entity<Option<Vec<Entity<Room>>>>,
     global_result: Entity<Option<Vec<Entity<Room>>>>,
     // Rooms
+    indicator: Entity<Option<RoomKind>>,
     active_filter: Entity<RoomKind>,
     trusted_only: bool,
     // GPUI
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl Sidebar {
@@ -64,13 +66,28 @@ impl Sidebar {
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let active_filter = cx.new(|_| RoomKind::Ongoing);
+        let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
 
+        let chats = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
+
+        subscriptions.push(cx.subscribe_in(
+            &chats,
+            window,
+            move |this, _chats, event, _window, cx| {
+                if let RoomEmitter::Request(kind) = event {
+                    this.indicator.update(cx, |this, cx| {
+                        *this = Some(kind.to_owned());
+                        cx.notify();
+                    });
+                }
+            },
+        ));
 
         subscriptions.push(cx.subscribe_in(
             &find_input,
@@ -103,6 +120,7 @@ impl Sidebar {
             find_debouncer: DebouncedDelay::new(),
             finding: false,
             trusted_only: false,
+            indicator,
             active_filter,
             find_input,
             local_result,
@@ -275,10 +293,14 @@ impl Sidebar {
     }
 
     fn set_filter(&mut self, kind: RoomKind, cx: &mut Context<Self>) {
+        self.indicator.update(cx, |this, cx| {
+            *this = None;
+            cx.notify();
+        });
         self.active_filter.update(cx, |this, cx| {
             *this = kind;
             cx.notify();
-        })
+        });
     }
 
     fn set_trusted_only(&mut self, cx: &mut Context<Self>) {
@@ -532,6 +554,20 @@ impl Render for Sidebar {
                                     .child(
                                         Button::new("all")
                                             .label("All")
+                                            .tooltip("All ongoing conversations")
+                                            .when_some(
+                                                self.indicator.read(cx).as_ref(),
+                                                |this, kind| {
+                                                    this.when(kind == &RoomKind::Ongoing, |this| {
+                                                        this.child(
+                                                            div()
+                                                                .size_1()
+                                                                .rounded_full()
+                                                                .bg(cx.theme().cursor),
+                                                        )
+                                                    })
+                                                },
+                                            )
                                             .small()
                                             .bold()
                                             .secondary()
@@ -544,6 +580,20 @@ impl Render for Sidebar {
                                     .child(
                                         Button::new("requests")
                                             .label("Requests")
+                                            .tooltip("Incoming new conversations")
+                                            .when_some(
+                                                self.indicator.read(cx).as_ref(),
+                                                |this, kind| {
+                                                    this.when(kind != &RoomKind::Ongoing, |this| {
+                                                        this.child(
+                                                            div()
+                                                                .size_1()
+                                                                .rounded_full()
+                                                                .bg(cx.theme().cursor),
+                                                        )
+                                                    })
+                                                },
+                                            )
                                             .small()
                                             .bold()
                                             .secondary()
