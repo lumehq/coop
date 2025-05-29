@@ -713,6 +713,15 @@ impl Chat {
                     })],
                 cx,
             ))
+            .on_mouse_down(
+                gpui::MouseButton::Middle,
+                cx.listener({
+                    let message = message.clone();
+                    move |this, _, _window, cx| {
+                        this.reply(message.clone(), cx);
+                    }
+                }),
+            )
             .hover(|this| this.bg(cx.theme().surface_background))
     }
 }

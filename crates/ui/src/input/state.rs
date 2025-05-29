@@ -1136,8 +1136,14 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if event.button == MouseButton::Middle {
+            self.paste(&Paste, window, cx);
+            return;
+        }
+
         self.selecting = true;
         let offset = self.index_for_mouse_position(event.position, window, cx);
+
         // Double click to select word
         if event.button == MouseButton::Left && event.click_count == 2 {
             self.select_word(offset, window, cx);
@@ -1213,9 +1219,10 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    pub(super) fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn paste(&mut self, _paste: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(clipboard) = cx.read_from_clipboard() {
             let mut new_text = clipboard.text().unwrap_or_default();
+
             if !self.is_multi_line() {
                 new_text = new_text.replace('\n', "");
             }
