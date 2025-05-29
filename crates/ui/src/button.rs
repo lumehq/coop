@@ -316,7 +316,7 @@ impl RenderOnce for Button {
                 this.bg(normal_style.bg)
                     .hover(|this| {
                         let hover_style = style.hovered(window, cx);
-                        this.bg(hover_style.bg)
+                        this.bg(hover_style.bg).text_color(hover_style.fg)
                     })
                     .active(|this| {
                         let active_style = style.active(window, cx);
