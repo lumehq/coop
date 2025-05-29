@@ -218,6 +218,10 @@ impl RenderOnce for TextInput {
                 MouseButton::Left,
                 window.listener_for(&self.state, InputState::on_mouse_down),
             )
+            .on_mouse_down(
+                MouseButton::Middle,
+                window.listener_for(&self.state, InputState::on_mouse_down),
+            )
             .on_mouse_up(
                 MouseButton::Left,
                 window.listener_for(&self.state, InputState::on_mouse_up),

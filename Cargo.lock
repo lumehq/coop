@@ -282,9 +282,9 @@ dependencies = [
 
 [[package]]
 name = "async-process"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63255f1dc2381611000436537bbedfe83183faa303a5a0edaf191edef06526bb"
+checksum = "cde3f4e40e6021d7acffc90095cbd6dc54cb593903d1de5832f435eb274b85dc"
 dependencies = [
  "async-channel",
  "async-io",
@@ -295,7 +295,7 @@ dependencies = [
  "cfg-if",
  "event-listener",
  "futures-lite 2.6.0",
- "rustix 0.38.44",
+ "rustix 1.0.7",
  "tracing",
 ]
 
@@ -312,9 +312,9 @@ dependencies = [
 
 [[package]]
 name = "async-signal"
-version = "0.2.10"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "637e00349800c0bdf8bfc21ebbc0b6524abea702b0da4168ac00d070d0c0b9f3"
+checksum = "d7605a4e50d4b06df3898d5a70bf5fde51ed9059b0434b73105193bc27acce0d"
 dependencies = [
  "async-io",
  "async-lock",
@@ -322,7 +322,7 @@ dependencies = [
  "cfg-if",
  "futures-core",
  "futures-io",
- "rustix 0.38.44",
+ "rustix 1.0.7",
  "signal-hook-registry",
  "slab",
  "windows-sys 0.59.0",
@@ -417,7 +417,7 @@ dependencies = [
  "gpui",
  "log",
  "nostr-sdk",
- "reqwest 0.12.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "reqwest 0.12.18",
  "smol",
  "tempfile",
 ]
@@ -1078,7 +1078,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1459,7 +1459,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1617,9 +1617,9 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "embed-resource"
-version = "3.0.2"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fbc6e0d8e0c03a655b53ca813f0463d2c956bc4db8138dbc89f120b066551e3"
+checksum = "e8fe7d068ca6b3a5782ca5ec9afc244acd99dd441e4686a83b1c3973aba1d489"
 dependencies = [
  "cc",
  "memchr",
@@ -2276,7 +2276,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2368,7 +2368,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2597,7 +2597,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2614,7 +2614,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -2683,22 +2683,28 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf9f1e950e0d9d1d3c47184416723cf29c0d1f93bd8cccf37e4beb6b44f31710"
+checksum = "b1c293b6b3d21eca78250dc7dbebd6b9210ec5530e038cbfe0661b5c47ab06e8"
 dependencies = [
+ "base64",
  "bytes",
  "futures-channel",
+ "futures-core",
  "futures-util",
  "http",
  "http-body",
  "hyper",
+ "ipnet",
  "libc",
+ "percent-encoding",
  "pin-project-lite",
  "socket2",
+ "system-configuration",
  "tokio",
  "tower-service",
  "tracing",
+ "windows-registry 0.4.0",
 ]
 
 [[package]]
@@ -2947,6 +2953,16 @@ name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
+
+[[package]]
+name = "iri-string"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbc5ebe9c3a1a7a5127f920a418f7585e9e758e911d0466ed004f393b0e380b2"
+dependencies = [
+ "memchr",
+ "serde",
+]
 
 [[package]]
 name = "is-docker"
@@ -3315,7 +3331,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3517,7 +3533,7 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 [[package]]
 name = "nostr"
 version = "0.42.1"
-source = "git+https://github.com/rust-nostr/nostr#50e48f8fe4624b57a5ee495c0df98020e5208736"
+source = "git+https://github.com/rust-nostr/nostr#c125038df931689eb11baf434f3b361e04937f5c"
 dependencies = [
  "aes",
  "base64",
@@ -3530,7 +3546,7 @@ dependencies = [
  "getrandom 0.2.16",
  "instant",
  "regex",
- "reqwest 0.12.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "reqwest 0.12.18",
  "scrypt",
  "secp256k1",
  "serde",
@@ -3542,7 +3558,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#50e48f8fe4624b57a5ee495c0df98020e5208736"
+source = "git+https://github.com/rust-nostr/nostr#c125038df931689eb11baf434f3b361e04937f5c"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3554,7 +3570,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#50e48f8fe4624b57a5ee495c0df98020e5208736"
+source = "git+https://github.com/rust-nostr/nostr#c125038df931689eb11baf434f3b361e04937f5c"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3565,7 +3581,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#50e48f8fe4624b57a5ee495c0df98020e5208736"
+source = "git+https://github.com/rust-nostr/nostr#c125038df931689eb11baf434f3b361e04937f5c"
 dependencies = [
  "async-utility",
  "heed",
@@ -3578,7 +3594,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#50e48f8fe4624b57a5ee495c0df98020e5208736"
+source = "git+https://github.com/rust-nostr/nostr#c125038df931689eb11baf434f3b361e04937f5c"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3594,7 +3610,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#50e48f8fe4624b57a5ee495c0df98020e5208736"
+source = "git+https://github.com/rust-nostr/nostr#c125038df931689eb11baf434f3b361e04937f5c"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4599,9 +4615,9 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
-version = "0.29.1"
+version = "0.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e85935612710191461ec9df47b4b5880dd6359d4fad3b2f2ed696215f6f3146"
+checksum = "6f96bfbb7df43d34a2b7b8582fcbcb676ba02a763265cb90bc8aabfd62b57d64"
 dependencies = [
  "bytemuck",
  "font-types",
@@ -4630,7 +4646,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "derive_refineable",
  "workspace-hack",
@@ -4664,59 +4680,6 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
-
-[[package]]
-name = "reqwest"
-version = "0.12.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d19c46a6fdd48bc4dab94b6103fccc55d34c67cc0ad04653aad4ea2a07cd7bbb"
-dependencies = [
- "base64",
- "bytes",
- "encoding_rs",
- "futures-core",
- "futures-util",
- "h2",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-tls",
- "hyper-util",
- "ipnet",
- "js-sys",
- "log",
- "mime",
- "mime_guess",
- "native-tls",
- "once_cell",
- "percent-encoding",
- "pin-project-lite",
- "quinn",
- "rustls",
- "rustls-pemfile",
- "rustls-pki-types",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "system-configuration",
- "tokio",
- "tokio-native-tls",
- "tokio-rustls",
- "tokio-socks",
- "tokio-util",
- "tower",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-streams",
- "web-sys",
- "webpki-roots 0.26.11",
- "windows-registry 0.4.0",
-]
 
 [[package]]
 name = "reqwest"
@@ -4767,9 +4730,60 @@ dependencies = [
 ]
 
 [[package]]
+name = "reqwest"
+version = "0.12.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e98ff6b0dbbe4d5a37318f433d4fc82babd21631f194d370409ceb2e40b2f0b5"
+dependencies = [
+ "base64",
+ "bytes",
+ "encoding_rs",
+ "futures-core",
+ "futures-util",
+ "h2",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-tls",
+ "hyper-util",
+ "ipnet",
+ "js-sys",
+ "log",
+ "mime",
+ "mime_guess",
+ "native-tls",
+ "once_cell",
+ "percent-encoding",
+ "pin-project-lite",
+ "quinn",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-rustls",
+ "tokio-socks",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-streams",
+ "web-sys",
+ "webpki-roots 1.0.0",
+]
+
+[[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4778,7 +4792,7 @@ dependencies = [
  "http_client_tls",
  "log",
  "regex",
- "reqwest 0.12.15 (git+https://github.com/zed-industries/reqwest.git?rev=951c770a32f1998d6e999cef3e59e0013e6c4415)",
+ "reqwest 0.12.15",
  "serde",
  "smol",
  "tokio",
@@ -5240,7 +5254,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "anyhow",
  "serde",
@@ -5435,9 +5449,9 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "skrifa"
-version = "0.31.1"
+version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9c3bb8cab5196b98d70c866ce1ea81ab516104d5b396f84ae80f8766b5d5b4e"
+checksum = "dbeb4ca4399663735553a09dd17ce7e49a0a0203f03b706b39628c4d913a8607"
 dependencies = [
  "bytemuck",
  "read-fonts",
@@ -5592,7 +5606,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "arrayvec",
  "log",
@@ -6158,6 +6172,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-http"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fdb0c213ca27a9f57ab69ddb290fd80d970922355b83ae380b395d3986b8a2e"
+dependencies = [
+ "bitflags 2.9.1",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "iri-string",
+ "pin-project-lite",
+ "tower",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
 name = "tower-layer"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6489,7 +6521,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#2a8242ac909ff5572d1ff5bb3e33ecb9337b456c"
+source = "git+https://github.com/zed-industries/zed#f9407db7d6eb7d5c2a3d79350662030bd83e748d"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -6513,8 +6545,6 @@ dependencies = [
  "tempfile",
  "tendril",
  "unicase",
- "unicode-script",
- "unicode-segmentation",
  "walkdir",
  "workspace-hack",
 ]
@@ -7468,12 +7498,12 @@ dependencies = [
 
 [[package]]
 name = "winreg"
-version = "0.52.0"
+version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
+checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
  "cfg-if",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
