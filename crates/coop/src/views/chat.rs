@@ -215,7 +215,7 @@ impl Chat {
     }
 
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let min_timestamp = new_msg.created_at.as_u64().saturating_sub(2);
+        let min_timestamp = new_msg.created_at.as_u64().saturating_sub(5);
 
         self.messages.read(cx).iter().any(|existing| {
             let existing = existing.borrow();
