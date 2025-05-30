@@ -1220,7 +1220,12 @@ impl InputState {
     }
 
     pub(super) fn paste(&mut self, _paste: &Paste, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(clipboard) = cx.read_from_clipboard() {
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let read_clipboard = cx.read_from_primary();
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        let read_clipboard = cx.read_from_clipboard();
+
+        if let Some(clipboard) = read_clipboard {
             let mut new_text = clipboard.text().unwrap_or_default();
 
             if !self.is_multi_line() {
