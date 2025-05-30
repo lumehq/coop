@@ -6,8 +6,9 @@ use std::{
 
 use gpui::{
     fill, point, px, relative, App, BorderStyle, Bounds, ContentMask, CursorStyle, Edges, Element,
-    EntityId, Hitbox, Hsla, IntoElement, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Position, ScrollHandle, ScrollWheelEvent, UniformListScrollHandle, Window,
+    EntityId, Hitbox, HitboxBehavior, Hsla, IntoElement, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, Position, ScrollHandle, ScrollWheelEvent,
+    UniformListScrollHandle, Window,
 };
 use theme::ActiveTheme;
 
@@ -431,7 +432,7 @@ impl Element for Scrollbar {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let hitbox = window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            window.insert_hitbox(bounds, false)
+            window.insert_hitbox(bounds, HitboxBehavior::Normal)
         });
 
         let mut states = vec![];
@@ -569,7 +570,7 @@ impl Element for Scrollbar {
             };
 
             let bar_hitbox = window.with_content_mask(Some(ContentMask { bounds }), |window| {
-                window.insert_hitbox(bounds, false)
+                window.insert_hitbox(bounds, HitboxBehavior::Normal)
             });
 
             states.push(AxisPrepaintState {

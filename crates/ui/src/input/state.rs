@@ -503,6 +503,13 @@ impl InputState {
             return;
         }
 
+        // Handle moving below the last line
+        if direction == 1 && new_line_index == 0 && new_sub_line > 0 && lines.len() == 1 {
+            // Move cursor to the end of the text
+            self.move_to(self.text.len(), window, cx);
+            return;
+        }
+
         if new_sub_line < 0 {
             if new_line_index > 0 {
                 new_line_index -= 1;

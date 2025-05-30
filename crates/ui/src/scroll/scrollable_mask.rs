@@ -1,7 +1,7 @@
 use gpui::{
     px, relative, App, Axis, BorderStyle, Bounds, ContentMask, Corners, Edges, Element, ElementId,
-    EntityId, GlobalElementId, Hitbox, Hsla, IntoElement, IsZero as _, LayoutId, PaintQuad, Pixels,
-    Point, Position, ScrollHandle, ScrollWheelEvent, Size, Style, Window,
+    EntityId, GlobalElementId, Hitbox, HitboxBehavior, Hsla, IntoElement, IsZero as _, LayoutId,
+    PaintQuad, Pixels, Point, Position, ScrollHandle, ScrollWheelEvent, Size, Style, Window,
 };
 
 use crate::AxisExt;
@@ -96,7 +96,7 @@ impl Element for ScrollableMask {
             size: bounds.size,
         };
 
-        window.insert_hitbox(cover_bounds, false)
+        window.insert_hitbox(cover_bounds, HitboxBehavior::Normal)
     }
 
     fn paint(
