@@ -1,7 +1,7 @@
 use gpui::{
     canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, App, Bounds, CursorStyle,
-    Decorations, Edges, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement,
-    Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
+    Decorations, Edges, HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement, Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
 use theme::ActiveTheme;
 
@@ -80,7 +80,7 @@ impl RenderOnce for WindowBorder {
                                         point(px(0.0), px(0.0)),
                                         window.window_bounds().get_bounds().size,
                                     ),
-                                    false,
+                                    HitboxBehavior::Normal,
                                 )
                             },
                             move |_bounds, hitbox, window, _cx| {
