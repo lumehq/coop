@@ -10,11 +10,10 @@ use common::{nip96_upload, profile::RenderProfile};
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, rems, svg,
-    white, AnyElement, App, AppContext, ClickEvent, ClipboardItem, Context, Div, Element, Empty,
-    Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    KeyDownEvent, ListAlignment, ListState, ObjectFit, ParentElement, PathPromptOptions, Render,
-    RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, StyledImage,
-    Subscription, Window,
+    white, AnyElement, App, AppContext, ClipboardItem, Context, Div, Element, Empty, Entity,
+    EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment,
+    ListState, ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
