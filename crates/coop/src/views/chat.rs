@@ -730,7 +730,7 @@ impl Chat {
                 ],
                 cx,
             ))
-            .on_double_click({
+            .on_mouse_down(gpui::MouseButton::Middle, {
                 let content = ClipboardItem::new_string(message.content.to_string());
                 cx.listener(move |_this, _event, _window, cx| {
                     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -739,15 +739,12 @@ impl Chat {
                     cx.write_to_clipboard(content.clone());
                 })
             })
-            .on_mouse_down(
-                gpui::MouseButton::Middle,
-                cx.listener({
-                    let message = message.clone();
-                    move |this, _, _window, cx| {
-                        this.reply(message.clone(), cx);
-                    }
-                }),
-            )
+            .on_double_click(cx.listener({
+                let message = message.clone();
+                move |this, _, _window, cx| {
+                    this.reply(message.clone(), cx);
+                }
+            }))
             .hover(|this| this.bg(cx.theme().surface_background))
     }
 }
