@@ -10,10 +10,10 @@ use common::{nip96_upload, profile::RenderProfile};
 use global::get_client;
 use gpui::{
     div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, rems, svg,
-    white, AnyElement, App, AppContext, Context, Div, Element, Empty, Entity, EventEmitter,
-    Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState,
-    ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    white, AnyElement, App, AppContext, ClipboardItem, Context, Div, Element, Empty, Entity,
+    EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment,
+    ListState, ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -30,7 +30,7 @@ use ui::{
     notification::Notification,
     popup_menu::PopupMenu,
     text::RichText,
-    v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
+    v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable, StyledExt,
 };
 
 use crate::views::subject;
@@ -700,28 +700,50 @@ impl Chat {
             )
             .child(message_border(cx))
             .child(message_actions(
-                vec![Button::new("reply")
-                    .icon(IconName::Reply)
-                    .tooltip("Reply")
-                    .small()
-                    .ghost()
-                    .on_click({
-                        let message = message.clone();
-                        cx.listener(move |this, _, _, cx| {
-                            this.reply(message.clone(), cx);
-                        })
-                    })],
+                vec![
+                    Button::new("reply")
+                        .icon(IconName::Reply)
+                        .tooltip("Reply")
+                        .small()
+                        .ghost()
+                        .on_click({
+                            let message = message.clone();
+                            cx.listener(move |this, _event, _window, cx| {
+                                this.reply(message.clone(), cx);
+                            })
+                        }),
+                    Button::new("copy")
+                        .icon(IconName::Copy)
+                        .tooltip("Copy Message")
+                        .small()
+                        .ghost()
+                        .on_click({
+                            let content = ClipboardItem::new_string(message.content.to_string());
+                            cx.listener(move |_this, _event, _window, cx| {
+                                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                                cx.write_to_primary(content.clone());
+                                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                                cx.write_to_clipboard(content.clone());
+                            })
+                        }),
+                ],
                 cx,
             ))
-            .on_mouse_down(
-                gpui::MouseButton::Middle,
-                cx.listener({
-                    let message = message.clone();
-                    move |this, _, _window, cx| {
-                        this.reply(message.clone(), cx);
-                    }
-                }),
-            )
+            .on_mouse_down(gpui::MouseButton::Middle, {
+                let content = ClipboardItem::new_string(message.content.to_string());
+                cx.listener(move |_this, _event, _window, cx| {
+                    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                    cx.write_to_primary(content.clone());
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
+                    cx.write_to_clipboard(content.clone());
+                })
+            })
+            .on_double_click(cx.listener({
+                let message = message.clone();
+                move |this, _, _window, cx| {
+                    this.reply(message.clone(), cx);
+                }
+            }))
             .hover(|this| this.bg(cx.theme().surface_background))
     }
 }
@@ -885,7 +907,7 @@ fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
         }))
 }
 
-fn message_actions(buttons: Vec<Button>, cx: &App) -> Div {
+fn message_actions(buttons: impl IntoIterator<Item = impl IntoElement>, cx: &App) -> Div {
     div()
         .group_hover("", |this| this.visible())
         .invisible()
@@ -899,6 +921,6 @@ fn message_actions(buttons: Vec<Button>, cx: &App) -> Div {
         .bg(cx.theme().background)
         .p_0p5()
         .flex()
-        .gap_0p5()
+        .gap_1()
         .children(buttons)
 }
