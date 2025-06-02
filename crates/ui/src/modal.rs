@@ -1,18 +1,17 @@
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement,
-    IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
-    Styled, Window,
+    actions, anchored, div, point, px, relative, Animation, AnimationExt as _, AnyElement, App, Bounds, ClickEvent,
+    Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point,
+    RenderOnce, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonCustomVariant, ButtonVariants as _},
-    v_flex, ContextModal, IconName, StyledExt,
-};
+use crate::animation::cubic_bezier;
+use crate::button::{Button, ButtonCustomVariant, ButtonVariants as _};
+use crate::{v_flex, ContextModal, IconName, StyledExt};
 
 actions!(modal, [Escape]);
 
@@ -81,10 +80,7 @@ impl Modal {
     }
 
     /// Sets the callback for when the modal is closed.
-    pub fn on_close(
-        mut self,
-        on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_close(mut self, on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_close = Rc::new(on_close);
         self
     }
@@ -206,26 +202,22 @@ impl RenderOnce for Modal {
                             })
                             .when(self.closable, |this| {
                                 this.child(
-                                    Button::new(SharedString::from(format!(
-                                        "modal-close-{layer_ix}"
-                                    )))
-                                    .icon(IconName::CloseCircleFill)
-                                    .absolute()
-                                    .top_1p5()
-                                    .right_2()
-                                    .custom(
-                                        ButtonCustomVariant::new(window, cx)
-                                            .foreground(cx.theme().icon_muted)
-                                            .color(cx.theme().ghost_element_background)
-                                            .hover(cx.theme().ghost_element_background)
-                                            .active(cx.theme().ghost_element_background),
-                                    )
-                                    .on_click(
-                                        move |_, window, cx| {
+                                    Button::new(SharedString::from(format!("modal-close-{layer_ix}")))
+                                        .icon(IconName::CloseCircleFill)
+                                        .absolute()
+                                        .top_1p5()
+                                        .right_2()
+                                        .custom(
+                                            ButtonCustomVariant::new(window, cx)
+                                                .foreground(cx.theme().icon_muted)
+                                                .color(cx.theme().ghost_element_background)
+                                                .hover(cx.theme().ghost_element_background)
+                                                .active(cx.theme().ghost_element_background),
+                                        )
+                                        .on_click(move |_, window, cx| {
                                             on_close(&ClickEvent::default(), window, cx);
                                             window.close_modal(cx);
-                                        },
-                                    ),
+                                        }),
                                 )
                             })
                             .child(self.content)

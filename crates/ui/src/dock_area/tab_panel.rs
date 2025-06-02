@@ -1,24 +1,23 @@
-use gpui::{
-    div, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
-    DismissEvent, DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
-};
 use std::sync::Arc;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, px, rems, App, AppContext, Context, Corner, DefiniteLength, DismissEvent, DragMoveEvent, Empty, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
+    Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+};
 use theme::ActiveTheme;
 
-use super::{
-    panel::PanelView, stack_panel::StackPanel, ClosePanel, DockArea, PanelEvent, PanelStyle,
-    ToggleZoom,
-};
-use crate::{
-    button::{Button, ButtonVariants as _},
-    dock_area::{dock::DockPlacement, panel::Panel},
-    h_flex,
-    popup_menu::{PopupMenu, PopupMenuExt},
-    tab::{tab_bar::TabBar, Tab},
-    v_flex, AxisExt, IconName, Placement, Selectable, Sizable, StyledExt,
-};
+use super::panel::PanelView;
+use super::stack_panel::StackPanel;
+use super::{ClosePanel, DockArea, PanelEvent, PanelStyle, ToggleZoom};
+use crate::button::{Button, ButtonVariants as _};
+use crate::dock_area::dock::DockPlacement;
+use crate::dock_area::panel::Panel;
+use crate::popup_menu::{PopupMenu, PopupMenuExt};
+use crate::tab::tab_bar::TabBar;
+use crate::tab::Tab;
+use crate::{h_flex, v_flex, AxisExt, IconName, Placement, Selectable, Sizable, StyledExt};
 
 #[derive(Clone)]
 struct TabState {
@@ -96,15 +95,11 @@ impl Panel for TabPanel {
             return false;
         }
 
-        self.active_panel(cx)
-            .map(|panel| panel.closable(cx))
-            .unwrap_or(true)
+        self.active_panel(cx).map(|panel| panel.closable(cx)).unwrap_or(true)
     }
 
     fn zoomable(&self, cx: &App) -> bool {
-        self.active_panel(cx)
-            .map(|panel| panel.zoomable(cx))
-            .unwrap_or(false)
+        self.active_panel(cx).map(|panel| panel.zoomable(cx)).unwrap_or(false)
     }
 
     fn visible(&self, cx: &App) -> bool {
@@ -201,12 +196,7 @@ impl TabPanel {
     }
 
     /// Add a panel to the end of the tabs
-    pub fn add_panel(
-        &mut self,
-        panel: Arc<dyn PanelView>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn add_panel(&mut self, panel: Arc<dyn PanelView>, window: &mut Window, cx: &mut Context<Self>) {
         self.add_panel_with_active(panel, true, window, cx);
     }
 
@@ -217,18 +207,10 @@ impl TabPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self
-            .panels
-            .iter()
-            .any(|p| p.panel_id(cx) == panel.panel_id(cx))
-        {
+        if self.panels.iter().any(|p| p.panel_id(cx) == panel.panel_id(cx)) {
             // Set the active panel to the matched panel
             if active {
-                if let Some(ix) = self
-                    .panels
-                    .iter()
-                    .position(|p| p.panel_id(cx) == panel.panel_id(cx))
-                {
+                if let Some(ix) = self.panels.iter().position(|p| p.panel_id(cx) == panel.panel_id(cx)) {
                     self.set_active_ix(ix, window, cx);
                 }
             }
@@ -271,13 +253,7 @@ impl TabPanel {
         cx.notify();
     }
 
-    fn insert_panel_at(
-        &mut self,
-        panel: Arc<dyn PanelView>,
-        ix: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn insert_panel_at(&mut self, panel: Arc<dyn PanelView>, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .panels
             .iter()
@@ -293,12 +269,7 @@ impl TabPanel {
     }
 
     /// Remove a panel from the tab panel
-    pub fn remove_panel(
-        &mut self,
-        panel: &Arc<dyn PanelView>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn remove_panel(&mut self, panel: &Arc<dyn PanelView>, window: &mut Window, cx: &mut Context<Self>) {
         self.detach_panel(panel, window, cx);
         self.remove_self_if_empty(window, cx);
 
@@ -306,12 +277,7 @@ impl TabPanel {
         cx.emit(PanelEvent::LayoutChanged);
     }
 
-    fn detach_panel(
-        &mut self,
-        panel: &Arc<dyn PanelView>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn detach_panel(&mut self, panel: &Arc<dyn PanelView>, window: &mut Window, cx: &mut Context<Self>) {
         let panel_view = panel.view();
         self.panels.retain(|p| p.view() != panel_view);
 
@@ -335,12 +301,7 @@ impl TabPanel {
         }
     }
 
-    pub(super) fn set_collapsed(
-        &mut self,
-        collapsed: bool,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn set_collapsed(&mut self, collapsed: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.is_collapsed = collapsed;
         cx.notify();
     }
@@ -376,13 +337,9 @@ impl TabPanel {
 
     /// Return all visible panels
     fn visible_panels<'a>(&'a self, cx: &'a App) -> impl Iterator<Item = Arc<dyn PanelView>> + 'a {
-        self.panels.iter().filter_map(|panel| {
-            if panel.visible(cx) {
-                Some(panel.clone())
-            } else {
-                None
-            }
-        })
+        self.panels
+            .iter()
+            .filter_map(|panel| if panel.visible(cx) { Some(panel.clone()) } else { None })
     }
 
     /// Return true if the tab panel is draggable.
@@ -399,12 +356,7 @@ impl TabPanel {
         !self.is_locked(cx)
     }
 
-    fn render_toolbar(
-        &self,
-        state: &TabState,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_toolbar(&self, state: &TabState, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let is_zoomed = self.is_zoomed && state.zoomable;
         let view = cx.entity().clone();
         let build_popup_menu = move |this, cx: &App| view.read(cx).popup_menu(this, cx);
@@ -425,9 +377,9 @@ impl TabPanel {
                         .small()
                         .ghost()
                         .tooltip("Zoom Out")
-                        .on_click(cx.listener(|view, _, window, cx| {
-                            view.on_action_toggle_zoom(&ToggleZoom, window, cx)
-                        })),
+                        .on_click(
+                            cx.listener(|view, _, window, cx| view.on_action_toggle_zoom(&ToggleZoom, window, cx)),
+                        ),
                 )
             })
             .child(
@@ -445,9 +397,7 @@ impl TabPanel {
                                     let name = if is_zoomed { "Zoom Out" } else { "Zoom In" };
                                     this.separator().menu(name, Box::new(ToggleZoom))
                                 })
-                                .when(closable, |this| {
-                                    this.separator().menu("Close", Box::new(ClosePanel))
-                                })
+                                .when(closable, |this| this.separator().menu("Close", Box::new(ClosePanel)))
                         }
                     })
                     .anchor(Corner::TopRight),
@@ -475,15 +425,12 @@ impl TabPanel {
 
         // Check if current TabPanel's entity_id matches the one stored in DockArea for this placement
         if !match placement {
-            DockPlacement::Left => {
-                dock_area.left_dock.is_some() && toggle_button_panels.left == Some(view_entity_id)
-            }
+            DockPlacement::Left => dock_area.left_dock.is_some() && toggle_button_panels.left == Some(view_entity_id),
             DockPlacement::Right => {
                 dock_area.right_dock.is_some() && toggle_button_panels.right == Some(view_entity_id)
             }
             DockPlacement::Bottom => {
-                dock_area.bottom_dock.is_some()
-                    && toggle_button_panels.bottom == Some(view_entity_id)
+                dock_area.bottom_dock.is_some() && toggle_button_panels.bottom == Some(view_entity_id)
             }
             DockPlacement::Center => unreachable!(),
         } {
@@ -537,12 +484,7 @@ impl TabPanel {
         )
     }
 
-    fn render_title_bar(
-        &self,
-        state: &TabState,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_title_bar(&self, state: &TabState, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity().clone();
 
         let Some(dock_area) = self.dock_area.upgrade() else {
@@ -572,13 +514,7 @@ impl TabPanel {
                         .min_w_16()
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .child(
-                            div()
-                                .w_full()
-                                .text_ellipsis()
-                                .text_xs()
-                                .child(panel.title(cx)),
-                        )
+                        .child(div().w_full().text_ellipsis().text_xs().child(panel.title(cx)))
                         .when(state.draggable, |this| {
                             this.on_drag(
                                 DragPanel {
@@ -638,13 +574,10 @@ impl TabPanel {
                                 view.set_active_ix(ix, window, cx);
                             }))
                             .when(state.draggable, |this| {
-                                this.on_drag(
-                                    DragPanel::new(panel.clone(), view.clone()),
-                                    |drag, _, _, cx| {
-                                        cx.stop_propagation();
-                                        cx.new(|_| drag.clone())
-                                    },
-                                )
+                                this.on_drag(DragPanel::new(panel.clone(), view.clone()), |drag, _, _, cx| {
+                                    cx.stop_propagation();
+                                    cx.new(|_| drag.clone())
+                                })
                             })
                             .when(state.droppable, |this| {
                                 this.drag_over::<DragPanel>(|this, _, _, cx| {
@@ -672,11 +605,8 @@ impl TabPanel {
                     .min_w_16()
                     .rounded(cx.theme().radius)
                     .when(state.droppable, |this| {
-                        this.drag_over::<DragPanel>(|this, _, _, cx| {
-                            this.bg(cx.theme().surface_background)
-                        })
-                        .on_drop(cx.listener(
-                            move |this, drag: &DragPanel, window, cx| {
+                        this.drag_over::<DragPanel>(|this, _, _, cx| this.bg(cx.theme().surface_background))
+                            .on_drop(cx.listener(move |this, drag: &DragPanel, window, cx| {
                                 this.will_split_placement = None;
 
                                 let ix = if drag.tab_panel == view {
@@ -686,8 +616,7 @@ impl TabPanel {
                                 };
 
                                 this.on_drop(drag, ix, false, window, cx)
-                            },
-                        ))
+                            }))
                     }),
             )
             .suffix(
@@ -703,12 +632,7 @@ impl TabPanel {
             .into_any_element()
     }
 
-    fn render_active_panel(
-        &self,
-        state: &TabState,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_active_panel(&self, state: &TabState, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.is_collapsed {
             return Empty {}.into_any_element();
         }
@@ -738,52 +662,44 @@ impl TabPanel {
                     ),
             )
             .when(state.droppable, |this| {
-                this.on_drag_move(cx.listener(Self::on_panel_drag_move))
-                    .child(
-                        div()
-                            .invisible()
-                            .absolute()
-                            .p_1()
-                            .child(
-                                div()
-                                    .rounded_lg()
-                                    .border_1()
-                                    .border_color(cx.theme().element_disabled)
-                                    .bg(cx.theme().drop_target_background)
-                                    .size_full(),
-                            )
-                            .map(|this| match self.will_split_placement {
-                                Some(placement) => {
-                                    let size = DefiniteLength::Fraction(0.35);
-                                    match placement {
-                                        Placement::Left => this.left_0().top_0().bottom_0().w(size),
-                                        Placement::Right => {
-                                            this.right_0().top_0().bottom_0().w(size)
-                                        }
-                                        Placement::Top => this.top_0().left_0().right_0().h(size),
-                                        Placement::Bottom => {
-                                            this.bottom_0().left_0().right_0().h(size)
-                                        }
-                                    }
+                this.on_drag_move(cx.listener(Self::on_panel_drag_move)).child(
+                    div()
+                        .invisible()
+                        .absolute()
+                        .p_1()
+                        .child(
+                            div()
+                                .rounded_lg()
+                                .border_1()
+                                .border_color(cx.theme().element_disabled)
+                                .bg(cx.theme().drop_target_background)
+                                .size_full(),
+                        )
+                        .map(|this| match self.will_split_placement {
+                            Some(placement) => {
+                                let size = DefiniteLength::Fraction(0.35);
+                                match placement {
+                                    Placement::Left => this.left_0().top_0().bottom_0().w(size),
+                                    Placement::Right => this.right_0().top_0().bottom_0().w(size),
+                                    Placement::Top => this.top_0().left_0().right_0().h(size),
+                                    Placement::Bottom => this.bottom_0().left_0().right_0().h(size),
                                 }
-                                None => this.top_0().left_0().size_full(),
-                            })
-                            .group_drag_over::<DragPanel>("", |this| this.visible())
-                            .on_drop(cx.listener(|this, drag: &DragPanel, window, cx| {
+                            }
+                            None => this.top_0().left_0().size_full(),
+                        })
+                        .group_drag_over::<DragPanel>("", |this| this.visible())
+                        .on_drop(
+                            cx.listener(|this, drag: &DragPanel, window, cx| {
                                 this.on_drop(drag, None, true, window, cx)
-                            })),
-                    )
+                            }),
+                        ),
+                )
             })
             .into_any_element()
     }
 
     /// Calculate the split direction based on the current mouse position
-    fn on_panel_drag_move(
-        &mut self,
-        drag: &DragMoveEvent<DragPanel>,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_panel_drag_move(&mut self, drag: &DragMoveEvent<DragPanel>, _window: &mut Window, cx: &mut Context<Self>) {
         let bounds = drag.bounds;
         let position = drag.event.position;
 
@@ -819,10 +735,7 @@ impl TabPanel {
         let is_same_tab = drag.tab_panel == cx.entity();
 
         // If target is same tab, and it is only one panel, do nothing.
-        if is_same_tab
-            && ix.is_none()
-            && (self.will_split_placement.is_none() || self.panels.len() == 1)
-        {
+        if is_same_tab && ix.is_none() && (self.will_split_placement.is_none() || self.panels.len() == 1) {
             return;
         }
 
@@ -929,41 +842,22 @@ impl TabPanel {
             new_stack_panel.update(cx, |view, cx| match placement {
                 Placement::Left | Placement::Top => {
                     view.add_panel(Arc::new(new_tab_panel), size, dock_area.clone(), window, cx);
-                    view.add_panel(
-                        Arc::new(tab_panel.clone()),
-                        None,
-                        dock_area.clone(),
-                        window,
-                        cx,
-                    );
+                    view.add_panel(Arc::new(tab_panel.clone()), None, dock_area.clone(), window, cx);
                 }
                 Placement::Right | Placement::Bottom => {
-                    view.add_panel(
-                        Arc::new(tab_panel.clone()),
-                        None,
-                        dock_area.clone(),
-                        window,
-                        cx,
-                    );
+                    view.add_panel(Arc::new(tab_panel.clone()), None, dock_area.clone(), window, cx);
                     view.add_panel(Arc::new(new_tab_panel), size, dock_area.clone(), window, cx);
                 }
             });
 
             if stack_panel != new_stack_panel {
                 stack_panel.update(cx, |view, cx| {
-                    view.replace_panel(
-                        Arc::new(tab_panel.clone()),
-                        new_stack_panel.clone(),
-                        window,
-                        cx,
-                    );
+                    view.replace_panel(Arc::new(tab_panel.clone()), new_stack_panel.clone(), window, cx);
                 });
             }
 
             cx.spawn_in(window, async move |_, cx| {
-                cx.update(|window, cx| {
-                    tab_panel.update(cx, |view, cx| view.remove_self_if_empty(window, cx))
-                })
+                cx.update(|window, cx| tab_panel.update(cx, |view, cx| view.remove_self_if_empty(window, cx)))
             })
             .detach()
         }
@@ -977,12 +871,7 @@ impl TabPanel {
         }
     }
 
-    fn on_action_toggle_zoom(
-        &mut self,
-        _action: &ToggleZoom,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_action_toggle_zoom(&mut self, _action: &ToggleZoom, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.zoomable(cx) {
             return;
         }
@@ -1008,12 +897,7 @@ impl TabPanel {
         .detach();
     }
 
-    fn on_action_close_panel(
-        &mut self,
-        _: &ClosePanel,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_action_close_panel(&mut self, _: &ClosePanel, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(panel) = self.active_panel(cx) {
             self.remove_panel(&panel, window, cx);
         }

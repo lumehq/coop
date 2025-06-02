@@ -1,19 +1,20 @@
+use std::str::FromStr;
+use std::time::Duration;
+
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::get_client;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, App, AppContext, Context, Entity, Flatten, IntoElement,
-    ParentElement, PathPromptOptions, Render, Styled, Task, Window,
+    div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement, PathPromptOptions, Render, Styled,
+    Task, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
-use std::{str::FromStr, time::Duration};
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    input::{InputState, TextInput},
-    ContextModal, Disableable, IconName, Sizable,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputState, TextInput};
+use ui::{ContextModal, Disableable, IconName, Sizable};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Profile> {
     Profile::new(window, cx)
@@ -32,10 +33,8 @@ pub struct Profile {
 impl Profile {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
-        let avatar_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
-        let website_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
+        let avatar_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+        let website_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -54,10 +53,10 @@ impl Profile {
             };
 
             let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
-                let client = get_client();
-                let signer = client.signer().await?;
+                let signer = shared_state().client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let metadata = client
+                let metadata = shared_state()
+                    .client
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?;
 
@@ -122,8 +121,7 @@ impl Profile {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         spawn(async move {
-                            let client = get_client();
-                            if let Ok(url) = nip96_upload(client, file_data).await {
+                            if let Ok(url) = nip96_upload(&shared_state().client, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
@@ -189,9 +187,7 @@ impl Profile {
         }
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = get_client();
-            _ = client.set_metadata(&new_metadata).await?;
-
+            let _ = shared_state().client.set_metadata(&new_metadata).await?;
             Ok(())
         });
 
@@ -243,19 +239,9 @@ impl Render for Profile {
                     .map(|this| {
                         let picture = self.avatar_input.read(cx).value();
                         if picture.is_empty() {
-                            this.child(
-                                img("brand/avatar.png")
-                                    .rounded_full()
-                                    .size_10()
-                                    .flex_shrink_0(),
-                            )
+                            this.child(img("brand/avatar.png").rounded_full().size_10().flex_shrink_0())
                         } else {
-                            this.child(
-                                img(picture.clone())
-                                    .rounded_full()
-                                    .size_10()
-                                    .flex_shrink_0(),
-                            )
+                            this.child(img(picture.clone()).rounded_full().size_10().flex_shrink_0())
                         }
                     })
                     .child(

@@ -1,24 +1,22 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use account::Account;
 use common::string_to_qr;
-use global::get_client_keys;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, red, relative, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, Image, IntoElement, ParentElement, Render, SharedString,
-    Styled, Subscription, Window,
+    div, img, red, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, Image,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    input::{InputEvent, InputState, TextInput},
-    notification::Notification,
-    popup_menu::PopupMenu,
-    ContextModal, Disableable, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
+use ui::popup_menu::PopupMenu;
+use ui::{ContextModal, Disableable, Sizable, StyledExt};
 
 #[derive(Debug, Clone)]
 struct CoopAuthUrlHandler;
@@ -66,78 +64,66 @@ impl Login {
         let error = cx.new(|_| None);
         let qr = cx.new(|_| None);
 
-        let key_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
-        let connect_relay =
-            cx.new(|cx| InputState::new(window, cx).default_value("wss://relay.nsec.app"));
+        let key_input = cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
+        let connect_relay = cx.new(|cx| InputState::new(window, cx).default_value("wss://relay.nsec.app"));
 
         let signers = smallvec![];
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.subscribe_in(
-            &key_input,
-            window,
-            move |this, _, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.login(window, cx);
-                }
-            },
-        ));
-
-        subscriptions.push(cx.subscribe_in(
-            &connect_relay,
-            window,
-            move |this, _, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.change_relay(window, cx);
-                }
-            },
-        ));
+        subscriptions.push(cx.subscribe_in(&key_input, window, move |this, _, event, window, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                this.login(window, cx);
+            }
+        }));
 
         subscriptions.push(
-            cx.observe_in(&connect_client, window, |this, uri, window, cx| {
-                let keys = get_client_keys().to_owned();
-
-                if let Some(uri) = uri.read(cx).clone() {
-                    if let Ok(qr) = string_to_qr(uri.to_string().as_str()) {
-                        this.qr.update(cx, |this, cx| {
-                            *this = Some(qr);
-                            cx.notify();
-                        });
-                    }
-
-                    // Shutdown all previous nostr connect clients
-                    for client in std::mem::take(&mut this.signers).into_iter() {
-                        cx.background_spawn(async move {
-                            client.shutdown().await;
-                        })
-                        .detach();
-                    }
-
-                    // Create a new nostr connect client
-                    match NostrConnect::new(uri, keys, Duration::from_secs(200), None) {
-                        Ok(mut signer) => {
-                            // Handle auth url
-                            signer.auth_url_handler(CoopAuthUrlHandler);
-                            // Store this signer for further clean up
-                            this.signers.push(signer.clone());
-
-                            Account::global(cx).update(cx, |this, cx| {
-                                this.login(signer, window, cx);
-                            });
-                        }
-                        Err(e) => {
-                            window.push_notification(Notification::error(e.to_string()), cx);
-                        }
-                    }
+            cx.subscribe_in(&connect_relay, window, move |this, _, event, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.change_relay(window, cx);
                 }
             }),
         );
 
+        subscriptions.push(cx.observe_in(&connect_client, window, |this, uri, window, cx| {
+            let keys = Keys::generate();
+
+            if let Some(uri) = uri.read(cx).clone() {
+                if let Ok(qr) = string_to_qr(uri.to_string().as_str()) {
+                    this.qr.update(cx, |this, cx| {
+                        *this = Some(qr);
+                        cx.notify();
+                    });
+                }
+
+                // Shutdown all previous nostr connect clients
+                for client in std::mem::take(&mut this.signers).into_iter() {
+                    cx.background_spawn(async move {
+                        client.shutdown().await;
+                    })
+                    .detach();
+                }
+
+                // Create a new nostr connect client
+                match NostrConnect::new(uri, keys, Duration::from_secs(200), None) {
+                    Ok(mut signer) => {
+                        // Handle auth url
+                        signer.auth_url_handler(CoopAuthUrlHandler);
+                        // Store this signer for further clean up
+                        this.signers.push(signer.clone());
+
+                        Account::global(cx).update(cx, |this, cx| {
+                            this.login(signer, window, cx);
+                        });
+                    }
+                    Err(e) => {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    }
+                }
+            }
+        }));
+
         cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(300))
-                .await;
+            cx.background_executor().timer(Duration::from_millis(300)).await;
 
             cx.update(|window, cx| {
                 this.update(cx, |this, cx| {
@@ -204,14 +190,12 @@ impl Login {
     }
 
     fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(relay_url) =
-            RelayUrl::parse(self.connect_relay.read(cx).value().to_string().as_str())
-        else {
+        let Ok(relay_url) = RelayUrl::parse(self.connect_relay.read(cx).value().to_string().as_str()) else {
             window.push_notification(Notification::error("Relay URL is not valid."), cx);
             return;
         };
 
-        let client_pubkey = get_client_keys().public_key();
+        let client_pubkey = Keys::generate().public_key();
         let uri = NostrConnectURI::client(client_pubkey, vec![relay_url], "Coop");
 
         self.connect_client.update(cx, |this, cx| {
@@ -275,62 +259,50 @@ impl Render for Login {
             .relative()
             .flex()
             .child(
-                div()
-                    .h_full()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        div()
-                            .w_80()
-                            .flex()
-                            .flex_col()
-                            .gap_8()
-                            .child(
-                                div()
-                                    .text_center()
-                                    .child(
-                                        div()
-                                            .text_center()
-                                            .text_xl()
-                                            .font_semibold()
-                                            .line_height(relative(1.3))
-                                            .child("Welcome Back!"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().text_muted)
-                                            .child("Continue with Private Key or Bunker"),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_3()
-                                    .child(TextInput::new(&self.key_input))
-                                    .child(
-                                        Button::new("login")
-                                            .label("Continue")
-                                            .primary()
-                                            .loading(self.is_logging_in)
-                                            .disabled(self.is_logging_in)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.login(window, cx);
-                                            })),
-                                    )
-                                    .when_some(self.error.read(cx).clone(), |this, error| {
-                                        this.child(
-                                            div()
-                                                .text_xs()
-                                                .text_center()
-                                                .text_color(red())
-                                                .child(error),
-                                        )
-                                    }),
-                            ),
-                    ),
+                div().h_full().flex_1().flex().items_center().justify_center().child(
+                    div()
+                        .w_80()
+                        .flex()
+                        .flex_col()
+                        .gap_8()
+                        .child(
+                            div()
+                                .text_center()
+                                .child(
+                                    div()
+                                        .text_center()
+                                        .text_xl()
+                                        .font_semibold()
+                                        .line_height(relative(1.3))
+                                        .child("Welcome Back!"),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(cx.theme().text_muted)
+                                        .child("Continue with Private Key or Bunker"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_3()
+                                .child(TextInput::new(&self.key_input))
+                                .child(
+                                    Button::new("login")
+                                        .label("Continue")
+                                        .primary()
+                                        .loading(self.is_logging_in)
+                                        .disabled(self.is_logging_in)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.login(window, cx);
+                                        })),
+                                )
+                                .when_some(self.error.read(cx).clone(), |this, error| {
+                                    this.child(div().text_xs().text_center().text_color(red()).child(error))
+                                }),
+                        ),
+                ),
             )
             .child(
                 div()
@@ -379,9 +351,7 @@ impl Render for Login {
                                         .rounded_2xl()
                                         .shadow_md()
                                         .when(cx.theme().mode.is_dark(), |this| {
-                                            this.shadow_none()
-                                                .border_1()
-                                                .border_color(cx.theme().border)
+                                            this.shadow_none().border_1().border_color(cx.theme().border)
                                         })
                                         .bg(cx.theme().background)
                                         .child(img(qr).h_64()),
@@ -395,15 +365,11 @@ impl Render for Login {
                                     .justify_center()
                                     .gap_1()
                                     .child(TextInput::new(&self.connect_relay).xsmall())
-                                    .child(
-                                        Button::new("change")
-                                            .label("Change")
-                                            .ghost()
-                                            .xsmall()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.change_relay(window, cx);
-                                            })),
-                                    ),
+                                    .child(Button::new("change").label("Change").ghost().xsmall().on_click(
+                                        cx.listener(move |this, _, window, cx| {
+                                            this.change_relay(window, cx);
+                                        }),
+                                    )),
                             ),
                     ),
             )

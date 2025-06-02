@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext, Axis, Context, Element, Entity,
-    InteractiveElement as _, IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
-    Point, Render, StatefulInteractiveElement, Style, Styled as _, WeakEntity, Window,
+    div, px, App, AppContext, Axis, Context, Element, Entity, InteractiveElement as _, IntoElement, MouseMoveEvent,
+    MouseUpEvent, ParentElement as _, Pixels, Point, Render, StatefulInteractiveElement, Style, Styled as _,
+    WeakEntity, Window,
 };
 use serde::{Deserialize, Serialize};
 use theme::ActiveTheme;
 
 use super::{DockArea, DockItem};
-use crate::{
-    dock_area::{panel::PanelView, tab_panel::TabPanel},
-    resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE},
-    AxisExt as _, StyledExt,
-};
+use crate::dock_area::panel::PanelView;
+use crate::dock_area::tab_panel::TabPanel;
+use crate::resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE};
+use crate::{AxisExt as _, StyledExt};
 
 #[derive(Clone, Render)]
 struct ResizePanel;
@@ -102,39 +102,22 @@ impl Dock {
         }
     }
 
-    pub fn left(
-        dock_area: WeakEntity<DockArea>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn left(dock_area: WeakEntity<DockArea>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self::new(dock_area, DockPlacement::Left, window, cx)
     }
 
-    pub fn bottom(
-        dock_area: WeakEntity<DockArea>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn bottom(dock_area: WeakEntity<DockArea>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self::new(dock_area, DockPlacement::Bottom, window, cx)
     }
 
-    pub fn right(
-        dock_area: WeakEntity<DockArea>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn right(dock_area: WeakEntity<DockArea>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self::new(dock_area, DockPlacement::Right, window, cx)
     }
 
     /// Update the Dock to be collapsible or not.
     ///
     /// And if the Dock is not collapsible, it will be open.
-    pub fn set_collapsible(
-        &mut self,
-        collapsible: bool,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_collapsible(&mut self, collapsible: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.collapsible = collapsible;
         if !collapsible {
             self.open = true
@@ -142,12 +125,7 @@ impl Dock {
         cx.notify();
     }
 
-    fn subscribe_panel_events(
-        dock_area: WeakEntity<DockArea>,
-        panel: &DockItem,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
+    fn subscribe_panel_events(dock_area: WeakEntity<DockArea>, panel: &DockItem, window: &mut Window, cx: &mut App) {
         match panel {
             DockItem::Tabs { view, .. } => {
                 window.defer(cx, {
@@ -215,21 +193,12 @@ impl Dock {
     }
 
     /// Add item to the Dock.
-    pub fn add_panel(
-        &mut self,
-        panel: Arc<dyn PanelView>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn add_panel(&mut self, panel: Arc<dyn PanelView>, window: &mut Window, cx: &mut Context<Self>) {
         self.panel.add_panel(panel, &self.dock_area, window, cx);
         cx.notify();
     }
 
-    fn render_resize_handle(
-        &mut self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_resize_handle(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let axis = self.placement.axis();
         let neg_offset = -HANDLE_PADDING;
         let view = cx.entity().clone();
@@ -282,21 +251,12 @@ impl Dock {
             })
     }
 
-    fn resize(
-        &mut self,
-        mouse_position: Point<Pixels>,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn resize(&mut self, mouse_position: Point<Pixels>, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.is_resizing {
             return;
         }
 
-        let dock_area = self
-            .dock_area
-            .upgrade()
-            .expect("DockArea is missing")
-            .read(cx);
+        let dock_area = self.dock_area.upgrade().expect("DockArea is missing").read(cx);
 
         let area_bounds = dock_area.bounds;
         let mut left_dock_size = Pixels(0.0);
@@ -368,9 +328,7 @@ impl Render for Dock {
                 DockPlacement::Center => unreachable!(),
             })
             // Bottom Dock should keep the title bar, then user can click the Toggle button
-            .when(!self.open && self.placement.is_bottom(), |this| {
-                this.h(px(29.))
-            })
+            .when(!self.open && self.placement.is_bottom(), |this| this.h(px(29.)))
             .map(|this| match &self.panel {
                 DockItem::Split { view, .. } => this.child(view.clone()),
                 DockItem::Tabs { view, .. } => this.child(view.clone()),

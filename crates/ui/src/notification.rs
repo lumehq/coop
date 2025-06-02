@@ -1,24 +1,20 @@
-use std::{
-    any::TypeId,
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-    time::Duration,
-};
+use std::any::TypeId;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    blue, div, green, prelude::FluentBuilder, px, red, yellow, Animation, AnimationExt, App,
-    AppContext, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    blue, div, green, px, red, yellow, Animation, AnimationExt, App, AppContext, ClickEvent, Context, DismissEvent,
+    ElementId, Entity, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use smol::Timer;
 use theme::ActiveTheme;
 
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonVariants as _},
-    h_flex, v_flex, Icon, IconName, Sizable as _, StyledExt,
-};
+use crate::animation::cubic_bezier;
+use crate::button::{Button, ButtonVariants as _};
+use crate::{h_flex, v_flex, Icon, IconName, Sizable as _, StyledExt};
 
 pub enum NotificationType {
     Info,
@@ -177,10 +173,7 @@ impl Notification {
     }
 
     /// Set the click callback of the notification.
-    pub fn on_click(
-        mut self,
-        on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_click(mut self, on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Arc::new(on_click));
         self
     }
@@ -272,8 +265,7 @@ impl Render for Notification {
             })
             .with_animation(
                 ElementId::NamedInteger("slide-down".into(), closing as u64),
-                Animation::new(Duration::from_secs_f64(0.15))
-                    .with_easing(cubic_bezier(0.4, 0., 0.2, 1.)),
+                Animation::new(Duration::from_secs_f64(0.15)).with_easing(cubic_bezier(0.4, 0., 0.2, 1.)),
                 move |this, delta| {
                     if closing {
                         let x_offset = px(0.) + delta * px(45.);
@@ -304,12 +296,7 @@ impl NotificationList {
         }
     }
 
-    pub fn push(
-        &mut self,
-        notification: impl Into<Notification>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn push(&mut self, notification: impl Into<Notification>, window: &mut Window, cx: &mut Context<Self>) {
         let notification = notification.into();
         let id = notification.id.clone();
         let autohide = notification.autohide;
@@ -332,9 +319,7 @@ impl NotificationList {
             // Sleep for 3 seconds to autohide the notification
             cx.spawn_in(window, async move |_, cx| {
                 Timer::after(Duration::from_secs(3)).await;
-                _ = notification.update_in(cx, |note, window, cx| {
-                    note.dismiss(&ClickEvent::default(), window, cx)
-                });
+                _ = notification.update_in(cx, |note, window, cx| note.dismiss(&ClickEvent::default(), window, cx));
             })
             .detach();
         }
@@ -352,11 +337,7 @@ impl NotificationList {
 }
 
 impl Render for NotificationList {
-    fn render(
-        &mut self,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
-    ) -> impl IntoElement {
+    fn render(&mut self, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let size = window.viewport_size();
         let items = self.notifications.iter().rev().take(10).rev().cloned();
 

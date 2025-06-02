@@ -1,19 +1,16 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, relative, AnyElement, App, DefiniteLength, Entity,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Rems, RenderOnce,
-    Styled, Window,
+    div, px, relative, AnyElement, App, DefiniteLength, Entity, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement as _, Rems, RenderOnce, Styled, Window,
 };
 use theme::ActiveTheme;
 
 use super::InputState;
-use crate::{
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    indicator::Indicator,
-    input::clear_button::clear_button,
-    scroll::{Scrollbar, ScrollbarAxis},
-    IconName, Sizable, Size, StyleSized,
-};
+use crate::button::{Button, ButtonVariants as _};
+use crate::indicator::Indicator;
+use crate::input::clear_button::clear_button;
+use crate::scroll::{Scrollbar, ScrollbarAxis};
+use crate::{h_flex, IconName, Sizable, Size, StyleSized};
 
 #[derive(IntoElement)]
 pub struct TextInput {
@@ -157,8 +154,7 @@ impl RenderOnce for TextInput {
         let prefix = self.prefix;
         let suffix = self.suffix;
 
-        let show_clear_button =
-            self.cleanable && !state.loading && !state.text.is_empty() && state.is_single_line();
+        let show_clear_button = self.cleanable && !state.loading && !state.text.is_empty() && state.is_single_line();
 
         let bg = if state.disabled {
             cx.theme().surface_background
@@ -174,9 +170,7 @@ impl RenderOnce for TextInput {
             .when(!state.disabled, |this| {
                 this.on_action(window.listener_for(&self.state, InputState::backspace))
                     .on_action(window.listener_for(&self.state, InputState::delete))
-                    .on_action(
-                        window.listener_for(&self.state, InputState::delete_to_beginning_of_line),
-                    )
+                    .on_action(window.listener_for(&self.state, InputState::delete_to_beginning_of_line))
                     .on_action(window.listener_for(&self.state, InputState::delete_to_end_of_line))
                     .on_action(window.listener_for(&self.state, InputState::delete_previous_word))
                     .on_action(window.listener_for(&self.state, InputState::delete_next_word))
@@ -233,8 +227,7 @@ impl RenderOnce for TextInput {
             .input_py(self.size)
             .input_h(self.size)
             .when(state.is_multi_line(), |this| {
-                this.h_auto()
-                    .when_some(self.height, |this, height| this.h(height))
+                this.h_auto().when_some(self.height, |this, height| this.h(height))
             })
             .when(self.appearance, |this| {
                 this.bg(bg)
@@ -282,21 +275,15 @@ impl RenderOnce for TextInput {
                     let scroll_size = state.scroll_size;
 
                     this.relative().child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .right(px(1.))
-                            .bottom_0()
-                            .child(
-                                Scrollbar::vertical(
-                                    entity_id,
-                                    state.scrollbar_state.clone(),
-                                    state.scroll_handle.clone(),
-                                    scroll_size,
-                                )
-                                .axis(ScrollbarAxis::Vertical),
-                            ),
+                        div().absolute().top_0().left_0().right(px(1.)).bottom_0().child(
+                            Scrollbar::vertical(
+                                entity_id,
+                                state.scrollbar_state.clone(),
+                                state.scroll_handle.clone(),
+                                scroll_size,
+                            )
+                            .axis(ScrollbarAxis::Vertical),
+                        ),
                     )
                 } else {
                     this

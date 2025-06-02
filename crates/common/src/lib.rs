@@ -1,8 +1,6 @@
-use std::{
-    collections::HashSet,
-    hash::{DefaultHasher, Hash, Hasher},
-    sync::Arc,
-};
+use std::collections::HashSet;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
 use global::constants::NIP96_SERVER;
 use gpui::{Image, ImageFormat};

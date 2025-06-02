@@ -1,21 +1,21 @@
-use std::{cell::Cell, rc::Rc, time::Duration};
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, uniform_list, AnyElement, AppContext, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyBinding, Length, ListSizingBehavior,
-    MouseButton, ParentElement, Render, Styled, Task, UniformListScrollHandle, Window,
+    div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyBinding, Length, ListSizingBehavior, MouseButton, MouseDownEvent,
+    ParentElement, Render, ScrollStrategy, Styled, Subscription, Task, UniformListScrollHandle, Window,
 };
-use gpui::{px, App, Context, EventEmitter, MouseDownEvent, ScrollStrategy, Subscription};
 use smol::Timer;
 use theme::ActiveTheme;
 
 use super::loading::Loading;
-use crate::{
-    actions::{Cancel, Confirm, SelectNext, SelectPrev},
-    input::{InputEvent, InputState, TextInput},
-    scroll::{Scrollbar, ScrollbarState},
-    v_flex, Icon, IconName, Sizable as _, Size,
-};
+use crate::actions::{Cancel, Confirm, SelectNext, SelectPrev};
+use crate::input::{InputEvent, InputState, TextInput};
+use crate::scroll::{Scrollbar, ScrollbarState};
+use crate::{v_flex, Icon, IconName, Sizable as _, Size};
 
 pub fn init(cx: &mut App) {
     let context: Option<&str> = Some("List");
@@ -45,12 +45,7 @@ pub trait ListDelegate: Sized + 'static {
 
     /// When Query Input change, this method will be called.
     /// You can perform search here.
-    fn perform_search(
-        &mut self,
-        query: &str,
-        window: &mut Window,
-        cx: &mut Context<List<Self>>,
-    ) -> Task<()> {
+    fn perform_search(&mut self, query: &str, window: &mut Window, cx: &mut Context<List<Self>>) -> Task<()> {
         Task::ready(())
     }
 
@@ -60,12 +55,7 @@ pub trait ListDelegate: Sized + 'static {
     /// Render the item at the given index.
     ///
     /// Return None will skip the item.
-    fn render_item(
-        &self,
-        ix: usize,
-        window: &mut Window,
-        cx: &mut Context<List<Self>>,
-    ) -> Option<Self::Item>;
+    fn render_item(&self, ix: usize, window: &mut Window, cx: &mut Context<List<Self>>) -> Option<Self::Item>;
 
     /// Return a Element to show when list is empty.
     fn render_empty(&self, window: &mut Window, cx: &mut Context<List<Self>>) -> impl IntoElement {
@@ -79,11 +69,7 @@ pub trait ListDelegate: Sized + 'static {
     /// For example: The last search results, or the last selected item.
     ///
     /// Default is None, that means no initial state.
-    fn render_initial(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<List<Self>>,
-    ) -> Option<AnyElement> {
+    fn render_initial(&self, window: &mut Window, cx: &mut Context<List<Self>>) -> Option<AnyElement> {
         None
     }
 
@@ -93,21 +79,12 @@ pub trait ListDelegate: Sized + 'static {
     }
 
     /// Returns a Element to show when loading, default is built-in Skeleton loading view.
-    fn render_loading(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<List<Self>>,
-    ) -> impl IntoElement {
+    fn render_loading(&self, window: &mut Window, cx: &mut Context<List<Self>>) -> impl IntoElement {
         Loading
     }
 
     /// Set the selected index, just store the ix, don't confirm.
-    fn set_selected_index(
-        &mut self,
-        ix: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<List<Self>>,
-    );
+    fn set_selected_index(&mut self, ix: Option<usize>, window: &mut Window, cx: &mut Context<List<Self>>);
 
     /// Set the confirm and give the selected index, this is means user have clicked the item or pressed Enter.
     ///
@@ -168,8 +145,7 @@ where
 {
     pub fn new(delegate: D, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let query_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search..."));
-        let _query_input_subscription =
-            cx.subscribe_in(&query_input, window, Self::on_query_input_event);
+        let _query_input_subscription = cx.subscribe_in(&query_input, window, Self::on_query_input_event);
 
         Self {
             focus_handle: cx.focus_handle(),
@@ -219,14 +195,8 @@ where
         self
     }
 
-    pub fn set_query_input(
-        &mut self,
-        query_input: Entity<InputState>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self._query_input_subscription =
-            cx.subscribe_in(&query_input, window, Self::on_query_input_event);
+    pub fn set_query_input(&mut self, query_input: Entity<InputState>, window: &mut Window, cx: &mut Context<Self>) {
+        self._query_input_subscription = cx.subscribe_in(&query_input, window, Self::on_query_input_event);
         self.query_input = Some(query_input);
     }
 
@@ -248,12 +218,7 @@ where
     }
 
     /// Set the selected index of the list, this will also scroll to the selected item.
-    pub fn set_selected_index(
-        &mut self,
-        ix: Option<usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_selected_index(&mut self, ix: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
         self.selected_index = ix;
         self.delegate.set_selected_index(ix, window, cx);
         self.scroll_to_selected_item(window, cx);
@@ -277,8 +242,7 @@ where
 
     /// Scroll to the item at the given index.
     pub fn scroll_to_item(&mut self, ix: usize, _: &mut Window, cx: &mut Context<Self>) {
-        self.vertical_scroll_handle
-            .scroll_to_item(ix, ScrollStrategy::Top);
+        self.vertical_scroll_handle.scroll_to_item(ix, ScrollStrategy::Top);
         cx.notify();
     }
 
@@ -289,8 +253,7 @@ where
 
     fn scroll_to_selected_item(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
         if let Some(ix) = self.selected_index {
-            self.vertical_scroll_handle
-                .scroll_to_item(ix, ScrollStrategy::Top);
+            self.vertical_scroll_handle.scroll_to_item(ix, ScrollStrategy::Top);
         }
     }
 
@@ -321,8 +284,7 @@ where
                     search.await;
 
                     _ = this.update_in(window, |this, _, _| {
-                        this.vertical_scroll_handle
-                            .scroll_to_item(0, ScrollStrategy::Top);
+                        this.vertical_scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
                         this.last_query = Some(text);
                     });
 
@@ -333,13 +295,9 @@ where
                     });
                 });
             }
-            InputEvent::PressEnter { secondary } => self.on_action_confirm(
-                &Confirm {
-                    secondary: *secondary,
-                },
-                window,
-                cx,
-            ),
+            InputEvent::PressEnter { secondary } => {
+                self.on_action_confirm(&Confirm { secondary: *secondary }, window, cx)
+            }
             _ => {}
         }
     }
@@ -394,12 +352,7 @@ where
         cx.notify();
     }
 
-    fn on_action_confirm(
-        &mut self,
-        confirm: &Confirm,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_action_confirm(&mut self, confirm: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
         if self.delegate.items_count(cx) == 0 {
             return;
         }
@@ -408,8 +361,7 @@ where
             return;
         };
 
-        self.delegate
-            .set_selected_index(self.selected_index, window, cx);
+        self.delegate.set_selected_index(self.selected_index, window, cx);
         self.delegate.confirm(confirm.secondary, window, cx);
         cx.emit(ListEvent::Confirm(ix));
         cx.notify();
@@ -423,12 +375,7 @@ where
         cx.notify();
     }
 
-    fn on_action_select_prev(
-        &mut self,
-        _: &SelectPrev,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_action_select_prev(&mut self, _: &SelectPrev, window: &mut Window, cx: &mut Context<Self>) {
         let items_count = self.delegate.items_count(cx);
         if items_count == 0 {
             return;
@@ -443,12 +390,7 @@ where
         self.select_item(selected_index, window, cx);
     }
 
-    fn on_action_select_next(
-        &mut self,
-        _: &SelectNext,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_action_select_next(&mut self, _: &SelectNext, window: &mut Window, cx: &mut Context<Self>) {
         let items_count = self.delegate.items_count(cx);
         if items_count == 0 {
             return;
@@ -470,12 +412,7 @@ where
         self.select_item(selected_index, window, cx);
     }
 
-    fn render_list_item(
-        &mut self,
-        ix: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn render_list_item(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.selected_index == Some(ix);
         let right_clicked = self.right_clicked_index == Some(ix);
 
@@ -580,17 +517,13 @@ where
                         .child(
                             TextInput::new(&input)
                                 .with_size(self.size)
-                                .prefix(
-                                    Icon::new(IconName::Search).text_color(cx.theme().text_muted),
-                                )
+                                .prefix(Icon::new(IconName::Search).text_color(cx.theme().text_muted))
                                 .cleanable()
                                 .appearance(false),
                         ),
                 )
             })
-            .when(loading, |this| {
-                this.child(self.delegate().render_loading(window, cx))
-            })
+            .when(loading, |this| this.child(self.delegate().render_loading(window, cx)))
             .when(!loading, |this| {
                 this.on_action(cx.listener(Self::on_action_cancel))
                     .on_action(cx.listener(Self::on_action_confirm))
@@ -613,17 +546,10 @@ where
                                         this.child(
                                             uniform_list(view, "uniform-list", items_count, {
                                                 move |list, visible_range, window, cx| {
-                                                    list.load_more_if_need(
-                                                        items_count,
-                                                        visible_range.end,
-                                                        window,
-                                                        cx,
-                                                    );
+                                                    list.load_more_if_need(items_count, visible_range.end, window, cx);
 
                                                     visible_range
-                                                        .map(|ix| {
-                                                            list.render_list_item(ix, window, cx)
-                                                        })
+                                                        .map(|ix| list.render_list_item(ix, window, cx))
                                                         .collect::<Vec<_>>()
                                                 }
                                             })

@@ -1,7 +1,7 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    prelude::FluentBuilder as _, svg, AnyElement, App, AppContext, Entity, Hsla, IntoElement,
-    Radians, Render, RenderOnce, SharedString, StyleRefinement, Styled, Svg, Transformation,
-    Window,
+    svg, AnyElement, App, AppContext, Entity, Hsla, IntoElement, Radians, Render, RenderOnce, SharedString,
+    StyleRefinement, Styled, Svg, Transformation, Window,
 };
 use theme::ActiveTheme;
 
@@ -236,9 +236,7 @@ impl Icon {
 
     /// Rotate the icon by the given angle
     pub fn rotate(mut self, radians: impl Into<Radians>) -> Self {
-        self.base = self
-            .base
-            .with_transformation(Transformation::rotate(radians));
+        self.base = self.base.with_transformation(Transformation::rotate(radians));
         self
     }
 }
@@ -285,11 +283,7 @@ impl From<Icon> for AnyElement {
 }
 
 impl Render for Icon {
-    fn render(
-        &mut self,
-        _window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
-    ) -> impl IntoElement {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let text_color = self.text_color.unwrap_or_else(|| cx.theme().icon);
 
         svg()

@@ -3,22 +3,20 @@ use std::str::FromStr;
 use account::Account;
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::get_client;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
-    Render, SharedString, Styled, Window,
+    div, img, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    input::{InputState, TextInput},
-    popup_menu::PopupMenu,
-    Disableable, Icon, IconName, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::input::{InputState, TextInput};
+use ui::popup_menu::PopupMenu;
+use ui::{Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
@@ -44,8 +42,7 @@ impl NewAccount {
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
-        let avatar_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+        let avatar_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -109,11 +106,10 @@ impl NewAccount {
                     };
 
                     if let Ok(file_data) = fs::read(path).await {
-                        let client = get_client();
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         spawn(async move {
-                            if let Ok(url) = nip96_upload(client, file_data).await {
+                            if let Ok(url) = nip96_upload(&shared_state().client, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
@@ -231,12 +227,7 @@ impl Render for NewAccount {
                             .gap_2()
                             .map(|this| {
                                 if self.avatar_input.read(cx).value().is_empty() {
-                                    this.child(
-                                        img("brand/avatar.png")
-                                            .rounded_full()
-                                            .size_10()
-                                            .flex_shrink_0(),
-                                    )
+                                    this.child(img("brand/avatar.png").rounded_full().size_10().flex_shrink_0())
                                 } else {
                                     this.child(
                                         img(self.avatar_input.read(cx).value().clone())
@@ -277,13 +268,7 @@ impl Render for NewAccount {
                             .child("Bio:")
                             .child(TextInput::new(&self.bio_input).small()),
                     )
-                    .child(
-                        div()
-                            .my_2()
-                            .w_full()
-                            .h_px()
-                            .bg(cx.theme().elevated_surface_background),
-                    )
+                    .child(div().my_2().w_full().h_px().bg(cx.theme().elevated_surface_background))
                     .child(
                         Button::new("submit")
                             .label("Continue")

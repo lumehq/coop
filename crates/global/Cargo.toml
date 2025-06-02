@@ -8,6 +8,9 @@ publish.workspace = true
 nostr-sdk.workspace = true
 dirs.workspace = true
 smol.workspace = true
+futures.workspace = true
+log.workspace = true
+anyhow.workspace = true
 
 whoami = "1.5.2"
 rustls = "0.23.23"

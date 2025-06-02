@@ -1,17 +1,15 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, AnyView, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement as _, Render, Styled, Window,
+    div, AnyView, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement as _,
+    Render, Styled, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{
-    input::InputState,
-    modal::Modal,
-    notification::{Notification, NotificationList},
-    window_border,
-};
+use crate::input::InputState;
+use crate::modal::Modal;
+use crate::notification::{Notification, NotificationList};
+use crate::window_border;
 
 /// Extension trait for [`WindowContext`] and [`ViewContext`] to add drawer functionality.
 pub trait ContextModal: Sized {
@@ -99,16 +97,14 @@ impl ContextModal for Window {
     fn push_notification(&mut self, note: impl Into<Notification>, cx: &mut App) {
         let note = note.into();
         Root::update(self, cx, move |root, window, cx| {
-            root.notification
-                .update(cx, |view, cx| view.push(note, window, cx));
+            root.notification.update(cx, |view, cx| view.push(note, window, cx));
             cx.notify();
         })
     }
 
     fn clear_notifications(&mut self, cx: &mut App) {
         Root::update(self, cx, move |root, window, cx| {
-            root.notification
-                .update(cx, |view, cx| view.clear(window, cx));
+            root.notification.update(cx, |view, cx| view.clear(window, cx));
             cx.notify();
         })
     }
@@ -184,10 +180,7 @@ impl Root {
     }
 
     // Render Notification layer.
-    pub fn render_notification_layer(
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Option<impl IntoElement> {
+    pub fn render_notification_layer(window: &mut Window, cx: &mut App) -> Option<impl IntoElement> {
         let root = window.root::<Root>()??;
 
         Some(div().child(root.read(cx).notification.clone()))

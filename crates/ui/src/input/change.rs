@@ -1,4 +1,5 @@
-use std::{fmt::Debug, ops::Range};
+use std::fmt::Debug;
+use std::ops::Range;
 
 use crate::history::HistoryItem;
 
@@ -12,12 +13,7 @@ pub struct Change {
 }
 
 impl Change {
-    pub fn new(
-        old_range: Range<usize>,
-        old_text: &str,
-        new_range: Range<usize>,
-        new_text: &str,
-    ) -> Self {
+    pub fn new(old_range: Range<usize>, old_text: &str, new_range: Range<usize>, new_text: &str) -> Self {
         Self {
             old_range,
             old_text: old_text.to_string(),

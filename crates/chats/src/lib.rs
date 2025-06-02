@@ -1,13 +1,13 @@
-use std::{cmp::Reverse, collections::BTreeSet};
+use std::cmp::Reverse;
+use std::collections::BTreeSet;
 
 use account::Account;
 use anyhow::Error;
 use common::room_hash;
-use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use global::get_client;
-use gpui::{
-    App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
-};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use global::shared_state;
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -96,10 +96,7 @@ impl ChatRegistry {
 
     /// Get a room by its ID.
     pub fn room(&self, id: &u64, cx: &App) -> Option<Entity<Room>> {
-        self.rooms
-            .iter()
-            .find(|model| model.read(cx).id == *id)
-            .cloned()
+        self.rooms.iter().find(|model| model.read(cx).id == *id).cloned()
     }
 
     /// Get room by its position.
@@ -165,19 +162,15 @@ impl ChatRegistry {
             return;
         };
 
-        let client = get_client();
+        let client = &shared_state().client;
         let public_key = current_user.public_key();
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             // Get messages sent by the user
-            let send = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .author(public_key);
+            let send = Filter::new().kind(Kind::PrivateDirectMessage).author(public_key);
 
             // Get messages received by the user
-            let recv = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .pubkey(public_key);
+            let recv = Filter::new().kind(Kind::PrivateDirectMessage).pubkey(public_key);
 
             let send_events = client.database().query(send).await?;
             let recv_events = client.database().query(recv).await?;
@@ -264,11 +257,7 @@ impl ChatRegistry {
 
     /// Push a new Room to the global registry
     pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
-        let weak_room = if let Some(room) = self
-            .rooms
-            .iter()
-            .find(|this| this.read(cx).id == room.read(cx).id)
-        {
+        let weak_room = if let Some(room) = self.rooms.iter().find(|this| this.read(cx).id == room.read(cx).id) {
             room.downgrade()
         } else {
             let weak_room = room.downgrade();

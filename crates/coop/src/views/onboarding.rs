@@ -1,14 +1,12 @@
 use gpui::{
-    div, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    popup_menu::PopupMenu,
-    Icon, IconName, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::popup_menu::PopupMenu;
+use ui::{Icon, IconName, StyledExt};
 
 use crate::chatspace;
 
@@ -96,13 +94,7 @@ impl Render for Onboarding {
                     .child(
                         div()
                             .text_center()
-                            .child(
-                                div()
-                                    .text_xl()
-                                    .font_semibold()
-                                    .line_height(relative(1.3))
-                                    .child(TITLE),
-                            )
+                            .child(div().text_xl().font_semibold().line_height(relative(1.3)).child(TITLE))
                             .child(div().text_color(cx.theme().text_muted).child(SUBTITLE)),
                     ),
             )

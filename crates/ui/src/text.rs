@@ -1,13 +1,16 @@
+use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::Arc;
+
 use common::profile::RenderProfile;
 use gpui::{
-    AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
-    SharedString, StyledText, UnderlineStyle, Window,
+    AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement, SharedString,
+    StyledText, UnderlineStyle, Window,
 };
 use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::{collections::HashMap, ops::Range, sync::Arc};
 use theme::ActiveTheme;
 
 static NOSTR_URI_REGEX: Lazy<Regex> =
@@ -28,8 +31,7 @@ impl From<HighlightStyle> for Highlight {
     }
 }
 
-type CustomRangeTooltipFn =
-    Option<Arc<dyn Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView>>>;
+type CustomRangeTooltipFn = Option<Arc<dyn Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView>>>;
 
 #[derive(Clone, Default)]
 pub struct RichText {

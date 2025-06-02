@@ -1,13 +1,12 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use global::{
-    constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID},
-    get_client,
-};
+use global::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID};
+use global::shared_state;
 use gpui::{App, AppContext, Context, Entity, Global, Task, Window};
 use nostr_sdk::prelude::*;
-use ui::{notification::Notification, ContextModal};
+use ui::notification::Notification;
+use ui::ContextModal;
 
 struct GlobalAccount(Entity<Account>);
 
@@ -41,14 +40,14 @@ impl Account {
         S: NostrSigner + 'static,
     {
         let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
-            let client = get_client();
             let public_key = signer.get_public_key().await?;
 
             // Update signer
-            client.set_signer(signer).await;
+            shared_state().client.set_signer(signer).await;
 
             // Fetch user's metadata
-            let metadata = client
+            let metadata = shared_state()
+                .client
                 .fetch_metadata(public_key, Duration::from_secs(2))
                 .await?
                 .unwrap_or_default();
@@ -71,10 +70,8 @@ impl Account {
                 .ok();
             }
             Err(e) => {
-                cx.update(|window, cx| {
-                    window.push_notification(Notification::error(e.to_string()), cx)
-                })
-                .ok();
+                cx.update(|window, cx| window.push_notification(Notification::error(e.to_string()), cx))
+                    .ok();
             }
         })
         .detach();
@@ -89,20 +86,17 @@ impl Account {
             "wss://nos.lol",
         ];
 
-        const DEFAULT_MESSAGING_RELAYS: [&str; 2] =
-            ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
+        const DEFAULT_MESSAGING_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
 
         let keys = Keys::generate();
         let public_key = keys.public_key();
 
         let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
-            let client = get_client();
-
             // Update signer
-            client.set_signer(keys).await;
+            shared_state().client.set_signer(keys).await;
 
             // Set metadata
-            client.set_metadata(&metadata).await?;
+            shared_state().client.set_metadata(&metadata).await?;
 
             // Create relay list
             let tags: Vec<Tag> = DEFAULT_NIP_65_RELAYS
@@ -118,7 +112,7 @@ impl Account {
 
             let builder = EventBuilder::new(Kind::RelayList, "").tags(tags);
 
-            if let Err(e) = client.send_event_builder(builder).await {
+            if let Err(e) = shared_state().client.send_event_builder(builder).await {
                 log::error!("Failed to send relay list event: {}", e);
             };
 
@@ -136,7 +130,7 @@ impl Account {
 
             let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
 
-            if let Err(e) = client.send_event_builder(builder).await {
+            if let Err(e) = shared_state().client.send_event_builder(builder).await {
                 log::error!("Failed to send messaging relay list event: {}", e);
             };
 
@@ -157,10 +151,8 @@ impl Account {
                 })
                 .ok();
             } else {
-                cx.update(|window, cx| {
-                    window.push_notification(Notification::error("Failed to create account."), cx)
-                })
-                .ok();
+                cx.update(|window, cx| window.push_notification(Notification::error("Failed to create account."), cx))
+                    .ok();
             }
         })
         .detach();
@@ -197,31 +189,27 @@ impl Account {
             .author(user)
             .limit(10);
 
-        let data = Filter::new()
-            .author(user)
-            .since(Timestamp::now())
-            .kinds(vec![
-                Kind::Metadata,
-                Kind::ContactList,
-                Kind::MuteList,
-                Kind::SimpleGroups,
-                Kind::InboxRelays,
-                Kind::RelayList,
-            ]);
+        let data = Filter::new().author(user).since(Timestamp::now()).kinds(vec![
+            Kind::Metadata,
+            Kind::ContactList,
+            Kind::MuteList,
+            Kind::SimpleGroups,
+            Kind::InboxRelays,
+            Kind::RelayList,
+        ]);
 
         let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
         let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = get_client();
-            client.subscribe(metadata, Some(opts)).await?;
-            client.subscribe(data, None).await?;
+            shared_state().client.subscribe(metadata, Some(opts)).await?;
+            shared_state().client.subscribe(data, None).await?;
 
             let sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-            client.subscribe_with_id(sub_id, msg, Some(opts)).await?;
+            shared_state().client.subscribe_with_id(sub_id, msg, Some(opts)).await?;
 
             let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-            client.subscribe_with_id(sub_id, new_msg, None).await?;
+            shared_state().client.subscribe_with_id(sub_id, new_msg, None).await?;
 
             Ok(())
         });

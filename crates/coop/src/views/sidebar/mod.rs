@@ -1,33 +1,32 @@
-use std::{collections::BTreeSet, ops::Range, time::Duration};
+use std::collections::BTreeSet;
+use std::ops::Range;
+use std::time::Duration;
 
 use account::Account;
 use async_utility::task::spawn;
-use chats::{
-    room::{Room, RoomKind},
-    ChatRegistry, RoomEmitter,
-};
-
-use common::{debounced_delay::DebouncedDelay, profile::RenderProfile};
+use chats::room::{Room, RoomKind};
+use chats::{ChatRegistry, RoomEmitter};
+use common::debounced_delay::DebouncedDelay;
+use common::profile::RenderProfile;
 use element::DisplayRoom;
-use global::{constants::SEARCH_RELAYS, get_client};
+use global::constants::SEARCH_RELAYS;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, rems, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache,
-    SharedString, Styled, Subscription, Task, Window,
+    div, rems, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, Render, RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::{
-    avatar::Avatar,
-    button::{Button, ButtonRounded, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    input::{InputEvent, InputState, TextInput},
-    popup_menu::{PopupMenu, PopupMenuExt},
-    skeleton::Skeleton,
-    ContextModal, IconName, Selectable, Sizable, StyledExt,
-};
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::popup_menu::{PopupMenu, PopupMenuExt};
+use ui::skeleton::Skeleton;
+use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::chatspace::{ModalKind, ToggleModal};
 
@@ -70,29 +69,24 @@ impl Sidebar {
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
 
-        let find_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
+        let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
 
         let chats = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.subscribe_in(
-            &chats,
-            window,
-            move |this, _chats, event, _window, cx| {
+        subscriptions.push(
+            cx.subscribe_in(&chats, window, move |this, _chats, event, _window, cx| {
                 if let RoomEmitter::Request(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();
                     });
                 }
-            },
-        ));
+            }),
+        );
 
-        subscriptions.push(cx.subscribe_in(
-            &find_input,
-            window,
-            |this, _state, event, _window, cx| {
+        subscriptions.push(
+            cx.subscribe_in(&find_input, window, |this, _state, event, _window, cx| {
                 match event {
                     InputEvent::PressEnter { .. } => this.search(cx),
                     InputEvent::Change(text) => {
@@ -101,17 +95,16 @@ impl Sidebar {
                             this.clear_search_results(cx);
                         } else {
                             // Run debounced search
-                            this.find_debouncer.fire_new(
-                                Duration::from_millis(FIND_DELAY),
-                                cx,
-                                |this, cx| this.debounced_search(cx),
-                            );
+                            this.find_debouncer
+                                .fire_new(Duration::from_millis(FIND_DELAY), cx, |this, cx| {
+                                    this.debounced_search(cx)
+                                });
                         }
                     }
                     _ => {}
                 }
-            },
-        ));
+            }),
+        );
 
         Self {
             name: "Chat Sidebar".into(),
@@ -142,14 +135,13 @@ impl Sidebar {
         let query = self.find_input.read(cx).value().clone();
 
         cx.background_spawn(async move {
-            let client = get_client();
-
             let filter = Filter::new()
                 .kind(Kind::Metadata)
                 .search(query.to_lowercase())
                 .limit(FIND_LIMIT);
 
-            let events = client
+            let events = shared_state()
+                .client
                 .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
                 .await?
                 .into_iter()
@@ -160,8 +152,7 @@ impl Sidebar {
             let (tx, rx) = smol::channel::bounded::<Room>(10);
 
             spawn(async move {
-                let client = get_client();
-                let signer = client.signer().await.expect("signer is required");
+                let signer = shared_state().client.signer().await.expect("signer is required");
                 let public_key = signer.get_public_key().await.expect("error");
 
                 for event in events.into_iter() {
@@ -248,10 +239,7 @@ impl Sidebar {
             cx.spawn(async move |this, cx| {
                 if let Ok(result) = task.await {
                     this.update(cx, |this, cx| {
-                        let result = result
-                            .into_iter()
-                            .map(|room| cx.new(|_| room))
-                            .collect_vec();
+                        let result = result.into_iter().map(|room| cx.new(|_| room)).collect_vec();
 
                         this.set_finding(false, cx);
 
@@ -555,19 +543,11 @@ impl Render for Sidebar {
                                         Button::new("all")
                                             .label("All")
                                             .tooltip("All ongoing conversations")
-                                            .when_some(
-                                                self.indicator.read(cx).as_ref(),
-                                                |this, kind| {
-                                                    this.when(kind == &RoomKind::Ongoing, |this| {
-                                                        this.child(
-                                                            div()
-                                                                .size_1()
-                                                                .rounded_full()
-                                                                .bg(cx.theme().cursor),
-                                                        )
-                                                    })
-                                                },
-                                            )
+                                            .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
+                                                this.when(kind == &RoomKind::Ongoing, |this| {
+                                                    this.child(div().size_1().rounded_full().bg(cx.theme().cursor))
+                                                })
+                                            })
                                             .small()
                                             .bold()
                                             .secondary()
@@ -581,19 +561,11 @@ impl Render for Sidebar {
                                         Button::new("requests")
                                             .label("Requests")
                                             .tooltip("Incoming new conversations")
-                                            .when_some(
-                                                self.indicator.read(cx).as_ref(),
-                                                |this, kind| {
-                                                    this.when(kind != &RoomKind::Ongoing, |this| {
-                                                        this.child(
-                                                            div()
-                                                                .size_1()
-                                                                .rounded_full()
-                                                                .bg(cx.theme().cursor),
-                                                        )
-                                                    })
-                                                },
-                                            )
+                                            .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
+                                                this.when(kind != &RoomKind::Ongoing, |this| {
+                                                    this.child(div().size_1().rounded_full().bg(cx.theme().cursor))
+                                                })
+                                            })
                                             .small()
                                             .bold()
                                             .secondary()
@@ -624,23 +596,12 @@ impl Render for Sidebar {
                             }),
                     )
                     .when(chats.wait_for_eose, |this| {
-                        this.child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .children(self.render_skeleton(10)),
-                        )
+                        this.child(div().flex().flex_col().gap_1().children(self.render_skeleton(10)))
                     })
                     .child(
-                        uniform_list(
-                            cx.entity(),
-                            "rooms",
-                            rooms.len(),
-                            move |this, range, _window, cx| {
-                                this.render_uniform_item(&rooms, range, cx)
-                            },
-                        )
+                        uniform_list(cx.entity(), "rooms", rooms.len(), move |this, range, _window, cx| {
+                            this.render_uniform_item(&rooms, range, cx)
+                        })
                         .h_full(),
                     ),
             )

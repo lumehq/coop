@@ -1,7 +1,10 @@
+use std::cell::RefCell;
+use std::iter::IntoIterator;
+use std::rc::Rc;
+
 use chrono::{Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
-use std::{cell::RefCell, iter::IntoIterator, rc::Rc};
 
 use crate::room::SendError;
 

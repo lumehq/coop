@@ -1,7 +1,7 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, Axis, Div, ElementId, InteractiveElement,
-    IntoElement, ParentElement as _, Pixels, RenderOnce, Stateful, StatefulInteractiveElement,
-    Styled as _, Window,
+    div, px, App, Axis, Div, ElementId, InteractiveElement, IntoElement, ParentElement as _, Pixels, RenderOnce,
+    Stateful, StatefulInteractiveElement, Styled as _, Window,
 };
 use theme::ActiveTheme;
 
@@ -65,9 +65,7 @@ impl RenderOnce for ResizeHandle {
                 div()
                     .rounded_full()
                     .hover(|this| this.bg(cx.theme().border_variant))
-                    .when(self.axis.is_horizontal(), |this| {
-                        this.h_full().w(HANDLE_SIZE)
-                    })
+                    .when(self.axis.is_horizontal(), |this| this.h_full().w(HANDLE_SIZE))
                     .when(self.axis.is_vertical(), |this| this.w_full().h(HANDLE_SIZE)),
             )
     }

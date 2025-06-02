@@ -1,9 +1,11 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui::{
-    canvas, div, relative, AnyElement, App, Div, Element, ElementId, EntityId, GlobalElementId,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Position, ScrollHandle, SharedString,
-    Size, Stateful, StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
+    canvas, div, relative, AnyElement, App, Div, Element, ElementId, EntityId, GlobalElementId, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Position, ScrollHandle, SharedString, Size, Stateful,
+    StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
 };
-use std::{cell::Cell, rc::Rc};
 
 use super::{Scrollbar, ScrollbarAxis, ScrollbarState};
 
@@ -22,11 +24,9 @@ where
     E: Element,
 {
     pub(crate) fn new(view_id: EntityId, element: E, axis: ScrollbarAxis) -> Self {
-        let id = ElementId::Name(SharedString::from(format!(
-            "ScrollView:{}-{:?}",
-            view_id,
-            element.id(),
-        )));
+        let id = ElementId::Name(SharedString::from(
+            format!("ScrollView:{}-{:?}", view_id, element.id(),),
+        ));
 
         Self {
             element: Some(element),
@@ -62,14 +62,11 @@ where
         cx: &mut App,
         f: impl FnOnce(&mut Self, &mut ScrollViewState, &mut Window, &mut App) -> R,
     ) -> R {
-        window.with_optional_element_state::<ScrollViewState, _>(
-            Some(id),
-            |element_state, window| {
-                let mut element_state = element_state.unwrap().unwrap_or_default();
-                let result = f(self, &mut element_state, window, cx);
-                (result, Some(element_state))
-            },
-        )
+        window.with_optional_element_state::<ScrollViewState, _>(Some(id), |element_state, window| {
+            let mut element_state = element_state.unwrap().unwrap_or_default();
+            let result = f(self, &mut element_state, window, cx);
+            (result, Some(element_state))
+        })
     }
 }
 
@@ -208,10 +205,7 @@ where
                         .left_0()
                         .right_0()
                         .bottom_0()
-                        .child(
-                            Scrollbar::both(view_id, state, handle.clone(), scroll_size.get())
-                                .axis(axis),
-                        ),
+                        .child(Scrollbar::both(view_id, state, handle.clone(), scroll_size.get()).axis(axis)),
                 )
                 .into_any_element();
 

@@ -1,8 +1,9 @@
-use crate::{button::Button, popup_menu::PopupMenu};
 use gpui::{
-    AnyElement, AnyView, App, Element, Entity, EventEmitter, FocusHandle, Focusable, Hsla, Render,
-    SharedString, Window,
+    AnyElement, AnyView, App, Element, Entity, EventEmitter, FocusHandle, Focusable, Hsla, Render, SharedString, Window,
 };
+
+use crate::button::Button;
+use crate::popup_menu::PopupMenu;
 
 pub enum PanelEvent {
     ZoomIn,

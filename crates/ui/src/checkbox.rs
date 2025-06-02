@@ -1,7 +1,7 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, relative, svg, App, ElementId, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Window,
+    div, relative, svg, App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use theme::ActiveTheme;
 
@@ -116,17 +116,13 @@ impl RenderOnce for Checkbox {
                 }
             })
             .when(self.disabled, |this| {
-                this.cursor_not_allowed()
-                    .text_color(cx.theme().text_placeholder)
+                this.cursor_not_allowed().text_color(cx.theme().text_placeholder)
             })
-            .when_some(
-                self.on_click.filter(|_| !self.disabled),
-                |this, on_click| {
-                    this.on_click(move |_, window, cx| {
-                        let checked = !self.checked;
-                        on_click(&checked, window, cx);
-                    })
-                },
-            )
+            .when_some(self.on_click.filter(|_| !self.disabled), |this, on_click| {
+                this.on_click(move |_, window, cx| {
+                    let checked = !self.checked;
+                    on_click(&checked, window, cx);
+                })
+            })
     }
 }

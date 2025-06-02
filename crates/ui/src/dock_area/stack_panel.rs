@@ -1,23 +1,19 @@
-use super::{DockArea, PanelEvent};
-use crate::{
-    dock_area::{
-        panel::{Panel, PanelView},
-        tab_panel::TabPanel,
-    },
-    h_flex,
-    resizable::{
-        h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent,
-        ResizablePanelGroup,
-    },
-    AxisExt as _, Placement,
-};
+use std::sync::Arc;
+
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    prelude::FluentBuilder, App, AppContext, Axis, Context, DismissEvent, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Pixels, Render, SharedString, Styled,
-    Subscription, WeakEntity, Window,
+    App, AppContext, Axis, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
+    ParentElement, Pixels, Render, SharedString, Styled, Subscription, WeakEntity, Window,
 };
 use smallvec::SmallVec;
-use std::sync::Arc;
+
+use super::{DockArea, PanelEvent};
+use crate::dock_area::panel::{Panel, PanelView};
+use crate::dock_area::tab_panel::TabPanel;
+use crate::resizable::{
+    h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent, ResizablePanelGroup,
+};
+use crate::{h_flex, AxisExt as _, Placement};
 
 pub struct StackPanel {
     pub(super) parent: Option<WeakEntity<StackPanel>>,
@@ -50,11 +46,9 @@ impl StackPanel {
         });
 
         // Bubble up the resize event.
-        let subscriptions = vec![cx.subscribe_in(
-            &panel_group,
-            window,
-            |_, _, _: &ResizablePanelEvent, _, cx| cx.emit(PanelEvent::LayoutChanged),
-        )];
+        let subscriptions = vec![cx.subscribe_in(&panel_group, window, |_, _, _: &ResizablePanelEvent, _, cx| {
+            cx.emit(PanelEvent::LayoutChanged)
+        })];
 
         Self {
             axis,
@@ -116,15 +110,7 @@ impl StackPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.insert_panel_at(
-            panel,
-            self.panels_len(),
-            placement,
-            size,
-            dock_area,
-            window,
-            cx,
-        );
+        self.insert_panel_at(panel, self.panels_len(), placement, size, dock_area, window, cx);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -139,12 +125,8 @@ impl StackPanel {
         cx: &mut Context<Self>,
     ) {
         match placement {
-            Placement::Top | Placement::Left => {
-                self.insert_panel_before(panel, ix, size, dock_area, window, cx)
-            }
-            Placement::Right | Placement::Bottom => {
-                self.insert_panel_after(panel, ix, size, dock_area, window, cx)
-            }
+            Placement::Top | Placement::Left => self.insert_panel_before(panel, ix, size, dock_area, window, cx),
+            Placement::Right | Placement::Bottom => self.insert_panel_after(panel, ix, size, dock_area, window, cx),
         }
     }
 
@@ -205,9 +187,7 @@ impl StackPanel {
                 if let Ok(tab_panel) = panel.view().downcast::<TabPanel>() {
                     tab_panel.update(cx, |tab_panel, _| tab_panel.set_parent(view.downgrade()));
                 } else if let Ok(stack_panel) = panel.view().downcast::<Self>() {
-                    stack_panel.update(cx, |stack_panel, _| {
-                        stack_panel.parent = Some(view.downgrade())
-                    });
+                    stack_panel.update(cx, |stack_panel, _| stack_panel.parent = Some(view.downgrade()));
                 }
 
                 // Subscribe to the panel's layout change event.
@@ -221,20 +201,11 @@ impl StackPanel {
             }
         });
 
-        let ix = if ix > self.panels.len() {
-            self.panels.len()
-        } else {
-            ix
-        };
+        let ix = if ix > self.panels.len() { self.panels.len() } else { ix };
 
         self.panels.insert(ix, panel.clone());
         self.panel_group.update(cx, |view, cx| {
-            view.insert_child(
-                Self::new_resizable_panel(panel.clone(), size),
-                ix,
-                window,
-                cx,
-            )
+            view.insert_child(Self::new_resizable_panel(panel.clone(), size), ix, window, cx)
         });
 
         cx.emit(PanelEvent::LayoutChanged);
@@ -242,12 +213,7 @@ impl StackPanel {
     }
 
     /// Remove panel from the stack.
-    pub fn remove_panel(
-        &mut self,
-        panel: Arc<dyn PanelView>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn remove_panel(&mut self, panel: Arc<dyn PanelView>, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(ix) = self.index_of_panel(panel.clone()) {
             self.panels.remove(ix);
             self.panel_group.update(cx, |view, cx| {
@@ -303,11 +269,7 @@ impl StackPanel {
     }
 
     /// Find the first top left in the stack.
-    pub(super) fn left_top_tab_panel(
-        &self,
-        check_parent: bool,
-        cx: &App,
-    ) -> Option<Entity<TabPanel>> {
+    pub(super) fn left_top_tab_panel(&self, check_parent: bool, cx: &App) -> Option<Entity<TabPanel>> {
         if check_parent {
             if let Some(parent) = self.parent.as_ref().and_then(|parent| parent.upgrade()) {
                 if let Some(panel) = parent.read(cx).left_top_tab_panel(true, cx) {
@@ -331,11 +293,7 @@ impl StackPanel {
     }
 
     /// Find the first top right in the stack.
-    pub(super) fn right_top_tab_panel(
-        &self,
-        check_parent: bool,
-        cx: &App,
-    ) -> Option<Entity<TabPanel>> {
+    pub(super) fn right_top_tab_panel(&self, check_parent: bool, cx: &App) -> Option<Entity<TabPanel>> {
         if check_parent {
             if let Some(parent) = self.parent.as_ref().and_then(|parent| parent.upgrade()) {
                 if let Some(panel) = parent.read(cx).right_top_tab_panel(true, cx) {
@@ -373,8 +331,7 @@ impl StackPanel {
     /// Change the axis of the stack panel.
     pub(super) fn set_axis(&mut self, axis: Axis, window: &mut Window, cx: &mut Context<Self>) {
         self.axis = axis;
-        self.panel_group
-            .update(cx, |view, cx| view.set_axis(axis, window, cx));
+        self.panel_group.update(cx, |view, cx| view.set_axis(axis, window, cx));
         cx.notify();
     }
 }
@@ -391,9 +348,6 @@ impl EventEmitter<DismissEvent> for StackPanel {}
 
 impl Render for StackPanel {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .size_full()
-            .overflow_hidden()
-            .child(self.panel_group.clone())
+        h_flex().size_full().overflow_hidden().child(self.panel_group.clone())
     }
 }

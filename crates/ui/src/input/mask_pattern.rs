@@ -147,9 +147,7 @@ impl MaskPattern {
 
     pub fn placeholder(&self) -> Option<String> {
         match self {
-            Self::Pattern { tokens, .. } => {
-                Some(tokens.iter().map(|token| token.placeholder()).collect())
-            }
+            Self::Pattern { tokens, .. } => Some(tokens.iter().map(|token| token.placeholder()).collect()),
             Self::Number { .. } => None,
             Self::None => None,
         }
@@ -203,19 +201,13 @@ impl MaskPattern {
                 }
 
                 // check if the integer part is valid
-                if !int_part
-                    .chars()
-                    .all(|ch| ch.is_ascii_digit() || Some(ch) == *separator)
-                {
+                if !int_part.chars().all(|ch| ch.is_ascii_digit() || Some(ch) == *separator) {
                     return false;
                 }
 
                 // check if the fraction part is valid
                 if let Some(frac) = frac_part {
-                    if !frac
-                        .chars()
-                        .all(|ch| ch.is_ascii_digit() || Some(ch) == *separator)
-                    {
+                    if !frac.chars().all(|ch| ch.is_ascii_digit() || Some(ch) == *separator) {
                         return false;
                     }
                 }
@@ -269,10 +261,7 @@ impl MaskPattern {
         }
 
         match self {
-            Self::Number {
-                separator,
-                fraction,
-            } => {
+            Self::Number { separator, fraction } => {
                 if let Some(sep) = *separator {
                     // Remove the existing group separator
                     let text = text.replace(sep, "");
@@ -281,11 +270,9 @@ impl MaskPattern {
                     let int_part = parts.next().unwrap_or("");
 
                     // Limit the fraction part to the given range, if not enough, pad with 0
-                    let frac_part = parts.next().map(|part| {
-                        part.chars()
-                            .take(fraction.unwrap_or(usize::MAX))
-                            .collect::<String>()
-                    });
+                    let frac_part = parts
+                        .next()
+                        .map(|part| part.chars().take(fraction.unwrap_or(usize::MAX)).collect::<String>());
 
                     // Reverse the integer part for easier grouping
                     let chars: Vec<char> = int_part.chars().rev().collect();

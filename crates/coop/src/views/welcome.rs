@@ -1,14 +1,12 @@
 use gpui::{
-    div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
+    ParentElement, Render, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::{
-    button::Button,
-    dock_area::panel::{Panel, PanelEvent},
-    popup_menu::PopupMenu,
-    StyledExt,
-};
+use ui::button::Button;
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::popup_menu::PopupMenu;
+use ui::StyledExt;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
     Welcome::new(window, cx)
@@ -72,30 +70,25 @@ impl Focusable for Welcome {
 
 impl Render for Welcome {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap_1()
-                    .child(
-                        svg()
-                            .path("brand/coop.svg")
-                            .size_12()
-                            .text_color(cx.theme().elevated_surface_background),
-                    )
-                    .child(
-                        div()
-                            .child("coop on nostr.")
-                            .text_color(cx.theme().text_placeholder)
-                            .font_semibold()
-                            .text_sm(),
-                    ),
-            )
+        div().size_full().flex().items_center().justify_center().child(
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap_1()
+                .child(
+                    svg()
+                        .path("brand/coop.svg")
+                        .size_12()
+                        .text_color(cx.theme().elevated_surface_background),
+                )
+                .child(
+                    div()
+                        .child("coop on nostr.")
+                        .text_color(cx.theme().text_placeholder)
+                        .font_semibold()
+                        .text_sm(),
+                ),
+        )
     }
 }

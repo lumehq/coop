@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use gpui::{
-    bounce, div, ease_in_out, Animation, AnimationExt, Div, IntoElement, ParentElement as _,
-    RenderOnce, Styled,
+    bounce, div, ease_in_out, Animation, AnimationExt, Div, IntoElement, ParentElement as _, RenderOnce, Styled,
 };
 use theme::ActiveTheme;
 

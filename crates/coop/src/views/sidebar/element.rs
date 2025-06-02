@@ -1,11 +1,13 @@
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
-    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::{avatar::Avatar, StyledExt};
+use ui::avatar::Avatar;
+use ui::StyledExt;
 
 #[derive(IntoElement)]
 pub struct DisplayRoom {
@@ -45,10 +47,7 @@ impl DisplayRoom {
         self
     }
 
-    pub fn on_click(
-        mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.handler = Rc::new(handler);
         self
     }
@@ -75,12 +74,7 @@ impl RenderOnce for DisplayRoom {
                         if let Some(path) = self.img {
                             this.child(Avatar::new(path).size(rems(1.5)))
                         } else {
-                            this.child(
-                                img("brand/avatar.png")
-                                    .rounded_full()
-                                    .size_6()
-                                    .into_any_element(),
-                            )
+                            this.child(img("brand/avatar.png").rounded_full().size_6().into_any_element())
                         }
                     }),
             )
@@ -91,14 +85,7 @@ impl RenderOnce for DisplayRoom {
                     .items_center()
                     .justify_between()
                     .when_some(self.label, |this, label| {
-                        this.child(
-                            div()
-                                .flex_1()
-                                .line_clamp(1)
-                                .text_ellipsis()
-                                .font_medium()
-                                .child(label),
-                        )
+                        this.child(div().flex_1().line_clamp(1).text_ellipsis().font_medium().child(label))
                     })
                     .when_some(self.description, |this, description| {
                         this.child(

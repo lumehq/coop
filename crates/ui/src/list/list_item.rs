@@ -1,7 +1,7 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, AnyElement, App, ClickEvent, Div, ElementId,
-    InteractiveElement, IntoElement, MouseButton, MouseMoveEvent, ParentElement, RenderOnce,
-    Stateful, StatefulInteractiveElement as _, Styled, Window,
+    div, AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, MouseButton, MouseMoveEvent,
+    ParentElement, RenderOnce, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use smallvec::SmallVec;
 use theme::ActiveTheme;
@@ -72,24 +72,16 @@ impl ListItem {
         F: Fn(&mut Window, &mut App) -> E + 'static,
         E: IntoElement,
     {
-        self.suffix = Some(Box::new(move |window, cx| {
-            builder(window, cx).into_any_element()
-        }));
+        self.suffix = Some(Box::new(move |window, cx| builder(window, cx).into_any_element()));
         self
     }
 
-    pub fn on_click(
-        mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
 
-    pub fn on_mouse_enter(
-        mut self,
-        handler: impl Fn(&MouseMoveEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_mouse_enter(mut self, handler: impl Fn(&MouseMoveEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_mouse_enter = Some(Box::new(handler));
         self
     }

@@ -1,7 +1,7 @@
 use gpui::{
-    fill, point, px, relative, size, App, Bounds, Corners, Element, ElementId, ElementInputHandler,
-    Entity, GlobalElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent, PaintQuad, Path,
-    Pixels, Point, SharedString, Style, TextAlign, TextRun, UnderlineStyle, Window, WrappedLine,
+    fill, point, px, relative, size, App, Bounds, Corners, Element, ElementId, ElementInputHandler, Entity,
+    GlobalElementId, IntoElement, LayoutId, MouseButton, MouseMoveEvent, PaintQuad, Path, Pixels, Point, SharedString,
+    Style, TextAlign, TextRun, UnderlineStyle, Window, WrappedLine,
 };
 use smallvec::SmallVec;
 use theme::ActiveTheme;
@@ -104,26 +104,21 @@ impl TextElement {
             prev_lines_offset += line.len() + 1;
         }
 
-        if let (Some(cursor_pos), Some(cursor_start), Some(cursor_end)) =
-            (cursor_pos, cursor_start, cursor_end)
-        {
+        if let (Some(cursor_pos), Some(cursor_start), Some(cursor_end)) = (cursor_pos, cursor_start, cursor_end) {
             let cursor_moved = input.last_cursor_offset != Some(cursor_offset);
             let selection_changed = input.last_selected_range != Some(selected_range.clone());
 
             if cursor_moved || selection_changed {
-                scroll_offset.x =
-                    if scroll_offset.x + cursor_pos.x > (bounds.size.width - RIGHT_MARGIN) {
-                        // cursor is out of right
-                        bounds.size.width - RIGHT_MARGIN - cursor_pos.x
-                    } else if scroll_offset.x + cursor_pos.x < px(0.) {
-                        // cursor is out of left
-                        scroll_offset.x - cursor_pos.x
-                    } else {
-                        scroll_offset.x
-                    };
-                scroll_offset.y = if scroll_offset.y + cursor_pos.y + line_height
-                    > bounds.size.height - bottom_margin
-                {
+                scroll_offset.x = if scroll_offset.x + cursor_pos.x > (bounds.size.width - RIGHT_MARGIN) {
+                    // cursor is out of right
+                    bounds.size.width - RIGHT_MARGIN - cursor_pos.x
+                } else if scroll_offset.x + cursor_pos.x < px(0.) {
+                    // cursor is out of left
+                    scroll_offset.x - cursor_pos.x
+                } else {
+                    scroll_offset.x
+                };
+                scroll_offset.y = if scroll_offset.y + cursor_pos.y + line_height > bounds.size.height - bottom_margin {
                     // cursor is out of bottom
                     bounds.size.height - bottom_margin - cursor_pos.y
                 } else if scroll_offset.y + cursor_pos.y < px(0.) {
@@ -158,8 +153,7 @@ impl TextElement {
 
             if input.show_cursor(window, cx) {
                 // cursor blink
-                let cursor_height =
-                    window.text_style().font_size.to_pixels(window.rem_size()) + px(2.);
+                let cursor_height = window.text_style().font_size.to_pixels(window.rem_size()) + px(2.);
                 cursor = Some(fill(
                     Bounds::new(
                         point(
@@ -206,21 +200,16 @@ impl TextElement {
 
             let line_origin = point(px(0.), offset_y);
 
-            let line_cursor_start =
-                line.position_for_index(start_ix.saturating_sub(prev_lines_offset), line_height);
-            let line_cursor_end =
-                line.position_for_index(end_ix.saturating_sub(prev_lines_offset), line_height);
+            let line_cursor_start = line.position_for_index(start_ix.saturating_sub(prev_lines_offset), line_height);
+            let line_cursor_end = line.position_for_index(end_ix.saturating_sub(prev_lines_offset), line_height);
 
             if line_cursor_start.is_some() || line_cursor_end.is_some() {
-                let start = line_cursor_start
-                    .unwrap_or_else(|| line.position_for_index(0, line_height).unwrap());
+                let start = line_cursor_start.unwrap_or_else(|| line.position_for_index(0, line_height).unwrap());
 
-                let end = line_cursor_end
-                    .unwrap_or_else(|| line.position_for_index(line.len(), line_height).unwrap());
+                let end = line_cursor_end.unwrap_or_else(|| line.position_for_index(line.len(), line_height).unwrap());
 
                 // Split the selection into multiple items
-                let wrapped_lines =
-                    (end.y / line_height).ceil() as usize - (start.y / line_height).ceil() as usize;
+                let wrapped_lines = (end.y / line_height).ceil() as usize - (start.y / line_height).ceil() as usize;
 
                 let mut end_x = end.x;
 
@@ -492,8 +481,7 @@ impl Element for TextElement {
 
         // Calculate the scroll offset to keep the cursor in view
 
-        let (cursor, cursor_scroll_offset) =
-            self.layout_cursor(&lines, line_height, &mut bounds, window, cx);
+        let (cursor, cursor_scroll_offset) = self.layout_cursor(&lines, line_height, &mut bounds, window, cx);
 
         let selection_path = self.layout_selections(&lines, line_height, &mut bounds, window, cx);
 
@@ -521,11 +509,7 @@ impl Element for TextElement {
         let bounds = prepaint.bounds;
         let selected_range = self.input.read(cx).selected_range.clone();
 
-        window.handle_input(
-            &focus_handle,
-            ElementInputHandler::new(bounds, self.input.clone()),
-            cx,
-        );
+        window.handle_input(&focus_handle, ElementInputHandler::new(bounds, self.input.clone()), cx);
 
         // Set Root focused_input when self is focused
         if focused {
@@ -581,12 +565,7 @@ impl Element for TextElement {
             }
         }
 
-        let width = prepaint
-            .lines
-            .iter()
-            .map(|l| l.width())
-            .max()
-            .unwrap_or_default();
+        let width = prepaint.lines.iter().map(|l| l.width()).max().unwrap_or_default();
         let height = offset_y;
         let scroll_size = size(width, height);
 
@@ -600,9 +579,7 @@ impl Element for TextElement {
 
             input.last_selected_range = Some(selected_range);
             input.scroll_size = scroll_size;
-            input
-                .scroll_handle
-                .set_offset(prepaint.cursor_scroll_offset);
+            input.scroll_handle.set_offset(prepaint.cursor_scroll_offset);
 
             cx.notify();
         });

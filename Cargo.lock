@@ -2199,7 +2199,10 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 name = "global"
 version = "0.1.5"
 dependencies = [
+ "anyhow",
  "dirs 5.0.1",
+ "futures",
+ "log",
  "nostr-sdk",
  "rustls",
  "smol",

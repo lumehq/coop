@@ -1,25 +1,27 @@
+use std::cell::Cell;
+use std::ops::Range;
+use std::rc::Rc;
+
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    actions, div, impl_internal_actions, point, px, App, AppContext, Bounds, ClipboardItem, Context, DefiniteLength,
+    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render,
+    ScrollHandle, ScrollWheelEvent, SharedString, Styled as _, Subscription, UTF16Selection, Window, WrappedLine,
+};
 use serde::Deserialize;
 use smallvec::SmallVec;
-use std::{cell::Cell, ops::Range, rc::Rc};
 use unicode_segmentation::*;
-
-use gpui::{
-    actions, div, impl_internal_actions, point, prelude::FluentBuilder as _, px, App, AppContext,
-    Bounds, ClipboardItem, Context, DefiniteLength, Entity, EntityInputHandler, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
-    Render, ScrollHandle, ScrollWheelEvent, SharedString, Styled as _, Subscription,
-    UTF16Selection, Window, WrappedLine,
-};
 
 // TODO:
 // - Move cursor to skip line eof empty chars.
-
 use super::{
     blink_cursor::BlinkCursor, change::Change, element::TextElement, mask_pattern::MaskPattern,
     text_wrapper::TextWrapper,
 };
-use crate::{history::History, scroll::ScrollbarState, Root};
+use crate::history::History;
+use crate::scroll::ScrollbarState;
+use crate::Root;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct Enter {
@@ -386,10 +388,7 @@ impl InputState {
     ///
     /// Default rows is 2.
     pub fn multi_line(mut self) -> Self {
-        self.mode = InputMode::MultiLine {
-            rows: 2,
-            height: None,
-        };
+        self.mode = InputMode::MultiLine { rows: 2, height: None };
         self
     }
 
@@ -416,12 +415,7 @@ impl InputState {
     }
 
     /// Set placeholder
-    pub fn set_placeholder(
-        &mut self,
-        placeholder: impl Into<SharedString>,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_placeholder(&mut self, placeholder: impl Into<SharedString>, _: &mut Window, cx: &mut Context<Self>) {
         self.placeholder = placeholder.into();
         cx.notify();
     }
@@ -562,10 +556,7 @@ impl InputState {
 
     #[inline]
     pub(super) fn is_multi_line(&self) -> bool {
-        matches!(
-            self.mode,
-            InputMode::MultiLine { .. } | InputMode::AutoGrow { .. }
-        )
+        matches!(self.mode, InputMode::MultiLine { .. } | InputMode::AutoGrow { .. })
     }
 
     #[inline]
@@ -603,12 +594,7 @@ impl InputState {
     /// Set the text of the input field.
     ///
     /// And the selection_range will be reset to 0..0.
-    pub fn set_value(
-        &mut self,
-        value: impl Into<SharedString>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_value(&mut self, value: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) {
         self.history.ignore = true;
         self.replace_text(value, window, cx);
         self.history.ignore = false;
@@ -621,12 +607,7 @@ impl InputState {
     /// Insert text at the current cursor position.
     ///
     /// And the cursor will be moved to the end of inserted text.
-    pub fn insert(
-        &mut self,
-        text: impl Into<SharedString>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn insert(&mut self, text: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) {
         let text: SharedString = text.into();
         let range = self.range_to_utf16(&(self.cursor_offset()..self.cursor_offset()));
         self.replace_text_in_range(Some(range), &text, window, cx);
@@ -636,23 +617,13 @@ impl InputState {
     /// Replace text at the current cursor position.
     ///
     /// And the cursor will be moved to the end of replaced text.
-    pub fn replace(
-        &mut self,
-        text: impl Into<SharedString>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn replace(&mut self, text: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) {
         let text: SharedString = text.into();
         self.replace_text_in_range(None, &text, window, cx);
         self.selected_range = self.selected_range.end..self.selected_range.end;
     }
 
-    fn replace_text(
-        &mut self,
-        text: impl Into<SharedString>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn replace_text(&mut self, text: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) {
         let text: SharedString = text.into();
         let range = 0..self.text.chars().map(|c| c.len_utf16()).sum();
         self.replace_text_in_range(Some(range), &text, window, cx);
@@ -689,12 +660,7 @@ impl InputState {
     }
 
     /// Set the regular expression pattern of the input field with reference.
-    pub fn set_pattern(
-        &mut self,
-        pattern: regex::Regex,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
+    pub fn set_pattern(&mut self, pattern: regex::Regex, _window: &mut Window, _cx: &mut Context<Self>) {
         self.pattern = Some(pattern);
     }
 
@@ -769,21 +735,11 @@ impl InputState {
         self.move_vertical(1, window, cx);
     }
 
-    pub(super) fn select_left(
-        &mut self,
-        _: &SelectLeft,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_left(&mut self, _: &SelectLeft, window: &mut Window, cx: &mut Context<Self>) {
         self.select_to(self.previous_boundary(self.cursor_offset()), window, cx);
     }
 
-    pub(super) fn select_right(
-        &mut self,
-        _: &SelectRight,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_right(&mut self, _: &SelectRight, window: &mut Window, cx: &mut Context<Self>) {
         self.select_to(self.next_boundary(self.cursor_offset()), window, cx);
     }
 
@@ -795,12 +751,7 @@ impl InputState {
         self.select_to(offset, window, cx);
     }
 
-    pub(super) fn select_down(
-        &mut self,
-        _: &SelectDown,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_single_line() {
             return;
         }
@@ -808,12 +759,7 @@ impl InputState {
         self.select_to(self.next_boundary(offset), window, cx);
     }
 
-    pub(super) fn select_all(
-        &mut self,
-        _: &SelectAll,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
         self.move_to(0, window, cx);
         self.select_to(self.text.len(), window, cx)
     }
@@ -830,12 +776,7 @@ impl InputState {
         self.move_to(offset, window, cx);
     }
 
-    pub(super) fn shift_to_new_line(
-        &mut self,
-        _: &NewLine,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn shift_to_new_line(&mut self, _: &NewLine, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_multi_line() {
             let is_eof = self.selected_range.end == self.text.len();
             self.replace_text_in_range(None, "\n", window, cx);
@@ -849,21 +790,11 @@ impl InputState {
         }
     }
 
-    pub(super) fn move_to_start(
-        &mut self,
-        _: &MoveToStart,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn move_to_start(&mut self, _: &MoveToStart, window: &mut Window, cx: &mut Context<Self>) {
         self.move_to(0, window, cx);
     }
 
-    pub(super) fn move_to_end(
-        &mut self,
-        _: &MoveToEnd,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn move_to_end(&mut self, _: &MoveToEnd, window: &mut Window, cx: &mut Context<Self>) {
         let end = self.text.len();
         self.move_to(end, window, cx);
     }
@@ -878,31 +809,16 @@ impl InputState {
         self.move_to(offset, window, cx);
     }
 
-    pub(super) fn move_to_next_word(
-        &mut self,
-        _: &MoveToNextWord,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn move_to_next_word(&mut self, _: &MoveToNextWord, window: &mut Window, cx: &mut Context<Self>) {
         let offset = self.next_end_of_word();
         self.move_to(offset, window, cx);
     }
 
-    pub(super) fn select_to_start(
-        &mut self,
-        _: &SelectToStart,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_to_start(&mut self, _: &SelectToStart, window: &mut Window, cx: &mut Context<Self>) {
         self.select_to(0, window, cx);
     }
 
-    pub(super) fn select_to_end(
-        &mut self,
-        _: &SelectToEnd,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_to_end(&mut self, _: &SelectToEnd, window: &mut Window, cx: &mut Context<Self>) {
         let end = self.text.len();
         self.select_to(end, window, cx);
     }
@@ -917,12 +833,7 @@ impl InputState {
         self.select_to(self.previous_boundary(offset), window, cx);
     }
 
-    pub(super) fn select_to_end_of_line(
-        &mut self,
-        _: &SelectToEndOfLine,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_to_end_of_line(&mut self, _: &SelectToEndOfLine, window: &mut Window, cx: &mut Context<Self>) {
         let offset = self.end_of_line(window, cx);
         self.select_to(self.next_boundary(offset), window, cx);
     }
@@ -937,12 +848,7 @@ impl InputState {
         self.select_to(offset, window, cx);
     }
 
-    pub(super) fn select_to_next_word(
-        &mut self,
-        _: &SelectToNextWordEnd,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_to_next_word(&mut self, _: &SelectToNextWordEnd, window: &mut Window, cx: &mut Context<Self>) {
         let offset = self.next_end_of_word();
         self.select_to(offset, window, cx);
     }
@@ -992,28 +898,18 @@ impl InputState {
         let offset = self.next_boundary(self.cursor_offset());
         // ignore if offset is "\n"
         if self
-            .text_for_range(
-                self.range_to_utf16(&(offset - 1..offset)),
-                &mut None,
-                window,
-                cx,
-            )
+            .text_for_range(self.range_to_utf16(&(offset - 1..offset)), &mut None, window, cx)
             .unwrap_or_default()
             .eq("\n")
         {
             return offset;
         }
 
-        self.text_for_range(
-            self.range_to_utf16(&(offset..self.text.len())),
-            &mut None,
-            window,
-            cx,
-        )
-        .unwrap_or_default()
-        .find('\n')
-        .map(|i| i + offset)
-        .unwrap_or(self.text.len())
+        self.text_for_range(self.range_to_utf16(&(offset..self.text.len())), &mut None, window, cx)
+            .unwrap_or_default()
+            .find('\n')
+            .map(|i| i + offset)
+            .unwrap_or(self.text.len())
     }
 
     pub(super) fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
@@ -1052,12 +948,7 @@ impl InputState {
         self.pause_blink_cursor(cx);
     }
 
-    pub(super) fn delete_to_end_of_line(
-        &mut self,
-        _: &DeleteToEndOfLine,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn delete_to_end_of_line(&mut self, _: &DeleteToEndOfLine, window: &mut Window, cx: &mut Context<Self>) {
         let mut offset = self.end_of_line(window, cx);
         if offset == self.cursor_offset() {
             offset = (offset + 1).clamp(0, self.text.len());
@@ -1087,12 +978,7 @@ impl InputState {
         self.pause_blink_cursor(cx);
     }
 
-    pub(super) fn delete_next_word(
-        &mut self,
-        _: &DeleteToNextWordEnd,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn delete_next_word(&mut self, _: &DeleteToNextWordEnd, window: &mut Window, cx: &mut Context<Self>) {
         let offset = self.next_end_of_word();
         self.replace_text_in_range(
             Some(self.range_to_utf16(&(self.cursor_offset()..offset))),
@@ -1137,12 +1023,7 @@ impl InputState {
         cx.propagate();
     }
 
-    pub(super) fn on_mouse_down(
-        &mut self,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if event.button == MouseButton::Middle {
             self.paste(&Paste, window, cx);
             return;
@@ -1164,22 +1045,12 @@ impl InputState {
         }
     }
 
-    pub(super) fn on_mouse_up(
-        &mut self,
-        _: &MouseUpEvent,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
+    pub(super) fn on_mouse_up(&mut self, _: &MouseUpEvent, _window: &mut Window, _cx: &mut Context<Self>) {
         self.selecting = false;
         self.selected_word_range = None;
     }
 
-    pub(super) fn on_scroll_wheel(
-        &mut self,
-        event: &ScrollWheelEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn on_scroll_wheel(&mut self, event: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(self.last_line_height);
         self.update_scroll_offset(Some(self.scroll_handle.offset() + delta), cx);
     }
@@ -1187,10 +1058,8 @@ impl InputState {
     fn update_scroll_offset(&mut self, offset: Option<Point<Pixels>>, cx: &mut Context<Self>) {
         let mut offset = offset.unwrap_or(self.scroll_handle.offset());
 
-        let safe_y_range =
-            (-self.scroll_size.height + self.input_bounds.size.height).min(px(0.0))..px(0.);
-        let safe_x_range =
-            (-self.scroll_size.width + self.input_bounds.size.width).min(px(0.0))..px(0.);
+        let safe_y_range = (-self.scroll_size.height + self.input_bounds.size.height).min(px(0.0))..px(0.);
+        let safe_x_range = (-self.scroll_size.width + self.input_bounds.size.width).min(px(0.0))..px(0.);
 
         offset.y = offset.y.clamp(safe_y_range.start, safe_y_range.end);
         offset.x = offset.x.clamp(safe_x_range.start, safe_x_range.end);
@@ -1243,13 +1112,7 @@ impl InputState {
         }
     }
 
-    fn push_history(
-        &mut self,
-        range: &Range<usize>,
-        new_text: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn push_history(&mut self, range: &Range<usize>, new_text: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.history.ignore {
             return;
         }
@@ -1260,12 +1123,8 @@ impl InputState {
 
         let new_range = range.start..range.start + new_text.len();
 
-        self.history.push(Change::new(
-            range.clone(),
-            &old_text,
-            new_range.clone(),
-            new_text,
-        ));
+        self.history
+            .push(Change::new(range.clone(), &old_text, new_range.clone(), new_text));
     }
 
     pub(super) fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
@@ -1311,19 +1170,13 @@ impl InputState {
         }
     }
 
-    fn index_for_mouse_position(
-        &self,
-        position: Point<Pixels>,
-        _window: &Window,
-        _cx: &App,
-    ) -> usize {
+    fn index_for_mouse_position(&self, position: Point<Pixels>, _window: &Window, _cx: &App) -> usize {
         // If the text is empty, always return 0
         if self.text.is_empty() {
             return 0;
         }
 
-        let (Some(bounds), Some(lines)) = (self.last_bounds.as_ref(), self.last_layout.as_ref())
-        else {
+        let (Some(bounds), Some(lines)) = (self.last_bounds.as_ref(), self.last_layout.as_ref()) else {
             return 0;
         };
 
@@ -1357,10 +1210,7 @@ impl InputState {
             if let Ok(v) = index_result {
                 index += v;
                 break;
-            } else if line
-                .index_for_position(point(px(0.), pos.y), line_height)
-                .is_ok()
-            {
+            } else if line.index_for_position(point(px(0.), pos.y), line_height).is_ok() {
                 // Click in the this line but not in the text, move cursor to the end of the line.
                 // The fallback index is saved in Err from `index_for_position` method.
                 index += index_result.unwrap_err();
@@ -1455,9 +1305,7 @@ impl InputState {
 
         let mut start = self.offset_to_utf16(offset);
         let mut end = start;
-        let prev_text = self
-            .text_for_range(0..start, &mut None, window, cx)
-            .unwrap_or_default();
+        let prev_text = self.text_for_range(0..start, &mut None, window, cx).unwrap_or_default();
         let next_text = self
             .text_for_range(end..self.text.len(), &mut None, window, cx)
             .unwrap_or_default();
@@ -1578,12 +1426,7 @@ impl InputState {
         self.pause_blink_cursor(cx);
     }
 
-    pub(super) fn on_drag_move(
-        &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn on_drag_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.text.is_empty() {
             return;
         }
@@ -1619,10 +1462,7 @@ impl InputState {
             return false;
         }
 
-        self.pattern
-            .as_ref()
-            .map(|p| p.is_match(new_text))
-            .unwrap_or(true)
+        self.pattern.as_ref().map(|p| p.is_match(new_text)).unwrap_or(true)
     }
 
     /// Set the mask pattern for formatting the input text.
@@ -1642,12 +1482,7 @@ impl InputState {
         self
     }
 
-    pub fn set_mask_pattern(
-        &mut self,
-        pattern: impl Into<MaskPattern>,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_mask_pattern(&mut self, pattern: impl Into<MaskPattern>, _: &mut Window, cx: &mut Context<Self>) {
         self.mask_pattern = pattern.into();
         if let Some(placeholder) = self.mask_pattern.placeholder() {
             self.placeholder = placeholder.into();
@@ -1661,8 +1496,7 @@ impl InputState {
 
         // Update text_wrapper wrap_width if changed.
         if wrap_width_changed {
-            self.text_wrapper
-                .set_wrap_width(Some(new_bounds.size.width), cx);
+            self.text_wrapper.set_wrap_width(Some(new_bounds.size.width), cx);
             self.mode.update_auto_grow(&self.text_wrapper);
         }
     }
@@ -1693,14 +1527,8 @@ impl EntityInputHandler for InputState {
         })
     }
 
-    fn marked_text_range(
-        &self,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) -> Option<Range<usize>> {
-        self.marked_range
-            .as_ref()
-            .map(|range| self.range_to_utf16(range))
+    fn marked_text_range(&self, _window: &mut Window, _cx: &mut Context<Self>) -> Option<Range<usize>> {
+        self.marked_range.as_ref().map(|range| self.range_to_utf16(range))
     }
 
     fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
@@ -1806,14 +1634,10 @@ impl EntityInputHandler for InputState {
         let mut index_offset = 0;
 
         for line in lines.iter() {
-            if let Some(p) =
-                line.position_for_index(range.start.saturating_sub(index_offset), line_height)
-            {
+            if let Some(p) = line.position_for_index(range.start.saturating_sub(index_offset), line_height) {
                 start_origin = Some(p + point(px(0.), y_offset));
             }
-            if let Some(p) =
-                line.position_for_index(range.end.saturating_sub(index_offset), line_height)
-            {
+            if let Some(p) = line.position_for_index(range.end.saturating_sub(index_offset), line_height) {
                 end_origin = Some(p + point(px(0.), y_offset));
             }
 
