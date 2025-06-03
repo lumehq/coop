@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use app_state::AppState;
@@ -6,7 +7,7 @@ use global::{shared_state, NostrSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, red, relative, AnyElement, App, AppContext, ClipboardItem, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Focusable, Image, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
@@ -39,6 +40,7 @@ pub struct Login {
     key_input: Entity<InputState>,
     relay_input: Entity<InputState>,
     connection_string: Entity<NostrConnectURI>,
+    qr_image: Entity<Option<Arc<Image>>>,
     // Signer that created by Connection String
     active_signer: Entity<Option<NostrConnect>>,
     // Error for the key input
@@ -63,6 +65,8 @@ impl Login {
         let error = cx.new(|_| None);
         let key_input = cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
         let relay_input = cx.new(|cx| InputState::new(window, cx).default_value(NOSTR_CONNECT_RELAY));
+        let qr_image = cx.new(|_| None);
+        let async_qr_image = qr_image.downgrade();
         let active_signer = cx.new(|_| None);
         let async_active_signer = active_signer.downgrade();
 
@@ -90,32 +94,49 @@ impl Login {
             }
         }));
 
-        subscriptions.push(cx.observe_new::<NostrConnectURI>(move |this, _window, cx| {
-            let client_keys = AppState::get_global(cx)
-                .client_keys()
-                .cloned()
-                .unwrap_or(Keys::generate());
-
-            if let Ok(mut signer) = NostrConnect::new(
-                this.to_owned(),
-                client_keys,
-                Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
-                None,
-            ) {
-                // Automatically open remote signer's webpage when received auth url
-                signer.auth_url_handler(CoopAuthUrlHandler);
-
-                async_active_signer
+        subscriptions.push(
+            cx.observe_new::<NostrConnectURI>(move |connection_string, _window, cx| {
+                // Update the QR Image with the new connection string
+                async_qr_image
                     .update(cx, |this, cx| {
-                        *this = Some(signer);
+                        *this = string_to_qr(&connection_string.to_string());
                         cx.notify();
                     })
                     .ok();
-            }
-        }));
+
+                let client_keys = AppState::get_global(cx)
+                    .client_keys()
+                    .cloned()
+                    .unwrap_or(Keys::generate());
+
+                if let Ok(mut signer) = NostrConnect::new(
+                    connection_string.to_owned(),
+                    client_keys,
+                    Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
+                    None,
+                ) {
+                    // Automatically open remote signer's webpage when received auth url
+                    signer.auth_url_handler(CoopAuthUrlHandler);
+
+                    async_active_signer
+                        .update(cx, |this, cx| {
+                            *this = Some(signer);
+                            cx.notify();
+                        })
+                        .ok();
+                }
+            }),
+        );
 
         subscriptions.push(cx.observe_in(&connection_string, window, |this, entity, _window, cx| {
             let connection_string = entity.read(cx).clone();
+
+            // Update the QR Image with the new connection string
+            this.qr_image.update(cx, |this, cx| {
+                *this = string_to_qr(&connection_string.to_string());
+                cx.notify();
+            });
+
             let client_keys = AppState::get_global(cx)
                 .client_keys()
                 .cloned()
@@ -159,6 +180,7 @@ impl Login {
             key_input,
             relay_input,
             connection_string,
+            qr_image,
             error,
             active_signer,
             subscriptions,
@@ -278,8 +300,6 @@ impl Focusable for Login {
 
 impl Render for Login {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let connection_string = self.connection_string.read(cx).to_string();
-
         div()
             .size_full()
             .relative()
@@ -363,7 +383,7 @@ impl Render for Login {
                                             .child("Use Nostr Connect apps to scan the code"),
                                     ),
                             )
-                            .when_some(string_to_qr(&connection_string), |this, qr| {
+                            .when_some(self.qr_image.read(cx).clone(), |this, qr| {
                                 this.child(
                                     div()
                                         .id("")
