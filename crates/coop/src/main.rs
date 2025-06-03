@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use app_state::AppState;
 use asset::Assets;
 use auto_update::AutoUpdater;
 use chats::ChatRegistry;
@@ -46,7 +47,8 @@ fn main() {
         // Register the `quit` function
         cx.on_action(quit);
 
-        // Register the `quit` function with CMD+Q
+        // Register the `quit` function with CMD+Q (macOS only)
+        #[cfg(target_os = "macos")]
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
 
         // Set menu items
@@ -94,11 +96,11 @@ fn main() {
                 // Initialize auto update
                 auto_update::init(cx);
 
+                // Initialize account state
+                app_state::init(cx);
+
                 // Initialize chat state
                 chats::init(cx);
-
-                // Initialize account state
-                account::init(cx);
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
@@ -122,6 +124,11 @@ fn main() {
                                     auto_updater.update(cx, |this, cx| {
                                         this.update(event, cx);
                                     });
+                                }
+                                NostrSignal::RemoteSigner((signer, _bunker_uri)) => {
+                                    AppState::global(cx).update(cx, |this, cx| {
+                                        this.login(signer, window, cx);
+                                    })
                                 }
                             };
                         })

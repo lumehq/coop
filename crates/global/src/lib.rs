@@ -1,11 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use anyhow::anyhow;
 use constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
+    NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
+use nostr_connect::client::NostrConnect;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
@@ -21,6 +24,8 @@ pub enum NostrSignal {
     Event(Event),
     /// Receive app update
     AppUpdate(Event),
+    /// Receive the connection from remote signer
+    RemoteSigner((NostrConnect, NostrConnectURI)),
     /// Receive EOSE
     Eose,
 }
@@ -30,8 +35,6 @@ pub struct Globals {
     pub client: Client,
     /// TODO: add document
     pub auto_close: Option<SubscribeAutoCloseOptions>,
-    /// TODO: add document
-    pub client_signer: Option<Arc<dyn NostrSigner + 'static>>,
     /// TODO: add document
     pub global_sender: smol::channel::Sender<NostrSignal>,
     /// TODO: add document
@@ -46,6 +49,11 @@ pub struct Globals {
 
 pub fn shared_state() -> &'static Globals {
     GLOBALS.get_or_init(|| {
+        // rustls uses the `aws_lc_rs` provider by default
+        // This only errors if the default provider has already
+        // been installed. We can ignore this `Result`.
+        rustls::crypto::aws_lc_rs::default_provider().install_default().ok();
+
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
@@ -54,7 +62,6 @@ pub fn shared_state() -> &'static Globals {
 
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
-            client_signer: None,
             persons: RwLock::new(BTreeMap::new()),
             auto_close: Some(SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE)),
             global_sender,
@@ -71,9 +78,54 @@ impl Globals {
         self.subscribe_for_app_updates().await;
 
         nostr_sdk::async_utility::task::spawn(async move {
-            while let Ok(mut public_keys) = shared_state().batch_receiver.recv().await {
-                if public_keys.len() >= METADATA_BATCH_LIMIT {
-                    shared_state().sync_pubkeys(mem::take(&mut public_keys)).await;
+            let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
+            let timeout_duration = Duration::from_millis(METADATA_BATCH_TIMEOUT);
+
+            loop {
+                let timeout = smol::Timer::after(timeout_duration);
+
+                enum BatchEvent {
+                    NewKeys(Vec<PublicKey>),
+                    Timeout,
+                    ChannelClosed,
+                }
+
+                let event = smol::future::or(
+                    async {
+                        match shared_state().batch_receiver.recv().await {
+                            Ok(public_keys) => BatchEvent::NewKeys(public_keys),
+                            Err(_) => BatchEvent::ChannelClosed,
+                        }
+                    },
+                    async {
+                        timeout.await;
+                        BatchEvent::Timeout
+                    },
+                )
+                .await;
+
+                match event {
+                    BatchEvent::NewKeys(public_keys) => {
+                        batch.extend(public_keys);
+
+                        // Process immediately if batch limit reached
+                        if batch.len() >= METADATA_BATCH_LIMIT {
+                            shared_state().sync_data_for_pubkeys(mem::take(&mut batch)).await;
+                        }
+                    }
+                    BatchEvent::Timeout => {
+                        // Process current batch if not empty
+                        if !batch.is_empty() {
+                            shared_state().sync_data_for_pubkeys(mem::take(&mut batch)).await;
+                        }
+                    }
+                    BatchEvent::ChannelClosed => {
+                        // Process remaining batch and exit
+                        if !batch.is_empty() {
+                            shared_state().sync_data_for_pubkeys(batch).await;
+                        }
+                        break;
+                    }
                 }
             }
         });
@@ -248,7 +300,7 @@ impl Globals {
         }
     }
 
-    async fn sync_pubkeys(&self, buffer: Vec<PublicKey>) {
+    async fn sync_data_for_pubkeys(&self, buffer: BTreeSet<PublicKey>) {
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays, Kind::UserStatus];
         let filter = Filter::new()
             .limit(buffer.len() * kinds.len())

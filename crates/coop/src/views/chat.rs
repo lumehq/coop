@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use account::Account;
+use app_state::AppState;
 use async_utility::task::spawn;
 use chats::message::Message;
 use chats::room::{Room, RoomKind, SendError};
@@ -204,7 +204,7 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(current_user) = Account::get_global(cx).profile_ref() else {
+        let Some(account) = AppState::get_global(cx).account() else {
             return false;
         };
 
@@ -212,7 +212,7 @@ impl Chat {
             return false;
         };
 
-        if current_user.public_key() != author.public_key() {
+        if account.public_key() != author.public_key() {
             return false;
         }
 
@@ -225,7 +225,7 @@ impl Chat {
                 m.borrow()
                     .author
                     .as_ref()
-                    .is_some_and(|p| p.public_key() == current_user.public_key())
+                    .is_some_and(|p| p.public_key() == account.public_key())
             })
             .any(|existing| {
                 let existing = existing.borrow();

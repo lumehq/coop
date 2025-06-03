@@ -40,11 +40,12 @@ pub fn room_hash(event: &Event) -> u64 {
     hasher.finish()
 }
 
-pub fn string_to_qr(data: &str) -> Result<Arc<Image>, anyhow::Error> {
-    let bytes = qrcode_generator::to_png_to_vec_from_str(data, QrCodeEcc::Medium, 256)?;
-    let img = Arc::new(Image::from_bytes(ImageFormat::Png, bytes));
+pub fn string_to_qr(data: &str) -> Option<Arc<Image>> {
+    let Ok(bytes) = qrcode_generator::to_png_to_vec_from_str(data, QrCodeEcc::Medium, 256) else {
+        return None;
+    };
 
-    Ok(img)
+    Some(Arc::new(Image::from_bytes(ImageFormat::Png, bytes)))
 }
 
 pub fn compare<T>(a: &[T], b: &[T]) -> bool

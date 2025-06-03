@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use account::Account;
 use anyhow::{anyhow, Error};
+use app_state::AppState;
 use chrono::{Local, TimeZone};
 use common::profile::RenderProfile;
 use common::{compare, room_hash};
@@ -166,21 +166,20 @@ impl Room {
     ///
     /// The Profile of the first member in the room
     pub fn first_member(&self, cx: &App) -> Profile {
-        let account = Account::global(cx).read(cx);
-        let Some(profile) = account.profile.clone() else {
+        let Some(account) = AppState::get_global(cx).account().cloned() else {
             return shared_state().person(&self.members[0]);
         };
 
         if let Some(public_key) = self
             .members
             .iter()
-            .filter(|&pubkey| pubkey != &profile.public_key())
+            .filter(|&pubkey| pubkey != &account.public_key())
             .collect::<Vec<_>>()
             .first()
         {
             shared_state().person(public_key)
         } else {
-            profile
+            account
         }
     }
 
@@ -533,7 +532,7 @@ impl Room {
     /// Returns `Some(Message)` containing the temporary message if the current user's profile is available,
     /// or `None` if no account is found.
     pub fn create_temp_message(&self, content: &str, replies: Option<&Vec<Message>>, cx: &App) -> Option<Message> {
-        let author = Account::get_global(cx).profile.clone()?;
+        let author = AppState::get_global(cx).account().cloned()?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 

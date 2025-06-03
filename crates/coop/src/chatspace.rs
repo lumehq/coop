@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use account::Account;
 use anyhow::Error;
+use app_state::AppState;
 use chats::{ChatRegistry, RoomEmitter};
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
@@ -78,13 +78,13 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let account = Account::global(cx);
+            let account = AppState::global(cx);
             let chats = ChatRegistry::global(cx);
             let mut subscriptions = smallvec![];
 
             subscriptions.push(
                 cx.observe_in(&account, window, |this: &mut ChatSpace, account, window, cx| {
-                    if account.read(cx).profile.is_some() {
+                    if account.read(cx).account().is_some() {
                         this.open_chats(window, cx);
                     } else {
                         this.open_onboarding(window, cx);

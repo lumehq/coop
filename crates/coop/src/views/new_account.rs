@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use account::Account;
+use app_state::AppState;
 use async_utility::task::spawn;
 use common::nip96_upload;
 use global::shared_state;
@@ -75,7 +75,7 @@ impl NewAccount {
             metadata = metadata.picture(url);
         };
 
-        Account::global(cx).update(cx, |this, cx| {
+        AppState::global(cx).update(cx, |this, cx| {
             this.new_account(metadata, window, cx);
         });
     }

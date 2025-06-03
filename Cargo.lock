@@ -3,21 +3,6 @@
 version = 4
 
 [[package]]
-name = "account"
-version = "0.1.5"
-dependencies = [
- "anyhow",
- "common",
- "global",
- "gpui",
- "log",
- "nostr-sdk",
- "smallvec",
- "smol",
- "ui",
-]
-
-[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -102,6 +87,21 @@ name = "anyhow"
 version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
+
+[[package]]
+name = "app_state"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "common",
+ "global",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "smallvec",
+ "smol",
+ "ui",
+]
 
 [[package]]
 name = "arbitrary"
@@ -934,8 +934,8 @@ dependencies = [
 name = "chats"
 version = "0.1.5"
 dependencies = [
- "account",
  "anyhow",
+ "app_state",
  "chrono",
  "common",
  "fuzzy-matcher",
@@ -1156,8 +1156,8 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 name = "coop"
 version = "0.1.5"
 dependencies = [
- "account",
  "anyhow",
+ "app_state",
  "auto_update",
  "chats",
  "common",
@@ -2203,6 +2203,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "log",
+ "nostr-connect",
  "nostr-sdk",
  "rustls",
  "smol",
