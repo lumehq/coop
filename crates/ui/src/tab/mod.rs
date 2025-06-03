@@ -1,7 +1,7 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, Stateful,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
 
@@ -119,7 +119,9 @@ impl RenderOnce for Tab {
             .bg(bg_color)
             .rounded(cx.theme().radius)
             .hover(|this| this.bg(hover_bg_color))
-            .when_some(self.prefix, |this, prefix| this.child(prefix).text_color(text_color))
+            .when_some(self.prefix, |this, prefix| {
+                this.child(prefix).text_color(text_color)
+            })
             .child(self.label)
             .when_some(self.suffix, |this, suffix| this.child(suffix))
     }

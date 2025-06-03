@@ -9,8 +9,8 @@ use global::constants::APP_ID;
 use global::constants::APP_NAME;
 use global::{shared_state, NostrSignal};
 use gpui::{
-    actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowKind,
-    WindowOptions,
+    actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
+    WindowBounds, WindowKind, WindowOptions,
 };
 #[cfg(not(target_os = "linux"))]
 use gpui::{point, SharedString, TitlebarOptions};

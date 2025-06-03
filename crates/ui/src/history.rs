@@ -154,6 +154,7 @@ mod tests {
         fn version(&self) -> usize {
             self.version
         }
+
         fn set_version(&mut self, version: usize) {
             self.version = version;
         }

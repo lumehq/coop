@@ -2,8 +2,9 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, px, App, AppContext, Corner, Element, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    div, impl_internal_actions, px, App, AppContext, Corner, Element, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    WeakEntity, Window,
 };
 use serde::Deserialize;
 use theme::ActiveTheme;

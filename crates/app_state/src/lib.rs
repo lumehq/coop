@@ -106,14 +106,17 @@ impl AppState {
             .author(user)
             .limit(10);
 
-        let data = Filter::new().author(user).since(Timestamp::now()).kinds(vec![
-            Kind::Metadata,
-            Kind::ContactList,
-            Kind::MuteList,
-            Kind::SimpleGroups,
-            Kind::InboxRelays,
-            Kind::RelayList,
-        ]);
+        let data = Filter::new()
+            .author(user)
+            .since(Timestamp::now())
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::ContactList,
+                Kind::MuteList,
+                Kind::SimpleGroups,
+                Kind::InboxRelays,
+                Kind::RelayList,
+            ]);
 
         let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
         let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
@@ -124,10 +127,16 @@ impl AppState {
             let client = &shared_state().client;
             let opts = shared_state().auto_close;
 
-            client.subscribe(metadata, shared_state().auto_close).await?;
+            client
+                .subscribe(metadata, shared_state().auto_close)
+                .await?;
             client.subscribe(data, None).await?;
-            client.subscribe_with_id(all_messages_sub_id, msg, opts).await?;
-            client.subscribe_with_id(new_messages_sub_id, new_msg, None).await?;
+            client
+                .subscribe_with_id(all_messages_sub_id, msg, opts)
+                .await?;
+            client
+                .subscribe_with_id(new_messages_sub_id, new_msg, None)
+                .await?;
 
             Ok(())
         });
@@ -176,8 +185,10 @@ impl AppState {
                 .ok();
             }
             Err(e) => {
-                cx.update(|window, cx| window.push_notification(Notification::error(e.to_string()), cx))
-                    .ok();
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error(e.to_string()), cx)
+                })
+                .ok();
             }
         })
         .detach();
@@ -192,7 +203,8 @@ impl AppState {
             "wss://nos.lol",
         ];
 
-        const DEFAULT_MESSAGING_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
+        const DEFAULT_MESSAGING_RELAYS: [&str; 2] =
+            ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
 
         let keys = Keys::generate();
         let public_key = keys.public_key();
@@ -257,8 +269,10 @@ impl AppState {
                 })
                 .ok();
             } else {
-                cx.update(|window, cx| window.push_notification(Notification::error("Failed to create account."), cx))
-                    .ok();
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error("Failed to create account."), cx)
+                })
+                .ok();
             }
         })
         .detach();

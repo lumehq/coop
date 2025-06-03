@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    black, div, px, relative, white, AnyElement, App, ClickEvent, Div, Element, Hsla, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Rgba, Stateful, StatefulInteractiveElement as _,
-    Style, Styled, Window,
+    black, div, px, relative, white, AnyElement, App, ClickEvent, Div, Element, Hsla,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Rgba,
+    Stateful, StatefulInteractiveElement as _, Style, Styled, Window,
 };
 use theme::ActiveTheme;
 
@@ -40,7 +40,10 @@ impl TitleBar {
 
     /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.
     /// Linux only, this will do nothing on other platforms.
-    pub fn on_close_window(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_close_window(
+        mut self,
+        f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         if cfg!(target_os = "linux") {
             self.on_close_window = Some(Rc::new(Box::new(f)));
         }
@@ -289,8 +292,8 @@ impl IntoElement for TitleBarElement {
 }
 
 impl Element for TitleBarElement {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
@@ -345,16 +348,20 @@ impl Element for TitleBarElement {
     ) {
         use gpui::{MouseButton, MouseMoveEvent, MouseUpEvent};
 
-        window.on_mouse_event(move |ev: &MouseMoveEvent, _, window: &mut Window, _cx: &mut App| {
-            if bounds.contains(&ev.position) && ev.pressed_button == Some(MouseButton::Left) {
-                window.start_window_move();
-            }
-        });
+        window.on_mouse_event(
+            move |ev: &MouseMoveEvent, _, window: &mut Window, _cx: &mut App| {
+                if bounds.contains(&ev.position) && ev.pressed_button == Some(MouseButton::Left) {
+                    window.start_window_move();
+                }
+            },
+        );
 
-        window.on_mouse_event(move |ev: &MouseUpEvent, _, window: &mut Window, _cx: &mut App| {
-            if ev.button == MouseButton::Left {
-                window.show_window_menu(ev.position);
-            }
-        });
+        window.on_mouse_event(
+            move |ev: &MouseUpEvent, _, window: &mut Window, _cx: &mut App| {
+                if ev.button == MouseButton::Left {
+                    window.show_window_menu(ev.position);
+                }
+            },
+        );
     }
 }

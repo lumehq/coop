@@ -44,7 +44,9 @@ impl TextWrapper {
     pub(super) fn update(&mut self, text: SharedString, cx: &mut App) {
         let mut wrapped_lines = vec![];
         let wrap_width = self.wrap_width.unwrap_or(Pixels::MAX);
-        let mut line_wrapper = cx.text_system().line_wrapper(self.font.clone(), self.font_size);
+        let mut line_wrapper = cx
+            .text_system()
+            .line_wrapper(self.font.clone(), self.font_size);
 
         for line in text.lines() {
             let mut prev_boundary_ix = 0;

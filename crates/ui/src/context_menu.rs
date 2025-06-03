@@ -3,15 +3,19 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, deferred, div, px, relative, AnyElement, App, Context, Corner, DismissEvent, DispatchPhase, Element,
-    ElementId, Entity, Focusable, FocusableWrapper, GlobalElementId, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Position, Size, Stateful, Style, Window,
+    anchored, deferred, div, px, relative, AnyElement, App, Context, Corner, DismissEvent,
+    DispatchPhase, Element, ElementId, Entity, Focusable, FocusableWrapper, GlobalElementId,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
+    Position, Size, Stateful, Style, Window,
 };
 
 use crate::popup_menu::PopupMenu;
 
 pub trait ContextMenuExt: ParentElement + Sized {
-    fn context_menu(self, f: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static) -> Self {
+    fn context_menu(
+        self,
+        f: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+    ) -> Self {
         self.child(ContextMenu::new("context-menu").menu(f))
     }
 }
@@ -19,7 +23,8 @@ pub trait ContextMenuExt: ParentElement + Sized {
 impl<E> ContextMenuExt for Stateful<E> where E: ParentElement {}
 impl<E> ContextMenuExt for FocusableWrapper<E> where E: ParentElement {}
 
-type Menu = Option<Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>>;
+type Menu =
+    Option<Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>>;
 
 /// A context menu that can be shown on right-click.
 pub struct ContextMenu {
@@ -53,11 +58,14 @@ impl ContextMenu {
         cx: &mut App,
         f: impl FnOnce(&mut Self, &mut ContextMenuState, &mut Window, &mut App) -> R,
     ) -> R {
-        window.with_optional_element_state::<ContextMenuState, _>(Some(id), |element_state, window| {
-            let mut element_state = element_state.unwrap().unwrap_or_default();
-            let result = f(self, &mut element_state, window, cx);
-            (result, Some(element_state))
-        })
+        window.with_optional_element_state::<ContextMenuState, _>(
+            Some(id),
+            |element_state, window| {
+                let mut element_state = element_state.unwrap().unwrap_or_default();
+                let result = f(self, &mut element_state, window, cx);
+                (result, Some(element_state))
+            },
+        )
     }
 }
 
@@ -88,8 +96,8 @@ impl Default for ContextMenuState {
 }
 
 impl Element for ContextMenu {
-    type RequestLayoutState = ContextMenuState;
     type PrepaintState = ();
+    type RequestLayoutState = ContextMenuState;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
@@ -228,8 +236,10 @@ impl Element for ContextMenu {
                         *position.borrow_mut() = event.position;
                         *open.borrow_mut() = true;
 
-                        let menu =
-                            PopupMenu::build(window, cx, |menu, window, cx| (builder)(menu, window, cx)).into_element();
+                        let menu = PopupMenu::build(window, cx, |menu, window, cx| {
+                            (builder)(menu, window, cx)
+                        })
+                        .into_element();
 
                         let open = open.clone();
                         window

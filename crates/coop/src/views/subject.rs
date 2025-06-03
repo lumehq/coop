@@ -1,14 +1,19 @@
 use chats::ChatRegistry;
 use gpui::{
-    div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled,
-    Window,
+    div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    ParentElement, Render, Styled, Window,
 };
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::{ContextModal, Sizable};
 
-pub fn init(id: u64, subject: Option<String>, window: &mut Window, cx: &mut App) -> Entity<Subject> {
+pub fn init(
+    id: u64,
+    subject: Option<String>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<Subject> {
     Subject::new(id, subject, window, cx)
 }
 
@@ -19,7 +24,12 @@ pub struct Subject {
 }
 
 impl Subject {
-    pub fn new(id: u64, subject: Option<String>, window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(
+        id: u64,
+        subject: Option<String>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Entity<Self> {
         let input = cx.new(|cx| {
             let mut this = InputState::new(window, cx).placeholder("Exciting Project...");
             if let Some(text) = subject.clone() {
@@ -68,7 +78,12 @@ impl Render for Subject {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(div().text_sm().text_color(cx.theme().text_muted).child("Subject:"))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().text_muted)
+                            .child("Subject:"),
+                    )
                     .child(TextInput::new(&self.input).small())
                     .child(
                         div()

@@ -1,7 +1,8 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled, Window,
+    div, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use theme::ActiveTheme;
 
@@ -192,7 +193,10 @@ impl Button {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
@@ -356,10 +360,15 @@ impl RenderOnce for Button {
                         _ => this.gap_2().font_medium(),
                     })
                     .when(!self.loading, |this| {
-                        this.when_some(self.icon, |this, icon| this.child(icon.with_size(icon_size)))
+                        this.when_some(self.icon, |this, icon| {
+                            this.child(icon.with_size(icon_size))
+                        })
                     })
                     .when(self.loading, |this| {
-                        this.child(Indicator::new().when_some(self.loading_icon, |this, icon| this.icon(icon)))
+                        this.child(
+                            Indicator::new()
+                                .when_some(self.loading_icon, |this, icon| this.icon(icon)),
+                        )
                     })
                     .when_some(self.label, |this, label| {
                         this.child(

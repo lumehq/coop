@@ -7,8 +7,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, Render, Styled, Subscription, Task, Window,
+    div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -82,28 +82,35 @@ impl ChatSpace {
             let chats = ChatRegistry::global(cx);
             let mut subscriptions = smallvec![];
 
-            subscriptions.push(
-                cx.observe_in(&account, window, |this: &mut ChatSpace, account, window, cx| {
+            subscriptions.push(cx.observe_in(
+                &account,
+                window,
+                |this: &mut ChatSpace, account, window, cx| {
                     if account.read(cx).account().is_some() {
                         this.open_chats(window, cx);
                     } else {
                         this.open_onboarding(window, cx);
                     }
-                }),
-            );
+                },
+            ));
 
-            subscriptions.push(cx.subscribe_in(&chats, window, |this, _state, event, window, cx| {
-                if let RoomEmitter::Open(room) = event {
-                    if let Some(room) = room.upgrade() {
-                        this.dock.update(cx, |this, cx| {
-                            let panel = chat::init(room, window, cx);
-                            this.add_panel(panel, DockPlacement::Center, window, cx);
-                        });
-                    } else {
-                        window.push_notification("Failed to open room. Please retry later.", cx);
+            subscriptions.push(cx.subscribe_in(
+                &chats,
+                window,
+                |this, _state, event, window, cx| {
+                    if let RoomEmitter::Open(room) = event {
+                        if let Some(room) = room.upgrade() {
+                            this.dock.update(cx, |this, cx| {
+                                let panel = chat::init(room, window, cx);
+                                this.add_panel(panel, DockPlacement::Center, window, cx);
+                            });
+                        } else {
+                            window
+                                .push_notification("Failed to open room. Please retry later.", cx);
+                        }
                     }
-                }
-            }));
+                },
+            ));
 
             subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
                 if let Some(window) = window {
@@ -185,14 +192,28 @@ impl ChatSpace {
         cx.background_spawn(async move {
             let signer = shared_state().client.signer().await?;
             let public_key = signer.get_public_key().await?;
-            let filter = Filter::new().kind(Kind::InboxRelays).author(public_key).limit(1);
-            let is_exist = shared_state().client.database().query(filter).await?.first().is_some();
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
+            let is_exist = shared_state()
+                .client
+                .database()
+                .query(filter)
+                .await?
+                .first()
+                .is_some();
 
             Ok(is_exist)
         })
     }
 
-    fn on_modal_action(&mut self, action: &ToggleModal, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_modal_action(
+        &mut self,
+        action: &ToggleModal,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match action.modal {
             ModalKind::Profile => {
                 let profile = profile::init(window, cx);
@@ -273,25 +294,39 @@ impl Render for ChatSpace {
                                 .child(div())
                                 // Right side
                                 .child(
-                                    div().flex().items_center().justify_end().gap_2().px_2().child(
-                                        Button::new("appearance")
-                                            .xsmall()
-                                            .ghost()
-                                            .map(|this| {
-                                                if cx.theme().mode.is_dark() {
-                                                    this.icon(IconName::Sun)
-                                                } else {
-                                                    this.icon(IconName::Moon)
-                                                }
-                                            })
-                                            .on_click(cx.listener(|_, _, window, cx| {
-                                                if cx.theme().mode.is_dark() {
-                                                    Theme::change(ThemeMode::Light, Some(window), cx);
-                                                } else {
-                                                    Theme::change(ThemeMode::Dark, Some(window), cx);
-                                                }
-                                            })),
-                                    ),
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_end()
+                                        .gap_2()
+                                        .px_2()
+                                        .child(
+                                            Button::new("appearance")
+                                                .xsmall()
+                                                .ghost()
+                                                .map(|this| {
+                                                    if cx.theme().mode.is_dark() {
+                                                        this.icon(IconName::Sun)
+                                                    } else {
+                                                        this.icon(IconName::Moon)
+                                                    }
+                                                })
+                                                .on_click(cx.listener(|_, _, window, cx| {
+                                                    if cx.theme().mode.is_dark() {
+                                                        Theme::change(
+                                                            ThemeMode::Light,
+                                                            Some(window),
+                                                            cx,
+                                                        );
+                                                    } else {
+                                                        Theme::change(
+                                                            ThemeMode::Dark,
+                                                            Some(window),
+                                                            cx,
+                                                        );
+                                                    }
+                                                })),
+                                        ),
                                 ),
                         )
                     })

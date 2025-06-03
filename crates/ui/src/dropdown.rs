@@ -1,9 +1,9 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, canvas, deferred, div, px, rems, AnyElement, App, AppContext, Bounds, ClickEvent, Context, DismissEvent,
-    ElementId, Empty, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
-    Length, ParentElement, Pixels, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    Task, WeakEntity, Window,
+    anchored, canvas, deferred, div, px, rems, AnyElement, App, AppContext, Bounds, ClickEvent,
+    Context, DismissEvent, ElementId, Empty, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyBinding, Length, ParentElement, Pixels, Render, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use theme::ActiveTheme;
 
@@ -28,7 +28,11 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("up", SelectPrev, Some(CONTEXT)),
         KeyBinding::new("down", SelectNext, Some(CONTEXT)),
         KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
-        KeyBinding::new("secondary-enter", Confirm { secondary: true }, Some(CONTEXT)),
+        KeyBinding::new(
+            "secondary-enter",
+            Confirm { secondary: true },
+            Some(CONTEXT),
+        ),
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
     ])
 }
@@ -134,7 +138,12 @@ where
         self.delegate.len()
     }
 
-    fn render_item(&self, ix: usize, _: &mut gpui::Window, cx: &mut gpui::Context<List<Self>>) -> Option<Self::Item> {
+    fn render_item(
+        &self,
+        ix: usize,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<List<Self>>,
+    ) -> Option<Self::Item> {
         let selected = self.selected_index == Some(ix);
         let size = self
             .dropdown
@@ -181,13 +190,23 @@ where
         });
     }
 
-    fn perform_search(&mut self, query: &str, window: &mut Window, cx: &mut Context<List<Self>>) -> Task<()> {
+    fn perform_search(
+        &mut self,
+        query: &str,
+        window: &mut Window,
+        cx: &mut Context<List<Self>>,
+    ) -> Task<()> {
         self.dropdown.upgrade().map_or(Task::ready(()), |dropdown| {
             dropdown.update(cx, |_, cx| self.delegate.perform_search(query, window, cx))
         })
     }
 
-    fn set_selected_index(&mut self, ix: Option<usize>, _: &mut Window, _: &mut Context<List<Self>>) {
+    fn set_selected_index(
+        &mut self,
+        ix: Option<usize>,
+        _: &mut Window,
+        _: &mut Context<List<Self>>,
+    ) {
         self.selected_index = ix;
     }
 
@@ -313,7 +332,12 @@ impl<D> DropdownState<D>
 where
     D: DropdownDelegate + 'static,
 {
-    pub fn new(delegate: D, selected_index: Option<usize>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        delegate: D,
+        selected_index: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         let delegate = DropdownListDelegate {
             delegate,
@@ -324,7 +348,9 @@ where
         let searchable = delegate.delegate.can_search();
 
         let list = cx.new(|cx| {
-            let mut list = List::new(delegate, window, cx).max_h(rems(20.)).reset_on_cancel(false);
+            let mut list = List::new(delegate, window, cx)
+                .max_h(rems(20.))
+                .reset_on_cancel(false);
             if !searchable {
                 list = list.no_query();
             }
@@ -359,7 +385,12 @@ where
         self
     }
 
-    pub fn set_selected_index(&mut self, selected_index: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_selected_index(
+        &mut self,
+        selected_index: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.list.update(cx, |list, cx| {
             list.set_selected_index(selected_index, window, cx);
         });
@@ -557,7 +588,11 @@ where
     fn display_title(&self, _: &Window, cx: &App) -> impl IntoElement {
         let default_title = div()
             .text_color(cx.theme().text_accent)
-            .child(self.placeholder.clone().unwrap_or_else(|| "Please select".into()))
+            .child(
+                self.placeholder
+                    .clone()
+                    .unwrap_or_else(|| "Please select".into()),
+            )
             .when(self.disabled, |this| this.text_color(cx.theme().text_muted));
 
         let Some(selected_index) = &self.state.read(cx).selected_index(cx) else {
@@ -703,7 +738,9 @@ where
                                     if self.disabled {
                                         this.disabled(true)
                                     } else {
-                                        this.on_click(window.listener_for(&self.state, DropdownState::clean))
+                                        this.on_click(
+                                            window.listener_for(&self.state, DropdownState::clean),
+                                        )
                                     }
                                 }))
                             })
@@ -758,9 +795,12 @@ where
                                         .shadow_md()
                                         .child(state.list.clone()),
                                 )
-                                .on_mouse_down_out(window.listener_for(&self.state, |this, _, window, cx| {
-                                    this.escape(&Cancel, window, cx);
-                                })),
+                                .on_mouse_down_out(window.listener_for(
+                                    &self.state,
+                                    |this, _, window, cx| {
+                                        this.escape(&Cancel, window, cx);
+                                    },
+                                )),
                         ),
                     )
                     .with_priority(1),

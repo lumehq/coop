@@ -1,8 +1,8 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, point, px, AnyElement, App, Bounds, CursorStyle, Decorations, Edges, HitboxBehavior, Hsla,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce, ResizeEdge, Size,
-    Styled as _, Window,
+    canvas, div, point, px, AnyElement, App, Bounds, CursorStyle, Decorations, Edges,
+    HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
+    Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
 use theme::ActiveTheme;
 
@@ -49,7 +49,9 @@ pub fn window_paddings(window: &Window, _cx: &App) -> Edges<Pixels> {
 
 impl WindowBorder {
     pub fn new() -> Self {
-        Self { ..Default::default() }
+        Self {
+            ..Default::default()
+        }
     }
 }
 
@@ -75,7 +77,10 @@ impl RenderOnce for WindowBorder {
                         canvas(
                             |_bounds, window, _cx| {
                                 window.insert_hitbox(
-                                    Bounds::new(point(px(0.0), px(0.0)), window.window_bounds().get_bounds().size),
+                                    Bounds::new(
+                                        point(px(0.0), px(0.0)),
+                                        window.window_bounds().get_bounds().size,
+                                    ),
                                     HitboxBehavior::Normal,
                                 )
                             },
@@ -87,8 +92,12 @@ impl RenderOnce for WindowBorder {
                                 };
                                 window.set_cursor_style(
                                     match edge {
-                                        ResizeEdge::Top | ResizeEdge::Bottom => CursorStyle::ResizeUpDown,
-                                        ResizeEdge::Left | ResizeEdge::Right => CursorStyle::ResizeLeftRight,
+                                        ResizeEdge::Top | ResizeEdge::Bottom => {
+                                            CursorStyle::ResizeUpDown
+                                        }
+                                        ResizeEdge::Left | ResizeEdge::Right => {
+                                            CursorStyle::ResizeLeftRight
+                                        }
                                         ResizeEdge::TopLeft | ResizeEdge::BottomRight => {
                                             CursorStyle::ResizeUpLeftDownRight
                                         }
@@ -103,8 +112,12 @@ impl RenderOnce for WindowBorder {
                         .size_full()
                         .absolute(),
                     )
-                    .when(!(tiling.top || tiling.right), |div| div.rounded_tr(BORDER_RADIUS))
-                    .when(!(tiling.top || tiling.left), |div| div.rounded_tl(BORDER_RADIUS))
+                    .when(!(tiling.top || tiling.right), |div| {
+                        div.rounded_tr(BORDER_RADIUS)
+                    })
+                    .when(!(tiling.top || tiling.left), |div| {
+                        div.rounded_tl(BORDER_RADIUS)
+                    })
                     .when(!tiling.top, |div| div.pt(SHADOW_SIZE))
                     .when(!tiling.bottom, |div| div.pb(SHADOW_SIZE))
                     .when(!tiling.left, |div| div.pl(SHADOW_SIZE))
@@ -125,8 +138,12 @@ impl RenderOnce for WindowBorder {
                         Decorations::Server => div,
                         Decorations::Client { tiling } => div
                             .border_color(cx.theme().window_border)
-                            .when(!(tiling.top || tiling.right), |div| div.rounded_tr(BORDER_RADIUS))
-                            .when(!(tiling.top || tiling.left), |div| div.rounded_tl(BORDER_RADIUS))
+                            .when(!(tiling.top || tiling.right), |div| {
+                                div.rounded_tr(BORDER_RADIUS)
+                            })
+                            .when(!(tiling.top || tiling.left), |div| {
+                                div.rounded_tl(BORDER_RADIUS)
+                            })
                             .when(!tiling.top, |div| div.border_t(BORDER_SIZE))
                             .when(!tiling.bottom, |div| div.border_b(BORDER_SIZE))
                             .when(!tiling.left, |div| div.border_l(BORDER_SIZE))

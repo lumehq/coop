@@ -9,19 +9,6 @@ use gpui::{Hsla, SharedString};
 pub struct ColorScaleStep(usize);
 
 impl ColorScaleStep {
-    pub const ONE: Self = Self(1);
-    pub const TWO: Self = Self(2);
-    pub const THREE: Self = Self(3);
-    pub const FOUR: Self = Self(4);
-    pub const FIVE: Self = Self(5);
-    pub const SIX: Self = Self(6);
-    pub const SEVEN: Self = Self(7);
-    pub const EIGHT: Self = Self(8);
-    pub const NINE: Self = Self(9);
-    pub const TEN: Self = Self(10);
-    pub const ELEVEN: Self = Self(11);
-    pub const TWELVE: Self = Self(12);
-
     /// All of the steps in a [`ColorScale`].
     pub const ALL: [ColorScaleStep; 12] = [
         Self::ONE,
@@ -37,6 +24,18 @@ impl ColorScaleStep {
         Self::ELEVEN,
         Self::TWELVE,
     ];
+    pub const EIGHT: Self = Self(8);
+    pub const ELEVEN: Self = Self(11);
+    pub const FIVE: Self = Self(5);
+    pub const FOUR: Self = Self(4);
+    pub const NINE: Self = Self(9);
+    pub const ONE: Self = Self(1);
+    pub const SEVEN: Self = Self(7);
+    pub const SIX: Self = Self(6);
+    pub const TEN: Self = Self(10);
+    pub const THREE: Self = Self(3);
+    pub const TWELVE: Self = Self(12);
+    pub const TWO: Self = Self(2);
 }
 
 /// A scale of colors for a given [`ColorScaleSet`].
@@ -191,8 +190,8 @@ pub struct ColorScales {
 }
 
 impl IntoIterator for ColorScales {
-    type Item = ColorScaleSet;
     type IntoIter = std::vec::IntoIter<Self::Item>;
+    type Item = ColorScaleSet;
 
     fn into_iter(self) -> Self::IntoIter {
         vec![

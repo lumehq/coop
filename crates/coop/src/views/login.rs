@@ -6,9 +6,9 @@ use common::string_to_qr;
 use global::{shared_state, NostrSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, red, relative, AnyElement, App, AppContext, ClipboardItem, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, Image, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window,
+    div, img, red, relative, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -63,8 +63,10 @@ impl Login {
         const NOSTR_CONNECT_TIMEOUT: u64 = 300;
 
         let error = cx.new(|_| None);
-        let key_input = cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
-        let relay_input = cx.new(|cx| InputState::new(window, cx).default_value(NOSTR_CONNECT_RELAY));
+        let key_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
+        let relay_input =
+            cx.new(|cx| InputState::new(window, cx).default_value(NOSTR_CONNECT_RELAY));
         let qr_image = cx.new(|_| None);
         let async_qr_image = qr_image.downgrade();
         let active_signer = cx.new(|_| None);
@@ -82,20 +84,24 @@ impl Login {
 
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.subscribe_in(&key_input, window, |this, _, event, window, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                this.login(window, cx);
-            }
-        }));
-
-        subscriptions.push(cx.subscribe_in(&relay_input, window, |this, _, event, window, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                this.change_relay(window, cx);
-            }
-        }));
+        subscriptions.push(
+            cx.subscribe_in(&key_input, window, |this, _, event, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.login(window, cx);
+                }
+            }),
+        );
 
         subscriptions.push(
-            cx.observe_new::<NostrConnectURI>(move |connection_string, _window, cx| {
+            cx.subscribe_in(&relay_input, window, |this, _, event, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.change_relay(window, cx);
+                }
+            }),
+        );
+
+        subscriptions.push(cx.observe_new::<NostrConnectURI>(
+            move |connection_string, _window, cx| {
                 // Update the QR Image with the new connection string
                 async_qr_image
                     .update(cx, |this, cx| {
@@ -125,53 +131,59 @@ impl Login {
                         })
                         .ok();
                 }
-            }),
-        );
+            },
+        ));
 
-        subscriptions.push(cx.observe_in(&connection_string, window, |this, entity, _window, cx| {
-            let connection_string = entity.read(cx).clone();
+        subscriptions.push(cx.observe_in(
+            &connection_string,
+            window,
+            |this, entity, _window, cx| {
+                let connection_string = entity.read(cx).clone();
 
-            // Update the QR Image with the new connection string
-            this.qr_image.update(cx, |this, cx| {
-                *this = string_to_qr(&connection_string.to_string());
-                cx.notify();
-            });
-
-            let client_keys = AppState::get_global(cx)
-                .client_keys()
-                .cloned()
-                .unwrap_or(Keys::generate());
-
-            if let Ok(mut signer) = NostrConnect::new(
-                connection_string,
-                client_keys,
-                Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
-                None,
-            ) {
-                // Automatically open remote signer's webpage when received auth url
-                signer.auth_url_handler(CoopAuthUrlHandler);
-
-                this.active_signer.update(cx, |this, cx| {
-                    *this = Some(signer);
+                // Update the QR Image with the new connection string
+                this.qr_image.update(cx, |this, cx| {
+                    *this = string_to_qr(&connection_string.to_string());
                     cx.notify();
                 });
-            }
-        }));
 
-        subscriptions.push(cx.observe_in(&active_signer, window, |_this, entity, _window, cx| {
-            if let Some(signer) = entity.read(cx).clone() {
-                cx.background_spawn(async move {
-                    if let Ok(bunker_uri) = signer.bunker_uri().await {
-                        shared_state()
-                            .global_sender
-                            .send(NostrSignal::RemoteSigner((signer, bunker_uri)))
-                            .await
-                            .ok();
-                    }
-                })
-                .detach();
-            }
-        }));
+                let client_keys = AppState::get_global(cx)
+                    .client_keys()
+                    .cloned()
+                    .unwrap_or(Keys::generate());
+
+                if let Ok(mut signer) = NostrConnect::new(
+                    connection_string,
+                    client_keys,
+                    Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
+                    None,
+                ) {
+                    // Automatically open remote signer's webpage when received auth url
+                    signer.auth_url_handler(CoopAuthUrlHandler);
+
+                    this.active_signer.update(cx, |this, cx| {
+                        *this = Some(signer);
+                        cx.notify();
+                    });
+                }
+            },
+        ));
+
+        subscriptions.push(
+            cx.observe_in(&active_signer, window, |_this, entity, _window, cx| {
+                if let Some(signer) = entity.read(cx).clone() {
+                    cx.background_spawn(async move {
+                        if let Ok(bunker_uri) = signer.bunker_uri().await {
+                            shared_state()
+                                .global_sender
+                                .send(NostrSignal::RemoteSigner((signer, bunker_uri)))
+                                .await
+                                .ok();
+                        }
+                    })
+                    .detach();
+                }
+            }),
+        );
 
         Self {
             name: "Login".into(),
@@ -220,7 +232,8 @@ impl Login {
                 .cloned()
                 .unwrap_or(Keys::generate());
 
-            if let Ok(signer) = NostrConnect::new(uri, client_keys, Duration::from_secs(300), None) {
+            if let Ok(signer) = NostrConnect::new(uri, client_keys, Duration::from_secs(300), None)
+            {
                 AppState::global(cx).update(cx, |this, cx| {
                     this.login(signer, window, cx);
                 });
@@ -231,7 +244,8 @@ impl Login {
     }
 
     fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(relay_url) = RelayUrl::parse(self.relay_input.read(cx).value().to_string().as_str()) else {
+        let Ok(relay_url) = RelayUrl::parse(self.relay_input.read(cx).value().to_string().as_str())
+        else {
             window.push_notification(Notification::error("Relay URL is not valid."), cx);
             return;
         };
@@ -305,50 +319,62 @@ impl Render for Login {
             .relative()
             .flex()
             .child(
-                div().h_full().flex_1().flex().items_center().justify_center().child(
-                    div()
-                        .w_80()
-                        .flex()
-                        .flex_col()
-                        .gap_8()
-                        .child(
-                            div()
-                                .text_center()
-                                .child(
-                                    div()
-                                        .text_center()
-                                        .text_xl()
-                                        .font_semibold()
-                                        .line_height(relative(1.3))
-                                        .child("Welcome Back!"),
-                                )
-                                .child(
-                                    div()
-                                        .text_color(cx.theme().text_muted)
-                                        .child("Continue with Private Key or Bunker"),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_3()
-                                .child(TextInput::new(&self.key_input))
-                                .child(
-                                    Button::new("login")
-                                        .label("Continue")
-                                        .primary()
-                                        .loading(self.is_logging_in)
-                                        .disabled(self.is_logging_in)
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.login(window, cx);
-                                        })),
-                                )
-                                .when_some(self.error.read(cx).clone(), |this, error| {
-                                    this.child(div().text_xs().text_center().text_color(red()).child(error))
-                                }),
-                        ),
-                ),
+                div()
+                    .h_full()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .w_80()
+                            .flex()
+                            .flex_col()
+                            .gap_8()
+                            .child(
+                                div()
+                                    .text_center()
+                                    .child(
+                                        div()
+                                            .text_center()
+                                            .text_xl()
+                                            .font_semibold()
+                                            .line_height(relative(1.3))
+                                            .child("Welcome Back!"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_muted)
+                                            .child("Continue with Private Key or Bunker"),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_3()
+                                    .child(TextInput::new(&self.key_input))
+                                    .child(
+                                        Button::new("login")
+                                            .label("Continue")
+                                            .primary()
+                                            .loading(self.is_logging_in)
+                                            .disabled(self.is_logging_in)
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.login(window, cx);
+                                            })),
+                                    )
+                                    .when_some(self.error.read(cx).clone(), |this, error| {
+                                        this.child(
+                                            div()
+                                                .text_xs()
+                                                .text_center()
+                                                .text_color(red())
+                                                .child(error),
+                                        )
+                                    }),
+                            ),
+                    ),
             )
             .child(
                 div()
@@ -398,20 +424,31 @@ impl Render for Login {
                                         .rounded_2xl()
                                         .shadow_md()
                                         .when(cx.theme().mode.is_dark(), |this| {
-                                            this.shadow_none().border_1().border_color(cx.theme().border)
+                                            this.shadow_none()
+                                                .border_1()
+                                                .border_color(cx.theme().border)
                                         })
                                         .bg(cx.theme().background)
                                         .child(img(qr).h_64())
                                         .on_click(cx.listener(move |this, _, window, cx| {
-                                            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                                            #[cfg(any(
+                                                target_os = "linux",
+                                                target_os = "freebsd"
+                                            ))]
                                             cx.write_to_clipboard(ClipboardItem::new_string(
                                                 this.connection_string.read(cx).to_string(),
                                             ));
-                                            #[cfg(any(target_os = "macos", target_os = "windows"))]
+                                            #[cfg(any(
+                                                target_os = "macos",
+                                                target_os = "windows"
+                                            ))]
                                             cx.write_to_clipboard(ClipboardItem::new_string(
                                                 this.connection_string.read(cx).to_string(),
                                             ));
-                                            window.push_notification("Connection String has been copied", cx);
+                                            window.push_notification(
+                                                "Connection String has been copied",
+                                                cx,
+                                            );
                                         })),
                                 )
                             })
@@ -423,11 +460,15 @@ impl Render for Login {
                                     .justify_center()
                                     .gap_1()
                                     .child(TextInput::new(&self.relay_input).xsmall())
-                                    .child(Button::new("change").label("Change").ghost().xsmall().on_click(
-                                        cx.listener(move |this, _, window, cx| {
-                                            this.change_relay(window, cx);
-                                        }),
-                                    )),
+                                    .child(
+                                        Button::new("change")
+                                            .label("Change")
+                                            .ghost()
+                                            .xsmall()
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.change_relay(window, cx);
+                                            })),
+                                    ),
                             ),
                     ),
             )

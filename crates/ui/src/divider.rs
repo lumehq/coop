@@ -1,5 +1,7 @@
 use gpui::prelude::FluentBuilder as _;
-use gpui::{div, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled};
+use gpui::{
+    div, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
+};
 use theme::ActiveTheme;
 
 /// A divider that can be either vertical or horizontal.

@@ -3,8 +3,8 @@ use global::constants::NEW_MESSAGE_SUB_ID;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement, Render, Styled, Subscription, Task, TextAlign, UniformList, Window,
+    div, px, uniform_list, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign, UniformList, Window,
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -37,9 +37,18 @@ impl Relays {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
                 let signer = shared_state().client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let filter = Filter::new().kind(Kind::InboxRelays).author(public_key).limit(1);
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(public_key)
+                    .limit(1);
 
-                if let Some(event) = shared_state().client.database().query(filter).await?.first_owned() {
+                if let Some(event) = shared_state()
+                    .client
+                    .database()
+                    .query(filter)
+                    .await?
+                    .first_owned()
+                {
                     let relays = event
                         .tags
                         .filter(TagKind::Relay)
@@ -77,13 +86,15 @@ impl Relays {
         cx.new(|cx| {
             let mut subscriptions = smallvec![];
 
-            subscriptions.push(
-                cx.subscribe_in(&input, window, move |this: &mut Relays, _, event, window, cx| {
+            subscriptions.push(cx.subscribe_in(
+                &input,
+                window,
+                move |this: &mut Relays, _, event, window, cx| {
                     if let InputEvent::PressEnter { .. } = event {
                         this.add(window, cx);
                     }
-                }),
-            );
+                },
+            ));
 
             Self {
                 relays,
@@ -145,7 +156,10 @@ impl Relays {
                 .client
                 .subscribe_with_id(
                     sub_id,
-                    Filter::new().kind(Kind::GiftWrap).pubkey(public_key).limit(0),
+                    Filter::new()
+                        .kind(Kind::GiftWrap)
+                        .pubkey(public_key)
+                        .limit(0),
                     None,
                 )
                 .await
@@ -206,7 +220,12 @@ impl Relays {
         });
     }
 
-    fn render_list(&mut self, relays: Vec<RelayUrl>, _window: &mut Window, cx: &mut Context<Self>) -> UniformList {
+    fn render_list(
+        &mut self,
+        relays: Vec<RelayUrl>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> UniformList {
         let view = cx.entity();
         let total = relays.len();
 
@@ -236,7 +255,9 @@ impl Relays {
                                     .ghost()
                                     .invisible()
                                     .group_hover("", |this| this.visible())
-                                    .on_click(cx.listener(move |this, _, window, cx| this.remove(ix, window, cx))),
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.remove(ix, window, cx)
+                                    })),
                             ),
                     ),
                 )
@@ -277,7 +298,12 @@ impl Render for Relays {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().text_sm().text_color(cx.theme().text_muted).child(MESSAGE))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().text_muted)
+                            .child(MESSAGE),
+                    )
                     .child(
                         div()
                             .w_full()
@@ -298,7 +324,9 @@ impl Render for Relays {
                                             .small()
                                             .ghost()
                                             .rounded_md()
-                                            .on_click(cx.listener(|this, _, window, cx| this.add(window, cx))),
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.add(window, cx)
+                                            })),
                                     ),
                             )
                             .map(|this| {

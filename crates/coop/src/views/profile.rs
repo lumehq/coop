@@ -6,8 +6,8 @@ use common::nip96_upload;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement, PathPromptOptions, Render, Styled,
-    Task, Window,
+    div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
+    PathPromptOptions, Render, Styled, Task, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
@@ -33,8 +33,10 @@ pub struct Profile {
 impl Profile {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
-        let avatar_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
-        let website_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
+        let avatar_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+        let website_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -239,9 +241,19 @@ impl Render for Profile {
                     .map(|this| {
                         let picture = self.avatar_input.read(cx).value();
                         if picture.is_empty() {
-                            this.child(img("brand/avatar.png").rounded_full().size_10().flex_shrink_0())
+                            this.child(
+                                img("brand/avatar.png")
+                                    .rounded_full()
+                                    .size_10()
+                                    .flex_shrink_0(),
+                            )
                         } else {
-                            this.child(img(picture.clone()).rounded_full().size_10().flex_shrink_0())
+                            this.child(
+                                img(picture.clone())
+                                    .rounded_full()
+                                    .size_10()
+                                    .flex_shrink_0(),
+                            )
                         }
                     })
                     .child(

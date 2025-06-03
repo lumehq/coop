@@ -4,10 +4,10 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    actions, anchored, canvas, div, px, rems, Action, AnyElement, App, AppContext, Bounds, Context, Corner,
-    DismissEvent, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
-    Keystroke, ParentElement, Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, WeakEntity, Window,
+    actions, anchored, canvas, div, px, rems, Action, AnyElement, App, AppContext, Bounds, Context,
+    Corner, DismissEvent, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyBinding, Keystroke, ParentElement, Pixels, Render, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
 };
 use theme::ActiveTheme;
 
@@ -55,7 +55,9 @@ pub trait PopupMenuExt: Styled + Selectable + IntoElement + 'static {
             .trigger(self)
             .trigger_style(style)
             .anchor(anchor.into())
-            .content(move |window, cx| PopupMenu::build(window, cx, |menu, window, cx| f(menu, window, cx)))
+            .content(move |window, cx| {
+                PopupMenu::build(window, cx, |menu, window, cx| f(menu, window, cx))
+            })
     }
 }
 
@@ -126,9 +128,12 @@ impl PopupMenu {
     ) -> Entity<Self> {
         cx.new(|cx| {
             let focus_handle = cx.focus_handle();
-            let subscriptions = vec![cx.on_blur(&focus_handle, window, |this: &mut PopupMenu, window, cx| {
-                this.dismiss(&Dismiss, window, cx)
-            })];
+            let subscriptions =
+                vec![
+                    cx.on_blur(&focus_handle, window, |this: &mut PopupMenu, window, cx| {
+                        this.dismiss(&Dismiss, window, cx)
+                    }),
+                ];
             let menu = Self {
                 focus_handle,
                 action_focus_handle: None,
@@ -223,7 +228,12 @@ impl PopupMenu {
     }
 
     /// Add Menu Item with check icon
-    pub fn menu_with_check(mut self, label: impl Into<SharedString>, checked: bool, action: Box<dyn Action>) -> Self {
+    pub fn menu_with_check(
+        mut self,
+        label: impl Into<SharedString>,
+        checked: bool,
+        action: Box<dyn Action>,
+    ) -> Self {
         if checked {
             self.add_menu_item(label, Some(IconName::Check.into()), action);
         } else {
@@ -409,7 +419,13 @@ impl PopupMenu {
 
             let ix = self
                 .selected_index
-                .map(|index| if index == last_ix { 0 } else { index.saturating_sub(1) })
+                .map(|index| {
+                    if index == last_ix {
+                        0
+                    } else {
+                        index.saturating_sub(1)
+                    }
+                })
                 .unwrap_or(last_ix);
             self.selected_index = Some(ix);
             cx.notify();
@@ -441,9 +457,12 @@ impl PopupMenu {
     ) -> Option<impl IntoElement> {
         if let Some(action) = action {
             if let Some(keybinding) = window.bindings_for_action(action.deref()).first() {
-                let el = div()
-                    .text_color(cx.theme().text_muted)
-                    .children(keybinding.keystrokes().iter().map(|key| key_shortcut(key.clone())));
+                let el = div().text_color(cx.theme().text_muted).children(
+                    keybinding
+                        .keystrokes()
+                        .iter()
+                        .map(|key| key_shortcut(key.clone())),
+                );
 
                 return Some(el);
             }

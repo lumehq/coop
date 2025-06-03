@@ -3,11 +3,11 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    actions, anchored, deferred, div, px, AnyElement, App, Bounds, Context, Corner, DismissEvent, DispatchPhase,
-    Element, ElementId, Entity, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hitbox, HitboxBehavior,
-    InteractiveElement as _, IntoElement, KeyBinding, LayoutId, ManagedView, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, Render, ScrollHandle, StatefulInteractiveElement, Style, StyleRefinement, Styled,
-    Window,
+    actions, anchored, deferred, div, px, AnyElement, App, Bounds, Context, Corner, DismissEvent,
+    DispatchPhase, Element, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
+    GlobalElementId, Hitbox, HitboxBehavior, InteractiveElement as _, IntoElement, KeyBinding,
+    LayoutId, ManagedView, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    ScrollHandle, StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
 };
 
 use crate::{Selectable, StyledExt as _};
@@ -137,7 +137,9 @@ where
     where
         T: Selectable + IntoElement + 'static,
     {
-        self.trigger = Some(Box::new(|is_open, _, _| trigger.selected(is_open).into_any_element()));
+        self.trigger = Some(Box::new(|is_open, _, _| {
+            trigger.selected(is_open).into_any_element()
+        }));
         self
     }
 
@@ -145,6 +147,7 @@ where
         self.trigger_style = Some(style);
         self
     }
+
     /// Set the content of the popover.
     ///
     /// The `content` is a closure that returns an `AnyElement`.
@@ -191,11 +194,14 @@ where
         cx: &mut App,
         f: impl FnOnce(&mut Self, &mut PopoverElementState<M>, &mut Window, &mut App) -> R,
     ) -> R {
-        window.with_optional_element_state::<PopoverElementState<M>, _>(Some(id), |element_state, window| {
-            let mut element_state = element_state.unwrap().unwrap_or_default();
-            let result = f(self, &mut element_state, window, cx);
-            (result, Some(element_state))
-        })
+        window.with_optional_element_state::<PopoverElementState<M>, _>(
+            Some(id),
+            |element_state, window| {
+                let mut element_state = element_state.unwrap().unwrap_or_default();
+                let result = f(self, &mut element_state, window, cx);
+                (result, Some(element_state))
+            },
+        )
     }
 }
 
@@ -240,8 +246,8 @@ pub struct PrepaintState {
 }
 
 impl<M: ManagedView> Element for Popover<M> {
-    type RequestLayoutState = PopoverElementState<M>;
     type PrepaintState = PrepaintState;
+    type RequestLayoutState = PopoverElementState<M>;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
@@ -273,69 +279,81 @@ impl<M: ManagedView> Element for Popover<M> {
             }
         }
 
-        self.with_element_state(id.unwrap(), window, cx, |view, element_state, window, cx| {
-            let mut popover_layout_id = None;
-            let mut popover_element = None;
-            let mut is_open = false;
+        self.with_element_state(
+            id.unwrap(),
+            window,
+            cx,
+            |view, element_state, window, cx| {
+                let mut popover_layout_id = None;
+                let mut popover_element = None;
+                let mut is_open = false;
 
-            if let Some(content_view) = element_state.content_view.borrow_mut().as_mut() {
-                is_open = true;
+                if let Some(content_view) = element_state.content_view.borrow_mut().as_mut() {
+                    is_open = true;
 
-                let mut anchored = anchored().snap_to_window_with_margin(px(8.)).anchor(view.anchor);
-                if let Some(trigger_bounds) = element_state.trigger_bounds {
-                    anchored = anchored.position(view.resolved_corner(trigger_bounds));
+                    let mut anchored = anchored()
+                        .snap_to_window_with_margin(px(8.))
+                        .anchor(view.anchor);
+                    if let Some(trigger_bounds) = element_state.trigger_bounds {
+                        anchored = anchored.position(view.resolved_corner(trigger_bounds));
+                    }
+
+                    let mut element = {
+                        let content_view_mut = element_state.content_view.clone();
+                        let anchor = view.anchor;
+                        let no_style = view.no_style;
+                        deferred(
+                            anchored.child(
+                                div()
+                                    .size_full()
+                                    .occlude()
+                                    .when(!no_style, |this| this.popover_style(cx))
+                                    .map(|this| match anchor {
+                                        Corner::TopLeft | Corner::TopRight => this.top_1p5(),
+                                        Corner::BottomLeft | Corner::BottomRight => {
+                                            this.bottom_1p5()
+                                        }
+                                    })
+                                    .child(content_view.clone())
+                                    .when(!no_style, |this| {
+                                        this.on_mouse_down_out(move |_, window, _| {
+                                            // Update the element_state.content_view to `None`,
+                                            // so that the `paint`` method will not paint it.
+                                            *content_view_mut.borrow_mut() = None;
+                                            window.refresh();
+                                        })
+                                    }),
+                            ),
+                        )
+                        .with_priority(1)
+                        .into_any()
+                    };
+
+                    popover_layout_id = Some(element.request_layout(window, cx));
+                    popover_element = Some(element);
                 }
 
-                let mut element = {
-                    let content_view_mut = element_state.content_view.clone();
-                    let anchor = view.anchor;
-                    let no_style = view.no_style;
-                    deferred(
-                        anchored.child(
-                            div()
-                                .size_full()
-                                .occlude()
-                                .when(!no_style, |this| this.popover_style(cx))
-                                .map(|this| match anchor {
-                                    Corner::TopLeft | Corner::TopRight => this.top_1p5(),
-                                    Corner::BottomLeft | Corner::BottomRight => this.bottom_1p5(),
-                                })
-                                .child(content_view.clone())
-                                .when(!no_style, |this| {
-                                    this.on_mouse_down_out(move |_, window, _| {
-                                        // Update the element_state.content_view to `None`,
-                                        // so that the `paint`` method will not paint it.
-                                        *content_view_mut.borrow_mut() = None;
-                                        window.refresh();
-                                    })
-                                }),
-                        ),
-                    )
-                    .with_priority(1)
-                    .into_any()
-                };
+                let mut trigger_element = view.render_trigger(is_open, window, cx);
+                let trigger_layout_id = trigger_element.request_layout(window, cx);
 
-                popover_layout_id = Some(element.request_layout(window, cx));
-                popover_element = Some(element);
-            }
+                let layout_id = window.request_layout(
+                    style,
+                    Some(trigger_layout_id).into_iter().chain(popover_layout_id),
+                    cx,
+                );
 
-            let mut trigger_element = view.render_trigger(is_open, window, cx);
-            let trigger_layout_id = trigger_element.request_layout(window, cx);
-
-            let layout_id =
-                window.request_layout(style, Some(trigger_layout_id).into_iter().chain(popover_layout_id), cx);
-
-            (
-                layout_id,
-                PopoverElementState {
-                    trigger_layout_id: Some(trigger_layout_id),
-                    popover_layout_id,
-                    popover_element,
-                    trigger_element: Some(trigger_element),
-                    ..Default::default()
-                },
-            )
-        })
+                (
+                    layout_id,
+                    PopoverElementState {
+                        trigger_layout_id: Some(trigger_layout_id),
+                        popover_layout_id,
+                        popover_element,
+                        trigger_element: Some(trigger_element),
+                        ..Default::default()
+                    },
+                )
+            },
+        )
     }
 
     fn prepaint(
@@ -354,14 +372,22 @@ impl<M: ManagedView> Element for Popover<M> {
             element.prepaint(window, cx);
         }
 
-        let trigger_bounds = request_layout.trigger_layout_id.map(|id| window.layout_bounds(id));
+        let trigger_bounds = request_layout
+            .trigger_layout_id
+            .map(|id| window.layout_bounds(id));
 
         // Prepare the popover, for get the bounds of it for open window size.
-        let _ = request_layout.popover_layout_id.map(|id| window.layout_bounds(id));
+        let _ = request_layout
+            .popover_layout_id
+            .map(|id| window.layout_bounds(id));
 
-        let hitbox = window.insert_hitbox(trigger_bounds.unwrap_or_default(), HitboxBehavior::Normal);
+        let hitbox =
+            window.insert_hitbox(trigger_bounds.unwrap_or_default(), HitboxBehavior::Normal);
 
-        PrepaintState { trigger_bounds, hitbox }
+        PrepaintState {
+            trigger_bounds,
+            hitbox,
+        }
     }
 
     fn paint(
@@ -374,53 +400,67 @@ impl<M: ManagedView> Element for Popover<M> {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.with_element_state(id.unwrap(), window, cx, |this, element_state, window, cx| {
-            element_state.trigger_bounds = prepaint.trigger_bounds;
+        self.with_element_state(
+            id.unwrap(),
+            window,
+            cx,
+            |this, element_state, window, cx| {
+                element_state.trigger_bounds = prepaint.trigger_bounds;
 
-            if let Some(mut element) = request_layout.trigger_element.take() {
-                element.paint(window, cx);
-            }
-
-            if let Some(mut element) = request_layout.popover_element.take() {
-                element.paint(window, cx);
-                return;
-            }
-
-            // When mouse click down in the trigger bounds, open the popover.
-            let Some(content_build) = this.content.take() else {
-                return;
-            };
-            let old_content_view = element_state.content_view.clone();
-            let hitbox_id = prepaint.hitbox.id;
-            let mouse_button = this.mouse_button;
-            window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-                if phase == DispatchPhase::Bubble && event.button == mouse_button && hitbox_id.is_hovered(window) {
-                    cx.stop_propagation();
-                    window.prevent_default();
-
-                    let new_content_view = (content_build)(window, cx);
-                    let old_content_view1 = old_content_view.clone();
-
-                    let previous_focus_handle = window.focused(cx);
-
-                    window
-                        .subscribe(&new_content_view, cx, move |modal, _: &DismissEvent, window, cx| {
-                            if modal.focus_handle(cx).contains_focused(window, cx) {
-                                if let Some(previous_focus_handle) = previous_focus_handle.as_ref() {
-                                    window.focus(previous_focus_handle);
-                                }
-                            }
-                            *old_content_view1.borrow_mut() = None;
-
-                            window.refresh();
-                        })
-                        .detach();
-
-                    window.focus(&new_content_view.focus_handle(cx));
-                    *old_content_view.borrow_mut() = Some(new_content_view);
-                    window.refresh();
+                if let Some(mut element) = request_layout.trigger_element.take() {
+                    element.paint(window, cx);
                 }
-            });
-        });
+
+                if let Some(mut element) = request_layout.popover_element.take() {
+                    element.paint(window, cx);
+                    return;
+                }
+
+                // When mouse click down in the trigger bounds, open the popover.
+                let Some(content_build) = this.content.take() else {
+                    return;
+                };
+                let old_content_view = element_state.content_view.clone();
+                let hitbox_id = prepaint.hitbox.id;
+                let mouse_button = this.mouse_button;
+                window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Bubble
+                        && event.button == mouse_button
+                        && hitbox_id.is_hovered(window)
+                    {
+                        cx.stop_propagation();
+                        window.prevent_default();
+
+                        let new_content_view = (content_build)(window, cx);
+                        let old_content_view1 = old_content_view.clone();
+
+                        let previous_focus_handle = window.focused(cx);
+
+                        window
+                            .subscribe(
+                                &new_content_view,
+                                cx,
+                                move |modal, _: &DismissEvent, window, cx| {
+                                    if modal.focus_handle(cx).contains_focused(window, cx) {
+                                        if let Some(previous_focus_handle) =
+                                            previous_focus_handle.as_ref()
+                                        {
+                                            window.focus(previous_focus_handle);
+                                        }
+                                    }
+                                    *old_content_view1.borrow_mut() = None;
+
+                                    window.refresh();
+                                },
+                            )
+                            .detach();
+
+                        window.focus(&new_content_view.focus_handle(cx));
+                        *old_content_view.borrow_mut() = Some(new_content_view);
+                        window.refresh();
+                    }
+                });
+            },
+        );
     }
 }

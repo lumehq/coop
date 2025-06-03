@@ -1,7 +1,7 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, px, rems, AbsoluteLength, App, Hsla, ImageSource, Img, IntoElement, ParentElement, RenderOnce, Styled,
-    StyledImage, Window,
+    div, img, px, rems, AbsoluteLength, App, Hsla, ImageSource, Img, IntoElement, ParentElement,
+    RenderOnce, Styled, StyledImage, Window,
 };
 use theme::ActiveTheme;
 
@@ -66,7 +66,11 @@ impl Avatar {
 
 impl RenderOnce for Avatar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let border_width = if self.border_color.is_some() { px(2.) } else { px(0.) };
+        let border_width = if self.border_color.is_some() {
+            px(2.)
+        } else {
+            px(0.)
+        };
 
         let image_size = self.size.unwrap_or_else(|| rems(1.).into());
         let container_size = image_size.to_pixels(window.rem_size()) + border_width * 2.;

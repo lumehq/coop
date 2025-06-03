@@ -6,8 +6,9 @@ use common::nip96_upload;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Window,
+    div, img, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten,
+    FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
+    Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
@@ -42,7 +43,8 @@ impl NewAccount {
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
-        let avatar_input = cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+        let avatar_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -227,7 +229,12 @@ impl Render for NewAccount {
                             .gap_2()
                             .map(|this| {
                                 if self.avatar_input.read(cx).value().is_empty() {
-                                    this.child(img("brand/avatar.png").rounded_full().size_10().flex_shrink_0())
+                                    this.child(
+                                        img("brand/avatar.png")
+                                            .rounded_full()
+                                            .size_10()
+                                            .flex_shrink_0(),
+                                    )
                                 } else {
                                     this.child(
                                         img(self.avatar_input.read(cx).value().clone())
@@ -268,7 +275,13 @@ impl Render for NewAccount {
                             .child("Bio:")
                             .child(TextInput::new(&self.bio_input).small()),
                     )
-                    .child(div().my_2().w_full().h_px().bg(cx.theme().elevated_surface_background))
+                    .child(
+                        div()
+                            .my_2()
+                            .w_full()
+                            .h_px()
+                            .bg(cx.theme().elevated_surface_background),
+                    )
                     .child(
                         Button::new("submit")
                             .label("Continue")

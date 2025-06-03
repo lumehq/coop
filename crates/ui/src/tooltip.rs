@@ -1,5 +1,6 @@
 use gpui::{
-    div, relative, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, relative, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
+    SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
 

@@ -1,7 +1,7 @@
 use gpui::{
-    px, relative, App, Axis, BorderStyle, Bounds, ContentMask, Corners, Edges, Element, ElementId, EntityId,
-    GlobalElementId, Hitbox, HitboxBehavior, Hsla, IntoElement, IsZero as _, LayoutId, PaintQuad, Pixels, Point,
-    Position, ScrollHandle, ScrollWheelEvent, Size, Style, Window,
+    px, relative, App, Axis, BorderStyle, Bounds, ContentMask, Corners, Edges, Element, ElementId,
+    EntityId, GlobalElementId, Hitbox, HitboxBehavior, Hsla, IntoElement, IsZero as _, LayoutId,
+    PaintQuad, Pixels, Point, Position, ScrollHandle, ScrollWheelEvent, Size, Style, Window,
 };
 
 use crate::AxisExt;
@@ -46,8 +46,8 @@ impl IntoElement for ScrollableMask {
 }
 
 impl Element for ScrollableMask {
-    type RequestLayoutState = ();
     type PrepaintState = Hitbox;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         None
@@ -133,7 +133,10 @@ impl Element for ScrollableMask {
                 let last_offset = scroll_handle.offset();
 
                 move |event: &ScrollWheelEvent, phase, window, cx| {
-                    if bounds.contains(&mouse_position) && phase.bubble() && hitbox.is_hovered(window) {
+                    if bounds.contains(&mouse_position)
+                        && phase.bubble()
+                        && hitbox.is_hovered(window)
+                    {
                         let mut offset = scroll_handle.offset();
                         let mut delta = event.delta.pixel_delta(line_height);
 

@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, Animation, AnimationExt as _, AnyElement, App, Element, ElementId, GlobalElementId, InteractiveElement,
-    IntoElement, LayoutId, ParentElement as _, SharedString, Styled as _, Window,
+    div, px, Animation, AnimationExt as _, AnyElement, App, Element, ElementId, GlobalElementId,
+    InteractiveElement, IntoElement, LayoutId, ParentElement as _, SharedString, Styled as _,
+    Window,
 };
 use theme::ActiveTheme;
 
@@ -89,9 +90,8 @@ pub struct SwitchState {
 }
 
 impl Element for Switch {
-    type RequestLayoutState = AnyElement;
-
     type PrepaintState = ();
+    type RequestLayoutState = AnyElement;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
@@ -160,31 +160,45 @@ impl Element for Switch {
                                 .when(!self.disabled, |this| this.cursor_pointer())
                                 .child(
                                     // Switch Toggle
-                                    div().rounded_full().bg(toggle_bg).size(bar_width).map(|this| {
-                                        let prev_checked = state.prev_checked.clone();
-                                        if !self.disabled && prev_checked.borrow().is_some_and(|prev| prev != checked) {
-                                            let dur = Duration::from_secs_f64(0.15);
-                                            cx.spawn(async move |cx| {
-                                                cx.background_executor().timer(dur).await;
-                                                *prev_checked.borrow_mut() = Some(checked);
-                                            })
-                                            .detach();
-                                            this.with_animation(
-                                                ElementId::NamedInteger("move".into(), checked as u64),
-                                                Animation::new(dur),
-                                                move |this, delta| {
-                                                    let max_x = bg_width - bar_width - inset * 2;
-                                                    let x = if checked { max_x * delta } else { max_x - max_x * delta };
-                                                    this.left(x)
-                                                },
-                                            )
-                                            .into_any_element()
-                                        } else {
-                                            let max_x = bg_width - bar_width - inset * 2;
-                                            let x = if checked { max_x } else { px(0.) };
-                                            this.left(x).into_any_element()
-                                        }
-                                    }),
+                                    div().rounded_full().bg(toggle_bg).size(bar_width).map(
+                                        |this| {
+                                            let prev_checked = state.prev_checked.clone();
+                                            if !self.disabled
+                                                && prev_checked
+                                                    .borrow()
+                                                    .is_some_and(|prev| prev != checked)
+                                            {
+                                                let dur = Duration::from_secs_f64(0.15);
+                                                cx.spawn(async move |cx| {
+                                                    cx.background_executor().timer(dur).await;
+                                                    *prev_checked.borrow_mut() = Some(checked);
+                                                })
+                                                .detach();
+                                                this.with_animation(
+                                                    ElementId::NamedInteger(
+                                                        "move".into(),
+                                                        checked as u64,
+                                                    ),
+                                                    Animation::new(dur),
+                                                    move |this, delta| {
+                                                        let max_x =
+                                                            bg_width - bar_width - inset * 2;
+                                                        let x = if checked {
+                                                            max_x * delta
+                                                        } else {
+                                                            max_x - max_x * delta
+                                                        };
+                                                        this.left(x)
+                                                    },
+                                                )
+                                                .into_any_element()
+                                            } else {
+                                                let max_x = bg_width - bar_width - inset * 2;
+                                                let x = if checked { max_x } else { px(0.) };
+                                                this.left(x).into_any_element()
+                                            }
+                                        },
+                                    ),
                                 ),
                         )
                         .when_some(self.label.clone(), |this, label| {
@@ -194,7 +208,10 @@ impl Element for Switch {
                             }))
                         })
                         .when_some(
-                            on_click.as_ref().map(|c| c.clone()).filter(|_| !self.disabled),
+                            on_click
+                                .as_ref()
+                                .map(|c| c.clone())
+                                .filter(|_| !self.disabled),
                             |this, on_click| {
                                 let prev_checked = state.prev_checked.clone();
                                 this.on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {

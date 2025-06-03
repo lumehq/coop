@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, ease_in_out, percentage, Animation, AnimationExt as _, App, Hsla, IntoElement, ParentElement, RenderOnce,
-    Styled as _, Transformation, Window,
+    div, ease_in_out, percentage, Animation, AnimationExt as _, App, Hsla, IntoElement,
+    ParentElement, RenderOnce, Styled as _, Transformation, Window,
 };
 
 use crate::{Icon, IconName, Sizable, Size};

@@ -328,7 +328,11 @@ impl Room {
 
         cx.background_spawn(async move {
             for public_key in public_keys.iter() {
-                let metadata = shared_state().client.database().metadata(*public_key).await?;
+                let metadata = shared_state()
+                    .client
+                    .database()
+                    .metadata(*public_key)
+                    .await?;
 
                 shared_state()
                     .persons
@@ -364,8 +368,17 @@ impl Room {
             let mut result = Vec::with_capacity(pubkeys.len());
 
             for pubkey in pubkeys.iter() {
-                let filter = Filter::new().kind(Kind::InboxRelays).author(*pubkey).limit(1);
-                let is_ready = shared_state().client.database().query(filter).await?.first().is_some();
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(*pubkey)
+                    .limit(1);
+                let is_ready = shared_state()
+                    .client
+                    .database()
+                    .query(filter)
+                    .await?
+                    .first()
+                    .is_some();
 
                 result.push((*pubkey, is_ready));
             }
@@ -531,7 +544,12 @@ impl Room {
     ///
     /// Returns `Some(Message)` containing the temporary message if the current user's profile is available,
     /// or `None` if no account is found.
-    pub fn create_temp_message(&self, content: &str, replies: Option<&Vec<Message>>, cx: &App) -> Option<Message> {
+    pub fn create_temp_message(
+        &self,
+        content: &str,
+        replies: Option<&Vec<Message>>,
+        cx: &App,
+    ) -> Option<Message> {
         let author = AppState::get_global(cx).account().cloned()?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
@@ -643,7 +661,9 @@ impl Room {
 
             // Add subject tag if it's present
             if let Some(subject) = subject {
-                tags.push(Tag::from_standardized(TagStandard::Subject(subject.to_string())));
+                tags.push(Tag::from_standardized(TagStandard::Subject(
+                    subject.to_string(),
+                )));
             }
 
             // Add picture tag if it's present

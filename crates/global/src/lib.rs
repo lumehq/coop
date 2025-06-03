@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
-    NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
+    METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
 use nostr_connect::client::NostrConnect;
 use nostr_sdk::prelude::*;
@@ -52,7 +52,9 @@ pub fn shared_state() -> &'static Globals {
         // rustls uses the `aws_lc_rs` provider by default
         // This only errors if the default provider has already
         // been installed. We can ignore this `Result`.
-        rustls::crypto::aws_lc_rs::default_provider().install_default().ok();
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .ok();
 
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
@@ -63,7 +65,9 @@ pub fn shared_state() -> &'static Globals {
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
             persons: RwLock::new(BTreeMap::new()),
-            auto_close: Some(SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE)),
+            auto_close: Some(
+                SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
+            ),
             global_sender,
             global_receiver,
             batch_sender,
@@ -110,13 +114,17 @@ impl Globals {
 
                         // Process immediately if batch limit reached
                         if batch.len() >= METADATA_BATCH_LIMIT {
-                            shared_state().sync_data_for_pubkeys(mem::take(&mut batch)).await;
+                            shared_state()
+                                .sync_data_for_pubkeys(mem::take(&mut batch))
+                                .await;
                         }
                     }
                     BatchEvent::Timeout => {
                         // Process current batch if not empty
                         if !batch.is_empty() {
-                            shared_state().sync_data_for_pubkeys(mem::take(&mut batch)).await;
+                            shared_state()
+                                .sync_data_for_pubkeys(mem::take(&mut batch))
+                                .await;
                         }
                     }
                     BatchEvent::ChannelClosed => {
@@ -136,7 +144,10 @@ impl Globals {
         while let Ok(notification) = notifications.recv().await {
             if let RelayPoolNotification::Message { message, .. } = notification {
                 match message {
-                    RelayMessage::Event { event, subscription_id } => {
+                    RelayMessage::Event {
+                        event,
+                        subscription_id,
+                    } => {
                         if processed_events.contains(&event.id) {
                             continue;
                         }
@@ -246,7 +257,10 @@ impl Globals {
     }
 
     async fn get_unwrapped(&self, target: EventId) -> Result<Event, anyhow::Error> {
-        let filter = Filter::new().kind(Kind::Custom(30078)).event(target).limit(1);
+        let filter = Filter::new()
+            .kind(Kind::Custom(30078))
+            .event(target)
+            .limit(1);
 
         if let Some(event) = self.client.database().query(filter).await?.first_owned() {
             Ok(Event::from_json(event.content)?)
@@ -264,7 +278,9 @@ impl Globals {
             Err(_) => match self.client.unwrap_gift_wrap(event).await {
                 Ok(unwrap) => match unwrap.rumor.sign_with_keys(&random_keys) {
                     Ok(unwrapped) => {
-                        self.set_unwrapped(event.id, &unwrapped, &random_keys).await.ok();
+                        self.set_unwrapped(event.id, &unwrapped, &random_keys)
+                            .await
+                            .ok();
                         unwrapped
                     }
                     Err(_) => return,
@@ -285,7 +301,10 @@ impl Globals {
 
         // Send this event to the GPUI
         if sub_id == &new_messages_id {
-            self.global_sender.send(NostrSignal::Event(event)).await.ok();
+            self.global_sender
+                .send(NostrSignal::Event(event))
+                .await
+                .ok();
         }
     }
 
@@ -301,7 +320,12 @@ impl Globals {
     }
 
     async fn sync_data_for_pubkeys(&self, buffer: BTreeSet<PublicKey>) {
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays, Kind::UserStatus];
+        let kinds = vec![
+            Kind::Metadata,
+            Kind::ContactList,
+            Kind::InboxRelays,
+            Kind::UserStatus,
+        ];
         let filter = Filter::new()
             .limit(buffer.len() * kinds.len())
             .authors(buffer)

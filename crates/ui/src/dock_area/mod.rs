@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    actions, canvas, div, px, AnyElement, AnyView, App, AppContext, Axis, Bounds, Context, Edges, Entity, EntityId,
-    EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, Styled, Subscription,
-    WeakEntity, Window,
+    actions, canvas, div, px, AnyElement, AnyView, App, AppContext, Axis, Bounds, Context, Edges,
+    Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
+    Pixels, Render, Styled, Subscription, WeakEntity, Window,
 };
 
 use crate::dock_area::dock::{Dock, DockPlacement};
@@ -154,7 +154,12 @@ impl DockItem {
         Self::new_tabs(new_items, active_ix, dock_area, window, cx)
     }
 
-    pub fn tab<P: Panel>(item: Entity<P>, dock_area: &WeakEntity<DockArea>, window: &mut Window, cx: &mut App) -> Self {
+    pub fn tab<P: Panel>(
+        item: Entity<P>,
+        dock_area: &WeakEntity<DockArea>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
         Self::new_tabs(vec![Arc::new(item.clone())], None, dock_area, window, cx)
     }
 
@@ -194,7 +199,9 @@ impl DockItem {
     /// Find existing panel in the dock item.
     pub fn find_panel(&self, panel: Arc<dyn PanelView>) -> Option<Arc<dyn PanelView>> {
         match self {
-            Self::Split { items, .. } => items.iter().find_map(|item| item.find_panel(panel.clone())),
+            Self::Split { items, .. } => {
+                items.iter().find_map(|item| item.find_panel(panel.clone()))
+            }
             Self::Tabs { items, .. } => items.iter().find(|item| *item == &panel).cloned(),
             Self::Panel { view } => Some(view.clone()),
         }
@@ -484,7 +491,12 @@ impl DockArea {
         }
     }
 
-    pub fn toggle_dock(&self, placement: DockPlacement, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn toggle_dock(
+        &self,
+        placement: DockPlacement,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let dock = match placement {
             DockPlacement::Left => &self.left_dock,
             DockPlacement::Bottom => &self.bottom_dock,
@@ -552,7 +564,8 @@ impl DockArea {
                 }
             }
             DockPlacement::Center => {
-                self.items.add_panel(panel, &cx.entity().downgrade(), window, cx);
+                self.items
+                    .add_panel(panel, &cx.entity().downgrade(), window, cx);
             }
         }
     }
@@ -565,8 +578,10 @@ impl DockArea {
                     self.subscribe_item(item, window, cx);
                 }
 
-                self.subscriptions
-                    .push(cx.subscribe_in(view, window, move |_, _, event, window, cx| {
+                self.subscriptions.push(cx.subscribe_in(
+                    view,
+                    window,
+                    move |_, _, event, window, cx| {
                         if let PanelEvent::LayoutChanged = event {
                             cx.spawn_in(window, async move |view, window| {
                                 _ = view.update_in(window, |view, window, cx| {
@@ -577,7 +592,8 @@ impl DockArea {
 
                             cx.emit(DockEvent::LayoutChanged);
                         }
-                    }));
+                    },
+                ));
             }
             DockItem::Tabs { .. } => {
                 // We subscribe to the tab panel event in StackPanel's insert_panel
@@ -595,39 +611,49 @@ impl DockArea {
         window: &mut Window,
         cx: &mut Context<DockArea>,
     ) {
-        let subscription = cx.subscribe_in(view, window, move |_, panel, event, window, cx| match event {
-            PanelEvent::ZoomIn => {
-                let panel = panel.clone();
-                cx.spawn_in(window, async move |view, window| {
-                    _ = view.update_in(window, |view, window, cx| {
-                        view.set_zoomed_in(panel, window, cx);
-                        cx.notify();
-                    });
-                })
-                .detach();
-            }
-            PanelEvent::ZoomOut => cx
-                .spawn_in(window, async move |view, window| {
-                    _ = view.update_in(window, |view, window, cx| {
-                        view.set_zoomed_out(window, cx);
-                    });
-                })
-                .detach(),
-            PanelEvent::LayoutChanged => {
-                cx.spawn_in(window, async move |view, window| {
-                    _ = view.update_in(window, |view, window, cx| {
-                        view.update_toggle_button_tab_panels(window, cx)
-                    });
-                })
-                .detach();
-                cx.emit(DockEvent::LayoutChanged);
-            }
-        });
+        let subscription =
+            cx.subscribe_in(
+                view,
+                window,
+                move |_, panel, event, window, cx| match event {
+                    PanelEvent::ZoomIn => {
+                        let panel = panel.clone();
+                        cx.spawn_in(window, async move |view, window| {
+                            _ = view.update_in(window, |view, window, cx| {
+                                view.set_zoomed_in(panel, window, cx);
+                                cx.notify();
+                            });
+                        })
+                        .detach();
+                    }
+                    PanelEvent::ZoomOut => cx
+                        .spawn_in(window, async move |view, window| {
+                            _ = view.update_in(window, |view, window, cx| {
+                                view.set_zoomed_out(window, cx);
+                            });
+                        })
+                        .detach(),
+                    PanelEvent::LayoutChanged => {
+                        cx.spawn_in(window, async move |view, window| {
+                            _ = view.update_in(window, |view, window, cx| {
+                                view.update_toggle_button_tab_panels(window, cx)
+                            });
+                        })
+                        .detach();
+                        cx.emit(DockEvent::LayoutChanged);
+                    }
+                },
+            );
 
         self.subscriptions.push(subscription);
     }
 
-    pub fn set_zoomed_in<P: Panel>(&mut self, panel: Entity<P>, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_zoomed_in<P: Panel>(
+        &mut self,
+        panel: Entity<P>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.zoom_view = Some(panel.into());
         cx.notify();
     }
@@ -645,12 +671,22 @@ impl DockArea {
         }
     }
 
-    pub fn update_toggle_button_tab_panels(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn update_toggle_button_tab_panels(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Left toggle button
-        self.toggle_button_panels.left = self.items.left_top_tab_panel(cx).map(|view| view.entity_id());
+        self.toggle_button_panels.left = self
+            .items
+            .left_top_tab_panel(cx)
+            .map(|view| view.entity_id());
 
         // Right toggle button
-        self.toggle_button_panels.right = self.items.right_top_tab_panel(cx).map(|view| view.entity_id());
+        self.toggle_button_panels.right = self
+            .items
+            .right_top_tab_panel(cx)
+            .map(|view| view.entity_id());
 
         // Bottom toggle button
         self.toggle_button_panels.bottom = self
@@ -702,9 +738,16 @@ impl Render for DockArea {
                                     .flex_col()
                                     .overflow_hidden()
                                     // Top center
-                                    .child(div().flex_1().overflow_hidden().child(self.render_items(window, cx)))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .overflow_hidden()
+                                            .child(self.render_items(window, cx)),
+                                    )
                                     // Bottom Dock
-                                    .when_some(self.bottom_dock.clone(), |this, dock| this.child(dock)),
+                                    .when_some(self.bottom_dock.clone(), |this, dock| {
+                                        this.child(dock)
+                                    }),
                             )
                             // Right Dock
                             .when_some(self.right_dock.clone(), |this, dock| {
