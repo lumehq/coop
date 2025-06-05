@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Error;
 use app_state::AppState;
@@ -10,7 +11,7 @@ use gpui::{
     div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
 };
-use nostr_sdk::prelude::*;
+use nostr_connect::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
@@ -21,7 +22,9 @@ use ui::dock_area::{DockArea, DockItem};
 use ui::{ContextModal, IconName, Root, Sizable, TitleBar};
 
 use crate::views::chat::{self, Chat};
-use crate::views::{compose, login, new_account, onboarding, profile, relays, sidebar, welcome};
+use crate::views::{
+    compose, login, new_account, onboarding, profile, relays, sidebar, startup, welcome,
+};
 
 impl_internal_actions!(dock, [ToggleModal]);
 
@@ -63,13 +66,13 @@ pub struct ChatSpace {
     titlebar: bool,
     dock: Entity<DockArea>,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 3]>,
+    subscriptions: SmallVec<[Subscription; 4]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let dock = cx.new(|cx| {
-            let panel = Arc::new(onboarding::init(window, cx));
+            let panel = Arc::new(startup::init(window, cx));
             let center = DockItem::panel(panel);
             let mut dock = DockArea::new(window, cx);
             // Initialize the dock area with the center panel
@@ -78,26 +81,34 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let account = AppState::global(cx);
+            let app_state = AppState::global(cx);
             let chats = ChatRegistry::global(cx);
             let mut subscriptions = smallvec![];
 
+            subscriptions.push(cx.observe_new::<Self>(|this: &mut Self, window, cx| {
+                if let Some(window) = window {
+                    this.setup_panel(window, cx);
+                }
+            }));
+
             subscriptions.push(cx.observe_in(
-                &account,
+                &app_state,
                 window,
-                |this: &mut ChatSpace, account, window, cx| {
-                    if account.read(cx).account().is_some() {
-                        this.open_chats(window, cx);
-                    } else {
-                        this.open_onboarding(window, cx);
-                    }
+                |this: &mut Self, _, window, cx| {
+                    this.setup_panel(window, cx);
                 },
             ));
+
+            subscriptions.push(cx.observe_new::<Chat>(|this: &mut Chat, window, cx| {
+                if let Some(window) = window {
+                    this.load_messages(window, cx);
+                }
+            }));
 
             subscriptions.push(cx.subscribe_in(
                 &chats,
                 window,
-                |this, _state, event, window, cx| {
+                |this: &mut ChatSpace, _state, event, window, cx| {
                     if let RoomEmitter::Open(room) = event {
                         if let Some(room) = room.upgrade() {
                             this.dock.update(cx, |this, cx| {
@@ -112,12 +123,6 @@ impl ChatSpace {
                 },
             ));
 
-            subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
-                if let Some(window) = window {
-                    this.load_messages(window, cx);
-                }
-            }));
-
             Self {
                 dock,
                 subscriptions,
@@ -126,7 +131,67 @@ impl ChatSpace {
         })
     }
 
-    fn show_titlebar(&mut self, cx: &mut Context<Self>) {
+    fn setup_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let app_state = AppState::global(cx);
+        let task = cx.read_credentials("coop_user");
+
+        if let Some(client_keys) = AppState::get_global(cx).client_keys().cloned() {
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok(Some((username, secret))) = task.await {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            if username == "nostr_connect" {
+                                if let Ok(Ok(uri)) =
+                                    String::from_utf8(secret).map(NostrConnectURI::parse)
+                                {
+                                    if let Ok(signer) = NostrConnect::new(
+                                        uri,
+                                        client_keys,
+                                        Duration::from_secs(300),
+                                        None,
+                                    ) {
+                                        app_state.update(cx, |this, cx| {
+                                            this.login(signer, window, cx);
+                                        });
+
+                                        this.open_chats(window, cx);
+                                    } else {
+                                        this.open_onboarding(window, cx);
+                                    }
+                                } else {
+                                    this.open_onboarding(window, cx);
+                                }
+                            } else {
+                                #[allow(clippy::collapsible_else_if)]
+                                if let Ok(keys) = SecretKey::from_slice(&secret).map(Keys::new) {
+                                    app_state.update(cx, |this, cx| {
+                                        this.login(keys, window, cx);
+                                    });
+
+                                    this.open_chats(window, cx);
+                                } else {
+                                    this.open_onboarding(window, cx);
+                                }
+                            }
+                        })
+                        .ok();
+                    })
+                    .ok();
+                } else {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.open_onboarding(window, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }
+            })
+            .detach();
+        }
+    }
+
+    fn titlebar(&mut self, cx: &mut Context<Self>) {
         self.titlebar = true;
         cx.notify();
     }
@@ -142,7 +207,7 @@ impl ChatSpace {
     }
 
     fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_titlebar(cx);
+        self.titlebar(cx);
 
         let weak_dock = self.dock.downgrade();
         let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));

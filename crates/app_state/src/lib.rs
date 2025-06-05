@@ -43,38 +43,21 @@ impl AppState {
 
         subscriptions.push(cx.observe_new::<AppState>(|_this, window, cx| {
             if let Some(window) = window {
-                // let user_keys_task = cx.read_credentials("coop_user");
                 let client_keys_task = cx.read_credentials("coop_client");
 
                 cx.spawn_in(window, async move |this, cx| {
-                    if let Ok(Some(task)) = client_keys_task.await {
-                        let keys = SecretKey::from_slice(&task.1).map(Keys::new).ok();
-
+                    if let Ok(Some((_, secret))) = client_keys_task.await {
                         this.update(cx, |this, cx| {
-                            this.client_keys = keys;
-                            cx.notify();
+                            let keys = SecretKey::from_slice(&secret).map(Keys::new).ok();
+                            this.set_client_keys(keys, cx);
                         })
                         .ok();
                     } else {
-                        let keys = Keys::generate();
-
                         this.update(cx, |this, cx| {
-                            let save_keys_task = cx.write_credentials(
-                                "coop_client",
-                                &keys.public_key.to_hex(),
-                                keys.secret_key().as_secret_bytes(),
-                            );
-
-                            cx.background_spawn(async move {
-                                save_keys_task.await.ok();
-                            })
-                            .detach();
-
-                            this.client_keys = Some(keys);
-                            cx.notify();
+                            this.generate_new_keys(cx);
                         })
                         .ok();
-                    }
+                    };
                 })
                 .detach();
             }
@@ -89,11 +72,9 @@ impl AppState {
 
     /// Subscribes to the current account's metadata.
     fn subscribe(&self, cx: &mut Context<Self>) {
-        let Some(profile) = self.account.as_ref() else {
+        let Some(public_key) = self.account.as_ref().map(|this| this.public_key()) else {
             return;
         };
-
-        let user = profile.public_key();
 
         let metadata = Filter::new()
             .kinds(vec![
@@ -103,12 +84,11 @@ impl AppState {
                 Kind::MuteList,
                 Kind::SimpleGroups,
             ])
-            .author(user)
+            .author(public_key)
             .limit(10);
 
         let data = Filter::new()
-            .author(user)
-            .since(Timestamp::now())
+            .author(public_key)
             .kinds(vec![
                 Kind::Metadata,
                 Kind::ContactList,
@@ -116,35 +96,38 @@ impl AppState {
                 Kind::SimpleGroups,
                 Kind::InboxRelays,
                 Kind::RelayList,
-            ]);
+            ])
+            .since(Timestamp::now());
 
-        let msg = Filter::new().kind(Kind::GiftWrap).pubkey(user);
-        let new_msg = Filter::new().kind(Kind::GiftWrap).pubkey(user).limit(0);
+        let msg = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+        let new_msg = Filter::new()
+            .kind(Kind::GiftWrap)
+            .pubkey(public_key)
+            .limit(0);
+
         let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
         let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
 
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+        cx.background_spawn(async move {
             let client = &shared_state().client;
             let opts = shared_state().auto_close;
 
+            client.subscribe(data, None).await.ok();
+
             client
                 .subscribe(metadata, shared_state().auto_close)
-                .await?;
-            client.subscribe(data, None).await?;
+                .await
+                .ok();
+
             client
                 .subscribe_with_id(all_messages_sub_id, msg, opts)
-                .await?;
+                .await
+                .ok();
+
             client
                 .subscribe_with_id(new_messages_sub_id, new_msg, None)
-                .await?;
-
-            Ok(())
-        });
-
-        cx.spawn(async move |_, _| {
-            if let Err(e) = task.await {
-                log::error!("Error: {}", e);
-            }
+                .await
+                .ok();
         })
         .detach();
     }
@@ -174,8 +157,8 @@ impl AppState {
             Ok(profile) => {
                 cx.update(|window, cx| {
                     this.update(cx, |this, cx| {
-                        this.account = Some(profile);
-                        cx.notify();
+                        this.set_account(profile, cx);
+                        // Start subscription for this account
                         cx.defer_in(window, |this, _, cx| {
                             this.subscribe(cx);
                         });
@@ -196,15 +179,13 @@ impl AppState {
 
     /// Create a new account with the given metadata.
     pub fn new_account(&mut self, metadata: Metadata, window: &mut Window, cx: &mut Context<Self>) {
-        const DEFAULT_NIP_65_RELAYS: [&str; 4] = [
+        const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
+        const NIP65_RELAYS: [&str; 4] = [
             "wss://relay.damus.io",
             "wss://relay.primal.net",
             "wss://relay.nostr.net",
             "wss://nos.lol",
         ];
-
-        const DEFAULT_MESSAGING_RELAYS: [&str; 2] =
-            ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
 
         let keys = Keys::generate();
         let public_key = keys.public_key();
@@ -212,41 +193,34 @@ impl AppState {
         let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
             // Update signer
             shared_state().client.set_signer(keys).await;
-
             // Set metadata
             shared_state().client.set_metadata(&metadata).await?;
 
             // Create relay list
-            let tags: Vec<Tag> = DEFAULT_NIP_65_RELAYS
-                .into_iter()
-                .filter_map(|url| {
+            let builder = EventBuilder::new(Kind::RelayList, "").tags(
+                NIP65_RELAYS.into_iter().filter_map(|url| {
                     if let Ok(url) = RelayUrl::parse(url) {
                         Some(Tag::relay_metadata(url, None))
                     } else {
                         None
                     }
-                })
-                .collect();
-
-            let builder = EventBuilder::new(Kind::RelayList, "").tags(tags);
+                }),
+            );
 
             if let Err(e) = shared_state().client.send_event_builder(builder).await {
                 log::error!("Failed to send relay list event: {}", e);
             };
 
             // Create messaging relay list
-            let tags: Vec<Tag> = DEFAULT_MESSAGING_RELAYS
-                .into_iter()
-                .filter_map(|url| {
+            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
+                NIP17_RELAYS.into_iter().filter_map(|url| {
                     if let Ok(url) = RelayUrl::parse(url) {
                         Some(Tag::relay(url))
                     } else {
                         None
                     }
-                })
-                .collect();
-
-            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
+                }),
+            );
 
             if let Err(e) = shared_state().client.send_event_builder(builder).await {
                 log::error!("Failed to send messaging relay list event: {}", e);
@@ -259,8 +233,8 @@ impl AppState {
             if let Ok(profile) = task.await {
                 cx.update(|window, cx| {
                     this.update(cx, |this, cx| {
-                        this.account = Some(profile);
-                        cx.notify();
+                        this.set_account(profile, cx);
+                        // Start subscription for this account
                         cx.defer_in(window, |this, _, cx| {
                             this.subscribe(cx);
                         });
@@ -278,9 +252,42 @@ impl AppState {
         .detach();
     }
 
+    /// Set the current account's profile.
+    pub fn set_account(&mut self, profile: Profile, cx: &mut Context<Self>) {
+        self.account = Some(profile);
+        cx.notify();
+    }
+
     /// Get the reference to account's profile.
     pub fn account(&self) -> Option<&Profile> {
         self.account.as_ref()
+    }
+
+    /// Set the client keys.
+    pub fn set_client_keys(&mut self, keys: Option<Keys>, cx: &mut Context<Self>) {
+        self.client_keys = keys;
+        cx.notify();
+    }
+
+    /// Set the client keys.
+    pub fn generate_new_keys(&mut self, cx: &mut Context<Self>) {
+        let keys = Keys::generate();
+        let save_keys = cx.write_credentials(
+            "coop_client",
+            &keys.public_key.to_hex(),
+            keys.secret_key().as_secret_bytes(),
+        );
+
+        // Update the client keys
+        self.set_client_keys(Some(keys), cx);
+
+        // Save keys in the background
+        cx.background_spawn(async move {
+            if let Err(e) = save_keys.await {
+                log::error!("Failed to save keys: {}", e);
+            }
+        })
+        .detach();
     }
 
     /// Get the reference to the client keys.

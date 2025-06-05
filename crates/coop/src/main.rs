@@ -125,10 +125,23 @@ fn main() {
                                         this.update(event, cx);
                                     });
                                 }
-                                NostrSignal::RemoteSigner((signer, _bunker_uri)) => {
+                                NostrSignal::RemoteSigner((signer, bunker_uri)) => {
                                     AppState::global(cx).update(cx, |this, cx| {
                                         this.login(signer, window, cx);
+                                    });
+
+                                    let save_credential = cx.write_credentials(
+                                        "coop_user",
+                                        "nostr_connect",
+                                        bunker_uri.to_string().as_bytes(),
+                                    );
+
+                                    cx.background_spawn(async move {
+                                        if let Err(e) = save_credential.await {
+                                            log::error!("Failed to save bunker: {}", e)
+                                        }
                                     })
+                                    .detach();
                                 }
                             };
                         })
