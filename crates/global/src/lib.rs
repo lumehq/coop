@@ -1,8 +1,8 @@
 //! Global state management for the Nostr client application.
-//! 
+//!
 //! This module provides a singleton global state that manages:
 //! - Nostr client connections and event handling
-//! - User identity and profile management  
+//! - User identity and profile management
 //! - Batched metadata fetching for performance
 //! - Cross-component communication via channels
 
@@ -402,23 +402,21 @@ impl Globals {
 
         let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
         let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-
-        let client = &shared_state().client;
         let opts = shared_state().auto_close;
 
-        client.subscribe(data, None).await.ok();
+        self.client.subscribe(data, None).await.ok();
 
-        client
+        self.client
             .subscribe(metadata, shared_state().auto_close)
             .await
             .ok();
 
-        client
+        self.client
             .subscribe_with_id(all_messages_sub_id, msg, opts)
             .await
             .ok();
 
-        client
+        self.client
             .subscribe_with_id(new_messages_sub_id, new_msg, None)
             .await
             .ok();

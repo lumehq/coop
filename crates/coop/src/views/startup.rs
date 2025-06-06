@@ -1,7 +1,8 @@
 use gpui::{
-    div, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
     IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
+use theme::ActiveTheme;
 use ui::button::Button;
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
@@ -53,12 +54,34 @@ impl Focusable for Startup {
 }
 
 impl Render for Startup {
-    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .child(Indicator::new().small())
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_3()
+                    .child(
+                        svg()
+                            .path("brand/coop.svg")
+                            .size_12()
+                            .text_color(cx.theme().elevated_surface_background),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .text_color(cx.theme().text_muted)
+                            .text_sm()
+                            .child(Indicator::new().small())
+                            .child("Connecting"),
+                    ),
+            )
     }
 }

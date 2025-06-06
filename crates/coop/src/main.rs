@@ -43,9 +43,6 @@ fn main() {
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
     app.run(move |cx| {
-        // Bring the app to the foreground
-        cx.activate(true);
-
         // Register the `quit` function
         cx.on_action(quit);
 
@@ -92,6 +89,7 @@ fn main() {
 
             // Root Entity
             cx.new(|cx| {
+                cx.activate(true);
                 // Initialize components
                 ui::init(cx);
                 // Initialize auto update
