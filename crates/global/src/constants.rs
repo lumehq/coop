@@ -36,6 +36,8 @@ pub const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 /// NIP96 Media Server.
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";
 
+pub(crate) const GLOBAL_CHANNEL_LIMIT: usize = 2048;
+pub(crate) const BATCH_CHANNEL_LIMIT: usize = 1024;
 pub(crate) const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
 pub(crate) const NIP65_RELAYS: [&str; 4] = [
     "wss://relay.damus.io",

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::string_to_qr;
-use global::constants::{KEYRING_BUNKER, KEYRING_USER_PATH};
+use global::constants::{APP_NAME, KEYRING_BUNKER, KEYRING_USER_PATH};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -76,7 +76,7 @@ impl Login {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
             let client_keys = shared_state().client_signer.clone();
 
-            NostrConnectURI::client(client_keys.public_key(), vec![relay], "Coop")
+            NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
 
         // Convert the Connection String into QR Image
@@ -166,13 +166,27 @@ impl Login {
         ));
 
         subscriptions.push(
-            cx.observe_in(&active_signer, window, |_this, entity, _window, cx| {
+            cx.observe_in(&active_signer, window, |_this, entity, window, cx| {
                 if let Some(signer) = entity.read(cx).clone() {
+                    let (tx, rx) = oneshot::channel::<NostrConnectURI>();
+
                     cx.background_spawn(async move {
-                        if signer.bunker_uri().await.is_ok() {
+                        if let Ok(bunker_uri) = signer.bunker_uri().await {
+                            tx.send(bunker_uri).ok();
+
                             if let Err(e) = shared_state().set_signer(signer).await {
                                 log::error!("{}", e);
                             }
+                        }
+                    })
+                    .detach();
+
+                    cx.spawn_in(window, async move |this, cx| {
+                        if let Ok(uri) = rx.await {
+                            this.update(cx, |this, cx| {
+                                this.save_bunker(&uri, cx);
+                            })
+                            .ok();
                         }
                     })
                     .detach();

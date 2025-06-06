@@ -13,7 +13,9 @@ use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
 
-use crate::constants::{KEYRING_PATH, NIP17_RELAYS, NIP65_RELAYS};
+use crate::constants::{
+    BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT, KEYRING_PATH, NIP17_RELAYS, NIP65_RELAYS,
+};
 
 pub mod constants;
 pub mod paths;
@@ -66,14 +68,21 @@ pub fn shared_state() -> &'static Globals {
         let client_signer = if let Ok(keys) = keyring.get("client") {
             keys
         } else {
-            Keys::generate()
+            let keys = Keys::generate();
+            if let Err(e) = keyring.set("client", &keys) {
+                log::error!("Failed to save client keys: {}", e);
+            }
+            keys
         };
 
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
-        let (global_sender, global_receiver) = smol::channel::bounded::<NostrSignal>(2048);
-        let (batch_sender, batch_receiver) = smol::channel::bounded::<Vec<PublicKey>>(2048);
+        let (global_sender, global_receiver) =
+            smol::channel::bounded::<NostrSignal>(GLOBAL_CHANNEL_LIMIT);
+
+        let (batch_sender, batch_receiver) =
+            smol::channel::bounded::<Vec<PublicKey>>(BATCH_CHANNEL_LIMIT);
 
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
