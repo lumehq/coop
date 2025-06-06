@@ -1,3 +1,11 @@
+//! Global state management for the Nostr client application.
+//! 
+//! This module provides a singleton global state that manages:
+//! - Nostr client connections and event handling
+//! - User identity and profile management  
+//! - Batched metadata fetching for performance
+//! - Cross-component communication via channels
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::sync::OnceLock;
@@ -20,40 +28,45 @@ use crate::constants::{
 pub mod constants;
 pub mod paths;
 
+/// Global singleton instance for application state
 static GLOBALS: OnceLock<Globals> = OnceLock::new();
 
+/// Signals sent through the global event channel to notify UI components
 #[derive(Debug)]
 pub enum NostrSignal {
+    /// User's signing keys have been updated
     SignerUpdated,
-    /// Receive event
+    /// New Nostr event received
     Event(Event),
-    /// Receive app update
+    /// Application update event received
     AppUpdate(Event),
-    /// Receive EOSE
+    /// End of stored events received from relay
     Eose,
 }
 
+/// Global application state containing Nostr client and shared resources
 pub struct Globals {
     /// The Nostr SDK client
     pub client: Client,
-    /// TODO: add document
+    /// Cryptographic keys for signing Nostr events
     pub client_signer: Keys,
-    /// TODO: add document,
+    /// Current user's profile information (pubkey and metadata)
     pub identity: RwLock<Option<Profile>>,
-    /// TODO: add document
+    /// Auto-close options for subscriptions to prevent memory leaks
     pub auto_close: Option<SubscribeAutoCloseOptions>,
-    /// TODO: add document
+    /// Channel sender for broadcasting global Nostr events to UI
     pub global_sender: smol::channel::Sender<NostrSignal>,
-    /// TODO: add document
+    /// Channel receiver for handling global Nostr events
     pub global_receiver: smol::channel::Receiver<NostrSignal>,
-    /// TODO: add document
+    /// Channel sender for batching public keys for metadata fetching
     pub batch_sender: smol::channel::Sender<Vec<PublicKey>>,
-    /// TODO: add document
+    /// Channel receiver for processing batched public key requests
     pub batch_receiver: smol::channel::Receiver<Vec<PublicKey>>,
-    /// TODO: add document
+    /// Cache of user profiles mapped by their public keys
     pub persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
 }
 
+/// Returns the global singleton instance, initializing it if necessary
 pub fn shared_state() -> &'static Globals {
     GLOBALS.get_or_init(|| {
         // rustls uses the `aws_lc_rs` provider by default
@@ -101,6 +114,7 @@ pub fn shared_state() -> &'static Globals {
 }
 
 impl Globals {
+    /// Starts the global event processing system and metadata batching
     pub async fn start(&self) {
         self.connect().await;
         self.subscribe_for_app_updates().await;
@@ -112,9 +126,13 @@ impl Globals {
             loop {
                 let timeout = smol::Timer::after(timeout_duration);
 
+                /// Internal events for the metadata batching system
                 enum BatchEvent {
+                    /// New public keys to add to the batch
                     NewKeys(Vec<PublicKey>),
+                    /// Timeout reached, process current batch
                     Timeout,
+                    /// Channel was closed, shutdown gracefully
                     ChannelClosed,
                 }
 
@@ -205,6 +223,7 @@ impl Globals {
         }
     }
 
+    /// Sets a new signer for the client and updates user identity
     pub async fn set_signer<S>(&self, signer: S) -> Result<(), Error>
     where
         S: NostrSigner + 'static,
@@ -237,6 +256,7 @@ impl Globals {
         Ok(())
     }
 
+    /// Creates a new account with the given keys and metadata
     pub async fn new_account(&self, keys: Keys, metadata: Metadata) {
         let profile = Profile::new(keys.public_key(), metadata.clone());
 
@@ -291,14 +311,17 @@ impl Globals {
         self.subscribe_for_user_data().await;
     }
 
+    /// Returns the current user's profile (blocking)
     pub fn identity(&self) -> Option<Profile> {
         self.identity.read_blocking().as_ref().cloned()
     }
 
+    /// Returns the current user's profile (async)
     pub async fn async_identity(&self) -> Option<Profile> {
         self.identity.read().await.as_ref().cloned()
     }
 
+    /// Gets a person's profile from cache or creates default (blocking)
     pub fn person(&self, public_key: &PublicKey) -> Profile {
         let metadata = if let Some(metadata) = self.persons.read_blocking().get(public_key) {
             metadata.clone().unwrap_or_default()
@@ -309,6 +332,7 @@ impl Globals {
         Profile::new(*public_key, metadata)
     }
 
+    /// Gets a person's profile from cache or creates default (async)
     pub async fn async_person(&self, public_key: &PublicKey) -> Profile {
         let metadata = if let Some(metadata) = self.persons.read().await.get(public_key) {
             metadata.clone().unwrap_or_default()
@@ -319,6 +343,7 @@ impl Globals {
         Profile::new(*public_key, metadata)
     }
 
+    /// Connects to bootstrap and configured relays
     async fn connect(&self) {
         for relay in BOOTSTRAP_RELAYS.into_iter() {
             if let Err(e) = self.client.add_relay(relay).await {
@@ -338,6 +363,7 @@ impl Globals {
         log::info!("Connected to bootstrap relays");
     }
 
+    /// Subscribes to user-specific data feeds (DMs, mentions, etc.)
     async fn subscribe_for_user_data(&self) {
         let Some(profile) = self.identity.read().await.clone() else {
             return;
@@ -400,6 +426,7 @@ impl Globals {
         log::info!("Subscribing to user's metadata...");
     }
 
+    /// Subscribes to application update notifications
     async fn subscribe_for_app_updates(&self) {
         let coordinate = Coordinate {
             kind: Kind::Custom(32267),
@@ -423,6 +450,7 @@ impl Globals {
         log::info!("Subscribing to app updates...");
     }
 
+    /// Stores an unwrapped event in local database with reference to original
     async fn set_unwrapped(&self, root: EventId, event: &Event, keys: &Keys) -> Result<(), Error> {
         // Must be use the random generated keys to sign this event
         let event = EventBuilder::new(Kind::Custom(30078), event.as_json())
@@ -436,6 +464,7 @@ impl Globals {
         Ok(())
     }
 
+    /// Retrieves a previously unwrapped event from local database
     async fn get_unwrapped(&self, target: EventId) -> Result<Event, Error> {
         let filter = Filter::new()
             .kind(Kind::Custom(30078))
@@ -449,7 +478,8 @@ impl Globals {
         }
     }
 
-    async fn unwrap_event(&self, sub_id: &SubscriptionId, event: &Event) {
+    /// Unwraps a gift-wrapped event and processes its contents
+    async fn unwrap_event(&self, subscription_id: &SubscriptionId, event: &Event) {
         let new_messages_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
         let random_keys = Keys::generate();
 
@@ -480,7 +510,7 @@ impl Globals {
         self.client.database().save_event(&event).await.ok();
 
         // Send this event to the GPUI
-        if sub_id == &new_messages_id {
+        if subscription_id == &new_messages_id {
             self.global_sender
                 .send(NostrSignal::Event(event))
                 .await
@@ -488,6 +518,7 @@ impl Globals {
         }
     }
 
+    /// Extracts public keys from contact list and queues metadata sync
     async fn extract_pubkeys_and_sync(&self, event: &Event) {
         if let Ok(signer) = self.client.signer().await {
             if let Ok(public_key) = signer.get_public_key().await {
@@ -499,7 +530,8 @@ impl Globals {
         }
     }
 
-    async fn sync_data_for_pubkeys(&self, buffer: BTreeSet<PublicKey>) {
+    /// Fetches metadata for a batch of public keys
+    async fn sync_data_for_pubkeys(&self, public_keys: BTreeSet<PublicKey>) {
         let kinds = vec![
             Kind::Metadata,
             Kind::ContactList,
@@ -507,8 +539,8 @@ impl Globals {
             Kind::UserStatus,
         ];
         let filter = Filter::new()
-            .limit(buffer.len() * kinds.len())
-            .authors(buffer)
+            .limit(public_keys.len() * kinds.len())
+            .authors(public_keys)
             .kinds(kinds);
 
         if let Err(e) = shared_state()
@@ -520,6 +552,7 @@ impl Globals {
         }
     }
 
+    /// Inserts or updates a person's metadata from a Kind::Metadata event
     async fn insert_person(&self, event: &Event) {
         let metadata = Metadata::from_json(&event.content).ok();
 
@@ -535,6 +568,7 @@ impl Globals {
             .or_insert_with(|| metadata);
     }
 
+    /// Notifies UI of application updates via global channel
     async fn notify_update(&self, event: &Event) {
         let filter = Filter::new()
             .ids(event.tags.event_ids().copied())
