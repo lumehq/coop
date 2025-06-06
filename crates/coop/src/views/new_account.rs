@@ -1,7 +1,6 @@
-use std::str::FromStr;
-
 use async_utility::task::spawn;
 use common::nip96_upload;
+use global::constants::KEYRING_USER_PATH;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -72,14 +71,24 @@ impl NewAccount {
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
 
+        let keys = Keys::generate();
         let mut metadata = Metadata::new().display_name(name).about(bio);
 
-        if let Ok(url) = Url::from_str(&avatar) {
+        if let Ok(url) = Url::parse(&avatar) {
             metadata = metadata.picture(url);
         };
 
+        let save_credential = cx.write_credentials(
+            KEYRING_USER_PATH,
+            keys.public_key().to_hex().as_str(),
+            keys.secret_key().as_secret_bytes(),
+        );
+
         cx.background_spawn(async move {
-            shared_state().new_account(metadata).await;
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save keys: {}", e)
+            };
+            shared_state().new_account(keys, metadata).await;
         })
         .detach();
     }

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
@@ -37,7 +37,7 @@ pub struct Globals {
     /// TODO: add document
     pub client_signer: Keys,
     /// TODO: add document,
-    pub identity: Arc<RwLock<Option<Profile>>>,
+    pub identity: RwLock<Option<Profile>>,
     /// TODO: add document
     pub auto_close: Option<SubscribeAutoCloseOptions>,
     /// TODO: add document
@@ -77,11 +77,11 @@ pub fn shared_state() -> &'static Globals {
 
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
+            identity: RwLock::new(None),
             persons: RwLock::new(BTreeMap::new()),
             auto_close: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
-            identity: Arc::new(RwLock::new(None)),
             client_signer,
             global_sender,
             global_receiver,
@@ -213,22 +213,22 @@ impl Globals {
             .unwrap_or_default();
 
         let profile = Profile::new(public_key, metadata);
-        let mut guard = self.identity.write().await;
-
+        let mut identity_guard = self.identity.write().await;
         // Update the identity
-        *guard = Some(profile);
+        *identity_guard = Some(profile);
+
+        // Subscribe for user's data
+        nostr_sdk::async_utility::task::spawn(async move {
+            shared_state().subscribe_for_user_data().await;
+        });
 
         // Notify GPUi via the global channel
         self.global_sender.send(NostrSignal::SignerUpdated).await?;
 
-        // Subscribe
-        self.subscribe_for_user_data().await;
-
         Ok(())
     }
 
-    pub async fn new_account(&self, metadata: Metadata) {
-        let keys = Keys::generate();
+    pub async fn new_account(&self, keys: Keys, metadata: Metadata) {
         let profile = Profile::new(keys.public_key(), metadata.clone());
 
         // Update signer
