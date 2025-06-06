@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use app_state::AppState;
 use common::string_to_qr;
-use global::{shared_state, NostrSignal};
+use global::constants::{KEYRING_BUNKER, KEYRING_USER_PATH};
+use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, red, relative, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
@@ -19,6 +19,9 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{ContextModal, Disableable, Sizable, StyledExt};
+
+const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
+const NOSTR_CONNECT_TIMEOUT: u64 = 300;
 
 #[derive(Debug, Clone)]
 struct CoopAuthUrlHandler;
@@ -59,9 +62,6 @@ impl Login {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
-        const NOSTR_CONNECT_TIMEOUT: u64 = 300;
-
         // nsec or bunker_uri (NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md)
         let key_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
@@ -72,12 +72,9 @@ impl Login {
         // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
         //
         // Direct connection initiated by the client
-        let connection_string = cx.new(|cx| {
+        let connection_string = cx.new(|_cx| {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let client_keys = AppState::get_global(cx)
-                .client_keys()
-                .cloned()
-                .unwrap_or(Keys::generate());
+            let client_keys = shared_state().client_signer.clone();
 
             NostrConnectURI::client(client_keys.public_key(), vec![relay], "Coop")
         });
@@ -111,22 +108,9 @@ impl Login {
 
         subscriptions.push(cx.observe_new::<NostrConnectURI>(
             move |connection_string, _window, cx| {
-                // Update the QR Image with the new connection string
-                async_qr_image
-                    .update(cx, |this, cx| {
-                        *this = string_to_qr(&connection_string.to_string());
-                        cx.notify();
-                    })
-                    .ok();
-
-                let client_keys = AppState::get_global(cx)
-                    .client_keys()
-                    .cloned()
-                    .unwrap_or(Keys::generate());
-
                 if let Ok(mut signer) = NostrConnect::new(
                     connection_string.to_owned(),
-                    client_keys,
+                    shared_state().client_signer.clone(),
                     Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
                     None,
                 ) {
@@ -140,6 +124,14 @@ impl Login {
                         })
                         .ok();
                 }
+
+                // Update the QR Image with the new connection string
+                async_qr_image
+                    .update(cx, |this, cx| {
+                        *this = string_to_qr(&connection_string.to_string());
+                        cx.notify();
+                    })
+                    .ok();
             },
         ));
 
@@ -148,10 +140,7 @@ impl Login {
             window,
             |this, entity, _window, cx| {
                 let connection_string = entity.read(cx).clone();
-                let client_keys = AppState::get_global(cx)
-                    .client_keys()
-                    .cloned()
-                    .unwrap_or(Keys::generate());
+                let client_keys = shared_state().client_signer.clone();
 
                 // Update the QR Image with the new connection string
                 this.qr_image.update(cx, |this, cx| {
@@ -180,12 +169,10 @@ impl Login {
             cx.observe_in(&active_signer, window, |_this, entity, _window, cx| {
                 if let Some(signer) = entity.read(cx).clone() {
                     cx.background_spawn(async move {
-                        if let Ok(bunker_uri) = signer.bunker_uri().await {
-                            shared_state()
-                                .global_sender
-                                .send(NostrSignal::RemoteSigner((signer, bunker_uri)))
-                                .await
-                                .ok();
+                        if signer.bunker_uri().await.is_ok() {
+                            if let Err(e) = shared_state().set_signer(signer).await {
+                                log::error!("{}", e);
+                            }
                         }
                     })
                     .detach();
@@ -207,13 +194,13 @@ impl Login {
         }
     }
 
-    fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn login(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.is_logging_in {
             return;
         };
         self.set_logging_in(true, cx);
 
-        let app_state = AppState::global(cx);
+        let client_keys = shared_state().client_signer.clone();
         let content = self.key_input.read(cx).value();
 
         if content.starts_with("nsec1") {
@@ -222,13 +209,19 @@ impl Login {
                 return;
             };
 
+            // Active signer is no longer needed
+            self.shutdown_active_signer(cx);
+
             // Save these keys to the OS storage for further logins
             self.save_keys(&keys, cx);
 
-            // Update the app state
-            app_state.update(cx, |this, cx| {
-                this.login(keys, window, cx);
-            });
+            // Set signer with this keys in the background
+            cx.background_spawn(async move {
+                if let Err(e) = shared_state().set_signer(keys).await {
+                    log::error!("{}", e);
+                }
+            })
+            .detach();
         } else if content.starts_with("bunker://") {
             let Ok(uri) = NostrConnectURI::parse(content.as_ref()) else {
                 self.set_error("Bunker URL is not valid".to_owned(), cx);
@@ -241,16 +234,24 @@ impl Login {
             // Save this bunker to the OS Storage for further logins
             self.save_bunker(&uri, cx);
 
-            let client_keys = AppState::get_global(cx)
-                .client_keys()
-                .cloned()
-                .unwrap_or(Keys::generate());
-
-            if let Ok(signer) = NostrConnect::new(uri, client_keys, Duration::from_secs(300), None)
-            {
-                app_state.update(cx, |this, cx| {
-                    this.login(signer, window, cx);
-                });
+            match NostrConnect::new(
+                uri,
+                client_keys,
+                Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
+                None,
+            ) {
+                Ok(signer) => {
+                    // Set signer with this remote signer in the background
+                    cx.background_spawn(async move {
+                        if let Err(e) = shared_state().set_signer(signer).await {
+                            log::error!("{}", e);
+                        }
+                    })
+                    .detach();
+                }
+                Err(e) => {
+                    self.set_error(e.to_string(), cx);
+                }
             }
         } else {
             self.set_error("You must provide a valid Private Key or Bunker.".into(), cx);
@@ -264,11 +265,7 @@ impl Login {
             return;
         };
 
-        let client_keys = AppState::get_global(cx)
-            .client_keys()
-            .cloned()
-            .unwrap_or(Keys::generate());
-
+        let client_keys = shared_state().client_signer.clone();
         let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
 
         self.connection_string.update(cx, |this, cx| {
@@ -279,13 +276,15 @@ impl Login {
 
     fn save_keys(&self, keys: &Keys, cx: &mut Context<Self>) {
         let save_credential = cx.write_credentials(
-            "coop_user",
-            &keys.public_key().to_hex(),
+            KEYRING_USER_PATH,
+            keys.public_key().to_hex().as_str(),
             keys.secret_key().as_secret_bytes(),
         );
 
         cx.background_spawn(async move {
-            save_credential.await.ok();
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save keys: {}", e)
+            }
         })
         .detach();
     }
@@ -293,14 +292,18 @@ impl Login {
     fn save_bunker(&self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
         let mut value = uri.to_string();
 
+        // Remove the secret param if it exists
         if let Some(secret) = uri.secret() {
             value = value.replace(secret, "");
         }
 
-        let save_credential = cx.write_credentials("coop_user", "nostr_connect", value.as_bytes());
+        let save_credential =
+            cx.write_credentials(KEYRING_USER_PATH, KEYRING_BUNKER, value.as_bytes());
 
         cx.background_spawn(async move {
-            save_credential.await.ok();
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save the Bunker URI: {}", e)
+            }
         })
         .detach();
     }

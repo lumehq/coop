@@ -1,6 +1,9 @@
 pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 pub const APP_PUBKEY: &str = "b1813fb01274b32cc5db6d1198e7c79dda0fb430899f63c7064f651a41d44f2b";
+pub const KEYRING_PATH: &str = "Coop Safe Storage";
+pub const KEYRING_USER_PATH: &str = "coop";
+pub const KEYRING_BUNKER: &str = "bunker";
 
 /// Bootstrap Relays.
 pub const BOOTSTRAP_RELAYS: [&str; 4] = [

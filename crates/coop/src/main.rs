@@ -1,12 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use app_state::AppState;
+use anyhow::Error;
 use asset::Assets;
 use auto_update::AutoUpdater;
 use chats::ChatRegistry;
-use global::constants::APP_ID;
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
+use global::constants::{APP_ID, KEYRING_BUNKER, KEYRING_USER_PATH};
 use global::{shared_state, NostrSignal};
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
@@ -16,6 +17,7 @@ use gpui::{
 use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
+use nostr_connect::prelude::*;
 use theme::Theme;
 use ui::Root;
 
@@ -92,15 +94,50 @@ fn main() {
             cx.new(|cx| {
                 // Initialize components
                 ui::init(cx);
-
                 // Initialize auto update
                 auto_update::init(cx);
-
-                // Initialize account state
-                app_state::init(cx);
-
                 // Initialize chat state
                 chats::init(cx);
+
+                // Initialize chatspace (or workspace)
+                let chatspace = chatspace::init(window, cx);
+                let async_chatspace = chatspace.downgrade();
+                let async_chatspace_clone = async_chatspace.clone();
+
+                // Read user's credential
+                let read_credential = cx.read_credentials(KEYRING_USER_PATH);
+
+                cx.spawn_in(window, async move |_, cx| {
+                    if let Ok(Some((user, secret))) = read_credential.await {
+                        cx.update(|window, cx| {
+                            if let Ok(signer) = extract_credential(&user, secret) {
+                                cx.background_spawn(async move {
+                                    if let Err(e) = shared_state().set_signer(signer).await {
+                                        log::error!("Signer error: {}", e);
+                                    }
+                                })
+                                .detach();
+                            } else {
+                                async_chatspace
+                                    .update(cx, |this, cx| {
+                                        this.open_onboarding(window, cx);
+                                    })
+                                    .ok();
+                            }
+                        })
+                        .ok();
+                    } else {
+                        cx.update(|window, cx| {
+                            async_chatspace
+                                .update(cx, |this, cx| {
+                                    this.open_onboarding(window, cx);
+                                })
+                                .ok();
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
@@ -110,6 +147,18 @@ fn main() {
                             let auto_updater = AutoUpdater::global(cx);
 
                             match signal {
+                                NostrSignal::SignerUpdated => {
+                                    cx.background_spawn(async move {
+                                        shared_state().subscribe_for_user_data().await;
+                                    })
+                                    .detach();
+
+                                    async_chatspace_clone
+                                        .update(cx, |this, cx| {
+                                            this.open_chats(window, cx);
+                                        })
+                                        .ok();
+                                }
                                 NostrSignal::Eose => {
                                     chats.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
@@ -125,24 +174,6 @@ fn main() {
                                         this.update(event, cx);
                                     });
                                 }
-                                NostrSignal::RemoteSigner((signer, bunker_uri)) => {
-                                    AppState::global(cx).update(cx, |this, cx| {
-                                        this.login(signer, window, cx);
-                                    });
-
-                                    let save_credential = cx.write_credentials(
-                                        "coop_user",
-                                        "nostr_connect",
-                                        bunker_uri.to_string().as_bytes(),
-                                    );
-
-                                    cx.background_spawn(async move {
-                                        if let Err(e) = save_credential.await {
-                                            log::error!("Failed to save bunker: {}", e)
-                                        }
-                                    })
-                                    .detach();
-                                }
                             };
                         })
                         .ok();
@@ -150,11 +181,27 @@ fn main() {
                 })
                 .detach();
 
-                Root::new(chatspace::init(window, cx).into(), window, cx)
+                Root::new(chatspace.into(), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");
     });
+}
+
+fn extract_credential(user: &str, secret: Vec<u8>) -> Result<impl NostrSigner, Error> {
+    if user == KEYRING_BUNKER {
+        let value = String::from_utf8(secret)?;
+        let uri = NostrConnectURI::parse(value)?;
+        let client_keys = shared_state().client_signer.clone();
+        let signer = NostrConnect::new(uri, client_keys, Duration::from_secs(300), None)?;
+
+        Ok(signer.into_nostr_signer())
+    } else {
+        let secret_key = SecretKey::from_slice(&secret)?;
+        let keys = Keys::new(secret_key);
+
+        Ok(keys.into_nostr_signer())
+    }
 }
 
 fn quit(_: &Quit, cx: &mut App) {

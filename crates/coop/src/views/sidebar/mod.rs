@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
-use app_state::AppState;
 use async_utility::task::spawn;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
@@ -494,9 +493,10 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(AppState::get_global(cx).account(), |this, profile| {
-                this.child(self.render_account(profile, cx))
-            })
+            .when_some(
+                shared_state().identity.read_blocking().as_ref(),
+                |this, profile| this.child(self.render_account(profile, cx)),
+            )
             // Search Input
             .child(
                 div().px_3().w_full().h_7().flex_none().child(

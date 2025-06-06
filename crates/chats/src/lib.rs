@@ -2,7 +2,6 @@ use std::cmp::Reverse;
 use std::collections::BTreeSet;
 
 use anyhow::Error;
-use app_state::AppState;
 use common::room_hash;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -162,13 +161,10 @@ impl ChatRegistry {
     /// 3. Determines each room's type based on message frequency and trust status
     /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // If the user is not logged in, do nothing
-        let Some(account) = AppState::get_global(cx).account() else {
+        let client = &shared_state().client;
+        let Some(public_key) = shared_state().identity().map(|i| i.public_key()) else {
             return;
         };
-
-        let client = &shared_state().client;
-        let public_key = account.public_key();
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             // Get messages sent by the user
@@ -292,8 +288,7 @@ impl ChatRegistry {
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
         let author = event.pubkey;
-
-        let Some(account) = AppState::get_global(cx).account().cloned() else {
+        let Some(public_key) = shared_state().identity().map(|i| i.public_key()) else {
             return;
         };
 
@@ -303,7 +298,7 @@ impl ChatRegistry {
                 this.created_at(event.created_at, cx);
 
                 // Set this room is ongoing if the new message is from current user
-                if author == account.public_key() {
+                if author == public_key {
                     this.set_ongoing(cx);
                 }
 

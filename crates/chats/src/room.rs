@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error};
-use app_state::AppState;
 use chrono::{Local, TimeZone};
 use common::profile::RenderProfile;
 use common::{compare, room_hash};
@@ -165,8 +164,8 @@ impl Room {
     /// # Returns
     ///
     /// The Profile of the first member in the room
-    pub fn first_member(&self, cx: &App) -> Profile {
-        let Some(account) = AppState::get_global(cx).account().cloned() else {
+    pub fn first_member(&self, _cx: &App) -> Profile {
+        let Some(account) = shared_state().identity() else {
             return shared_state().person(&self.members[0]);
         };
 
@@ -548,9 +547,9 @@ impl Room {
         &self,
         content: &str,
         replies: Option<&Vec<Message>>,
-        cx: &App,
+        _cx: &App,
     ) -> Option<Message> {
-        let author = AppState::get_global(cx).account().cloned()?;
+        let author = shared_state().identity()?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 

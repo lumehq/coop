@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use app_state::AppState;
 use async_utility::task::spawn;
 use chats::message::Message;
 use chats::room::{Room, RoomKind, SendError};
@@ -220,7 +219,7 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(account) = AppState::get_global(cx).account() else {
+        let Some(account) = shared_state().identity() else {
             return false;
         };
 

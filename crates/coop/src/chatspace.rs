@@ -1,8 +1,6 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Error;
-use app_state::AppState;
 use chats::{ChatRegistry, RoomEmitter};
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
@@ -63,10 +61,10 @@ pub struct ToggleModal {
 }
 
 pub struct ChatSpace {
-    titlebar: bool,
     dock: Entity<DockArea>,
+    titlebar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 4]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl ChatSpace {
@@ -81,30 +79,17 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let app_state = AppState::global(cx);
             let chats = ChatRegistry::global(cx);
             let mut subscriptions = smallvec![];
 
-            subscriptions.push(cx.observe_new::<Self>(|this: &mut Self, window, cx| {
-                if let Some(window) = window {
-                    this.setup_panel(window, cx);
-                }
-            }));
-
-            subscriptions.push(cx.observe_in(
-                &app_state,
-                window,
-                |this: &mut Self, _, window, cx| {
-                    this.setup_panel(window, cx);
-                },
-            ));
-
+            // Automatically load messages when chat panel opens
             subscriptions.push(cx.observe_new::<Chat>(|this: &mut Chat, window, cx| {
                 if let Some(window) = window {
                     this.load_messages(window, cx);
                 }
             }));
 
+            // Subscribe to open chat room requests
             subscriptions.push(cx.subscribe_in(
                 &chats,
                 window,
@@ -113,11 +98,15 @@ impl ChatSpace {
                         if let Some(room) = room.upgrade() {
                             this.dock.update(cx, |this, cx| {
                                 let panel = chat::init(room, window, cx);
-                                this.add_panel(panel, DockPlacement::Center, window, cx);
+                                let placement = DockPlacement::Center;
+
+                                this.add_panel(panel, placement, window, cx);
                             });
                         } else {
-                            window
-                                .push_notification("Failed to open room. Please retry later.", cx);
+                            window.push_notification(
+                                "Failed to open room. Please try again later.",
+                                cx,
+                            );
                         }
                     }
                 },
@@ -131,72 +120,7 @@ impl ChatSpace {
         })
     }
 
-    fn setup_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let app_state = AppState::global(cx);
-        let task = cx.read_credentials("coop_user");
-
-        if let Some(client_keys) = AppState::get_global(cx).client_keys().cloned() {
-            cx.spawn_in(window, async move |this, cx| {
-                if let Ok(Some((username, secret))) = task.await {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            if username == "nostr_connect" {
-                                if let Ok(Ok(uri)) =
-                                    String::from_utf8(secret).map(NostrConnectURI::parse)
-                                {
-                                    if let Ok(signer) = NostrConnect::new(
-                                        uri,
-                                        client_keys,
-                                        Duration::from_secs(300),
-                                        None,
-                                    ) {
-                                        app_state.update(cx, |this, cx| {
-                                            this.login(signer, window, cx);
-                                        });
-
-                                        this.open_chats(window, cx);
-                                    } else {
-                                        this.open_onboarding(window, cx);
-                                    }
-                                } else {
-                                    this.open_onboarding(window, cx);
-                                }
-                            } else {
-                                #[allow(clippy::collapsible_else_if)]
-                                if let Ok(keys) = SecretKey::from_slice(&secret).map(Keys::new) {
-                                    app_state.update(cx, |this, cx| {
-                                        this.login(keys, window, cx);
-                                    });
-
-                                    this.open_chats(window, cx);
-                                } else {
-                                    this.open_onboarding(window, cx);
-                                }
-                            }
-                        })
-                        .ok();
-                    })
-                    .ok();
-                } else {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            this.open_onboarding(window, cx);
-                        })
-                        .ok();
-                    })
-                    .ok();
-                }
-            })
-            .detach();
-        }
-    }
-
-    fn titlebar(&mut self, cx: &mut Context<Self>) {
-        self.titlebar = true;
-        cx.notify();
-    }
-
-    fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
 
@@ -206,7 +130,7 @@ impl ChatSpace {
         });
     }
 
-    fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.titlebar(cx);
 
         let weak_dock = self.dock.downgrade();
@@ -251,6 +175,11 @@ impl ChatSpace {
             })
             .detach();
         });
+    }
+
+    fn titlebar(&mut self, cx: &mut Context<Self>) {
+        self.titlebar = true;
+        cx.notify();
     }
 
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {

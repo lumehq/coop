@@ -1,17 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
-use nostr_connect::client::NostrConnect;
+use nostr_keyring::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
+
+use crate::constants::KEYRING_PATH;
 
 pub mod constants;
 pub mod paths;
@@ -20,12 +22,11 @@ static GLOBALS: OnceLock<Globals> = OnceLock::new();
 
 #[derive(Debug)]
 pub enum NostrSignal {
+    SignerUpdated,
     /// Receive event
     Event(Event),
     /// Receive app update
     AppUpdate(Event),
-    /// Receive the connection from remote signer
-    RemoteSigner((NostrConnect, NostrConnectURI)),
     /// Receive EOSE
     Eose,
 }
@@ -33,6 +34,10 @@ pub enum NostrSignal {
 pub struct Globals {
     /// The Nostr SDK client
     pub client: Client,
+    /// TODO: add document
+    pub client_signer: Keys,
+    /// TODO: add document,
+    pub identity: Arc<RwLock<Option<Profile>>>,
     /// TODO: add document
     pub auto_close: Option<SubscribeAutoCloseOptions>,
     /// TODO: add document
@@ -56,6 +61,14 @@ pub fn shared_state() -> &'static Globals {
             .install_default()
             .ok();
 
+        let keyring = NostrKeyring::new(KEYRING_PATH);
+        // Get the client signer or generate a new one if it doesn't exist
+        let client_signer = if let Ok(keys) = keyring.get("client") {
+            keys
+        } else {
+            Keys::generate()
+        };
+
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
@@ -68,6 +81,8 @@ pub fn shared_state() -> &'static Globals {
             auto_close: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
+            identity: Arc::new(RwLock::new(None)),
+            client_signer,
             global_sender,
             global_receiver,
             batch_sender,
@@ -181,6 +196,42 @@ impl Globals {
         }
     }
 
+    pub async fn set_signer<S>(&self, signer: S) -> Result<(), Error>
+    where
+        S: NostrSigner + 'static,
+    {
+        let public_key = signer.get_public_key().await?;
+
+        // Update signer
+        self.client.set_signer(signer).await;
+
+        // Fetch user's metadata
+        let metadata = shared_state()
+            .client
+            .fetch_metadata(public_key, Duration::from_secs(2))
+            .await?
+            .unwrap_or_default();
+
+        let profile = Profile::new(public_key, metadata);
+        let mut guard = self.identity.write().await;
+
+        // Update the identity
+        *guard = Some(profile);
+
+        // Notify GPUi via the global channel
+        self.global_sender.send(NostrSignal::SignerUpdated).await?;
+
+        Ok(())
+    }
+
+    pub fn identity(&self) -> Option<Profile> {
+        self.identity.read_blocking().as_ref().cloned()
+    }
+
+    pub async fn async_identity(&self) -> Option<Profile> {
+        self.identity.read().await.as_ref().cloned()
+    }
+
     pub fn person(&self, public_key: &PublicKey) -> Profile {
         let metadata = if let Some(metadata) = self.persons.read_blocking().get(public_key) {
             metadata.clone().unwrap_or_default()
@@ -220,6 +271,68 @@ impl Globals {
         log::info!("Connected to bootstrap relays");
     }
 
+    pub async fn subscribe_for_user_data(&self) {
+        let Some(profile) = self.identity.read().await.clone() else {
+            return;
+        };
+
+        let public_key = profile.public_key();
+
+        let metadata = Filter::new()
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::ContactList,
+                Kind::InboxRelays,
+                Kind::MuteList,
+                Kind::SimpleGroups,
+            ])
+            .author(public_key)
+            .limit(10);
+
+        let data = Filter::new()
+            .author(public_key)
+            .kinds(vec![
+                Kind::Metadata,
+                Kind::ContactList,
+                Kind::MuteList,
+                Kind::SimpleGroups,
+                Kind::InboxRelays,
+                Kind::RelayList,
+            ])
+            .since(Timestamp::now());
+
+        let msg = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+        let new_msg = Filter::new()
+            .kind(Kind::GiftWrap)
+            .pubkey(public_key)
+            .limit(0);
+
+        let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+        let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+
+        let client = &shared_state().client;
+        let opts = shared_state().auto_close;
+
+        client.subscribe(data, None).await.ok();
+
+        client
+            .subscribe(metadata, shared_state().auto_close)
+            .await
+            .ok();
+
+        client
+            .subscribe_with_id(all_messages_sub_id, msg, opts)
+            .await
+            .ok();
+
+        client
+            .subscribe_with_id(new_messages_sub_id, new_msg, None)
+            .await
+            .ok();
+
+        log::info!("Subscribing to user's metadata...");
+    }
+
     async fn subscribe_for_app_updates(&self) {
         let coordinate = Coordinate {
             kind: Kind::Custom(32267),
@@ -256,7 +369,7 @@ impl Globals {
         Ok(())
     }
 
-    async fn get_unwrapped(&self, target: EventId) -> Result<Event, anyhow::Error> {
+    async fn get_unwrapped(&self, target: EventId) -> Result<Event, Error> {
         let filter = Filter::new()
             .kind(Kind::Custom(30078))
             .event(target)
