@@ -42,8 +42,10 @@ impl NewAccount {
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
+
         let avatar_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -63,7 +65,7 @@ impl NewAccount {
         }
     }
 
-    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn submit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.set_submitting(true, cx);
 
         let avatar = self.avatar_input.read(cx).value().to_string();
@@ -76,11 +78,10 @@ impl NewAccount {
             metadata = metadata.picture(url);
         };
 
-        /*
-        AppState::global(cx).update(cx, |this, cx| {
-            this.new_account(metadata, window, cx);
-        });
-        */
+        cx.background_spawn(async move {
+            shared_state().new_account(metadata).await;
+        })
+        .detach();
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {

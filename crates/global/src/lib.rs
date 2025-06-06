@@ -13,7 +13,7 @@ use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
 
-use crate::constants::KEYRING_PATH;
+use crate::constants::{KEYRING_PATH, NIP17_RELAYS, NIP65_RELAYS};
 
 pub mod constants;
 pub mod paths;
@@ -221,7 +221,65 @@ impl Globals {
         // Notify GPUi via the global channel
         self.global_sender.send(NostrSignal::SignerUpdated).await?;
 
+        // Subscribe
+        self.subscribe_for_user_data().await;
+
         Ok(())
+    }
+
+    pub async fn new_account(&self, metadata: Metadata) {
+        let keys = Keys::generate();
+        let profile = Profile::new(keys.public_key(), metadata.clone());
+
+        // Update signer
+        self.client.set_signer(keys).await;
+
+        // Set metadata
+        self.client.set_metadata(&metadata).await.ok();
+
+        // Create relay list
+        let builder = EventBuilder::new(Kind::RelayList, "").tags(
+            NIP65_RELAYS.into_iter().filter_map(|url| {
+                if let Ok(url) = RelayUrl::parse(url) {
+                    Some(Tag::relay_metadata(url, None))
+                } else {
+                    None
+                }
+            }),
+        );
+
+        if let Err(e) = self.client.send_event_builder(builder).await {
+            log::error!("Failed to send relay list event: {}", e);
+        };
+
+        // Create messaging relay list
+        let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
+            NIP17_RELAYS.into_iter().filter_map(|url| {
+                if let Ok(url) = RelayUrl::parse(url) {
+                    Some(Tag::relay(url))
+                } else {
+                    None
+                }
+            }),
+        );
+
+        if let Err(e) = self.client.send_event_builder(builder).await {
+            log::error!("Failed to send messaging relay list event: {}", e);
+        };
+
+        let mut guard = self.identity.write().await;
+
+        // Update the identity
+        *guard = Some(profile);
+
+        // Notify GPUi via the global channel
+        self.global_sender
+            .send(NostrSignal::SignerUpdated)
+            .await
+            .ok();
+
+        // Subscribe
+        self.subscribe_for_user_data().await;
     }
 
     pub fn identity(&self) -> Option<Profile> {
@@ -271,7 +329,7 @@ impl Globals {
         log::info!("Connected to bootstrap relays");
     }
 
-    pub async fn subscribe_for_user_data(&self) {
+    async fn subscribe_for_user_data(&self) {
         let Some(profile) = self.identity.read().await.clone() else {
             return;
         };

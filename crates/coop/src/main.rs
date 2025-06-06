@@ -148,11 +148,6 @@ fn main() {
 
                             match signal {
                                 NostrSignal::SignerUpdated => {
-                                    cx.background_spawn(async move {
-                                        shared_state().subscribe_for_user_data().await;
-                                    })
-                                    .detach();
-
                                     async_chatspace_clone
                                         .update(cx, |this, cx| {
                                             this.open_chats(window, cx);
