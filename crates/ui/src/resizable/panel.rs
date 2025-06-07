@@ -1,10 +1,12 @@
-use gpui::{
-    canvas, div, prelude::FluentBuilder, px, relative, Along, AnyElement, AnyView, App, AppContext,
-    Axis, Bounds, Context, Element, Entity, EntityId, EventEmitter, IntoElement, IsZero,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, StatefulInteractiveElement as _,
-    Style, Styled, WeakEntity, Window,
-};
 use std::rc::Rc;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    canvas, div, px, relative, Along, AnyElement, AnyView, App, AppContext, Axis, Bounds, Context,
+    Element, Entity, EntityId, EventEmitter, IntoElement, IsZero, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Render, StatefulInteractiveElement as _, Style, Styled, WeakEntity,
+    Window,
+};
 
 use super::resize_handle;
 use crate::{h_flex, v_flex, AxisExt};
@@ -470,8 +472,8 @@ impl IntoElement for ResizePanelGroupElement {
 }
 
 impl Element for ResizePanelGroupElement {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None

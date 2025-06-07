@@ -5,50 +5,35 @@ use gpui::{
 use theme::ActiveTheme;
 use ui::button::Button;
 use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::indicator::Indicator;
 use ui::popup_menu::PopupMenu;
-use ui::StyledExt;
+use ui::Sizable;
 
-pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
-    Welcome::new(window, cx)
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<Startup> {
+    Startup::new(window, cx)
 }
 
-pub struct Welcome {
+pub struct Startup {
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
 }
 
-impl Welcome {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::view(window, cx))
-    }
-
-    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self {
+impl Startup {
+    fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self {
             name: "Welcome".into(),
-            closable: true,
-            zoomable: true,
             focus_handle: cx.focus_handle(),
-        }
+        })
     }
 }
 
-impl Panel for Welcome {
+impl Panel for Startup {
     fn panel_id(&self) -> SharedString {
         self.name.clone()
     }
 
     fn title(&self, _cx: &App) -> AnyElement {
-        "👋".into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
+        "Startup".into_any_element()
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -60,15 +45,15 @@ impl Panel for Welcome {
     }
 }
 
-impl EventEmitter<PanelEvent> for Welcome {}
+impl EventEmitter<PanelEvent> for Startup {}
 
-impl Focusable for Welcome {
+impl Focusable for Startup {
     fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for Welcome {
+impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
@@ -80,7 +65,7 @@ impl Render for Welcome {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap_1()
+                    .gap_6()
                     .child(
                         svg()
                             .path("brand/coop.svg")
@@ -89,10 +74,14 @@ impl Render for Welcome {
                     )
                     .child(
                         div()
-                            .child("coop on nostr.")
-                            .text_color(cx.theme().text_placeholder)
-                            .font_semibold()
-                            .text_sm(),
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .text_xs()
+                            .text_center()
+                            .text_color(cx.theme().text_muted)
+                            .child("Connection in progress")
+                            .child(Indicator::new().small()),
                     ),
             )
     }

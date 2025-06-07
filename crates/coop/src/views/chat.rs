@@ -1,19 +1,21 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::Arc;
 
-use account::Account;
 use async_utility::task::spawn;
-use chats::{
-    message::Message,
-    room::{Room, RoomKind, SendError},
-};
-use common::{nip96_upload, profile::RenderProfile};
-use global::get_client;
+use chats::message::Message;
+use chats::room::{Room, RoomKind, SendError};
+use common::nip96_upload;
+use common::profile::RenderProfile;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, impl_internal_actions, list, prelude::FluentBuilder, px, red, relative, rems, svg,
-    white, AnyElement, App, AppContext, ClipboardItem, Context, Div, Element, Empty, Entity,
-    EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment,
-    ListState, ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache,
-    SharedString, StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    div, img, impl_internal_actions, list, px, red, relative, rems, svg, white, AnyElement, App,
+    AppContext, ClipboardItem, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -21,15 +23,15 @@ use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::emoji_picker::EmojiPicker;
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
+use ui::popup_menu::PopupMenu;
+use ui::text::RichText;
 use ui::{
-    avatar::Avatar,
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    emoji_picker::EmojiPicker,
-    input::{InputEvent, InputState, TextInput},
-    notification::Notification,
-    popup_menu::PopupMenu,
-    text::RichText,
     v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable, StyledExt,
 };
 
@@ -217,7 +219,7 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(current_user) = Account::get_global(cx).profile_ref() else {
+        let Some(account) = shared_state().identity() else {
             return false;
         };
 
@@ -225,7 +227,7 @@ impl Chat {
             return false;
         };
 
-        if current_user.public_key() != author.public_key() {
+        if account.public_key() != author.public_key() {
             return false;
         }
 
@@ -238,7 +240,7 @@ impl Chat {
                 m.borrow()
                     .author
                     .as_ref()
-                    .is_some_and(|p| p.public_key() == current_user.public_key())
+                    .is_some_and(|p| p.public_key() == account.public_key())
             })
             .any(|existing| {
                 let existing = existing.borrow();
@@ -383,12 +385,11 @@ impl Chat {
                     };
 
                     if let Ok(file_data) = fs::read(path).await {
-                        let client = get_client();
                         let (tx, rx) = oneshot::channel::<Option<Url>>();
 
                         // Spawn task via async utility instead of GPUI context
                         spawn(async move {
-                            let url = match nip96_upload(client, file_data).await {
+                            let url = match nip96_upload(&shared_state().client, file_data).await {
                                 Ok(url) => Some(url),
                                 Err(e) => {
                                     log::error!("Upload error: {e}");

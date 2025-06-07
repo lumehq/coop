@@ -1,17 +1,14 @@
-use anyhow::{anyhow, Error};
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::Error;
 use asset::Assets;
 use auto_update::AutoUpdater;
 use chats::ChatRegistry;
-use futures::{select, FutureExt};
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
-use global::{
-    constants::{
-        ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
-        METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
-    },
-    get_client, init_global_state, profiles,
-};
+use global::constants::{APP_ID, KEYRING_BUNKER, KEYRING_USER_PATH};
+use global::{shared_state, NostrSignal};
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     WindowBounds, WindowKind, WindowOptions,
@@ -20,13 +17,7 @@ use gpui::{
 use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
-use nostr_sdk::{
-    async_utility::task::spawn, nips::nip01::Coordinate, pool::prelude::ReqExitPolicy, Client,
-    Event, EventBuilder, EventId, Filter, JsonUtil, Keys, Kind, Metadata, PublicKey, RelayMessage,
-    RelayPoolNotification, SubscribeAutoCloseOptions, SubscriptionId, Tag,
-};
-use smol::Timer;
-use std::{collections::HashSet, mem, sync::Arc, time::Duration};
+use nostr_connect::prelude::*;
 use theme::Theme;
 use ui::Root;
 
@@ -36,226 +27,27 @@ pub(crate) mod views;
 
 actions!(coop, [Quit]);
 
-#[derive(Debug)]
-enum Signal {
-    /// Receive event
-    Event(Event),
-    /// Receive eose
-    Eose,
-    /// Receive app updates
-    AppUpdates(Event),
-}
-
 fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
-    // Initialize global state
-    init_global_state();
 
-    let (event_tx, event_rx) = smol::channel::bounded::<Signal>(2048);
-    let (batch_tx, batch_rx) = smol::channel::bounded::<Vec<PublicKey>>(500);
-
-    let client = get_client();
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
-    // Spawn a task to establish relay connections
-    // NOTE: Use `async_utility` instead of `smol-rs`
-    spawn(async move {
-        for relay in BOOTSTRAP_RELAYS.into_iter() {
-            if let Err(e) = client.add_relay(relay).await {
-                log::error!("Failed to add relay {}: {}", relay, e);
-            }
-        }
-
-        for relay in SEARCH_RELAYS.into_iter() {
-            if let Err(e) = client.add_relay(relay).await {
-                log::error!("Failed to add relay {}: {}", relay, e);
-            }
-        }
-
-        // Establish connection to bootstrap relays
-        client.connect().await;
-
-        log::info!("Connected to bootstrap relays");
-        log::info!("Subscribing to app updates...");
-
-        let coordinate = Coordinate {
-            kind: Kind::Custom(32267),
-            public_key: PublicKey::from_hex(APP_PUBKEY).expect("App Pubkey is invalid"),
-            identifier: APP_ID.into(),
-        };
-
-        let filter = Filter::new()
-            .kind(Kind::ReleaseArtifactSet)
-            .coordinate(&coordinate)
-            .limit(1);
-
-        if let Err(e) = client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-            .await
-        {
-            log::error!("Failed to subscribe for app updates: {}", e);
-        }
+    // Initialize the Global State and process events in a separate thread.
+    // Must be run under async utility runtime
+    nostr_sdk::async_utility::task::spawn(async move {
+        shared_state().start().await;
     });
 
-    // Spawn a task to handle metadata batching
-    // NOTE: Use `async_utility` instead of `smol-rs`
-    spawn(async move {
-        let mut batch: HashSet<PublicKey> = HashSet::new();
-
-        loop {
-            let mut timeout =
-                Box::pin(Timer::after(Duration::from_millis(METADATA_BATCH_TIMEOUT)).fuse());
-
-            select! {
-                pubkeys = batch_rx.recv().fuse() => {
-                    match pubkeys {
-                        Ok(keys) => {
-                            batch.extend(keys);
-                            if batch.len() >= METADATA_BATCH_LIMIT {
-                                sync_metadata(mem::take(&mut batch), client, opts).await;
-                            }
-                        }
-                        Err(_) => break,
-                    }
-                }
-                _ = timeout => {
-                    if !batch.is_empty() {
-                        sync_metadata(mem::take(&mut batch), client, opts).await;
-                    }
-                }
-            }
-        }
-    });
-
-    // Spawn a task to handle relay pool notification
-    // NOTE: Use `async_utility` instead of `smol-rs`
-    spawn(async move {
-        let keys = Keys::generate();
-        let all_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-        let new_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-        let mut notifications = client.notifications();
-
-        let mut processed_events: HashSet<EventId> = HashSet::new();
-
-        while let Ok(notification) = notifications.recv().await {
-            if let RelayPoolNotification::Message { message, .. } = notification {
-                match message {
-                    RelayMessage::Event {
-                        event,
-                        subscription_id,
-                    } => {
-                        if processed_events.contains(&event.id) {
-                            continue;
-                        }
-                        processed_events.insert(event.id);
-
-                        match event.kind {
-                            Kind::GiftWrap => {
-                                let event = match get_unwrapped(event.id).await {
-                                    Ok(event) => event,
-                                    Err(_) => match client.unwrap_gift_wrap(&event).await {
-                                        Ok(unwrap) => match unwrap.rumor.sign_with_keys(&keys) {
-                                            Ok(unwrapped) => {
-                                                set_unwrapped(event.id, &unwrapped, &keys)
-                                                    .await
-                                                    .ok();
-                                                unwrapped
-                                            }
-                                            Err(_) => continue,
-                                        },
-                                        Err(_) => continue,
-                                    },
-                                };
-
-                                let mut pubkeys = vec![];
-                                pubkeys.extend(event.tags.public_keys());
-                                pubkeys.push(event.pubkey);
-
-                                // Send all pubkeys to the batch to sync metadata
-                                batch_tx.send(pubkeys).await.ok();
-
-                                // Save the event to the database, use for query directly.
-                                client.database().save_event(&event).await.ok();
-
-                                // Send this event to the GPUI
-                                if new_id == *subscription_id {
-                                    event_tx.send(Signal::Event(event)).await.ok();
-                                }
-                            }
-                            Kind::Metadata => {
-                                let metadata = Metadata::from_json(&event.content).ok();
-
-                                profiles()
-                                    .write()
-                                    .await
-                                    .entry(event.pubkey)
-                                    .and_modify(|entry| {
-                                        if entry.is_none() {
-                                            *entry = metadata.clone();
-                                        }
-                                    })
-                                    .or_insert_with(|| metadata);
-                            }
-                            Kind::ContactList => {
-                                if let Ok(signer) = client.signer().await {
-                                    if let Ok(public_key) = signer.get_public_key().await {
-                                        if public_key == event.pubkey {
-                                            let pubkeys = event
-                                                .tags
-                                                .public_keys()
-                                                .copied()
-                                                .collect::<Vec<_>>();
-
-                                            batch_tx.send(pubkeys).await.ok();
-                                        }
-                                    }
-                                }
-                            }
-                            Kind::ReleaseArtifactSet => {
-                                let filter = Filter::new()
-                                    .ids(event.tags.event_ids().copied())
-                                    .kind(Kind::FileMetadata);
-
-                                if let Err(e) = client
-                                    .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-                                    .await
-                                {
-                                    log::error!("Failed to subscribe for file metadata: {}", e);
-                                } else {
-                                    event_tx
-                                        .send(Signal::AppUpdates(event.into_owned()))
-                                        .await
-                                        .ok();
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    RelayMessage::EndOfStoredEvents(subscription_id) => {
-                        if all_id == *subscription_id {
-                            event_tx.send(Signal::Eose).await.ok();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    });
-
-    // Initialize application
+    // Initialize the Application
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
     app.run(move |cx| {
-        // Bring the app to the foreground
-        cx.activate(true);
-
         // Register the `quit` function
         cx.on_action(quit);
 
-        // Register the `quit` function with CMD+Q
+        // Register the `quit` function with CMD+Q (macOS only)
+        #[cfg(target_os = "macos")]
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
 
         // Set menu items
@@ -297,37 +89,87 @@ fn main() {
 
             // Root Entity
             cx.new(|cx| {
+                cx.activate(true);
                 // Initialize components
                 ui::init(cx);
-
                 // Initialize auto update
                 auto_update::init(cx);
-
                 // Initialize chat state
                 chats::init(cx);
 
-                // Initialize account state
-                account::init(cx);
+                // Initialize chatspace (or workspace)
+                let chatspace = chatspace::init(window, cx);
+                let async_chatspace = chatspace.downgrade();
+                let async_chatspace_clone = async_chatspace.clone();
+
+                // Read user's credential
+                let read_credential = cx.read_credentials(KEYRING_USER_PATH);
+
+                cx.spawn_in(window, async move |_, cx| {
+                    if let Ok(Some((user, secret))) = read_credential.await {
+                        cx.update(|window, cx| {
+                            if let Ok(signer) = extract_credential(&user, secret) {
+                                cx.background_spawn(async move {
+                                    if let Err(e) = shared_state().set_signer(signer).await {
+                                        log::error!("Signer error: {}", e);
+                                    }
+                                })
+                                .detach();
+                            } else {
+                                async_chatspace
+                                    .update(cx, |this, cx| {
+                                        this.open_onboarding(window, cx);
+                                    })
+                                    .ok();
+                            }
+                        })
+                        .ok();
+                    } else {
+                        cx.update(|window, cx| {
+                            async_chatspace
+                                .update(cx, |this, cx| {
+                                    this.open_onboarding(window, cx);
+                                })
+                                .ok();
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
-                    while let Ok(signal) = event_rx.recv().await {
+                    while let Ok(signal) = shared_state().global_receiver.recv().await {
                         cx.update(|window, cx| {
                             let chats = ChatRegistry::global(cx);
                             let auto_updater = AutoUpdater::global(cx);
 
                             match signal {
-                                Signal::Eose => {
+                                NostrSignal::SignerUpdated => {
+                                    async_chatspace_clone
+                                        .update(cx, |this, cx| {
+                                            this.open_chats(window, cx);
+                                        })
+                                        .ok();
+                                }
+                                NostrSignal::SignerUnset => {
+                                    async_chatspace_clone
+                                        .update(cx, |this, cx| {
+                                            this.open_onboarding(window, cx);
+                                        })
+                                        .ok();
+                                }
+                                NostrSignal::Eose => {
                                     chats.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
                                     });
                                 }
-                                Signal::Event(event) => {
+                                NostrSignal::Event(event) => {
                                     chats.update(cx, |this, cx| {
                                         this.event_to_message(event, window, cx);
                                     });
                                 }
-                                Signal::AppUpdates(event) => {
+                                NostrSignal::AppUpdate(event) => {
                                     auto_updater.update(cx, |this, cx| {
                                         this.update(event, cx);
                                     });
@@ -339,62 +181,26 @@ fn main() {
                 })
                 .detach();
 
-                Root::new(chatspace::init(window, cx).into(), window, cx)
+                Root::new(chatspace.into(), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");
     });
 }
 
-async fn set_unwrapped(root: EventId, event: &Event, keys: &Keys) -> Result<(), Error> {
-    let client = get_client();
-    let event = EventBuilder::new(Kind::Custom(9001), event.as_json())
-        .tags(vec![Tag::event(root)])
-        .sign(keys) // keys must be random generated
-        .await?;
+fn extract_credential(user: &str, secret: Vec<u8>) -> Result<impl NostrSigner, Error> {
+    if user == KEYRING_BUNKER {
+        let value = String::from_utf8(secret)?;
+        let uri = NostrConnectURI::parse(value)?;
+        let client_keys = shared_state().client_signer.clone();
+        let signer = NostrConnect::new(uri, client_keys, Duration::from_secs(300), None)?;
 
-    client.database().save_event(&event).await?;
-
-    Ok(())
-}
-
-async fn get_unwrapped(gift_wrap: EventId) -> Result<Event, Error> {
-    let client = get_client();
-    let filter = Filter::new()
-        .kind(Kind::Custom(9001))
-        .event(gift_wrap)
-        .limit(1);
-
-    if let Some(event) = client.database().query(filter).await?.first_owned() {
-        let parsed = Event::from_json(event.content)?;
-        Ok(parsed)
+        Ok(signer.into_nostr_signer())
     } else {
-        Err(anyhow!("Event not found"))
-    }
-}
+        let secret_key = SecretKey::from_slice(&secret)?;
+        let keys = Keys::new(secret_key);
 
-async fn sync_metadata(
-    buffer: HashSet<PublicKey>,
-    client: &Client,
-    opts: SubscribeAutoCloseOptions,
-) {
-    let kinds = vec![
-        Kind::Metadata,
-        Kind::ContactList,
-        Kind::InboxRelays,
-        Kind::UserStatus,
-    ];
-
-    let filter = Filter::new()
-        .authors(buffer.iter().cloned())
-        .limit(buffer.len() * kinds.len())
-        .kinds(kinds);
-
-    if let Err(e) = client
-        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-        .await
-    {
-        log::error!("Failed to sync metadata: {e}");
+        Ok(keys.into_nostr_signer())
     }
 }
 

@@ -1,4 +1,5 @@
-use std::{fmt::Debug, ops::Range};
+use std::fmt::Debug;
+use std::ops::Range;
 
 use crate::history::HistoryItem;
 

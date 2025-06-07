@@ -1,25 +1,28 @@
+use std::cell::Cell;
+use std::ops::Range;
+use std::rc::Rc;
+
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    actions, div, impl_internal_actions, point, px, App, AppContext, Bounds, ClipboardItem,
+    Context, DefiniteLength, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, Styled as _, Subscription, UTF16Selection, Window, WrappedLine,
+};
 use serde::Deserialize;
 use smallvec::SmallVec;
-use std::{cell::Cell, ops::Range, rc::Rc};
 use unicode_segmentation::*;
-
-use gpui::{
-    actions, div, impl_internal_actions, point, prelude::FluentBuilder as _, px, App, AppContext,
-    Bounds, ClipboardItem, Context, DefiniteLength, Entity, EntityInputHandler, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point,
-    Render, ScrollHandle, ScrollWheelEvent, SharedString, Styled as _, Subscription,
-    UTF16Selection, Window, WrappedLine,
-};
 
 // TODO:
 // - Move cursor to skip line eof empty chars.
-
 use super::{
     blink_cursor::BlinkCursor, change::Change, element::TextElement, mask_pattern::MaskPattern,
     text_wrapper::TextWrapper,
 };
-use crate::{history::History, scroll::ScrollbarState, Root};
+use crate::history::History;
+use crate::scroll::ScrollbarState;
+use crate::Root;
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct Enter {

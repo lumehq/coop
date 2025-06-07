@@ -1,12 +1,13 @@
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
+use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    actions, anchored, deferred, div, prelude::FluentBuilder as _, px, AnyElement, App, Bounds,
-    Context, Corner, DismissEvent, DispatchPhase, Element, ElementId, Entity, EventEmitter,
-    FocusHandle, Focusable, GlobalElementId, Hitbox, HitboxBehavior, InteractiveElement as _,
-    IntoElement, KeyBinding, LayoutId, ManagedView, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, Render, ScrollHandle, StatefulInteractiveElement, Style, StyleRefinement,
-    Styled, Window,
+    actions, anchored, deferred, div, px, AnyElement, App, Bounds, Context, Corner, DismissEvent,
+    DispatchPhase, Element, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
+    GlobalElementId, Hitbox, HitboxBehavior, InteractiveElement as _, IntoElement, KeyBinding,
+    LayoutId, ManagedView, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    ScrollHandle, StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
 };
 
 use crate::{Selectable, StyledExt as _};
@@ -146,6 +147,7 @@ where
         self.trigger_style = Some(style);
         self
     }
+
     /// Set the content of the popover.
     ///
     /// The `content` is a closure that returns an `AnyElement`.
@@ -244,8 +246,8 @@ pub struct PrepaintState {
 }
 
 impl<M: ManagedView> Element for Popover<M> {
-    type RequestLayoutState = PopoverElementState<M>;
     type PrepaintState = PrepaintState;
+    type RequestLayoutState = PopoverElementState<M>;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())

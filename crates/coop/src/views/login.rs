@@ -1,24 +1,27 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
-use account::Account;
 use common::string_to_qr;
-use global::get_client_keys;
+use global::constants::{APP_NAME, KEYRING_BUNKER, KEYRING_USER_PATH};
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, red, relative, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, Image, IntoElement, ParentElement, Render, SharedString,
-    Styled, Subscription, Window,
+    div, img, red, relative, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    input::{InputEvent, InputState, TextInput},
-    notification::Notification,
-    popup_menu::PopupMenu,
-    ContextModal, Disableable, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
+use ui::popup_menu::PopupMenu;
+use ui::{ContextModal, Disableable, Sizable, StyledExt};
+
+const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
+const NOSTR_CONNECT_TIMEOUT: u64 = 300;
 
 #[derive(Debug, Clone)]
 struct CoopAuthUrlHandler;
@@ -37,23 +40,20 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
 }
 
 pub struct Login {
-    // Inputs
     key_input: Entity<InputState>,
+    relay_input: Entity<InputState>,
+    connection_string: Entity<NostrConnectURI>,
+    qr_image: Entity<Option<Arc<Image>>>,
+    // Signer that created by Connection String
+    active_signer: Entity<Option<NostrConnect>>,
+    // Error for the key input
     error: Entity<Option<SharedString>>,
     is_logging_in: bool,
-    // Nostr Connect
-    qr: Entity<Option<Arc<Image>>>,
-    connect_relay: Entity<InputState>,
-    connect_client: Entity<Option<NostrConnectURI>>,
-    // Keep track of all signers created by nostr connect
-    signers: SmallVec<[NostrConnect; 3]>,
     // Panel
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 4]>,
+    subscriptions: SmallVec<[Subscription; 5]>,
 }
 
 impl Login {
@@ -62,106 +62,159 @@ impl Login {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let connect_client: Entity<Option<NostrConnectURI>> = cx.new(|_| None);
-        let error = cx.new(|_| None);
-        let qr = cx.new(|_| None);
-
+        // nsec or bunker_uri (NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md)
         let key_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
-        let connect_relay =
-            cx.new(|cx| InputState::new(window, cx).default_value("wss://relay.nsec.app"));
 
-        let signers = smallvec![];
+        let relay_input =
+            cx.new(|cx| InputState::new(window, cx).default_value(NOSTR_CONNECT_RELAY));
+
+        // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
+        //
+        // Direct connection initiated by the client
+        let connection_string = cx.new(|_cx| {
+            let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
+            let client_keys = shared_state().client_signer.clone();
+
+            NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
+        });
+
+        // Convert the Connection String into QR Image
+        let qr_image = cx.new(|_| None);
+        let async_qr_image = qr_image.downgrade();
+
+        // Keep track of the signer that created by Connection String
+        let active_signer = cx.new(|_| None);
+        let async_active_signer = active_signer.downgrade();
+
+        let error = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.subscribe_in(
-            &key_input,
-            window,
-            move |this, _, event, window, cx| {
+        subscriptions.push(
+            cx.subscribe_in(&key_input, window, |this, _, event, window, cx| {
                 if let InputEvent::PressEnter { .. } = event {
                     this.login(window, cx);
                 }
+            }),
+        );
+
+        subscriptions.push(
+            cx.subscribe_in(&relay_input, window, |this, _, event, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.change_relay(window, cx);
+                }
+            }),
+        );
+
+        subscriptions.push(cx.observe_new::<NostrConnectURI>(
+            move |connection_string, _window, cx| {
+                if let Ok(mut signer) = NostrConnect::new(
+                    connection_string.to_owned(),
+                    shared_state().client_signer.clone(),
+                    Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
+                    None,
+                ) {
+                    // Automatically open remote signer's webpage when received auth url
+                    signer.auth_url_handler(CoopAuthUrlHandler);
+
+                    async_active_signer
+                        .update(cx, |this, cx| {
+                            *this = Some(signer);
+                            cx.notify();
+                        })
+                        .ok();
+                }
+
+                // Update the QR Image with the new connection string
+                async_qr_image
+                    .update(cx, |this, cx| {
+                        *this = string_to_qr(&connection_string.to_string());
+                        cx.notify();
+                    })
+                    .ok();
             },
         ));
 
-        subscriptions.push(cx.subscribe_in(
-            &connect_relay,
+        subscriptions.push(cx.observe_in(
+            &connection_string,
             window,
-            move |this, _, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.change_relay(window, cx);
+            |this, entity, _window, cx| {
+                let connection_string = entity.read(cx).clone();
+                let client_keys = shared_state().client_signer.clone();
+
+                // Update the QR Image with the new connection string
+                this.qr_image.update(cx, |this, cx| {
+                    *this = string_to_qr(&connection_string.to_string());
+                    cx.notify();
+                });
+
+                if let Ok(mut signer) = NostrConnect::new(
+                    connection_string,
+                    client_keys,
+                    Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
+                    None,
+                ) {
+                    // Automatically open remote signer's webpage when received auth url
+                    signer.auth_url_handler(CoopAuthUrlHandler);
+
+                    this.active_signer.update(cx, |this, cx| {
+                        *this = Some(signer);
+                        cx.notify();
+                    });
                 }
             },
         ));
 
         subscriptions.push(
-            cx.observe_in(&connect_client, window, |this, uri, window, cx| {
-                let keys = get_client_keys().to_owned();
+            cx.observe_in(&active_signer, window, |_this, entity, window, cx| {
+                if let Some(signer) = entity.read(cx).clone() {
+                    let (tx, rx) = oneshot::channel::<Option<NostrConnectURI>>();
 
-                if let Some(uri) = uri.read(cx).clone() {
-                    if let Ok(qr) = string_to_qr(uri.to_string().as_str()) {
-                        this.qr.update(cx, |this, cx| {
-                            *this = Some(qr);
-                            cx.notify();
-                        });
-                    }
+                    cx.background_spawn(async move {
+                        if let Ok(bunker_uri) = signer.bunker_uri().await {
+                            tx.send(Some(bunker_uri)).ok();
 
-                    // Shutdown all previous nostr connect clients
-                    for client in std::mem::take(&mut this.signers).into_iter() {
-                        cx.background_spawn(async move {
-                            client.shutdown().await;
-                        })
-                        .detach();
-                    }
-
-                    // Create a new nostr connect client
-                    match NostrConnect::new(uri, keys, Duration::from_secs(200), None) {
-                        Ok(mut signer) => {
-                            // Handle auth url
-                            signer.auth_url_handler(CoopAuthUrlHandler);
-                            // Store this signer for further clean up
-                            this.signers.push(signer.clone());
-
-                            Account::global(cx).update(cx, |this, cx| {
-                                this.login(signer, window, cx);
-                            });
+                            if let Err(e) = shared_state().set_signer(signer).await {
+                                log::error!("{}", e);
+                            }
+                        } else {
+                            tx.send(None).ok();
                         }
-                        Err(e) => {
-                            window.push_notification(Notification::error(e.to_string()), cx);
+                    })
+                    .detach();
+
+                    cx.spawn_in(window, async move |this, cx| {
+                        if let Ok(Some(uri)) = rx.await {
+                            this.update(cx, |this, cx| {
+                                this.save_bunker(&uri, cx);
+                            })
+                            .ok();
+                        } else {
+                            cx.update(|window, cx| {
+                                window.push_notification(
+                                    Notification::error("Connection failed"),
+                                    cx,
+                                );
+                            })
+                            .ok();
                         }
-                    }
+                    })
+                    .detach();
                 }
             }),
         );
 
-        cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(300))
-                .await;
-
-            cx.update(|window, cx| {
-                this.update(cx, |this, cx| {
-                    this.change_relay(window, cx);
-                })
-                .ok();
-            })
-            .ok();
-        })
-        .detach();
-
         Self {
-            key_input,
-            connect_relay,
-            connect_client,
-            subscriptions,
-            signers,
-            error,
-            qr,
-            is_logging_in: false,
             name: "Login".into(),
-            closable: true,
-            zoomable: true,
             focus_handle: cx.focus_handle(),
+            is_logging_in: false,
+            key_input,
+            relay_input,
+            connection_string,
+            qr_image,
+            error,
+            active_signer,
+            subscriptions,
         }
     }
 
@@ -169,63 +222,169 @@ impl Login {
         if self.is_logging_in {
             return;
         };
-
         self.set_logging_in(true, cx);
 
+        let client_keys = shared_state().client_signer.clone();
         let content = self.key_input.read(cx).value();
-        let account = Account::global(cx);
 
         if content.starts_with("nsec1") {
-            match SecretKey::parse(content.as_ref()) {
-                Ok(secret) => {
-                    let keys = Keys::new(secret);
+            let Ok(keys) = SecretKey::parse(content.as_ref()).map(Keys::new) else {
+                self.set_error("Secret key is not valid", cx);
+                return;
+            };
 
-                    account.update(cx, |this, cx| {
-                        this.login(keys, window, cx);
-                    });
+            // Active signer is no longer needed
+            self.shutdown_active_signer(cx);
+
+            // Save these keys to the OS storage for further logins
+            self.save_keys(&keys, cx);
+
+            // Set signer with this keys in the background
+            cx.background_spawn(async move {
+                if let Err(e) = shared_state().set_signer(keys).await {
+                    log::error!("{}", e);
+                }
+            })
+            .detach();
+        } else if content.starts_with("bunker://") {
+            let Ok(uri) = NostrConnectURI::parse(content.as_ref()) else {
+                self.set_error("Bunker URL is not valid", cx);
+                return;
+            };
+
+            // Active signer is no longer needed
+            self.shutdown_active_signer(cx);
+
+            match NostrConnect::new(
+                uri.clone(),
+                client_keys,
+                Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2),
+                None,
+            ) {
+                Ok(signer) => {
+                    let (tx, rx) = oneshot::channel::<Option<NostrConnectURI>>();
+
+                    // Set signer with this remote signer in the background
+                    cx.background_spawn(async move {
+                        if let Ok(bunker_uri) = signer.bunker_uri().await {
+                            tx.send(Some(bunker_uri)).ok();
+
+                            if let Err(e) = shared_state().set_signer(signer).await {
+                                log::error!("{}", e);
+                            }
+                        } else {
+                            tx.send(None).ok();
+                        }
+                    })
+                    .detach();
+
+                    // Handle error
+                    cx.spawn_in(window, async move |this, cx| {
+                        if let Ok(Some(uri)) = rx.await {
+                            this.update(cx, |this, cx| {
+                                this.save_bunker(&uri, cx);
+                            })
+                            .ok();
+                        } else {
+                            this.update(cx, |this, cx| {
+                                this.set_error(
+                                    "Connection to the Remote Signer failed or timed out",
+                                    cx,
+                                );
+                            })
+                            .ok();
+                        }
+                    })
+                    .detach();
                 }
                 Err(e) => {
                     self.set_error(e.to_string(), cx);
                 }
             }
-        } else if content.starts_with("bunker://") {
-            let Ok(uri) = NostrConnectURI::parse(content.as_ref()) else {
-                self.set_error("Bunker URL is not valid".to_owned(), cx);
-                return;
-            };
-
-            self.connect_client.update(cx, |this, cx| {
-                *this = Some(uri);
-                cx.notify();
-            });
         } else {
-            self.set_error("You must provide a valid Private Key or Bunker.".into(), cx);
+            self.set_error("You must provide a valid Private Key or Bunker.", cx);
         };
     }
 
     fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(relay_url) =
-            RelayUrl::parse(self.connect_relay.read(cx).value().to_string().as_str())
+        let Ok(relay_url) = RelayUrl::parse(self.relay_input.read(cx).value().to_string().as_str())
         else {
             window.push_notification(Notification::error("Relay URL is not valid."), cx);
             return;
         };
 
-        let client_pubkey = get_client_keys().public_key();
-        let uri = NostrConnectURI::client(client_pubkey, vec![relay_url], "Coop");
+        let client_keys = shared_state().client_signer.clone();
+        let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
 
-        self.connect_client.update(cx, |this, cx| {
-            *this = Some(uri);
+        self.connection_string.update(cx, |this, cx| {
+            *this = uri;
             cx.notify();
         });
     }
 
-    fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
+    fn save_keys(&self, keys: &Keys, cx: &mut Context<Self>) {
+        let save_credential = cx.write_credentials(
+            KEYRING_USER_PATH,
+            keys.public_key().to_hex().as_str(),
+            keys.secret_key().as_secret_bytes(),
+        );
+
+        cx.background_spawn(async move {
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save keys: {}", e)
+            }
+        })
+        .detach();
+    }
+
+    fn save_bunker(&self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
+        let mut value = uri.to_string();
+
+        // Remove the secret param if it exists
+        if let Some(secret) = uri.secret() {
+            value = value.replace(secret, "");
+        }
+
+        let save_credential =
+            cx.write_credentials(KEYRING_USER_PATH, KEYRING_BUNKER, value.as_bytes());
+
+        cx.background_spawn(async move {
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save the Bunker URI: {}", e)
+            }
+        })
+        .detach();
+    }
+
+    fn shutdown_active_signer(&self, cx: &Context<Self>) {
+        if let Some(signer) = self.active_signer.read(cx).clone() {
+            cx.background_spawn(async move {
+                signer.shutdown().await;
+            })
+            .detach();
+        }
+    }
+
+    fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.set_logging_in(false, cx);
         self.error.update(cx, |this, cx| {
-            *this = Some(SharedString::new(message));
+            *this = Some(message.into());
             cx.notify();
         });
+
+        // Clear the error message after 3 secs
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(3)).await;
+
+            this.update(cx, |this, cx| {
+                this.error.update(cx, |this, cx| {
+                    *this = None;
+                    cx.notify();
+                });
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
@@ -241,14 +400,6 @@ impl Panel for Login {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -365,9 +516,10 @@ impl Render for Login {
                                             .child("Use Nostr Connect apps to scan the code"),
                                     ),
                             )
-                            .when_some(self.qr.read(cx).clone(), |this, qr| {
+                            .when_some(self.qr_image.read(cx).clone(), |this, qr| {
                                 this.child(
                                     div()
+                                        .id("")
                                         .mb_2()
                                         .p_2()
                                         .size_72()
@@ -384,7 +536,27 @@ impl Render for Login {
                                                 .border_color(cx.theme().border)
                                         })
                                         .bg(cx.theme().background)
-                                        .child(img(qr).h_64()),
+                                        .child(img(qr).h_64())
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            #[cfg(any(
+                                                target_os = "linux",
+                                                target_os = "freebsd"
+                                            ))]
+                                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                                this.connection_string.read(cx).to_string(),
+                                            ));
+                                            #[cfg(any(
+                                                target_os = "macos",
+                                                target_os = "windows"
+                                            ))]
+                                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                                this.connection_string.read(cx).to_string(),
+                                            ));
+                                            window.push_notification(
+                                                "Connection String has been copied",
+                                                cx,
+                                            );
+                                        })),
                                 )
                             })
                             .child(
@@ -394,7 +566,7 @@ impl Render for Login {
                                     .items_center()
                                     .justify_center()
                                     .gap_1()
-                                    .child(TextInput::new(&self.connect_relay).xsmall())
+                                    .child(TextInput::new(&self.relay_input).xsmall())
                                     .child(
                                         Button::new("change")
                                             .label("Change")

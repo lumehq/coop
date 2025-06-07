@@ -1,9 +1,11 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui::{
     canvas, div, relative, AnyElement, App, Div, Element, ElementId, EntityId, GlobalElementId,
     InteractiveElement, IntoElement, ParentElement, Pixels, Position, ScrollHandle, SharedString,
     Size, Stateful, StatefulInteractiveElement, Style, StyleRefinement, Styled, Window,
 };
-use std::{cell::Cell, rc::Rc};
 
 use super::{Scrollbar, ScrollbarAxis, ScrollbarState};
 
@@ -143,8 +145,8 @@ impl<E> Element for Scrollable<E>
 where
     E: Element,
 {
-    type RequestLayoutState = AnyElement;
     type PrepaintState = ScrollViewState;
+    type RequestLayoutState = AnyElement;
 
     fn id(&self) -> Option<gpui::ElementId> {
         Some(self.id.clone())

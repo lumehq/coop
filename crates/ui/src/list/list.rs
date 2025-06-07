@@ -1,21 +1,22 @@
-use std::{cell::Cell, rc::Rc, time::Duration};
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, uniform_list, AnyElement, AppContext, Entity, FocusHandle,
+    div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement, IntoElement, KeyBinding, Length, ListSizingBehavior,
-    MouseButton, ParentElement, Render, Styled, Task, UniformListScrollHandle, Window,
+    MouseButton, MouseDownEvent, ParentElement, Render, ScrollStrategy, Styled, Subscription, Task,
+    UniformListScrollHandle, Window,
 };
-use gpui::{px, App, Context, EventEmitter, MouseDownEvent, ScrollStrategy, Subscription};
 use smol::Timer;
 use theme::ActiveTheme;
 
 use super::loading::Loading;
-use crate::{
-    actions::{Cancel, Confirm, SelectNext, SelectPrev},
-    input::{InputEvent, InputState, TextInput},
-    scroll::{Scrollbar, ScrollbarState},
-    v_flex, Icon, IconName, Sizable as _, Size,
-};
+use crate::actions::{Cancel, Confirm, SelectNext, SelectPrev};
+use crate::input::{InputEvent, InputState, TextInput};
+use crate::scroll::{Scrollbar, ScrollbarState};
+use crate::{v_flex, Icon, IconName, Sizable as _, Size};
 
 pub fn init(cx: &mut App) {
     let context: Option<&str> = Some("List");

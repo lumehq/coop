@@ -46,8 +46,8 @@ impl IntoElement for ScrollableMask {
 }
 
 impl Element for ScrollableMask {
-    type RequestLayoutState = ();
     type PrepaintState = Hitbox;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         None

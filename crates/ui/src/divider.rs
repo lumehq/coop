@@ -1,6 +1,6 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce,
-    SharedString, Styled,
+    div, px, Axis, Div, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
 };
 use theme::ActiveTheme;
 

@@ -1,24 +1,21 @@
-use std::str::FromStr;
-
-use account::Account;
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::get_client;
+use global::constants::KEYRING_USER_PATH;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, relative, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
-    Render, SharedString, Styled, Window,
+    div, img, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten,
+    FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
+    Styled, Window,
 };
 use nostr_sdk::prelude::*;
 use smol::fs;
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    input::{InputState, TextInput},
-    popup_menu::PopupMenu,
-    Disableable, Icon, IconName, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::input::{InputState, TextInput};
+use ui::popup_menu::PopupMenu;
+use ui::{Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
@@ -44,8 +41,10 @@ impl NewAccount {
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
+
         let avatar_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -65,22 +64,33 @@ impl NewAccount {
         }
     }
 
-    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn submit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.set_submitting(true, cx);
 
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
 
+        let keys = Keys::generate();
         let mut metadata = Metadata::new().display_name(name).about(bio);
 
-        if let Ok(url) = Url::from_str(&avatar) {
+        if let Ok(url) = Url::parse(&avatar) {
             metadata = metadata.picture(url);
         };
 
-        Account::global(cx).update(cx, |this, cx| {
-            this.new_account(metadata, window, cx);
-        });
+        let save_credential = cx.write_credentials(
+            KEYRING_USER_PATH,
+            keys.public_key().to_hex().as_str(),
+            keys.secret_key().as_secret_bytes(),
+        );
+
+        cx.background_spawn(async move {
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save keys: {}", e)
+            };
+            shared_state().new_account(keys, metadata).await;
+        })
+        .detach();
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -109,11 +119,10 @@ impl NewAccount {
                     };
 
                     if let Ok(file_data) = fs::read(path).await {
-                        let client = get_client();
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         spawn(async move {
-                            if let Ok(url) = nip96_upload(client, file_data).await {
+                            if let Ok(url) = nip96_upload(&shared_state().client, file_data).await {
                                 _ = tx.send(url);
                             }
                         });

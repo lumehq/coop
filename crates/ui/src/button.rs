@@ -1,13 +1,14 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce, SharedString,
+    div, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString,
     StatefulInteractiveElement as _, Styled, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{
-    indicator::Indicator, tooltip::Tooltip, Disableable, Icon, Selectable, Sizable, Size, StyledExt,
-};
+use crate::indicator::Indicator;
+use crate::tooltip::Tooltip;
+use crate::{Disableable, Icon, Selectable, Sizable, Size, StyledExt};
 
 pub enum ButtonRounded {
     Normal,

@@ -4,11 +4,9 @@ use gpui::{
     ParentElement, Render, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    input::{InputState, TextInput},
-    ContextModal, Sizable,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputState, TextInput};
+use ui::{ContextModal, Sizable};
 
 pub fn init(
     id: u64,

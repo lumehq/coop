@@ -1,9 +1,10 @@
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    black, div, prelude::FluentBuilder as _, px, relative, white, AnyElement, App, ClickEvent, Div,
-    Element, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
-    RenderOnce, Rgba, Stateful, StatefulInteractiveElement as _, Style, Styled, Window,
+    black, div, px, relative, white, AnyElement, App, ClickEvent, Div, Element, Hsla,
+    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Rgba,
+    Stateful, StatefulInteractiveElement as _, Style, Styled, Window,
 };
 use theme::ActiveTheme;
 
@@ -291,8 +292,8 @@ impl IntoElement for TitleBarElement {
 }
 
 impl Element for TitleBarElement {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None

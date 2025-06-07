@@ -1,15 +1,16 @@
-use crate::dock_area::{
-    dock::{Dock, DockPlacement},
-    panel::{Panel, PanelEvent, PanelStyle, PanelView},
-    stack_panel::StackPanel,
-    tab_panel::TabPanel,
-};
-use gpui::{
-    actions, canvas, div, prelude::FluentBuilder, px, AnyElement, AnyView, App, AppContext, Axis,
-    Bounds, Context, Edges, Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, Styled, Subscription, WeakEntity, Window,
-};
 use std::sync::Arc;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    actions, canvas, div, px, AnyElement, AnyView, App, AppContext, Axis, Bounds, Context, Edges,
+    Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
+    Pixels, Render, Styled, Subscription, WeakEntity, Window,
+};
+
+use crate::dock_area::dock::{Dock, DockPlacement};
+use crate::dock_area::panel::{Panel, PanelEvent, PanelStyle, PanelView};
+use crate::dock_area::stack_panel::StackPanel;
+use crate::dock_area::tab_panel::TabPanel;
 
 pub mod dock;
 pub mod panel;

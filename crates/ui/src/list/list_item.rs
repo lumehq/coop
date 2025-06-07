@@ -1,7 +1,8 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, AnyElement, App, ClickEvent, Div, ElementId,
-    InteractiveElement, IntoElement, MouseButton, MouseMoveEvent, ParentElement, RenderOnce,
-    Stateful, StatefulInteractiveElement as _, Styled, Window,
+    div, AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, MouseButton,
+    MouseMoveEvent, ParentElement, RenderOnce, Stateful, StatefulInteractiveElement as _, Styled,
+    Window,
 };
 use smallvec::SmallVec;
 use theme::ActiveTheme;

@@ -1,6 +1,7 @@
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, px, AnyElement, App, Div, ElementId, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, Stateful, StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, Stateful, StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
 

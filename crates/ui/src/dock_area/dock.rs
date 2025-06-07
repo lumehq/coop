@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext, Axis, Context, Element, Entity,
-    InteractiveElement as _, IntoElement, MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels,
-    Point, Render, StatefulInteractiveElement, Style, Styled as _, WeakEntity, Window,
+    div, px, App, AppContext, Axis, Context, Element, Entity, InteractiveElement as _, IntoElement,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render,
+    StatefulInteractiveElement, Style, Styled as _, WeakEntity, Window,
 };
 use serde::{Deserialize, Serialize};
 use theme::ActiveTheme;
 
 use super::{DockArea, DockItem};
-use crate::{
-    dock_area::{panel::PanelView, tab_panel::TabPanel},
-    resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE},
-    AxisExt as _, StyledExt,
-};
+use crate::dock_area::panel::PanelView;
+use crate::dock_area::tab_panel::TabPanel;
+use crate::resizable::{HANDLE_PADDING, HANDLE_SIZE, PANEL_MIN_SIZE};
+use crate::{AxisExt as _, StyledExt};
 
 #[derive(Clone, Render)]
 struct ResizePanel;
@@ -396,8 +396,8 @@ impl IntoElement for DockElement {
 }
 
 impl Element for DockElement {
-    type RequestLayoutState = ();
     type PrepaintState = ();
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None

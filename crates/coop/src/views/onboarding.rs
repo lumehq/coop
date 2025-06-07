@@ -3,12 +3,10 @@ use gpui::{
     Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    popup_menu::PopupMenu,
-    Icon, IconName, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::popup_menu::PopupMenu;
+use ui::{Icon, IconName, StyledExt};
 
 use crate::chatspace;
 

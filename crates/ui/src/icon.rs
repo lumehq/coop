@@ -1,7 +1,7 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    prelude::FluentBuilder as _, svg, AnyElement, App, AppContext, Entity, Hsla, IntoElement,
-    Radians, Render, RenderOnce, SharedString, StyleRefinement, Styled, Svg, Transformation,
-    Window,
+    svg, AnyElement, App, AppContext, Entity, Hsla, IntoElement, Radians, Render, RenderOnce,
+    SharedString, StyleRefinement, Styled, Svg, Transformation, Window,
 };
 use theme::ActiveTheme;
 
@@ -40,6 +40,7 @@ pub enum IconName {
     Inbox,
     Info,
     Loader,
+    Logout,
     Moon,
     PanelBottom,
     PanelBottomOpen,
@@ -108,6 +109,7 @@ impl IconName {
             Self::Inbox => "icons/inbox.svg",
             Self::Info => "icons/info.svg",
             Self::Loader => "icons/loader.svg",
+            Self::Logout => "icons/logout.svg",
             Self::Moon => "icons/moon.svg",
             Self::PanelBottom => "icons/panel-bottom.svg",
             Self::PanelBottomOpen => "icons/panel-bottom-open.svg",

@@ -1,19 +1,16 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, relative, AnyElement, App, DefiniteLength, Entity,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Rems, RenderOnce,
-    Styled, Window,
+    div, px, relative, AnyElement, App, DefiniteLength, Entity, InteractiveElement as _,
+    IntoElement, MouseButton, ParentElement as _, Rems, RenderOnce, Styled, Window,
 };
 use theme::ActiveTheme;
 
 use super::InputState;
-use crate::{
-    button::{Button, ButtonVariants as _},
-    h_flex,
-    indicator::Indicator,
-    input::clear_button::clear_button,
-    scroll::{Scrollbar, ScrollbarAxis},
-    IconName, Sizable, Size, StyleSized,
-};
+use crate::button::{Button, ButtonVariants as _};
+use crate::indicator::Indicator;
+use crate::input::clear_button::clear_button;
+use crate::scroll::{Scrollbar, ScrollbarAxis};
+use crate::{h_flex, IconName, Sizable, Size, StyleSized};
 
 #[derive(IntoElement)]
 pub struct TextInput {

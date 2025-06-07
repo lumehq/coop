@@ -1,18 +1,17 @@
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    actions, anchored, div, point, prelude::FluentBuilder, px, relative, Animation,
-    AnimationExt as _, AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement,
-    IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString,
-    Styled, Window,
+    actions, anchored, div, point, px, relative, Animation, AnimationExt as _, AnyElement, App,
+    Bounds, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    ParentElement, Pixels, Point, RenderOnce, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonCustomVariant, ButtonVariants as _},
-    v_flex, ContextModal, IconName, StyledExt,
-};
+use crate::animation::cubic_bezier;
+use crate::button::{Button, ButtonCustomVariant, ButtonVariants as _};
+use crate::{v_flex, ContextModal, IconName, StyledExt};
 
 actions!(modal, [Escape]);
 

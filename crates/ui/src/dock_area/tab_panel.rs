@@ -1,24 +1,24 @@
-use gpui::{
-    div, prelude::FluentBuilder, px, rems, App, AppContext, Context, Corner, DefiniteLength,
-    DismissEvent, DragMoveEvent, Empty, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
-};
 use std::sync::Arc;
+
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, px, rems, App, AppContext, Context, Corner, DefiniteLength, DismissEvent, DragMoveEvent,
+    Empty, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement, Pixels, Render, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, WeakEntity, Window,
+};
 use theme::ActiveTheme;
 
-use super::{
-    panel::PanelView, stack_panel::StackPanel, ClosePanel, DockArea, PanelEvent, PanelStyle,
-    ToggleZoom,
-};
-use crate::{
-    button::{Button, ButtonVariants as _},
-    dock_area::{dock::DockPlacement, panel::Panel},
-    h_flex,
-    popup_menu::{PopupMenu, PopupMenuExt},
-    tab::{tab_bar::TabBar, Tab},
-    v_flex, AxisExt, IconName, Placement, Selectable, Sizable, StyledExt,
-};
+use super::panel::PanelView;
+use super::stack_panel::StackPanel;
+use super::{ClosePanel, DockArea, PanelEvent, PanelStyle, ToggleZoom};
+use crate::button::{Button, ButtonVariants as _};
+use crate::dock_area::dock::DockPlacement;
+use crate::dock_area::panel::Panel;
+use crate::popup_menu::{PopupMenu, PopupMenuExt};
+use crate::tab::tab_bar::TabBar;
+use crate::tab::Tab;
+use crate::{h_flex, v_flex, AxisExt, IconName, Placement, Selectable, Sizable, StyledExt};
 
 #[derive(Clone)]
 struct TabState {

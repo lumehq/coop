@@ -6,12 +6,10 @@ use gpui::{
 };
 use theme::ActiveTheme;
 
-use crate::{
-    input::InputState,
-    modal::Modal,
-    notification::{Notification, NotificationList},
-    window_border,
-};
+use crate::input::InputState;
+use crate::modal::Modal;
+use crate::notification::{Notification, NotificationList};
+use crate::window_border;
 
 /// Extension trait for [`WindowContext`] and [`ViewContext`] to add drawer functionality.
 pub trait ContextModal: Sized {

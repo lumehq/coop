@@ -1,7 +1,5 @@
-use std::{
-    fmt::Debug,
-    time::{Duration, Instant},
-};
+use std::fmt::Debug;
+use std::time::{Duration, Instant};
 
 pub trait HistoryItem: Clone {
     fn version(&self) -> usize;
@@ -156,6 +154,7 @@ mod tests {
         fn version(&self) -> usize {
             self.version
         }
+
         fn set_version(&mut self, version: usize) {
             self.version = version;
         }

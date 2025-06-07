@@ -1,29 +1,27 @@
 use std::sync::Arc;
 
-use account::Account;
 use anyhow::Error;
 use chats::{ChatRegistry, RoomEmitter};
-use global::{
-    constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH},
-    get_client,
-};
+use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Axis, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
+    div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
 };
-use nostr_sdk::prelude::*;
+use nostr_connect::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
-use ui::{
-    button::{Button, ButtonVariants},
-    dock_area::{dock::DockPlacement, panel::PanelView, DockArea, DockItem},
-    ContextModal, IconName, Root, Sizable, TitleBar,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::dock::DockPlacement;
+use ui::dock_area::panel::PanelView;
+use ui::dock_area::{DockArea, DockItem};
+use ui::{ContextModal, IconName, Root, Sizable, TitleBar};
 
+use crate::views::chat::{self, Chat};
 use crate::views::{
-    chat::{self, Chat},
-    compose, login, new_account, onboarding, profile, relays, sidebar, welcome,
+    compose, login, new_account, onboarding, profile, relays, sidebar, startup, welcome,
 };
 
 impl_internal_actions!(dock, [ToggleModal]);
@@ -63,16 +61,16 @@ pub struct ToggleModal {
 }
 
 pub struct ChatSpace {
-    titlebar: bool,
     dock: Entity<DockArea>,
+    titlebar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 3]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let dock = cx.new(|cx| {
-            let panel = Arc::new(onboarding::init(window, cx));
+            let panel = Arc::new(startup::init(window, cx));
             let center = DockItem::panel(panel);
             let mut dock = DockArea::new(window, cx);
             // Initialize the dock area with the center panel
@@ -81,45 +79,38 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let account = Account::global(cx);
             let chats = ChatRegistry::global(cx);
             let mut subscriptions = smallvec![];
 
-            subscriptions.push(cx.observe_in(
-                &account,
-                window,
-                |this: &mut ChatSpace, account, window, cx| {
-                    if account.read(cx).profile.is_some() {
-                        this.open_chats(window, cx);
-                    } else {
-                        this.open_onboarding(window, cx);
-                    }
-                },
-            ));
-
-            subscriptions.push(cx.subscribe_in(
-                &chats,
-                window,
-                |this, _state, event, window, cx| {
-                    if let RoomEmitter::Open(room) = event {
-                        if let Some(room) = room.upgrade() {
-                            this.dock.update(cx, |this, cx| {
-                                let panel = chat::init(room, window, cx);
-                                this.add_panel(panel, DockPlacement::Center, window, cx);
-                            });
-                        } else {
-                            window
-                                .push_notification("Failed to open room. Please retry later.", cx);
-                        }
-                    }
-                },
-            ));
-
-            subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
+            // Automatically load messages when chat panel opens
+            subscriptions.push(cx.observe_new::<Chat>(|this: &mut Chat, window, cx| {
                 if let Some(window) = window {
                     this.load_messages(window, cx);
                 }
             }));
+
+            // Subscribe to open chat room requests
+            subscriptions.push(cx.subscribe_in(
+                &chats,
+                window,
+                |this: &mut ChatSpace, _state, event, window, cx| {
+                    if let RoomEmitter::Open(room) = event {
+                        if let Some(room) = room.upgrade() {
+                            this.dock.update(cx, |this, cx| {
+                                let panel = chat::init(room, window, cx);
+                                let placement = DockPlacement::Center;
+
+                                this.add_panel(panel, placement, window, cx);
+                            });
+                        } else {
+                            window.push_notification(
+                                "Failed to open room. Please try again later.",
+                                cx,
+                            );
+                        }
+                    }
+                },
+            ));
 
             Self {
                 dock,
@@ -129,12 +120,10 @@ impl ChatSpace {
         })
     }
 
-    fn show_titlebar(&mut self, cx: &mut Context<Self>) {
-        self.titlebar = true;
-        cx.notify();
-    }
+    pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Disable the titlebar
+        self.titlebar(false, cx);
 
-    fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
 
@@ -144,8 +133,9 @@ impl ChatSpace {
         });
     }
 
-    fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_titlebar(cx);
+    pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Enable the titlebar
+        self.titlebar(true, cx);
 
         let weak_dock = self.dock.downgrade();
         let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
@@ -191,20 +181,28 @@ impl ChatSpace {
         });
     }
 
+    fn titlebar(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.titlebar = status;
+        cx.notify();
+    }
+
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
         cx.background_spawn(async move {
-            let client = get_client();
-            let signer = client.signer().await?;
+            let signer = shared_state().client.signer().await?;
             let public_key = signer.get_public_key().await?;
-
             let filter = Filter::new()
                 .kind(Kind::InboxRelays)
                 .author(public_key)
                 .limit(1);
+            let is_exist = shared_state()
+                .client
+                .database()
+                .query(filter)
+                .await?
+                .first()
+                .is_some();
 
-            let exist = client.database().query(filter).await?.first().is_some();
-
-            Ok(exist)
+            Ok(is_exist)
         })
     }
 
@@ -298,11 +296,12 @@ impl Render for ChatSpace {
                                         .flex()
                                         .items_center()
                                         .justify_end()
-                                        .gap_2()
+                                        .gap_1p5()
                                         .px_2()
                                         .child(
                                             Button::new("appearance")
-                                                .xsmall()
+                                                .tooltip("Change the app's appearance")
+                                                .small()
                                                 .ghost()
                                                 .map(|this| {
                                                     if cx.theme().mode.is_dark() {
@@ -325,6 +324,26 @@ impl Render for ChatSpace {
                                                             cx,
                                                         );
                                                     }
+                                                })),
+                                        )
+                                        .child(
+                                            Button::new("settings")
+                                                .tooltip("Open settings")
+                                                .small()
+                                                .ghost()
+                                                .icon(IconName::Settings),
+                                        )
+                                        .child(
+                                            Button::new("logout")
+                                                .tooltip("Log out")
+                                                .small()
+                                                .ghost()
+                                                .icon(IconName::Logout)
+                                                .on_click(cx.listener(move |_, _, _window, cx| {
+                                                    cx.background_spawn(async move {
+                                                        shared_state().unset_signer().await;
+                                                    })
+                                                    .detach();
                                                 })),
                                         ),
                                 ),

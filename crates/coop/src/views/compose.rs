@@ -1,28 +1,25 @@
-use std::{
-    collections::{BTreeSet, HashSet},
-    time::Duration,
-};
+use std::collections::{BTreeSet, HashSet};
+use std::time::Duration;
 
 use anyhow::Error;
-use chats::{room::Room, ChatRegistry};
+use chats::room::Room;
+use chats::ChatRegistry;
 use common::profile::RenderProfile;
-use global::get_client;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, impl_internal_actions, prelude::FluentBuilder, px, red, relative, uniform_list, App,
-    AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, TextAlign,
-    Window,
+    div, img, impl_internal_actions, px, red, relative, uniform_list, App, AppContext, Context,
+    Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, TextAlign, Window,
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    input::{InputEvent, InputState, TextInput},
-    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
@@ -71,10 +68,13 @@ impl Compose {
 
         cx.spawn(async move |this, cx| {
             let task: Task<Result<BTreeSet<Profile>, Error>> = cx.background_spawn(async move {
-                let client = get_client();
-                let signer = client.signer().await?;
+                let signer = shared_state().client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let profiles = client.database().contacts(public_key).await?;
+                let profiles = shared_state()
+                    .client
+                    .database()
+                    .contacts(public_key)
+                    .await?;
 
                 Ok(profiles)
             });
@@ -133,8 +133,7 @@ impl Compose {
         let tags = Tags::from_list(tag_list);
 
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
-            let client = get_client();
-            let signer = client.signer().await?;
+            let signer = shared_state().client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
             // [IMPORTANT]
@@ -173,7 +172,6 @@ impl Compose {
     }
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let client = get_client();
         let content = self.user_input.read(cx).value().to_string();
 
         // Show loading spinner
@@ -184,7 +182,8 @@ impl Compose {
                 let profile = nip05::profile(&content, None).await?;
                 let public_key = profile.public_key;
 
-                let metadata = client
+                let metadata = shared_state()
+                    .client
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?
                     .unwrap_or_default();
@@ -199,7 +198,8 @@ impl Compose {
             };
 
             cx.background_spawn(async move {
-                let metadata = client
+                let metadata = shared_state()
+                    .client
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?
                     .unwrap_or_default();

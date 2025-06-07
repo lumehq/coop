@@ -1,19 +1,18 @@
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, prelude::FluentBuilder, px, App, AppContext, Corner, Element,
-    InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, WeakEntity, Window,
+    div, impl_internal_actions, px, App, AppContext, Corner, Element, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    WeakEntity, Window,
 };
 use serde::Deserialize;
 use theme::ActiveTheme;
 
-use crate::{
-    button::{Button, ButtonVariants},
-    input::InputState,
-    popover::{Popover, PopoverContent},
-    Icon,
-};
+use crate::button::{Button, ButtonVariants};
+use crate::input::InputState;
+use crate::popover::{Popover, PopoverContent};
+use crate::Icon;
 
 #[derive(PartialEq, Clone, Debug, Deserialize)]
 pub struct EmitEmoji(pub SharedString);

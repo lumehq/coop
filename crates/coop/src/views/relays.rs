@@ -1,18 +1,17 @@
 use anyhow::Error;
-use global::{constants::NEW_MESSAGE_SUB_ID, get_client};
+use global::constants::NEW_MESSAGE_SUB_ID;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, px, uniform_list, App, AppContext, Context, Entity, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign,
-    UniformList, Window,
+    div, px, uniform_list, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign, UniformList, Window,
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    input::{InputEvent, InputState, TextInput},
-    ContextModal, Disableable, IconName, Sizable,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::{ContextModal, Disableable, IconName, Sizable};
 
 const MIN_HEIGHT: f32 = 200.0;
 const MESSAGE: &str = "In order to receive messages from others, you need to setup at least one Messaging Relay. You can use the recommend relays or add more.";
@@ -36,16 +35,20 @@ impl Relays {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-                let client = get_client();
-                let signer = client.signer().await?;
+                let signer = shared_state().client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-
                 let filter = Filter::new()
                     .kind(Kind::InboxRelays)
                     .author(public_key)
                     .limit(1);
 
-                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                if let Some(event) = shared_state()
+                    .client
+                    .database()
+                    .query(filter)
+                    .await?
+                    .first_owned()
+                {
                     let relays = event
                         .tags
                         .filter(TagKind::Relay)
@@ -108,18 +111,23 @@ impl Relays {
 
         let relays = self.relays.read(cx).clone();
         let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
-            let client = get_client();
-            let signer = client.signer().await?;
+            let signer = shared_state().client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
             // If user didn't have any NIP-65 relays, add default ones
-            if client.database().relay_list(public_key).await?.is_empty() {
+            if shared_state()
+                .client
+                .database()
+                .relay_list(public_key)
+                .await?
+                .is_empty()
+            {
                 let builder = EventBuilder::relay_list(vec![
                     (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
                     (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
                 ]);
 
-                if let Err(e) = client.send_event_builder(builder).await {
+                if let Err(e) = shared_state().client.send_event_builder(builder).await {
                     log::error!("Failed to send relay list event: {}", e);
                 }
             }
@@ -130,21 +138,22 @@ impl Relays {
                 .collect();
 
             let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
-            let output = client.send_event_builder(builder).await?;
+            let output = shared_state().client.send_event_builder(builder).await?;
 
             // Connect to messaging relays
             for relay in relays.into_iter() {
-                _ = client.add_relay(&relay).await;
-                _ = client.connect_relay(&relay).await;
+                _ = shared_state().client.add_relay(&relay).await;
+                _ = shared_state().client.connect_relay(&relay).await;
             }
 
             let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
 
             // Close old subscription
-            client.unsubscribe(&sub_id).await;
+            shared_state().client.unsubscribe(&sub_id).await;
 
             // Subscribe to new messages
-            if let Err(e) = client
+            if let Err(e) = shared_state()
+                .client
                 .subscribe_with_id(
                     sub_id,
                     Filter::new()

@@ -1,9 +1,12 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Animation, AnimationExt as _, AnyElement, App, Element,
-    ElementId, GlobalElementId, InteractiveElement, IntoElement, LayoutId, ParentElement as _,
-    SharedString, Styled as _, Window,
+    div, px, Animation, AnimationExt as _, AnyElement, App, Element, ElementId, GlobalElementId,
+    InteractiveElement, IntoElement, LayoutId, ParentElement as _, SharedString, Styled as _,
+    Window,
 };
 use theme::ActiveTheme;
 
@@ -87,9 +90,8 @@ pub struct SwitchState {
 }
 
 impl Element for Switch {
-    type RequestLayoutState = AnyElement;
-
     type PrepaintState = ();
+    type RequestLayoutState = AnyElement;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())

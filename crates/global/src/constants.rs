@@ -1,6 +1,9 @@
 pub const APP_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 pub const APP_PUBKEY: &str = "b1813fb01274b32cc5db6d1198e7c79dda0fb430899f63c7064f651a41d44f2b";
+pub const KEYRING_PATH: &str = "Coop Safe Storage";
+pub const KEYRING_USER_PATH: &str = "coop";
+pub const KEYRING_BUNKER: &str = "bunker";
 
 /// Bootstrap Relays.
 pub const BOOTSTRAP_RELAYS: [&str; 4] = [
@@ -32,3 +35,13 @@ pub const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 
 /// NIP96 Media Server.
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";
+
+pub(crate) const GLOBAL_CHANNEL_LIMIT: usize = 2048;
+pub(crate) const BATCH_CHANNEL_LIMIT: usize = 1024;
+pub(crate) const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
+pub(crate) const NIP65_RELAYS: [&str; 4] = [
+    "wss://relay.damus.io",
+    "wss://relay.primal.net",
+    "wss://relay.nostr.net",
+    "wss://nos.lol",
+];

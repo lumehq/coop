@@ -1,23 +1,21 @@
-use super::{DockArea, PanelEvent};
-use crate::{
-    dock_area::{
-        panel::{Panel, PanelView},
-        tab_panel::TabPanel,
-    },
-    h_flex,
-    resizable::{
-        h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent,
-        ResizablePanelGroup,
-    },
-    AxisExt as _, Placement,
-};
+use std::sync::Arc;
+
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    prelude::FluentBuilder, App, AppContext, Axis, Context, DismissEvent, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Pixels, Render, SharedString, Styled,
-    Subscription, WeakEntity, Window,
+    App, AppContext, Axis, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, Pixels, Render, SharedString, Styled, Subscription, WeakEntity,
+    Window,
 };
 use smallvec::SmallVec;
-use std::sync::Arc;
+
+use super::{DockArea, PanelEvent};
+use crate::dock_area::panel::{Panel, PanelView};
+use crate::dock_area::tab_panel::TabPanel;
+use crate::resizable::{
+    h_resizable, resizable_panel, v_resizable, ResizablePanel, ResizablePanelEvent,
+    ResizablePanelGroup,
+};
+use crate::{h_flex, AxisExt as _, Placement};
 
 pub struct StackPanel {
     pub(super) parent: Option<WeakEntity<StackPanel>>,

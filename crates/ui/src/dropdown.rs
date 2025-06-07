@@ -1,19 +1,16 @@
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, canvas, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App, AppContext,
-    Bounds, ClickEvent, Context, DismissEvent, ElementId, Empty, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyBinding, Length, ParentElement, Pixels, Render,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity,
-    Window,
+    anchored, canvas, deferred, div, px, rems, AnyElement, App, AppContext, Bounds, ClickEvent,
+    Context, DismissEvent, ElementId, Empty, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyBinding, Length, ParentElement, Pixels, Render, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{
-    actions::{Cancel, Confirm, SelectNext, SelectPrev},
-    h_flex,
-    input::clear_button::clear_button,
-    list::{List, ListDelegate, ListItem},
-    v_flex, Disableable as _, Icon, IconName, Sizable, Size, StyleSized,
-};
+use crate::actions::{Cancel, Confirm, SelectNext, SelectPrev};
+use crate::input::clear_button::clear_button;
+use crate::list::{List, ListDelegate, ListItem};
+use crate::{h_flex, v_flex, Disableable as _, Icon, IconName, Sizable, Size, StyleSized};
 
 #[derive(Clone)]
 pub enum ListEvent {

@@ -1,8 +1,6 @@
-use std::{
-    cell::Cell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::{
     fill, point, px, relative, App, BorderStyle, Bounds, ContentMask, CursorStyle, Edges, Element,
@@ -389,9 +387,8 @@ pub struct AxisPrepaintState {
 }
 
 impl Element for Scrollbar {
-    type RequestLayoutState = ();
-
     type PrepaintState = PrepaintState;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<gpui::ElementId> {
         None
@@ -631,7 +628,7 @@ impl Element for Scrollbar {
                     let margin_end = state.margin_end;
                     let is_vertical = axis.is_vertical();
 
-                    window.set_cursor_style(CursorStyle::default(), Some(&state.bar_hitbox));
+                    window.set_cursor_style(CursorStyle::default(), &state.bar_hitbox);
 
                     window.paint_layer(hitbox_bounds, |cx| {
                         cx.paint_quad(fill(state.bounds, state.bg));

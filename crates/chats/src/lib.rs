@@ -1,10 +1,11 @@
-use std::{cmp::Reverse, collections::BTreeSet};
+use std::cmp::Reverse;
+use std::collections::BTreeSet;
 
-use account::Account;
 use anyhow::Error;
 use common::room_hash;
-use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use global::get_client;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use global::shared_state;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
 };
@@ -67,7 +68,7 @@ impl ChatRegistry {
     }
 
     /// Set the global ChatRegistry instance
-    pub fn set_global(state: Entity<Self>, cx: &mut App) {
+    pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalChatRegistry(state));
     }
 
@@ -160,13 +161,10 @@ impl ChatRegistry {
     /// 3. Determines each room's type based on message frequency and trust status
     /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // If the user is not logged in, do nothing
-        let Some(current_user) = Account::get_global(cx).profile_ref() else {
+        let client = &shared_state().client;
+        let Some(public_key) = shared_state().identity().map(|i| i.public_key()) else {
             return;
         };
-
-        let client = get_client();
-        let public_key = current_user.public_key();
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             // Get messages sent by the user
@@ -290,8 +288,7 @@ impl ChatRegistry {
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
         let author = event.pubkey;
-
-        let Some(profile) = Account::get_global(cx).profile.to_owned() else {
+        let Some(public_key) = shared_state().identity().map(|i| i.public_key()) else {
             return;
         };
 
@@ -301,7 +298,7 @@ impl ChatRegistry {
                 this.created_at(event.created_at, cx);
 
                 // Set this room is ongoing if the new message is from current user
-                if author == profile.public_key() {
+                if author == public_key {
                     this.set_ongoing(cx);
                 }
 

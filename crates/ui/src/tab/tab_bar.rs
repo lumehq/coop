@@ -1,10 +1,11 @@
-use crate::h_flex;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyElement, App, Div, ElementId, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, ScrollHandle, StatefulInteractiveElement as _, Styled,
-    Window,
+    div, px, AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, ScrollHandle, StatefulInteractiveElement as _, Styled, Window,
 };
 use smallvec::SmallVec;
+
+use crate::h_flex;
 
 #[derive(IntoElement)]
 pub struct TabBar {

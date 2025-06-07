@@ -1,11 +1,13 @@
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, prelude::FluentBuilder, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
-    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::{avatar::Avatar, StyledExt};
+use ui::avatar::Avatar;
+use ui::StyledExt;
 
 #[derive(IntoElement)]
 pub struct DisplayRoom {

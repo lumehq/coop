@@ -348,8 +348,8 @@ fn print_points_as_svg_path(line_corners: &Vec<Corners<Point<Pixels>>>, points: 
 }
 
 impl Element for TextElement {
-    type RequestLayoutState = ();
     type PrepaintState = PrepaintState;
+    type RequestLayoutState = ();
 
     fn id(&self) -> Option<ElementId> {
         None

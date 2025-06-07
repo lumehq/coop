@@ -1,24 +1,21 @@
-use std::{
-    any::TypeId,
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-    time::Duration,
-};
+use std::any::TypeId;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    blue, div, green, prelude::FluentBuilder, px, red, yellow, Animation, AnimationExt, App,
-    AppContext, ClickEvent, Context, DismissEvent, ElementId, Entity, EventEmitter,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    blue, div, green, px, red, yellow, Animation, AnimationExt, App, AppContext, ClickEvent,
+    Context, DismissEvent, ElementId, Entity, EventEmitter, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Window,
 };
 use smol::Timer;
 use theme::ActiveTheme;
 
-use crate::{
-    animation::cubic_bezier,
-    button::{Button, ButtonVariants as _},
-    h_flex, v_flex, Icon, IconName, Sizable as _, StyledExt,
-};
+use crate::animation::cubic_bezier;
+use crate::button::{Button, ButtonVariants as _};
+use crate::{h_flex, v_flex, Icon, IconName, Sizable as _, StyledExt};
 
 pub enum NotificationType {
     Info,

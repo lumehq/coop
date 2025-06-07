@@ -1,33 +1,32 @@
-use std::{collections::BTreeSet, ops::Range, time::Duration};
+use std::collections::BTreeSet;
+use std::ops::Range;
+use std::time::Duration;
 
-use account::Account;
 use async_utility::task::spawn;
-use chats::{
-    room::{Room, RoomKind},
-    ChatRegistry, RoomEmitter,
-};
-
-use common::{debounced_delay::DebouncedDelay, profile::RenderProfile};
+use chats::room::{Room, RoomKind};
+use chats::{ChatRegistry, RoomEmitter};
+use common::debounced_delay::DebouncedDelay;
+use common::profile::RenderProfile;
 use element::DisplayRoom;
-use global::{constants::SEARCH_RELAYS, get_client};
+use global::constants::SEARCH_RELAYS;
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, rems, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache,
-    SharedString, Styled, Subscription, Task, Window,
+    div, rems, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
+    Styled, Subscription, Task, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::{
-    avatar::Avatar,
-    button::{Button, ButtonRounded, ButtonVariants},
-    dock_area::panel::{Panel, PanelEvent},
-    input::{InputEvent, InputState, TextInput},
-    popup_menu::{PopupMenu, PopupMenuExt},
-    skeleton::Skeleton,
-    ContextModal, IconName, Selectable, Sizable, StyledExt,
-};
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::popup_menu::{PopupMenu, PopupMenuExt};
+use ui::skeleton::Skeleton;
+use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::chatspace::{ModalKind, ToggleModal};
 
@@ -142,14 +141,13 @@ impl Sidebar {
         let query = self.find_input.read(cx).value().clone();
 
         cx.background_spawn(async move {
-            let client = get_client();
-
             let filter = Filter::new()
                 .kind(Kind::Metadata)
                 .search(query.to_lowercase())
                 .limit(FIND_LIMIT);
 
-            let events = client
+            let events = shared_state()
+                .client
                 .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
                 .await?
                 .into_iter()
@@ -160,8 +158,11 @@ impl Sidebar {
             let (tx, rx) = smol::channel::bounded::<Room>(10);
 
             spawn(async move {
-                let client = get_client();
-                let signer = client.signer().await.expect("signer is required");
+                let signer = shared_state()
+                    .client
+                    .signer()
+                    .await
+                    .expect("signer is required");
                 let public_key = signer.get_public_key().await.expect("error");
 
                 for event in events.into_iter() {
@@ -492,9 +493,10 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(Account::get_global(cx).profile_ref(), |this, profile| {
-                this.child(self.render_account(profile, cx))
-            })
+            .when_some(
+                shared_state().identity.read_blocking().as_ref(),
+                |this, profile| this.child(self.render_account(profile, cx)),
+            )
             // Search Input
             .child(
                 div().px_3().w_full().h_7().flex_none().child(

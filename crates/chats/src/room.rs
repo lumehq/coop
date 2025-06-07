@@ -1,18 +1,17 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::cmp::Ordering;
+use std::sync::Arc;
 
-use account::Account;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
-use common::{compare, profile::RenderProfile, room_hash};
-use global::{async_cache_profile, get_cache_profile, get_client, profiles};
+use common::profile::RenderProfile;
+use common::{compare, room_hash};
+use global::shared_state;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
-use crate::{
-    constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE},
-    message::Message,
-};
+use crate::constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE};
+use crate::message::Message;
 
 #[derive(Debug, Clone)]
 pub struct Incoming(pub Message);
@@ -165,22 +164,21 @@ impl Room {
     /// # Returns
     ///
     /// The Profile of the first member in the room
-    pub fn first_member(&self, cx: &App) -> Profile {
-        let account = Account::global(cx).read(cx);
-        let Some(profile) = account.profile.clone() else {
-            return get_cache_profile(&self.members[0]);
+    pub fn first_member(&self, _cx: &App) -> Profile {
+        let Some(account) = shared_state().identity() else {
+            return shared_state().person(&self.members[0]);
         };
 
         if let Some(public_key) = self
             .members
             .iter()
-            .filter(|&pubkey| pubkey != &profile.public_key())
+            .filter(|&pubkey| pubkey != &account.public_key())
             .collect::<Vec<_>>()
             .first()
         {
-            get_cache_profile(public_key)
+            shared_state().person(public_key)
         } else {
-            profile
+            account
         }
     }
 
@@ -200,7 +198,7 @@ impl Room {
             let profiles = self
                 .members
                 .iter()
-                .map(get_cache_profile)
+                .map(|public_key| shared_state().person(public_key))
                 .collect::<Vec<_>>();
 
             let mut name = profiles
@@ -325,14 +323,18 @@ impl Room {
     /// A Task that resolves to Result<Vec<(PublicKey, Option<Metadata>)>, Error>
     #[allow(clippy::type_complexity)]
     pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<(), Error>> {
-        let client = get_client();
         let public_keys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
             for public_key in public_keys.iter() {
-                let metadata = client.database().metadata(*public_key).await?;
+                let metadata = shared_state()
+                    .client
+                    .database()
+                    .metadata(*public_key)
+                    .await?;
 
-                profiles()
+                shared_state()
+                    .persons
                     .write()
                     .await
                     .entry(*public_key)
@@ -359,7 +361,6 @@ impl Room {
     /// A Task that resolves to Result<Vec<(PublicKey, bool)>, Error> where
     /// the boolean indicates if the member has inbox relays configured
     pub fn messaging_relays(&self, cx: &App) -> Task<Result<Vec<(PublicKey, bool)>, Error>> {
-        let client = get_client();
         let pubkeys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
@@ -370,8 +371,13 @@ impl Room {
                     .kind(Kind::InboxRelays)
                     .author(*pubkey)
                     .limit(1);
-
-                let is_ready = client.database().query(filter).await?.first().is_some();
+                let is_ready = shared_state()
+                    .client
+                    .database()
+                    .query(filter)
+                    .await?
+                    .first()
+                    .is_some();
 
                 result.push((*pubkey, is_ready));
             }
@@ -391,9 +397,7 @@ impl Room {
     /// A Task that resolves to Result<Vec<RoomMessage>, Error> containing
     /// all messages for this room
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Message>, Error>> {
-        let client = get_client();
         let pubkeys = Arc::clone(&self.members);
-
         let filter = Filter::new()
             .kind(Kind::PrivateDirectMessage)
             .authors(pubkeys.to_vec())
@@ -404,7 +408,8 @@ impl Room {
             let parser = NostrParser::new();
 
             // Get all events from database
-            let events = client
+            let events = shared_state()
+                .client
                 .database()
                 .query(filter)
                 .await?
@@ -452,10 +457,10 @@ impl Room {
                     .collect::<Vec<_>>();
 
                 for pubkey in pubkey_tokens.iter() {
-                    mentions.push(async_cache_profile(pubkey).await);
+                    mentions.push(shared_state().async_person(pubkey).await);
                 }
 
-                let author = async_cache_profile(&event.pubkey).await;
+                let author = shared_state().async_person(&event.pubkey).await;
 
                 if let Ok(message) = Message::builder()
                     .id(event.id)
@@ -486,7 +491,7 @@ impl Room {
     ///
     /// Processes the event and emits an Incoming to the UI when complete
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
-        let author = get_cache_profile(&event.pubkey);
+        let author = shared_state().person(&event.pubkey);
 
         // Extract all mentions from content
         let mentions = extract_mentions(&event.content);
@@ -542,9 +547,9 @@ impl Room {
         &self,
         content: &str,
         replies: Option<&Vec<Message>>,
-        cx: &App,
+        _cx: &App,
     ) -> Option<Message> {
-        let author = Account::get_global(cx).profile.clone()?;
+        let author = shared_state().identity()?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
@@ -627,11 +632,10 @@ impl Room {
         let public_keys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
-            let client = get_client();
-            let signer = client.signer().await?;
+            let signer = shared_state().client.signer().await?;
             let public_key = signer.get_public_key().await?;
-            let mut reports = vec![];
 
+            let mut reports = vec![];
             let mut tags: Vec<Tag> = public_keys
                 .iter()
                 .filter_map(|pubkey| {
@@ -671,11 +675,13 @@ impl Room {
             };
 
             for receiver in receivers.iter() {
-                if let Err(e) = client
+                if let Err(e) = shared_state()
+                    .client
                     .send_private_msg(*receiver, &content, tags.clone())
                     .await
                 {
-                    let metadata = client
+                    let metadata = shared_state()
+                        .client
                         .database()
                         .metadata(*receiver)
                         .await?
@@ -692,11 +698,13 @@ impl Room {
 
             // Only send a backup message to current user if there are no issues when sending to others
             if reports.is_empty() {
-                if let Err(e) = client
+                if let Err(e) = shared_state()
+                    .client
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await
                 {
-                    let metadata = client
+                    let metadata = shared_state()
+                        .client
                         .database()
                         .metadata(*current_user)
                         .await?
@@ -732,7 +740,7 @@ pub fn extract_mentions(content: &str) -> Vec<Profile> {
         .collect::<Vec<_>>();
 
     for pubkey in pubkey_tokens.into_iter() {
-        mentions.push(get_cache_profile(&pubkey));
+        mentions.push(shared_state().person(&pubkey));
     }
 
     mentions

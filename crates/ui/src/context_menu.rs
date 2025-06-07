@@ -1,11 +1,15 @@
-use crate::popup_menu::PopupMenu;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder, px, relative, AnyElement, App, Context,
-    Corner, DismissEvent, DispatchPhase, Element, ElementId, Entity, Focusable, FocusableWrapper,
-    GlobalElementId, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, Position, Size, Stateful, Style, Window,
+    anchored, deferred, div, px, relative, AnyElement, App, Context, Corner, DismissEvent,
+    DispatchPhase, Element, ElementId, Entity, Focusable, FocusableWrapper, GlobalElementId,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
+    Position, Size, Stateful, Style, Window,
 };
-use std::{cell::RefCell, rc::Rc};
+
+use crate::popup_menu::PopupMenu;
 
 pub trait ContextMenuExt: ParentElement + Sized {
     fn context_menu(
@@ -92,8 +96,8 @@ impl Default for ContextMenuState {
 }
 
 impl Element for ContextMenu {
-    type RequestLayoutState = ContextMenuState;
     type PrepaintState = ();
+    type RequestLayoutState = ContextMenuState;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())

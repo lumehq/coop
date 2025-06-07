@@ -1,7 +1,8 @@
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, point, prelude::FluentBuilder as _, px, AnyElement, App, Bounds, CursorStyle,
-    Decorations, Edges, HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, Pixels, Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
+    canvas, div, point, px, AnyElement, App, Bounds, CursorStyle, Decorations, Edges,
+    HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
+    Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
 use theme::ActiveTheme;
 
@@ -104,7 +105,7 @@ impl RenderOnce for WindowBorder {
                                             CursorStyle::ResizeUpRightDownLeft
                                         }
                                     },
-                                    Some(&hitbox),
+                                    &hitbox,
                                 );
                             },
                         )

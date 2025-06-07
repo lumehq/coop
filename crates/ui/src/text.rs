@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::Arc;
+
 use common::profile::RenderProfile;
 use gpui::{
     AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
@@ -7,7 +11,6 @@ use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::{collections::HashMap, ops::Range, sync::Arc};
 use theme::ActiveTheme;
 
 static NOSTR_URI_REGEX: Lazy<Regex> =

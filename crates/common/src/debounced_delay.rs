@@ -1,6 +1,9 @@
-use futures::{channel::oneshot, FutureExt};
+use std::marker::PhantomData;
+use std::time::Duration;
+
+use futures::channel::oneshot;
+use futures::FutureExt;
 use gpui::{Context, Task};
-use std::{marker::PhantomData, time::Duration};
 
 pub struct DebouncedDelay<E: 'static> {
     task: Option<Task<()>>,
