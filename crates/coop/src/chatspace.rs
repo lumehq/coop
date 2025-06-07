@@ -122,7 +122,7 @@ impl ChatSpace {
 
     pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Disable the titlebar
-        self.titlebar(cx);
+        self.titlebar(false, cx);
 
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
@@ -135,7 +135,7 @@ impl ChatSpace {
 
     pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Enable the titlebar
-        self.titlebar(cx);
+        self.titlebar(true, cx);
 
         let weak_dock = self.dock.downgrade();
         let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
@@ -181,8 +181,8 @@ impl ChatSpace {
         });
     }
 
-    fn titlebar(&mut self, cx: &mut Context<Self>) {
-        self.titlebar = !self.titlebar;
+    fn titlebar(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.titlebar = status;
         cx.notify();
     }
 

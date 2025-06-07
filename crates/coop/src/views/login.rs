@@ -168,23 +168,33 @@ impl Login {
         subscriptions.push(
             cx.observe_in(&active_signer, window, |_this, entity, window, cx| {
                 if let Some(signer) = entity.read(cx).clone() {
-                    let (tx, rx) = oneshot::channel::<NostrConnectURI>();
+                    let (tx, rx) = oneshot::channel::<Option<NostrConnectURI>>();
 
                     cx.background_spawn(async move {
                         if let Ok(bunker_uri) = signer.bunker_uri().await {
-                            tx.send(bunker_uri).ok();
+                            tx.send(Some(bunker_uri)).ok();
 
                             if let Err(e) = shared_state().set_signer(signer).await {
                                 log::error!("{}", e);
                             }
+                        } else {
+                            tx.send(None).ok();
                         }
                     })
                     .detach();
 
                     cx.spawn_in(window, async move |this, cx| {
-                        if let Ok(uri) = rx.await {
+                        if let Ok(Some(uri)) = rx.await {
                             this.update(cx, |this, cx| {
                                 this.save_bunker(&uri, cx);
+                            })
+                            .ok();
+                        } else {
+                            cx.update(|window, cx| {
+                                window.push_notification(
+                                    Notification::error("Connection failed"),
+                                    cx,
+                                );
                             })
                             .ok();
                         }
@@ -208,7 +218,7 @@ impl Login {
         }
     }
 
-    fn login(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_logging_in {
             return;
         };
@@ -219,7 +229,7 @@ impl Login {
 
         if content.starts_with("nsec1") {
             let Ok(keys) = SecretKey::parse(content.as_ref()).map(Keys::new) else {
-                self.set_error("Secret key is not valid".to_owned(), cx);
+                self.set_error("Secret key is not valid", cx);
                 return;
             };
 
@@ -238,27 +248,46 @@ impl Login {
             .detach();
         } else if content.starts_with("bunker://") {
             let Ok(uri) = NostrConnectURI::parse(content.as_ref()) else {
-                self.set_error("Bunker URL is not valid".to_owned(), cx);
+                self.set_error("Bunker URL is not valid", cx);
                 return;
             };
 
             // Active signer is no longer needed
             self.shutdown_active_signer(cx);
 
-            // Save this bunker to the OS Storage for further logins
-            self.save_bunker(&uri, cx);
-
-            match NostrConnect::new(
-                uri,
-                client_keys,
-                Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
-                None,
-            ) {
+            match NostrConnect::new(uri.clone(), client_keys, Duration::from_secs(10), None) {
                 Ok(signer) => {
+                    let (tx, rx) = oneshot::channel::<Option<NostrConnectURI>>();
+
                     // Set signer with this remote signer in the background
                     cx.background_spawn(async move {
-                        if let Err(e) = shared_state().set_signer(signer).await {
-                            log::error!("{}", e);
+                        if let Ok(bunker_uri) = signer.bunker_uri().await {
+                            tx.send(Some(bunker_uri)).ok();
+
+                            if let Err(e) = shared_state().set_signer(signer).await {
+                                log::error!("{}", e);
+                            }
+                        } else {
+                            tx.send(None).ok();
+                        }
+                    })
+                    .detach();
+
+                    // Handle error
+                    cx.spawn_in(window, async move |this, cx| {
+                        if let Ok(Some(uri)) = rx.await {
+                            this.update(cx, |this, cx| {
+                                this.save_bunker(&uri, cx);
+                            })
+                            .ok();
+                        } else {
+                            this.update(cx, |this, cx| {
+                                this.set_error(
+                                    "Connection to the Remote Signer failed or timed out",
+                                    cx,
+                                );
+                            })
+                            .ok();
                         }
                     })
                     .detach();
@@ -268,7 +297,7 @@ impl Login {
                 }
             }
         } else {
-            self.set_error("You must provide a valid Private Key or Bunker.".into(), cx);
+            self.set_error("You must provide a valid Private Key or Bunker.", cx);
         };
     }
 
@@ -331,12 +360,26 @@ impl Login {
         }
     }
 
-    fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
+    fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.set_logging_in(false, cx);
         self.error.update(cx, |this, cx| {
-            *this = Some(SharedString::new(message));
+            *this = Some(message.into());
             cx.notify();
         });
+
+        // Clear the error message after 3 secs
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(3)).await;
+
+            this.update(cx, |this, cx| {
+                this.error.update(cx, |this, cx| {
+                    *this = None;
+                    cx.notify();
+                });
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
