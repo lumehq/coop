@@ -255,7 +255,12 @@ impl Login {
             // Active signer is no longer needed
             self.shutdown_active_signer(cx);
 
-            match NostrConnect::new(uri.clone(), client_keys, Duration::from_secs(10), None) {
+            match NostrConnect::new(
+                uri.clone(),
+                client_keys,
+                Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2),
+                None,
+            ) {
                 Ok(signer) => {
                     let (tx, rx) = oneshot::channel::<Option<NostrConnectURI>>();
 
