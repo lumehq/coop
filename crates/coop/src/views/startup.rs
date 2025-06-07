@@ -65,7 +65,7 @@ impl Render for Startup {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap_3()
+                    .gap_6()
                     .child(
                         svg()
                             .path("brand/coop.svg")
@@ -77,10 +77,11 @@ impl Render for Startup {
                             .flex()
                             .items_center()
                             .gap_1p5()
+                            .text_xs()
+                            .text_center()
                             .text_color(cx.theme().text_muted)
-                            .text_sm()
-                            .child(Indicator::new().small())
-                            .child("Connecting"),
+                            .child("Connection in progress")
+                            .child(Indicator::new().small()),
                     ),
             )
     }

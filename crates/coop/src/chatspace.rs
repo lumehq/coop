@@ -121,6 +121,9 @@ impl ChatSpace {
     }
 
     pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Disable the titlebar
+        self.titlebar(cx);
+
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
 
@@ -131,6 +134,7 @@ impl ChatSpace {
     }
 
     pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Enable the titlebar
         self.titlebar(cx);
 
         let weak_dock = self.dock.downgrade();
@@ -178,7 +182,7 @@ impl ChatSpace {
     }
 
     fn titlebar(&mut self, cx: &mut Context<Self>) {
-        self.titlebar = true;
+        self.titlebar = !self.titlebar;
         cx.notify();
     }
 
@@ -292,11 +296,12 @@ impl Render for ChatSpace {
                                         .flex()
                                         .items_center()
                                         .justify_end()
-                                        .gap_2()
+                                        .gap_1p5()
                                         .px_2()
                                         .child(
                                             Button::new("appearance")
-                                                .xsmall()
+                                                .tooltip("Change the app's appearance")
+                                                .small()
                                                 .ghost()
                                                 .map(|this| {
                                                     if cx.theme().mode.is_dark() {
@@ -319,6 +324,26 @@ impl Render for ChatSpace {
                                                             cx,
                                                         );
                                                     }
+                                                })),
+                                        )
+                                        .child(
+                                            Button::new("settings")
+                                                .tooltip("Open settings")
+                                                .small()
+                                                .ghost()
+                                                .icon(IconName::Settings),
+                                        )
+                                        .child(
+                                            Button::new("logout")
+                                                .tooltip("Log out")
+                                                .small()
+                                                .ghost()
+                                                .icon(IconName::Logout)
+                                                .on_click(cx.listener(move |_, _, _window, cx| {
+                                                    cx.background_spawn(async move {
+                                                        shared_state().unset_signer().await;
+                                                    })
+                                                    .detach();
                                                 })),
                                         ),
                                 ),

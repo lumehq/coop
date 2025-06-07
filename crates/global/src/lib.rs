@@ -36,6 +36,8 @@ static GLOBALS: OnceLock<Globals> = OnceLock::new();
 pub enum NostrSignal {
     /// User's signing keys have been updated
     SignerUpdated,
+    /// User's signing keys have been unset
+    SignerUnset,
     /// New Nostr event received
     Event(Event),
     /// Application update event received
@@ -254,6 +256,14 @@ impl Globals {
         self.global_sender.send(NostrSignal::SignerUpdated).await?;
 
         Ok(())
+    }
+
+    pub async fn unset_signer(&self) {
+        self.client.reset().await;
+
+        if let Err(e) = self.global_sender.send(NostrSignal::SignerUnset).await {
+            log::error!("Failed to send signal to global channel: {}", e);
+        }
     }
 
     /// Creates a new account with the given keys and metadata

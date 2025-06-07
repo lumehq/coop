@@ -152,6 +152,13 @@ fn main() {
                                         })
                                         .ok();
                                 }
+                                NostrSignal::SignerUnset => {
+                                    async_chatspace_clone
+                                        .update(cx, |this, cx| {
+                                            this.open_onboarding(window, cx);
+                                        })
+                                        .ok();
+                                }
                                 NostrSignal::Eose => {
                                     chats.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
