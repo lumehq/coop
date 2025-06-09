@@ -5,6 +5,7 @@ pub mod new_account;
 pub mod onboarding;
 pub mod profile;
 pub mod relays;
+pub mod settings;
 pub mod sidebar;
 pub mod startup;
 pub mod subject;
