@@ -930,6 +930,7 @@ dependencies = [
  "nostr",
  "nostr-sdk",
  "oneshot",
+ "settings",
  "smallvec",
  "smol",
 ]
@@ -1157,6 +1158,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "settings",
  "smallvec",
  "smol",
  "theme",
@@ -5387,6 +5389,9 @@ dependencies = [
  "anyhow",
  "gpui",
  "log",
+ "nostr-sdk",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

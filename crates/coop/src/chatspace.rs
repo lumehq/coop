@@ -20,7 +20,7 @@ use ui::dock_area::{DockArea, DockItem};
 use ui::{ContextModal, IconName, Root, Sizable, TitleBar};
 
 use crate::views::chat::{self, Chat};
-use crate::views::{login, new_account, onboarding, settings, sidebar, startup, welcome};
+use crate::views::{login, new_account, onboarding, preferences, sidebar, startup, welcome};
 
 impl_internal_actions!(dock, [ToggleModal]);
 
@@ -180,11 +180,11 @@ impl ChatSpace {
     }
 
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let settings = settings::init(window, cx);
+        let settings = preferences::init(window, cx);
 
         window.open_modal(cx, move |modal, _, _| {
             modal
-                .title("Settings")
+                .title("Preferences")
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(settings.clone())
         });
@@ -290,8 +290,8 @@ impl Render for ChatSpace {
                                                 })),
                                         )
                                         .child(
-                                            Button::new("settings")
-                                                .tooltip("Open settings")
+                                            Button::new("preferences")
+                                                .tooltip("Open Preferences")
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Settings)
@@ -301,7 +301,7 @@ impl Render for ChatSpace {
                                         )
                                         .child(
                                             Button::new("logout")
-                                                .tooltip("Log out")
+                                                .tooltip("Log Out")
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Logout)

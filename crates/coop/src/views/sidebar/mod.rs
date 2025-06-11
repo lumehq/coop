@@ -19,6 +19,7 @@ use gpui::{
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use settings::Settings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -69,6 +70,7 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
+        let trusted_only = Settings::get_global(cx).only_show_trusted;
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
@@ -119,7 +121,7 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            trusted_only: false,
+            trusted_only,
             indicator,
             active_filter,
             find_input,
@@ -347,6 +349,8 @@ impl Sidebar {
     }
 
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
+        let proxy = Settings::get_global(cx).proxy_user_avatars;
+
         div()
             .px_3()
             .h_8()
@@ -362,7 +366,7 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(Avatar::new(profile.render_avatar()).size(rems(1.75)))
+                    .child(Avatar::new(profile.render_avatar(proxy)).size(rems(1.75)))
                     .child(profile.render_name())
                     .on_click(cx.listener({
                         let Ok(public_key) = profile.public_key().to_bech32();

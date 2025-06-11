@@ -20,6 +20,7 @@ use gpui::{
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
+use settings::Settings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
@@ -542,6 +543,9 @@ impl Chat {
             return div().id(ix);
         };
 
+        let proxy = Settings::get_global(cx).proxy_user_avatars;
+        let hide_avatar = Settings::get_global(cx).hide_user_avatars;
+
         let message = message.borrow();
 
         // Message without ID, Author probably the placeholder
@@ -590,7 +594,9 @@ impl Chat {
                 div()
                     .flex()
                     .gap_3()
-                    .child(Avatar::new(author.render_avatar()).size(rems(2.)))
+                    .when(!hide_avatar, |this| {
+                        this.child(Avatar::new(author.render_avatar(proxy)).size(rems(2.)))
+                    })
                     .child(
                         div()
                             .flex_1()
