@@ -9,7 +9,7 @@ use global::shared_state;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use settings::Settings;
+use settings::AppSettings;
 
 use crate::constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE};
 use crate::message::Message;
@@ -250,7 +250,7 @@ impl Room {
     /// - For a direct message: the other person's avatar
     /// - For a group chat: None
     pub fn display_image(&self, cx: &App) -> SharedString {
-        let proxy = Settings::get_global(cx).proxy_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
 
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
@@ -633,7 +633,7 @@ impl Room {
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
-        let backup = Settings::get_global(cx).backup_messages;
+        let backup = AppSettings::get_global(cx).settings().backup_messages;
 
         cx.background_spawn(async move {
             let signer = shared_state().client.signer().await?;

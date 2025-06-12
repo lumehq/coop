@@ -5,7 +5,7 @@ use gpui::{
     div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use settings::Settings;
+use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::StyledExt;
@@ -60,7 +60,7 @@ impl DisplayRoom {
 impl RenderOnce for DisplayRoom {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let handler = self.handler.clone();
-        let hide_avatar = Settings::get_global(cx).hide_user_avatars;
+        let hide_avatar = AppSettings::get_global(cx).settings().hide_user_avatars;
 
         self.base
             .id(self.ix)

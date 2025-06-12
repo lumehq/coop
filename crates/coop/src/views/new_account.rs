@@ -9,6 +9,7 @@ use gpui::{
     Styled, Window,
 };
 use nostr_sdk::prelude::*;
+use settings::AppSettings;
 use smol::fs;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -94,6 +95,7 @@ impl NewAccount {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let nip96 = AppSettings::get_global(cx).settings().media_server.clone();
         let avatar_input = self.avatar_input.downgrade();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -122,7 +124,9 @@ impl NewAccount {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         spawn(async move {
-                            if let Ok(url) = nip96_upload(&shared_state().client, file_data).await {
+                            if let Ok(url) =
+                                nip96_upload(&shared_state().client, nip96, file_data).await
+                            {
                                 _ = tx.send(url);
                             }
                         });

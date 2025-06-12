@@ -5387,11 +5387,13 @@ name = "settings"
 version = "0.1.5"
 dependencies = [
  "anyhow",
+ "global",
  "gpui",
  "log",
  "nostr-sdk",
  "serde",
  "serde_json",
+ "smallvec",
 ]
 
 [[package]]

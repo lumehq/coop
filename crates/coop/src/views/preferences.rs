@@ -1,32 +1,63 @@
 use common::profile::RenderProfile;
-use global::shared_state;
+use global::{constants::NIP96_SERVER, shared_state};
 use gpui::{
-    div, prelude::FluentBuilder, relative, rems, App, AppContext, Context, Entity, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
+    div, http_client::Url, prelude::FluentBuilder, px, relative, rems, App, AppContext, Context,
+    Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
 };
-use settings::Settings;
+use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::{avatar::Avatar, StyledExt};
+use ui::{
+    avatar::Avatar,
+    button::{Button, ButtonVariants},
+    input::{InputState, TextInput},
+    switch::Switch,
+    ContextModal, IconName, Sizable, Size, StyledExt,
+};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     Preferences::new(window, cx)
 }
 
 pub struct Preferences {
+    media_input: Entity<InputState>,
     focus_handle: FocusHandle,
 }
 
 impl Preferences {
-    pub fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self {
-            focus_handle: cx.focus_handle(),
+    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| {
+            let media_server = AppSettings::get_global(cx)
+                .settings()
+                .media_server
+                .to_string();
+
+            let media_input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .default_value(media_server)
+                    .placeholder(NIP96_SERVER)
+            });
+
+            Self {
+                media_input,
+                focus_handle: cx.focus_handle(),
+            }
         })
     }
 }
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = Settings::get_global(cx).proxy_user_avatars;
+        const MEDIA_DESCRIPTION: &str = "Coop only supports NIP-96 media servers for now. If you're not sure about it, please keep the default value.";
+        const BACKUP_DESCRIPTION: &str =
+            "When a user sends a message, Coop won't back it up to the user's messaging relays";
+        const TRUSTED_DESCRIPTION: &str = "Show trusted requests by default";
+        const HIDE_AVATAR_DESCRIPTION: &str =
+            "Unload all avatar pictures to improve performance and reduce memory usage";
+        const PROXY_DESCRIPTION: &str =
+            "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)";
+
+        let input_state = self.media_input.downgrade();
+        let settings = AppSettings::get_global(cx).settings();
 
         div()
             .track_focus(&self.focus_handle)
@@ -54,7 +85,10 @@ impl Render for Preferences {
                                 .flex()
                                 .items_center()
                                 .gap_2()
-                                .child(Avatar::new(profile.render_avatar(proxy)).size(rems(2.4)))
+                                .child(
+                                    Avatar::new(profile.render_avatar(settings.proxy_user_avatars))
+                                        .size(rems(2.4)),
+                                )
                                 .child(
                                     div()
                                         .flex_1()
@@ -91,7 +125,87 @@ impl Render for Preferences {
                             .font_semibold()
                             .child("Media Server"),
                     )
-                    .child(div().child("TODO")),
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap_1()
+                            .child(TextInput::new(&self.media_input).xsmall())
+                            .child(
+                                Button::new("update")
+                                    .icon(IconName::CheckCircleFill)
+                                    .ghost()
+                                    .with_size(Size::Size(px(26.)))
+                                    .on_click(move |_, window, cx| {
+                                        if let Some(input) = input_state.upgrade() {
+                                            let value = input.read(cx).value();
+                                            let Ok(url) = Url::parse(value) else {
+                                                window.push_notification("URL is not valid", cx);
+                                                return;
+                                            };
+
+                                            AppSettings::global(cx).update(cx, |this, cx| {
+                                                this.settings.media_server = url;
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(MEDIA_DESCRIPTION),
+                    ),
+            )
+            .child(
+                div()
+                    .py_2()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().text_placeholder)
+                            .font_semibold()
+                            .child("Messages"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                Switch::new("backup_messages")
+                                    .label("Backup messages")
+                                    .description(BACKUP_DESCRIPTION)
+                                    .checked(settings.backup_messages)
+                                    .on_click(|_, _window, cx| {
+                                        AppSettings::global(cx).update(cx, |this, cx| {
+                                            this.settings.backup_messages =
+                                                !this.settings.backup_messages;
+                                            cx.notify();
+                                        })
+                                    }),
+                            )
+                            .child(
+                                Switch::new("only_show_trusted")
+                                    .label("Only trusted")
+                                    .description(TRUSTED_DESCRIPTION)
+                                    .checked(settings.only_show_trusted)
+                                    .on_click(|_, _window, cx| {
+                                        AppSettings::global(cx).update(cx, |this, cx| {
+                                            this.settings.only_show_trusted =
+                                                !this.settings.only_show_trusted;
+                                            cx.notify();
+                                        })
+                                    }),
+                            ),
+                    ),
             )
             .child(
                 div()
@@ -108,7 +222,38 @@ impl Render for Preferences {
                             .font_semibold()
                             .child("Display"),
                     )
-                    .child(div().child("TODO")),
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                Switch::new("hide_user_avatars")
+                                    .label("Hide user avatars")
+                                    .description(HIDE_AVATAR_DESCRIPTION)
+                                    .checked(settings.hide_user_avatars)
+                                    .on_click(|_, _window, cx| {
+                                        AppSettings::global(cx).update(cx, |this, cx| {
+                                            this.settings.hide_user_avatars =
+                                                !this.settings.hide_user_avatars;
+                                            cx.notify();
+                                        })
+                                    }),
+                            )
+                            .child(
+                                Switch::new("proxy_user_avatars")
+                                    .label("Proxy user avatars")
+                                    .description(PROXY_DESCRIPTION)
+                                    .checked(settings.proxy_user_avatars)
+                                    .on_click(|_, _window, cx| {
+                                        AppSettings::global(cx).update(cx, |this, cx| {
+                                            this.settings.proxy_user_avatars =
+                                                !this.settings.proxy_user_avatars;
+                                            cx.notify();
+                                        })
+                                    }),
+                            ),
+                    ),
             )
     }
 }

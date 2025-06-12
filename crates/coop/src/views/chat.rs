@@ -20,7 +20,7 @@ use gpui::{
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
-use settings::Settings;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
@@ -372,6 +372,7 @@ impl Chat {
 
         self.uploading(true, cx);
 
+        let nip96 = AppSettings::get_global(cx).settings().media_server.clone();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -390,7 +391,9 @@ impl Chat {
 
                         // Spawn task via async utility instead of GPUI context
                         spawn(async move {
-                            let url = match nip96_upload(&shared_state().client, file_data).await {
+                            let url = match nip96_upload(&shared_state().client, nip96, file_data)
+                                .await
+                            {
                                 Ok(url) => Some(url),
                                 Err(e) => {
                                     log::error!("Upload error: {e}");
@@ -543,8 +546,8 @@ impl Chat {
             return div().id(ix);
         };
 
-        let proxy = Settings::get_global(cx).proxy_user_avatars;
-        let hide_avatar = Settings::get_global(cx).hide_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+        let hide_avatar = AppSettings::get_global(cx).settings().hide_user_avatars;
 
         let message = message.borrow();
 

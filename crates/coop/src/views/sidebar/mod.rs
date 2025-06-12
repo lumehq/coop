@@ -19,7 +19,7 @@ use gpui::{
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use settings::Settings;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -70,7 +70,7 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let trusted_only = Settings::get_global(cx).only_show_trusted;
+        let trusted_only = AppSettings::get_global(cx).settings().only_show_trusted;
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
@@ -349,7 +349,7 @@ impl Sidebar {
     }
 
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
-        let proxy = Settings::get_global(cx).proxy_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
 
         div()
             .px_3()

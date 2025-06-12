@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, Animation, AnimationExt as _, AnyElement, App, Element, ElementId, GlobalElementId,
-    InteractiveElement, IntoElement, LayoutId, ParentElement as _, SharedString, Styled as _,
-    Window,
+    div, px, white, Animation, AnimationExt as _, AnyElement, App, Element, ElementId,
+    GlobalElementId, InteractiveElement, IntoElement, LayoutId, ParentElement as _, SharedString,
+    Styled as _, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{h_flex, Disableable, Side, Sizable, Size};
+use crate::{Disableable, Side, Sizable, Size};
 
 type OnClick = Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>;
 
@@ -19,6 +19,7 @@ pub struct Switch {
     checked: bool,
     disabled: bool,
     label: Option<SharedString>,
+    description: Option<SharedString>,
     label_side: Side,
     on_click: OnClick,
     size: Size,
@@ -27,13 +28,15 @@ pub struct Switch {
 impl Switch {
     pub fn new(id: impl Into<ElementId>) -> Self {
         let id: ElementId = id.into();
+
         Self {
             id: id.clone(),
             checked: false,
             disabled: false,
             label: None,
+            description: None,
             on_click: None,
-            label_side: Side::Right,
+            label_side: Side::Left,
             size: Size::Medium,
         }
     }
@@ -45,6 +48,11 @@ impl Switch {
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
@@ -116,8 +124,8 @@ impl Element for Switch {
             let on_click = self.on_click.clone();
 
             let (bg, toggle_bg) = match self.checked {
-                true => (theme.icon_accent, theme.background),
-                false => (theme.element_background, theme.background),
+                true => (theme.element_background, white()),
+                false => (theme.elevated_surface_background, white()),
             };
 
             let (bg, toggle_bg) = match self.disabled {
@@ -138,74 +146,98 @@ impl Element for Switch {
             let inset = px(2.);
 
             let mut element = div()
-                .flex()
                 .child(
-                    h_flex()
+                    div()
                         .id(self.id.clone())
-                        .items_center()
-                        .gap_2()
                         .when(self.label_side.is_left(), |this| this.flex_row_reverse())
                         .child(
-                            // Switch Bar
                             div()
-                                .id(self.id.clone())
-                                .w(bg_width)
-                                .h(bg_height)
-                                .rounded(bg_height / 2.)
+                                .w_full()
                                 .flex()
+                                .justify_between()
                                 .items_center()
-                                .border(inset)
-                                .border_color(theme.border_transparent)
-                                .bg(bg)
-                                .when(!self.disabled, |this| this.cursor_pointer())
+                                .gap_4()
+                                .when_some(self.label.clone(), |this, label| {
+                                    // Label
+                                    this.child(
+                                        div().text_sm().text_color(cx.theme().text).child(label),
+                                    )
+                                })
                                 .child(
-                                    // Switch Toggle
-                                    div().rounded_full().bg(toggle_bg).size(bar_width).map(
-                                        |this| {
-                                            let prev_checked = state.prev_checked.clone();
-                                            if !self.disabled
-                                                && prev_checked
-                                                    .borrow()
-                                                    .is_some_and(|prev| prev != checked)
-                                            {
-                                                let dur = Duration::from_secs_f64(0.15);
-                                                cx.spawn(async move |cx| {
-                                                    cx.background_executor().timer(dur).await;
-                                                    *prev_checked.borrow_mut() = Some(checked);
-                                                })
-                                                .detach();
-                                                this.with_animation(
-                                                    ElementId::NamedInteger(
-                                                        "move".into(),
-                                                        checked as u64,
-                                                    ),
-                                                    Animation::new(dur),
-                                                    move |this, delta| {
+                                    // Switch Bar
+                                    div()
+                                        .id(self.id.clone())
+                                        .flex_shrink_0()
+                                        .w(bg_width)
+                                        .h(bg_height)
+                                        .rounded(bg_height / 2.)
+                                        .flex()
+                                        .items_center()
+                                        .border(inset)
+                                        .border_color(theme.border_transparent)
+                                        .bg(bg)
+                                        .when(!self.disabled, |this| this.cursor_pointer())
+                                        .child(
+                                            // Switch Toggle
+                                            div()
+                                                .rounded_full()
+                                                .shadow_sm()
+                                                .bg(toggle_bg)
+                                                .size(bar_width)
+                                                .map(|this| {
+                                                    let prev_checked = state.prev_checked.clone();
+                                                    if !self.disabled
+                                                        && prev_checked
+                                                            .borrow()
+                                                            .is_some_and(|prev| prev != checked)
+                                                    {
+                                                        let dur = Duration::from_secs_f64(0.15);
+                                                        cx.spawn(async move |cx| {
+                                                            cx.background_executor()
+                                                                .timer(dur)
+                                                                .await;
+                                                            *prev_checked.borrow_mut() =
+                                                                Some(checked);
+                                                        })
+                                                        .detach();
+                                                        this.with_animation(
+                                                            ElementId::NamedInteger(
+                                                                "move".into(),
+                                                                checked as u64,
+                                                            ),
+                                                            Animation::new(dur),
+                                                            move |this, delta| {
+                                                                let max_x = bg_width
+                                                                    - bar_width
+                                                                    - inset * 2;
+                                                                let x = if checked {
+                                                                    max_x * delta
+                                                                } else {
+                                                                    max_x - max_x * delta
+                                                                };
+                                                                this.left(x)
+                                                            },
+                                                        )
+                                                        .into_any_element()
+                                                    } else {
                                                         let max_x =
                                                             bg_width - bar_width - inset * 2;
-                                                        let x = if checked {
-                                                            max_x * delta
-                                                        } else {
-                                                            max_x - max_x * delta
-                                                        };
-                                                        this.left(x)
-                                                    },
-                                                )
-                                                .into_any_element()
-                                            } else {
-                                                let max_x = bg_width - bar_width - inset * 2;
-                                                let x = if checked { max_x } else { px(0.) };
-                                                this.left(x).into_any_element()
-                                            }
-                                        },
-                                    ),
+                                                        let x =
+                                                            if checked { max_x } else { px(0.) };
+                                                        this.left(x).into_any_element()
+                                                    }
+                                                }),
+                                        ),
                                 ),
                         )
-                        .when_some(self.label.clone(), |this, label| {
-                            this.child(div().child(label).map(|this| match self.size {
-                                Size::XSmall | Size::Small => this.text_sm(),
-                                _ => this.text_base(),
-                            }))
+                        .when_some(self.description.clone(), |this, description| {
+                            this.child(
+                                div()
+                                    .w_3_4()
+                                    .text_xs()
+                                    .text_color(cx.theme().text_muted)
+                                    .child(description),
+                            )
                         })
                         .when_some(
                             on_click
