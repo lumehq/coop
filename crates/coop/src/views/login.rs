@@ -1,8 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use client_keys::ClientKeys;
+use common::handle_auth::CoopAuthUrlHandler;
 use common::string_to_qr;
-use global::constants::{APP_NAME, KEYRING_BUNKER, KEYRING_USER_PATH};
+use global::constants::{
+    APP_NAME, KEYRING_BUNKER, KEYRING_USER_PATH, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
+};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -19,21 +23,6 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{ContextModal, Disableable, Sizable, StyledExt};
-
-const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
-const NOSTR_CONNECT_TIMEOUT: u64 = 300;
-
-#[derive(Debug, Clone)]
-struct CoopAuthUrlHandler;
-
-impl AuthUrlHandler for CoopAuthUrlHandler {
-    fn on_auth_url(&self, auth_url: Url) -> BoxedFuture<Result<()>> {
-        Box::pin(async move {
-            webbrowser::open(auth_url.as_str())?;
-            Ok(())
-        })
-    }
-}
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
@@ -72,9 +61,9 @@ impl Login {
         // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
         //
         // Direct connection initiated by the client
-        let connection_string = cx.new(|_cx| {
+        let connection_string = cx.new(|cx| {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let client_keys = shared_state().client_signer.clone();
+            let client_keys = ClientKeys::get_global(cx).keys();
 
             NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
@@ -106,41 +95,37 @@ impl Login {
             }),
         );
 
-        subscriptions.push(cx.observe_new::<NostrConnectURI>(
-            move |connection_string, _window, cx| {
-                if let Ok(mut signer) = NostrConnect::new(
-                    connection_string.to_owned(),
-                    shared_state().client_signer.clone(),
-                    Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
-                    None,
-                ) {
-                    // Automatically open remote signer's webpage when received auth url
-                    signer.auth_url_handler(CoopAuthUrlHandler);
+        subscriptions.push(cx.observe_new::<NostrConnectURI>(move |uri, _window, cx| {
+            let client_keys = ClientKeys::get_global(cx).keys();
+            let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
 
-                    async_active_signer
-                        .update(cx, |this, cx| {
-                            *this = Some(signer);
-                            cx.notify();
-                        })
-                        .ok();
-                }
+            if let Ok(mut signer) = NostrConnect::new(uri.to_owned(), client_keys, timeout, None) {
+                // Automatically open remote signer's webpage when received auth url
+                signer.auth_url_handler(CoopAuthUrlHandler);
 
-                // Update the QR Image with the new connection string
-                async_qr_image
+                async_active_signer
                     .update(cx, |this, cx| {
-                        *this = string_to_qr(&connection_string.to_string());
+                        *this = Some(signer);
                         cx.notify();
                     })
                     .ok();
-            },
-        ));
+            }
+
+            // Update the QR Image with the new connection string
+            async_qr_image
+                .update(cx, |this, cx| {
+                    *this = string_to_qr(&uri.to_string());
+                    cx.notify();
+                })
+                .ok();
+        }));
 
         subscriptions.push(cx.observe_in(
             &connection_string,
             window,
             |this, entity, _window, cx| {
                 let connection_string = entity.read(cx).clone();
-                let client_keys = shared_state().client_signer.clone();
+                let client_keys = ClientKeys::get_global(cx).keys();
 
                 // Update the QR Image with the new connection string
                 this.qr_image.update(cx, |this, cx| {
@@ -224,7 +209,7 @@ impl Login {
         };
         self.set_logging_in(true, cx);
 
-        let client_keys = shared_state().client_signer.clone();
+        let client_keys = ClientKeys::get_global(cx).keys();
         let content = self.key_input.read(cx).value();
 
         if content.starts_with("nsec1") {
@@ -261,7 +246,10 @@ impl Login {
                 Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2),
                 None,
             ) {
-                Ok(signer) => {
+                Ok(mut signer) => {
+                    // Automatically open remote signer's webpage when received auth url
+                    signer.auth_url_handler(CoopAuthUrlHandler);
+
                     let (tx, rx) = oneshot::channel::<Option<NostrConnectURI>>();
 
                     // Set signer with this remote signer in the background
@@ -313,7 +301,7 @@ impl Login {
             return;
         };
 
-        let client_keys = shared_state().client_signer.clone();
+        let client_keys = ClientKeys::get_global(cx).keys();
         let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
 
         self.connection_string.update(cx, |this, cx| {

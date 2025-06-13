@@ -7,23 +7,21 @@
 //! - Cross-component communication via channels
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
 use std::sync::OnceLock;
 use std::time::Duration;
+use std::{fs, mem};
 
 use anyhow::{anyhow, Error};
 use constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
-use nostr_keyring::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
 
-use crate::constants::{
-    BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT, KEYRING_PATH, NIP17_RELAYS, NIP65_RELAYS,
-};
+use crate::constants::{BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT, NIP17_RELAYS, NIP65_RELAYS};
+use crate::paths::support_dir;
 
 pub mod constants;
 pub mod paths;
@@ -50,8 +48,8 @@ pub enum NostrSignal {
 pub struct Globals {
     /// The Nostr SDK client
     pub client: Client,
-    /// Cryptographic keys for signing Nostr events
-    pub client_signer: Keys,
+    /// Determines if this is the first time user run Coop
+    pub first_run: bool,
     /// Current user's profile information (pubkey and metadata)
     pub identity: RwLock<Option<Profile>>,
     /// Auto-close options for subscriptions to prevent memory leaks
@@ -78,18 +76,7 @@ pub fn shared_state() -> &'static Globals {
             .install_default()
             .ok();
 
-        let keyring = NostrKeyring::new(KEYRING_PATH);
-        // Get the client signer or generate a new one if it doesn't exist
-        let client_signer = if let Ok(keys) = keyring.get("client") {
-            keys
-        } else {
-            let keys = Keys::generate();
-            if let Err(e) = keyring.set("client", &keys) {
-                log::error!("Failed to save client keys: {}", e);
-            }
-            keys
-        };
-
+        let first_run = is_first_run().unwrap_or(true);
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
@@ -106,7 +93,7 @@ pub fn shared_state() -> &'static Globals {
             auto_close: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
-            client_signer,
+            first_run,
             global_sender,
             global_receiver,
             batch_sender,
@@ -594,5 +581,16 @@ impl Globals {
                 .await
                 .ok();
         }
+    }
+}
+
+fn is_first_run() -> Result<bool, anyhow::Error> {
+    let flag = support_dir().join(".first_run");
+
+    if !flag.exists() {
+        fs::write(&flag, "")?;
+        Ok(true) // First run
+    } else {
+        Ok(false) // Not first run
     }
 }

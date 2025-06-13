@@ -15,6 +15,7 @@ common = { path = "../common" }
 global = { path = "../global" }
 chats = { path = "../chats" }
 settings = { path = "../settings" }
+client_keys = { path = "../client_keys" }
 auto_update = { path = "../auto_update" }
 
 gpui.workspace = true
@@ -35,5 +36,4 @@ smol.workspace = true
 futures.workspace = true
 oneshot.workspace = true
 
-webbrowser = "1.0.4"
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }

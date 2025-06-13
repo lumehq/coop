@@ -12,7 +12,7 @@ use crate::{
     actions::{Cancel, Confirm},
     animation::cubic_bezier,
     button::{Button, ButtonCustomVariant, ButtonVariant, ButtonVariants as _},
-    h_flex, v_flex, ContextModal, IconName, Root, StyledExt,
+    h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt,
 };
 
 const CONTEXT: &str = "Modal";
@@ -45,7 +45,7 @@ impl Default for ModalButtonProps {
             ok_text: None,
             ok_variant: ButtonVariant::Primary,
             cancel_text: None,
-            cancel_variant: ButtonVariant::default(),
+            cancel_variant: ButtonVariant::Ghost,
         }
     }
 }
@@ -120,7 +120,7 @@ impl Modal {
             footer: None,
             content: v_flex(),
             margin_top: None,
-            width: px(480.),
+            width: px(380.),
             max_width: None,
             overlay: true,
             keyboard: true,
@@ -291,12 +291,15 @@ impl RenderOnce for Modal {
         let render_ok: RenderButtonFn = Box::new({
             let on_ok = on_ok.clone();
             let on_close = on_close.clone();
-            let ok_text = self.button_props.ok_text.unwrap_or_else(|| "Ok".into());
             let ok_variant = self.button_props.ok_variant;
+            let ok_text = self.button_props.ok_text.unwrap_or_else(|| "OK".into());
+
             move |_, _| {
                 Button::new("ok")
                     .label(ok_text)
                     .with_variant(ok_variant)
+                    .small()
+                    .flex_1()
                     .on_click({
                         let on_ok = on_ok.clone();
                         let on_close = on_close.clone();
@@ -315,18 +318,22 @@ impl RenderOnce for Modal {
                     .into_any_element()
             }
         });
+
         let render_cancel: RenderButtonFn = Box::new({
             let on_cancel = on_cancel.clone();
             let on_close = on_close.clone();
+            let cancel_variant = self.button_props.cancel_variant;
             let cancel_text = self
                 .button_props
                 .cancel_text
                 .unwrap_or_else(|| "Cancel".into());
-            let cancel_variant = self.button_props.cancel_variant;
+
             move |_, _| {
                 Button::new("cancel")
                     .label(cancel_text)
                     .with_variant(cancel_variant)
+                    .small()
+                    .flex_1()
                     .on_click({
                         let on_cancel = on_cancel.clone();
                         let on_close = on_close.clone();
@@ -344,15 +351,18 @@ impl RenderOnce for Modal {
         });
 
         let window_paddings = crate::window_border::window_paddings(window, cx);
+
         let view_size = window.viewport_size()
             - gpui::size(
                 window_paddings.left + window_paddings.right,
                 window_paddings.top + window_paddings.bottom,
             );
+
         let bounds = Bounds {
             origin: Point::default(),
             size: view_size,
         };
+
         let offset_top = px(layer_ix as f32 * 16.);
         let y = self.margin_top.unwrap_or(view_size.height / 10.) + offset_top;
         let x = bounds.center().x - self.width / 2.;
@@ -469,12 +479,14 @@ impl RenderOnce for Modal {
                             .when(self.footer.is_some(), |this| {
                                 let footer = self.footer.unwrap();
 
-                                this.child(h_flex().gap_2().justify_end().children(footer(
-                                    render_ok,
-                                    render_cancel,
-                                    window,
-                                    cx,
-                                )))
+                                this.child(
+                                    h_flex().p_4().gap_1p5().justify_center().children(footer(
+                                        render_ok,
+                                        render_cancel,
+                                        window,
+                                        cx,
+                                    )),
+                                )
                             })
                             .with_animation(
                                 "slide-down",

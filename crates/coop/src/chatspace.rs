@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Error;
 use chats::{ChatRegistry, RoomEmitter};
+use client_keys::ClientKeys;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
@@ -17,7 +18,8 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{DockArea, DockItem};
-use ui::{ContextModal, IconName, Root, Sizable, TitleBar};
+use ui::modal::ModalButtonProps;
+use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
 use crate::views::chat::{self, Chat};
 use crate::views::{login, new_account, onboarding, preferences, sidebar, startup, welcome};
@@ -62,7 +64,7 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
     titlebar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl ChatSpace {
@@ -78,7 +80,65 @@ impl ChatSpace {
 
         cx.new(|cx| {
             let chats = ChatRegistry::global(cx);
+            let client_keys = ClientKeys::global(cx);
             let mut subscriptions = smallvec![];
+
+            subscriptions.push(cx.observe_in(
+                &client_keys,
+                window,
+                |_this: &mut Self, state, window, cx| {
+                    if !state.read(cx).has_keys() {
+                        window.open_modal(cx, |this, _window, cx| {
+                            const DESCRIPTION: &str =
+                                "Allow Coop to read the client keys stored in Keychain to continue";
+
+                            this.overlay_closable(false)
+                                .show_close(false)
+                                .keyboard(false)
+                                .confirm()
+                                .button_props(
+                                    ModalButtonProps::default()
+                                        .cancel_text("Create New Keys")
+                                        .ok_text("Allow"),
+                                )
+                                .child(
+                                    div()
+                                        .px_10()
+                                        .w_full()
+                                        .h_40()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_center()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .font_semibold()
+                                                .text_color(cx.theme().text_muted)
+                                                .child("Warning"),
+                                        )
+                                        .child(DESCRIPTION),
+                                )
+                                .on_cancel(|_, _window, cx| {
+                                    ClientKeys::global(cx).update(cx, |this, cx| {
+                                        this.new_keys(cx);
+                                    });
+                                    // true: Close modal
+                                    true
+                                })
+                                .on_ok(|_, window, cx| {
+                                    ClientKeys::global(cx).update(cx, |this, cx| {
+                                        this.load(window, cx);
+                                    });
+                                    // true: Close modal
+                                    true
+                                })
+                        });
+                    }
+                },
+            ));
 
             // Automatically load messages when chat panel opens
             subscriptions.push(cx.observe_new::<Chat>(|this: &mut Chat, window, cx| {
@@ -91,7 +151,7 @@ impl ChatSpace {
             subscriptions.push(cx.subscribe_in(
                 &chats,
                 window,
-                |this: &mut ChatSpace, _state, event, window, cx| {
+                |this: &mut Self, _state, event, window, cx| {
                     if let RoomEmitter::Open(room) = event {
                         if let Some(room) = room.upgrade() {
                             this.dock.update(cx, |this, cx| {

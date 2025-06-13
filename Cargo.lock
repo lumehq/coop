@@ -972,6 +972,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "client_keys"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "global",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "smallvec",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1096,10 +1108,12 @@ dependencies = [
  "global",
  "gpui",
  "itertools 0.13.0",
+ "nostr-connect",
  "nostr-sdk",
  "qrcode-generator",
  "smallvec",
  "smol",
+ "webbrowser",
 ]
 
 [[package]]
@@ -1144,6 +1158,7 @@ dependencies = [
  "anyhow",
  "auto_update",
  "chats",
+ "client_keys",
  "common",
  "dirs 5.0.1",
  "futures",
@@ -1164,7 +1179,6 @@ dependencies = [
  "theme",
  "tracing-subscriber",
  "ui",
- "webbrowser",
 ]
 
 [[package]]
@@ -2189,7 +2203,6 @@ dependencies = [
  "futures",
  "log",
  "nostr-connect",
- "nostr-keyring",
  "nostr-sdk",
  "rustls",
  "smol",
@@ -3050,20 +3063,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "keyring"
-version = "3.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1961983669d57bdfe6c0f3ef8e4c229b5ef751afcc7d87e4271d2f71f6ccfa8b"
-dependencies = [
- "byteorder",
- "linux-keyutils",
- "log",
- "security-framework 2.11.1",
- "security-framework 3.2.0",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3168,16 +3167,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dfa36d52c581e9ec783a7ce2a5e0143da6237be5811a0b3153fedfdbe9f780"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "linux-keyutils"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "761e49ec5fd8a5a463f9b84e877c373d888935b71c6be78f3767fe2ae6bed18e"
-dependencies = [
- "bitflags 2.9.1",
- "libc",
 ]
 
 [[package]]
@@ -3584,15 +3573,6 @@ dependencies = [
  "lru",
  "nostr",
  "tokio",
-]
-
-[[package]]
-name = "nostr-keyring"
-version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#4096b9da00f18c3089f734b27ce1388616f3cb13"
-dependencies = [
- "keyring",
- "nostr",
 ]
 
 [[package]]

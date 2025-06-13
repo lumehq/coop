@@ -8,6 +8,7 @@ publish.workspace = true
 global = { path = "../global" }
 
 gpui.workspace = true
+nostr-connect.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
@@ -16,4 +17,5 @@ smallvec.workspace = true
 smol.workspace = true
 futures.workspace = true
 
+webbrowser = "1.0.4"
 qrcode-generator = "5.0.0"
