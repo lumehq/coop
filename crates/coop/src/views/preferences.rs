@@ -1,8 +1,12 @@
 use common::profile::RenderProfile;
-use global::{constants::NIP96_SERVER, shared_state};
+use global::{
+    constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER},
+    shared_state,
+};
 use gpui::{
     div, http_client::Url, prelude::FluentBuilder, px, relative, rems, App, AppContext, Context,
-    Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
+    Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled, Window,
 };
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -13,6 +17,8 @@ use ui::{
     switch::Switch,
     ContextModal, IconName, Sizable, Size, StyledExt,
 };
+
+use crate::views::{profile, relays};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     Preferences::new(window, cx)
@@ -42,6 +48,27 @@ impl Preferences {
                 focus_handle: cx.focus_handle(),
             }
         })
+    }
+
+    fn open_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let profile = profile::init(window, cx);
+
+        window.open_modal(cx, move |modal, _, _| {
+            modal
+                .title("Profile")
+                .width(px(DEFAULT_MODAL_WIDTH))
+                .child(profile.clone())
+        });
+    }
+
+    fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let relays = relays::init(window, cx);
+
+        window.open_modal(cx, move |this, _, _| {
+            this.width(px(DEFAULT_MODAL_WIDTH))
+                .title("Edit your Messaging Relays")
+                .child(relays.clone())
+        });
     }
 }
 
@@ -82,30 +109,52 @@ impl Render for Preferences {
                     .when_some(shared_state().identity(), |this, profile| {
                         this.child(
                             div()
+                                .w_full()
                                 .flex()
+                                .justify_between()
                                 .items_center()
-                                .gap_2()
-                                .child(
-                                    Avatar::new(profile.render_avatar(settings.proxy_user_avatars))
-                                        .size(rems(2.4)),
-                                )
                                 .child(
                                     div()
-                                        .flex_1()
-                                        .text_sm()
+                                        .id("current-user")
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
                                         .child(
-                                            div()
-                                                .line_height(relative(1.3))
-                                                .font_semibold()
-                                                .child(profile.render_name()),
+                                            Avatar::new(
+                                                profile.render_avatar(settings.proxy_user_avatars),
+                                            )
+                                            .size(rems(2.4)),
                                         )
                                         .child(
                                             div()
-                                                .line_height(relative(1.3))
-                                                .text_xs()
-                                                .text_color(cx.theme().text_muted)
-                                                .child("See your profile"),
-                                        ),
+                                                .flex_1()
+                                                .text_sm()
+                                                .child(
+                                                    div()
+                                                        .line_height(relative(1.3))
+                                                        .font_semibold()
+                                                        .child(profile.render_name()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .line_height(relative(1.3))
+                                                        .text_xs()
+                                                        .text_color(cx.theme().text_muted)
+                                                        .child("See your profile"),
+                                                ),
+                                        )
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.open_profile(window, cx);
+                                        })),
+                                )
+                                .child(
+                                    Button::new("relays")
+                                        .label("DM Relays")
+                                        .ghost()
+                                        .small()
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.open_relays(window, cx);
+                                        })),
                                 ),
                         )
                     }),
