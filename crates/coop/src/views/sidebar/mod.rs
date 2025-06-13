@@ -8,27 +8,29 @@ use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
 use common::profile::RenderProfile;
 use element::DisplayRoom;
-use global::constants::SEARCH_RELAYS;
+use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, rems, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
-    Styled, Subscription, Task, Window,
+    div, px, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
+    Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::popup_menu::{PopupMenu, PopupMenuExt};
+use ui::popup_menu::PopupMenu;
 use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
-use crate::chatspace::{ModalKind, ToggleModal};
+use crate::views::compose;
 
 mod element;
 
@@ -68,6 +70,7 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
+        let trusted_only = AppSettings::get_global(cx).settings().only_show_trusted;
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
@@ -118,7 +121,7 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            trusted_only: false,
+            trusted_only,
             indicator,
             active_filter,
             find_input,
@@ -334,7 +337,20 @@ impl Sidebar {
         });
     }
 
+    fn open_compose(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let compose = compose::init(window, cx);
+
+        window.open_modal(cx, move |modal, _window, _cx| {
+            modal
+                .title("Direct Messages")
+                .width(px(DEFAULT_MODAL_WIDTH))
+                .child(compose.clone())
+        });
+    }
+
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
+        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+
         div()
             .px_3()
             .h_8()
@@ -344,56 +360,38 @@ impl Sidebar {
             .items_center()
             .child(
                 div()
+                    .id("current-user")
                     .flex()
                     .items_center()
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(Avatar::new(profile.render_avatar()).size(rems(1.75)))
-                    .child(profile.render_name()),
+                    .child(Avatar::new(profile.render_avatar(proxy)).size(rems(1.75)))
+                    .child(profile.render_name())
+                    .on_click(cx.listener({
+                        let Ok(public_key) = profile.public_key().to_bech32();
+                        let item = ClipboardItem::new_string(public_key);
+
+                        move |_, _, window, cx| {
+                            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                            cx.write_to_primary(item.clone());
+                            #[cfg(any(target_os = "windows", target_os = "macos"))]
+                            cx.write_to_clipboard(item.clone());
+
+                            window.push_notification("User's NPUB is copied", cx);
+                        }
+                    })),
             )
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        Button::new("user")
-                            .icon(IconName::Ellipsis)
-                            .small()
-                            .ghost()
-                            .rounded(ButtonRounded::Full)
-                            .popup_menu(|this, _window, _cx| {
-                                this.menu(
-                                    "Profile",
-                                    Box::new(ToggleModal {
-                                        modal: ModalKind::Profile,
-                                    }),
-                                )
-                                .menu(
-                                    "Relays",
-                                    Box::new(ToggleModal {
-                                        modal: ModalKind::Relay,
-                                    }),
-                                )
-                            }),
-                    )
-                    .child(
-                        Button::new("compose")
-                            .icon(IconName::PlusFill)
-                            .tooltip("Create DM or Group DM")
-                            .small()
-                            .primary()
-                            .rounded(ButtonRounded::Full)
-                            .on_click(cx.listener(|_, _, window, cx| {
-                                window.dispatch_action(
-                                    Box::new(ToggleModal {
-                                        modal: ModalKind::Compose,
-                                    }),
-                                    cx,
-                                );
-                            })),
-                    ),
+                Button::new("compose")
+                    .icon(IconName::PlusFill)
+                    .tooltip("Create DM or Group DM")
+                    .small()
+                    .primary()
+                    .rounded(ButtonRounded::Full)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_compose(window, cx);
+                    })),
             )
     }
 

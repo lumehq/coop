@@ -14,6 +14,7 @@ theme = { path = "../theme" }
 common = { path = "../common" }
 global = { path = "../global" }
 chats = { path = "../chats" }
+settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }
 
 gpui.workspace = true

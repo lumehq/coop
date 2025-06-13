@@ -2,23 +2,29 @@ use global::constants::IMAGE_RESIZE_SERVICE;
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
+const FALLBACK_IMG: &str = "https://image.nostr.build/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png";
+
 pub trait RenderProfile {
-    fn render_avatar(&self) -> SharedString;
+    fn render_avatar(&self, proxy: bool) -> SharedString;
     fn render_name(&self) -> SharedString;
 }
 
 impl RenderProfile for Profile {
-    fn render_avatar(&self) -> SharedString {
+    fn render_avatar(&self, proxy: bool) -> SharedString {
         self.metadata()
             .picture
             .as_ref()
             .filter(|picture| !picture.is_empty())
             .map(|picture| {
-                format!(
-                    "{}/?url={}&w=100&h=100&fit=cover&mask=circle&default=https://image.nostr.build/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png&n=-1",
-                    IMAGE_RESIZE_SERVICE, picture
-                )
-                .into()
+                if proxy {
+                    format!(
+                        "{}/?url={}&w=100&h=100&fit=cover&mask=circle&default={}&n=-1",
+                        IMAGE_RESIZE_SERVICE, picture, FALLBACK_IMG
+                    )
+                    .into()
+                } else {
+                    picture.into()
+                }
             })
             .unwrap_or_else(|| "brand/avatar.png".into())
     }

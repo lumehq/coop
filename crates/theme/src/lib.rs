@@ -373,6 +373,7 @@ impl Theme {
         Self::change(appearance, window, cx);
     }
 
+    /// Change the app's appearance
     pub fn change(mode: impl Into<ThemeMode>, window: Option<&mut Window>, cx: &mut App) {
         let mode = mode.into();
         let colors = match mode {

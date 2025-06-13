@@ -6,8 +6,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
+    div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, IntoElement,
+    ParentElement, Render, Styled, Subscription, Task, Window,
 };
 use nostr_connect::prelude::*;
 use serde::Deserialize;
@@ -20,9 +20,7 @@ use ui::dock_area::{DockArea, DockItem};
 use ui::{ContextModal, IconName, Root, Sizable, TitleBar};
 
 use crate::views::chat::{self, Chat};
-use crate::views::{
-    compose, login, new_account, onboarding, profile, relays, sidebar, startup, welcome,
-};
+use crate::views::{login, new_account, onboarding, preferences, sidebar, startup, welcome};
 
 impl_internal_actions!(dock, [ToggleModal]);
 
@@ -181,6 +179,17 @@ impl ChatSpace {
         });
     }
 
+    pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let settings = preferences::init(window, cx);
+
+        window.open_modal(cx, move |modal, _, _| {
+            modal
+                .title("Preferences")
+                .width(px(DEFAULT_MODAL_WIDTH))
+                .child(settings.clone())
+        });
+    }
+
     fn titlebar(&mut self, status: bool, cx: &mut Context<Self>) {
         self.titlebar = status;
         cx.notify();
@@ -206,53 +215,19 @@ impl ChatSpace {
         })
     }
 
-    fn on_modal_action(
-        &mut self,
-        action: &ToggleModal,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match action.modal {
-            ModalKind::Profile => {
-                let profile = profile::init(window, cx);
+    fn toggle_appearance(&self, window: &mut Window, cx: &mut App) {
+        if cx.theme().mode.is_dark() {
+            Theme::change(ThemeMode::Light, Some(window), cx);
+        } else {
+            Theme::change(ThemeMode::Dark, Some(window), cx);
+        }
+    }
 
-                window.open_modal(cx, move |modal, _, _| {
-                    modal
-                        .title("Profile")
-                        .width(px(DEFAULT_MODAL_WIDTH))
-                        .child(profile.clone())
-                })
-            }
-            ModalKind::Compose => {
-                let compose = compose::init(window, cx);
-
-                window.open_modal(cx, move |modal, _, _| {
-                    modal
-                        .title("Direct Messages")
-                        .width(px(DEFAULT_MODAL_WIDTH))
-                        .child(compose.clone())
-                })
-            }
-            ModalKind::Relay => {
-                let relays = relays::init(window, cx);
-
-                window.open_modal(cx, move |this, _, _| {
-                    this.width(px(DEFAULT_MODAL_WIDTH))
-                        .title("Edit your Messaging Relays")
-                        .child(relays.clone())
-                });
-            }
-            ModalKind::SetupRelay => {
-                let relays = relays::init(window, cx);
-
-                window.open_modal(cx, move |this, _, _| {
-                    this.width(px(DEFAULT_MODAL_WIDTH))
-                        .title("Your Messaging Relays are not configured")
-                        .child(relays.clone())
-                });
-            }
-            _ => {}
-        };
+    fn logout(&self, _window: &mut Window, cx: &mut App) {
+        cx.background_spawn(async move {
+            shared_state().unset_signer().await;
+        })
+        .detach();
     }
 
     pub(crate) fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
@@ -310,40 +285,28 @@ impl Render for ChatSpace {
                                                         this.icon(IconName::Moon)
                                                     }
                                                 })
-                                                .on_click(cx.listener(|_, _, window, cx| {
-                                                    if cx.theme().mode.is_dark() {
-                                                        Theme::change(
-                                                            ThemeMode::Light,
-                                                            Some(window),
-                                                            cx,
-                                                        );
-                                                    } else {
-                                                        Theme::change(
-                                                            ThemeMode::Dark,
-                                                            Some(window),
-                                                            cx,
-                                                        );
-                                                    }
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.toggle_appearance(window, cx);
                                                 })),
                                         )
                                         .child(
-                                            Button::new("settings")
-                                                .tooltip("Open settings")
+                                            Button::new("preferences")
+                                                .tooltip("Open Preferences")
                                                 .small()
                                                 .ghost()
-                                                .icon(IconName::Settings),
+                                                .icon(IconName::Settings)
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.open_settings(window, cx);
+                                                })),
                                         )
                                         .child(
                                             Button::new("logout")
-                                                .tooltip("Log out")
+                                                .tooltip("Log Out")
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Logout)
-                                                .on_click(cx.listener(move |_, _, _window, cx| {
-                                                    cx.background_spawn(async move {
-                                                        shared_state().unset_signer().await;
-                                                    })
-                                                    .detach();
+                                                .on_click(cx.listener(|this, _, window, cx| {
+                                                    this.logout(window, cx);
                                                 })),
                                         ),
                                 ),
@@ -356,7 +319,5 @@ impl Render for ChatSpace {
             .child(div().absolute().top_8().children(notification_layer))
             // Modals
             .children(modal_layer)
-            // Actions
-            .on_action(cx.listener(Self::on_modal_action))
     }
 }

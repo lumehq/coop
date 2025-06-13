@@ -461,7 +461,7 @@ impl Globals {
     /// Stores an unwrapped event in local database with reference to original
     async fn set_unwrapped(&self, root: EventId, event: &Event, keys: &Keys) -> Result<(), Error> {
         // Must be use the random generated keys to sign this event
-        let event = EventBuilder::new(Kind::Custom(30078), event.as_json())
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, event.as_json())
             .tags(vec![Tag::identifier(root), Tag::event(root)])
             .sign(keys)
             .await?;

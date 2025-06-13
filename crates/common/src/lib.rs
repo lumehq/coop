@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
-use global::constants::NIP96_SERVER;
 use gpui::{Image, ImageFormat};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -11,11 +10,14 @@ use qrcode_generator::QrCodeEcc;
 pub mod debounced_delay;
 pub mod profile;
 
-pub async fn nip96_upload(client: &Client, file: Vec<u8>) -> anyhow::Result<Url, anyhow::Error> {
+pub async fn nip96_upload(
+    client: &Client,
+    upload_to: Url,
+    file: Vec<u8>,
+) -> anyhow::Result<Url, anyhow::Error> {
     let signer = client.signer().await?;
-    let server_url = Url::parse(NIP96_SERVER)?;
 
-    let config: ServerConfig = nip96::get_server_config(server_url, None).await?;
+    let config: ServerConfig = nip96::get_server_config(upload_to.to_owned(), None).await?;
     let url = nip96::upload_data(&signer, &config, file, None, None).await?;
 
     Ok(url)

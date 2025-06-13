@@ -14,6 +14,7 @@ use gpui::{
 };
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
@@ -305,6 +306,8 @@ impl Render for Compose {
         const DESCRIPTION: &str =
             "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
 
+        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+
         let label: SharedString = if self.selected.read(cx).len() > 1 {
             "Create Group DM".into()
         } else {
@@ -413,7 +416,7 @@ impl Render for Compose {
                                                             .gap_3()
                                                             .text_sm()
                                                             .child(
-                                                                img(item.render_avatar())
+                                                                img(item.render_avatar(proxy))
                                                                     .size_7()
                                                                     .flex_shrink_0(),
                                                             )

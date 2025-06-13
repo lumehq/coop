@@ -5,6 +5,7 @@ use gpui::{
     div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::StyledExt;
@@ -59,6 +60,7 @@ impl DisplayRoom {
 impl RenderOnce for DisplayRoom {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let handler = self.handler.clone();
+        let hide_avatar = AppSettings::get_global(cx).settings().hide_user_avatars;
 
         self.base
             .id(self.ix)
@@ -67,25 +69,27 @@ impl RenderOnce for DisplayRoom {
             .gap_2()
             .text_sm()
             .rounded(cx.theme().radius)
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .size_6()
-                    .rounded_full()
-                    .overflow_hidden()
-                    .map(|this| {
-                        if let Some(path) = self.img {
-                            this.child(Avatar::new(path).size(rems(1.5)))
-                        } else {
-                            this.child(
-                                img("brand/avatar.png")
-                                    .rounded_full()
-                                    .size_6()
-                                    .into_any_element(),
-                            )
-                        }
-                    }),
-            )
+            .when(!hide_avatar, |this| {
+                this.child(
+                    div()
+                        .flex_shrink_0()
+                        .size_6()
+                        .rounded_full()
+                        .overflow_hidden()
+                        .map(|this| {
+                            if let Some(path) = self.img {
+                                this.child(Avatar::new(path).size(rems(1.5)))
+                            } else {
+                                this.child(
+                                    img("brand/avatar.png")
+                                        .rounded_full()
+                                        .size_6()
+                                        .into_any_element(),
+                                )
+                            }
+                        }),
+                )
+            })
             .child(
                 div()
                     .flex_1()

@@ -92,6 +92,8 @@ fn main() {
                 cx.activate(true);
                 // Initialize components
                 ui::init(cx);
+                // Initialize settings
+                settings::init(cx);
                 // Initialize auto update
                 auto_update::init(cx);
                 // Initialize chat state
