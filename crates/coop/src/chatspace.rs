@@ -7,7 +7,7 @@ use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, IntoElement,
+    div, impl_internal_actions, px, relative, App, AppContext, Axis, Context, Entity, IntoElement,
     ParentElement, Render, Styled, Subscription, Task, Window,
 };
 use identity::Identity;
@@ -122,7 +122,7 @@ impl ChatSpace {
                                                 .text_color(cx.theme().text_muted)
                                                 .child("Warning"),
                                         )
-                                        .child(DESCRIPTION),
+                                        .child(div().line_height(relative(1.4)).child(DESCRIPTION)),
                                 )
                                 .on_cancel(|_, _window, cx| {
                                     ClientKeys::global(cx).update(cx, |this, cx| {

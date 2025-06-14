@@ -13,6 +13,18 @@ pub const BOOTSTRAP_RELAYS: [&str; 4] = [
     "wss://user.kindpag.es",
     "wss://relaydiscovery.com",
 ];
+
+/// NIP65 Relays. Used for new account
+pub const NIP65_RELAYS: [&str; 4] = [
+    "wss://relay.damus.io",
+    "wss://relay.primal.net",
+    "wss://relay.nostr.net",
+    "wss://nos.lol",
+];
+
+/// Messaging Relays. Used for new account
+pub const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
+
 /// Search Relays.
 pub const SEARCH_RELAYS: [&str; 1] = ["wss://relay.nostr.band"];
 
@@ -45,10 +57,3 @@ pub const NIP96_SERVER: &str = "https://nostrmedia.com";
 
 pub(crate) const GLOBAL_CHANNEL_LIMIT: usize = 2048;
 pub(crate) const BATCH_CHANNEL_LIMIT: usize = 1024;
-pub(crate) const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
-pub(crate) const NIP65_RELAYS: [&str; 4] = [
-    "wss://relay.damus.io",
-    "wss://relay.primal.net",
-    "wss://relay.nostr.net",
-    "wss://nos.lol",
-];

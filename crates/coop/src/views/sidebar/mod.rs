@@ -17,6 +17,7 @@ use gpui::{
     RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
     Window,
 };
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -491,10 +492,9 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(
-                shared_state().identity.read_blocking().as_ref(),
-                |this, profile| this.child(self.render_account(profile, cx)),
-            )
+            .when_some(Identity::get_global(cx).profile(), |this, profile| {
+                this.child(self.render_account(&profile, cx))
+            })
             // Search Input
             .child(
                 div().px_3().w_full().h_7().flex_none().child(

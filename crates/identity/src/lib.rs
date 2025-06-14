@@ -4,7 +4,9 @@ use anyhow::Error;
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::{
-    constants::{KEYRING_BUNKER, KEYRING_USER_PATH, NOSTR_CONNECT_TIMEOUT},
+    constants::{
+        KEYRING_BUNKER, KEYRING_USER_PATH, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT,
+    },
     shared_state, NostrSignal,
 };
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
@@ -164,7 +166,7 @@ impl Identity {
     }
 
     /// Sets a new signer for the client and updates user identity
-    pub(crate) fn set_signer<S>(&self, signer: S, window: &mut Window, cx: &mut Context<Self>)
+    pub fn set_signer<S>(&self, signer: S, window: &mut Window, cx: &mut Context<Self>)
     where
         S: NostrSigner + 'static,
     {
@@ -215,6 +217,145 @@ impl Identity {
         .detach();
     }
 
+    /// Sets a remote signer and updates user identity
+    pub fn verify_and_set_remote_signer(
+        &self,
+        signer: NostrConnect,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (tx, rx) = oneshot::channel::<Option<(NostrConnectURI, NostrConnect)>>();
+
+        cx.background_spawn(async move {
+            if let Ok(bunker_uri) = signer.bunker_uri().await {
+                tx.send(Some((bunker_uri, signer))).ok();
+            } else {
+                tx.send(None).ok();
+            }
+        })
+        .detach();
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Some((uri, signer))) = rx.await {
+                cx.update(|window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.save_bunker_uri(&uri, cx);
+                        this.set_signer(signer, window, cx);
+                    })
+                    .ok();
+                })
+                .ok();
+            } else {
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error("Connection failed"), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Creates a new identity with the given keys and metadata
+    pub fn new_identity(&mut self, keys: Keys, metadata: Metadata, cx: &mut Context<Self>) {
+        let profile = Profile::new(keys.public_key(), metadata.clone());
+        let save = cx.write_credentials(
+            KEYRING_USER_PATH,
+            keys.public_key().to_hex().as_str(),
+            keys.secret_key().as_secret_bytes(),
+        );
+
+        cx.background_spawn(async move {
+            if let Err(e) = save.await {
+                log::error!("Failed to save keys: {}", e)
+            };
+        })
+        .detach();
+
+        cx.background_spawn(async move {
+            // Update signer
+            shared_state().client.set_signer(keys).await;
+            // Set metadata
+            shared_state().client.set_metadata(&metadata).await.ok();
+
+            // Create relay list
+            let builder = EventBuilder::new(Kind::RelayList, "").tags(
+                NIP65_RELAYS.into_iter().filter_map(|url| {
+                    if let Ok(url) = RelayUrl::parse(url) {
+                        Some(Tag::relay_metadata(url, None))
+                    } else {
+                        None
+                    }
+                }),
+            );
+
+            if let Err(e) = shared_state().client.send_event_builder(builder).await {
+                log::error!("Failed to send relay list event: {}", e);
+            };
+
+            // Create messaging relay list
+            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
+                NIP17_RELAYS.into_iter().filter_map(|url| {
+                    if let Ok(url) = RelayUrl::parse(url) {
+                        Some(Tag::relay(url))
+                    } else {
+                        None
+                    }
+                }),
+            );
+
+            if let Err(e) = shared_state().client.send_event_builder(builder).await {
+                log::error!("Failed to send messaging relay list event: {}", e);
+            };
+
+            // Notify GPUi via the global channel
+            shared_state()
+                .global_sender
+                .send(NostrSignal::SignerUpdated)
+                .await
+                .ok();
+
+            // Subscribe
+            shared_state()
+                .subscribe_for_user_data(profile.public_key())
+                .await;
+        })
+        .detach();
+    }
+
+    pub fn save_bunker_uri(&self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
+        let mut value = uri.to_string();
+
+        // Remove the secret param if it exists
+        if let Some(secret) = uri.secret() {
+            value = value.replace(secret, "");
+        }
+
+        let save_bunker_uri =
+            cx.write_credentials(KEYRING_USER_PATH, KEYRING_BUNKER, value.as_bytes());
+
+        cx.background_spawn(async move {
+            if let Err(e) = save_bunker_uri.await {
+                log::error!("Failed to save the Bunker URI: {}", e)
+            }
+        })
+        .detach();
+    }
+
+    pub fn save_keys(&self, keys: &Keys, cx: &mut Context<Self>) {
+        let save_credential = cx.write_credentials(
+            KEYRING_USER_PATH,
+            keys.public_key().to_hex().as_str(),
+            keys.secret_key().as_secret_bytes(),
+        );
+
+        cx.background_spawn(async move {
+            if let Err(e) = save_credential.await {
+                log::error!("Failed to save keys: {}", e)
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn set_profile(&self, profile: Profile, cx: &mut Context<Self>) {
         *self.profile.borrow_mut() = Some(profile);
         cx.notify();
@@ -223,6 +364,11 @@ impl Identity {
     pub(crate) fn set_empty(&self, cx: &mut Context<Self>) {
         *self.profile.borrow_mut() = None;
         cx.notify();
+    }
+
+    /// Returns the current profile
+    pub fn profile(&self) -> Option<Profile> {
+        self.profile.borrow().clone()
     }
 
     /// Returns true if a profile is currently loaded

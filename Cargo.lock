@@ -925,6 +925,7 @@ dependencies = [
  "fuzzy-matcher",
  "global",
  "gpui",
+ "identity",
  "itertools 0.13.0",
  "log",
  "nostr",
