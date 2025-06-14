@@ -1,0 +1,239 @@
+use std::{cell::RefCell, rc::Rc, time::Duration};
+
+use anyhow::Error;
+use client_keys::ClientKeys;
+use common::handle_auth::CoopAuthUrlHandler;
+use global::{
+    constants::{KEYRING_BUNKER, KEYRING_USER_PATH, NOSTR_CONNECT_TIMEOUT},
+    shared_state, NostrSignal,
+};
+use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
+use nostr_connect::prelude::*;
+use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
+use ui::{notification::Notification, ContextModal};
+
+pub fn init(window: &mut Window, cx: &mut App) {
+    Identity::set_global(cx.new(|cx| Identity::new(window, cx)), cx);
+}
+
+struct GlobalIdentity(Entity<Identity>);
+
+impl Global for GlobalIdentity {}
+
+pub struct Identity {
+    profile: Rc<RefCell<Option<Profile>>>,
+    #[allow(dead_code)]
+    subscriptions: SmallVec<[Subscription; 1]>,
+}
+
+impl Identity {
+    /// Retrieve the Global Settings instance
+    pub fn global(cx: &App) -> Entity<Self> {
+        cx.global::<GlobalIdentity>().0.clone()
+    }
+
+    /// Retrieve the Settings instance
+    pub fn get_global(cx: &App) -> &Self {
+        cx.global::<GlobalIdentity>().0.read(cx)
+    }
+
+    /// Set the global Settings instance
+    pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
+        cx.set_global(GlobalIdentity(state));
+    }
+
+    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let client_keys = ClientKeys::global(cx);
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(
+            cx.observe_in(&client_keys, window, |this, state, window, cx| {
+                if state.read(cx).has_keys() {
+                    this.load(window, cx);
+                }
+            }),
+        );
+
+        Self {
+            profile: Rc::new(RefCell::new(None)),
+            subscriptions,
+        }
+    }
+
+    pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let read_user_keys = cx.read_credentials(KEYRING_USER_PATH);
+
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Some((username, secret))) = read_user_keys.await else {
+                // User cancelled the action or failed to read credentials, then notify UI
+                this.update(cx, |this, cx| {
+                    *this.profile.borrow_mut() = None;
+                    cx.notify();
+                })
+                .ok();
+
+                return;
+            };
+
+            // Process to login with saved user credentials
+            cx.update(|window, cx| {
+                this.update(cx, |this, cx| {
+                    this.auto_login(username, secret, window, cx);
+                })
+                .ok();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn auto_login(
+        &self,
+        username: String,
+        secret: Vec<u8>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if username == KEYRING_BUNKER {
+            // Process to login with nostr connect
+            match secret_to_bunker(secret) {
+                Ok(uri) => {
+                    let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+                    let client_keys = ClientKeys::get_global(cx).keys();
+
+                    match NostrConnect::new(uri, client_keys, timeout, None) {
+                        Ok(mut signer) => {
+                            // Automatically open remote signer's webpage when received auth url
+                            signer.auth_url_handler(CoopAuthUrlHandler);
+
+                            let (tx, rx) = oneshot::channel::<Option<NostrConnect>>();
+
+                            // Verify the signer, make sure Remote Signer is connected
+                            cx.background_spawn(async move {
+                                if signer.bunker_uri().await.is_ok() {
+                                    tx.send(Some(signer)).ok();
+                                } else {
+                                    tx.send(None).ok();
+                                }
+                            })
+                            .detach();
+
+                            cx.spawn_in(window, async move |this, cx| {
+                                match rx.await {
+                                    Ok(Some(signer)) => {
+                                        cx.update(|window, cx| {
+                                            this.update(cx, |this, cx| {
+                                                this.set_signer(signer, window, cx);
+                                            })
+                                            .ok();
+                                        })
+                                        .ok();
+                                    }
+                                    _ => {
+                                        cx.update(|window, cx| {
+                                            window.push_notification(
+                                                Notification::error(
+                                                    "Failed to connect to the remote signer",
+                                                ),
+                                                cx,
+                                            );
+                                            this.update(cx, |this, cx| {
+                                                this.set_empty(cx);
+                                            })
+                                            .ok();
+                                        })
+                                        .ok();
+                                    }
+                                };
+                            })
+                            .detach();
+                        }
+                        Err(_) => self.set_empty(cx),
+                    }
+                }
+                Err(_) => self.set_empty(cx),
+            }
+        } else {
+            // Process to login with secret key
+            match SecretKey::from_slice(&secret) {
+                Ok(secret_key) => self.set_signer(Keys::new(secret_key), window, cx),
+                Err(_) => self.set_empty(cx),
+            }
+        }
+    }
+
+    /// Sets a new signer for the client and updates user identity
+    pub(crate) fn set_signer<S>(&self, signer: S, window: &mut Window, cx: &mut Context<Self>)
+    where
+        S: NostrSigner + 'static,
+    {
+        let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
+            let public_key = signer.get_public_key().await?;
+
+            // Update signer
+            shared_state().client.set_signer(signer).await;
+
+            // Fetch user's metadata
+            let metadata = shared_state()
+                .client
+                .fetch_metadata(public_key, Duration::from_secs(2))
+                .await?
+                .unwrap_or_default();
+
+            // Create user's profile with public key and metadata
+            let profile = Profile::new(public_key, metadata);
+
+            // Subscribe for user's data
+            nostr_sdk::async_utility::task::spawn(async move {
+                shared_state().subscribe_for_user_data(public_key).await;
+            });
+
+            // Notify GPUi via the global channel
+            shared_state()
+                .global_sender
+                .send(NostrSignal::SignerUpdated)
+                .await?;
+
+            Ok(profile)
+        });
+
+        cx.spawn_in(window, async move |this, cx| match task.await {
+            Ok(profile) => {
+                this.update(cx, |this, cx| {
+                    this.set_profile(profile, cx);
+                })
+                .ok();
+            }
+            Err(e) => {
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error(e.to_string()), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn set_profile(&self, profile: Profile, cx: &mut Context<Self>) {
+        *self.profile.borrow_mut() = Some(profile);
+        cx.notify();
+    }
+
+    pub(crate) fn set_empty(&self, cx: &mut Context<Self>) {
+        *self.profile.borrow_mut() = None;
+        cx.notify();
+    }
+
+    /// Returns true if a profile is currently loaded
+    pub fn has_profile(&self) -> bool {
+        self.profile.borrow().is_some()
+    }
+}
+
+fn secret_to_bunker(secret: Vec<u8>) -> Result<NostrConnectURI, Error> {
+    let value = String::from_utf8(secret)?;
+    let uri = NostrConnectURI::parse(value)?;
+
+    Ok(uri)
+}

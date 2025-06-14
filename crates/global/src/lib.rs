@@ -236,7 +236,7 @@ impl Globals {
 
         // Subscribe for user's data
         nostr_sdk::async_utility::task::spawn(async move {
-            shared_state().subscribe_for_user_data().await;
+            shared_state().subscribe_for_user_data(public_key).await;
         });
 
         // Notify GPUi via the global channel
@@ -296,7 +296,7 @@ impl Globals {
         let mut guard = self.identity.write().await;
 
         // Update the identity
-        *guard = Some(profile);
+        *guard = Some(profile.clone());
 
         // Notify GPUi via the global channel
         self.global_sender
@@ -305,7 +305,7 @@ impl Globals {
             .ok();
 
         // Subscribe
-        self.subscribe_for_user_data().await;
+        self.subscribe_for_user_data(profile.public_key()).await;
     }
 
     /// Returns the current user's profile (blocking)
@@ -361,13 +361,7 @@ impl Globals {
     }
 
     /// Subscribes to user-specific data feeds (DMs, mentions, etc.)
-    async fn subscribe_for_user_data(&self) {
-        let Some(profile) = self.identity.read().await.clone() else {
-            return;
-        };
-
-        let public_key = profile.public_key();
-
+    pub async fn subscribe_for_user_data(&self, public_key: PublicKey) {
         let metadata = Filter::new()
             .kinds(vec![
                 Kind::Metadata,

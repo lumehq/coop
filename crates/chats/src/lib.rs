@@ -77,7 +77,7 @@ impl ChatRegistry {
         let mut subscriptions = smallvec![];
 
         // When the ChatRegistry is created, load all rooms from the local database
-        subscriptions.push(cx.observe_new::<ChatRegistry>(|this, window, cx| {
+        subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
             if let Some(window) = window {
                 this.load_rooms(window, cx);
             }

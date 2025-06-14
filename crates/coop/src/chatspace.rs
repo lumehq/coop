@@ -10,6 +10,7 @@ use gpui::{
     div, impl_internal_actions, px, App, AppContext, Axis, Context, Entity, IntoElement,
     ParentElement, Render, Styled, Subscription, Task, Window,
 };
+use identity::Identity;
 use nostr_connect::prelude::*;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
@@ -64,7 +65,7 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
     titlebar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 3]>,
+    subscriptions: SmallVec<[Subscription; 4]>,
 }
 
 impl ChatSpace {
@@ -81,8 +82,10 @@ impl ChatSpace {
         cx.new(|cx| {
             let chats = ChatRegistry::global(cx);
             let client_keys = ClientKeys::global(cx);
+            let identity = Identity::global(cx);
             let mut subscriptions = smallvec![];
 
+            // Observe the client keys and show an alert modal if they fail to initialize
             subscriptions.push(cx.observe_in(
                 &client_keys,
                 window,
@@ -136,6 +139,19 @@ impl ChatSpace {
                                     true
                                 })
                         });
+                    }
+                },
+            ));
+
+            // Observe the identity and show onboarding if it fails to initialize
+            subscriptions.push(cx.observe_in(
+                &identity,
+                window,
+                |this: &mut Self, state, window, cx| {
+                    if !state.read(cx).has_profile() {
+                        this.open_onboarding(window, cx);
+                    } else {
+                        this.open_chats(window, cx);
                     }
                 },
             ));

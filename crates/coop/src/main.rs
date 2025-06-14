@@ -93,6 +93,8 @@ fn main() {
                 settings::init(cx);
                 // Initialize client keys
                 client_keys::init(cx);
+                // Initialize identity
+                identity::init(window, cx);
                 // Initialize auto update
                 auto_update::init(cx);
                 // Initialize chat state

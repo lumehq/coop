@@ -1164,6 +1164,7 @@ dependencies = [
  "futures",
  "global",
  "gpui",
+ "identity",
  "itertools 0.13.0",
  "log",
  "nostr-connect",
@@ -2813,6 +2814,23 @@ dependencies = [
  "zerofrom",
  "zerotrie",
  "zerovec",
+]
+
+[[package]]
+name = "identity"
+version = "0.1.5"
+dependencies = [
+ "anyhow",
+ "client_keys",
+ "common",
+ "global",
+ "gpui",
+ "log",
+ "nostr-connect",
+ "nostr-sdk",
+ "oneshot",
+ "smallvec",
+ "ui",
 ]
 
 [[package]]
