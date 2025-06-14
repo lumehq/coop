@@ -1,6 +1,5 @@
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::constants::KEYRING_USER_PATH;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -8,6 +7,7 @@ use gpui::{
     FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
     Styled, Window,
 };
+use identity::Identity;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
@@ -79,19 +79,9 @@ impl NewAccount {
             metadata = metadata.picture(url);
         };
 
-        let save_credential = cx.write_credentials(
-            KEYRING_USER_PATH,
-            keys.public_key().to_hex().as_str(),
-            keys.secret_key().as_secret_bytes(),
-        );
-
-        cx.background_spawn(async move {
-            if let Err(e) = save_credential.await {
-                log::error!("Failed to save keys: {}", e)
-            };
-            shared_state().new_account(keys, metadata).await;
-        })
-        .detach();
+        Identity::global(cx).update(cx, |this, cx| {
+            this.new_identity(keys, metadata, cx);
+        });
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {

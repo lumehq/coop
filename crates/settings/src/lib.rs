@@ -25,6 +25,7 @@ pub struct Settings {
     pub hide_user_avatars: bool,
     pub only_show_trusted: bool,
     pub backup_messages: bool,
+    pub auto_login: bool,
 }
 
 impl AsRef<Settings> for Settings {
@@ -40,7 +41,7 @@ impl Global for GlobalAppSettings {}
 pub struct AppSettings {
     pub settings: Settings,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl AppSettings {
@@ -66,6 +67,7 @@ impl AppSettings {
             hide_user_avatars: false,
             only_show_trusted: false,
             backup_messages: true,
+            auto_login: false,
         };
 
         let mut subscriptions = smallvec![];
@@ -120,7 +122,10 @@ impl AppSettings {
     fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.settings) {
             cx.background_spawn(async move {
-                let Some(identity) = shared_state().identity() else {
+                let Ok(signer) = shared_state().client.signer().await else {
+                    return;
+                };
+                let Ok(public_key) = signer.get_public_key().await else {
                     return;
                 };
 
@@ -129,7 +134,7 @@ impl AppSettings {
 
                 if let Ok(event) = EventBuilder::new(Kind::ApplicationSpecificData, content)
                     .tags(vec![ident])
-                    .build(identity.public_key())
+                    .build(public_key)
                     .sign(&keys)
                     .await
                 {

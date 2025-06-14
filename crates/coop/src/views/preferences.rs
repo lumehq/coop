@@ -1,13 +1,11 @@
 use common::profile::RenderProfile;
-use global::{
-    constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER},
-    shared_state,
-};
+use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
 use gpui::{
     div, http_client::Url, prelude::FluentBuilder, px, relative, rems, App, AppContext, Context,
     Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window,
 };
+use identity::Identity;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::{
@@ -106,7 +104,7 @@ impl Render for Preferences {
                             .font_semibold()
                             .child("Account"),
                     )
-                    .when_some(shared_state().identity(), |this, profile| {
+                    .when_some(Identity::get_global(cx).profile(), |this, profile| {
                         this.child(
                             div()
                                 .w_full()

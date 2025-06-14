@@ -65,6 +65,8 @@ impl Render for Startup {
                     .flex()
                     .flex_col()
                     .items_center()
+                    .justify_center()
+                    .text_center()
                     .gap_6()
                     .child(
                         svg()
@@ -74,13 +76,10 @@ impl Render for Startup {
                     )
                     .child(
                         div()
+                            .w_24()
                             .flex()
                             .items_center()
-                            .gap_1p5()
-                            .text_xs()
-                            .text_center()
-                            .text_color(cx.theme().text_muted)
-                            .child("Connection in progress")
+                            .justify_center()
                             .child(Indicator::new().small()),
                     ),
             )

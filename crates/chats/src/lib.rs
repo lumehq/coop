@@ -9,6 +9,7 @@ use global::shared_state;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
 };
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -77,7 +78,7 @@ impl ChatRegistry {
         let mut subscriptions = smallvec![];
 
         // When the ChatRegistry is created, load all rooms from the local database
-        subscriptions.push(cx.observe_new::<ChatRegistry>(|this, window, cx| {
+        subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
             if let Some(window) = window {
                 this.load_rooms(window, cx);
             }
@@ -162,7 +163,7 @@ impl ChatRegistry {
     /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let client = &shared_state().client;
-        let Some(public_key) = shared_state().identity().map(|i| i.public_key()) else {
+        let Some(public_key) = Identity::get_global(cx).profile().map(|i| i.public_key()) else {
             return;
         };
 
@@ -288,7 +289,7 @@ impl ChatRegistry {
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
         let author = event.pubkey;
-        let Some(public_key) = shared_state().identity().map(|i| i.public_key()) else {
+        let Some(public_key) = Identity::get_global(cx).profile().map(|i| i.public_key()) else {
             return;
         };
 

@@ -7,23 +7,21 @@
 //! - Cross-component communication via channels
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
 use std::sync::OnceLock;
 use std::time::Duration;
+use std::{fs, mem};
 
 use anyhow::{anyhow, Error};
 use constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
-use nostr_keyring::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
 
-use crate::constants::{
-    BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT, KEYRING_PATH, NIP17_RELAYS, NIP65_RELAYS,
-};
+use crate::constants::{BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT};
+use crate::paths::support_dir;
 
 pub mod constants;
 pub mod paths;
@@ -50,11 +48,9 @@ pub enum NostrSignal {
 pub struct Globals {
     /// The Nostr SDK client
     pub client: Client,
-    /// Cryptographic keys for signing Nostr events
-    pub client_signer: Keys,
-    /// Current user's profile information (pubkey and metadata)
-    pub identity: RwLock<Option<Profile>>,
-    /// Auto-close options for subscriptions to prevent memory leaks
+    /// Determines if this is the first time user run Coop
+    pub first_run: bool,
+    /// Auto-close options for subscriptions
     pub auto_close: Option<SubscribeAutoCloseOptions>,
     /// Channel sender for broadcasting global Nostr events to UI
     pub global_sender: smol::channel::Sender<NostrSignal>,
@@ -78,18 +74,7 @@ pub fn shared_state() -> &'static Globals {
             .install_default()
             .ok();
 
-        let keyring = NostrKeyring::new(KEYRING_PATH);
-        // Get the client signer or generate a new one if it doesn't exist
-        let client_signer = if let Ok(keys) = keyring.get("client") {
-            keys
-        } else {
-            let keys = Keys::generate();
-            if let Err(e) = keyring.set("client", &keys) {
-                log::error!("Failed to save client keys: {}", e);
-            }
-            keys
-        };
-
+        let first_run = is_first_run().unwrap_or(true);
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
@@ -101,12 +86,11 @@ pub fn shared_state() -> &'static Globals {
 
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
-            identity: RwLock::new(None),
             persons: RwLock::new(BTreeMap::new()),
             auto_close: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
-            client_signer,
+            first_run,
             global_sender,
             global_receiver,
             batch_sender,
@@ -225,110 +209,12 @@ impl Globals {
         }
     }
 
-    /// Sets a new signer for the client and updates user identity
-    pub async fn set_signer<S>(&self, signer: S) -> Result<(), Error>
-    where
-        S: NostrSigner + 'static,
-    {
-        let public_key = signer.get_public_key().await?;
-
-        // Update signer
-        self.client.set_signer(signer).await;
-
-        // Fetch user's metadata
-        let metadata = shared_state()
-            .client
-            .fetch_metadata(public_key, Duration::from_secs(2))
-            .await?
-            .unwrap_or_default();
-
-        let profile = Profile::new(public_key, metadata);
-        let mut identity_guard = self.identity.write().await;
-        // Update the identity
-        *identity_guard = Some(profile);
-
-        // Subscribe for user's data
-        nostr_sdk::async_utility::task::spawn(async move {
-            shared_state().subscribe_for_user_data().await;
-        });
-
-        // Notify GPUi via the global channel
-        self.global_sender.send(NostrSignal::SignerUpdated).await?;
-
-        Ok(())
-    }
-
     pub async fn unset_signer(&self) {
         self.client.reset().await;
 
         if let Err(e) = self.global_sender.send(NostrSignal::SignerUnset).await {
             log::error!("Failed to send signal to global channel: {}", e);
         }
-    }
-
-    /// Creates a new account with the given keys and metadata
-    pub async fn new_account(&self, keys: Keys, metadata: Metadata) {
-        let profile = Profile::new(keys.public_key(), metadata.clone());
-
-        // Update signer
-        self.client.set_signer(keys).await;
-
-        // Set metadata
-        self.client.set_metadata(&metadata).await.ok();
-
-        // Create relay list
-        let builder = EventBuilder::new(Kind::RelayList, "").tags(
-            NIP65_RELAYS.into_iter().filter_map(|url| {
-                if let Ok(url) = RelayUrl::parse(url) {
-                    Some(Tag::relay_metadata(url, None))
-                } else {
-                    None
-                }
-            }),
-        );
-
-        if let Err(e) = self.client.send_event_builder(builder).await {
-            log::error!("Failed to send relay list event: {}", e);
-        };
-
-        // Create messaging relay list
-        let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
-            NIP17_RELAYS.into_iter().filter_map(|url| {
-                if let Ok(url) = RelayUrl::parse(url) {
-                    Some(Tag::relay(url))
-                } else {
-                    None
-                }
-            }),
-        );
-
-        if let Err(e) = self.client.send_event_builder(builder).await {
-            log::error!("Failed to send messaging relay list event: {}", e);
-        };
-
-        let mut guard = self.identity.write().await;
-
-        // Update the identity
-        *guard = Some(profile);
-
-        // Notify GPUi via the global channel
-        self.global_sender
-            .send(NostrSignal::SignerUpdated)
-            .await
-            .ok();
-
-        // Subscribe
-        self.subscribe_for_user_data().await;
-    }
-
-    /// Returns the current user's profile (blocking)
-    pub fn identity(&self) -> Option<Profile> {
-        self.identity.read_blocking().as_ref().cloned()
-    }
-
-    /// Returns the current user's profile (async)
-    pub async fn async_identity(&self) -> Option<Profile> {
-        self.identity.read().await.as_ref().cloned()
     }
 
     /// Gets a person's profile from cache or creates default (blocking)
@@ -374,13 +260,7 @@ impl Globals {
     }
 
     /// Subscribes to user-specific data feeds (DMs, mentions, etc.)
-    async fn subscribe_for_user_data(&self) {
-        let Some(profile) = self.identity.read().await.clone() else {
-            return;
-        };
-
-        let public_key = profile.public_key();
-
+    pub async fn subscribe_for_user_data(&self, public_key: PublicKey) {
         let metadata = Filter::new()
             .kinds(vec![
                 Kind::Metadata,
@@ -594,5 +474,16 @@ impl Globals {
                 .await
                 .ok();
         }
+    }
+}
+
+fn is_first_run() -> Result<bool, anyhow::Error> {
+    let flag = support_dir().join(".first_run");
+
+    if !flag.exists() {
+        fs::write(&flag, "")?;
+        Ok(true) // First run
+    } else {
+        Ok(false) // Not first run
     }
 }

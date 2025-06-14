@@ -7,6 +7,7 @@ use common::profile::RenderProfile;
 use common::{compare, room_hash};
 use global::shared_state;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -165,8 +166,8 @@ impl Room {
     /// # Returns
     ///
     /// The Profile of the first member in the room
-    pub fn first_member(&self, _cx: &App) -> Profile {
-        let Some(account) = shared_state().identity() else {
+    pub fn first_member(&self, cx: &App) -> Profile {
+        let Some(account) = Identity::get_global(cx).profile() else {
             return shared_state().person(&self.members[0]);
         };
 
@@ -550,9 +551,9 @@ impl Room {
         &self,
         content: &str,
         replies: Option<&Vec<Message>>,
-        _cx: &App,
+        cx: &App,
     ) -> Option<Message> {
-        let author = shared_state().identity()?;
+        let author = Identity::get_global(cx).profile()?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 

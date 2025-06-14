@@ -5,7 +5,6 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-nostr-keyring.workspace = true
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
 dirs.workspace = true

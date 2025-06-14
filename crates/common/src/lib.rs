@@ -8,6 +8,7 @@ use nostr_sdk::prelude::*;
 use qrcode_generator::QrCodeEcc;
 
 pub mod debounced_delay;
+pub mod handle_auth;
 pub mod profile;
 
 pub async fn nip96_upload(
