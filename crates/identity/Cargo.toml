@@ -9,6 +9,7 @@ ui = { path = "../ui" }
 global = { path = "../global" }
 common = { path = "../common" }
 client_keys = { path = "../client_keys" }
+settings = { path = "../settings" }
 
 nostr-sdk.workspace = true
 nostr-connect.workspace = true

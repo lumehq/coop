@@ -54,19 +54,21 @@ impl ClientKeys {
         let read_client_keys = cx.read_credentials(KEYRING_CLIENT_PATH);
 
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Some((_, secret))) = read_client_keys.await else {
+            if let Ok(Some((_, secret))) = read_client_keys.await {
+                // Update keys
                 this.update(cx, |this, cx| {
-                    // The UI still needs to be notified in this case
-                    *this.keys.borrow_mut() = None;
+                    let secret_key = SecretKey::from_slice(&secret).expect("Invalid");
+                    let keys = Keys::new(secret_key);
+                    *this.keys.borrow_mut() = Some(keys);
                     cx.notify();
                 })
                 .ok();
-                return;
-            };
-
-            this.update(cx, |this, cx| {
-                let keys = if shared_state().first_run {
+            } else if shared_state().first_run {
+                // Generate a new keys and update
+                this.update(cx, |this, cx| {
                     let keys = Keys::generate();
+                    *this.keys.borrow_mut() = Some(keys.clone());
+
                     let write_keys = cx.write_credentials(
                         KEYRING_CLIENT_PATH,
                         keys.public_key().to_hex().as_str(),
@@ -80,23 +82,16 @@ impl ClientKeys {
                     })
                     .detach();
 
-                    keys
-                } else {
-                    let Ok(secret_key) = SecretKey::from_slice(&secret) else {
-                        // The UI still needs to be notified in this case
-                        *this.keys.borrow_mut() = None;
-                        cx.notify();
-
-                        return;
-                    };
-
-                    Keys::new(secret_key)
-                };
-
-                *this.keys.borrow_mut() = Some(keys);
-                cx.notify();
-            })
-            .ok();
+                    cx.notify();
+                })
+                .ok();
+            } else {
+                this.update(cx, |this, cx| {
+                    *this.keys.borrow_mut() = None;
+                    cx.notify();
+                })
+                .ok();
+            }
         })
         .detach();
     }

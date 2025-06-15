@@ -50,6 +50,8 @@ pub struct Globals {
     pub client: Client,
     /// Determines if this is the first time user run Coop
     pub first_run: bool,
+    /// Account that has been saved in the Keychain
+    pub local_account: RwLock<Option<PublicKey>>,
     /// Auto-close options for subscriptions
     pub auto_close: Option<SubscribeAutoCloseOptions>,
     /// Channel sender for broadcasting global Nostr events to UI
@@ -75,6 +77,7 @@ pub fn shared_state() -> &'static Globals {
             .ok();
 
         let first_run = is_first_run().unwrap_or(true);
+        let local_account = get_local_account().unwrap_or_default();
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
@@ -90,6 +93,7 @@ pub fn shared_state() -> &'static Globals {
             auto_close: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
+            local_account: RwLock::new(local_account),
             first_run,
             global_sender,
             global_receiver,
@@ -104,6 +108,7 @@ impl Globals {
     pub async fn start(&self) {
         self.connect().await;
         self.subscribe_for_app_updates().await;
+        self.preload_metadata().await;
 
         nostr_sdk::async_utility::task::spawn(async move {
             let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
@@ -212,6 +217,13 @@ impl Globals {
     pub async fn unset_signer(&self) {
         self.client.reset().await;
 
+        if let Ok(signer) = self.client.signer().await {
+            if let Ok(public_key) = signer.get_public_key().await {
+                let file = support_dir().join(format!(".{}", public_key.to_bech32().unwrap()));
+                fs::remove_file(&file).ok();
+            }
+        }
+
         if let Err(e) = self.global_sender.send(NostrSignal::SignerUnset).await {
             log::error!("Failed to send signal to global channel: {}", e);
         }
@@ -240,7 +252,7 @@ impl Globals {
     }
 
     /// Connects to bootstrap and configured relays
-    async fn connect(&self) {
+    pub(crate) async fn connect(&self) {
         for relay in BOOTSTRAP_RELAYS.into_iter() {
             if let Err(e) = self.client.add_relay(relay).await {
                 log::error!("Failed to add relay {}: {}", relay, e);
@@ -315,7 +327,7 @@ impl Globals {
     }
 
     /// Subscribes to application update notifications
-    async fn subscribe_for_app_updates(&self) {
+    pub(crate) async fn subscribe_for_app_updates(&self) {
         let coordinate = Coordinate {
             kind: Kind::Custom(32267),
             public_key: PublicKey::from_hex(APP_PUBKEY).expect("App Pubkey is invalid"),
@@ -338,8 +350,28 @@ impl Globals {
         log::info!("Subscribing to app updates...");
     }
 
+    pub(crate) async fn preload_metadata(&self) {
+        if let Some(public_key) = self.local_account.read().await.as_ref().cloned() {
+            let filter = Filter::new()
+                .kind(Kind::Metadata)
+                .author(public_key)
+                .limit(1);
+
+            if let Ok(events) = self.client.database().query(filter).await {
+                for event in events.into_iter() {
+                    self.insert_person(&event).await;
+                }
+            }
+        }
+    }
+
     /// Stores an unwrapped event in local database with reference to original
-    async fn set_unwrapped(&self, root: EventId, event: &Event, keys: &Keys) -> Result<(), Error> {
+    pub(crate) async fn set_unwrapped(
+        &self,
+        root: EventId,
+        event: &Event,
+        keys: &Keys,
+    ) -> Result<(), Error> {
         // Must be use the random generated keys to sign this event
         let event = EventBuilder::new(Kind::ApplicationSpecificData, event.as_json())
             .tags(vec![Tag::identifier(root), Tag::event(root)])
@@ -353,7 +385,7 @@ impl Globals {
     }
 
     /// Retrieves a previously unwrapped event from local database
-    async fn get_unwrapped(&self, target: EventId) -> Result<Event, Error> {
+    pub(crate) async fn get_unwrapped(&self, target: EventId) -> Result<Event, Error> {
         let filter = Filter::new()
             .kind(Kind::Custom(30078))
             .event(target)
@@ -367,7 +399,7 @@ impl Globals {
     }
 
     /// Unwraps a gift-wrapped event and processes its contents
-    async fn unwrap_event(&self, subscription_id: &SubscriptionId, event: &Event) {
+    pub(crate) async fn unwrap_event(&self, subscription_id: &SubscriptionId, event: &Event) {
         let new_messages_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
         let random_keys = Keys::generate();
 
@@ -407,7 +439,7 @@ impl Globals {
     }
 
     /// Extracts public keys from contact list and queues metadata sync
-    async fn extract_pubkeys_and_sync(&self, event: &Event) {
+    pub(crate) async fn extract_pubkeys_and_sync(&self, event: &Event) {
         if let Ok(signer) = self.client.signer().await {
             if let Ok(public_key) = signer.get_public_key().await {
                 if public_key == event.pubkey {
@@ -419,7 +451,7 @@ impl Globals {
     }
 
     /// Fetches metadata for a batch of public keys
-    async fn sync_data_for_pubkeys(&self, public_keys: BTreeSet<PublicKey>) {
+    pub(crate) async fn sync_data_for_pubkeys(&self, public_keys: BTreeSet<PublicKey>) {
         let kinds = vec![
             Kind::Metadata,
             Kind::ContactList,
@@ -441,7 +473,7 @@ impl Globals {
     }
 
     /// Inserts or updates a person's metadata from a Kind::Metadata event
-    async fn insert_person(&self, event: &Event) {
+    pub(crate) async fn insert_person(&self, event: &Event) {
         let metadata = Metadata::from_json(&event.content).ok();
 
         self.persons
@@ -457,7 +489,7 @@ impl Globals {
     }
 
     /// Notifies UI of application updates via global channel
-    async fn notify_update(&self, event: &Event) {
+    pub(crate) async fn notify_update(&self, event: &Event) {
         let filter = Filter::new()
             .ids(event.tags.event_ids().copied())
             .kind(Kind::FileMetadata);
@@ -475,6 +507,34 @@ impl Globals {
                 .ok();
         }
     }
+
+    pub async fn set_local_account(&self, public_key: PublicKey) {
+        let mut writer = self.local_account.write().await;
+        *writer = Some(public_key);
+
+        // Cache to disk for checking on startup
+        let file = support_dir().join(format!(".{}", public_key.to_bech32().unwrap()));
+        fs::write(&file, "").ok();
+    }
+}
+
+fn get_local_account() -> Result<Option<PublicKey>> {
+    let dir = support_dir();
+    let mut result = None;
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        if file_name.starts_with(".npub1") {
+            if let Ok(public_key) = PublicKey::from_bech32(&file_name.replace(".", "")) {
+                result = Some(public_key);
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 fn is_first_run() -> Result<bool, anyhow::Error> {

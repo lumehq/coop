@@ -12,6 +12,7 @@ use global::{
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use ui::{notification::Notification, ContextModal};
 
@@ -51,8 +52,15 @@ impl Identity {
 
         subscriptions.push(
             cx.observe_in(&client_keys, window, |this, state, window, cx| {
-                if state.read(cx).has_keys() {
+                let auto_login = AppSettings::get_global(cx).settings().auto_login;
+                // Skip auto login if the user hasn't enabled auto login
+                if state.read(cx).has_keys()
+                    && auto_login
+                    && shared_state().local_account.read_blocking().is_some()
+                {
                     this.load(window, cx);
+                } else {
+                    this.set_empty(cx);
                 }
             }),
         );
@@ -190,6 +198,9 @@ impl Identity {
             nostr_sdk::async_utility::task::spawn(async move {
                 shared_state().subscribe_for_user_data(public_key).await;
             });
+
+            // Cache the user's public key for quick checks on startup (without reading credentials)
+            shared_state().set_local_account(public_key).await;
 
             // Notify GPUi via the global channel
             shared_state()

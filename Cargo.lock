@@ -2830,6 +2830,7 @@ dependencies = [
  "nostr-connect",
  "nostr-sdk",
  "oneshot",
+ "settings",
  "smallvec",
  "ui",
 ]
