@@ -61,7 +61,7 @@ impl Login {
         // Direct connection initiated by the client
         let connection_string = cx.new(|cx| {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let client_keys = ClientKeys::get_global(cx).keys();
+            let client_keys = ClientKeys::get_global(cx).keys(cx);
 
             NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
@@ -97,7 +97,7 @@ impl Login {
 
         // Observe the Connect URI that changes when the relay is changed
         subscriptions.push(cx.observe_new::<NostrConnectURI>(move |uri, _window, cx| {
-            let client_keys = ClientKeys::get_global(cx).keys();
+            let client_keys = ClientKeys::get_global(cx).keys(cx);
             let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
 
             if let Ok(mut signer) = NostrConnect::new(uri.to_owned(), client_keys, timeout, None) {
@@ -126,7 +126,7 @@ impl Login {
             window,
             |this, entity, _window, cx| {
                 let connection_string = entity.read(cx).clone();
-                let client_keys = ClientKeys::get_global(cx).keys();
+                let client_keys = ClientKeys::get_global(cx).keys(cx);
 
                 // Update the QR Image with the new connection string
                 this.qr_image.update(cx, |this, cx| {
@@ -221,7 +221,7 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys();
+        let client_keys = ClientKeys::get_global(cx).keys(cx);
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2);
 
         // Active signer is no longer needed
@@ -277,7 +277,7 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys();
+        let client_keys = ClientKeys::get_global(cx).keys(cx);
         let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
 
         self.connection_string.update(cx, |this, cx| {

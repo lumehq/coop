@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use global::{constants::KEYRING_CLIENT_PATH, shared_state};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
@@ -14,7 +12,7 @@ struct GlobalClientKeys(Entity<ClientKeys>);
 impl Global for GlobalClientKeys {}
 
 pub struct ClientKeys {
-    keys: Rc<RefCell<Option<Keys>>>,
+    keys: Entity<Option<Keys>>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -36,6 +34,7 @@ impl ClientKeys {
     }
 
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        let keys = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
@@ -45,7 +44,7 @@ impl ClientKeys {
         }));
 
         Self {
-            keys: Rc::new(RefCell::new(None)),
+            keys,
             subscriptions,
         }
     }
@@ -57,38 +56,23 @@ impl ClientKeys {
             if let Ok(Some((_, secret))) = read_client_keys.await {
                 // Update keys
                 this.update(cx, |this, cx| {
-                    let secret_key = SecretKey::from_slice(&secret).expect("Invalid");
+                    let Ok(secret_key) = SecretKey::from_slice(&secret) else {
+                        this.set_keys(None, false, cx);
+                        return;
+                    };
                     let keys = Keys::new(secret_key);
-                    *this.keys.borrow_mut() = Some(keys);
-                    cx.notify();
+                    this.set_keys(Some(keys), false, cx);
                 })
                 .ok();
             } else if shared_state().first_run {
                 // Generate a new keys and update
                 this.update(cx, |this, cx| {
-                    let keys = Keys::generate();
-                    *this.keys.borrow_mut() = Some(keys.clone());
-
-                    let write_keys = cx.write_credentials(
-                        KEYRING_CLIENT_PATH,
-                        keys.public_key().to_hex().as_str(),
-                        keys.secret_key().as_secret_bytes(),
-                    );
-
-                    cx.background_spawn(async move {
-                        if let Err(e) = write_keys.await {
-                            log::error!("Failed to save the client keys: {e}")
-                        }
-                    })
-                    .detach();
-
-                    cx.notify();
+                    this.new_keys(cx);
                 })
                 .ok();
             } else {
                 this.update(cx, |this, cx| {
-                    *this.keys.borrow_mut() = None;
-                    cx.notify();
+                    this.set_keys(None, false, cx);
                 })
                 .ok();
             }
@@ -96,20 +80,45 @@ impl ClientKeys {
         .detach();
     }
 
-    pub fn new_keys(&mut self, cx: &mut Context<Self>) {
-        let keys = Keys::generate();
-        *self.keys.borrow_mut() = Some(keys);
-        cx.notify();
+    pub(crate) fn set_keys(&mut self, keys: Option<Keys>, persist: bool, cx: &mut Context<Self>) {
+        if let Some(keys) = keys.clone() {
+            if persist {
+                let write_keys = cx.write_credentials(
+                    KEYRING_CLIENT_PATH,
+                    keys.public_key().to_hex().as_str(),
+                    keys.secret_key().as_secret_bytes(),
+                );
+
+                cx.background_spawn(async move {
+                    if let Err(e) = write_keys.await {
+                        log::error!("Failed to save the client keys: {e}")
+                    }
+                })
+                .detach();
+
+                cx.notify();
+            }
+        }
+
+        self.keys.update(cx, |this, cx| {
+            *this = keys;
+            cx.notify();
+        });
     }
 
-    pub fn keys(&self) -> Keys {
+    pub fn new_keys(&mut self, cx: &mut Context<Self>) {
+        self.set_keys(Some(Keys::generate()), true, cx);
+    }
+
+    pub fn keys(&self, cx: &App) -> Keys {
         self.keys
-            .borrow()
-            .clone()
+            .read(cx)
+            .as_ref()
+            .cloned()
             .expect("Keys should always be initialized")
     }
 
-    pub fn has_keys(&self) -> bool {
-        self.keys.borrow().is_some()
+    pub fn has_keys(&self, cx: &App) -> bool {
+        self.keys.read(cx).is_some()
     }
 }

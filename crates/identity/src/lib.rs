@@ -54,7 +54,7 @@ impl Identity {
             cx.observe_in(&client_keys, window, |this, state, window, cx| {
                 let auto_login = AppSettings::get_global(cx).settings().auto_login;
                 // Skip auto login if the user hasn't enabled auto login
-                if state.read(cx).has_keys()
+                if state.read(cx).has_keys(cx)
                     && auto_login
                     && shared_state().local_account.read_blocking().is_some()
                 {
@@ -110,7 +110,7 @@ impl Identity {
             match secret_to_bunker(secret) {
                 Ok(uri) => {
                     let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
-                    let client_keys = ClientKeys::get_global(cx).keys();
+                    let client_keys = ClientKeys::get_global(cx).keys(cx);
 
                     match NostrConnect::new(uri, client_keys, timeout, None) {
                         Ok(mut signer) => {

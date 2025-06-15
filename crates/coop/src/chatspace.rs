@@ -90,7 +90,7 @@ impl ChatSpace {
                 &client_keys,
                 window,
                 |_this: &mut Self, state, window, cx| {
-                    if !state.read(cx).has_keys() {
+                    if !state.read(cx).has_keys(cx) {
                         window.open_modal(cx, |this, _window, cx| {
                             const DESCRIPTION: &str =
                                 "Allow Coop to read the client keys stored in Keychain to continue";
