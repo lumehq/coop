@@ -31,7 +31,7 @@ impl Preferences {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| {
             let media_server = AppSettings::get_global(cx)
-                .settings()
+                .settings
                 .media_server
                 .to_string();
 
@@ -82,7 +82,7 @@ impl Render for Preferences {
             "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)";
 
         let input_state = self.media_input.downgrade();
-        let settings = AppSettings::get_global(cx).settings();
+        let settings = AppSettings::get_global(cx).settings.as_ref();
 
         div()
             .track_focus(&self.focus_handle)

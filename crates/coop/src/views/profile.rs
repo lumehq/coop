@@ -105,7 +105,7 @@ impl Profile {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nip96 = AppSettings::get_global(cx).settings().media_server.clone();
+        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
         let avatar_input = self.avatar_input.downgrade();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,

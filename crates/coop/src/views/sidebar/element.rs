@@ -60,7 +60,7 @@ impl DisplayRoom {
 impl RenderOnce for DisplayRoom {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let handler = self.handler.clone();
-        let hide_avatar = AppSettings::get_global(cx).settings().hide_user_avatars;
+        let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
 
         self.base
             .id(self.ix)

@@ -251,7 +251,7 @@ impl Room {
     /// - For a direct message: the other person's avatar
     /// - For a group chat: None
     pub fn display_image(&self, cx: &App) -> SharedString {
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
@@ -634,7 +634,7 @@ impl Room {
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = Arc::clone(&self.members);
-        let backup = AppSettings::get_global(cx).settings().backup_messages;
+        let backup = AppSettings::get_global(cx).settings.backup_messages;
 
         cx.background_spawn(async move {
             let signer = shared_state().client.signer().await?;

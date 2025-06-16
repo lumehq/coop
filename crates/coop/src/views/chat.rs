@@ -373,7 +373,7 @@ impl Chat {
 
         self.uploading(true, cx);
 
-        let nip96 = AppSettings::get_global(cx).settings().media_server.clone();
+        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -547,8 +547,8 @@ impl Chat {
             return div().id(ix);
         };
 
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
-        let hide_avatar = AppSettings::get_global(cx).settings().hide_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
 
         let message = message.borrow();
 

@@ -82,11 +82,7 @@ impl AppSettings {
         }
     }
 
-    pub fn settings(&self) -> &Settings {
-        self.settings.as_ref()
-    }
-
-    fn get_settings_from_db(&self, cx: &mut Context<Self>) {
+    pub(crate) fn get_settings_from_db(&self, cx: &mut Context<Self>) {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
@@ -119,7 +115,7 @@ impl AppSettings {
         .detach();
     }
 
-    fn set_settings(&self, cx: &mut Context<Self>) {
+    pub(crate) fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.settings) {
             cx.background_spawn(async move {
                 let Ok(signer) = shared_state().client.signer().await else {

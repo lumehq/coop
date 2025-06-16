@@ -53,7 +53,7 @@ impl Identity {
 
         subscriptions.push(
             cx.observe_in(&client_keys, window, |this, state, window, cx| {
-                let auto_login = AppSettings::get_global(cx).settings().auto_login;
+                let auto_login = AppSettings::get_global(cx).settings.auto_login;
                 let has_client_keys = state.read(cx).has_keys(cx);
 
                 // Skip auto login if the user hasn't enabled auto login

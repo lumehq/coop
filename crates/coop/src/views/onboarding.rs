@@ -91,8 +91,8 @@ impl Render for Onboarding {
         const TITLE: &str = "Welcome to Coop!";
         const SUBTITLE: &str = "Secure Communication on Nostr.";
 
-        let auto_login = AppSettings::get_global(cx).settings().auto_login;
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+        let auto_login = AppSettings::get_global(cx).settings.auto_login;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         div()
             .py_4()

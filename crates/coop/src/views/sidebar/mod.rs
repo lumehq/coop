@@ -71,7 +71,7 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let trusted_only = AppSettings::get_global(cx).settings().only_show_trusted;
+        let trusted_only = AppSettings::get_global(cx).settings.only_show_trusted;
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
@@ -350,7 +350,7 @@ impl Sidebar {
     }
 
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         div()
             .px_3()
