@@ -397,12 +397,13 @@ impl Identity {
     }
 
     pub fn write_keys(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {
+        let keys = keys.to_owned();
         let public_key = keys.public_key();
 
-        if let Ok(enc_key) =
-            EncryptedSecretKey::new(keys.secret_key(), &password, 16, KeySecurity::Medium)
-        {
-            cx.background_spawn(async move {
+        cx.background_spawn(async move {
+            if let Ok(enc_key) =
+                EncryptedSecretKey::new(keys.secret_key(), &password, 16, KeySecurity::Medium)
+            {
                 let keys = Keys::generate();
                 let builder =
                     EventBuilder::new(Kind::ApplicationSpecificData, enc_key.to_bech32().unwrap())
@@ -416,9 +417,9 @@ impl Identity {
                         log::error!("Failed to save event: {e}");
                     };
                 }
-            })
-            .detach();
-        }
+            }
+        })
+        .detach();
     }
 
     pub(crate) fn set_profile(&mut self, profile: Option<Profile>, cx: &mut Context<Self>) {

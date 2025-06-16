@@ -287,8 +287,11 @@ impl Login {
             // Active signer is no longer needed
             self.shutdown_active_signer(cx);
 
+            let keys = Keys::new(secret_key);
+
             Identity::global(cx).update(cx, |this, cx| {
-                this.set_signer(Keys::new(secret_key), window, cx);
+                this.write_keys(&keys, password, cx);
+                this.set_signer(keys, window, cx);
             });
         } else {
             self.set_error("Secret Key is invalid", cx);

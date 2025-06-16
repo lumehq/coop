@@ -1,4 +1,6 @@
+use anyhow::anyhow;
 use common::profile::RenderProfile;
+use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -6,6 +8,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 use identity::Identity;
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -37,8 +40,58 @@ impl Onboarding {
         cx.new(|cx| Self::view(window, cx))
     }
 
-    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let local_account = cx.new(|_| None);
+
+        let task = cx.background_spawn(async move {
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifier("coop:account")
+                .limit(1);
+
+            if let Some(event) = shared_state()
+                .client
+                .database()
+                .query(filter)
+                .await?
+                .first_owned()
+            {
+                let public_key = event
+                    .tags
+                    .public_keys()
+                    .copied()
+                    .collect_vec()
+                    .first()
+                    .cloned()
+                    .unwrap();
+
+                let metadata = shared_state()
+                    .client
+                    .database()
+                    .metadata(public_key)
+                    .await?
+                    .unwrap_or_default();
+
+                let profile = Profile::new(public_key, metadata);
+
+                Ok(profile)
+            } else {
+                Err(anyhow!("Not found"))
+            }
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(profile) = task.await {
+                this.update(cx, |this, cx| {
+                    this.local_account.update(cx, |this, cx| {
+                        *this = Some(profile);
+                        cx.notify();
+                    });
+                })
+                .ok();
+            }
+        })
+        .detach();
 
         Self {
             local_account,
