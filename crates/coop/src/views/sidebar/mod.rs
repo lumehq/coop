@@ -492,7 +492,7 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(Identity::get_global(cx).profile(cx), |this, profile| {
+            .when_some(Identity::get_global(cx).profile(), |this, profile| {
                 this.child(self.render_account(&profile, cx))
             })
             // Search Input

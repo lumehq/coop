@@ -7,6 +7,7 @@ use smallvec::{smallvec, SmallVec};
 
 pub fn init(cx: &mut App) {
     let state = cx.new(AppSettings::new);
+
     // Observe for state changes and save settings to database
     state.update(cx, |this, cx| {
         this.subscriptions

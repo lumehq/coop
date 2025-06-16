@@ -61,7 +61,7 @@ impl Login {
         // Direct connection initiated by the client
         let connection_string = cx.new(|cx| {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let client_keys = ClientKeys::get_global(cx).keys(cx);
+            let client_keys = ClientKeys::get_global(cx).keys();
 
             NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
@@ -97,7 +97,7 @@ impl Login {
 
         // Observe the Connect URI that changes when the relay is changed
         subscriptions.push(cx.observe_new::<NostrConnectURI>(move |uri, _window, cx| {
-            let client_keys = ClientKeys::get_global(cx).keys(cx);
+            let client_keys = ClientKeys::get_global(cx).keys();
             let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
 
             if let Ok(mut signer) = NostrConnect::new(uri.to_owned(), client_keys, timeout, None) {
@@ -126,7 +126,7 @@ impl Login {
             window,
             |this, entity, _window, cx| {
                 let connection_string = entity.read(cx).clone();
-                let client_keys = ClientKeys::get_global(cx).keys(cx);
+                let client_keys = ClientKeys::get_global(cx).keys();
 
                 // Update the QR Image with the new connection string
                 this.qr_image.update(cx, |this, cx| {
@@ -188,29 +188,111 @@ impl Login {
         // Prevent duplicate login requests
         self.set_logging_in(true, cx);
 
-        // Content can be nsec1 or bunker://
-        // TODO: support ncryptsec1
+        // Content can be secret key or bunker://
         match self.key_input.read(cx).value().to_string() {
-            s if s.starts_with("nsec1") => self.login_with_keys(&s, window, cx),
+            s if s.starts_with("nsec1") => self.ask_for_password(s, window, cx),
+            s if s.starts_with("ncryptsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("bunker://") => self.login_with_bunker(&s, window, cx),
             _ => self.set_error("You must provide a valid Private Key or Bunker.", cx),
         };
     }
 
-    fn login_with_keys(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(keys) = SecretKey::parse(content).map(Keys::new) else {
-            self.set_error("Secret key is not valid", cx);
-            return;
+    fn ask_for_password(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
+        let current_view = cx.entity().downgrade();
+        let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let weak_input = pwd_input.downgrade();
+
+        window.open_modal(cx, move |this, _window, cx| {
+            let weak_input = weak_input.clone();
+            let view_cancel = current_view.clone();
+            let view_ok = current_view.clone();
+
+            let label: SharedString = if content.starts_with("nsec1") {
+                "Set password to encrypt your key *".into()
+            } else {
+                "Password to decrypt your key *".into()
+            };
+
+            let description: Option<SharedString> = if content.starts_with("ncryptsec1") {
+                Some("Coop will only stored the encrypted version".into())
+            } else {
+                None
+            };
+
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .confirm()
+                .on_cancel(move |_, _window, cx| {
+                    view_cancel
+                        .update(cx, |this, cx| {
+                            this.set_error("Password is required", cx);
+                        })
+                        .ok();
+                    true
+                })
+                .on_ok(move |_, window, cx| {
+                    let value = weak_input
+                        .read_with(cx, |state, _cx| state.value().to_owned())
+                        .ok();
+
+                    view_ok
+                        .update(cx, |this, cx| {
+                            if let Some(password) = value {
+                                this.login_with_keys(password.to_string(), window, cx);
+                            } else {
+                                this.set_error("Password is required", cx);
+                            }
+                        })
+                        .ok();
+                    true
+                })
+                .child(
+                    div()
+                        .pt_4()
+                        .px_4()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .text_sm()
+                        .child(label)
+                        .child(TextInput::new(&pwd_input).small())
+                        .when_some(description, |this, description| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .italic()
+                                    .text_color(cx.theme().text_placeholder)
+                                    .child(description),
+                            )
+                        }),
+                )
+        });
+    }
+
+    fn login_with_keys(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
+        let value = self.key_input.read(cx).value().to_string();
+        let secret_key = if value.starts_with("nsec1") {
+            SecretKey::parse(&value).ok()
+        } else if value.starts_with("ncryptsec1") {
+            EncryptedSecretKey::from_bech32(&value)
+                .map(|enc| enc.decrypt(&password).ok())
+                .unwrap_or_default()
+        } else {
+            None
         };
 
-        // Active signer is no longer needed
-        self.shutdown_active_signer(cx);
+        if let Some(secret_key) = secret_key {
+            // Active signer is no longer needed
+            self.shutdown_active_signer(cx);
 
-        // Set signer with this keys in the background
-        Identity::global(cx).update(cx, |this, cx| {
-            this.save_keys(&keys, cx);
-            this.set_signer(keys, window, cx);
-        });
+            Identity::global(cx).update(cx, |this, cx| {
+                this.set_signer(Keys::new(secret_key), window, cx);
+            });
+        } else {
+            self.set_error("Secret Key is invalid", cx);
+        }
     }
 
     fn login_with_bunker(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -219,53 +301,50 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys(cx);
+        let client_keys = ClientKeys::get_global(cx).keys();
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2);
+
+        let Ok(mut signer) = NostrConnect::new(uri, client_keys, timeout, None) else {
+            self.set_error("Failed to create remote signer", cx);
+            return;
+        };
 
         // Active signer is no longer needed
         self.shutdown_active_signer(cx);
 
-        match NostrConnect::new(uri, client_keys, timeout, None) {
-            Ok(mut signer) => {
-                // Automatically open auth url
-                signer.auth_url_handler(CoopAuthUrlHandler);
+        // Automatically open auth url
+        signer.auth_url_handler(CoopAuthUrlHandler);
 
-                let (tx, rx) = oneshot::channel::<Option<(NostrConnect, NostrConnectURI)>>();
+        let (tx, rx) = oneshot::channel::<Option<(NostrConnect, NostrConnectURI)>>();
 
-                // Set signer with this remote signer in the background
-                cx.background_spawn(async move {
-                    if let Ok(bunker_uri) = signer.bunker_uri().await {
-                        tx.send(Some((signer, bunker_uri))).ok();
-                    } else {
-                        tx.send(None).ok();
-                    }
-                })
-                .detach();
-
-                // Handle error
-                cx.spawn_in(window, async move |this, cx| {
-                    if let Ok(Some((signer, uri))) = rx.await {
-                        cx.update(|window, cx| {
-                            Identity::global(cx).update(cx, |this, cx| {
-                                this.save_bunker_uri(&uri, cx);
-                                this.set_signer(signer, window, cx);
-                            });
-                        })
-                        .ok();
-                    } else {
-                        this.update(cx, |this, cx| {
-                            let msg = "Connection to the Remote Signer failed or timed out";
-                            this.set_error(msg, cx);
-                        })
-                        .ok();
-                    }
-                })
-                .detach();
+        // Verify remote signer connection
+        cx.background_spawn(async move {
+            if let Ok(bunker_uri) = signer.bunker_uri().await {
+                tx.send(Some((signer, bunker_uri))).ok();
+            } else {
+                tx.send(None).ok();
             }
-            Err(e) => {
-                self.set_error(e.to_string(), cx);
+        })
+        .detach();
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Some((signer, uri))) = rx.await {
+                cx.update(|window, cx| {
+                    Identity::global(cx).update(cx, |this, cx| {
+                        this.write_bunker(&uri, cx);
+                        this.set_signer(signer, window, cx);
+                    });
+                })
+                .ok();
+            } else {
+                this.update(cx, |this, cx| {
+                    let msg = "Connection to the Remote Signer failed or timed out";
+                    this.set_error(msg, cx);
+                })
+                .ok();
             }
-        }
+        })
+        .detach();
     }
 
     fn wait_for_connection(
@@ -289,7 +368,7 @@ impl Login {
             if let Ok(Some((uri, signer))) = rx.await {
                 cx.update(|window, cx| {
                     Identity::global(cx).update(cx, |this, cx| {
-                        this.save_bunker_uri(&uri, cx);
+                        this.write_bunker(&uri, cx);
                         this.set_signer(signer, window, cx);
                     });
                 })
@@ -316,7 +395,7 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys(cx);
+        let client_keys = ClientKeys::get_global(cx).keys();
         let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
 
         self.connection_string.update(cx, |this, cx| {

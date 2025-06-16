@@ -80,7 +80,7 @@ impl NewAccount {
         };
 
         Identity::global(cx).update(cx, |this, cx| {
-            this.new_identity(keys, metadata, cx);
+            this.new_identity(keys, "123456".into(), metadata, cx);
         });
     }
 

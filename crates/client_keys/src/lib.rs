@@ -1,4 +1,4 @@
-use global::{constants::KEYRING_CLIENT_PATH, shared_state};
+use global::{constants::KEYRING_URL, shared_state};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -12,7 +12,7 @@ struct GlobalClientKeys(Entity<ClientKeys>);
 impl Global for GlobalClientKeys {}
 
 pub struct ClientKeys {
-    keys: Entity<Option<Keys>>,
+    keys: Option<Keys>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -34,7 +34,6 @@ impl ClientKeys {
     }
 
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let keys = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
@@ -44,13 +43,13 @@ impl ClientKeys {
         }));
 
         Self {
-            keys,
+            keys: None,
             subscriptions,
         }
     }
 
     pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let read_client_keys = cx.read_credentials(KEYRING_CLIENT_PATH);
+        let read_client_keys = cx.read_credentials(KEYRING_URL);
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Some((_, secret))) = read_client_keys.await {
@@ -84,7 +83,7 @@ impl ClientKeys {
         if let Some(keys) = keys.clone() {
             if persist {
                 let write_keys = cx.write_credentials(
-                    KEYRING_CLIENT_PATH,
+                    KEYRING_URL,
                     keys.public_key().to_hex().as_str(),
                     keys.secret_key().as_secret_bytes(),
                 );
@@ -100,25 +99,23 @@ impl ClientKeys {
             }
         }
 
-        self.keys.update(cx, |this, cx| {
-            *this = keys;
-            cx.notify();
-        });
+        self.keys = keys;
+        // Make sure notify the UI after keys changes
+        cx.notify();
     }
 
     pub fn new_keys(&mut self, cx: &mut Context<Self>) {
         self.set_keys(Some(Keys::generate()), true, cx);
     }
 
-    pub fn keys(&self, cx: &App) -> Keys {
+    pub fn keys(&self) -> Keys {
         self.keys
-            .read(cx)
             .as_ref()
             .cloned()
             .expect("Keys should always be initialized")
     }
 
-    pub fn has_keys(&self, cx: &App) -> bool {
-        self.keys.read(cx).is_some()
+    pub fn has_keys(&self) -> bool {
+        self.keys.is_some()
     }
 }

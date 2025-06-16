@@ -221,7 +221,7 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(account) = Identity::get_global(cx).profile(cx) else {
+        let Some(account) = Identity::get_global(cx).profile() else {
             return false;
         };
 
