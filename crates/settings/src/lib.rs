@@ -55,7 +55,7 @@ impl AppSettings {
         cx.global::<GlobalAppSettings>().0.read(cx)
     }
 
-    /// Set the global Settings instance
+    /// Set the Global Settings instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalAppSettings(state));
     }

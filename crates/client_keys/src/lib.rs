@@ -18,17 +18,17 @@ pub struct ClientKeys {
 }
 
 impl ClientKeys {
-    /// Retrieve the Global Settings instance
+    /// Retrieve the Global Client Keys instance
     pub fn global(cx: &App) -> Entity<Self> {
         cx.global::<GlobalClientKeys>().0.clone()
     }
 
-    /// Retrieve the Settings instance
+    /// Retrieve the Client Keys instance
     pub fn get_global(cx: &App) -> &Self {
         cx.global::<GlobalClientKeys>().0.read(cx)
     }
 
-    /// Set the global Settings instance
+    /// Set the Global Client Keys instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalClientKeys(state));
     }

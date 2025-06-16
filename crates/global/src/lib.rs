@@ -1,11 +1,3 @@
-//! Global state management for the Nostr client application.
-//!
-//! This module provides a singleton global state that manages:
-//! - Nostr client connections and event handling
-//! - User identity and profile management
-//! - Batched metadata fetching for performance
-//! - Cross-component communication via channels
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -50,8 +42,6 @@ pub struct Globals {
     pub client: Client,
     /// Determines if this is the first time user run Coop
     pub first_run: bool,
-    /// Account that has been saved in the Keychain
-    pub local_account: RwLock<Option<PublicKey>>,
     /// Auto-close options for subscriptions
     pub auto_close: Option<SubscribeAutoCloseOptions>,
     /// Channel sender for broadcasting global Nostr events to UI
@@ -77,7 +67,6 @@ pub fn shared_state() -> &'static Globals {
             .ok();
 
         let first_run = is_first_run().unwrap_or(true);
-        let local_account = get_local_account().unwrap_or_default();
         let opts = Options::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
@@ -93,7 +82,6 @@ pub fn shared_state() -> &'static Globals {
             auto_close: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
-            local_account: RwLock::new(local_account),
             first_run,
             global_sender,
             global_receiver,
@@ -351,16 +339,10 @@ impl Globals {
     }
 
     pub(crate) async fn preload_metadata(&self) {
-        if let Some(public_key) = self.local_account.read().await.as_ref().cloned() {
-            let filter = Filter::new()
-                .kind(Kind::Metadata)
-                .author(public_key)
-                .limit(1);
-
-            if let Ok(events) = self.client.database().query(filter).await {
-                for event in events.into_iter() {
-                    self.insert_person(&event).await;
-                }
+        let filter = Filter::new().kind(Kind::Metadata).limit(100);
+        if let Ok(events) = self.client.database().query(filter).await {
+            for event in events.into_iter() {
+                self.insert_person(&event).await;
             }
         }
     }
@@ -387,7 +369,7 @@ impl Globals {
     /// Retrieves a previously unwrapped event from local database
     pub(crate) async fn get_unwrapped(&self, target: EventId) -> Result<Event, Error> {
         let filter = Filter::new()
-            .kind(Kind::Custom(30078))
+            .kind(Kind::ApplicationSpecificData)
             .event(target)
             .limit(1);
 
@@ -507,34 +489,6 @@ impl Globals {
                 .ok();
         }
     }
-
-    pub async fn set_local_account(&self, public_key: PublicKey) {
-        let mut writer = self.local_account.write().await;
-        *writer = Some(public_key);
-
-        // Cache to disk for checking on startup
-        let file = support_dir().join(format!(".{}", public_key.to_bech32().unwrap()));
-        fs::write(&file, "").ok();
-    }
-}
-
-fn get_local_account() -> Result<Option<PublicKey>> {
-    let dir = support_dir();
-    let mut result = None;
-
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        if file_name.starts_with(".npub1") {
-            if let Ok(public_key) = PublicKey::from_bech32(&file_name.replace(".", "")) {
-                result = Some(public_key);
-            }
-        }
-    }
-
-    Ok(result)
 }
 
 fn is_first_run() -> Result<bool, anyhow::Error> {

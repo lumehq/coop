@@ -167,7 +167,7 @@ impl Room {
     ///
     /// The Profile of the first member in the room
     pub fn first_member(&self, cx: &App) -> Profile {
-        let Some(account) = Identity::get_global(cx).profile() else {
+        let Some(account) = Identity::get_global(cx).profile(cx) else {
             return shared_state().person(&self.members[0]);
         };
 
@@ -553,7 +553,7 @@ impl Room {
         replies: Option<&Vec<Message>>,
         cx: &App,
     ) -> Option<Message> {
-        let author = Identity::get_global(cx).profile()?;
+        let author = Identity::get_global(cx).profile(cx)?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 

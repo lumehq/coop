@@ -157,14 +157,12 @@ impl Login {
         ));
 
         subscriptions.push(
-            cx.observe_in(&active_signer, window, |_this, entity, window, cx| {
+            cx.observe_in(&active_signer, window, |this, entity, window, cx| {
                 if let Some(mut signer) = entity.read(cx).clone() {
                     // Automatically open auth url
                     signer.auth_url_handler(CoopAuthUrlHandler);
-
-                    Identity::global(cx).update(cx, |this, cx| {
-                        this.verify_and_set_remote_signer(signer, window, cx);
-                    });
+                    // Wait for connection from remote signer
+                    this.wait_for_connection(signer, window, cx);
                 }
             }),
         );
@@ -268,6 +266,47 @@ impl Login {
                 self.set_error(e.to_string(), cx);
             }
         }
+    }
+
+    fn wait_for_connection(
+        &mut self,
+        signer: NostrConnect,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (tx, rx) = oneshot::channel::<Option<(NostrConnectURI, NostrConnect)>>();
+
+        cx.background_spawn(async move {
+            if let Ok(bunker_uri) = signer.bunker_uri().await {
+                tx.send(Some((bunker_uri, signer))).ok();
+            } else {
+                tx.send(None).ok();
+            }
+        })
+        .detach();
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Some((uri, signer))) = rx.await {
+                cx.update(|window, cx| {
+                    Identity::global(cx).update(cx, |this, cx| {
+                        this.save_bunker_uri(&uri, cx);
+                        this.set_signer(signer, window, cx);
+                    });
+                })
+                .ok();
+            } else {
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error("Connection failed"), cx);
+                    // Refresh the active signer
+                    this.update(cx, |this, cx| {
+                        this.change_relay(window, cx);
+                    })
+                    .ok();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
     fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {

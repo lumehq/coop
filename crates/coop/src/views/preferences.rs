@@ -104,7 +104,7 @@ impl Render for Preferences {
                             .font_semibold()
                             .child("Account"),
                     )
-                    .when_some(Identity::get_global(cx).profile(), |this, profile| {
+                    .when_some(Identity::get_global(cx).profile(cx), |this, profile| {
                         this.child(
                             div()
                                 .w_full()

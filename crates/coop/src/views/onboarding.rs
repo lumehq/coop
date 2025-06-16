@@ -1,5 +1,4 @@
 use common::profile::RenderProfile;
-use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -39,12 +38,7 @@ impl Onboarding {
     }
 
     fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let local_account = cx.new(|_| {
-            shared_state()
-                .local_account
-                .read_blocking()
-                .map(|public_key| shared_state().person(&public_key))
-        });
+        let local_account = cx.new(|_| None);
 
         Self {
             local_account,
@@ -134,7 +128,73 @@ impl Render for Onboarding {
                     ),
             )
             .map(|this| {
-                if shared_state().local_account.read_blocking().is_none() {
+                if let Some(profile) = self.local_account.read(cx).as_ref() {
+                    this.child(
+                        div()
+                            .id("account")
+                            .mb_3()
+                            .h_10()
+                            .w_72()
+                            .bg(cx.theme().element_background)
+                            .text_color(cx.theme().element_foreground)
+                            .rounded_lg()
+                            .text_sm()
+                            .map(|this| {
+                                if self.loading {
+                                    this.child(
+                                        div()
+                                            .size_full()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(Indicator::new().small()),
+                                    )
+                                } else {
+                                    this.child(
+                                        div()
+                                            .h_full()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .gap_2()
+                                            .child("Continue as")
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_1()
+                                                    .font_semibold()
+                                                    .child(
+                                                        Avatar::new(profile.render_avatar(proxy))
+                                                            .size(rems(1.5)),
+                                                    )
+                                                    .child(
+                                                        div().pb_px().child(profile.render_name()),
+                                                    ),
+                                            ),
+                                    )
+                                }
+                            })
+                            .hover(|this| this.bg(cx.theme().element_hover))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.set_loading(true, cx);
+                                Identity::global(cx).update(cx, |this, cx| {
+                                    this.load(window, cx);
+                                });
+                            })),
+                    )
+                    .child(
+                        Checkbox::new("auto_login")
+                            .label("Automatically log in next time")
+                            .checked(auto_login)
+                            .on_click(|_, _window, cx| {
+                                AppSettings::global(cx).update(cx, |this, cx| {
+                                    this.settings.auto_login = !this.settings.auto_login;
+                                    cx.notify();
+                                })
+                            }),
+                    )
+                } else {
                     this.child(
                         div()
                             .w_72()
@@ -161,78 +221,6 @@ impl Render for Onboarding {
                                     })),
                             ),
                     )
-                } else {
-                    this.when_some(self.local_account.read(cx).as_ref(), |this, profile| {
-                        this.child(
-                            div()
-                                .id("account")
-                                .mb_3()
-                                .h_10()
-                                .w_72()
-                                .bg(cx.theme().element_background)
-                                .text_color(cx.theme().element_foreground)
-                                .rounded_lg()
-                                .text_sm()
-                                .map(|this| {
-                                    if self.loading {
-                                        this.child(
-                                            div()
-                                                .size_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .child(Indicator::new().small()),
-                                        )
-                                    } else {
-                                        this.child(
-                                            div()
-                                                .h_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .gap_2()
-                                                .child("Continue as")
-                                                .child(
-                                                    div()
-                                                        .flex()
-                                                        .items_center()
-                                                        .gap_1()
-                                                        .font_semibold()
-                                                        .child(
-                                                            Avatar::new(
-                                                                profile.render_avatar(proxy),
-                                                            )
-                                                            .size(rems(1.5)),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .pb_px()
-                                                                .child(profile.render_name()),
-                                                        ),
-                                                ),
-                                        )
-                                    }
-                                })
-                                .hover(|this| this.bg(cx.theme().element_hover))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.set_loading(true, cx);
-                                    Identity::global(cx).update(cx, |this, cx| {
-                                        this.load(window, cx);
-                                    });
-                                })),
-                        )
-                        .child(
-                            Checkbox::new("auto_login")
-                                .label("Automatically log in next time")
-                                .checked(auto_login)
-                                .on_click(|_, _window, cx| {
-                                    AppSettings::global(cx).update(cx, |this, cx| {
-                                        this.settings.auto_login = !this.settings.auto_login;
-                                        cx.notify();
-                                    })
-                                }),
-                        )
-                    })
                 }
             })
     }

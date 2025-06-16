@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::time::Duration;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
@@ -25,48 +25,48 @@ struct GlobalIdentity(Entity<Identity>);
 impl Global for GlobalIdentity {}
 
 pub struct Identity {
-    profile: Rc<RefCell<Option<Profile>>>,
+    profile: Entity<Option<Profile>>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Identity {
-    /// Retrieve the Global Settings instance
+    /// Retrieve the Global Identity instance
     pub fn global(cx: &App) -> Entity<Self> {
         cx.global::<GlobalIdentity>().0.clone()
     }
 
-    /// Retrieve the Settings instance
+    /// Retrieve the Identity instance
     pub fn get_global(cx: &App) -> &Self {
         cx.global::<GlobalIdentity>().0.read(cx)
     }
 
-    /// Set the global Settings instance
+    /// Set the Global Identity instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalIdentity(state));
     }
 
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let client_keys = ClientKeys::global(cx);
+        let profile = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
             cx.observe_in(&client_keys, window, |this, state, window, cx| {
                 let auto_login = AppSettings::get_global(cx).settings().auto_login;
+                let has_client_keys = state.read(cx).has_keys(cx);
+
                 // Skip auto login if the user hasn't enabled auto login
-                if state.read(cx).has_keys(cx)
-                    && auto_login
-                    && shared_state().local_account.read_blocking().is_some()
-                {
+                if has_client_keys && auto_login {
                     this.load(window, cx);
                 } else {
-                    this.set_empty(cx);
+                    this.set_profile(None, cx);
                 }
             }),
         );
 
         Self {
-            profile: Rc::new(RefCell::new(None)),
+            profile,
             subscriptions,
         }
     }
@@ -78,8 +78,7 @@ impl Identity {
             let Ok(Some((username, secret))) = read_user_keys.await else {
                 // User cancelled the action or failed to read credentials, then notify UI
                 this.update(cx, |this, cx| {
-                    *this.profile.borrow_mut() = None;
-                    cx.notify();
+                    this.set_profile(None, cx);
                 })
                 .ok();
 
@@ -149,7 +148,7 @@ impl Identity {
                                                 cx,
                                             );
                                             this.update(cx, |this, cx| {
-                                                this.set_empty(cx);
+                                                this.set_profile(None, cx);
                                             })
                                             .ok();
                                         })
@@ -159,16 +158,16 @@ impl Identity {
                             })
                             .detach();
                         }
-                        Err(_) => self.set_empty(cx),
+                        Err(_) => self.set_profile(None, cx),
                     }
                 }
-                Err(_) => self.set_empty(cx),
+                Err(_) => self.set_profile(None, cx),
             }
         } else {
             // Process to login with secret key
             match SecretKey::from_slice(&secret) {
                 Ok(secret_key) => self.set_signer(Keys::new(secret_key), window, cx),
-                Err(_) => self.set_empty(cx),
+                Err(_) => self.set_profile(None, cx),
             }
         }
     }
@@ -199,9 +198,6 @@ impl Identity {
                 shared_state().subscribe_for_user_data(public_key).await;
             });
 
-            // Cache the user's public key for quick checks on startup (without reading credentials)
-            shared_state().set_local_account(public_key).await;
-
             // Notify GPUi via the global channel
             shared_state()
                 .global_sender
@@ -214,51 +210,13 @@ impl Identity {
         cx.spawn_in(window, async move |this, cx| match task.await {
             Ok(profile) => {
                 this.update(cx, |this, cx| {
-                    this.set_profile(profile, cx);
+                    this.set_profile(Some(profile), cx);
                 })
                 .ok();
             }
             Err(e) => {
                 cx.update(|window, cx| {
                     window.push_notification(Notification::error(e.to_string()), cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
-    /// Sets a remote signer and updates user identity
-    pub fn verify_and_set_remote_signer(
-        &self,
-        signer: NostrConnect,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let (tx, rx) = oneshot::channel::<Option<(NostrConnectURI, NostrConnect)>>();
-
-        cx.background_spawn(async move {
-            if let Ok(bunker_uri) = signer.bunker_uri().await {
-                tx.send(Some((bunker_uri, signer))).ok();
-            } else {
-                tx.send(None).ok();
-            }
-        })
-        .detach();
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some((uri, signer))) = rx.await {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.save_bunker_uri(&uri, cx);
-                        this.set_signer(signer, window, cx);
-                    })
-                    .ok();
-                })
-                .ok();
-            } else {
-                cx.update(|window, cx| {
-                    window.push_notification(Notification::error("Connection failed"), cx);
                 })
                 .ok();
             }
@@ -367,24 +325,21 @@ impl Identity {
         .detach();
     }
 
-    pub(crate) fn set_profile(&self, profile: Profile, cx: &mut Context<Self>) {
-        *self.profile.borrow_mut() = Some(profile);
-        cx.notify();
-    }
-
-    pub(crate) fn set_empty(&self, cx: &mut Context<Self>) {
-        *self.profile.borrow_mut() = None;
-        cx.notify();
+    pub(crate) fn set_profile(&self, profile: Option<Profile>, cx: &mut Context<Self>) {
+        self.profile.update(cx, |this, cx| {
+            *this = profile;
+            cx.notify();
+        });
     }
 
     /// Returns the current profile
-    pub fn profile(&self) -> Option<Profile> {
-        self.profile.borrow().clone()
+    pub fn profile(&self, cx: &App) -> Option<Profile> {
+        self.profile.read(cx).as_ref().cloned()
     }
 
     /// Returns true if a profile is currently loaded
-    pub fn has_profile(&self) -> bool {
-        self.profile.borrow().is_some()
+    pub fn has_profile(&self, cx: &App) -> bool {
+        self.profile.read(cx).is_some()
     }
 }
 
