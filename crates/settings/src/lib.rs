@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use global::shared_state;
+use global::{constants::SETTINGS_D, shared_state};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -87,7 +87,7 @@ impl AppSettings {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier("coop-settings")
+                .identifier(SETTINGS_D)
                 .limit(1);
 
             if let Some(event) = shared_state()
@@ -119,19 +119,10 @@ impl AppSettings {
     pub(crate) fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.settings) {
             cx.background_spawn(async move {
-                let Ok(signer) = shared_state().client.signer().await else {
-                    return;
-                };
-                let Ok(public_key) = signer.get_public_key().await else {
-                    return;
-                };
-
                 let keys = Keys::generate();
-                let ident = Tag::identifier("coop-settings");
 
                 if let Ok(event) = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                    .tags(vec![ident])
-                    .build(public_key)
+                    .tags(vec![Tag::identifier(SETTINGS_D)])
                     .sign(&keys)
                     .await
                 {

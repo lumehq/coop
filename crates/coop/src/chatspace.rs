@@ -299,11 +299,10 @@ impl ChatSpace {
         }
     }
 
-    fn logout(&self, _window: &mut Window, cx: &mut App) {
-        cx.background_spawn(async move {
-            shared_state().unset_signer().await;
-        })
-        .detach();
+    fn logout(&self, window: &mut Window, cx: &mut App) {
+        Identity::global(cx).update(cx, |this, cx| {
+            this.unload(window, cx);
+        });
     }
 
     pub(crate) fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {

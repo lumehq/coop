@@ -492,7 +492,7 @@ impl Globals {
 }
 
 fn is_first_run() -> Result<bool, anyhow::Error> {
-    let flag = support_dir().join(".first_run");
+    let flag = support_dir().join(".coop_first_run");
 
     if !flag.exists() {
         fs::write(&flag, "")?;

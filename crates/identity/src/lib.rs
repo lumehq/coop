@@ -4,12 +4,12 @@ use anyhow::{anyhow, Error};
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::{
-    constants::{NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT},
+    constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT},
     shared_state, NostrSignal,
 };
 use gpui::{
-    div, App, AppContext, Context, Entity, Global, ParentElement, Styled, Subscription, Task,
-    Window,
+    div, prelude::FluentBuilder, red, App, AppContext, Context, Entity, Global, ParentElement,
+    SharedString, Styled, Subscription, Task, Window,
 };
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
@@ -79,7 +79,7 @@ impl Identity {
         let task = cx.background_spawn(async move {
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier("coop:account")
+                .identifier(ACCOUNT_D)
                 .limit(1);
 
             if let Some(event) = shared_state()
@@ -117,6 +117,36 @@ impl Identity {
         .detach();
     }
 
+    pub fn unload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let task = cx.background_spawn(async move {
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifier(ACCOUNT_D)
+                .limit(1);
+
+            // Unset signer
+            shared_state().client.unset_signer().await;
+
+            // Delete account
+            shared_state()
+                .client
+                .database()
+                .delete(filter)
+                .await
+                .is_ok()
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if task.await {
+                this.update(cx, |this, cx| {
+                    this.set_profile(None, cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn login(
         &mut self,
         secret: &str,
@@ -128,11 +158,13 @@ impl Identity {
             if let Ok(uri) = NostrConnectURI::parse(secret) {
                 self.login_with_bunker(uri, window, cx);
             } else {
+                window.push_notification(Notification::error("Bunker URI is invalid"), cx);
                 self.set_profile(None, cx);
             }
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(secret) {
             self.login_with_keys(enc, window, cx);
         } else {
+            window.push_notification(Notification::error("Secret Key is invalid"), cx);
             self.set_profile(None, cx);
         }
     }
@@ -147,6 +179,7 @@ impl Identity {
         let client_keys = ClientKeys::get_global(cx).keys();
 
         let Ok(mut signer) = NostrConnect::new(uri, client_keys, timeout, None) else {
+            window.push_notification(Notification::error("Bunker URI is invalid"), cx);
             self.set_profile(None, cx);
             return;
         };
@@ -200,11 +233,14 @@ impl Identity {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let pwd_input: Entity<InputState> = cx.new(|cx| InputState::new(window, cx).masked(true));
         let weak_input = pwd_input.downgrade();
+        let error: Entity<Option<SharedString>> = cx.new(|_| None);
+        let weak_error = error.downgrade();
 
-        window.open_modal(cx, move |this, _window, _cx| {
+        window.open_modal(cx, move |this, _window, cx| {
             let weak_input = weak_input.clone();
+            let weak_error = weak_error.clone();
 
             this.overlay_closable(false)
                 .show_close(false)
@@ -223,19 +259,46 @@ impl Identity {
 
                     if let Some(password) = value {
                         if password.is_empty() {
+                            weak_error
+                                .update(cx, |this, cx| {
+                                    *this = Some("Password cannot be empty".into());
+                                    cx.notify();
+                                })
+                                .ok();
                             return false;
                         };
 
-                        Identity::global(cx).update(cx, |this, cx| {
-                            if let Ok(secret) = enc.decrypt(&password) {
-                                this.set_signer(Keys::new(secret), window, cx);
-                            } else {
-                                this.set_profile(None, cx);
-                            }
+                        Identity::global(cx).update(cx, |_, cx| {
+                            let weak_error = weak_error.clone();
+                            let task: Task<Option<SecretKey>> = cx.background_spawn(async move {
+                                // Decrypt the password in the background to prevent blocking the main thread
+                                enc.decrypt(&password).ok()
+                            });
+
+                            cx.spawn_in(window, async move |this, cx| {
+                                if let Some(secret) = task.await {
+                                    cx.update(|window, cx| {
+                                        window.close_modal(cx);
+                                        this.update(cx, |this, cx| {
+                                            this.set_signer(Keys::new(secret), window, cx);
+                                        })
+                                        .ok();
+                                    })
+                                    .ok();
+                                } else {
+                                    weak_error
+                                        .update(cx, |this, cx| {
+                                            *this = Some("Invalid password".into());
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                }
+                            })
+                            .detach();
                         });
                     }
 
-                    true
+                    false
                 })
                 .child(
                     div()
@@ -247,7 +310,16 @@ impl Identity {
                         .gap_1()
                         .text_sm()
                         .child("Password to decrypt your key *")
-                        .child(TextInput::new(&pwd_input).small()),
+                        .child(TextInput::new(&pwd_input).small())
+                        .when_some(error.read(cx).as_ref(), |this, error| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .italic()
+                                    .text_color(red())
+                                    .child(error.clone()),
+                            )
+                        }),
                 )
         });
     }
@@ -383,7 +455,7 @@ impl Identity {
         cx.background_spawn(async move {
             let keys = Keys::generate();
             let builder = EventBuilder::new(Kind::ApplicationSpecificData, value).tags(vec![
-                Tag::identifier("coop:account"),
+                Tag::identifier(ACCOUNT_D),
                 Tag::public_key(public_key),
             ]);
 
@@ -408,7 +480,7 @@ impl Identity {
                 let builder =
                     EventBuilder::new(Kind::ApplicationSpecificData, enc_key.to_bech32().unwrap())
                         .tags(vec![
-                            Tag::identifier("coop:account"),
+                            Tag::identifier(ACCOUNT_D),
                             Tag::public_key(public_key),
                         ]);
 
