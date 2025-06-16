@@ -19,7 +19,7 @@ use ui::checkbox::Checkbox;
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::popup_menu::PopupMenu;
-use ui::{Icon, IconName, Sizable, StyledExt};
+use ui::{Disableable, Icon, IconName, Sizable, StyledExt};
 
 use crate::chatspace;
 
@@ -260,6 +260,7 @@ impl Render for Onboarding {
                                     .label("Logout")
                                     .ghost()
                                     .small()
+                                    .disabled(self.loading)
                                     .on_click(|_, window, cx| {
                                         Identity::global(cx).update(cx, |this, cx| {
                                             this.unload(window, cx);
