@@ -1051,10 +1051,12 @@ impl Render for TabPanel {
         }
 
         v_flex()
+            .when(!self.is_collapsed, |this| {
+                this.on_action(cx.listener(Self::on_action_toggle_zoom))
+                    .on_action(cx.listener(Self::on_action_close_panel))
+            })
             .id("tab-panel")
             .track_focus(&focus_handle)
-            .on_action(cx.listener(Self::on_action_toggle_zoom))
-            .on_action(cx.listener(Self::on_action_close_panel))
             .size_full()
             .overflow_hidden()
             .child(self.render_title_bar(&state, window, cx))

@@ -4,13 +4,12 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     black, div, px, relative, white, AnyElement, App, ClickEvent, Div, Element, Hsla,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Rgba,
-    Stateful, StatefulInteractiveElement as _, Style, Styled, Window,
+    Stateful, StatefulInteractiveElement as _, Style, Styled, Window, WindowControlArea,
 };
 use theme::ActiveTheme;
 
 use crate::{h_flex, Icon, IconName, InteractiveElementExt as _, Sizable as _};
 
-const HEIGHT: Pixels = px(34.);
 const TITLE_BAR_HEIGHT: Pixels = px(34.);
 #[cfg(target_os = "macos")]
 const TITLE_BAR_LEFT_PADDING: Pixels = px(80.);
@@ -32,7 +31,7 @@ pub struct TitleBar {
 impl TitleBar {
     pub fn new() -> Self {
         Self {
-            base: div().id("title-bar").pl(TITLE_BAR_LEFT_PADDING),
+            base: div().id("title-bar"),
             children: Vec::new(),
             on_close_window: None,
         }
@@ -62,14 +61,14 @@ impl Default for TitleBar {
 // We don't need implementation the click event for the control buttons.
 // If user clicked in the bounds, the window event will be triggered.
 #[derive(IntoElement, Clone)]
-enum Control {
+enum ControlIcon {
     Minimize,
     Restore,
     Maximize,
     Close { on_close_window: OnCloseWindow },
 }
 
-impl Control {
+impl ControlIcon {
     fn minimize() -> Self {
         Self::Minimize
     }
@@ -104,11 +103,19 @@ impl Control {
         }
     }
 
+    fn window_control_area(&self) -> WindowControlArea {
+        match self {
+            Self::Minimize => WindowControlArea::Min,
+            Self::Restore | Self::Maximize => WindowControlArea::Max,
+            Self::Close { .. } => WindowControlArea::Close,
+        }
+    }
+
     fn is_close(&self) -> bool {
         matches!(self, Self::Close { .. })
     }
 
-    fn fg(&self, _window: &Window, cx: &App) -> Hsla {
+    fn fg(&self, cx: &App) -> Hsla {
         if cx.theme().mode.is_dark() {
             white()
         } else {
@@ -116,7 +123,7 @@ impl Control {
         }
     }
 
-    fn hover_fg(&self, _window: &Window, cx: &App) -> Hsla {
+    fn hover_fg(&self, cx: &App) -> Hsla {
         if self.is_close() || cx.theme().mode.is_dark() {
             white()
         } else {
@@ -124,7 +131,7 @@ impl Control {
         }
     }
 
-    fn hover_bg(&self, _window: &Window, cx: &App) -> Rgba {
+    fn hover_bg(&self, cx: &App) -> Rgba {
         if self.is_close() {
             Rgba {
                 r: 232.0 / 255.0,
@@ -150,42 +157,47 @@ impl Control {
     }
 }
 
-impl RenderOnce for Control {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let fg = self.fg(window, cx);
-        let hover_fg = self.hover_fg(window, cx);
-        let hover_bg = self.hover_bg(window, cx);
-        let icon = self.clone();
+impl RenderOnce for ControlIcon {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let is_linux = cfg!(target_os = "linux");
-        let on_close_window = match &icon {
-            Control::Close { on_close_window } => on_close_window.clone(),
+        let is_windows = cfg!(target_os = "windows");
+        let fg = self.fg(cx);
+        let hover_fg = self.hover_fg(cx);
+        let hover_bg = self.hover_bg(cx);
+        let icon = self.clone();
+        let on_close_window = match &self {
+            ControlIcon::Close { on_close_window } => on_close_window.clone(),
             _ => None,
         };
 
         div()
             .id(self.id())
             .flex()
-            .cursor_pointer()
             .w(TITLE_BAR_HEIGHT)
             .h_full()
             .justify_center()
             .content_center()
             .items_center()
             .text_color(fg)
+            .when(is_windows, |this| {
+                this.window_control_area(self.window_control_area())
+            })
             .when(is_linux, |this| {
                 this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     window.prevent_default();
                     cx.stop_propagation();
                 })
-                .on_click(move |_, window, cx| match icon {
-                    Self::Minimize => window.minimize_window(),
-                    Self::Restore => window.zoom_window(),
-                    Self::Maximize => window.zoom_window(),
-                    Self::Close { .. } => {
-                        if let Some(f) = on_close_window.clone() {
-                            f(&ClickEvent::default(), window, cx);
-                        } else {
-                            window.remove_window();
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    match icon {
+                        Self::Minimize => window.minimize_window(),
+                        Self::Restore | Self::Maximize => window.zoom_window(),
+                        Self::Close { .. } => {
+                            if let Some(f) = on_close_window.clone() {
+                                f(&ClickEvent::default(), window, cx);
+                            } else {
+                                window.remove_window();
+                            }
                         }
                     }
                 })
@@ -202,7 +214,7 @@ struct WindowControls {
 }
 
 impl RenderOnce for WindowControls {
-    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
         if cfg!(target_os = "macos") {
             return div().id("window-controls");
         }
@@ -217,14 +229,14 @@ impl RenderOnce for WindowControls {
                     .justify_center()
                     .content_stretch()
                     .h_full()
-                    .child(Control::minimize())
+                    .child(ControlIcon::minimize())
                     .child(if window.is_maximized() {
-                        Control::restore()
+                        ControlIcon::restore()
                     } else {
-                        Control::maximize()
+                        ControlIcon::maximize()
                     }),
             )
-            .child(Control::close(self.on_close_window))
+            .child(ControlIcon::close(self.on_close_window))
     }
 }
 
@@ -242,6 +254,8 @@ impl ParentElement for TitleBar {
 
 impl RenderOnce for TitleBar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        const HEIGHT: Pixels = px(34.);
+
         let is_linux = cfg!(target_os = "linux");
 
         div().flex_shrink_0().child(
@@ -253,13 +267,19 @@ impl RenderOnce for TitleBar {
                 .h(HEIGHT)
                 .bg(cx.theme().title_bar)
                 .when(window.is_fullscreen(), |this| this.pl(px(12.)))
-                .on_double_click(|_, window, _cx| window.zoom_window())
+                .when(is_linux, |this| {
+                    this.on_double_click(|_, window, _| window.zoom_window())
+                })
                 .child(
                     h_flex()
-                        .h_full()
+                        .id("bar")
+                        .pl(TITLE_BAR_LEFT_PADDING)
+                        .when(window.is_fullscreen(), |this| this.pl(px(12.)))
+                        .window_control_area(WindowControlArea::Drag)
                         .justify_between()
                         .flex_shrink_0()
                         .flex_1()
+                        .h_full()
                         .when(is_linux, |this| {
                             this.child(
                                 div()
