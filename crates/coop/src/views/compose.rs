@@ -360,7 +360,6 @@ impl Render for Compose {
                     )
                     .map(|this| {
                         let contacts = self.contacts.read(cx).clone();
-                        let view = cx.entity();
 
                         if contacts.is_empty() {
                             this.child(
@@ -389,15 +388,15 @@ impl Render for Compose {
                         } else {
                             this.child(
                                 uniform_list(
-                                    view,
                                     "contacts",
                                     contacts.len(),
-                                    move |this, range, _window, cx| {
+                                    cx.processor(move |this, range, _window, cx| {
                                         let selected = this.selected.read(cx);
                                         let mut items = Vec::new();
 
                                         for ix in range {
-                                            let item = contacts.get(ix).unwrap().clone();
+                                            let profile: &Profile = contacts.get(ix).unwrap();
+                                            let item = profile.clone();
                                             let is_select = selected.contains(&item.public_key());
 
                                             items.push(
@@ -446,7 +445,7 @@ impl Render for Compose {
                                         }
 
                                         items
-                                    },
+                                    }),
                                 )
                                 .pb_4()
                                 .min_h(px(280.)),

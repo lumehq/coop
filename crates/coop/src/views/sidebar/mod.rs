@@ -410,7 +410,7 @@ impl Sidebar {
         })
     }
 
-    fn render_uniform_item(
+    fn list_items(
         &self,
         rooms: &[Entity<Room>],
         range: Range<usize>,
@@ -634,12 +634,11 @@ impl Render for Sidebar {
                     })
                     .child(
                         uniform_list(
-                            cx.entity(),
                             "rooms",
                             rooms.len(),
-                            move |this, range, _window, cx| {
-                                this.render_uniform_item(&rooms, range, cx)
-                            },
+                            cx.processor(move |this, range, _window, cx| {
+                                this.list_items(&rooms, range, cx)
+                            }),
                         )
                         .h_full(),
                     ),

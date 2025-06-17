@@ -226,45 +226,48 @@ impl Relays {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> UniformList {
-        let view = cx.entity();
         let total = relays.len();
 
-        uniform_list(view, "relays", total, move |_, range, _window, cx| {
-            let mut items = Vec::new();
+        uniform_list(
+            "relays",
+            total,
+            cx.processor(move |_, range, _window, cx| {
+                let mut items = Vec::new();
 
-            for ix in range {
-                let item = relays.get(ix).unwrap().clone().to_string();
+                for ix in range {
+                    let item = relays.get(ix).map(|i: &RelayUrl| i.to_string()).unwrap();
 
-                items.push(
-                    div().group("").w_full().h_9().py_0p5().child(
-                        div()
-                            .px_2()
-                            .h_full()
-                            .w_full()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .rounded(cx.theme().radius)
-                            .bg(cx.theme().elevated_surface_background)
-                            .text_xs()
-                            .child(item)
-                            .child(
-                                Button::new("remove_{ix}")
-                                    .icon(IconName::Close)
-                                    .xsmall()
-                                    .ghost()
-                                    .invisible()
-                                    .group_hover("", |this| this.visible())
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.remove(ix, window, cx)
-                                    })),
-                            ),
-                    ),
-                )
-            }
+                    items.push(
+                        div().group("").w_full().h_9().py_0p5().child(
+                            div()
+                                .px_2()
+                                .h_full()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().elevated_surface_background)
+                                .text_xs()
+                                .child(item)
+                                .child(
+                                    Button::new("remove_{ix}")
+                                        .icon(IconName::Close)
+                                        .xsmall()
+                                        .ghost()
+                                        .invisible()
+                                        .group_hover("", |this| this.visible())
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.remove(ix, window, cx)
+                                        })),
+                                ),
+                        ),
+                    )
+                }
 
-            items
-        })
+                items
+            }),
+        )
         .w_full()
         .min_h(px(MIN_HEIGHT))
     }
