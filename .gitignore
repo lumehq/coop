@@ -19,3 +19,5 @@ dist/
 
 # Useless stuffs
 .DS_Store
+# Added by goreleaser init:
+.intentionally-empty-file.o

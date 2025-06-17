@@ -397,7 +397,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "auto_update"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "common",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "chats"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "client_keys"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "global",
@@ -1114,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1167,7 +1167,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "coop"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "auto_update",
@@ -2243,7 +2243,7 @@ checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
 name = "global"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -2909,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "identity"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "client_keys",
@@ -5516,7 +5516,7 @@ dependencies = [
 
 [[package]]
 name = "settings"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "global",
@@ -6059,7 +6059,7 @@ dependencies = [
 
 [[package]]
 name = "theme"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "gpui",
@@ -6488,7 +6488,7 @@ dependencies = [
 
 [[package]]
 name = "ui"
-version = "0.1.5"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
