@@ -1,6 +1,6 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, relative, svg, App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    div, svg, App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use theme::ActiveTheme;
@@ -65,35 +65,29 @@ impl Selectable for Checkbox {
 
 impl RenderOnce for Checkbox {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (color, icon_color) = if self.disabled {
-            (cx.theme().ghost_element_disabled, cx.theme().text_muted)
+        let icon_color = if self.disabled {
+            cx.theme().icon_muted
         } else {
-            (cx.theme().text_accent, cx.theme().surface_background)
+            cx.theme().icon_accent
         };
 
         h_flex()
             .id(self.id)
             .gap_2()
             .items_center()
-            .line_height(relative(1.))
             .child(
                 v_flex()
-                    .relative()
-                    .border_1()
-                    .border_color(color)
-                    .rounded_sm()
-                    .size_4()
                     .flex_shrink_0()
-                    .map(|this| match self.checked {
-                        false => this.bg(cx.theme().ghost_element_background),
-                        _ => this.bg(color),
-                    })
+                    .relative()
+                    .rounded_sm()
+                    .size_5()
+                    .bg(cx.theme().elevated_surface_background)
                     .child(
                         svg()
                             .absolute()
-                            .top_px()
-                            .left_px()
-                            .size_3()
+                            .top_0p5()
+                            .left_0p5()
+                            .size_4()
                             .text_color(icon_color)
                             .map(|this| match self.checked {
                                 true => this.path(IconName::Check.path()),
@@ -108,7 +102,7 @@ impl RenderOnce for Checkbox {
                             .w_full()
                             .overflow_x_hidden()
                             .text_ellipsis()
-                            .line_height(relative(1.))
+                            .text_sm()
                             .child(label),
                     )
                 } else {

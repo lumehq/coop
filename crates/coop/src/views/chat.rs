@@ -17,6 +17,7 @@ use gpui::{
     ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
@@ -220,7 +221,7 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(account) = shared_state().identity() else {
+        let Some(account) = Identity::get_global(cx).profile() else {
             return false;
         };
 
@@ -372,7 +373,7 @@ impl Chat {
 
         self.uploading(true, cx);
 
-        let nip96 = AppSettings::get_global(cx).settings().media_server.clone();
+        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -546,8 +547,8 @@ impl Chat {
             return div().id(ix);
         };
 
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
-        let hide_avatar = AppSettings::get_global(cx).settings().hide_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
 
         let message = message.borrow();
 

@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use global::shared_state;
+use global::{constants::SETTINGS_D, shared_state};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -7,6 +7,7 @@ use smallvec::{smallvec, SmallVec};
 
 pub fn init(cx: &mut App) {
     let state = cx.new(AppSettings::new);
+
     // Observe for state changes and save settings to database
     state.update(cx, |this, cx| {
         this.subscriptions
@@ -25,6 +26,7 @@ pub struct Settings {
     pub hide_user_avatars: bool,
     pub only_show_trusted: bool,
     pub backup_messages: bool,
+    pub auto_login: bool,
 }
 
 impl AsRef<Settings> for Settings {
@@ -40,7 +42,7 @@ impl Global for GlobalAppSettings {}
 pub struct AppSettings {
     pub settings: Settings,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl AppSettings {
@@ -54,7 +56,7 @@ impl AppSettings {
         cx.global::<GlobalAppSettings>().0.read(cx)
     }
 
-    /// Set the global Settings instance
+    /// Set the Global Settings instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalAppSettings(state));
     }
@@ -66,6 +68,7 @@ impl AppSettings {
             hide_user_avatars: false,
             only_show_trusted: false,
             backup_messages: true,
+            auto_login: false,
         };
 
         let mut subscriptions = smallvec![];
@@ -80,15 +83,11 @@ impl AppSettings {
         }
     }
 
-    pub fn settings(&self) -> &Settings {
-        self.settings.as_ref()
-    }
-
-    fn get_settings_from_db(&self, cx: &mut Context<Self>) {
+    pub(crate) fn get_settings_from_db(&self, cx: &mut Context<Self>) {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier("coop-settings")
+                .identifier(SETTINGS_D)
                 .limit(1);
 
             if let Some(event) = shared_state()
@@ -117,19 +116,13 @@ impl AppSettings {
         .detach();
     }
 
-    fn set_settings(&self, cx: &mut Context<Self>) {
+    pub(crate) fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.settings) {
             cx.background_spawn(async move {
-                let Some(identity) = shared_state().identity() else {
-                    return;
-                };
-
                 let keys = Keys::generate();
-                let ident = Tag::identifier("coop-settings");
 
                 if let Ok(event) = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                    .tags(vec![ident])
-                    .build(identity.public_key())
+                    .tags(vec![Tag::identifier(SETTINGS_D)])
                     .sign(&keys)
                     .await
                 {

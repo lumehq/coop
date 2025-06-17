@@ -306,7 +306,7 @@ impl Render for Compose {
         const DESCRIPTION: &str =
             "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
 
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         let label: SharedString = if self.selected.read(cx).len() > 1 {
             "Create Group DM".into()

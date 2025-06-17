@@ -1,6 +1,5 @@
 use async_utility::task::spawn;
 use common::nip96_upload;
-use global::constants::KEYRING_USER_PATH;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -8,6 +7,7 @@ use gpui::{
     FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
     Styled, Window,
 };
+use identity::Identity;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
@@ -16,7 +16,7 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
 use ui::popup_menu::PopupMenu;
-use ui::{Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
@@ -65,37 +65,71 @@ impl NewAccount {
         }
     }
 
-    fn submit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_submitting(true, cx);
 
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
 
-        let keys = Keys::generate();
         let mut metadata = Metadata::new().display_name(name).about(bio);
 
         if let Ok(url) = Url::parse(&avatar) {
             metadata = metadata.picture(url);
         };
 
-        let save_credential = cx.write_credentials(
-            KEYRING_USER_PATH,
-            keys.public_key().to_hex().as_str(),
-            keys.secret_key().as_secret_bytes(),
-        );
+        let current_view = cx.entity().downgrade();
+        let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let weak_input = pwd_input.downgrade();
 
-        cx.background_spawn(async move {
-            if let Err(e) = save_credential.await {
-                log::error!("Failed to save keys: {}", e)
-            };
-            shared_state().new_account(keys, metadata).await;
-        })
-        .detach();
+        window.open_modal(cx, move |this, _window, _cx| {
+            let metadata = metadata.clone();
+            let weak_input = weak_input.clone();
+            let view_cancel = current_view.clone();
+
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .confirm()
+                .on_cancel(move |_, window, cx| {
+                    view_cancel
+                        .update(cx, |_this, cx| {
+                            window.push_notification("Password is invalid", cx)
+                        })
+                        .ok();
+                    true
+                })
+                .on_ok(move |_, _window, cx| {
+                    let metadata = metadata.clone();
+                    let value = weak_input
+                        .read_with(cx, |state, _cx| state.value().to_owned())
+                        .ok();
+
+                    if let Some(password) = value {
+                        Identity::global(cx).update(cx, |this, cx| {
+                            this.new_identity(Keys::generate(), password.to_string(), metadata, cx);
+                        });
+                    }
+
+                    true
+                })
+                .child(
+                    div()
+                        .pt_4()
+                        .px_4()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .text_sm()
+                        .child("Set password to encrypt your key *")
+                        .child(TextInput::new(&pwd_input).small()),
+                )
+        });
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nip96 = AppSettings::get_global(cx).settings().media_server.clone();
+        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
         let avatar_input = self.avatar_input.downgrade();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,

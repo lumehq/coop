@@ -1,13 +1,11 @@
 use common::profile::RenderProfile;
-use global::{
-    constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER},
-    shared_state,
-};
+use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
 use gpui::{
     div, http_client::Url, prelude::FluentBuilder, px, relative, rems, App, AppContext, Context,
     Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window,
 };
+use identity::Identity;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::{
@@ -33,7 +31,7 @@ impl Preferences {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| {
             let media_server = AppSettings::get_global(cx)
-                .settings()
+                .settings
                 .media_server
                 .to_string();
 
@@ -84,7 +82,7 @@ impl Render for Preferences {
             "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)";
 
         let input_state = self.media_input.downgrade();
-        let settings = AppSettings::get_global(cx).settings();
+        let settings = AppSettings::get_global(cx).settings.as_ref();
 
         div()
             .track_focus(&self.focus_handle)
@@ -106,7 +104,7 @@ impl Render for Preferences {
                             .font_semibold()
                             .child("Account"),
                     )
-                    .when_some(shared_state().identity(), |this, profile| {
+                    .when_some(Identity::get_global(cx).profile(), |this, profile| {
                         this.child(
                             div()
                                 .w_full()

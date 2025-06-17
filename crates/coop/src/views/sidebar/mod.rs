@@ -17,6 +17,7 @@ use gpui::{
     RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
     Window,
 };
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -70,7 +71,7 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let trusted_only = AppSettings::get_global(cx).settings().only_show_trusted;
+        let trusted_only = AppSettings::get_global(cx).settings.only_show_trusted;
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
@@ -349,7 +350,7 @@ impl Sidebar {
     }
 
     fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_global(cx).settings().proxy_user_avatars;
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         div()
             .px_3()
@@ -491,10 +492,9 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(
-                shared_state().identity.read_blocking().as_ref(),
-                |this, profile| this.child(self.render_account(profile, cx)),
-            )
+            .when_some(Identity::get_global(cx).profile(), |this, profile| {
+                this.child(self.render_account(&profile, cx))
+            })
             // Search Input
             .child(
                 div().px_3().w_full().h_7().flex_none().child(
