@@ -63,7 +63,7 @@ pub struct ToggleModal {
 
 pub struct ChatSpace {
     dock: Entity<DockArea>,
-    titlebar: bool,
+    toolbar: bool,
     #[allow(unused)]
     subscriptions: SmallVec<[Subscription; 4]>,
 }
@@ -189,14 +189,14 @@ impl ChatSpace {
             Self {
                 dock,
                 subscriptions,
-                titlebar: false,
+                toolbar: false,
             }
         })
     }
 
     pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Disable the titlebar
-        self.titlebar(false, cx);
+        // No active user, disable user's toolbar
+        self.toolbar(false, cx);
 
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
@@ -208,8 +208,8 @@ impl ChatSpace {
     }
 
     pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Enable the titlebar
-        self.titlebar(true, cx);
+        // Enable the toolbar for logged in users
+        self.toolbar(true, cx);
 
         let weak_dock = self.dock.downgrade();
         let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
@@ -266,8 +266,8 @@ impl ChatSpace {
         });
     }
 
-    fn titlebar(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.titlebar = status;
+    fn toolbar(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.toolbar = status;
         cx.notify();
     }
 
@@ -335,13 +335,13 @@ impl Render for ChatSpace {
                     .flex_col()
                     .size_full()
                     // Title Bar
-                    .when(self.titlebar, |this| {
-                        this.child(
-                            TitleBar::new()
-                                // Left side
-                                .child(div())
-                                // Right side
-                                .child(
+                    .child(
+                        TitleBar::new()
+                            // Left side
+                            .child(div())
+                            // Right side
+                            .when(self.toolbar, |this| {
+                                this.child(
                                     div()
                                         .flex()
                                         .items_center()
@@ -384,9 +384,9 @@ impl Render for ChatSpace {
                                                     this.logout(window, cx);
                                                 })),
                                         ),
-                                ),
-                        )
-                    })
+                                )
+                            }),
+                    )
                     // Dock
                     .child(self.dock.clone()),
             )
