@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::{
     constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT},
-    shared_state, NostrSignal,
+    shared_state,
 };
 use gpui::{
     div, prelude::FluentBuilder, red, App, AppContext, Context, Entity, Global, ParentElement,
@@ -335,28 +335,18 @@ impl Identity {
             // Update signer
             shared_state().client.set_signer(signer).await;
 
+            // Subscribe for user's data
+            shared_state().subscribe_for_user_data(public_key).await;
+
             // Fetch user's metadata
             let metadata = shared_state()
                 .client
-                .fetch_metadata(public_key, Duration::from_secs(2))
+                .fetch_metadata(public_key, Duration::from_secs(3))
                 .await?
                 .unwrap_or_default();
 
             // Create user's profile with public key and metadata
-            let profile = Profile::new(public_key, metadata);
-
-            // Subscribe for user's data
-            nostr_sdk::async_utility::task::spawn(async move {
-                shared_state().subscribe_for_user_data(public_key).await;
-            });
-
-            // Notify GPUi via the global channel
-            shared_state()
-                .global_sender
-                .send(NostrSignal::SignerUpdated)
-                .await?;
-
-            Ok(profile)
+            Ok(Profile::new(public_key, metadata))
         });
 
         cx.spawn_in(window, async move |this, cx| match task.await {
@@ -424,14 +414,7 @@ impl Identity {
                 log::error!("Failed to send messaging relay list event: {}", e);
             };
 
-            // Notify GPUi via the global channel
-            shared_state()
-                .global_sender
-                .send(NostrSignal::SignerUpdated)
-                .await
-                .ok();
-
-            // Subscribe
+            // Subscribe for user's data
             shared_state()
                 .subscribe_for_user_data(profile.public_key())
                 .await;

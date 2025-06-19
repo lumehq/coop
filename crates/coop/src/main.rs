@@ -100,10 +100,6 @@ fn main() {
                 // Initialize chat state
                 chats::init(cx);
 
-                // Initialize chatspace (or workspace)
-                let chatspace = chatspace::init(window, cx);
-                let async_chatspace = chatspace.downgrade();
-
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
                     while let Ok(signal) = shared_state().global_receiver.recv().await {
@@ -112,33 +108,22 @@ fn main() {
                             let auto_updater = AutoUpdater::global(cx);
 
                             match signal {
-                                NostrSignal::SignerUpdated => {
-                                    async_chatspace
-                                        .update(cx, |this, cx| {
-                                            this.open_chats(window, cx);
-                                        })
-                                        .ok();
-                                }
-                                NostrSignal::SignerUnset => {
-                                    async_chatspace
-                                        .update(cx, |this, cx| {
-                                            this.open_onboarding(window, cx);
-                                        })
-                                        .ok();
-                                }
-                                NostrSignal::Eose => {
-                                    chats.update(cx, |this, cx| {
-                                        this.load_rooms(window, cx);
-                                    });
-                                }
                                 NostrSignal::Event(event) => {
                                     chats.update(cx, |this, cx| {
                                         this.event_to_message(event, window, cx);
                                     });
                                 }
+                                NostrSignal::Notice(_) => {
+                                    // window.push_notification(msg, cx);
+                                }
                                 NostrSignal::AppUpdate(event) => {
                                     auto_updater.update(cx, |this, cx| {
                                         this.update(event, cx);
+                                    });
+                                }
+                                NostrSignal::Finish => {
+                                    chats.update(cx, |this, cx| {
+                                        this.load_rooms(window, cx);
                                     });
                                 }
                             };
@@ -148,7 +133,7 @@ fn main() {
                 })
                 .detach();
 
-                Root::new(chatspace.into(), window, cx)
+                Root::new(chatspace::init(window, cx).into(), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");
