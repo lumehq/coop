@@ -49,7 +49,7 @@ pub struct ChatRegistry {
     /// Indicates if rooms are currently being loaded
     ///
     /// Always equal to `true` when the app starts
-    pub wait_for_eose: bool,
+    pub loading: bool,
     /// Subscriptions for observing changes
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
@@ -91,7 +91,7 @@ impl ChatRegistry {
 
         Self {
             rooms: vec![],
-            wait_for_eose: true,
+            loading: true,
             subscriptions,
         }
     }
@@ -162,12 +162,12 @@ impl ChatRegistry {
     /// 3. Determines each room's type based on message frequency and trust status
     /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let client = &shared_state().client;
         let Some(public_key) = Identity::get_global(cx).profile().map(|i| i.public_key()) else {
             return;
         };
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
+            let client = shared_state().client();
             // Get messages sent by the user
             let send = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
@@ -239,7 +239,6 @@ impl ChatRegistry {
                 .expect("Failed to load chat rooms. Please restart the application.");
 
             this.update(cx, |this, cx| {
-                this.wait_for_eose = false;
                 this.rooms.extend(
                     rooms
                         .into_iter()
@@ -323,5 +322,10 @@ impl ChatRegistry {
             cx.emit(RoomEmitter::Request(kind));
             cx.notify();
         }
+    }
+
+    pub fn stop_loading(&mut self, cx: &mut Context<Self>) {
+        self.loading = false;
+        cx.notify();
     }
 }

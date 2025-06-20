@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use async_utility::task::spawn;
 use chats::message::Message;
 use chats::room::{Room, RoomKind, SendError};
 use common::nip96_upload;
@@ -391,8 +390,8 @@ impl Chat {
                         let (tx, rx) = oneshot::channel::<Option<Url>>();
 
                         // Spawn task via async utility instead of GPUI context
-                        spawn(async move {
-                            let url = match nip96_upload(&shared_state().client, nip96, file_data)
+                        nostr_sdk::async_utility::task::spawn(async move {
+                            let url = match nip96_upload(shared_state().client(), nip96, file_data)
                                 .await
                             {
                                 Ok(url) => Some(url),

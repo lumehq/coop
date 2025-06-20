@@ -126,9 +126,10 @@ impl AutoUpdater {
         self.set_status(AutoUpdateStatus::Downloading, cx);
 
         let task: Task<Result<(TempDir, PathBuf), Error>> = cx.background_spawn(async move {
+            let database = shared_state().client().database();
             let ids = event.tags.event_ids().copied();
             let filter = Filter::new().ids(ids).kind(Kind::FileMetadata);
-            let events = shared_state().client.database().query(filter).await?;
+            let events = database.query(filter).await?;
 
             if let Some(event) = events.into_iter().find(|event| event.content == OS) {
                 let tag = event.tags.find(TagKind::Url).context("url not found")?;

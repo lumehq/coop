@@ -56,4 +56,4 @@ pub const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";
 
 pub(crate) const GLOBAL_CHANNEL_LIMIT: usize = 2048;
-pub(crate) const BATCH_CHANNEL_LIMIT: usize = 1024;
+pub(crate) const BATCH_CHANNEL_LIMIT: usize = 2048;

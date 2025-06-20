@@ -38,21 +38,21 @@ pub enum NostrSignal {
 /// Global application state containing Nostr client and shared resources
 pub struct Globals {
     /// The Nostr SDK client
-    pub client: Client,
+    client: Client,
     /// Determines if this is the first time user run Coop
-    pub first_run: bool,
+    first_run: bool,
     /// Channel sender for broadcasting global Nostr events to UI
-    pub global_sender: smol::channel::Sender<NostrSignal>,
+    global_sender: smol::channel::Sender<NostrSignal>,
     /// Channel receiver for handling global Nostr events
-    pub global_receiver: smol::channel::Receiver<NostrSignal>,
+    global_receiver: smol::channel::Receiver<NostrSignal>,
     /// Cache of user profiles mapped by their public keys
-    pub persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
+    persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
 
-    pub(crate) batch_sender: smol::channel::Sender<Vec<PublicKey>>,
-    pub(crate) batch_receiver: smol::channel::Receiver<Vec<PublicKey>>,
+    batch_sender: smol::channel::Sender<PublicKey>,
+    batch_receiver: smol::channel::Receiver<PublicKey>,
 
-    pub(crate) event_sender: smol::channel::Sender<Event>,
-    pub(crate) event_receiver: smol::channel::Receiver<Event>,
+    event_sender: smol::channel::Sender<Event>,
+    event_receiver: smol::channel::Receiver<Event>,
 }
 
 /// Returns the global singleton instance, initializing it if necessary
@@ -73,7 +73,7 @@ pub fn shared_state() -> &'static Globals {
             smol::channel::bounded::<NostrSignal>(GLOBAL_CHANNEL_LIMIT);
 
         let (batch_sender, batch_receiver) =
-            smol::channel::bounded::<Vec<PublicKey>>(BATCH_CHANNEL_LIMIT);
+            smol::channel::bounded::<PublicKey>(BATCH_CHANNEL_LIMIT);
 
         let (event_sender, event_receiver) = smol::channel::unbounded::<Event>();
 
@@ -104,42 +104,60 @@ impl Globals {
         let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
 
         while let Ok(notification) = notifications.recv().await {
-            if let RelayPoolNotification::Message {
-                message:
+            if let RelayPoolNotification::Message { message, .. } = notification {
+                match message {
                     RelayMessage::Event {
                         event,
                         subscription_id,
-                    },
-                ..
-            } = notification
-            {
-                if processed_events.contains(&event.id) {
-                    continue;
-                }
-                // Skip events that have already been processed
-                processed_events.insert(event.id);
+                    } => {
+                        if processed_events.contains(&event.id) {
+                            continue;
+                        }
+                        // Skip events that have already been processed
+                        processed_events.insert(event.id);
 
-                match event.kind {
-                    Kind::GiftWrap => {
-                        if *subscription_id == new_messages_sub_id {
-                            self.unwrap_event(&event, true).await;
-                        } else {
-                            self.event_sender.send(event.into_owned()).await.ok();
+                        match event.kind {
+                            Kind::GiftWrap => {
+                                if *subscription_id == new_messages_sub_id {
+                                    self.unwrap_event(&event, true).await;
+                                } else {
+                                    self.event_sender.send(event.into_owned()).await.ok();
+                                }
+                            }
+                            Kind::Metadata => {
+                                self.insert_person_from_event(&event).await;
+                            }
+                            Kind::ContactList => {
+                                self.extract_pubkeys_and_sync(&event).await;
+                            }
+                            Kind::ReleaseArtifactSet => {
+                                self.notify_update(&event).await;
+                            }
+                            _ => {}
                         }
                     }
-                    Kind::ContactList => {
-                        self.extract_pubkeys_and_sync(&event).await;
-                    }
-                    Kind::Metadata => {
-                        self.insert_person(&event).await;
-                    }
-                    Kind::ReleaseArtifactSet => {
-                        self.notify_update(&event).await;
+                    RelayMessage::EndOfStoredEvents(_) => {
+                        // Placeholder
                     }
                     _ => {}
                 }
             }
         }
+    }
+
+    /// Gets a reference to the Nostr Client instance
+    pub fn client(&'static self) -> &'static Client {
+        &self.client
+    }
+
+    /// Gets the global signal receiver
+    pub fn signal(&self) -> smol::channel::Receiver<NostrSignal> {
+        self.global_receiver.clone()
+    }
+
+    /// Returns whether this is the first time the application has been run
+    pub fn first_run(&self) -> bool {
+        self.first_run
     }
 
     /// Batch metadata requests. Combine all requests from multiple authors into single filter
@@ -152,15 +170,15 @@ impl Globals {
                 let timeout = smol::Timer::after(duration);
                 /// Internal events for the metadata batching system
                 enum BatchEvent {
-                    NewKeys(Vec<PublicKey>),
+                    NewKeys(PublicKey),
                     Timeout,
                     Closed,
                 }
 
                 let event = smol::future::or(
                     async {
-                        if let Ok(public_keys) = shared_state().batch_receiver.recv().await {
-                            BatchEvent::NewKeys(public_keys)
+                        if let Ok(public_key) = shared_state().batch_receiver.recv().await {
+                            BatchEvent::NewKeys(public_key)
                         } else {
                             BatchEvent::Closed
                         }
@@ -173,8 +191,8 @@ impl Globals {
                 .await;
 
                 match event {
-                    BatchEvent::NewKeys(public_keys) => {
-                        batch.extend(public_keys);
+                    BatchEvent::NewKeys(public_key) => {
+                        batch.insert(public_key);
                         // Process immediately if batch limit reached
                         if batch.len() >= METADATA_BATCH_LIMIT {
                             shared_state()
@@ -259,6 +277,7 @@ impl Globals {
                 }
 
                 if last_event_time.elapsed() >= timeout_duration {
+                    shared_state().event_receiver.close();
                     break;
                 }
             }
@@ -285,6 +304,41 @@ impl Globals {
         };
 
         Profile::new(*public_key, metadata)
+    }
+
+    /// Check if a person exists or not
+    pub async fn has_person(&self, public_key: &PublicKey) -> bool {
+        self.persons.read().await.contains_key(public_key)
+    }
+
+    /// Inserts or updates a person's metadata
+    pub async fn insert_person(&self, public_key: PublicKey, metadata: Option<Metadata>) {
+        self.persons
+            .write()
+            .await
+            .entry(public_key)
+            .and_modify(|entry| {
+                if entry.is_none() {
+                    *entry = metadata.clone();
+                }
+            })
+            .or_insert_with(|| metadata);
+    }
+
+    /// Inserts or updates a person's metadata from a Kind::Metadata event
+    pub(crate) async fn insert_person_from_event(&self, event: &Event) {
+        let metadata = Metadata::from_json(&event.content).ok();
+
+        self.persons
+            .write()
+            .await
+            .entry(event.pubkey)
+            .and_modify(|entry| {
+                if entry.is_none() {
+                    *entry = metadata.clone();
+                }
+            })
+            .or_insert_with(|| metadata);
     }
 
     /// Connects to bootstrap and configured relays
@@ -402,7 +456,7 @@ impl Globals {
         let filter = Filter::new().kind(Kind::Metadata).limit(100);
         if let Ok(events) = self.client.database().query(filter).await {
             for event in events.into_iter() {
-                self.insert_person(&event).await;
+                self.insert_person_from_event(&event).await;
             }
         }
     }
@@ -437,7 +491,7 @@ impl Globals {
         if let Some(event) = self.client.database().query(filter).await?.first_owned() {
             Ok(Event::from_json(event.content)?)
         } else {
-            Err(anyhow!("Event not found"))
+            Err(anyhow!("Event is not cached yet"))
         }
     }
 
@@ -462,16 +516,16 @@ impl Globals {
             }
         };
 
-        let mut pubkeys = vec![];
-        pubkeys.extend(event.tags.public_keys());
-        pubkeys.push(event.pubkey);
-
-        // Send all pubkeys to the batch to sync metadata
-        self.batch_sender.send(pubkeys).await.ok();
-
         // Save the event to the database, use for query directly.
         if let Err(e) = self.client.database().save_event(&event).await {
             log::error!("Failed to save event: {e}")
+        }
+
+        // Send all pubkeys to the batch to sync metadata
+        self.batch_sender.send(event.pubkey).await.ok();
+
+        for public_key in event.tags.public_keys().copied() {
+            self.batch_sender.send(public_key).await.ok();
         }
 
         // Send a notify to GPUI if this is a new message
@@ -488,8 +542,9 @@ impl Globals {
         if let Ok(signer) = self.client.signer().await {
             if let Ok(public_key) = signer.get_public_key().await {
                 if public_key == event.pubkey {
-                    let pubkeys = event.tags.public_keys().copied().collect::<Vec<_>>();
-                    self.batch_sender.send(pubkeys).await.ok();
+                    for public_key in event.tags.public_keys().copied() {
+                        self.batch_sender.send(public_key).await.ok();
+                    }
                 }
             }
         }
@@ -516,22 +571,6 @@ impl Globals {
         {
             log::error!("Failed to sync metadata: {e}");
         }
-    }
-
-    /// Inserts or updates a person's metadata from a Kind::Metadata event
-    pub(crate) async fn insert_person(&self, event: &Event) {
-        let metadata = Metadata::from_json(&event.content).ok();
-
-        self.persons
-            .write()
-            .await
-            .entry(event.pubkey)
-            .and_modify(|entry| {
-                if entry.is_none() {
-                    *entry = metadata.clone();
-                }
-            })
-            .or_insert_with(|| metadata);
     }
 
     /// Notifies UI of application updates via global channel

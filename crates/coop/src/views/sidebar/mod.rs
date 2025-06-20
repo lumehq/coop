@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
-use async_utility::task::spawn;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
@@ -145,13 +144,14 @@ impl Sidebar {
         let query = self.find_input.read(cx).value().clone();
 
         cx.background_spawn(async move {
+            let client = shared_state().client();
+
             let filter = Filter::new()
                 .kind(Kind::Metadata)
                 .search(query.to_lowercase())
                 .limit(FIND_LIMIT);
 
-            let events = shared_state()
-                .client
+            let events = client
                 .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
                 .await?
                 .into_iter()
@@ -161,12 +161,8 @@ impl Sidebar {
             let mut rooms = BTreeSet::new();
             let (tx, rx) = smol::channel::bounded::<Room>(10);
 
-            spawn(async move {
-                let signer = shared_state()
-                    .client
-                    .signer()
-                    .await
-                    .expect("signer is required");
+            nostr_sdk::async_utility::task::spawn(async move {
+                let signer = client.signer().await.expect("signer is required");
                 let public_key = signer.get_public_key().await.expect("error");
 
                 for event in events.into_iter() {
@@ -406,7 +402,14 @@ impl Sidebar {
                 .items_center()
                 .gap_2()
                 .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                .child(Skeleton::new().w_40().h_4().rounded_sm())
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .justify_between()
+                        .child(Skeleton::new().w_32().h_2p5().rounded_sm())
+                        .child(Skeleton::new().w_6().h_2p5().rounded_sm()),
+                )
         })
     }
 
@@ -488,6 +491,7 @@ impl Render for Sidebar {
         div()
             .image_cache(self.image_cache.clone())
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .gap_3()
@@ -528,6 +532,7 @@ impl Render for Sidebar {
                     items
                 }))
             })
+            // Chat Rooms
             .child(
                 div()
                     .px_2()
@@ -623,13 +628,13 @@ impl Render for Sidebar {
                                 )
                             }),
                     )
-                    .when(chats.wait_for_eose, |this| {
+                    .when(chats.loading, |this| {
                         this.child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .children(self.render_skeleton(10)),
+                                .children(self.render_skeleton(3)),
                         )
                     })
                     .child(
@@ -643,5 +648,23 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
+            // Loading Indicator
+            .when(chats.loading, |this| {
+                this.child(
+                    div().absolute().bottom_2().px_2().child(
+                        div()
+                            .w_full()
+                            .h_8()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .text_sm()
+                            .font_semibold()
+                            .bg(cx.theme().elevated_surface_background.opacity(0.75))
+                            .child("Processing..."),
+                    ),
+                )
+            })
     }
 }

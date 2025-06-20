@@ -102,7 +102,7 @@ fn main() {
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
-                    while let Ok(signal) = shared_state().global_receiver.recv().await {
+                    while let Ok(signal) = shared_state().signal().recv().await {
                         cx.update(|window, cx| {
                             let chats = ChatRegistry::global(cx);
                             let auto_updater = AutoUpdater::global(cx);
@@ -124,6 +124,7 @@ fn main() {
                                 NostrSignal::Finish => {
                                     chats.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
+                                        this.stop_loading(cx);
                                     });
                                 }
                             };
