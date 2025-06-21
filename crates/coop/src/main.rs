@@ -3,9 +3,9 @@ use std::sync::Arc;
 use asset::Assets;
 use auto_update::AutoUpdater;
 use chats::ChatRegistry;
-use global::constants::APP_ID;
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
+use global::constants::{ALL_MESSAGES_SUB_ID, APP_ID};
 use global::{shared_state, NostrSignal};
 use gpui::{
     actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
@@ -15,6 +15,7 @@ use gpui::{
 use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
+use nostr_sdk::SubscriptionId;
 use theme::Theme;
 use ui::Root;
 
@@ -28,17 +29,19 @@ fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    // Initialize the Global State and process events in a separate thread.
-    // Must be run under async utility runtime
-    nostr_sdk::async_utility::task::spawn(async move {
-        shared_state().start().await;
-    });
-
     // Initialize the Application
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
+    // Initialize the Global State and process events in a separate thread.
+    app.background_executor()
+        .spawn(async move {
+            shared_state().start().await;
+        })
+        .detach();
+
+    // Run application
     app.run(move |cx| {
         // Register the `quit` function
         cx.on_action(quit);
@@ -102,6 +105,8 @@ fn main() {
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
+                    let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+
                     while let Ok(signal) = shared_state().signal().recv().await {
                         cx.update(|window, cx| {
                             let chats = ChatRegistry::global(cx);
@@ -113,18 +118,32 @@ fn main() {
                                         this.event_to_message(event, window, cx);
                                     });
                                 }
-                                NostrSignal::Notice(_) => {
+                                // Load chat rooms and set as finished
+                                NostrSignal::Finish => {
+                                    chats.update(cx, |this, cx| {
+                                        this.set_finish(true, cx);
+                                        this.load_rooms(window, cx);
+                                    });
+                                }
+                                // Load chat rooms without setting as finished
+                                NostrSignal::PartialFinish => {
+                                    chats.update(cx, |this, cx| {
+                                        this.load_rooms(window, cx);
+                                    });
+                                }
+                                NostrSignal::Eose(subscription_id) => {
+                                    if subscription_id == all_messages_sub_id {
+                                        chats.update(cx, |this, cx| {
+                                            this.load_rooms(window, cx);
+                                        });
+                                    }
+                                }
+                                NostrSignal::Notice(_msg) => {
                                     // window.push_notification(msg, cx);
                                 }
                                 NostrSignal::AppUpdate(event) => {
                                     auto_updater.update(cx, |this, cx| {
                                         this.update(event, cx);
-                                    });
-                                }
-                                NostrSignal::Finish => {
-                                    chats.update(cx, |this, cx| {
-                                        this.load_rooms(window, cx);
-                                        this.stop_loading(cx);
                                     });
                                 }
                             };

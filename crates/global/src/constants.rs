@@ -40,9 +40,9 @@ pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
 
 /// Total metadata requests will be grouped.
-pub const METADATA_BATCH_LIMIT: usize = 200;
+pub const METADATA_BATCH_LIMIT: usize = 100;
 /// Maximum timeout for grouping metadata requests.
-pub const METADATA_BATCH_TIMEOUT: u64 = 300;
+pub const METADATA_BATCH_TIMEOUT: u64 = 400;
 
 /// Default width for all modals.
 pub const DEFAULT_MODAL_WIDTH: f32 = 420.;

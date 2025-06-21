@@ -11,10 +11,10 @@ use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
-    RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
-    Window,
+    div, px, relative, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context,
+    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
+    Render, RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Task, Window,
 };
 use identity::Identity;
 use itertools::Itertools;
@@ -25,6 +25,7 @@ use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::indicator::Indicator;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::skeleton::Skeleton;
@@ -476,7 +477,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::get_global(cx);
-
+        // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
             results.to_owned()
         } else {
@@ -634,7 +635,7 @@ impl Render for Sidebar {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .children(self.render_skeleton(3)),
+                                .children(self.render_skeleton(5)),
                         )
                     })
                     .child(
@@ -648,21 +649,36 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
-            // Loading Indicator
-            .when(chats.loading, |this| {
+            .when(!chats.finished, |this| {
                 this.child(
-                    div().absolute().bottom_2().px_2().child(
+                    div().absolute().bottom_4().px_4().child(
                         div()
+                            .p_1()
                             .w_full()
-                            .h_8()
+                            .rounded_full()
                             .flex()
+                            .flex_col()
                             .items_center()
                             .justify_center()
-                            .rounded_full()
-                            .text_sm()
-                            .font_semibold()
-                            .bg(cx.theme().elevated_surface_background.opacity(0.75))
-                            .child("Processing..."),
+                            .text_center()
+                            .bg(cx.theme().panel_background)
+                            .shadow_sm()
+                            .text_xs()
+                            .child(
+                                div()
+                                    .font_semibold()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .line_height(relative(1.2))
+                                    .child(Indicator::new().xsmall())
+                                    .child("Retrieving messages..."),
+                            )
+                            .child(
+                                div()
+                                    .text_color(cx.theme().text_muted)
+                                    .child("This may take some time"),
+                            ),
                     ),
                 )
             })

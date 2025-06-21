@@ -25,14 +25,18 @@ static GLOBALS: OnceLock<Globals> = OnceLock::new();
 /// Signals sent through the global event channel to notify UI components
 #[derive(Debug)]
 pub enum NostrSignal {
-    /// New Nostr event received
+    /// New gift wrap event received
     Event(Event),
+    /// Finished processing all gift wrap events
+    Finish,
+    /// Partially finished processing all gift wrap events
+    PartialFinish,
+    /// Receives EOSE response from relay pool
+    Eose(SubscriptionId),
     /// Notice from Relay Pool
     Notice(String),
     /// Application update event received
     AppUpdate(Event),
-    /// Finished processing all gift wrap events
-    Finish,
 }
 
 /// Global application state containing Nostr client and shared resources
@@ -41,12 +45,12 @@ pub struct Globals {
     client: Client,
     /// Determines if this is the first time user run Coop
     first_run: bool,
+    /// Cache of user profiles mapped by their public keys
+    persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
     /// Channel sender for broadcasting global Nostr events to UI
     global_sender: smol::channel::Sender<NostrSignal>,
     /// Channel receiver for handling global Nostr events
     global_receiver: smol::channel::Receiver<NostrSignal>,
-    /// Cache of user profiles mapped by their public keys
-    persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
 
     batch_sender: smol::channel::Sender<PublicKey>,
     batch_receiver: smol::channel::Receiver<PublicKey>,
@@ -136,8 +140,11 @@ impl Globals {
                             _ => {}
                         }
                     }
-                    RelayMessage::EndOfStoredEvents(_) => {
-                        // Placeholder
+                    RelayMessage::EndOfStoredEvents(subscription_id) => {
+                        self.global_sender
+                            .send(NostrSignal::Eose(subscription_id.into_owned()))
+                            .await
+                            .ok();
                     }
                     _ => {}
                 }
@@ -163,8 +170,8 @@ impl Globals {
     /// Batch metadata requests. Combine all requests from multiple authors into single filter
     pub(crate) fn batching_metadata(&self) -> Task<()> {
         smol::spawn(async move {
-            let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
             let duration = Duration::from_millis(METADATA_BATCH_TIMEOUT);
+            let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
 
             loop {
                 let timeout = smol::Timer::after(duration);
@@ -223,64 +230,53 @@ impl Globals {
     /// Process to unwrap the gift wrapped events
     pub(crate) fn process_gift_wrap_events(&self) -> Task<()> {
         smol::spawn(async move {
-            let duration = Duration::from_millis(800); // 800ms
-            let timeout_duration = Duration::from_secs(90); // 1.5 minutes
-            let mut last_event_time = Instant::now();
+            let timeout_duration = Duration::from_millis(700);
+            let mut counter = 0;
 
             loop {
                 if shared_state().client.signer().await.is_err() {
                     break;
-                };
-
-                let timeout = smol::Timer::after(duration);
-                /// Internal events for processing system
-                enum ProcessEvent {
-                    NewEvent(Box<Event>),
-                    Timeout,
-                    Closed,
                 }
 
+                let timeout = smol::Timer::after(timeout_duration);
                 let event = smol::future::or(
-                    async {
-                        if let Ok(event) = shared_state().event_receiver.recv().await {
-                            ProcessEvent::NewEvent(Box::new(event))
-                        } else {
-                            ProcessEvent::Closed
-                        }
-                    },
+                    async { (shared_state().event_receiver.recv().await).ok() },
                     async {
                         timeout.await;
-                        ProcessEvent::Timeout
+                        None
                     },
                 )
                 .await;
 
                 match event {
-                    ProcessEvent::NewEvent(event) => {
-                        // Trying to unwrap gift wrap event
+                    Some(event) => {
+                        // Process the gift wrap event unwrapping
                         shared_state().unwrap_event(&event, false).await;
-                        // Update timer
-                        last_event_time = Instant::now();
-
-                        continue;
+                        // Increment the total messages counter
+                        counter += 1;
+                        // Send partial finish signal to GPUI
+                        if counter >= 20 {
+                            shared_state()
+                                .global_sender
+                                .send(NostrSignal::PartialFinish)
+                                .await
+                                .ok();
+                        }
                     }
-                    ProcessEvent::Timeout => {
+                    None => {
                         shared_state()
                             .global_sender
                             .send(NostrSignal::Finish)
                             .await
                             .ok();
-                    }
-                    ProcessEvent::Closed => {
+
                         break;
                     }
                 }
-
-                if last_event_time.elapsed() >= timeout_duration {
-                    shared_state().event_receiver.close();
-                    break;
-                }
             }
+
+            // Event channel is no longer needed when all gift wrap events have been processed
+            shared_state().event_receiver.close();
         })
     }
 

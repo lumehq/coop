@@ -46,10 +46,17 @@ pub enum RoomEmitter {
 pub struct ChatRegistry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
+
     /// Indicates if rooms are currently being loaded
     ///
     /// Always equal to `true` when the app starts
     pub loading: bool,
+
+    /// Indicates if rooms have finished loading
+    ///
+    /// Always equal to `false` when the app starts
+    pub finished: bool,
+
     /// Subscriptions for observing changes
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
@@ -92,6 +99,7 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
+            finished: false,
             subscriptions,
         }
     }
@@ -252,6 +260,9 @@ impl ChatRegistry {
                         })
                         .collect_vec(),
                 );
+                // Disable loading indicator
+                // NOTE: all remaining gift wrap events are still being processed in the background
+                this.set_loading(false, cx);
 
                 cx.notify();
             })
@@ -324,8 +335,13 @@ impl ChatRegistry {
         }
     }
 
-    pub fn stop_loading(&mut self, cx: &mut Context<Self>) {
-        self.loading = false;
+    pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.loading = status;
+        cx.notify();
+    }
+
+    pub fn set_finish(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.finished = status;
         cx.notify();
     }
 }
