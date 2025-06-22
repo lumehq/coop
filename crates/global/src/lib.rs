@@ -252,13 +252,13 @@ impl Globals {
     /// Process to unwrap the gift wrapped events
     pub(crate) fn process_gift_wrap_events(&self) -> Task<()> {
         smol::spawn(async move {
-            let timeout_duration = Duration::from_millis(700);
+            let timeout_duration = Duration::from_secs(75); // 75 secs
             let mut counter = 0;
 
             loop {
                 // Signer is unset, probably user is not ready to retrieve gift wrap events
                 if shared_state().client.signer().await.is_err() {
-                    break;
+                    continue;
                 }
 
                 let timeout = smol::Timer::after(timeout_duration);
@@ -276,9 +276,13 @@ impl Globals {
                 match event {
                     Some(event) => {
                         // Process the gift wrap event unwrapping
-                        shared_state().unwrap_event(&event, false).await;
-                        // Increment the total messages counter
-                        counter += 1;
+                        let is_cached = shared_state().unwrap_event(&event, false).await;
+
+                        // Increment the total messages counter if message is not from cache
+                        if !is_cached {
+                            counter += 1;
+                        }
+
                         // Send partial finish signal to GPUI
                         if counter >= 20 {
                             shared_state().send_signal(NostrSignal::PartialFinish).await;
@@ -509,23 +513,38 @@ impl Globals {
         }
     }
 
-    /// Unwraps a gift-wrapped event and processes its contents
-    pub(crate) async fn unwrap_event(&self, event: &Event, incoming: bool) {
+    /// Unwraps a gift-wrapped event and processes its contents.
+    ///
+    /// # Arguments
+    /// * `event` - The gift-wrapped event to unwrap
+    /// * `incoming` - Whether this is a newly received event (true) or old
+    ///
+    /// # Returns
+    /// Returns `true` if the event was successfully loaded from cache or saved after unwrapping.
+    pub(crate) async fn unwrap_event(&self, event: &Event, incoming: bool) -> bool {
+        let mut is_cached = false;
+
         let event = match self.get_unwrapped(event.id).await {
-            Ok(event) => event,
+            Ok(event) => {
+                is_cached = true;
+                event
+            }
             Err(_) => {
-                let keys = Keys::generate();
                 match self.client.unwrap_gift_wrap(event).await {
                     Ok(unwrap) => {
+                        let keys = Keys::generate();
                         let Ok(unwrapped) = unwrap.rumor.sign_with_keys(&keys) else {
-                            return;
+                            return false;
                         };
+
                         // Save this event to the database for future use.
-                        _ = self.set_unwrapped(event.id, &unwrapped, &keys).await;
+                        if let Err(e) = self.set_unwrapped(event.id, &unwrapped, &keys).await {
+                            log::error!("Failed to save event: {e}")
+                        }
 
                         unwrapped
                     }
-                    Err(_) => return,
+                    Err(_) => return false,
                 }
             }
         };
@@ -546,6 +565,8 @@ impl Globals {
         if incoming {
             self.send_signal(NostrSignal::Event(event)).await;
         }
+
+        is_cached
     }
 
     /// Extracts public keys from contact list and queues metadata sync

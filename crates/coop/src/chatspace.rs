@@ -151,6 +151,11 @@ impl ChatSpace {
                     if !state.read(cx).has_profile() {
                         this.open_onboarding(window, cx);
                     } else {
+                        // Load all chat rooms from database
+                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                            this.load_rooms(window, cx);
+                        });
+                        // Open chat panels
                         this.open_chats(window, cx);
                     }
                 },

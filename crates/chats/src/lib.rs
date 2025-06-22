@@ -1,5 +1,5 @@
-use std::cmp::Reverse;
 use std::collections::BTreeSet;
+use std::{cmp::Reverse, collections::HashMap};
 
 use anyhow::Error;
 use common::room_hash;
@@ -54,7 +54,7 @@ pub struct ChatRegistry {
 
     /// Subscriptions for observing changes
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl EventEmitter<RoomEmitter> for ChatRegistry {}
@@ -78,13 +78,6 @@ impl ChatRegistry {
     /// Create a new ChatRegistry instance
     fn new(cx: &mut Context<Self>) -> Self {
         let mut subscriptions = smallvec![];
-
-        // When the ChatRegistry is created, load all rooms from the local database
-        subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
-            if let Some(window) = window {
-                this.load_rooms(window, cx);
-            }
-        }));
 
         // When any Room is created, load metadata for all members
         subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
@@ -166,13 +159,10 @@ impl ChatRegistry {
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         log::info!("Starting to load rooms from database...");
 
-        let Some(public_key) = Identity::get_global(cx).profile().map(|id| id.public_key()) else {
-            log::warn!("Load rooms called when user is not logged in");
-            return;
-        };
-
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             let client = shared_state().client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
             // Get messages sent by the user
             let send = Filter::new()
@@ -212,7 +202,7 @@ impl ChatRegistry {
                     // Check if room's author is seen in any contact list
                     let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
                     // If room's author is seen at least once, mark as trusted
-                    is_trust = client.database().count(filter).await? >= 1;
+                    is_trust = client.database().count(filter).await.unwrap_or(0) >= 1;
 
                     if is_trust {
                         trusted_keys.insert(event.pubkey);
@@ -226,7 +216,7 @@ impl ChatRegistry {
                     .pubkeys(public_keys);
 
                 // If current user has sent a message at least once, mark as ongoing
-                let is_ongoing = client.database().count(filter).await? >= 1;
+                let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
 
                 if is_ongoing {
                     rooms.insert(Room::new(&event).kind(RoomKind::Ongoing));
@@ -259,20 +249,25 @@ impl ChatRegistry {
     }
 
     pub(crate) fn extend_rooms(&mut self, rooms: BTreeSet<Room>, cx: &mut Context<Self>) {
-        self.rooms.extend(
-            rooms
-                .into_iter()
-                .sorted_by_key(|room| Reverse(room.created_at))
-                .filter_map(|room| {
-                    if !self.rooms.iter().any(|this| this.read(cx).id == room.id) {
-                        Some(cx.new(|_| room))
-                    } else {
-                        None
-                    }
-                })
-                .collect_vec(),
-        );
-        cx.notify();
+        let mut room_map: HashMap<u64, usize> = HashMap::with_capacity(self.rooms.len());
+
+        for (index, room) in self.rooms.iter().enumerate() {
+            room_map.insert(room.read(cx).id, index);
+        }
+
+        for new_room in rooms.into_iter() {
+            // Check if we already have a room with this ID
+            if let Some(&index) = room_map.get(&new_room.id) {
+                self.rooms[index].update(cx, |this, cx| {
+                    *this = new_room;
+                    cx.notify();
+                });
+            } else {
+                let new_index = self.rooms.len();
+                room_map.insert(new_room.id, new_index);
+                self.rooms.push(cx.new(|_| new_room));
+            }
+        }
     }
 
     /// Push a new Room to the global registry
