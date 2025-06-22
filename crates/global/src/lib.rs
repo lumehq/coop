@@ -8,6 +8,7 @@ use constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
+use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
@@ -43,12 +44,16 @@ pub enum NostrSignal {
 pub struct Globals {
     /// The Nostr SDK client
     client: Client,
+
     /// Determines if this is the first time user run Coop
     first_run: bool,
+
     /// Cache of user profiles mapped by their public keys
     persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
+
     /// Channel sender for broadcasting global Nostr events to UI
     global_sender: smol::channel::Sender<NostrSignal>,
+
     /// Channel receiver for handling global Nostr events
     global_receiver: smol::channel::Receiver<NostrSignal>,
 
@@ -122,10 +127,14 @@ impl Globals {
 
                         match event.kind {
                             Kind::GiftWrap => {
-                                if *subscription_id == new_messages_sub_id {
+                                if *subscription_id == new_messages_sub_id
+                                    || self
+                                        .event_sender
+                                        .send(event.clone().into_owned())
+                                        .await
+                                        .is_err()
+                                {
                                     self.unwrap_event(&event, true).await;
-                                } else {
-                                    self.event_sender.send(event.into_owned()).await.ok();
                                 }
                             }
                             Kind::Metadata => {
@@ -141,10 +150,8 @@ impl Globals {
                         }
                     }
                     RelayMessage::EndOfStoredEvents(subscription_id) => {
-                        self.global_sender
-                            .send(NostrSignal::Eose(subscription_id.into_owned()))
-                            .await
-                            .ok();
+                        self.send_signal(NostrSignal::Eose(subscription_id.into_owned()))
+                            .await;
                     }
                     _ => {}
                 }
@@ -157,14 +164,29 @@ impl Globals {
         &self.client
     }
 
+    /// Returns whether this is the first time the application has been run
+    pub fn first_run(&self) -> bool {
+        self.first_run
+    }
+
     /// Gets the global signal receiver
     pub fn signal(&self) -> smol::channel::Receiver<NostrSignal> {
         self.global_receiver.clone()
     }
 
-    /// Returns whether this is the first time the application has been run
-    pub fn first_run(&self) -> bool {
-        self.first_run
+    /// Sends a signal through the global channel to notify GPUI
+    ///
+    /// # Arguments
+    /// * `signal` - The [`NostrSignal`] to send to GPUI
+    ///
+    /// # Examples
+    /// ```
+    /// shared_state().send_signal(NostrSignal::Finish).await;
+    /// ```
+    pub async fn send_signal(&self, signal: NostrSignal) {
+        if let Err(e) = self.global_sender.send(signal).await {
+            log::error!("Failed to send signal: {e}")
+        }
     }
 
     /// Batch metadata requests. Combine all requests from multiple authors into single filter
@@ -234,11 +256,14 @@ impl Globals {
             let mut counter = 0;
 
             loop {
+                // Signer is unset, probably user is not ready to retrieve gift wrap events
                 if shared_state().client.signer().await.is_err() {
                     break;
                 }
 
                 let timeout = smol::Timer::after(timeout_duration);
+
+                // TODO: Find a way to make this code prettier
                 let event = smol::future::or(
                     async { (shared_state().event_receiver.recv().await).ok() },
                     async {
@@ -256,20 +281,13 @@ impl Globals {
                         counter += 1;
                         // Send partial finish signal to GPUI
                         if counter >= 20 {
-                            shared_state()
-                                .global_sender
-                                .send(NostrSignal::PartialFinish)
-                                .await
-                                .ok();
+                            shared_state().send_signal(NostrSignal::PartialFinish).await;
+                            // Reset counter
+                            counter = 0;
                         }
                     }
                     None => {
-                        shared_state()
-                            .global_sender
-                            .send(NostrSignal::Finish)
-                            .await
-                            .ok();
-
+                        shared_state().send_signal(NostrSignal::Finish).await;
                         break;
                     }
                 }
@@ -526,10 +544,7 @@ impl Globals {
 
         // Send a notify to GPUI if this is a new message
         if incoming {
-            self.global_sender
-                .send(NostrSignal::Event(event))
-                .await
-                .ok();
+            self.send_signal(NostrSignal::Event(event)).await;
         }
     }
 
@@ -583,10 +598,8 @@ impl Globals {
         {
             log::error!("Failed to subscribe for file metadata: {}", e);
         } else {
-            self.global_sender
-                .send(NostrSignal::AppUpdate(event.to_owned()))
-                .await
-                .ok();
+            self.send_signal(NostrSignal::AppUpdate(event.to_owned()))
+                .await;
         }
     }
 }

@@ -52,11 +52,6 @@ pub struct ChatRegistry {
     /// Always equal to `true` when the app starts
     pub loading: bool,
 
-    /// Indicates if rooms have finished loading
-    ///
-    /// Always equal to `false` when the app starts
-    pub finished: bool,
-
     /// Subscriptions for observing changes
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
@@ -99,7 +94,6 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
-            finished: false,
             subscriptions,
         }
     }
@@ -170,12 +164,16 @@ impl ChatRegistry {
     /// 3. Determines each room's type based on message frequency and trust status
     /// 4. Creates Room entities for each unique room
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(public_key) = Identity::get_global(cx).profile().map(|i| i.public_key()) else {
+        log::info!("Starting to load rooms from database...");
+
+        let Some(public_key) = Identity::get_global(cx).profile().map(|id| id.public_key()) else {
+            log::warn!("Load rooms called when user is not logged in");
             return;
         };
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             let client = shared_state().client();
+
             // Get messages sent by the user
             let send = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
@@ -226,6 +224,7 @@ impl ChatRegistry {
                     .kind(Kind::PrivateDirectMessage)
                     .author(public_key)
                     .pubkeys(public_keys);
+
                 // If current user has sent a message at least once, mark as ongoing
                 let is_ongoing = client.database().count(filter).await? >= 1;
 
@@ -242,33 +241,38 @@ impl ChatRegistry {
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            let rooms = task
-                .await
-                .expect("Failed to load chat rooms. Please restart the application.");
-
-            this.update(cx, |this, cx| {
-                this.rooms.extend(
-                    rooms
-                        .into_iter()
-                        .sorted_by_key(|room| Reverse(room.created_at))
-                        .filter_map(|room| {
-                            if !this.rooms.iter().any(|this| this.read(cx).id == room.id) {
-                                Some(cx.new(|_| room))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect_vec(),
-                );
-                // Disable loading indicator
-                // NOTE: all remaining gift wrap events are still being processed in the background
-                this.set_loading(false, cx);
-
-                cx.notify();
-            })
-            .ok();
+            match task.await {
+                Ok(rooms) => {
+                    this.update(cx, |this, cx| {
+                        this.extend_rooms(rooms, cx);
+                        this.sort(cx);
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    // TODO: push notification
+                    log::error!("Failed to load rooms: {e}")
+                }
+            };
         })
         .detach();
+    }
+
+    pub(crate) fn extend_rooms(&mut self, rooms: BTreeSet<Room>, cx: &mut Context<Self>) {
+        self.rooms.extend(
+            rooms
+                .into_iter()
+                .sorted_by_key(|room| Reverse(room.created_at))
+                .filter_map(|room| {
+                    if !self.rooms.iter().any(|this| this.read(cx).id == room.id) {
+                        Some(cx.new(|_| room))
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec(),
+        );
+        cx.notify();
     }
 
     /// Push a new Room to the global registry
@@ -337,11 +341,6 @@ impl ChatRegistry {
 
     pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.loading = status;
-        cx.notify();
-    }
-
-    pub fn set_finish(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.finished = status;
         cx.notify();
     }
 }

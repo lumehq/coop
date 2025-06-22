@@ -632,10 +632,11 @@ impl Render for Sidebar {
                     .when(chats.loading, |this| {
                         this.child(
                             div()
+                                .flex_1()
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .children(self.render_skeleton(5)),
+                                .children(self.render_skeleton(1)),
                         )
                     })
                     .child(
@@ -649,7 +650,7 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
-            .when(!chats.finished, |this| {
+            .when(chats.loading, |this| {
                 this.child(
                     div().absolute().bottom_4().px_4().child(
                         div()

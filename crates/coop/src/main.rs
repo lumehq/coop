@@ -118,11 +118,11 @@ fn main() {
                                         this.event_to_message(event, window, cx);
                                     });
                                 }
-                                // Load chat rooms and set as finished
+                                // Load chat rooms and stop the loading status
                                 NostrSignal::Finish => {
                                     chats.update(cx, |this, cx| {
-                                        this.set_finish(true, cx);
                                         this.load_rooms(window, cx);
+                                        this.set_loading(false, cx);
                                     });
                                 }
                                 // Load chat rooms without setting as finished
