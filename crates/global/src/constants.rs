@@ -31,8 +31,8 @@ pub const SEARCH_RELAYS: [&str; 1] = ["wss://relay.nostr.band"];
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 
-/// Default timeout for Nostr Connect
-pub const NOSTR_CONNECT_TIMEOUT: u64 = 300;
+/// Default timeout (in seconds) for Nostr Connect
+pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 
 /// Unique ID for new message subscription.
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";

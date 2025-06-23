@@ -99,11 +99,6 @@ impl ChatRegistry {
             .cloned()
     }
 
-    /// Get room by its position.
-    pub fn room_by_ix(&self, ix: usize, _cx: &App) -> Option<&Entity<Room>> {
-        self.rooms.get(ix)
-    }
-
     /// Get all ongoing rooms.
     pub fn ongoing_rooms(&self, cx: &App) -> Vec<Entity<Room>> {
         self.rooms

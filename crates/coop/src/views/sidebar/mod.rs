@@ -346,7 +346,46 @@ impl Sidebar {
         });
     }
 
-    fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
+    fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, _window, cx| {
+            const BODY_1: &str =
+                "Coop is downloading all your messages from the messaging relays. \
+                Depending on your total number of messages, this process may take up to \
+                15 minutes if you're using Nostr Connect.";
+            const BODY_2: &str =
+                "Please be patient - you only need to do this full download once. \
+                Next time, Coop will only download new messages.";
+            const DESCRIPTION: &str = "You still can use the app normally \
+                while messages are processing in the background";
+
+            this.child(
+                div()
+                    .pt_8()
+                    .pb_4()
+                    .px_4()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .text_sm()
+                            .child(BODY_1)
+                            .child(BODY_2),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(DESCRIPTION),
+                    ),
+            )
+        });
+    }
+
+    fn account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         div()
@@ -393,7 +432,7 @@ impl Sidebar {
             )
     }
 
-    fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
+    fn skeletons(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
                 .h_9()
@@ -498,7 +537,7 @@ impl Render for Sidebar {
             .gap_3()
             // Account
             .when_some(Identity::get_global(cx).profile(), |this, profile| {
-                this.child(self.render_account(&profile, cx))
+                this.child(self.account(&profile, cx))
             })
             // Search Input
             .child(
@@ -636,7 +675,7 @@ impl Render for Sidebar {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .children(self.render_skeleton(1)),
+                                .children(self.skeletons(1)),
                         )
                     })
                     .child(
@@ -658,27 +697,50 @@ impl Render for Sidebar {
                             .w_full()
                             .rounded_full()
                             .flex()
-                            .flex_col()
                             .items_center()
-                            .justify_center()
-                            .text_center()
+                            .justify_between()
                             .bg(cx.theme().panel_background)
                             .shadow_sm()
-                            .text_xs()
+                            // Empty div
+                            .child(div().size_6().flex_shrink_0())
+                            // Loading indicator
                             .child(
                                 div()
-                                    .font_semibold()
+                                    .flex_1()
                                     .flex()
+                                    .flex_col()
                                     .items_center()
-                                    .gap_1()
-                                    .line_height(relative(1.2))
-                                    .child(Indicator::new().xsmall())
-                                    .child("Retrieving messages..."),
+                                    .justify_center()
+                                    .text_xs()
+                                    .text_center()
+                                    .child(
+                                        div()
+                                            .font_semibold()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .line_height(relative(1.2))
+                                            .child(Indicator::new().xsmall())
+                                            .child("Retrieving messages..."),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_muted)
+                                            .child("This may take some time"),
+                                    ),
                             )
+                            // Info button
                             .child(
-                                div()
-                                    .text_color(cx.theme().text_muted)
-                                    .child("This may take some time"),
+                                Button::new("help")
+                                    .icon(IconName::Info)
+                                    .tooltip("Why you're seeing this")
+                                    .small()
+                                    .ghost()
+                                    .rounded(ButtonRounded::Full)
+                                    .flex_shrink_0()
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.open_loading_modal(window, cx)
+                                    })),
                             ),
                     ),
                 )
