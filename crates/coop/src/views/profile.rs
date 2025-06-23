@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use async_utility::task::spawn;
 use common::nip96_upload;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
@@ -56,10 +55,10 @@ impl Profile {
             };
 
             let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
-                let signer = shared_state().client.signer().await?;
+                let client = shared_state().client();
+                let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let metadata = shared_state()
-                    .client
+                let metadata = client
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?;
 
@@ -124,9 +123,9 @@ impl Profile {
                     if let Ok(file_data) = fs::read(path).await {
                         let (tx, rx) = oneshot::channel::<Url>();
 
-                        spawn(async move {
+                        nostr_sdk::async_utility::task::spawn(async move {
                             if let Ok(url) =
-                                nip96_upload(&shared_state().client, nip96, file_data).await
+                                nip96_upload(shared_state().client(), nip96, file_data).await
                             {
                                 _ = tx.send(url);
                             }
@@ -193,7 +192,7 @@ impl Profile {
         }
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let _ = shared_state().client.set_metadata(&new_metadata).await?;
+            let _ = shared_state().client().set_metadata(&new_metadata).await?;
             Ok(())
         });
 

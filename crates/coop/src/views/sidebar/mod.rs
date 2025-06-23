@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
-use async_utility::task::spawn;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
@@ -12,10 +11,10 @@ use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
-    RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
-    Window,
+    div, px, relative, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context,
+    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
+    Render, RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Task, Window,
 };
 use identity::Identity;
 use itertools::Itertools;
@@ -26,6 +25,7 @@ use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::indicator::Indicator;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::skeleton::Skeleton;
@@ -145,13 +145,14 @@ impl Sidebar {
         let query = self.find_input.read(cx).value().clone();
 
         cx.background_spawn(async move {
+            let client = shared_state().client();
+
             let filter = Filter::new()
                 .kind(Kind::Metadata)
                 .search(query.to_lowercase())
                 .limit(FIND_LIMIT);
 
-            let events = shared_state()
-                .client
+            let events = client
                 .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
                 .await?
                 .into_iter()
@@ -161,12 +162,8 @@ impl Sidebar {
             let mut rooms = BTreeSet::new();
             let (tx, rx) = smol::channel::bounded::<Room>(10);
 
-            spawn(async move {
-                let signer = shared_state()
-                    .client
-                    .signer()
-                    .await
-                    .expect("signer is required");
+            nostr_sdk::async_utility::task::spawn(async move {
+                let signer = client.signer().await.expect("signer is required");
                 let public_key = signer.get_public_key().await.expect("error");
 
                 for event in events.into_iter() {
@@ -349,7 +346,46 @@ impl Sidebar {
         });
     }
 
-    fn render_account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
+    fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, _window, cx| {
+            const BODY_1: &str =
+                "Coop is downloading all your messages from the messaging relays. \
+                Depending on your total number of messages, this process may take up to \
+                15 minutes if you're using Nostr Connect.";
+            const BODY_2: &str =
+                "Please be patient - you only need to do this full download once. \
+                Next time, Coop will only download new messages.";
+            const DESCRIPTION: &str = "You still can use the app normally \
+                while messages are processing in the background";
+
+            this.child(
+                div()
+                    .pt_8()
+                    .pb_4()
+                    .px_4()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .text_sm()
+                            .child(BODY_1)
+                            .child(BODY_2),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(DESCRIPTION),
+                    ),
+            )
+        });
+    }
+
+    fn account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
         div()
@@ -396,7 +432,7 @@ impl Sidebar {
             )
     }
 
-    fn render_skeleton(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
+    fn skeletons(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
                 .h_9()
@@ -406,7 +442,14 @@ impl Sidebar {
                 .items_center()
                 .gap_2()
                 .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                .child(Skeleton::new().w_40().h_4().rounded_sm())
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .justify_between()
+                        .child(Skeleton::new().w_32().h_2p5().rounded_sm())
+                        .child(Skeleton::new().w_6().h_2p5().rounded_sm()),
+                )
         })
     }
 
@@ -473,7 +516,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::get_global(cx);
-
+        // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
             results.to_owned()
         } else {
@@ -488,12 +531,13 @@ impl Render for Sidebar {
         div()
             .image_cache(self.image_cache.clone())
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .gap_3()
             // Account
             .when_some(Identity::get_global(cx).profile(), |this, profile| {
-                this.child(self.render_account(&profile, cx))
+                this.child(self.account(&profile, cx))
             })
             // Search Input
             .child(
@@ -528,6 +572,7 @@ impl Render for Sidebar {
                     items
                 }))
             })
+            // Chat Rooms
             .child(
                 div()
                     .px_2()
@@ -623,13 +668,14 @@ impl Render for Sidebar {
                                 )
                             }),
                     )
-                    .when(chats.wait_for_eose, |this| {
+                    .when(chats.loading, |this| {
                         this.child(
                             div()
+                                .flex_1()
                                 .flex()
                                 .flex_col()
                                 .gap_1()
-                                .children(self.render_skeleton(10)),
+                                .children(self.skeletons(1)),
                         )
                     })
                     .child(
@@ -643,5 +689,61 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
+            .when(chats.loading, |this| {
+                this.child(
+                    div().absolute().bottom_4().px_4().child(
+                        div()
+                            .p_1()
+                            .w_full()
+                            .rounded_full()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .bg(cx.theme().panel_background)
+                            .shadow_sm()
+                            // Empty div
+                            .child(div().size_6().flex_shrink_0())
+                            // Loading indicator
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_xs()
+                                    .text_center()
+                                    .child(
+                                        div()
+                                            .font_semibold()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .line_height(relative(1.2))
+                                            .child(Indicator::new().xsmall())
+                                            .child("Retrieving messages..."),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_muted)
+                                            .child("This may take some time"),
+                                    ),
+                            )
+                            // Info button
+                            .child(
+                                Button::new("help")
+                                    .icon(IconName::Info)
+                                    .tooltip("Why you're seeing this")
+                                    .small()
+                                    .ghost()
+                                    .rounded(ButtonRounded::Full)
+                                    .flex_shrink_0()
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.open_loading_modal(window, cx)
+                                    })),
+                            ),
+                    ),
+                )
+            })
     }
 }

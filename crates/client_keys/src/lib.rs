@@ -63,7 +63,7 @@ impl ClientKeys {
                     this.set_keys(Some(keys), false, cx);
                 })
                 .ok();
-            } else if shared_state().first_run {
+            } else if shared_state().first_run() {
                 // Generate a new keys and update
                 this.update(cx, |this, cx| {
                     this.new_keys(cx);

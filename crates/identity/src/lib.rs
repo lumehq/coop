@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::{
     constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT},
-    shared_state, NostrSignal,
+    shared_state,
 };
 use gpui::{
     div, prelude::FluentBuilder, red, App, AppContext, Context, Entity, Global, ParentElement,
@@ -77,18 +77,14 @@ impl Identity {
 
     pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task = cx.background_spawn(async move {
+            let database = shared_state().client().database();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_D)
                 .limit(1);
 
-            if let Some(event) = shared_state()
-                .client
-                .database()
-                .query(filter)
-                .await?
-                .first_owned()
-            {
+            if let Some(event) = database.query(filter).await?.first_owned() {
                 let secret = event.content;
                 let is_bunker = secret.starts_with("bunker://");
 
@@ -119,21 +115,17 @@ impl Identity {
 
     pub fn unload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task = cx.background_spawn(async move {
+            let client = shared_state().client();
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_D)
                 .limit(1);
 
             // Unset signer
-            shared_state().client.unset_signer().await;
+            client.unset_signer().await;
 
             // Delete account
-            shared_state()
-                .client
-                .database()
-                .delete(filter)
-                .await
-                .is_ok()
+            client.database().delete(filter).await.is_ok()
         });
 
         cx.spawn_in(window, async move |this, cx| {
@@ -330,33 +322,23 @@ impl Identity {
         S: NostrSigner + 'static,
     {
         let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
+            let client = shared_state().client();
             let public_key = signer.get_public_key().await?;
 
             // Update signer
-            shared_state().client.set_signer(signer).await;
+            client.set_signer(signer).await;
+
+            // Subscribe for user's data
+            shared_state().subscribe_for_user_data(public_key).await;
 
             // Fetch user's metadata
-            let metadata = shared_state()
-                .client
-                .fetch_metadata(public_key, Duration::from_secs(2))
+            let metadata = client
+                .fetch_metadata(public_key, Duration::from_secs(3))
                 .await?
                 .unwrap_or_default();
 
             // Create user's profile with public key and metadata
-            let profile = Profile::new(public_key, metadata);
-
-            // Subscribe for user's data
-            nostr_sdk::async_utility::task::spawn(async move {
-                shared_state().subscribe_for_user_data(public_key).await;
-            });
-
-            // Notify GPUi via the global channel
-            shared_state()
-                .global_sender
-                .send(NostrSignal::SignerUpdated)
-                .await?;
-
-            Ok(profile)
+            Ok(Profile::new(public_key, metadata))
         });
 
         cx.spawn_in(window, async move |this, cx| match task.await {
@@ -389,10 +371,12 @@ impl Identity {
         self.write_keys(&keys, password, cx);
 
         cx.background_spawn(async move {
+            let client = shared_state().client();
+
             // Update signer
-            shared_state().client.set_signer(keys).await;
+            client.set_signer(keys).await;
             // Set metadata
-            shared_state().client.set_metadata(&metadata).await.ok();
+            client.set_metadata(&metadata).await.ok();
 
             // Create relay list
             let builder = EventBuilder::new(Kind::RelayList, "").tags(
@@ -405,7 +389,7 @@ impl Identity {
                 }),
             );
 
-            if let Err(e) = shared_state().client.send_event_builder(builder).await {
+            if let Err(e) = client.send_event_builder(builder).await {
                 log::error!("Failed to send relay list event: {}", e);
             };
 
@@ -420,18 +404,11 @@ impl Identity {
                 }),
             );
 
-            if let Err(e) = shared_state().client.send_event_builder(builder).await {
+            if let Err(e) = client.send_event_builder(builder).await {
                 log::error!("Failed to send messaging relay list event: {}", e);
             };
 
-            // Notify GPUi via the global channel
-            shared_state()
-                .global_sender
-                .send(NostrSignal::SignerUpdated)
-                .await
-                .ok();
-
-            // Subscribe
+            // Subscribe for user's data
             shared_state()
                 .subscribe_for_user_data(profile.public_key())
                 .await;
@@ -453,14 +430,16 @@ impl Identity {
         }
 
         cx.background_spawn(async move {
+            let client = shared_state().client();
             let keys = Keys::generate();
+
             let builder = EventBuilder::new(Kind::ApplicationSpecificData, value).tags(vec![
                 Tag::identifier(ACCOUNT_D),
                 Tag::public_key(public_key),
             ]);
 
             if let Ok(event) = builder.sign(&keys).await {
-                if let Err(e) = shared_state().client.database().save_event(&event).await {
+                if let Err(e) = client.database().save_event(&event).await {
                     log::error!("Failed to save event: {e}");
                 };
             }
@@ -476,7 +455,9 @@ impl Identity {
             if let Ok(enc_key) =
                 EncryptedSecretKey::new(keys.secret_key(), &password, 16, KeySecurity::Medium)
             {
+                let client = shared_state().client();
                 let keys = Keys::generate();
+
                 let builder =
                     EventBuilder::new(Kind::ApplicationSpecificData, enc_key.to_bech32().unwrap())
                         .tags(vec![
@@ -485,7 +466,7 @@ impl Identity {
                         ]);
 
                 if let Ok(event) = builder.sign(&keys).await {
-                    if let Err(e) = shared_state().client.database().save_event(&event).await {
+                    if let Err(e) = client.database().save_event(&event).await {
                         log::error!("Failed to save event: {e}");
                     };
                 }

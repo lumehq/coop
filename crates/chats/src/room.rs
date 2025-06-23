@@ -324,30 +324,18 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// A Task that resolves to Result<Vec<(PublicKey, Option<Metadata>)>, Error>
-    #[allow(clippy::type_complexity)]
+    /// A Task that resolves to Result<(), Error>
     pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<(), Error>> {
         let public_keys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
-            for public_key in public_keys.iter() {
-                let metadata = shared_state()
-                    .client
-                    .database()
-                    .metadata(*public_key)
-                    .await?;
+            let database = shared_state().client().database();
 
-                shared_state()
-                    .persons
-                    .write()
-                    .await
-                    .entry(*public_key)
-                    .and_modify(|entry| {
-                        if entry.is_none() {
-                            *entry = metadata.clone();
-                        }
-                    })
-                    .or_insert_with(|| metadata);
+            for public_key in public_keys.iter().cloned() {
+                if !shared_state().has_person(&public_key).await {
+                    let metadata = database.metadata(public_key).await?;
+                    shared_state().insert_person(public_key, metadata).await;
+                }
             }
 
             Ok(())
@@ -368,6 +356,7 @@ impl Room {
         let pubkeys = Arc::clone(&self.members);
 
         cx.background_spawn(async move {
+            let database = shared_state().client().database();
             let mut result = Vec::with_capacity(pubkeys.len());
 
             for pubkey in pubkeys.iter() {
@@ -375,13 +364,7 @@ impl Room {
                     .kind(Kind::InboxRelays)
                     .author(*pubkey)
                     .limit(1);
-                let is_ready = shared_state()
-                    .client
-                    .database()
-                    .query(filter)
-                    .await?
-                    .first()
-                    .is_some();
+                let is_ready = database.query(filter).await?.first().is_some();
 
                 result.push((*pubkey, is_ready));
             }
@@ -410,11 +393,10 @@ impl Room {
         cx.background_spawn(async move {
             let mut messages = vec![];
             let parser = NostrParser::new();
+            let database = shared_state().client().database();
 
             // Get all events from database
-            let events = shared_state()
-                .client
-                .database()
+            let events = database
                 .query(filter)
                 .await?
                 .into_iter()
@@ -637,7 +619,8 @@ impl Room {
         let backup = AppSettings::get_global(cx).settings.backup_messages;
 
         cx.background_spawn(async move {
-            let signer = shared_state().client.signer().await?;
+            let client = shared_state().client();
+            let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
             let mut reports = vec![];
@@ -680,13 +663,11 @@ impl Room {
             };
 
             for receiver in receivers.iter() {
-                if let Err(e) = shared_state()
-                    .client
+                if let Err(e) = client
                     .send_private_msg(*receiver, &content, tags.clone())
                     .await
                 {
-                    let metadata = shared_state()
-                        .client
+                    let metadata = client
                         .database()
                         .metadata(*receiver)
                         .await?
@@ -703,13 +684,11 @@ impl Room {
 
             // Only send a backup message to current user if there are no issues when sending to others
             if backup && reports.is_empty() {
-                if let Err(e) = shared_state()
-                    .client
+                if let Err(e) = client
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await
                 {
-                    let metadata = shared_state()
-                        .client
+                    let metadata = client
                         .database()
                         .metadata(*current_user)
                         .await?

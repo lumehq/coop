@@ -8,9 +8,11 @@ use constants::{
     ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
+use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;
+use smol::Task;
 
 use crate::constants::{BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT};
 use crate::paths::support_dir;
@@ -24,36 +26,42 @@ static GLOBALS: OnceLock<Globals> = OnceLock::new();
 /// Signals sent through the global event channel to notify UI components
 #[derive(Debug)]
 pub enum NostrSignal {
-    /// User's signing keys have been updated
-    SignerUpdated,
-    /// User's signing keys have been unset
-    SignerUnset,
-    /// New Nostr event received
+    /// New gift wrap event received
     Event(Event),
+    /// Finished processing all gift wrap events
+    Finish,
+    /// Partially finished processing all gift wrap events
+    PartialFinish,
+    /// Receives EOSE response from relay pool
+    Eose(SubscriptionId),
+    /// Notice from Relay Pool
+    Notice(String),
     /// Application update event received
     AppUpdate(Event),
-    /// End of stored events received from relay
-    Eose,
 }
 
 /// Global application state containing Nostr client and shared resources
 pub struct Globals {
     /// The Nostr SDK client
-    pub client: Client,
+    client: Client,
+
     /// Determines if this is the first time user run Coop
-    pub first_run: bool,
-    /// Auto-close options for subscriptions
-    pub auto_close: Option<SubscribeAutoCloseOptions>,
-    /// Channel sender for broadcasting global Nostr events to UI
-    pub global_sender: smol::channel::Sender<NostrSignal>,
-    /// Channel receiver for handling global Nostr events
-    pub global_receiver: smol::channel::Receiver<NostrSignal>,
-    /// Channel sender for batching public keys for metadata fetching
-    pub batch_sender: smol::channel::Sender<Vec<PublicKey>>,
-    /// Channel receiver for processing batched public key requests
-    pub batch_receiver: smol::channel::Receiver<Vec<PublicKey>>,
+    first_run: bool,
+
     /// Cache of user profiles mapped by their public keys
-    pub persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
+    persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
+
+    /// Channel sender for broadcasting global Nostr events to UI
+    global_sender: smol::channel::Sender<NostrSignal>,
+
+    /// Channel receiver for handling global Nostr events
+    global_receiver: smol::channel::Receiver<NostrSignal>,
+
+    batch_sender: smol::channel::Sender<PublicKey>,
+    batch_receiver: smol::channel::Receiver<PublicKey>,
+
+    event_sender: smol::channel::Sender<Event>,
+    event_receiver: smol::channel::Receiver<Event>,
 }
 
 /// Returns the global singleton instance, initializing it if necessary
@@ -74,19 +82,20 @@ pub fn shared_state() -> &'static Globals {
             smol::channel::bounded::<NostrSignal>(GLOBAL_CHANNEL_LIMIT);
 
         let (batch_sender, batch_receiver) =
-            smol::channel::bounded::<Vec<PublicKey>>(BATCH_CHANNEL_LIMIT);
+            smol::channel::bounded::<PublicKey>(BATCH_CHANNEL_LIMIT);
+
+        let (event_sender, event_receiver) = smol::channel::unbounded::<Event>();
 
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
             persons: RwLock::new(BTreeMap::new()),
-            auto_close: Some(
-                SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
-            ),
             first_run,
             global_sender,
             global_receiver,
             batch_sender,
             batch_receiver,
+            event_sender,
+            event_receiver,
         }
     })
 }
@@ -95,72 +104,13 @@ impl Globals {
     /// Starts the global event processing system and metadata batching
     pub async fn start(&self) {
         self.connect().await;
-        self.subscribe_for_app_updates().await;
         self.preload_metadata().await;
-
-        nostr_sdk::async_utility::task::spawn(async move {
-            let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
-            let timeout_duration = Duration::from_millis(METADATA_BATCH_TIMEOUT);
-
-            loop {
-                let timeout = smol::Timer::after(timeout_duration);
-
-                /// Internal events for the metadata batching system
-                enum BatchEvent {
-                    /// New public keys to add to the batch
-                    NewKeys(Vec<PublicKey>),
-                    /// Timeout reached, process current batch
-                    Timeout,
-                    /// Channel was closed, shutdown gracefully
-                    ChannelClosed,
-                }
-
-                let event = smol::future::or(
-                    async {
-                        match shared_state().batch_receiver.recv().await {
-                            Ok(public_keys) => BatchEvent::NewKeys(public_keys),
-                            Err(_) => BatchEvent::ChannelClosed,
-                        }
-                    },
-                    async {
-                        timeout.await;
-                        BatchEvent::Timeout
-                    },
-                )
-                .await;
-
-                match event {
-                    BatchEvent::NewKeys(public_keys) => {
-                        batch.extend(public_keys);
-
-                        // Process immediately if batch limit reached
-                        if batch.len() >= METADATA_BATCH_LIMIT {
-                            shared_state()
-                                .sync_data_for_pubkeys(mem::take(&mut batch))
-                                .await;
-                        }
-                    }
-                    BatchEvent::Timeout => {
-                        // Process current batch if not empty
-                        if !batch.is_empty() {
-                            shared_state()
-                                .sync_data_for_pubkeys(mem::take(&mut batch))
-                                .await;
-                        }
-                    }
-                    BatchEvent::ChannelClosed => {
-                        // Process remaining batch and exit
-                        if !batch.is_empty() {
-                            shared_state().sync_data_for_pubkeys(batch).await;
-                        }
-                        break;
-                    }
-                }
-            }
-        });
+        self.subscribe_for_app_updates().await;
+        self.batching_metadata().detach(); // .detach() to keep running in background
 
         let mut notifications = self.client.notifications();
         let mut processed_events: BTreeSet<EventId> = BTreeSet::new();
+        let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
 
         while let Ok(notification) = notifications.recv().await {
             if let RelayPoolNotification::Message { message, .. } = notification {
@@ -177,10 +127,18 @@ impl Globals {
 
                         match event.kind {
                             Kind::GiftWrap => {
-                                self.unwrap_event(&subscription_id, &event).await;
+                                if *subscription_id == new_messages_sub_id
+                                    || self
+                                        .event_sender
+                                        .send(event.clone().into_owned())
+                                        .await
+                                        .is_err()
+                                {
+                                    self.unwrap_event(&event, true).await;
+                                }
                             }
                             Kind::Metadata => {
-                                self.insert_person(&event).await;
+                                self.insert_person_from_event(&event).await;
                             }
                             Kind::ContactList => {
                                 self.extract_pubkeys_and_sync(&event).await;
@@ -192,9 +150,8 @@ impl Globals {
                         }
                     }
                     RelayMessage::EndOfStoredEvents(subscription_id) => {
-                        if *subscription_id == SubscriptionId::new(ALL_MESSAGES_SUB_ID) {
-                            self.global_sender.send(NostrSignal::Eose).await.ok();
-                        }
+                        self.send_signal(NostrSignal::Eose(subscription_id.into_owned()))
+                            .await;
                     }
                     _ => {}
                 }
@@ -202,19 +159,147 @@ impl Globals {
         }
     }
 
-    pub async fn unset_signer(&self) {
-        self.client.reset().await;
+    /// Gets a reference to the Nostr Client instance
+    pub fn client(&'static self) -> &'static Client {
+        &self.client
+    }
 
-        if let Ok(signer) = self.client.signer().await {
-            if let Ok(public_key) = signer.get_public_key().await {
-                let file = support_dir().join(format!(".{}", public_key.to_bech32().unwrap()));
-                fs::remove_file(&file).ok();
+    /// Returns whether this is the first time the application has been run
+    pub fn first_run(&self) -> bool {
+        self.first_run
+    }
+
+    /// Gets the global signal receiver
+    pub fn signal(&self) -> smol::channel::Receiver<NostrSignal> {
+        self.global_receiver.clone()
+    }
+
+    /// Sends a signal through the global channel to notify GPUI
+    ///
+    /// # Arguments
+    /// * `signal` - The [`NostrSignal`] to send to GPUI
+    ///
+    /// # Examples
+    /// ```
+    /// shared_state().send_signal(NostrSignal::Finish).await;
+    /// ```
+    pub async fn send_signal(&self, signal: NostrSignal) {
+        if let Err(e) = self.global_sender.send(signal).await {
+            log::error!("Failed to send signal: {e}")
+        }
+    }
+
+    /// Batch metadata requests. Combine all requests from multiple authors into single filter
+    pub(crate) fn batching_metadata(&self) -> Task<()> {
+        smol::spawn(async move {
+            let duration = Duration::from_millis(METADATA_BATCH_TIMEOUT);
+            let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
+
+            loop {
+                let timeout = smol::Timer::after(duration);
+                /// Internal events for the metadata batching system
+                enum BatchEvent {
+                    NewKeys(PublicKey),
+                    Timeout,
+                    Closed,
+                }
+
+                let event = smol::future::or(
+                    async {
+                        if let Ok(public_key) = shared_state().batch_receiver.recv().await {
+                            BatchEvent::NewKeys(public_key)
+                        } else {
+                            BatchEvent::Closed
+                        }
+                    },
+                    async {
+                        timeout.await;
+                        BatchEvent::Timeout
+                    },
+                )
+                .await;
+
+                match event {
+                    BatchEvent::NewKeys(public_key) => {
+                        batch.insert(public_key);
+                        // Process immediately if batch limit reached
+                        if batch.len() >= METADATA_BATCH_LIMIT {
+                            shared_state()
+                                .sync_data_for_pubkeys(mem::take(&mut batch))
+                                .await;
+                        }
+                    }
+                    BatchEvent::Timeout => {
+                        if !batch.is_empty() {
+                            shared_state()
+                                .sync_data_for_pubkeys(mem::take(&mut batch))
+                                .await;
+                        }
+                    }
+                    BatchEvent::Closed => {
+                        if !batch.is_empty() {
+                            shared_state()
+                                .sync_data_for_pubkeys(mem::take(&mut batch))
+                                .await;
+                        }
+                        break;
+                    }
+                }
             }
-        }
+        })
+    }
 
-        if let Err(e) = self.global_sender.send(NostrSignal::SignerUnset).await {
-            log::error!("Failed to send signal to global channel: {}", e);
-        }
+    /// Process to unwrap the gift wrapped events
+    pub(crate) fn process_gift_wrap_events(&self) -> Task<()> {
+        smol::spawn(async move {
+            let timeout_duration = Duration::from_secs(75); // 75 secs
+            let mut counter = 0;
+
+            loop {
+                // Signer is unset, probably user is not ready to retrieve gift wrap events
+                if shared_state().client.signer().await.is_err() {
+                    continue;
+                }
+
+                let timeout = smol::Timer::after(timeout_duration);
+
+                // TODO: Find a way to make this code prettier
+                let event = smol::future::or(
+                    async { (shared_state().event_receiver.recv().await).ok() },
+                    async {
+                        timeout.await;
+                        None
+                    },
+                )
+                .await;
+
+                match event {
+                    Some(event) => {
+                        // Process the gift wrap event unwrapping
+                        let is_cached = shared_state().unwrap_event(&event, false).await;
+
+                        // Increment the total messages counter if message is not from cache
+                        if !is_cached {
+                            counter += 1;
+                        }
+
+                        // Send partial finish signal to GPUI
+                        if counter >= 20 {
+                            shared_state().send_signal(NostrSignal::PartialFinish).await;
+                            // Reset counter
+                            counter = 0;
+                        }
+                    }
+                    None => {
+                        shared_state().send_signal(NostrSignal::Finish).await;
+                        break;
+                    }
+                }
+            }
+
+            // Event channel is no longer needed when all gift wrap events have been processed
+            shared_state().event_receiver.close();
+        })
     }
 
     /// Gets a person's profile from cache or creates default (blocking)
@@ -239,6 +324,41 @@ impl Globals {
         Profile::new(*public_key, metadata)
     }
 
+    /// Check if a person exists or not
+    pub async fn has_person(&self, public_key: &PublicKey) -> bool {
+        self.persons.read().await.contains_key(public_key)
+    }
+
+    /// Inserts or updates a person's metadata
+    pub async fn insert_person(&self, public_key: PublicKey, metadata: Option<Metadata>) {
+        self.persons
+            .write()
+            .await
+            .entry(public_key)
+            .and_modify(|entry| {
+                if entry.is_none() {
+                    *entry = metadata.clone();
+                }
+            })
+            .or_insert_with(|| metadata);
+    }
+
+    /// Inserts or updates a person's metadata from a Kind::Metadata event
+    pub(crate) async fn insert_person_from_event(&self, event: &Event) {
+        let metadata = Metadata::from_json(&event.content).ok();
+
+        self.persons
+            .write()
+            .await
+            .entry(event.pubkey)
+            .and_modify(|entry| {
+                if entry.is_none() {
+                    *entry = metadata.clone();
+                }
+            })
+            .or_insert_with(|| metadata);
+    }
+
     /// Connects to bootstrap and configured relays
     pub(crate) async fn connect(&self) {
         for relay in BOOTSTRAP_RELAYS.into_iter() {
@@ -261,67 +381,79 @@ impl Globals {
 
     /// Subscribes to user-specific data feeds (DMs, mentions, etc.)
     pub async fn subscribe_for_user_data(&self, public_key: PublicKey) {
-        let metadata = Filter::new()
-            .kinds(vec![
-                Kind::Metadata,
-                Kind::ContactList,
-                Kind::InboxRelays,
-                Kind::MuteList,
-                Kind::SimpleGroups,
-            ])
-            .author(public_key)
-            .limit(10);
-
-        let data = Filter::new()
-            .author(public_key)
-            .kinds(vec![
-                Kind::Metadata,
-                Kind::ContactList,
-                Kind::MuteList,
-                Kind::SimpleGroups,
-                Kind::InboxRelays,
-                Kind::RelayList,
-            ])
-            .since(Timestamp::now());
-
-        let msg = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-        let new_msg = Filter::new()
-            .kind(Kind::GiftWrap)
-            .pubkey(public_key)
-            .limit(0);
-
         let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
         let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-        let opts = shared_state().auto_close;
-
-        self.client.subscribe(data, None).await.ok();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         self.client
-            .subscribe(metadata, shared_state().auto_close)
+            .subscribe(
+                Filter::new()
+                    .author(public_key)
+                    .kinds(vec![
+                        Kind::Metadata,
+                        Kind::ContactList,
+                        Kind::MuteList,
+                        Kind::SimpleGroups,
+                        Kind::InboxRelays,
+                        Kind::RelayList,
+                    ])
+                    .since(Timestamp::now()),
+                None,
+            )
             .await
             .ok();
 
         self.client
-            .subscribe_with_id(all_messages_sub_id, msg, opts)
+            .subscribe(
+                Filter::new()
+                    .kinds(vec![
+                        Kind::Metadata,
+                        Kind::ContactList,
+                        Kind::InboxRelays,
+                        Kind::MuteList,
+                        Kind::SimpleGroups,
+                    ])
+                    .author(public_key)
+                    .limit(10),
+                Some(SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE)),
+            )
             .await
             .ok();
 
         self.client
-            .subscribe_with_id(new_messages_sub_id, new_msg, None)
+            .subscribe_with_id(
+                all_messages_sub_id,
+                Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
+                Some(opts),
+            )
             .await
             .ok();
 
-        log::info!("Subscribing to user's metadata...");
+        self.client
+            .subscribe_with_id(
+                new_messages_sub_id,
+                Filter::new()
+                    .kind(Kind::GiftWrap)
+                    .pubkey(public_key)
+                    .limit(0),
+                None,
+            )
+            .await
+            .ok();
+
+        log::info!("Getting all user's metadata and messages...");
+        // Process gift-wrapped events in the background
+        self.process_gift_wrap_events().detach();
     }
 
     /// Subscribes to application update notifications
     pub(crate) async fn subscribe_for_app_updates(&self) {
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let coordinate = Coordinate {
             kind: Kind::Custom(32267),
             public_key: PublicKey::from_hex(APP_PUBKEY).expect("App Pubkey is invalid"),
             identifier: APP_ID.into(),
         };
-
         let filter = Filter::new()
             .kind(Kind::ReleaseArtifactSet)
             .coordinate(&coordinate)
@@ -329,20 +461,20 @@ impl Globals {
 
         if let Err(e) = self
             .client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, shared_state().auto_close)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await
         {
             log::error!("Failed to subscribe for app updates: {}", e);
         }
 
-        log::info!("Subscribing to app updates...");
+        log::info!("Subscribed to app updates");
     }
 
     pub(crate) async fn preload_metadata(&self) {
         let filter = Filter::new().kind(Kind::Metadata).limit(100);
         if let Ok(events) = self.client.database().query(filter).await {
             for event in events.into_iter() {
-                self.insert_person(&event).await;
+                self.insert_person_from_event(&event).await;
             }
         }
     }
@@ -370,54 +502,71 @@ impl Globals {
     pub(crate) async fn get_unwrapped(&self, target: EventId) -> Result<Event, Error> {
         let filter = Filter::new()
             .kind(Kind::ApplicationSpecificData)
+            .identifier(target)
             .event(target)
             .limit(1);
 
         if let Some(event) = self.client.database().query(filter).await?.first_owned() {
             Ok(Event::from_json(event.content)?)
         } else {
-            Err(anyhow!("Event not found"))
+            Err(anyhow!("Event is not cached yet"))
         }
     }
 
-    /// Unwraps a gift-wrapped event and processes its contents
-    pub(crate) async fn unwrap_event(&self, subscription_id: &SubscriptionId, event: &Event) {
-        let new_messages_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-        let random_keys = Keys::generate();
+    /// Unwraps a gift-wrapped event and processes its contents.
+    ///
+    /// # Arguments
+    /// * `event` - The gift-wrapped event to unwrap
+    /// * `incoming` - Whether this is a newly received event (true) or old
+    ///
+    /// # Returns
+    /// Returns `true` if the event was successfully loaded from cache or saved after unwrapping.
+    pub(crate) async fn unwrap_event(&self, event: &Event, incoming: bool) -> bool {
+        let mut is_cached = false;
 
         let event = match self.get_unwrapped(event.id).await {
-            Ok(event) => event,
-            Err(_) => match self.client.unwrap_gift_wrap(event).await {
-                Ok(unwrap) => match unwrap.rumor.sign_with_keys(&random_keys) {
-                    Ok(unwrapped) => {
-                        self.set_unwrapped(event.id, &unwrapped, &random_keys)
-                            .await
-                            .ok();
+            Ok(event) => {
+                is_cached = true;
+                event
+            }
+            Err(_) => {
+                match self.client.unwrap_gift_wrap(event).await {
+                    Ok(unwrap) => {
+                        let keys = Keys::generate();
+                        let Ok(unwrapped) = unwrap.rumor.sign_with_keys(&keys) else {
+                            return false;
+                        };
+
+                        // Save this event to the database for future use.
+                        if let Err(e) = self.set_unwrapped(event.id, &unwrapped, &keys).await {
+                            log::error!("Failed to save event: {e}")
+                        }
+
                         unwrapped
                     }
-                    Err(_) => return,
-                },
-                Err(_) => return,
-            },
+                    Err(_) => return false,
+                }
+            }
         };
 
-        let mut pubkeys = vec![];
-        pubkeys.extend(event.tags.public_keys());
-        pubkeys.push(event.pubkey);
+        // Save the event to the database, use for query directly.
+        if let Err(e) = self.client.database().save_event(&event).await {
+            log::error!("Failed to save event: {e}")
+        }
 
         // Send all pubkeys to the batch to sync metadata
-        self.batch_sender.send(pubkeys).await.ok();
+        self.batch_sender.send(event.pubkey).await.ok();
 
-        // Save the event to the database, use for query directly.
-        self.client.database().save_event(&event).await.ok();
-
-        // Send this event to the GPUI
-        if subscription_id == &new_messages_id {
-            self.global_sender
-                .send(NostrSignal::Event(event))
-                .await
-                .ok();
+        for public_key in event.tags.public_keys().copied() {
+            self.batch_sender.send(public_key).await.ok();
         }
+
+        // Send a notify to GPUI if this is a new message
+        if incoming {
+            self.send_signal(NostrSignal::Event(event)).await;
+        }
+
+        is_cached
     }
 
     /// Extracts public keys from contact list and queues metadata sync
@@ -425,8 +574,9 @@ impl Globals {
         if let Ok(signer) = self.client.signer().await {
             if let Ok(public_key) = signer.get_public_key().await {
                 if public_key == event.pubkey {
-                    let pubkeys = event.tags.public_keys().copied().collect::<Vec<_>>();
-                    self.batch_sender.send(pubkeys).await.ok();
+                    for public_key in event.tags.public_keys().copied() {
+                        self.batch_sender.send(public_key).await.ok();
+                    }
                 }
             }
         }
@@ -434,6 +584,7 @@ impl Globals {
 
     /// Fetches metadata for a batch of public keys
     pub(crate) async fn sync_data_for_pubkeys(&self, public_keys: BTreeSet<PublicKey>) {
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![
             Kind::Metadata,
             Kind::ContactList,
@@ -447,46 +598,29 @@ impl Globals {
 
         if let Err(e) = shared_state()
             .client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, shared_state().auto_close)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await
         {
             log::error!("Failed to sync metadata: {e}");
         }
     }
 
-    /// Inserts or updates a person's metadata from a Kind::Metadata event
-    pub(crate) async fn insert_person(&self, event: &Event) {
-        let metadata = Metadata::from_json(&event.content).ok();
-
-        self.persons
-            .write()
-            .await
-            .entry(event.pubkey)
-            .and_modify(|entry| {
-                if entry.is_none() {
-                    *entry = metadata.clone();
-                }
-            })
-            .or_insert_with(|| metadata);
-    }
-
     /// Notifies UI of application updates via global channel
     pub(crate) async fn notify_update(&self, event: &Event) {
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let filter = Filter::new()
             .ids(event.tags.event_ids().copied())
             .kind(Kind::FileMetadata);
 
         if let Err(e) = self
             .client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, self.auto_close)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await
         {
             log::error!("Failed to subscribe for file metadata: {}", e);
         } else {
-            self.global_sender
-                .send(NostrSignal::AppUpdate(event.to_owned()))
-                .await
-                .ok();
+            self.send_signal(NostrSignal::AppUpdate(event.to_owned()))
+                .await;
         }
     }
 }

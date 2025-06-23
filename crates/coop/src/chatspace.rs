@@ -151,6 +151,11 @@ impl ChatSpace {
                     if !state.read(cx).has_profile() {
                         this.open_onboarding(window, cx);
                     } else {
+                        // Load all chat rooms from database
+                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                            this.load_rooms(window, cx);
+                        });
+                        // Open chat panels
                         this.open_chats(window, cx);
                     }
                 },
@@ -273,19 +278,14 @@ impl ChatSpace {
 
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
         cx.background_spawn(async move {
-            let signer = shared_state().client.signer().await?;
+            let client = shared_state().client();
+            let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let filter = Filter::new()
                 .kind(Kind::InboxRelays)
                 .author(public_key)
                 .limit(1);
-            let is_exist = shared_state()
-                .client
-                .database()
-                .query(filter)
-                .await?
-                .first()
-                .is_some();
+            let is_exist = client.database().query(filter).await?.first().is_some();
 
             Ok(is_exist)
         })

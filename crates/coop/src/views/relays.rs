@@ -35,20 +35,15 @@ impl Relays {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-                let signer = shared_state().client.signer().await?;
+                let client = shared_state().client();
+                let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
                 let filter = Filter::new()
                     .kind(Kind::InboxRelays)
                     .author(public_key)
                     .limit(1);
 
-                if let Some(event) = shared_state()
-                    .client
-                    .database()
-                    .query(filter)
-                    .await?
-                    .first_owned()
-                {
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
                     let relays = event
                         .tags
                         .filter(TagKind::Relay)
@@ -111,23 +106,18 @@ impl Relays {
 
         let relays = self.relays.read(cx).clone();
         let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
-            let signer = shared_state().client.signer().await?;
+            let client = shared_state().client();
+            let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
             // If user didn't have any NIP-65 relays, add default ones
-            if shared_state()
-                .client
-                .database()
-                .relay_list(public_key)
-                .await?
-                .is_empty()
-            {
+            if client.database().relay_list(public_key).await?.is_empty() {
                 let builder = EventBuilder::relay_list(vec![
                     (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
                     (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
                 ]);
 
-                if let Err(e) = shared_state().client.send_event_builder(builder).await {
+                if let Err(e) = client.send_event_builder(builder).await {
                     log::error!("Failed to send relay list event: {}", e);
                 }
             }
@@ -138,22 +128,21 @@ impl Relays {
                 .collect();
 
             let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
-            let output = shared_state().client.send_event_builder(builder).await?;
+            let output = client.send_event_builder(builder).await?;
 
             // Connect to messaging relays
             for relay in relays.into_iter() {
-                _ = shared_state().client.add_relay(&relay).await;
-                _ = shared_state().client.connect_relay(&relay).await;
+                _ = client.add_relay(&relay).await;
+                _ = client.connect_relay(&relay).await;
             }
 
             let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
 
             // Close old subscription
-            shared_state().client.unsubscribe(&sub_id).await;
+            client.unsubscribe(&sub_id).await;
 
             // Subscribe to new messages
-            if let Err(e) = shared_state()
-                .client
+            if let Err(e) = client
                 .subscribe_with_id(
                     sub_id,
                     Filter::new()

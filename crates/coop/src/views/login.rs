@@ -158,11 +158,9 @@ impl Login {
 
         subscriptions.push(
             cx.observe_in(&active_signer, window, |this, entity, window, cx| {
-                if let Some(mut signer) = entity.read(cx).clone() {
-                    // Automatically open auth url
-                    signer.auth_url_handler(CoopAuthUrlHandler);
+                if let Some(signer) = entity.read(cx).as_ref() {
                     // Wait for connection from remote signer
-                    this.wait_for_connection(signer, window, cx);
+                    this.wait_for_connection(signer.to_owned(), window, cx);
                 }
             }),
         );
@@ -284,11 +282,7 @@ impl Login {
         };
 
         if let Some(secret_key) = secret_key {
-            // Active signer is no longer needed
-            self.shutdown_active_signer(cx);
-
             let keys = Keys::new(secret_key);
-
             Identity::global(cx).update(cx, |this, cx| {
                 this.write_keys(&keys, password, cx);
                 this.set_signer(keys, window, cx);
@@ -311,9 +305,6 @@ impl Login {
             self.set_error("Failed to create remote signer", cx);
             return;
         };
-
-        // Active signer is no longer needed
-        self.shutdown_active_signer(cx);
 
         // Automatically open auth url
         signer.auth_url_handler(CoopAuthUrlHandler);
@@ -359,10 +350,14 @@ impl Login {
         let (tx, rx) = oneshot::channel::<Option<(NostrConnectURI, NostrConnect)>>();
 
         cx.background_spawn(async move {
-            if let Ok(bunker_uri) = signer.bunker_uri().await {
-                tx.send(Some((bunker_uri, signer))).ok();
-            } else {
-                tx.send(None).ok();
+            match signer.bunker_uri().await {
+                Ok(bunker_uri) => {
+                    tx.send(Some((bunker_uri, signer))).ok();
+                }
+                Err(e) => {
+                    log::error!("Nostr Connect (Client): {e}");
+                    tx.send(None).ok();
+                }
             }
         })
         .detach();
@@ -378,9 +373,9 @@ impl Login {
                 .ok();
             } else {
                 cx.update(|window, cx| {
-                    window.push_notification(Notification::error("Connection failed"), cx);
                     // Refresh the active signer
                     this.update(cx, |this, cx| {
+                        window.push_notification(Notification::error("Connection failed"), cx);
                         this.change_relay(window, cx);
                     })
                     .ok();
@@ -405,15 +400,6 @@ impl Login {
             *this = uri;
             cx.notify();
         });
-    }
-
-    fn shutdown_active_signer(&self, cx: &Context<Self>) {
-        if let Some(signer) = self.active_signer.read(cx).clone() {
-            cx.background_spawn(async move {
-                signer.shutdown().await;
-            })
-            .detach();
-        }
     }
 
     fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {

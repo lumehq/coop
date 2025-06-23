@@ -31,8 +31,8 @@ pub const SEARCH_RELAYS: [&str; 1] = ["wss://relay.nostr.band"];
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 
-/// Default timeout for Nostr Connect
-pub const NOSTR_CONNECT_TIMEOUT: u64 = 300;
+/// Default timeout (in seconds) for Nostr Connect
+pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 
 /// Unique ID for new message subscription.
 pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
@@ -40,9 +40,9 @@ pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
 pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
 
 /// Total metadata requests will be grouped.
-pub const METADATA_BATCH_LIMIT: usize = 200;
+pub const METADATA_BATCH_LIMIT: usize = 100;
 /// Maximum timeout for grouping metadata requests.
-pub const METADATA_BATCH_TIMEOUT: u64 = 300;
+pub const METADATA_BATCH_TIMEOUT: u64 = 400;
 
 /// Default width for all modals.
 pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
@@ -56,4 +56,4 @@ pub const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";
 
 pub(crate) const GLOBAL_CHANNEL_LIMIT: usize = 2048;
-pub(crate) const BATCH_CHANNEL_LIMIT: usize = 1024;
+pub(crate) const BATCH_CHANNEL_LIMIT: usize = 2048;

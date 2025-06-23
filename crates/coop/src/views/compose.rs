@@ -69,13 +69,10 @@ impl Compose {
 
         cx.spawn(async move |this, cx| {
             let task: Task<Result<BTreeSet<Profile>, Error>> = cx.background_spawn(async move {
-                let signer = shared_state().client.signer().await?;
+                let client = shared_state().client();
+                let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let profiles = shared_state()
-                    .client
-                    .database()
-                    .contacts(public_key)
-                    .await?;
+                let profiles = client.database().contacts(public_key).await?;
 
                 Ok(profiles)
             });
@@ -134,7 +131,7 @@ impl Compose {
         let tags = Tags::from_list(tag_list);
 
         let event: Task<Result<Event, anyhow::Error>> = cx.background_spawn(async move {
-            let signer = shared_state().client.signer().await?;
+            let signer = shared_state().client().signer().await?;
             let public_key = signer.get_public_key().await?;
 
             // [IMPORTANT]
@@ -184,7 +181,7 @@ impl Compose {
                 let public_key = profile.public_key;
 
                 let metadata = shared_state()
-                    .client
+                    .client()
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?
                     .unwrap_or_default();
@@ -200,7 +197,7 @@ impl Compose {
 
             cx.background_spawn(async move {
                 let metadata = shared_state()
-                    .client
+                    .client()
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?
                     .unwrap_or_default();

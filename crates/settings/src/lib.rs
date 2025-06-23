@@ -85,18 +85,14 @@ impl AppSettings {
 
     pub(crate) fn get_settings_from_db(&self, cx: &mut Context<Self>) {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
+            let database = shared_state().client().database();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(SETTINGS_D)
                 .limit(1);
 
-            if let Some(event) = shared_state()
-                .client
-                .database()
-                .query(filter)
-                .await?
-                .first_owned()
-            {
+            if let Some(event) = database.query(filter).await?.first_owned() {
                 log::info!("Successfully loaded settings from database");
                 Ok(serde_json::from_str(&event.content)?)
             } else {
@@ -120,13 +116,14 @@ impl AppSettings {
         if let Ok(content) = serde_json::to_string(&self.settings) {
             cx.background_spawn(async move {
                 let keys = Keys::generate();
+                let database = shared_state().client().database();
 
                 if let Ok(event) = EventBuilder::new(Kind::ApplicationSpecificData, content)
                     .tags(vec![Tag::identifier(SETTINGS_D)])
                     .sign(&keys)
                     .await
                 {
-                    if let Err(e) = shared_state().client.database().save_event(&event).await {
+                    if let Err(e) = database.save_event(&event).await {
                         log::error!("Failed to save user settings: {e}");
                     } else {
                         log::info!("New settings have been saved successfully");
