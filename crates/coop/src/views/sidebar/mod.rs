@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
+use anyhow::Error;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
@@ -201,20 +202,68 @@ impl Sidebar {
         })
     }
 
+    fn profile_search(&mut self, query: &str, cx: &mut Context<Self>) {
+        let public_key = if query.starts_with("npub1") {
+            PublicKey::parse(query).ok()
+        } else if query.starts_with("nprofile1") {
+            Nip19Profile::from_bech32(query)
+                .map(|nip19| nip19.public_key)
+                .ok()
+        } else {
+            None
+        };
+
+        let Some(public_key) = public_key else {
+            self.set_finding(false, cx);
+            return;
+        };
+
+        let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
+            let signer = shared_state().client().signer().await.unwrap();
+            let user = signer.get_public_key().await.unwrap();
+            let keys = Keys::generate();
+
+            // Request metadata
+            shared_state().request_metadata(public_key).await;
+
+            // Create a Nostr event and convert it to a room
+            let event = EventBuilder::private_msg_rumor(public_key, "")
+                .build(user)
+                .sign(&keys)
+                .await?;
+
+            Ok(Room::new(&event).kind(RoomKind::Ongoing))
+        });
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(room) = task.await {
+                this.update(cx, |this, cx| {
+                    this.set_finding(false, cx);
+                    this.global_result.update(cx, |this, cx| {
+                        if let Some(rooms) = this {
+                            rooms.insert(0, cx.new(|_| room));
+                            cx.notify();
+                        }
+                    });
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
     fn search(&mut self, cx: &mut Context<Self>) {
-        let query = self.find_input.read(cx).value();
-        let result = ChatRegistry::get_global(cx).search(query.as_ref(), cx);
+        let query = self.find_input.read(cx).value().to_string();
 
         // Return if query is empty
         if query.is_empty() {
+            log::info!("Search query is empty");
             return;
         }
 
-        if query.starts_with("nevent1")
-            || query.starts_with("naddr")
-            || query.starts_with("nsec1")
-            || query.starts_with("note1")
-        {
+        // Return if query starts with "nsec1" or "note!"
+        if query.starts_with("nsec1") || query.starts_with("note1") {
+            log::info!("Coop does not support search with this query");
             return;
         }
 
@@ -223,27 +272,20 @@ impl Sidebar {
             return;
         }
 
-        // Block the UI until the search process completes
+        // Block the input until the search process completes
         self.set_finding(true, cx);
 
-        // Disable the search input to prevent duplicate requests
-        self.find_input.update(cx, |this, cx| {
-            this.set_disabled(true, cx);
-            this.set_loading(true, cx);
-        });
+        let chats = ChatRegistry::global(cx);
+        let result = chats.read(cx).search(&query, cx);
 
         if !result.is_empty() {
             self.set_finding(false, cx);
-
-            self.find_input.update(cx, |this, cx| {
-                this.set_disabled(false, cx);
-                this.set_loading(false, cx);
-            });
-
             self.local_result.update(cx, |this, cx| {
                 *this = Some(result);
                 cx.notify();
             });
+        } else if query.starts_with("npub1") || query.starts_with("nprofile1") {
+            self.profile_search(&query, cx);
         } else {
             let task = self.nip50_search(cx);
 
@@ -256,12 +298,6 @@ impl Sidebar {
                             .collect_vec();
 
                         this.set_finding(false, cx);
-
-                        this.find_input.update(cx, |this, cx| {
-                            this.set_disabled(false, cx);
-                            this.set_loading(false, cx);
-                        });
-
                         this.global_result.update(cx, |this, cx| {
                             *this = Some(result);
                             cx.notify();
@@ -277,6 +313,12 @@ impl Sidebar {
     fn set_finding(&mut self, status: bool, cx: &mut Context<Self>) {
         self.finding = status;
         cx.notify();
+
+        // Disable the input to prevent duplicate requests
+        self.find_input.update(cx, |this, cx| {
+            this.set_disabled(true, cx);
+            this.set_loading(true, cx);
+        });
     }
 
     fn clear_search_results(&mut self, cx: &mut Context<Self>) {
