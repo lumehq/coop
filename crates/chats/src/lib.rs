@@ -144,6 +144,15 @@ impl ChatRegistry {
             .collect()
     }
 
+    /// Search rooms by public keys.
+    pub fn search_by_public_key(&self, public_key: PublicKey, cx: &App) -> Vec<Entity<Room>> {
+        self.rooms
+            .iter()
+            .filter(|room| room.read(cx).members.contains(&public_key))
+            .cloned()
+            .collect()
+    }
+
     /// Load all rooms from the lmdb.
     ///
     /// This method:
