@@ -10,11 +10,11 @@ use common::profile::RenderProfile;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, impl_internal_actions, list, px, red, relative, rems, svg, white, AnyElement, App,
-    AppContext, ClipboardItem, Context, Div, Element, Empty, Entity, EventEmitter, Flatten,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
+    ClipboardItem, Context, Div, Element, Empty, Entity, EventEmitter, Flatten, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit, ParentElement,
+    PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, Subscription, Window,
 };
 use identity::Identity;
 use itertools::Itertools;
@@ -38,10 +38,9 @@ use ui::{
 
 use crate::views::subject;
 
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = chat, no_json)]
 pub struct ChangeSubject(pub String);
-
-impl_internal_actions!(chat, [ChangeSubject]);
 
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Arc<Entity<Chat>> {
     Arc::new(Chat::new(room, window, cx))

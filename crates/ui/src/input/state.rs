@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    actions, div, impl_internal_actions, point, px, App, AppContext, Bounds, ClipboardItem,
-    Context, DefiniteLength, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
+    actions, div, point, px, Action, App, AppContext, Bounds, ClipboardItem, Context,
+    DefiniteLength, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement as _, Pixels, Point, Render, ScrollHandle,
     ScrollWheelEvent, SharedString, Styled as _, Subscription, UTF16Selection, Window, WrappedLine,
@@ -24,13 +24,12 @@ use crate::history::History;
 use crate::scroll::ScrollbarState;
 use crate::Root;
 
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = input, no_json)]
 pub struct Enter {
     /// Is confirm with secondary.
     pub secondary: bool,
 }
-
-impl_internal_actions!(input, [Enter]);
 
 actions!(
     input,

@@ -7,8 +7,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, px, relative, App, AppContext, Axis, Context, Entity, IntoElement,
-    ParentElement, Render, Styled, Subscription, Task, Window,
+    div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
+    Render, Styled, Subscription, Task, Window,
 };
 use identity::Identity;
 use nostr_connect::prelude::*;
@@ -24,8 +24,6 @@ use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
 use crate::views::chat::{self, Chat};
 use crate::views::{login, new_account, onboarding, preferences, sidebar, startup, welcome};
-
-impl_internal_actions!(dock, [ToggleModal]);
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
@@ -56,7 +54,8 @@ pub enum ModalKind {
     SetupRelay,
 }
 
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = modal, no_json)]
 pub struct ToggleModal {
     pub modal: ModalKind,
 }
