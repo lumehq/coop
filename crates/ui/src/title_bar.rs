@@ -257,6 +257,7 @@ impl RenderOnce for TitleBar {
         const HEIGHT: Pixels = px(34.);
 
         let is_linux = cfg!(target_os = "linux");
+        let is_macos = cfg!(target_os = "macos");
 
         div().flex_shrink_0().child(
             self.base
@@ -269,6 +270,9 @@ impl RenderOnce for TitleBar {
                 .when(window.is_fullscreen(), |this| this.pl(px(12.)))
                 .when(is_linux, |this| {
                     this.on_double_click(|_, window, _| window.zoom_window())
+                })
+                .when(is_macos, |this| {
+                    this.on_double_click(|_, window, _| window.titlebar_double_click())
                 })
                 .child(
                     h_flex()

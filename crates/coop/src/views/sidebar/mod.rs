@@ -158,51 +158,58 @@ impl Sidebar {
                 .limit(FIND_LIMIT);
 
             let events = client
-                .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
+                .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(5))
                 .await?
                 .into_iter()
                 .unique_by(|event| event.pubkey)
                 .collect_vec();
 
             let mut rooms = BTreeSet::new();
-            let (tx, rx) = smol::channel::bounded::<Room>(events.len());
 
-            nostr_sdk::async_utility::task::spawn(async move {
-                let signer = client.signer().await.unwrap();
-                let public_key = signer.get_public_key().await.unwrap();
+            // Process to verify the search results
+            if !events.is_empty() {
+                let (tx, rx) = smol::channel::bounded::<Room>(events.len());
 
-                for event in events.into_iter() {
-                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                nostr_sdk::async_utility::task::spawn(async move {
+                    let signer = client.signer().await.unwrap();
+                    let public_key = signer.get_public_key().await.unwrap();
 
-                    let Some(target) = metadata.nip05.as_ref() else {
-                        // Skip if NIP-05 is not found
-                        continue;
-                    };
+                    for event in events.into_iter() {
+                        let metadata = Metadata::from_json(event.content).unwrap_or_default();
 
-                    let Ok(verified) = nip05::verify(&event.pubkey, target, None).await else {
-                        // Skip if NIP-05 verification fails
-                        continue;
-                    };
+                        log::info!("metadata: {:?}", metadata);
 
-                    if !verified {
-                        // Skip if NIP-05 is not valid
-                        continue;
-                    };
+                        let Some(target) = metadata.nip05.as_ref() else {
+                            // Skip if NIP-05 is not found
+                            continue;
+                        };
 
-                    if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
-                        .build(public_key)
-                        .sign(&Keys::generate())
-                        .await
-                    {
-                        if let Err(e) = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await {
-                            log::error!("Send error: {e}")
+                        let Ok(verified) = nip05::verify(&event.pubkey, target, None).await else {
+                            // Skip if NIP-05 verification fails
+                            continue;
+                        };
+
+                        if !verified {
+                            // Skip if NIP-05 is not valid
+                            continue;
+                        };
+
+                        if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
+                            .build(public_key)
+                            .sign(&Keys::generate())
+                            .await
+                        {
+                            if let Err(e) = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await
+                            {
+                                log::error!("Send error: {e}")
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            while let Ok(room) = rx.recv().await {
-                rooms.insert(room);
+                while let Ok(room) = rx.recv().await {
+                    rooms.insert(room);
+                }
             }
 
             Ok(rooms)
