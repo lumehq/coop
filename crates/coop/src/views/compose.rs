@@ -235,7 +235,10 @@ impl Compose {
     fn add_and_select_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let content = self.user_input.read(cx).value().to_string();
 
+        // Prevent multiple requests
         self.set_adding(true, cx);
+
+        // Show loading indicator in the input
         self.user_input.update(cx, |this, cx| {
             this.set_loading(true, cx);
         });
@@ -252,13 +255,11 @@ impl Compose {
 
                 if let Ok(profile) = rx.await {
                     let public_key = profile.public_key;
-
                     let metadata = shared_state()
                         .client()
                         .fetch_metadata(public_key, Duration::from_secs(2))
                         .await?
                         .unwrap_or_default();
-
                     let profile = Profile::new(public_key, metadata);
                     let contact = Contact::new(profile).select();
 
@@ -338,6 +339,7 @@ impl Compose {
             self.set_adding(false, cx);
         }
 
+        // Unlock the user input
         self.user_input.update(cx, |this, cx| {
             this.set_loading(false, cx);
         });
@@ -476,7 +478,11 @@ impl Render for Compose {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .child(TextInput::new(&self.user_input).small())
+                                    .child(
+                                        TextInput::new(&self.user_input)
+                                            .small()
+                                            .disabled(self.adding),
+                                    )
                                     .child(
                                         Button::new("add")
                                             .icon(IconName::PlusCircleFill)
