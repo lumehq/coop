@@ -302,6 +302,12 @@ impl Globals {
         })
     }
 
+    pub async fn request_metadata(&self, public_key: PublicKey) {
+        if let Err(e) = self.batch_sender.send(public_key).await {
+            log::error!("Failed to request metadata: {e}")
+        }
+    }
+
     /// Gets a person's profile from cache or creates default (blocking)
     pub fn person(&self, public_key: &PublicKey) -> Profile {
         let metadata = if let Some(metadata) = self.persons.read_blocking().get(public_key) {

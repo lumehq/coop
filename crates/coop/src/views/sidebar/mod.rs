@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
+use anyhow::Error;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
@@ -27,6 +28,7 @@ use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
@@ -95,9 +97,9 @@ impl Sidebar {
         subscriptions.push(cx.subscribe_in(
             &find_input,
             window,
-            |this, _state, event, _window, cx| {
+            |this, _state, event, window, cx| {
                 match event {
-                    InputEvent::PressEnter { .. } => this.search(cx),
+                    InputEvent::PressEnter { .. } => this.search(window, cx),
                     InputEvent::Change(text) => {
                         // Clear the result when input is empty
                         if text.is_empty() {
@@ -106,8 +108,9 @@ impl Sidebar {
                             // Run debounced search
                             this.find_debouncer.fire_new(
                                 Duration::from_millis(FIND_DELAY),
+                                window,
                                 cx,
-                                |this, cx| this.debounced_search(cx),
+                                |this, window, cx| this.debounced_search(window, cx),
                             );
                         }
                     }
@@ -132,19 +135,23 @@ impl Sidebar {
         }
     }
 
-    fn debounced_search(&self, cx: &mut Context<Self>) -> Task<()> {
-        cx.spawn(async move |this, cx| {
-            this.update(cx, |this, cx| {
-                this.search(cx);
+    fn debounced_search(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn_in(window, async move |this, cx| {
+            cx.update(|window, cx| {
+                this.update(cx, |this, cx| {
+                    this.search(window, cx);
+                })
+                .ok();
             })
             .ok();
         })
     }
 
-    fn nip50_search(&self, cx: &App) -> Task<Result<BTreeSet<Room>, Error>> {
-        let query = self.find_input.read(cx).value().clone();
+    fn search_by_nip50(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let query = query.to_owned();
+        let query_cloned = query.clone();
 
-        cx.background_spawn(async move {
+        let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             let client = shared_state().client();
 
             let filter = Filter::new()
@@ -153,137 +160,251 @@ impl Sidebar {
                 .limit(FIND_LIMIT);
 
             let events = client
-                .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
+                .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(5))
                 .await?
                 .into_iter()
                 .unique_by(|event| event.pubkey)
                 .collect_vec();
 
             let mut rooms = BTreeSet::new();
-            let (tx, rx) = smol::channel::bounded::<Room>(10);
 
-            nostr_sdk::async_utility::task::spawn(async move {
-                let signer = client.signer().await.expect("signer is required");
-                let public_key = signer.get_public_key().await.expect("error");
+            // Process to verify the search results
+            if !events.is_empty() {
+                let (tx, rx) = smol::channel::bounded::<Room>(events.len());
 
-                for event in events.into_iter() {
-                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                nostr_sdk::async_utility::task::spawn(async move {
+                    let signer = client.signer().await.unwrap();
+                    let public_key = signer.get_public_key().await.unwrap();
 
-                    let Some(target) = metadata.nip05.as_ref() else {
-                        continue;
-                    };
+                    for event in events.into_iter() {
+                        let metadata = Metadata::from_json(event.content).unwrap_or_default();
 
-                    let Ok(verified) = nip05::verify(&event.pubkey, target, None).await else {
-                        continue;
-                    };
+                        let Some(target) = metadata.nip05.as_ref() else {
+                            // Skip if NIP-05 is not found
+                            continue;
+                        };
 
-                    if !verified {
-                        continue;
-                    };
+                        let Ok(verified) = nip05::verify(&event.pubkey, target, None).await else {
+                            // Skip if NIP-05 verification fails
+                            continue;
+                        };
 
-                    if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
-                        .build(public_key)
-                        .sign(&Keys::generate())
-                        .await
-                    {
-                        if let Err(e) = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await {
-                            log::error!("{e}")
+                        if !verified {
+                            // Skip if NIP-05 is not valid
+                            continue;
+                        };
+
+                        if let Ok(event) = EventBuilder::private_msg_rumor(event.pubkey, "")
+                            .build(public_key)
+                            .sign(&Keys::generate())
+                            .await
+                        {
+                            if let Err(e) = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await
+                            {
+                                log::error!("Send error: {e}")
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            while let Ok(room) = rx.recv().await {
-                rooms.insert(room);
+                while let Ok(room) = rx.recv().await {
+                    rooms.insert(room);
+                }
             }
 
             Ok(rooms)
-        })
-    }
-
-    fn search(&mut self, cx: &mut Context<Self>) {
-        let query = self.find_input.read(cx).value();
-        let result = ChatRegistry::get_global(cx).search(query.as_ref(), cx);
-
-        // Return if query is empty
-        if query.is_empty() {
-            return;
-        }
-
-        if query.starts_with("nevent1")
-            || query.starts_with("naddr")
-            || query.starts_with("nsec1")
-            || query.starts_with("note1")
-        {
-            return;
-        }
-
-        // Return if search is in progress
-        if self.finding {
-            return;
-        }
-
-        // Block the UI until the search process completes
-        self.set_finding(true, cx);
-
-        // Disable the search input to prevent duplicate requests
-        self.find_input.update(cx, |this, cx| {
-            this.set_disabled(true, cx);
-            this.set_loading(true, cx);
         });
 
-        if !result.is_empty() {
-            self.set_finding(false, cx);
-
-            self.find_input.update(cx, |this, cx| {
-                this.set_disabled(false, cx);
-                this.set_loading(false, cx);
-            });
-
-            self.local_result.update(cx, |this, cx| {
-                *this = Some(result);
-                cx.notify();
-            });
-        } else {
-            let task = self.nip50_search(cx);
-
-            cx.spawn(async move |this, cx| {
-                if let Ok(result) = task.await {
-                    this.update(cx, |this, cx| {
-                        let result = result
-                            .into_iter()
-                            .map(|room| cx.new(|_| room))
-                            .collect_vec();
-
-                        this.set_finding(false, cx);
-
-                        this.find_input.update(cx, |this, cx| {
-                            this.set_disabled(false, cx);
-                            this.set_loading(false, cx);
-                        });
-
-                        this.global_result.update(cx, |this, cx| {
-                            *this = Some(result);
-                            cx.notify();
-                        });
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(result) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            if result.is_empty() {
+                                let msg =
+                                    format!("There are no users matching query {}", query_cloned);
+                                window.push_notification(Notification::info(msg), cx);
+                                this.set_finding(false, cx);
+                            } else {
+                                let result = result
+                                    .into_iter()
+                                    .map(|room| cx.new(|_| room))
+                                    .collect_vec();
+                                this.global_result(result, cx);
+                            }
+                        })
+                        .ok();
                     })
                     .ok();
                 }
-            })
-            .detach();
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(
+                            Notification::error(e.to_string()).title("Search Error"),
+                            cx,
+                        );
+                    })
+                    .ok();
+                }
+            };
+        })
+        .detach();
+    }
+
+    fn search_by_user(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let public_key = if query.starts_with("npub1") {
+            PublicKey::parse(query).ok()
+        } else if query.starts_with("nprofile1") {
+            Nip19Profile::from_bech32(query)
+                .map(|nip19| nip19.public_key)
+                .ok()
+        } else {
+            None
+        };
+
+        let Some(public_key) = public_key else {
+            window.push_notification("Public Key is not valid", cx);
+            self.set_finding(false, cx);
+            return;
+        };
+
+        let task: Task<Result<(Profile, Room), Error>> = cx.background_spawn(async move {
+            let client = shared_state().client();
+            let signer = client.signer().await.unwrap();
+            let user_pubkey = signer.get_public_key().await.unwrap();
+
+            let metadata = client
+                .fetch_metadata(public_key, Duration::from_secs(3))
+                .await?
+                .unwrap_or_default();
+
+            let event = EventBuilder::private_msg_rumor(public_key, "")
+                .build(user_pubkey)
+                .sign(&Keys::generate())
+                .await?;
+
+            let profile = Profile::new(public_key, metadata);
+            let room = Room::new(&event);
+
+            Ok((profile, room))
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok((profile, room)) => {
+                    this.update(cx, |this, cx| {
+                        let chats = ChatRegistry::global(cx);
+                        let result = chats
+                            .read(cx)
+                            .search_by_public_key(profile.public_key(), cx);
+
+                        if !result.is_empty() {
+                            this.local_result(result, cx);
+                        }
+                        this.global_result(vec![cx.new(|_| room)], cx);
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(
+                            Notification::error(e.to_string()).title("Search Error"),
+                            cx,
+                        );
+                    })
+                    .ok();
+                }
+            };
+        })
+        .detach();
+    }
+
+    fn search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.find_input.read(cx).value().to_string();
+
+        // Return if search is in progress
+        if self.finding {
+            window.push_notification("There is another search in progress", cx);
+            return;
         }
+
+        // Return if the query is empty
+        if query.is_empty() {
+            window.push_notification("Cannot search with an empty query", cx);
+            return;
+        }
+
+        // Return if the query starts with "nsec1" or "note1"
+        if query.starts_with("nsec1") || query.starts_with("note1") {
+            window.push_notification("Coop does not support searching with this query", cx);
+            return;
+        }
+
+        // Block the input until the search process completes
+        self.set_finding(true, cx);
+
+        // Process to search by user if query starts with npub or nprofile
+        if query.starts_with("npub1") || query.starts_with("nprofile1") {
+            self.search_by_user(&query, window, cx);
+            return;
+        };
+
+        let chats = ChatRegistry::global(cx);
+        let result = chats.read(cx).search(&query, cx);
+
+        if result.is_empty() {
+            // There are no current rooms matching this query, so proceed with global search via NIP-50
+            self.search_by_nip50(&query, window, cx);
+        } else {
+            self.local_result(result, cx);
+        }
+    }
+
+    fn global_result(&mut self, rooms: Vec<Entity<Room>>, cx: &mut Context<Self>) {
+        if self.finding {
+            self.set_finding(false, cx);
+        }
+
+        self.global_result.update(cx, |this, cx| {
+            *this = Some(rooms);
+            cx.notify();
+        });
+    }
+
+    fn local_result(&mut self, rooms: Vec<Entity<Room>>, cx: &mut Context<Self>) {
+        if self.finding {
+            self.set_finding(false, cx);
+        }
+
+        self.local_result.update(cx, |this, cx| {
+            *this = Some(rooms);
+            cx.notify();
+        });
     }
 
     fn set_finding(&mut self, status: bool, cx: &mut Context<Self>) {
         self.finding = status;
         cx.notify();
+        // Disable the input to prevent duplicate requests
+        self.find_input.update(cx, |this, cx| {
+            this.set_disabled(status, cx);
+            this.set_loading(status, cx);
+        });
     }
 
     fn clear_search_results(&mut self, cx: &mut Context<Self>) {
+        // Reset the input state
+        if self.finding {
+            self.set_finding(false, cx);
+        }
+
+        // Clear all local results
         self.local_result.update(cx, |this, cx| {
             *this = None;
             cx.notify();
         });
+
+        // Clear all global results
         self.global_result.update(cx, |this, cx| {
             *this = None;
             cx.notify();
@@ -516,6 +637,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::get_global(cx);
+
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
             results.to_owned()
@@ -552,11 +674,11 @@ impl Render for Sidebar {
                 ),
             )
             // Global Search Results
-            .when_some(self.global_result.read(cx).clone(), |this, rooms| {
+            .when_some(self.global_result.read(cx).as_ref(), |this, rooms| {
                 this.child(div().px_2().w_full().flex().flex_col().gap_1().children({
                     let mut items = Vec::with_capacity(rooms.len());
 
-                    for (ix, room) in rooms.into_iter().enumerate() {
+                    for (ix, room) in rooms.iter().enumerate() {
                         let this = room.read(cx);
                         let id = this.id;
                         let label = this.display_name(cx);
