@@ -300,7 +300,9 @@ impl Sidebar {
                             .read(cx)
                             .search_by_public_key(profile.public_key(), cx);
 
-                        this.local_result(result, cx);
+                        if !result.is_empty() {
+                            this.local_result(result, cx);
+                        }
                         this.global_result(vec![cx.new(|_| room)], cx);
                     })
                     .ok();
