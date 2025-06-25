@@ -179,8 +179,6 @@ impl Sidebar {
                     for event in events.into_iter() {
                         let metadata = Metadata::from_json(event.content).unwrap_or_default();
 
-                        log::info!("metadata: {:?}", metadata);
-
                         let Some(target) = metadata.nip05.as_ref() else {
                             // Skip if NIP-05 is not found
                             continue;
