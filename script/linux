@@ -34,6 +34,7 @@ if [[ -n $apt ]]; then
     libzstd-dev
     libvulkan1
     libgit2-dev
+    libx11-dev
     make
     cmake
     clang
