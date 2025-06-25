@@ -403,7 +403,7 @@ impl Compose {
                         this.child(
                             Icon::new(IconName::CheckCircleFill)
                                 .small()
-                                .text_color(cx.theme().icon_accent),
+                                .text_color(cx.theme().ring),
                         )
                     })
                     .hover(|this| this.bg(cx.theme().elevated_surface_background))
@@ -478,7 +478,7 @@ impl Render for Compose {
                                     .gap_1()
                                     .child(TextInput::new(&self.user_input).small())
                                     .child(
-                                        Button::new("add-user")
+                                        Button::new("add")
                                             .icon(IconName::PlusCircleFill)
                                             .small()
                                             .ghost()

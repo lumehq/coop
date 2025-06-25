@@ -149,6 +149,8 @@ impl Sidebar {
 
     fn search_by_nip50(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         let query = query.to_owned();
+        let query_cloned = query.clone();
+
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             let client = shared_state().client();
 
@@ -218,13 +220,22 @@ impl Sidebar {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(result) => {
-                    this.update(cx, |this, cx| {
-                        let result = result
-                            .into_iter()
-                            .map(|room| cx.new(|_| room))
-                            .collect_vec();
-
-                        this.global_result(result, cx);
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            if result.is_empty() {
+                                let msg =
+                                    format!("There are no users matching query {}", query_cloned);
+                                window.push_notification(Notification::info(msg), cx);
+                                this.set_finding(false, cx);
+                            } else {
+                                let result = result
+                                    .into_iter()
+                                    .map(|room| cx.new(|_| room))
+                                    .collect_vec();
+                                this.global_result(result, cx);
+                            }
+                        })
+                        .ok();
                     })
                     .ok();
                 }
