@@ -318,39 +318,30 @@ impl Login {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (tx, rx) = oneshot::channel::<Option<(NostrConnectURI, NostrConnect)>>();
-
-        cx.background_spawn(async move {
-            match signer.bunker_uri().await {
-                Ok(bunker_uri) => {
-                    tx.send(Some((bunker_uri, signer))).ok();
-                }
-                Err(e) => {
-                    log::error!("Nostr Connect (Client): {e}");
-                    tx.send(None).ok();
-                }
-            }
-        })
-        .detach();
-
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some((uri, signer))) = rx.await {
-                cx.update(|window, cx| {
-                    Identity::global(cx).update(cx, |this, cx| {
-                        this.write_bunker(&uri, cx);
-                        this.set_signer(signer, window, cx);
-                    });
-                })
-                .ok();
-            } else {
-                cx.update(|window, cx| {
-                    // Only send notifications on the login screen
-                    this.update(cx, |_, cx| {
-                        window.push_notification(Notification::error("Connection failed"), cx);
+            match signer.bunker_uri().await {
+                Ok(uri) => {
+                    cx.update(|window, cx| {
+                        Identity::global(cx).update(cx, |this, cx| {
+                            this.write_bunker(&uri, cx);
+                            this.set_signer(signer, window, cx);
+                        });
                     })
                     .ok();
-                })
-                .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        // Only send notifications on the login screen
+                        this.update(cx, |_, cx| {
+                            window.push_notification(
+                                Notification::error(e.to_string()).title("Nostr Connect"),
+                                cx,
+                            );
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
