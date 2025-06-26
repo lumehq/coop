@@ -31,8 +31,6 @@ pub struct Login {
     relay_input: Entity<InputState>,
     connection_string: Entity<NostrConnectURI>,
     qr_image: Entity<Option<Arc<Image>>>,
-    // Signer that created by Connection String
-    active_signer: Entity<Option<NostrConnect>>,
     // Error for the key input
     error: Entity<Option<SharedString>>,
     is_logging_in: bool,
@@ -40,7 +38,7 @@ pub struct Login {
     name: SharedString,
     focus_handle: FocusHandle,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 5]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl Login {
@@ -66,14 +64,7 @@ impl Login {
             NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
 
-        // Convert the Connection String into QR Image
         let qr_image = cx.new(|_| None);
-        let async_qr_image = qr_image.downgrade();
-
-        // Keep track of the signer that created by Connection String
-        let active_signer = cx.new(|_| None);
-        let async_active_signer = active_signer.downgrade();
-
         let error = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
@@ -95,36 +86,11 @@ impl Login {
             }),
         );
 
-        // Observe the Connect URI that changes when the relay is changed
-        subscriptions.push(cx.observe_new::<NostrConnectURI>(move |uri, _window, cx| {
-            let client_keys = ClientKeys::get_global(cx).keys();
-            let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
-
-            if let Ok(mut signer) = NostrConnect::new(uri.to_owned(), client_keys, timeout, None) {
-                // Automatically open auth url
-                signer.auth_url_handler(CoopAuthUrlHandler);
-
-                async_active_signer
-                    .update(cx, |this, cx| {
-                        *this = Some(signer);
-                        cx.notify();
-                    })
-                    .ok();
-            }
-
-            // Update the QR Image with the new connection string
-            async_qr_image
-                .update(cx, |this, cx| {
-                    *this = string_to_qr(&uri.to_string());
-                    cx.notify();
-                })
-                .ok();
-        }));
-
+        // Observe changes to the Nostr Connect URI and wait for a connection
         subscriptions.push(cx.observe_in(
             &connection_string,
             window,
-            |this, entity, _window, cx| {
+            |this, entity, window, cx| {
                 let connection_string = entity.read(cx).clone();
                 let client_keys = ClientKeys::get_global(cx).keys();
 
@@ -143,27 +109,32 @@ impl Login {
                     Ok(mut signer) => {
                         // Automatically open auth url
                         signer.auth_url_handler(CoopAuthUrlHandler);
-
-                        this.active_signer.update(cx, |this, cx| {
-                            *this = Some(signer);
-                            cx.notify();
-                        });
+                        // Wait for connection in the background
+                        this.wait_for_connection(signer, window, cx);
                     }
-                    Err(_) => {
-                        log::error!("Failed to create Nostr Connect")
+                    Err(e) => {
+                        window.push_notification(
+                            Notification::error(e.to_string()).title("Nostr Connect"),
+                            cx,
+                        );
                     }
                 }
             },
         ));
 
-        subscriptions.push(
-            cx.observe_in(&active_signer, window, |this, entity, window, cx| {
-                if let Some(signer) = entity.read(cx).as_ref() {
-                    // Wait for connection from remote signer
-                    this.wait_for_connection(signer.to_owned(), window, cx);
-                }
-            }),
-        );
+        // Create a Nostr Connect URI and QR Code 800ms after opening the login screen
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(800))
+                .await;
+            this.update(cx, |this, cx| {
+                this.connection_string.update(cx, |_, cx| {
+                    cx.notify();
+                })
+            })
+            .ok();
+        })
+        .detach();
 
         Self {
             name: "Login".into(),
@@ -174,7 +145,6 @@ impl Login {
             connection_string,
             qr_image,
             error,
-            active_signer,
             subscriptions,
         }
     }
@@ -320,10 +290,7 @@ impl Login {
             match signer.bunker_uri().await {
                 Ok(bunker_uri) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            "Connected to the Remote Signer successfully. Logging in...",
-                            cx,
-                        );
+                        window.push_notification("Logging in...", cx);
                         Identity::global(cx).update(cx, |this, cx| {
                             this.write_bunker(&bunker_uri, cx);
                             this.set_signer(signer, window, cx);
@@ -377,10 +344,9 @@ impl Login {
                 .ok();
             } else {
                 cx.update(|window, cx| {
-                    // Refresh the active signer
-                    this.update(cx, |this, cx| {
+                    // Only send notifications on the login screen
+                    this.update(cx, |_, cx| {
                         window.push_notification(Notification::error("Connection failed"), cx);
-                        this.change_relay(window, cx);
                     })
                     .ok();
                 })
