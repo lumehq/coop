@@ -186,12 +186,22 @@ impl Login {
         // Prevent duplicate login requests
         self.set_logging_in(true, cx);
 
+        // Disable the input
+        self.key_input.update(cx, |this, cx| {
+            this.set_loading(true, cx);
+            this.set_disabled(true, cx);
+        });
+
         // Content can be secret key or bunker://
         match self.key_input.read(cx).value().to_string() {
             s if s.starts_with("nsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("ncryptsec1") => self.ask_for_password(s, window, cx),
-            s if s.starts_with("bunker://") => self.login_with_bunker(&s, window, cx),
-            _ => self.set_error("You must provide a valid Private Key or Bunker.", cx),
+            s if s.starts_with("bunker://") => self.login_with_bunker(s, window, cx),
+            _ => self.set_error(
+                "You must provide a valid Private Key or Bunker.",
+                window,
+                cx,
+            ),
         };
     }
 
@@ -221,10 +231,10 @@ impl Login {
                 .show_close(false)
                 .keyboard(false)
                 .confirm()
-                .on_cancel(move |_, _window, cx| {
+                .on_cancel(move |_, window, cx| {
                     view_cancel
                         .update(cx, |this, cx| {
-                            this.set_error("Password is required", cx);
+                            this.set_error("Password is required", window, cx);
                         })
                         .ok();
                     true
@@ -239,7 +249,7 @@ impl Login {
                             if let Some(password) = value {
                                 this.login_with_keys(password.to_string(), window, cx);
                             } else {
-                                this.set_error("Password is required", cx);
+                                this.set_error("Password is required", window, cx);
                             }
                         })
                         .ok();
@@ -283,59 +293,53 @@ impl Login {
 
         if let Some(secret_key) = secret_key {
             let keys = Keys::new(secret_key);
+
             Identity::global(cx).update(cx, |this, cx| {
                 this.write_keys(&keys, password, cx);
                 this.set_signer(keys, window, cx);
             });
         } else {
-            self.set_error("Secret Key is invalid", cx);
+            self.set_error("Secret Key is invalid", window, cx);
         }
     }
 
-    fn login_with_bunker(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_bunker(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(uri) = NostrConnectURI::parse(content) else {
-            self.set_error("Bunker URL is not valid", cx);
+            self.set_error("Bunker URL is not valid", window, cx);
             return;
         };
 
         let client_keys = ClientKeys::get_global(cx).keys();
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2);
-
-        let Ok(mut signer) = NostrConnect::new(uri, client_keys, timeout, None) else {
-            self.set_error("Failed to create remote signer", cx);
-            return;
-        };
-
-        // Automatically open auth url
+        // .unwrap() is fine here because there's no error handling for bunker uri
+        let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
+        // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
 
-        let (tx, rx) = oneshot::channel::<Option<(NostrConnect, NostrConnectURI)>>();
-
-        // Verify remote signer connection
-        cx.background_spawn(async move {
-            if let Ok(bunker_uri) = signer.bunker_uri().await {
-                tx.send(Some((signer, bunker_uri))).ok();
-            } else {
-                tx.send(None).ok();
-            }
-        })
-        .detach();
-
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some((signer, uri))) = rx.await {
-                cx.update(|window, cx| {
-                    Identity::global(cx).update(cx, |this, cx| {
-                        this.write_bunker(&uri, cx);
-                        this.set_signer(signer, window, cx);
-                    });
-                })
-                .ok();
-            } else {
-                this.update(cx, |this, cx| {
-                    let msg = "Connection to the Remote Signer failed or timed out";
-                    this.set_error(msg, cx);
-                })
-                .ok();
+            match signer.bunker_uri().await {
+                Ok(bunker_uri) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(
+                            "Connected to the Remote Signer successfully. Logging in...",
+                            cx,
+                        );
+                        Identity::global(cx).update(cx, |this, cx| {
+                            this.write_bunker(&bunker_uri, cx);
+                            this.set_signer(signer, window, cx);
+                        });
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.set_error(e.to_string(), window, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
@@ -402,11 +406,26 @@ impl Login {
         });
     }
 
-    fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
+    fn set_error(
+        &mut self,
+        message: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Reset the log in state
         self.set_logging_in(false, cx);
+
+        // Update error message
         self.error.update(cx, |this, cx| {
             *this = Some(message.into());
             cx.notify();
+        });
+
+        // Re enable the input
+        self.key_input.update(cx, |this, cx| {
+            this.set_value("", window, cx);
+            this.set_loading(false, cx);
+            this.set_disabled(false, cx);
         });
 
         // Clear the error message after 3 secs

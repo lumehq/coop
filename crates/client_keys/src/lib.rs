@@ -80,13 +80,11 @@ impl ClientKeys {
     }
 
     pub(crate) fn set_keys(&mut self, keys: Option<Keys>, persist: bool, cx: &mut Context<Self>) {
-        if let Some(keys) = keys.clone() {
-            if persist {
-                let write_keys = cx.write_credentials(
-                    KEYRING_URL,
-                    keys.public_key().to_hex().as_str(),
-                    keys.secret_key().as_secret_bytes(),
-                );
+        if persist {
+            if let Some(keys) = keys.as_ref() {
+                let username = keys.public_key().to_hex();
+                let password = keys.secret_key().secret_bytes();
+                let write_keys = cx.write_credentials(KEYRING_URL, &username, &password);
 
                 cx.background_spawn(async move {
                     if let Err(e) = write_keys.await {
@@ -94,14 +92,11 @@ impl ClientKeys {
                     }
                 })
                 .detach();
-
-                cx.notify();
             }
         }
 
         self.keys = keys;
-        // Make sure notify the UI after keys changes
-        cx.notify();
+        cx.notify(); // Notify GPUI to reload UI
     }
 
     pub fn new_keys(&mut self, cx: &mut Context<Self>) {
