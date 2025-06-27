@@ -177,11 +177,17 @@ impl Login {
 
     fn ask_for_password(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
         let current_view = cx.entity().downgrade();
+
         let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let weak_input = pwd_input.downgrade();
+        let weak_pwd_input = pwd_input.downgrade();
+
+        let confirm_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let weak_confirm_input = confirm_input.downgrade();
 
         window.open_modal(cx, move |this, _window, cx| {
-            let weak_input = weak_input.clone();
+            let weak_pwd_input = weak_pwd_input.clone();
+            let weak_confirm_input = weak_confirm_input.clone();
+
             let view_cancel = current_view.clone();
             let view_ok = current_view.clone();
 
@@ -191,10 +197,12 @@ impl Login {
                 "Password to decrypt your key *".into()
             };
 
-            let description: Option<SharedString> = if content.starts_with("ncryptsec1") {
-                Some("Coop will only stored the encrypted version".into())
+            let description: SharedString = if content.starts_with("ncryptsec1") {
+                "Coop will only store the encrypted version of your keys".into()
             } else {
-                None
+                "Coop will use the password to encrypt your keys. \
+                You will need this password to decrypt your keys for future use."
+                    .into()
             };
 
             this.overlay_closable(false)
@@ -210,17 +218,17 @@ impl Login {
                     true
                 })
                 .on_ok(move |_, window, cx| {
-                    let value = weak_input
+                    let value = weak_pwd_input
+                        .read_with(cx, |state, _cx| state.value().to_owned())
+                        .ok();
+
+                    let confirm = weak_confirm_input
                         .read_with(cx, |state, _cx| state.value().to_owned())
                         .ok();
 
                     view_ok
                         .update(cx, |this, cx| {
-                            if let Some(password) = value {
-                                this.login_with_keys(password.to_string(), window, cx);
-                            } else {
-                                this.set_error("Password is required", window, cx);
-                            }
+                            this.verify_password(value, confirm, window, cx);
                         })
                         .ok();
                     true
@@ -232,21 +240,76 @@ impl Login {
                         .w_full()
                         .flex()
                         .flex_col()
-                        .gap_1()
+                        .gap_2()
                         .text_sm()
-                        .child(label)
-                        .child(TextInput::new(&pwd_input).small())
-                        .when_some(description, |this, description| {
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(label)
+                                .child(TextInput::new(&pwd_input).small()),
+                        )
+                        .when(content.starts_with("nsec1"), |this| {
                             this.child(
                                 div()
-                                    .text_xs()
-                                    .italic()
-                                    .text_color(cx.theme().text_placeholder)
-                                    .child(description),
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child("Confirm your password *")
+                                    .child(TextInput::new(&confirm_input).small()),
                             )
-                        }),
+                        })
+                        .child(
+                            div()
+                                .text_xs()
+                                .italic()
+                                .text_color(cx.theme().text_placeholder)
+                                .child(description),
+                        ),
                 )
         });
+    }
+
+    fn verify_password(
+        &mut self,
+        password: Option<SharedString>,
+        confirm: Option<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(password) = password else {
+            self.set_error("Password is required", window, cx);
+            return;
+        };
+
+        if password.is_empty() {
+            self.set_error("Password is required", window, cx);
+            return;
+        }
+
+        // Skip verification if password starts with "ncryptsec1"
+        if password.starts_with("ncryptsec1") {
+            self.login_with_keys(password.to_string(), window, cx);
+            return;
+        }
+
+        let Some(confirm) = confirm else {
+            self.set_error("You must confirm your password", window, cx);
+            return;
+        };
+
+        if confirm.is_empty() {
+            self.set_error("You must confirm your password", window, cx);
+            return;
+        }
+
+        if password != confirm {
+            self.set_error("Passwords do not match", window, cx);
+            return;
+        }
+
+        self.login_with_keys(password.to_string(), window, cx);
     }
 
     fn login_with_keys(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {

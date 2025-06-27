@@ -9,7 +9,7 @@ use global::{
 };
 use gpui::{
     div, prelude::FluentBuilder, red, App, AppContext, Context, Entity, Global, ParentElement,
-    SharedString, Styled, Subscription, Task, Window,
+    SharedString, Styled, Subscription, Task, WeakEntity, Window,
 };
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
@@ -227,10 +227,15 @@ impl Identity {
     ) {
         let pwd_input: Entity<InputState> = cx.new(|cx| InputState::new(window, cx).masked(true));
         let weak_input = pwd_input.downgrade();
+
         let error: Entity<Option<SharedString>> = cx.new(|_| None);
         let weak_error = error.downgrade();
 
+        let entity = cx.weak_entity();
+
         window.open_modal(cx, move |this, _window, cx| {
+            let entity = entity.clone();
+            let entity_clone = entity.clone();
             let weak_input = weak_input.clone();
             let weak_error = weak_error.clone();
 
@@ -239,56 +244,25 @@ impl Identity {
                 .keyboard(false)
                 .confirm()
                 .on_cancel(move |_, _window, cx| {
-                    Identity::global(cx).update(cx, |this, cx| {
-                        this.set_profile(None, cx);
-                    });
+                    entity
+                        .update(cx, |this, cx| {
+                            this.set_profile(None, cx);
+                        })
+                        .ok();
+                    // Close modal
                     true
                 })
                 .on_ok(move |_, window, cx| {
-                    let value = weak_input
-                        .read_with(cx, |state, _cx| state.value().to_string())
+                    let weak_error = weak_error.clone();
+                    let password = weak_input
+                        .read_with(cx, |state, _cx| state.value().to_owned())
                         .ok();
 
-                    if let Some(password) = value {
-                        if password.is_empty() {
-                            weak_error
-                                .update(cx, |this, cx| {
-                                    *this = Some("Password cannot be empty".into());
-                                    cx.notify();
-                                })
-                                .ok();
-                            return false;
-                        };
-
-                        Identity::global(cx).update(cx, |_, cx| {
-                            let weak_error = weak_error.clone();
-                            let task: Task<Option<SecretKey>> = cx.background_spawn(async move {
-                                // Decrypt the password in the background to prevent blocking the main thread
-                                enc.decrypt(&password).ok()
-                            });
-
-                            cx.spawn_in(window, async move |this, cx| {
-                                if let Some(secret) = task.await {
-                                    cx.update(|window, cx| {
-                                        window.close_modal(cx);
-                                        this.update(cx, |this, cx| {
-                                            this.set_signer(Keys::new(secret), window, cx);
-                                        })
-                                        .ok();
-                                    })
-                                    .ok();
-                                } else {
-                                    weak_error
-                                        .update(cx, |this, cx| {
-                                            *this = Some("Invalid password".into());
-                                            cx.notify();
-                                        })
-                                        .ok();
-                                }
-                            })
-                            .detach();
-                        });
-                    }
+                    entity_clone
+                        .update(cx, |this, cx| {
+                            this.verify_keys(enc, password, weak_error, window, cx);
+                        })
+                        .ok();
 
                     false
                 })
@@ -314,6 +288,55 @@ impl Identity {
                         }),
                 )
         });
+    }
+
+    pub(crate) fn verify_keys(
+        &mut self,
+        enc: EncryptedSecretKey,
+        password: Option<SharedString>,
+        error: WeakEntity<Option<SharedString>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(password) = password else {
+            _ = error.update(cx, |this, cx| {
+                *this = Some("Password is required".into());
+                cx.notify();
+            });
+            return;
+        };
+
+        if password.is_empty() {
+            _ = error.update(cx, |this, cx| {
+                *this = Some("Password cannot be empty".into());
+                cx.notify();
+            });
+            return;
+        }
+
+        // Decrypt the password in the background to prevent blocking the main thread
+        let task: Task<Option<SecretKey>> =
+            cx.background_spawn(async move { enc.decrypt(&password).ok() });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Some(secret) = task.await {
+                cx.update(|window, cx| {
+                    window.close_modal(cx);
+                    // Update user's signer with decrypted secret key
+                    this.update(cx, |this, cx| {
+                        this.set_signer(Keys::new(secret), window, cx);
+                    })
+                    .ok();
+                })
+                .ok();
+            } else {
+                _ = error.update(cx, |this, cx| {
+                    *this = Some("Invalid password".into());
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     /// Sets a new signer for the client and updates user identity
