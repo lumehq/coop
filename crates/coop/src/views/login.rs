@@ -22,8 +22,6 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{ContextModal, Disableable, Sizable, StyledExt};
 
-const TIMEOUT: u64 = 30;
-
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
 }
@@ -348,7 +346,7 @@ impl Login {
         };
 
         let client_keys = ClientKeys::get_global(cx).keys();
-        let timeout = Duration::from_secs(TIMEOUT);
+        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 8);
         // .unwrap() is fine here because there's no error handling for bunker uri
         let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
         // Handle auth url with the default browser
@@ -356,7 +354,7 @@ impl Login {
 
         // Start countdown
         cx.spawn_in(window, async move |this, cx| {
-            for i in (0..=TIMEOUT).rev() {
+            for i in (0..=NOSTR_CONNECT_TIMEOUT / 8).rev() {
                 if i == 0 {
                     this.update(cx, |this, cx| {
                         this.set_countdown(None, cx);
