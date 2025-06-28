@@ -22,6 +22,8 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{ContextModal, Disableable, Sizable, StyledExt};
 
+const TIMEOUT: u64 = 30;
+
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
 }
@@ -31,16 +33,15 @@ pub struct Login {
     relay_input: Entity<InputState>,
     connection_string: Entity<NostrConnectURI>,
     qr_image: Entity<Option<Arc<Image>>>,
-    // Signer that created by Connection String
-    active_signer: Entity<Option<NostrConnect>>,
     // Error for the key input
     error: Entity<Option<SharedString>>,
-    is_logging_in: bool,
+    countdown: Entity<Option<u64>>,
+    logging_in: bool,
     // Panel
     name: SharedString,
     focus_handle: FocusHandle,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 5]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl Login {
@@ -66,15 +67,9 @@ impl Login {
             NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
 
-        // Convert the Connection String into QR Image
         let qr_image = cx.new(|_| None);
-        let async_qr_image = qr_image.downgrade();
-
-        // Keep track of the signer that created by Connection String
-        let active_signer = cx.new(|_| None);
-        let async_active_signer = active_signer.downgrade();
-
         let error = cx.new(|_| None);
+        let countdown = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
         // Subscribe to key input events and process login when the user presses enter
@@ -95,36 +90,11 @@ impl Login {
             }),
         );
 
-        // Observe the Connect URI that changes when the relay is changed
-        subscriptions.push(cx.observe_new::<NostrConnectURI>(move |uri, _window, cx| {
-            let client_keys = ClientKeys::get_global(cx).keys();
-            let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
-
-            if let Ok(mut signer) = NostrConnect::new(uri.to_owned(), client_keys, timeout, None) {
-                // Automatically open auth url
-                signer.auth_url_handler(CoopAuthUrlHandler);
-
-                async_active_signer
-                    .update(cx, |this, cx| {
-                        *this = Some(signer);
-                        cx.notify();
-                    })
-                    .ok();
-            }
-
-            // Update the QR Image with the new connection string
-            async_qr_image
-                .update(cx, |this, cx| {
-                    *this = string_to_qr(&uri.to_string());
-                    cx.notify();
-                })
-                .ok();
-        }));
-
+        // Observe changes to the Nostr Connect URI and wait for a connection
         subscriptions.push(cx.observe_in(
             &connection_string,
             window,
-            |this, entity, _window, cx| {
+            |this, entity, window, cx| {
                 let connection_string = entity.read(cx).clone();
                 let client_keys = ClientKeys::get_global(cx).keys();
 
@@ -143,65 +113,86 @@ impl Login {
                     Ok(mut signer) => {
                         // Automatically open auth url
                         signer.auth_url_handler(CoopAuthUrlHandler);
-
-                        this.active_signer.update(cx, |this, cx| {
-                            *this = Some(signer);
-                            cx.notify();
-                        });
+                        // Wait for connection in the background
+                        this.wait_for_connection(signer, window, cx);
                     }
-                    Err(_) => {
-                        log::error!("Failed to create Nostr Connect")
+                    Err(e) => {
+                        window.push_notification(
+                            Notification::error(e.to_string()).title("Nostr Connect"),
+                            cx,
+                        );
                     }
                 }
             },
         ));
 
-        subscriptions.push(
-            cx.observe_in(&active_signer, window, |this, entity, window, cx| {
-                if let Some(signer) = entity.read(cx).as_ref() {
-                    // Wait for connection from remote signer
-                    this.wait_for_connection(signer.to_owned(), window, cx);
-                }
-            }),
-        );
+        // Create a Nostr Connect URI and QR Code 800ms after opening the login screen
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(800))
+                .await;
+            this.update(cx, |this, cx| {
+                this.connection_string.update(cx, |_, cx| {
+                    cx.notify();
+                })
+            })
+            .ok();
+        })
+        .detach();
 
         Self {
             name: "Login".into(),
             focus_handle: cx.focus_handle(),
-            is_logging_in: false,
+            logging_in: false,
+            countdown,
             key_input,
             relay_input,
             connection_string,
             qr_image,
             error,
-            active_signer,
             subscriptions,
         }
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_logging_in {
+        if self.logging_in {
             return;
         };
         // Prevent duplicate login requests
         self.set_logging_in(true, cx);
 
+        // Disable the input
+        self.key_input.update(cx, |this, cx| {
+            this.set_loading(true, cx);
+            this.set_disabled(true, cx);
+        });
+
         // Content can be secret key or bunker://
         match self.key_input.read(cx).value().to_string() {
             s if s.starts_with("nsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("ncryptsec1") => self.ask_for_password(s, window, cx),
-            s if s.starts_with("bunker://") => self.login_with_bunker(&s, window, cx),
-            _ => self.set_error("You must provide a valid Private Key or Bunker.", cx),
+            s if s.starts_with("bunker://") => self.login_with_bunker(s, window, cx),
+            _ => self.set_error(
+                "You must provide a valid Private Key or Bunker.",
+                window,
+                cx,
+            ),
         };
     }
 
     fn ask_for_password(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
         let current_view = cx.entity().downgrade();
+
         let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let weak_input = pwd_input.downgrade();
+        let weak_pwd_input = pwd_input.downgrade();
+
+        let confirm_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let weak_confirm_input = confirm_input.downgrade();
 
         window.open_modal(cx, move |this, _window, cx| {
-            let weak_input = weak_input.clone();
+            let weak_pwd_input = weak_pwd_input.clone();
+            let weak_confirm_input = weak_confirm_input.clone();
+
             let view_cancel = current_view.clone();
             let view_ok = current_view.clone();
 
@@ -211,36 +202,38 @@ impl Login {
                 "Password to decrypt your key *".into()
             };
 
-            let description: Option<SharedString> = if content.starts_with("ncryptsec1") {
-                Some("Coop will only stored the encrypted version".into())
+            let description: SharedString = if content.starts_with("ncryptsec1") {
+                "Coop will only store the encrypted version of your keys".into()
             } else {
-                None
+                "Coop will use the password to encrypt your keys. \
+                You will need this password to decrypt your keys for future use."
+                    .into()
             };
 
             this.overlay_closable(false)
                 .show_close(false)
                 .keyboard(false)
                 .confirm()
-                .on_cancel(move |_, _window, cx| {
+                .on_cancel(move |_, window, cx| {
                     view_cancel
                         .update(cx, |this, cx| {
-                            this.set_error("Password is required", cx);
+                            this.set_error("Password is required", window, cx);
                         })
                         .ok();
                     true
                 })
                 .on_ok(move |_, window, cx| {
-                    let value = weak_input
+                    let value = weak_pwd_input
+                        .read_with(cx, |state, _cx| state.value().to_owned())
+                        .ok();
+
+                    let confirm = weak_confirm_input
                         .read_with(cx, |state, _cx| state.value().to_owned())
                         .ok();
 
                     view_ok
                         .update(cx, |this, cx| {
-                            if let Some(password) = value {
-                                this.login_with_keys(password.to_string(), window, cx);
-                            } else {
-                                this.set_error("Password is required", cx);
-                            }
+                            this.verify_password(value, confirm, window, cx);
                         })
                         .ok();
                     true
@@ -252,21 +245,76 @@ impl Login {
                         .w_full()
                         .flex()
                         .flex_col()
-                        .gap_1()
+                        .gap_2()
                         .text_sm()
-                        .child(label)
-                        .child(TextInput::new(&pwd_input).small())
-                        .when_some(description, |this, description| {
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(label)
+                                .child(TextInput::new(&pwd_input).small()),
+                        )
+                        .when(content.starts_with("nsec1"), |this| {
                             this.child(
                                 div()
-                                    .text_xs()
-                                    .italic()
-                                    .text_color(cx.theme().text_placeholder)
-                                    .child(description),
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child("Confirm your password *")
+                                    .child(TextInput::new(&confirm_input).small()),
                             )
-                        }),
+                        })
+                        .child(
+                            div()
+                                .text_xs()
+                                .italic()
+                                .text_color(cx.theme().text_placeholder)
+                                .child(description),
+                        ),
                 )
         });
+    }
+
+    fn verify_password(
+        &mut self,
+        password: Option<SharedString>,
+        confirm: Option<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(password) = password else {
+            self.set_error("Password is required", window, cx);
+            return;
+        };
+
+        if password.is_empty() {
+            self.set_error("Password is required", window, cx);
+            return;
+        }
+
+        // Skip verification if password starts with "ncryptsec1"
+        if password.starts_with("ncryptsec1") {
+            self.login_with_keys(password.to_string(), window, cx);
+            return;
+        }
+
+        let Some(confirm) = confirm else {
+            self.set_error("You must confirm your password", window, cx);
+            return;
+        };
+
+        if confirm.is_empty() {
+            self.set_error("You must confirm your password", window, cx);
+            return;
+        }
+
+        if password != confirm {
+            self.set_error("Passwords do not match", window, cx);
+            return;
+        }
+
+        self.login_with_keys(password.to_string(), window, cx);
     }
 
     fn login_with_keys(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -283,59 +331,75 @@ impl Login {
 
         if let Some(secret_key) = secret_key {
             let keys = Keys::new(secret_key);
+
             Identity::global(cx).update(cx, |this, cx| {
                 this.write_keys(&keys, password, cx);
                 this.set_signer(keys, window, cx);
             });
         } else {
-            self.set_error("Secret Key is invalid", cx);
+            self.set_error("Secret Key is invalid", window, cx);
         }
     }
 
-    fn login_with_bunker(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_bunker(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(uri) = NostrConnectURI::parse(content) else {
-            self.set_error("Bunker URL is not valid", cx);
+            self.set_error("Bunker URL is not valid", window, cx);
             return;
         };
 
         let client_keys = ClientKeys::get_global(cx).keys();
-        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2);
-
-        let Ok(mut signer) = NostrConnect::new(uri, client_keys, timeout, None) else {
-            self.set_error("Failed to create remote signer", cx);
-            return;
-        };
-
-        // Automatically open auth url
+        let timeout = Duration::from_secs(TIMEOUT);
+        // .unwrap() is fine here because there's no error handling for bunker uri
+        let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
+        // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
 
-        let (tx, rx) = oneshot::channel::<Option<(NostrConnect, NostrConnectURI)>>();
-
-        // Verify remote signer connection
-        cx.background_spawn(async move {
-            if let Ok(bunker_uri) = signer.bunker_uri().await {
-                tx.send(Some((signer, bunker_uri))).ok();
-            } else {
-                tx.send(None).ok();
+        // Start countdown
+        cx.spawn_in(window, async move |this, cx| {
+            for i in (0..=TIMEOUT).rev() {
+                if i == 0 {
+                    this.update(cx, |this, cx| {
+                        this.set_countdown(None, cx);
+                    })
+                    .ok();
+                } else {
+                    this.update(cx, |this, cx| {
+                        this.set_countdown(Some(i), cx);
+                    })
+                    .ok();
+                }
+                cx.background_executor().timer(Duration::from_secs(1)).await;
             }
         })
         .detach();
 
+        // Handle connection
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some((signer, uri))) = rx.await {
-                cx.update(|window, cx| {
-                    Identity::global(cx).update(cx, |this, cx| {
-                        this.write_bunker(&uri, cx);
-                        this.set_signer(signer, window, cx);
-                    });
-                })
-                .ok();
-            } else {
-                this.update(cx, |this, cx| {
-                    let msg = "Connection to the Remote Signer failed or timed out";
-                    this.set_error(msg, cx);
-                })
-                .ok();
+            match signer.bunker_uri().await {
+                Ok(bunker_uri) => {
+                    cx.update(|window, cx| {
+                        window.push_notification("Logging in...", cx);
+                        Identity::global(cx).update(cx, |this, cx| {
+                            this.write_bunker(&bunker_uri, cx);
+                            this.set_signer(signer, window, cx);
+                        });
+                    })
+                    .ok();
+                }
+                Err(error) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            // Force reset the client keys without notify UI
+                            ClientKeys::global(cx).update(cx, |this, cx| {
+                                log::info!("Timeout occurred. Reset client keys");
+                                this.force_new_keys(cx);
+                            });
+                            this.set_error(error.to_string(), window, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
@@ -347,40 +411,30 @@ impl Login {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (tx, rx) = oneshot::channel::<Option<(NostrConnectURI, NostrConnect)>>();
-
-        cx.background_spawn(async move {
-            match signer.bunker_uri().await {
-                Ok(bunker_uri) => {
-                    tx.send(Some((bunker_uri, signer))).ok();
-                }
-                Err(e) => {
-                    log::error!("Nostr Connect (Client): {e}");
-                    tx.send(None).ok();
-                }
-            }
-        })
-        .detach();
-
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some((uri, signer))) = rx.await {
-                cx.update(|window, cx| {
-                    Identity::global(cx).update(cx, |this, cx| {
-                        this.write_bunker(&uri, cx);
-                        this.set_signer(signer, window, cx);
-                    });
-                })
-                .ok();
-            } else {
-                cx.update(|window, cx| {
-                    // Refresh the active signer
-                    this.update(cx, |this, cx| {
-                        window.push_notification(Notification::error("Connection failed"), cx);
-                        this.change_relay(window, cx);
+            match signer.bunker_uri().await {
+                Ok(uri) => {
+                    cx.update(|window, cx| {
+                        Identity::global(cx).update(cx, |this, cx| {
+                            this.write_bunker(&uri, cx);
+                            this.set_signer(signer, window, cx);
+                        });
                     })
                     .ok();
-                })
-                .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        // Only send notifications on the login screen
+                        this.update(cx, |_, cx| {
+                            window.push_notification(
+                                Notification::error(e.to_string()).title("Nostr Connect"),
+                                cx,
+                            );
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
@@ -402,11 +456,29 @@ impl Login {
         });
     }
 
-    fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
+    fn set_error(
+        &mut self,
+        message: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Reset the log in state
         self.set_logging_in(false, cx);
+
+        // Reset the countdown
+        self.set_countdown(None, cx);
+
+        // Update error message
         self.error.update(cx, |this, cx| {
             *this = Some(message.into());
             cx.notify();
+        });
+
+        // Re enable the input
+        self.key_input.update(cx, |this, cx| {
+            this.set_value("", window, cx);
+            this.set_loading(false, cx);
+            this.set_disabled(false, cx);
         });
 
         // Clear the error message after 3 secs
@@ -425,8 +497,15 @@ impl Login {
     }
 
     fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_logging_in = status;
+        self.logging_in = status;
         cx.notify();
+    }
+
+    fn set_countdown(&mut self, i: Option<u64>, cx: &mut Context<Self>) {
+        self.countdown.update(cx, |this, cx| {
+            *this = i;
+            cx.notify();
+        });
     }
 }
 
@@ -502,12 +581,24 @@ impl Render for Login {
                                         Button::new("login")
                                             .label("Continue")
                                             .primary()
-                                            .loading(self.is_logging_in)
-                                            .disabled(self.is_logging_in)
+                                            .loading(self.logging_in)
+                                            .disabled(self.logging_in)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.login(window, cx);
                                             })),
                                     )
+                                    .when_some(self.countdown.read(cx).as_ref(), |this, i| {
+                                        this.child(
+                                            div()
+                                                .text_xs()
+                                                .text_center()
+                                                .text_color(cx.theme().text_muted)
+                                                .child(SharedString::from(format!(
+                                                    "Approve connection request from your signer in {} seconds",
+                                                    i
+                                                ))),
+                                        )
+                                    })
                                     .when_some(self.error.read(cx).clone(), |this, error| {
                                         this.child(
                                             div()

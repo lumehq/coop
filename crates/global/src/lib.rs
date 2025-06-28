@@ -632,7 +632,7 @@ impl Globals {
 }
 
 fn is_first_run() -> Result<bool, anyhow::Error> {
-    let flag = support_dir().join(".coop_first_run");
+    let flag = support_dir().join(format!(".{}-first_run", env!("CARGO_PKG_VERSION")));
 
     if !flag.exists() {
         fs::write(&flag, "")?;
