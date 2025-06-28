@@ -476,7 +476,7 @@ impl Identity {
 
         cx.background_spawn(async move {
             if let Ok(enc_key) =
-                EncryptedSecretKey::new(keys.secret_key(), &password, 16, KeySecurity::Medium)
+                EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
             {
                 let client = shared_state().client();
                 let keys = Keys::generate();

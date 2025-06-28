@@ -56,11 +56,11 @@ impl ClientKeys {
                 // Update keys
                 this.update(cx, |this, cx| {
                     let Ok(secret_key) = SecretKey::from_slice(&secret) else {
-                        this.set_keys(None, false, cx);
+                        this.set_keys(None, false, true, cx);
                         return;
                     };
                     let keys = Keys::new(secret_key);
-                    this.set_keys(Some(keys), false, cx);
+                    this.set_keys(Some(keys), false, true, cx);
                 })
                 .ok();
             } else if shared_state().first_run() {
@@ -71,7 +71,7 @@ impl ClientKeys {
                 .ok();
             } else {
                 this.update(cx, |this, cx| {
-                    this.set_keys(None, false, cx);
+                    this.set_keys(None, false, true, cx);
                 })
                 .ok();
             }
@@ -79,7 +79,13 @@ impl ClientKeys {
         .detach();
     }
 
-    pub(crate) fn set_keys(&mut self, keys: Option<Keys>, persist: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_keys(
+        &mut self,
+        keys: Option<Keys>,
+        persist: bool,
+        notify: bool,
+        cx: &mut Context<Self>,
+    ) {
         if persist {
             if let Some(keys) = keys.as_ref() {
                 let username = keys.public_key().to_hex();
@@ -96,11 +102,18 @@ impl ClientKeys {
         }
 
         self.keys = keys;
-        cx.notify(); // Notify GPUI to reload UI
+        // Notify GPUI to reload UI
+        if notify {
+            cx.notify();
+        }
     }
 
     pub fn new_keys(&mut self, cx: &mut Context<Self>) {
-        self.set_keys(Some(Keys::generate()), true, cx);
+        self.set_keys(Some(Keys::generate()), true, true, cx);
+    }
+
+    pub fn force_new_keys(&mut self, cx: &mut Context<Self>) {
+        self.set_keys(Some(Keys::generate()), true, false, cx);
     }
 
     pub fn keys(&self) -> Keys {

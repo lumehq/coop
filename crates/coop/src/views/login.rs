@@ -343,7 +343,7 @@ impl Login {
         };
 
         let client_keys = ClientKeys::get_global(cx).keys();
-        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 2);
+        let timeout = Duration::from_secs(20);
         // .unwrap() is fine here because there's no error handling for bunker uri
         let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
         // Handle auth url with the default browser
@@ -361,10 +361,15 @@ impl Login {
                     })
                     .ok();
                 }
-                Err(e) => {
+                Err(error) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            this.set_error(e.to_string(), window, cx);
+                            // Force reset the client keys without notify UI
+                            ClientKeys::global(cx).update(cx, |this, cx| {
+                                log::info!("Timeout occurred. Reset client keys");
+                                this.force_new_keys(cx);
+                            });
+                            this.set_error(error.to_string(), window, cx);
                         })
                         .ok();
                     })
