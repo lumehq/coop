@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, impl_internal_actions, px, App, AppContext, Corner, Element, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    WeakEntity, Window,
+    div, px, Action, App, AppContext, Corner, Element, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WeakEntity,
+    Window,
 };
 use serde::Deserialize;
 use theme::ActiveTheme;
@@ -14,10 +14,9 @@ use crate::input::InputState;
 use crate::popover::{Popover, PopoverContent};
 use crate::Icon;
 
-#[derive(PartialEq, Clone, Debug, Deserialize)]
+#[derive(Action, PartialEq, Clone, Debug, Deserialize)]
+#[action(namespace = emoji, no_json)]
 pub struct EmitEmoji(pub SharedString);
-
-impl_internal_actions!(emoji, [EmitEmoji]);
 
 #[derive(IntoElement)]
 pub struct EmojiPicker {

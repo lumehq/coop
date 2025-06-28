@@ -2,23 +2,43 @@ use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
+use anyhow::{anyhow, Error, Result};
 use gpui::{Image, ImageFormat};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use qrcode_generator::QrCodeEcc;
+use reqwest::Client as ReqClient;
 
 pub mod debounced_delay;
 pub mod handle_auth;
 pub mod profile;
 
-pub async fn nip96_upload(
-    client: &Client,
-    upload_to: Url,
-    file: Vec<u8>,
-) -> anyhow::Result<Url, anyhow::Error> {
-    let signer = client.signer().await?;
+pub async fn verify_nip05(public_key: PublicKey, address: &str) -> Result<bool, Error> {
+    let req_client = ReqClient::new();
+    let address = Nip05Address::parse(address)?;
+    let res = req_client.get(address.url().to_string()).send().await?;
+    let json: Value = res.json().await?;
+    let verify = nip05::verify_from_json(&public_key, &address, &json);
 
-    let config: ServerConfig = nip96::get_server_config(upload_to.to_owned(), None).await?;
+    Ok(verify)
+}
+
+pub async fn nip05_profile(address: &str) -> Result<Nip05Profile, Error> {
+    let req_client = ReqClient::new();
+    let address = Nip05Address::parse(address)?;
+    let res = req_client.get(address.url().to_string()).send().await?;
+    let json: Value = res.json().await?;
+
+    if let Ok(profile) = Nip05Profile::from_json(&address, &json) {
+        Ok(profile)
+    } else {
+        Err(anyhow!("Failed to get NIP-05 profile"))
+    }
+}
+
+pub async fn nip96_upload(client: &Client, server: Url, file: Vec<u8>) -> Result<Url, Error> {
+    let signer = client.signer().await?;
+    let config = nip96::get_server_config(server.to_owned(), None).await?;
     let url = nip96::upload_data(&signer, &config, file, None, None).await?;
 
     Ok(url)
@@ -26,10 +46,10 @@ pub async fn nip96_upload(
 
 pub fn room_hash(event: &Event) -> u64 {
     let mut hasher = DefaultHasher::new();
-    let mut pubkeys: Vec<&PublicKey> = vec![];
+    let mut pubkeys: Vec<PublicKey> = vec![];
 
     // Add all public keys from event
-    pubkeys.push(&event.pubkey);
+    pubkeys.push(event.pubkey);
     pubkeys.extend(event.tags.public_keys().collect::<Vec<_>>());
 
     // Generate unique hash

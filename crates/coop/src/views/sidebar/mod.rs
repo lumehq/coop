@@ -7,6 +7,7 @@ use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
 use common::profile::RenderProfile;
+use common::verify_nip05;
 use element::DisplayRoom;
 use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::shared_state;
@@ -184,13 +185,8 @@ impl Sidebar {
                             continue;
                         };
 
-                        let Ok(verified) = nip05::verify(&event.pubkey, target, None).await else {
-                            // Skip if NIP-05 verification fails
-                            continue;
-                        };
-
-                        if !verified {
-                            // Skip if NIP-05 is not valid
+                        if !verify_nip05(event.pubkey, target).await.unwrap_or(false) {
+                            // Skip if NIP-05 is not valid or failed to verify
                             continue;
                         };
 

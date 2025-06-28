@@ -10,12 +10,15 @@ global = { path = "../global" }
 gpui.workspace = true
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
+nostr.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 futures.workspace = true
+reqwest.workspace = true
+log.workspace = true
 
 webbrowser = "1.0.4"
 qrcode-generator = "5.0.0"

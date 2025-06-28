@@ -4,17 +4,17 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use chats::room::{Room, RoomKind};
 use chats::ChatRegistry;
+use common::nip05_profile;
 use common::profile::RenderProfile;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, impl_internal_actions, px, red, relative, uniform_list, App, AppContext, Context,
-    Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    div, img, px, red, relative, uniform_list, App, AppContext, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Task, TextAlign, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
@@ -27,11 +27,6 @@ use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
 }
-
-#[derive(Clone, PartialEq, Eq, Deserialize)]
-struct SelectContact(PublicKey);
-
-impl_internal_actions!(contacts, [SelectContact]);
 
 #[derive(Debug, Clone)]
 struct Contact {
@@ -245,15 +240,14 @@ impl Compose {
 
         let task: Task<Result<Contact, anyhow::Error>> = if content.contains("@") {
             cx.background_spawn(async move {
-                let (tx, rx) = oneshot::channel::<Nip05Profile>();
+                let (tx, rx) = oneshot::channel::<Option<Nip05Profile>>();
 
                 nostr_sdk::async_utility::task::spawn(async move {
-                    if let Ok(profile) = nip05::profile(&content, None).await {
-                        tx.send(profile).ok();
-                    }
+                    let profile = nip05_profile(&content).await.ok();
+                    tx.send(profile).ok();
                 });
 
-                if let Ok(profile) = rx.await {
+                if let Ok(Some(profile)) = rx.await {
                     let public_key = profile.public_key;
                     let metadata = shared_state()
                         .client()

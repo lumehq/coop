@@ -12,7 +12,7 @@ gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 smol.workspace = true
+reqwest.workspace = true
 log.workspace = true
 
 tempfile = "3.19.1"
-reqwest = { version = "0.12", features = ["stream"] }

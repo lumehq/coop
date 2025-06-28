@@ -4,7 +4,6 @@ use std::sync::Arc;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use common::profile::RenderProfile;
-use common::{compare, room_hash};
 use global::shared_state;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use identity::Identity;
@@ -79,7 +78,7 @@ impl Room {
     ///
     /// A new Room instance with information extracted from the event
     pub fn new(event: &Event) -> Self {
-        let id = room_hash(event);
+        let id = common::room_hash(event);
         let created_at = event.created_at;
 
         // Get all pubkeys from the event's tags
@@ -405,7 +404,7 @@ impl Room {
                     let mut other_pubkeys = ev.tags.public_keys().copied().collect::<Vec<_>>();
                     other_pubkeys.push(ev.pubkey);
                     // Check if the event is from a member of the room
-                    compare(&other_pubkeys, &pubkeys)
+                    common::compare(&other_pubkeys, &pubkeys)
                 })
                 .collect::<Vec<_>>();
 
