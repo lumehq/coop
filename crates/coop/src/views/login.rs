@@ -22,6 +22,8 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{ContextModal, Disableable, Sizable, StyledExt};
 
+const TIMEOUT: u64 = 30;
+
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
 }
@@ -33,7 +35,8 @@ pub struct Login {
     qr_image: Entity<Option<Arc<Image>>>,
     // Error for the key input
     error: Entity<Option<SharedString>>,
-    is_logging_in: bool,
+    countdown: Entity<Option<u64>>,
+    logging_in: bool,
     // Panel
     name: SharedString,
     focus_handle: FocusHandle,
@@ -66,6 +69,7 @@ impl Login {
 
         let qr_image = cx.new(|_| None);
         let error = cx.new(|_| None);
+        let countdown = cx.new(|_| None);
         let mut subscriptions = smallvec![];
 
         // Subscribe to key input events and process login when the user presses enter
@@ -139,7 +143,8 @@ impl Login {
         Self {
             name: "Login".into(),
             focus_handle: cx.focus_handle(),
-            is_logging_in: false,
+            logging_in: false,
+            countdown,
             key_input,
             relay_input,
             connection_string,
@@ -150,7 +155,7 @@ impl Login {
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_logging_in {
+        if self.logging_in {
             return;
         };
         // Prevent duplicate login requests
@@ -343,12 +348,32 @@ impl Login {
         };
 
         let client_keys = ClientKeys::get_global(cx).keys();
-        let timeout = Duration::from_secs(20);
+        let timeout = Duration::from_secs(TIMEOUT);
         // .unwrap() is fine here because there's no error handling for bunker uri
         let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
 
+        // Start countdown
+        cx.spawn_in(window, async move |this, cx| {
+            for i in (0..=TIMEOUT).rev() {
+                if i == 0 {
+                    this.update(cx, |this, cx| {
+                        this.set_countdown(None, cx);
+                    })
+                    .ok();
+                } else {
+                    this.update(cx, |this, cx| {
+                        this.set_countdown(Some(i), cx);
+                    })
+                    .ok();
+                }
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+            }
+        })
+        .detach();
+
+        // Handle connection
         cx.spawn_in(window, async move |this, cx| {
             match signer.bunker_uri().await {
                 Ok(bunker_uri) => {
@@ -440,6 +465,9 @@ impl Login {
         // Reset the log in state
         self.set_logging_in(false, cx);
 
+        // Reset the countdown
+        self.set_countdown(None, cx);
+
         // Update error message
         self.error.update(cx, |this, cx| {
             *this = Some(message.into());
@@ -469,8 +497,15 @@ impl Login {
     }
 
     fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_logging_in = status;
+        self.logging_in = status;
         cx.notify();
+    }
+
+    fn set_countdown(&mut self, i: Option<u64>, cx: &mut Context<Self>) {
+        self.countdown.update(cx, |this, cx| {
+            *this = i;
+            cx.notify();
+        });
     }
 }
 
@@ -546,12 +581,24 @@ impl Render for Login {
                                         Button::new("login")
                                             .label("Continue")
                                             .primary()
-                                            .loading(self.is_logging_in)
-                                            .disabled(self.is_logging_in)
+                                            .loading(self.logging_in)
+                                            .disabled(self.logging_in)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.login(window, cx);
                                             })),
                                     )
+                                    .when_some(self.countdown.read(cx).as_ref(), |this, i| {
+                                        this.child(
+                                            div()
+                                                .text_xs()
+                                                .text_center()
+                                                .text_color(cx.theme().text_muted)
+                                                .child(SharedString::from(format!(
+                                                    "Approve connection request from your signer in {} seconds",
+                                                    i
+                                                ))),
+                                        )
+                                    })
                                     .when_some(self.error.read(cx).clone(), |this, error| {
                                         this.child(
                                             div()
