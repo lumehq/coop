@@ -31,6 +31,7 @@ impl Global for GlobalIdentity {}
 
 pub struct Identity {
     profile: Option<Profile>,
+    auto_logging_in_progress: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -62,6 +63,7 @@ impl Identity {
 
                 // Skip auto login if the user hasn't enabled auto login
                 if has_client_keys && auto_login {
+                    this.set_logging_in(true, cx);
                     this.load(window, cx);
                 } else {
                     this.set_profile(None, cx);
@@ -71,6 +73,7 @@ impl Identity {
 
         Self {
             profile: None,
+            auto_logging_in_progress: false,
             subscriptions,
         }
     }
@@ -167,32 +170,24 @@ impl Identity {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 10);
         let client_keys = ClientKeys::get_global(cx).keys();
 
         let Ok(mut signer) = NostrConnect::new(uri, client_keys, timeout, None) else {
-            window.push_notification(Notification::error("Bunker URI is invalid"), cx);
+            window.push_notification(
+                Notification::error("Bunker URI is invalid").title("Nostr Connect"),
+                cx,
+            );
             self.set_profile(None, cx);
             return;
         };
         // Automatically open auth url
         signer.auth_url_handler(CoopAuthUrlHandler);
 
-        let (tx, rx) = oneshot::channel::<Option<NostrConnect>>();
-
-        // Verify the signer, make sure Remote Signer is connected
-        cx.background_spawn(async move {
-            if signer.bunker_uri().await.is_ok() {
-                tx.send(Some(signer)).ok();
-            } else {
-                tx.send(None).ok();
-            }
-        })
-        .detach();
-
         cx.spawn_in(window, async move |this, cx| {
-            match rx.await {
-                Ok(Some(signer)) => {
+            // Call .bunker_uri() to verify the connection
+            match signer.bunker_uri().await {
+                Ok(_) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             this.set_signer(signer, window, cx);
@@ -201,10 +196,10 @@ impl Identity {
                     })
                     .ok();
                 }
-                _ => {
+                Err(e) => {
                     cx.update(|window, cx| {
                         window.push_notification(
-                            Notification::error("Failed to connect to the remote signer"),
+                            Notification::error(e.to_string()).title("Nostr Connect"),
                             cx,
                         );
                         this.update(cx, |this, cx| {
@@ -511,5 +506,14 @@ impl Identity {
     /// Returns true if a profile is currently loaded
     pub fn has_profile(&self) -> bool {
         self.profile.is_some()
+    }
+
+    pub fn logging_in(&self) -> bool {
+        self.auto_logging_in_progress
+    }
+
+    pub(crate) fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.auto_logging_in_progress = status;
+        cx.notify();
     }
 }

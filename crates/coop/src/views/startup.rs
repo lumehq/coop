@@ -1,13 +1,15 @@
+use gpui::prelude::FluentBuilder;
 use gpui::{
     div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
     IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
+use identity::Identity;
 use theme::ActiveTheme;
-use ui::button::Button;
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::popup_menu::PopupMenu;
-use ui::Sizable;
+use ui::{Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Startup> {
     Startup::new(window, cx)
@@ -55,7 +57,11 @@ impl Focusable for Startup {
 
 impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let identity = Identity::global(cx);
+        let logging_in = identity.read(cx).logging_in();
+
         div()
+            .relative()
             .size_full()
             .flex()
             .items_center()
@@ -80,8 +86,46 @@ impl Render for Startup {
                             .flex()
                             .items_center()
                             .justify_center()
+                            .gap_2()
+                            .when(logging_in, |this| {
+                                this.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().text)
+                                        .child("Auto login in progress"),
+                                )
+                            })
                             .child(Indicator::new().small()),
                     ),
+            )
+            .child(
+                div().absolute().bottom_3().right_3().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_end()
+                        .gap_1p5()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_semibold()
+                                .text_color(cx.theme().text_muted)
+                                .child("Stuck?"),
+                        )
+                        .child(
+                            Button::new("reset")
+                                .label("Reset")
+                                .small()
+                                .ghost()
+                                .on_click(|_, window, cx| {
+                                    Identity::global(cx).update(cx, |this, cx| {
+                                        this.unload(window, cx);
+                                        // Restart application
+                                        cx.restart(None);
+                                    });
+                                }),
+                        ),
+                ),
             )
     }
 }
