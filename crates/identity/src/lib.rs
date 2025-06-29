@@ -31,6 +31,7 @@ impl Global for GlobalIdentity {}
 
 pub struct Identity {
     profile: Option<Profile>,
+    auto_logging_in_progress: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -62,6 +63,7 @@ impl Identity {
 
                 // Skip auto login if the user hasn't enabled auto login
                 if has_client_keys && auto_login {
+                    this.set_logging_in(true, cx);
                     this.load(window, cx);
                 } else {
                     this.set_profile(None, cx);
@@ -71,6 +73,7 @@ impl Identity {
 
         Self {
             profile: None,
+            auto_logging_in_progress: false,
             subscriptions,
         }
     }
@@ -503,5 +506,14 @@ impl Identity {
     /// Returns true if a profile is currently loaded
     pub fn has_profile(&self) -> bool {
         self.profile.is_some()
+    }
+
+    pub fn logging_in(&self) -> bool {
+        self.auto_logging_in_progress
+    }
+
+    pub(crate) fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.auto_logging_in_progress = status;
+        cx.notify();
     }
 }

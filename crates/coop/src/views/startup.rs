@@ -1,7 +1,9 @@
+use gpui::prelude::FluentBuilder;
 use gpui::{
     div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
     IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
+use identity::Identity;
 use theme::ActiveTheme;
 use ui::button::Button;
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -55,6 +57,9 @@ impl Focusable for Startup {
 
 impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let identity = Identity::global(cx);
+        let logging_in = identity.read(cx).logging_in();
+
         div()
             .size_full()
             .flex()
@@ -80,7 +85,16 @@ impl Render for Startup {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(Indicator::new().small()),
+                            .gap_2()
+                            .child(Indicator::new().small())
+                            .when(logging_in, |this| {
+                                this.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().text_muted)
+                                        .child("Auto login in progress"),
+                                )
+                            }),
                     ),
             )
     }
