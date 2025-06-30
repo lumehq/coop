@@ -18,8 +18,7 @@ impl RenderProfile for Profile {
             .map(|picture| {
                 if proxy {
                     format!(
-                        "{}/?url={}&w=100&h=100&fit=cover&mask=circle&default={}&n=-1",
-                        IMAGE_RESIZE_SERVICE, picture, FALLBACK_IMG
+                        "{IMAGE_RESIZE_SERVICE}/?url={picture}&w=100&h=100&fit=cover&mask=circle&default={FALLBACK_IMG}&n=-1"
                     )
                     .into()
                 } else {

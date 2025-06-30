@@ -51,7 +51,7 @@ impl Drop for MacOsUnmounter {
                 );
             }
             Err(error) => {
-                log::error!("Error while trying to unmount disk image: {:?}", error);
+                log::error!("Error while trying to unmount disk image: {error:?}");
             }
         }
     }
@@ -154,7 +154,7 @@ impl AutoUpdater {
                     target_file.write_all(&chunk).await?;
                 }
 
-                log::info!("downloaded update. path:{:?}", downloaded_asset);
+                log::info!("downloaded update. path: {downloaded_asset:?}");
 
                 Ok((temp_dir, downloaded_asset))
             } else {
@@ -271,7 +271,7 @@ impl AutoUpdater {
             let from = extracted.join(&app_folder_name);
             let mut to = home_dir.join(".local");
 
-            let expected_suffix = format!("{}/libexec/coop", app_folder_name);
+            let expected_suffix = format!("{app_folder_name}/libexec/coop");
 
             if let Some(prefix) = running_app_path
                 .to_str()

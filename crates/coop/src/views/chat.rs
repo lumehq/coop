@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use chats::message::Message;
 use chats::room::{Room, RoomKind, SendError};
-use common::nip96_upload;
+use common::nip96::nip96_upload;
 use common::profile::RenderProfile;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
@@ -390,16 +390,9 @@ impl Chat {
 
                         // Spawn task via async utility instead of GPUI context
                         nostr_sdk::async_utility::task::spawn(async move {
-                            let url = match nip96_upload(shared_state().client(), nip96, file_data)
+                            let url = nip96_upload(shared_state().client(), &nip96, file_data)
                                 .await
-                            {
-                                Ok(url) => Some(url),
-                                Err(e) => {
-                                    log::error!("Upload error: {e}");
-                                    None
-                                }
-                            };
-
+                                .ok();
                             _ = tx.send(url);
                         });
 

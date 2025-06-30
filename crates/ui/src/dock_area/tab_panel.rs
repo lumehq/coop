@@ -518,7 +518,7 @@ impl TabPanel {
         };
 
         Some(
-            Button::new(SharedString::from(format!("toggle-dock:{:?}", placement)))
+            Button::new(SharedString::from(format!("toggle-dock:{placement:?}")))
                 .icon(icon)
                 .small()
                 .ghost()

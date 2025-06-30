@@ -1,4 +1,4 @@
-use common::nip96_upload;
+use common::nip96::nip96_upload;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -158,7 +158,7 @@ impl NewAccount {
 
                         nostr_sdk::async_utility::task::spawn(async move {
                             if let Ok(url) =
-                                nip96_upload(shared_state().client(), nip96, file_data).await
+                                nip96_upload(shared_state().client(), &nip96, file_data).await
                             {
                                 _ = tx.send(url);
                             }

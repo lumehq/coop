@@ -6,8 +6,8 @@ use anyhow::Error;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
+use common::nip05::nip05_verify;
 use common::profile::RenderProfile;
-use common::verify_nip05;
 use element::DisplayRoom;
 use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::shared_state;
@@ -185,7 +185,7 @@ impl Sidebar {
                             continue;
                         };
 
-                        if !verify_nip05(event.pubkey, target).await.unwrap_or(false) {
+                        if !nip05_verify(event.pubkey, target).await.unwrap_or(false) {
                             // Skip if NIP-05 is not valid or failed to verify
                             continue;
                         };
@@ -218,7 +218,7 @@ impl Sidebar {
                         this.update(cx, |this, cx| {
                             if result.is_empty() {
                                 let msg =
-                                    format!("There are no users matching query {}", query_cloned);
+                                    format!("There are no users matching query {query_cloned}");
                                 window.push_notification(Notification::info(msg), cx);
                                 this.set_finding(false, cx);
                             } else {

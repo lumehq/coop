@@ -17,11 +17,17 @@ reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Nostr
 nostr = { git = "https://github.com/rust-nostr/nostr" }
-nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = ["lmdb", "nip96", "nip59", "nip49", "nip44"] }
+nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [
+    "lmdb",
+    "nip96",
+    "nip59",
+    "nip49",
+    "nip44",
+] }
 nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
 
 # Others
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.12", features = ["multipart", "stream", "json"] }
 emojis = "0.6.4"
 smol = "2"
 futures = "0.3"

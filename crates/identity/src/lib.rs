@@ -408,7 +408,7 @@ impl Identity {
             );
 
             if let Err(e) = client.send_event_builder(builder).await {
-                log::error!("Failed to send relay list event: {}", e);
+                log::error!("Failed to send relay list event: {e}");
             };
 
             // Create messaging relay list
@@ -423,7 +423,7 @@ impl Identity {
             );
 
             if let Err(e) = client.send_event_builder(builder).await {
-                log::error!("Failed to send messaging relay list event: {}", e);
+                log::error!("Failed to send messaging relay list event: {e}");
             };
 
             // Subscribe for user's data

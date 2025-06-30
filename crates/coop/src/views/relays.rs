@@ -118,7 +118,7 @@ impl Relays {
                 ]);
 
                 if let Err(e) = client.send_event_builder(builder).await {
-                    log::error!("Failed to send relay list event: {}", e);
+                    log::error!("Failed to send relay list event: {e}");
                 }
             }
 
@@ -153,7 +153,7 @@ impl Relays {
                 )
                 .await
             {
-                log::error!("Failed to subscribe to new messages: {}", e);
+                log::error!("Failed to subscribe to new messages: {e}");
             }
 
             Ok(output.val)

@@ -50,7 +50,7 @@ pub trait PopupMenuExt: Styled + Selectable + IntoElement + 'static {
         let style = self.style().clone();
         let element_id = self.element_id();
 
-        Popover::new(SharedString::from(format!("popup-menu:{:?}", element_id)))
+        Popover::new(SharedString::from(format!("popup-menu:{element_id:?}")))
             .no_style()
             .trigger(self)
             .trigger_style(style)
@@ -716,7 +716,7 @@ impl Render for PopupMenu {
 /// Return the Platform specific keybinding string by KeyStroke
 pub fn key_shortcut(key: Keystroke) -> String {
     if cfg!(target_os = "macos") {
-        return format!("{}", key);
+        return format!("{key}");
     }
 
     let mut parts = vec![];

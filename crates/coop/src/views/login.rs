@@ -592,8 +592,7 @@ impl Render for Login {
                                                 .text_center()
                                                 .text_color(cx.theme().text_muted)
                                                 .child(SharedString::from(format!(
-                                                    "Approve connection request from your signer in {} seconds",
-                                                    i
+                                                    "Approve connection request from your signer in {i} seconds"
                                                 ))),
                                         )
                                     })

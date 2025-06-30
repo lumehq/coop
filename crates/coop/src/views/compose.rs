@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use chats::room::{Room, RoomKind};
 use chats::ChatRegistry;
-use common::nip05_profile;
+use common::nip05::nip05_profile;
 use common::profile::RenderProfile;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;

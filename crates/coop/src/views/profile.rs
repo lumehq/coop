@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use common::nip96_upload;
+use common::nip96::nip96_upload;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -104,7 +104,7 @@ impl Profile {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
+        let nip96_server = AppSettings::get_global(cx).settings.media_server.clone();
         let avatar_input = self.avatar_input.downgrade();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -125,7 +125,8 @@ impl Profile {
 
                         nostr_sdk::async_utility::task::spawn(async move {
                             if let Ok(url) =
-                                nip96_upload(shared_state().client(), nip96, file_data).await
+                                nip96_upload(shared_state().client(), &nip96_server, file_data)
+                                    .await
                             {
                                 _ = tx.send(url);
                             }

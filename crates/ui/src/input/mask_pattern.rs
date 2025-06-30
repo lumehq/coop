@@ -302,7 +302,7 @@ impl MaskPattern {
                         if fraction == &Some(0) {
                             int_with_sep
                         } else {
-                            format!("{}.{}", int_with_sep, frac)
+                            format!("{int_with_sep}.{frac}")
                         }
                     } else {
                         int_with_sep

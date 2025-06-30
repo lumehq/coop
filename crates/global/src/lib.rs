@@ -369,13 +369,13 @@ impl Globals {
     pub(crate) async fn connect(&self) {
         for relay in BOOTSTRAP_RELAYS.into_iter() {
             if let Err(e) = self.client.add_relay(relay).await {
-                log::error!("Failed to add relay {}: {}", relay, e);
+                log::error!("Failed to add relay {relay}: {e}");
             }
         }
 
         for relay in SEARCH_RELAYS.into_iter() {
             if let Err(e) = self.client.add_relay(relay).await {
-                log::error!("Failed to add relay {}: {}", relay, e);
+                log::error!("Failed to add relay {relay}: {e}");
             }
         }
 
@@ -470,7 +470,7 @@ impl Globals {
             .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await
         {
-            log::error!("Failed to subscribe for app updates: {}", e);
+            log::error!("Failed to subscribe for app updates: {e}");
         }
 
         log::info!("Subscribed to app updates");
@@ -623,7 +623,7 @@ impl Globals {
             .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await
         {
-            log::error!("Failed to subscribe for file metadata: {}", e);
+            log::error!("Failed to subscribe for file metadata: {e}");
         } else {
             self.send_signal(NostrSignal::AppUpdate(event.to_owned()))
                 .await;

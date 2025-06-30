@@ -293,7 +293,7 @@ pub fn render_plain_text_mut(
 
                 // Make it clickable
                 link_ranges.push(new_range);
-                link_urls.push(format!("mention:{}", entity_without_prefix));
+                link_urls.push(format!("mention:{entity_without_prefix}"));
 
                 // Adjust subsequent ranges if needed
                 if length_diff != 0 {
@@ -301,11 +301,11 @@ pub fn render_plain_text_mut(
                 }
             } else {
                 // No profile match or not a profile entity - create njump.me link
-                let njump_url = format!("https://njump.me/{}", entity_without_prefix);
+                let njump_url = format!("https://njump.me/{entity_without_prefix}");
 
                 // Create a shortened display format for the URL
                 let shortened_entity = format_shortened_entity(entity_without_prefix);
-                let display_text = format!("https://njump.me/{}", shortened_entity);
+                let display_text = format!("https://njump.me/{shortened_entity}");
 
                 // Replace the original entity with the shortened display version
                 text.replace_range(range.clone(), &display_text);
@@ -350,7 +350,7 @@ fn format_shortened_entity(entity: &str) -> String {
         let prefix = &entity[0..=prefix_end]; // Include the '1'
         let suffix = &entity[entity.len() - 4..]; // Last 4 chars
 
-        format!("{}...{}", prefix, suffix)
+        format!("{prefix}...{suffix}")
     } else {
         entity.to_string()
     }

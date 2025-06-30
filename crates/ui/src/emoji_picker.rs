@@ -102,11 +102,11 @@ impl RenderOnce for EmojiPicker {
                                                 input.update(cx, |this, cx| {
                                                     let current = this.value();
                                                     let new_text = if current.is_empty() {
-                                                        format!("{}", item)
+                                                        format!("{item}")
                                                     } else if current.ends_with(" ") {
-                                                        format!("{}{}", current, item)
+                                                        format!("{current}{item}")
                                                     } else {
-                                                        format!("{} {}", current, item)
+                                                        format!("{current} {item}")
                                                     };
                                                     this.set_value(new_text, window, cx);
                                                 });
