@@ -3,8 +3,6 @@ use std::sync::Arc;
 use asset::Assets;
 use auto_update::AutoUpdater;
 use chats::ChatRegistry;
-#[cfg(not(target_os = "linux"))]
-use global::constants::APP_NAME;
 use global::constants::{ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME};
 use global::{shared_state, NostrSignal};
 #[cfg(target_os = "linux")]
@@ -48,6 +46,9 @@ fn main() {
         // Register the `quit` function with CMD+Q (macOS only)
         #[cfg(target_os = "macos")]
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+
+        #[cfg(not(target_os = "macos"))]
+        cx.bind_keys([KeyBinding::new("super-q", Quit, None)]);
 
         // Set menu items
         cx.set_menus(vec![Menu {
