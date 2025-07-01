@@ -5,16 +5,15 @@ use auto_update::AutoUpdater;
 use chats::ChatRegistry;
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
-use global::constants::{ALL_MESSAGES_SUB_ID, APP_ID};
+use global::constants::{ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME};
 use global::{shared_state, NostrSignal};
-use gpui::{
-    actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
-    WindowBounds, WindowKind, WindowOptions,
-};
-#[cfg(not(target_os = "linux"))]
-use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
-use gpui::{WindowBackgroundAppearance, WindowDecorations};
+use gpui::WindowDecorations;
+use gpui::{
+    actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
+    SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowKind,
+    WindowOptions,
+};
 use nostr_sdk::SubscriptionId;
 use theme::Theme;
 use ui::Root;
@@ -58,7 +57,6 @@ fn main() {
 
         // Set up the window options
         let opts = WindowOptions {
-            #[cfg(not(target_os = "linux"))]
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::new_static(APP_NAME)),
                 traffic_light_position: Some(point(px(9.0), px(9.0))),
@@ -69,8 +67,7 @@ fn main() {
                 size(px(920.0), px(700.0)),
                 cx,
             ))),
-            #[cfg(target_os = "linux")]
-            window_background: WindowBackgroundAppearance::Transparent,
+            window_background: WindowBackgroundAppearance::Opaque,
             #[cfg(target_os = "linux")]
             window_decorations: Some(WindowDecorations::Client),
             kind: WindowKind::Normal,

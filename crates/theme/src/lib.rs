@@ -6,6 +6,13 @@ use gpui::{px, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance
 mod colors;
 mod scale;
 
+/// Defines window border size for all platforms.
+pub const DECORATION_BORDER_SIZE: Pixels = Pixels(1.0);
+/// Defines window border radius for platforms that use client side decorations.
+pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(10.0);
+/// Defines window shadow size for platforms that use client side decorations.
+pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(10.0);
+
 pub fn init(cx: &mut App) {
     Theme::sync_system_appearance(None, cx);
 }

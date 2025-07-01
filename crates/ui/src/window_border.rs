@@ -4,14 +4,10 @@ use gpui::{
     HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
     Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
-use theme::ActiveTheme;
-
-pub(crate) const BORDER_SIZE: Pixels = Pixels(1.0);
-pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
-#[cfg(not(target_os = "linux"))]
-pub(crate) const SHADOW_SIZE: Pixels = Pixels(0.0);
-#[cfg(target_os = "linux")]
-pub(crate) const SHADOW_SIZE: Pixels = Pixels(12.0);
+use theme::{
+    ActiveTheme, CLIENT_SIDE_DECORATION_ROUNDING, CLIENT_SIDE_DECORATION_SHADOW,
+    DECORATION_BORDER_SIZE,
+};
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {
@@ -29,7 +25,7 @@ pub fn window_paddings(window: &Window, _cx: &App) -> Edges<Pixels> {
     match window.window_decorations() {
         Decorations::Server => Edges::all(px(0.0)),
         Decorations::Client { tiling } => {
-            let mut paddings = Edges::all(SHADOW_SIZE);
+            let mut paddings = Edges::all(CLIENT_SIDE_DECORATION_SHADOW);
             if tiling.top {
                 paddings.top = px(0.0);
             }
@@ -64,11 +60,12 @@ impl ParentElement for WindowBorder {
 impl RenderOnce for WindowBorder {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let decorations = window.window_decorations();
-        window.set_client_inset(SHADOW_SIZE);
+        window.set_client_inset(CLIENT_SIDE_DECORATION_SHADOW);
 
         div()
             .id("window-backdrop")
             .bg(gpui::transparent_black())
+            .size_full()
             .map(|div| match decorations {
                 Decorations::Server => div,
                 Decorations::Client { tiling, .. } => div
@@ -87,7 +84,9 @@ impl RenderOnce for WindowBorder {
                             move |_bounds, hitbox, window, _cx| {
                                 let mouse = window.mouse_position();
                                 let size = window.window_bounds().get_bounds().size;
-                                let Some(edge) = resize_edge(mouse, SHADOW_SIZE, size) else {
+                                let Some(edge) =
+                                    resize_edge(mouse, CLIENT_SIDE_DECORATION_SHADOW, size)
+                                else {
                                     return;
                                 };
                                 window.set_cursor_style(
@@ -113,25 +112,30 @@ impl RenderOnce for WindowBorder {
                         .absolute(),
                     )
                     .when(!(tiling.top || tiling.right), |div| {
-                        div.rounded_tr(BORDER_RADIUS)
+                        div.rounded_tr(CLIENT_SIDE_DECORATION_ROUNDING)
                     })
                     .when(!(tiling.top || tiling.left), |div| {
-                        div.rounded_tl(BORDER_RADIUS)
+                        div.rounded_tl(CLIENT_SIDE_DECORATION_ROUNDING)
                     })
-                    .when(!tiling.top, |div| div.pt(SHADOW_SIZE))
-                    .when(!tiling.bottom, |div| div.pb(SHADOW_SIZE))
-                    .when(!tiling.left, |div| div.pl(SHADOW_SIZE))
-                    .when(!tiling.right, |div| div.pr(SHADOW_SIZE))
+                    .when(!(tiling.bottom || tiling.right), |div| {
+                        div.rounded_br(CLIENT_SIDE_DECORATION_ROUNDING)
+                    })
+                    .when(!(tiling.bottom || tiling.left), |div| {
+                        div.rounded_bl(CLIENT_SIDE_DECORATION_ROUNDING)
+                    })
+                    .when(!tiling.top, |div| div.pt(CLIENT_SIDE_DECORATION_SHADOW))
+                    .when(!tiling.bottom, |div| div.pb(CLIENT_SIDE_DECORATION_SHADOW))
+                    .when(!tiling.left, |div| div.pl(CLIENT_SIDE_DECORATION_SHADOW))
+                    .when(!tiling.right, |div| div.pr(CLIENT_SIDE_DECORATION_SHADOW))
                     .on_mouse_down(MouseButton::Left, move |_, window, _cx| {
                         let size = window.window_bounds().get_bounds().size;
                         let pos = window.mouse_position();
 
-                        if let Some(edge) = resize_edge(pos, SHADOW_SIZE, size) {
+                        if let Some(edge) = resize_edge(pos, CLIENT_SIDE_DECORATION_SHADOW, size) {
                             window.start_window_resize(edge)
                         };
                     }),
             })
-            .size_full()
             .child(
                 div()
                     .map(|div| match decorations {
@@ -139,15 +143,21 @@ impl RenderOnce for WindowBorder {
                         Decorations::Client { tiling } => div
                             .border_color(cx.theme().window_border)
                             .when(!(tiling.top || tiling.right), |div| {
-                                div.rounded_tr(BORDER_RADIUS)
+                                div.rounded_tr(CLIENT_SIDE_DECORATION_ROUNDING)
                             })
                             .when(!(tiling.top || tiling.left), |div| {
-                                div.rounded_tl(BORDER_RADIUS)
+                                div.rounded_tl(CLIENT_SIDE_DECORATION_ROUNDING)
                             })
-                            .when(!tiling.top, |div| div.border_t(BORDER_SIZE))
-                            .when(!tiling.bottom, |div| div.border_b(BORDER_SIZE))
-                            .when(!tiling.left, |div| div.border_l(BORDER_SIZE))
-                            .when(!tiling.right, |div| div.border_r(BORDER_SIZE))
+                            .when(!(tiling.bottom || tiling.right), |div| {
+                                div.rounded_br(CLIENT_SIDE_DECORATION_ROUNDING)
+                            })
+                            .when(!(tiling.bottom || tiling.left), |div| {
+                                div.rounded_bl(CLIENT_SIDE_DECORATION_ROUNDING)
+                            })
+                            .when(!tiling.top, |div| div.border_t(DECORATION_BORDER_SIZE))
+                            .when(!tiling.bottom, |div| div.border_b(DECORATION_BORDER_SIZE))
+                            .when(!tiling.left, |div| div.border_l(DECORATION_BORDER_SIZE))
+                            .when(!tiling.right, |div| div.border_r(DECORATION_BORDER_SIZE))
                             .when(!tiling.is_tiled(), |div| {
                                 div.shadow(vec![gpui::BoxShadow {
                                     color: Hsla {
@@ -156,7 +166,7 @@ impl RenderOnce for WindowBorder {
                                         l: 0.,
                                         a: 0.3,
                                     },
-                                    blur_radius: SHADOW_SIZE / 2.,
+                                    blur_radius: CLIENT_SIDE_DECORATION_SHADOW / 2.,
                                     spread_radius: px(0.),
                                     offset: point(px(0.0), px(0.0)),
                                 }])
@@ -165,8 +175,8 @@ impl RenderOnce for WindowBorder {
                     .on_mouse_move(|_e, _window, cx| {
                         cx.stop_propagation();
                     })
-                    .bg(gpui::transparent_black())
                     .size_full()
+                    .bg(gpui::transparent_black())
                     .children(self.children),
             )
     }
