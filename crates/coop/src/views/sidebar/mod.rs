@@ -527,11 +527,7 @@ impl Sidebar {
                         let item = ClipboardItem::new_string(public_key);
 
                         move |_, _, window, cx| {
-                            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                            cx.write_to_primary(item.clone());
-                            #[cfg(any(target_os = "windows", target_os = "macos"))]
                             cx.write_to_clipboard(item.clone());
-
                             window.push_notification("User's NPUB is copied", cx);
                         }
                     })),

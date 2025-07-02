@@ -1146,6 +1146,9 @@ impl InputState {
         cx: &mut Context<Self>,
     ) {
         if event.button == MouseButton::Middle {
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            self.paste_from_primary(window, cx);
+            #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
             self.paste(&Paste, window, cx);
             return;
         }
@@ -1228,13 +1231,21 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    pub(super) fn paste(&mut self, _paste: &Paste, window: &mut Window, cx: &mut Context<Self>) {
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        let read_clipboard = cx.read_from_primary();
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
-        let read_clipboard = cx.read_from_clipboard();
+    pub(super) fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(clipboard) = cx.read_from_clipboard() {
+            let mut new_text = clipboard.text().unwrap_or_default();
 
-        if let Some(clipboard) = read_clipboard {
+            if !self.is_multi_line() {
+                new_text = new_text.replace('\n', "");
+            }
+
+            self.replace_text_in_range(None, &new_text, window, cx);
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    pub(super) fn paste_from_primary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(clipboard) = cx.read_from_primary() {
             let mut new_text = clipboard.text().unwrap_or_default();
 
             if !self.is_multi_line() {
