@@ -1,20 +1,19 @@
 use common::profile::RenderProfile;
 use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
+use gpui::http_client::Url;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, http_client::Url, prelude::FluentBuilder, px, relative, rems, App, AppContext, Context,
-    Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, relative, rems, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
 };
 use identity::Identity;
 use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::{
-    avatar::Avatar,
-    button::{Button, ButtonVariants},
-    input::{InputState, TextInput},
-    switch::Switch,
-    ContextModal, IconName, Sizable, Size, StyledExt,
-};
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputState, TextInput};
+use ui::switch::Switch;
+use ui::{ContextModal, IconName, Sizable, Size, StyledExt};
 
 use crate::views::{profile, relays};
 

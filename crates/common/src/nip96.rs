@@ -3,9 +3,7 @@ use nostr::hashes::sha256::Hash as Sha256Hash;
 use nostr::hashes::Hash;
 use nostr::prelude::*;
 use nostr_sdk::prelude::*;
-use reqwest::multipart;
-use reqwest::Client as ReqClient;
-use reqwest::Response;
+use reqwest::{multipart, Client as ReqClient, Response};
 
 pub(crate) fn make_multipart_form(
     file_data: Vec<u8>,

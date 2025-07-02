@@ -4,9 +4,9 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     anchored, deferred, div, px, relative, AnyElement, App, Context, Corner, DismissEvent,
-    DispatchPhase, Element, ElementId, Entity, Focusable, FocusableWrapper, GlobalElementId,
-    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point,
-    Position, Size, Stateful, Style, Window,
+    DispatchPhase, Element, ElementId, Entity, Focusable, GlobalElementId, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Position, Size,
+    Stateful, Style, Window,
 };
 
 use crate::popup_menu::PopupMenu;
@@ -21,7 +21,6 @@ pub trait ContextMenuExt: ParentElement + Sized {
 }
 
 impl<E> ContextMenuExt for Stateful<E> where E: ParentElement {}
-impl<E> ContextMenuExt for FocusableWrapper<E> where E: ParentElement {}
 
 type Menu =
     Option<Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>>;

@@ -1,5 +1,6 @@
 use anyhow::anyhow;
-use global::{constants::SETTINGS_D, shared_state};
+use global::constants::SETTINGS_D;
+use global::shared_state;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};

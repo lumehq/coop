@@ -75,7 +75,7 @@ pub fn shared_state() -> &'static Globals {
             .ok();
 
         let first_run = is_first_run().unwrap_or(true);
-        let opts = Options::new().gossip(true);
+        let opts = ClientOptions::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
         let (global_sender, global_receiver) =

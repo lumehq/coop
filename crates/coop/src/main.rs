@@ -46,9 +46,13 @@ fn main() {
         // Register the `quit` function
         cx.on_action(quit);
 
-        // Register the `quit` function with CMD+Q (macOS only)
+        // Register the `quit` function with CMD+Q (macOS)
         #[cfg(target_os = "macos")]
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+
+        // Register the `quit` function with Super+Q (others)
+        #[cfg(not(target_os = "macos"))]
+        cx.bind_keys([KeyBinding::new("super-q", Quit, None)]);
 
         // Set menu items
         cx.set_menus(vec![Menu {

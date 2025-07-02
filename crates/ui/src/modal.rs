@@ -1,19 +1,18 @@
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
+use std::time::Duration;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, div, point, prelude::FluentBuilder, px, relative, Animation, AnimationExt as _,
-    AnyElement, App, Bounds, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement,
-    KeyBinding, MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString, Styled,
-    Window,
+    anchored, div, point, px, relative, Animation, AnimationExt as _, AnyElement, App, Bounds,
+    ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    ParentElement, Pixels, Point, RenderOnce, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
 
-use crate::{
-    actions::{Cancel, Confirm},
-    animation::cubic_bezier,
-    button::{Button, ButtonCustomVariant, ButtonVariant, ButtonVariants as _},
-    h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt,
-};
+use crate::actions::{Cancel, Confirm};
+use crate::animation::cubic_bezier;
+use crate::button::{Button, ButtonCustomVariant, ButtonVariant, ButtonVariants as _};
+use crate::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 const CONTEXT: &str = "Modal";
 
