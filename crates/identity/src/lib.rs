@@ -3,23 +3,20 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
-use global::{
-    constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT},
-    shared_state,
-};
+use global::constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT};
+use global::shared_state;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, prelude::FluentBuilder, red, App, AppContext, Context, Entity, Global, ParentElement,
-    SharedString, Styled, Subscription, Task, WeakEntity, Window,
+    div, red, App, AppContext, Context, Entity, Global, ParentElement, SharedString, Styled,
+    Subscription, Task, WeakEntity, Window,
 };
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use ui::{
-    input::{InputState, TextInput},
-    notification::Notification,
-    ContextModal, Sizable,
-};
+use ui::input::{InputState, TextInput};
+use ui::notification::Notification;
+use ui::{ContextModal, Sizable};
 
 pub fn init(window: &mut Window, cx: &mut App) {
     Identity::set_global(cx.new(|cx| Identity::new(window, cx)), cx);

@@ -1,5 +1,5 @@
-use std::collections::BTreeSet;
-use std::{cmp::Reverse, collections::HashMap};
+use std::cmp::Reverse;
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Error;
 use common::room_hash;
