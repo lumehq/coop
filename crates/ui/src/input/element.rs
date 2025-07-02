@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 use theme::ActiveTheme;
 
 use super::InputState;
-use crate::Root;
+use crate::window::Root;
 
 const CURSOR_THICKNESS: Pixels = px(2.);
 const RIGHT_MARGIN: Pixels = px(5.);

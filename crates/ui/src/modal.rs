@@ -12,7 +12,8 @@ use theme::ActiveTheme;
 use crate::actions::{Cancel, Confirm};
 use crate::animation::cubic_bezier;
 use crate::button::{Button, ButtonCustomVariant, ButtonVariant, ButtonVariants as _};
-use crate::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
+use crate::window::{ContextModal, Root};
+use crate::{h_flex, v_flex, IconName, Sizable, StyledExt};
 
 const CONTEXT: &str = "Modal";
 
@@ -349,7 +350,7 @@ impl RenderOnce for Modal {
             }
         });
 
-        let window_paddings = crate::window_border::window_paddings(window, cx);
+        let window_paddings = crate::window::window_paddings(window, cx);
 
         let view_size = window.viewport_size()
             - gpui::size(
