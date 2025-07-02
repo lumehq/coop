@@ -17,6 +17,8 @@ smallvec.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
+emojis.workspace = true
+log.workspace = true
 
 paste = "1"
 regex = "1"
@@ -25,4 +27,6 @@ uuid = "1.10"
 once_cell = "1.19.0"
 image = "0.25.1"
 linkify = "0.10.0"
-emojis.workspace = true
+futures-util = "0.3.31"
+resvg = { version = "0.45.0", default-features = false, features = ["text"] }
+usvg = { version = "0.45.0", default-features = false, features = ["text"] }

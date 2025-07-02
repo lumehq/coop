@@ -3,6 +3,7 @@ pub use focusable::FocusableCycle;
 pub use icon::*;
 pub use root::{ContextModal, Root};
 pub use styled::*;
+pub use svg_img::*;
 pub use title_bar::*;
 pub use window_border::{window_border, WindowBorder};
 
@@ -39,6 +40,7 @@ mod focusable;
 mod icon;
 mod root;
 mod styled;
+mod svg_img;
 mod title_bar;
 mod window_border;
 
