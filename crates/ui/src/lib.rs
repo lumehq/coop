@@ -1,10 +1,11 @@
 pub use event::InteractiveElementExt;
 pub use focusable::FocusableCycle;
 pub use icon::*;
+pub use root::{ContextModal, Root};
 pub use styled::*;
 pub use svg_img::*;
 pub use title_bar::*;
-pub use window::{ContextModal, Root};
+pub use window_border::{window_border, WindowBorder};
 
 pub use crate::Disableable;
 
@@ -37,10 +38,11 @@ pub mod tooltip;
 mod event;
 mod focusable;
 mod icon;
+mod root;
 mod styled;
 mod svg_img;
 mod title_bar;
-mod window;
+mod window_border;
 
 /// Initialize the UI module.
 ///

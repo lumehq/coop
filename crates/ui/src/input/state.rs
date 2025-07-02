@@ -22,7 +22,7 @@ use super::{
 };
 use crate::history::History;
 use crate::scroll::ScrollbarState;
-use crate::window::Root;
+use crate::Root;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = input, no_json)]
