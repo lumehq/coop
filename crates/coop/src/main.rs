@@ -23,6 +23,8 @@ pub(crate) mod asset;
 pub(crate) mod chatspace;
 pub(crate) mod views;
 
+i18n::init!();
+
 actions!(coop, [Quit]);
 
 fn main() {

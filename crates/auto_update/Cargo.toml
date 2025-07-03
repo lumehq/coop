@@ -8,6 +8,9 @@ publish.workspace = true
 common = { path = "../common" }
 global = { path = "../global" }
 
+rust-i18n.workspace = true
+i18n.workspace = true
+
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true

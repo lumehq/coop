@@ -6,6 +6,8 @@ use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
 
+i18n::init!();
+
 pub fn init(cx: &mut App) {
     let state = cx.new(AppSettings::new);
 

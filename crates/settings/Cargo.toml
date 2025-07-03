@@ -7,6 +7,9 @@ publish.workspace = true
 [dependencies]
 global = { path = "../global" }
 
+rust-i18n.workspace = true
+i18n.workspace = true
+
 nostr-sdk.workspace = true
 gpui.workspace = true
 anyhow.workspace = true
