@@ -74,7 +74,6 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let trusted_only = AppSettings::get_global(cx).settings.only_show_trusted;
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
@@ -126,7 +125,7 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            trusted_only,
+            trusted_only: false,
             indicator,
             active_filter,
             find_input,

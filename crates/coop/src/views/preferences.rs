@@ -71,14 +71,18 @@ impl Preferences {
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const MEDIA_DESCRIPTION: &str = "Coop only supports NIP-96 media servers for now. If you're not sure about it, please keep the default value.";
-        const BACKUP_DESCRIPTION: &str =
-            "When a user sends a message, Coop won't back it up to the user's messaging relays";
-        const TRUSTED_DESCRIPTION: &str = "Show trusted requests by default";
-        const HIDE_AVATAR_DESCRIPTION: &str =
-            "Unload all avatar pictures to improve performance and reduce memory usage";
-        const PROXY_DESCRIPTION: &str =
-            "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)";
+        const MEDIA_DESCRIPTION: &str = "Coop currently only supports NIP-96 media servers. \
+                                         If you're unsure, please keep the default value.";
+
+        const BACKUP_DESCRIPTION: &str = "When you send a message, Coop will also send it to \
+                                          your configured Messaging Relays. You can disable this \
+                                          if you want all sent messages to disappear when you log out.";
+
+        const HIDE_AVATAR_DESCRIPTION: &str = "Unload all avatar pictures to improve performance \
+                                               and reduce memory usage.";
+
+        const PROXY_DESCRIPTION: &str = "Use wsrv.nl to resize and downscale avatar pictures \
+                                         (saves ~50MB of data).";
 
         let input_state = self.media_input.downgrade();
         let settings = AppSettings::get_global(cx).settings.as_ref();
@@ -221,36 +225,19 @@ impl Render for Preferences {
                             .child("Messages"),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(
-                                Switch::new("backup_messages")
-                                    .label("Backup messages")
-                                    .description(BACKUP_DESCRIPTION)
-                                    .checked(settings.backup_messages)
-                                    .on_click(|_, _window, cx| {
-                                        AppSettings::global(cx).update(cx, |this, cx| {
-                                            this.settings.backup_messages =
-                                                !this.settings.backup_messages;
-                                            cx.notify();
-                                        })
-                                    }),
-                            )
-                            .child(
-                                Switch::new("only_show_trusted")
-                                    .label("Only trusted")
-                                    .description(TRUSTED_DESCRIPTION)
-                                    .checked(settings.only_show_trusted)
-                                    .on_click(|_, _window, cx| {
-                                        AppSettings::global(cx).update(cx, |this, cx| {
-                                            this.settings.only_show_trusted =
-                                                !this.settings.only_show_trusted;
-                                            cx.notify();
-                                        })
-                                    }),
-                            ),
+                        div().flex().flex_col().gap_2().child(
+                            Switch::new("backup_messages")
+                                .label("Backup messages")
+                                .description(BACKUP_DESCRIPTION)
+                                .checked(settings.backup_messages)
+                                .on_click(|_, _window, cx| {
+                                    AppSettings::global(cx).update(cx, |this, cx| {
+                                        this.settings.backup_messages =
+                                            !this.settings.backup_messages;
+                                        cx.notify();
+                                    })
+                                }),
+                        ),
                     ),
             )
             .child(

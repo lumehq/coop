@@ -25,7 +25,6 @@ pub struct Settings {
     pub media_server: Url,
     pub proxy_user_avatars: bool,
     pub hide_user_avatars: bool,
-    pub only_show_trusted: bool,
     pub backup_messages: bool,
     pub auto_login: bool,
 }
@@ -67,7 +66,6 @@ impl AppSettings {
             media_server: Url::parse("https://nostrmedia.com").expect("it's fine"),
             proxy_user_avatars: true,
             hide_user_avatars: false,
-            only_show_trusted: false,
             backup_messages: true,
             auto_login: false,
         };
