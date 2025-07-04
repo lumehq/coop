@@ -33,7 +33,7 @@ pub struct Relays {
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(SharedString::new(t!("relays.placeholder")))
+            InputState::new(window, cx).placeholder("wss://example.com"))
         });
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {

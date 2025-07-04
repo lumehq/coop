@@ -9,7 +9,7 @@ edition = "2021"
 publish = false
 
 [workspace.metadata.i18n]
-available-locales = ["en", "zh-CN"]
+available-locales = ["en", "zh-CN", "zh-TW", "ru", "vi", "ja", "es", "pt", "ko"]
 default-locale = "en"
 load-path = "locales"
 

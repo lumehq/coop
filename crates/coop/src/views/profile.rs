@@ -36,9 +36,9 @@ impl Profile {
         let name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("profile.placeholder_name")));
         let avatar_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder(t!("profile.placeholder_avatar")));
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
         let website_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder(t!("profile.placeholder_website")));
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
