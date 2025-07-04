@@ -314,7 +314,7 @@ impl Render for Relays {
                                     .child(
                                         Button::new("add_relay_btn")
                                             .icon(IconName::Plus)
-                                            .label(t!("relays.add"))
+                                            .label(t!("common.add"))
                                             .small()
                                             .ghost()
                                             .rounded_md()
@@ -336,7 +336,7 @@ impl Render for Relays {
             )
             .child(
                 Button::new("submti")
-                    .label(t!("relays.update"))
+                    .label(t!("common.update"))
                     .primary()
                     .w_full()
                     .loading(self.is_loading)

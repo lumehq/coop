@@ -273,7 +273,7 @@ impl Render for Profile {
                     .child(
                         Button::new("upload")
                             .icon(IconName::Upload)
-                            .label(SharedString::new(t!("profile.button_change")))
+                            .label(SharedString::new(t!("common.change")))
                             .ghost()
                             .small()
                             .disabled(self.is_loading || self.is_submitting)
@@ -313,7 +313,7 @@ impl Render for Profile {
             .child(
                 div().py_3().child(
                     Button::new("submit")
-                        .label(SharedString::new(t!("profile.button_update")))
+                        .label(SharedString::new(t!("common.update")))
                         .primary()
                         .disabled(self.is_loading || self.is_submitting)
                         .loading(self.is_submitting)
