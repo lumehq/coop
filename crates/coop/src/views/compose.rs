@@ -116,12 +116,7 @@ impl Compose {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title(SharedString::new(t!(
-                                "compose.notification_contacts_title"
-                            ))),
-                            cx,
-                        );
+                        window.push_notification(Notification::error(e.to_string()), cx);
                     })
                     .ok();
                 }
@@ -144,7 +139,7 @@ impl Compose {
         let public_keys: Vec<PublicKey> = self.selected(cx);
 
         if public_keys.is_empty() {
-            self.set_error(Some(SharedString::new(t!("compose.receiver_required"))), cx);
+            self.set_error(Some(t!("compose.receiver_required").into()), cx);
             return;
         }
 
@@ -220,13 +215,7 @@ impl Compose {
             cx.notify();
         } else {
             self.set_error(
-                Some(
-                    t!(
-                        "compose.contact_already_added",
-                        name = contact.profile.name()
-                    )
-                    .into(),
-                ),
+                Some(t!("compose.contact_existed", name = contact.profile.name()).into()),
                 cx,
             );
         }
@@ -277,7 +266,7 @@ impl Compose {
 
                     Ok(contact)
                 } else {
-                    Err(anyhow!(t!("compose.profile_not_found")))
+                    Err(anyhow!(t!("common.not_found")))
                 }
             })
         } else if content.starts_with("nprofile1") {
@@ -285,7 +274,7 @@ impl Compose {
                 .map(|nip19| nip19.public_key)
                 .ok()
             else {
-                self.set_error(Some("Public Key is not valid".into()), cx);
+                self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
                 return;
             };
 
@@ -303,7 +292,7 @@ impl Compose {
             })
         } else {
             let Ok(public_key) = PublicKey::parse(&content) else {
-                self.set_error(Some("Public Key is not valid".into()), cx);
+                self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
                 return;
             };
 
@@ -346,7 +335,7 @@ impl Compose {
         .detach();
     }
 
-    fn set_error(&mut self, error: Option<SharedString>, cx: &mut Context<Self>) {
+    fn set_error(&mut self, error: impl Into<Option<SharedString>>, cx: &mut Context<Self>) {
         if self.adding {
             self.set_adding(false, cx);
         }
@@ -358,7 +347,7 @@ impl Compose {
 
         // Update error message
         self.error_message.update(cx, |this, cx| {
-            *this = error;
+            *this = error.into();
             cx.notify();
         });
 

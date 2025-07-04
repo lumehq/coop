@@ -43,19 +43,17 @@ impl NewAccount {
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder(SharedString::new(t!("new_account.name_placeholder")))
-        });
-
-        let avatar_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(SharedString::new(t!("new_account.avatar_placeholder")))
+                .placeholder(SharedString::new(t!("profile.placeholder_name")))
         });
 
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
-                .placeholder(SharedString::new(t!("new_account.bio_placeholder")))
+                .placeholder(SharedString::new(t!("profile.placeholder_bio")))
         });
+
+        let avatar_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.png"));
 
         Self {
             name_input,
@@ -99,10 +97,7 @@ impl NewAccount {
                 .on_cancel(move |_, window, cx| {
                     view_cancel
                         .update(cx, |_this, cx| {
-                            window.push_notification(
-                                SharedString::new(t!("new_account.password_invalid")),
-                                cx,
-                            )
+                            window.push_notification(t!("new_account.password_invalid"), cx)
                         })
                         .ok();
                     true
@@ -303,7 +298,7 @@ impl Render for NewAccount {
                             })
                             .child(
                                 Button::new("upload")
-                                    .label(SharedString::new(t!("new_account.set_profile_picture")))
+                                    .label(t!("profile.set_profile_picture"))
                                     .icon(Icon::new(IconName::Plus))
                                     .ghost()
                                     .small()
@@ -320,7 +315,7 @@ impl Render for NewAccount {
                             .flex_col()
                             .gap_1()
                             .text_sm()
-                            .child(SharedString::new(t!("new_account.name_label")))
+                            .child(SharedString::new(t!("profile.label_name")))
                             .child(TextInput::new(&self.name_input).small()),
                     )
                     .child(
@@ -329,7 +324,7 @@ impl Render for NewAccount {
                             .flex_col()
                             .gap_1()
                             .text_sm()
-                            .child(SharedString::new(t!("new_account.bio_label")))
+                            .child(SharedString::new(t!("profile.label_bio")))
                             .child(TextInput::new(&self.bio_input).small()),
                     )
                     .child(
@@ -341,7 +336,7 @@ impl Render for NewAccount {
                     )
                     .child(
                         Button::new("submit")
-                            .label(SharedString::new(t!("new_account.continue")))
+                            .label(SharedString::new(t!("common.continue")))
                             .primary()
                             .loading(self.is_submitting)
                             .disabled(self.is_submitting || self.is_uploading)

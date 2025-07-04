@@ -218,16 +218,19 @@ impl Sidebar {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             if result.is_empty() {
-                                let msg =
-                                    format!("There are no users matching query {query_cloned}");
-                                window.push_notification(Notification::info(msg), cx);
+                                window.push_notification(
+                                    Notification::info(t!("sidebar.empty", query = query_cloned)),
+                                    cx,
+                                );
                                 this.set_finding(false, cx);
                             } else {
-                                let result = result
-                                    .into_iter()
-                                    .map(|room| cx.new(|_| room))
-                                    .collect_vec();
-                                this.global_result(result, cx);
+                                this.global_result(
+                                    result
+                                        .into_iter()
+                                        .map(|room| cx.new(|_| room))
+                                        .collect_vec(),
+                                    cx,
+                                );
                             }
                         })
                         .ok();
@@ -236,10 +239,7 @@ impl Sidebar {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title("Search Error"),
-                            cx,
-                        );
+                        window.push_notification(Notification::error(e.to_string()), cx);
                     })
                     .ok();
                 }
@@ -260,7 +260,7 @@ impl Sidebar {
         };
 
         let Some(public_key) = public_key else {
-            window.push_notification("Public Key is not valid", cx);
+            window.push_notification(t!("common.pubkey_invalid"), cx);
             self.set_finding(false, cx);
             return;
         };
@@ -304,10 +304,7 @@ impl Sidebar {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title("Search Error"),
-                            cx,
-                        );
+                        window.push_notification(Notification::error(e.to_string()), cx);
                     })
                     .ok();
                 }
@@ -321,19 +318,19 @@ impl Sidebar {
 
         // Return if search is in progress
         if self.finding {
-            window.push_notification("There is another search in progress", cx);
+            window.push_notification(t!("sidebar.search_in_progress"), cx);
             return;
         }
 
         // Return if the query is empty
         if query.is_empty() {
-            window.push_notification("Cannot search with an empty query", cx);
+            window.push_notification(t!("sidebar.empty_query"), cx);
             return;
         }
 
         // Return if the query starts with "nsec1" or "note1"
         if query.starts_with("nsec1") || query.starts_with("note1") {
-            window.push_notification("Coop does not support searching with this query", cx);
+            window.push_notification(t!("sidebar.not_support"), cx);
             return;
         }
 
@@ -433,12 +430,12 @@ impl Sidebar {
             room
         } else {
             let Some(result) = self.global_result.read(cx).as_ref() else {
-                window.push_notification("Failed to open room. Please try again later.", cx);
+                window.push_notification(t!("common.room_error"), cx);
                 return;
             };
 
             let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() else {
-                window.push_notification("Failed to open room. Please try again later.", cx);
+                window.push_notification(t!("common.room_error"), cx);
                 return;
             };
 
@@ -458,7 +455,7 @@ impl Sidebar {
 
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
-                .title("Direct Messages")
+                .title(SharedString::new(t!("sidebar.direct_messages")))
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(compose.clone())
         });
@@ -527,7 +524,7 @@ impl Sidebar {
             .child(
                 Button::new("compose")
                     .icon(IconName::PlusFill)
-                    .tooltip("Create DM or Group DM")
+                    .tooltip(t!("sidebar.dm_tooltip"))
                     .small()
                     .primary()
                     .rounded(ButtonRounded::Full)

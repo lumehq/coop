@@ -688,17 +688,13 @@ impl Chat {
                                         .text_xs()
                                         .italic()
                                         .child(Icon::new(IconName::Info).small())
-                                        .child(SharedString::new(t!(
-                                            "chat.send_fail_details_prompt"
-                                        )))
+                                        .child(SharedString::new(t!("chat.send_fail")))
                                         .on_click(move |_, window, cx| {
                                             let errors = errors.clone();
 
                                             window.open_modal(cx, move |this, _window, cx| {
-                                                this.title(SharedString::new(t!(
-                                                    "chat.error_logs_title"
-                                                )))
-                                                .child(message_errors(errors.clone(), cx))
+                                                this.title(SharedString::new(t!("chat.logs_title")))
+                                                    .child(message_errors(errors.clone(), cx))
                                             });
                                         }),
                                 )

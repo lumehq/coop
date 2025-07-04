@@ -81,7 +81,7 @@ impl Render for Subject {
                         div()
                             .text_sm()
                             .text_color(cx.theme().text_muted)
-                            .child("Subject:"),
+                            .child(SharedString::new(t!("subject.title"))),
                     )
                     .child(TextInput::new(&self.input).small())
                     .child(
@@ -94,7 +94,7 @@ impl Render for Subject {
             )
             .child(
                 Button::new("submit")
-                    .label(SharedString::new(t!("common.change")))
+                    .label(t!("common.change"))
                     .primary()
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| this.update(window, cx))),

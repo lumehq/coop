@@ -126,10 +126,8 @@ impl Profile {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         nostr_sdk::async_utility::task::spawn(async move {
-                            if let Ok(url) =
-                                nip96_upload(shared_state().client(), &nip96_server, file_data)
-                                    .await
-                            {
+                            let client = shared_state().client();
+                            if let Ok(url) = nip96_upload(client, &nip96_server, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
@@ -202,13 +200,11 @@ impl Profile {
         cx.spawn_in(window, async move |this, cx| match task.await {
             Ok(_) => {
                 cx.update(|window, cx| {
-                    _ = this.update(cx, |this, cx| {
+                    window.push_notification(t!("profile.updated_successfully"), cx);
+                    this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
-                    });
-                    window.push_notification(
-                        SharedString::new(t!("profile.updated_successfully")),
-                        cx,
-                    );
+                    })
+                    .ok();
                 })
                 .ok();
             }
@@ -273,7 +269,7 @@ impl Render for Profile {
                     .child(
                         Button::new("upload")
                             .icon(IconName::Upload)
-                            .label(SharedString::new(t!("common.change")))
+                            .label(t!("common.change"))
                             .ghost()
                             .small()
                             .disabled(self.is_loading || self.is_submitting)

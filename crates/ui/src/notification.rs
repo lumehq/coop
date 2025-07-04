@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
@@ -62,6 +63,12 @@ pub struct Notification {
 
 impl From<String> for Notification {
     fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<Cow<'static, str>> for Notification {
+    fn from(s: Cow<'static, str>) -> Self {
         Self::new(s)
     }
 }

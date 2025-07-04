@@ -36,7 +36,7 @@ impl Panel for Startup {
     }
 
     fn title(&self, _cx: &App) -> AnyElement {
-        "Startup".into_any_element()
+        self.name.clone().into_any_element()
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
