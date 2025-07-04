@@ -4,8 +4,9 @@ use gpui::http_client::Url;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use i18n::t;
 use identity::Identity;
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -50,9 +51,10 @@ impl Preferences {
     fn open_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
         let profile = profile::init(window, cx);
 
-        window.open_modal(cx, move |modal, _, _| {
+        window.open_modal(cx, move |modal, _window, _cx| {
+            let title = SharedString::new(t!("preferences.modal_profile_title"));
             modal
-                .title("Profile")
+                .title(title)
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(profile.clone())
         });
@@ -61,9 +63,10 @@ impl Preferences {
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
         let relays = relays::init(window, cx);
 
-        window.open_modal(cx, move |this, _, _| {
+        window.open_modal(cx, move |this, _window, _cx| {
+            let title = SharedString::new(t!("preferences.modal_relays_title"));
             this.width(px(DEFAULT_MODAL_WIDTH))
-                .title("Edit your Messaging Relays")
+                .title(title)
                 .child(relays.clone())
         });
     }
@@ -71,15 +74,6 @@ impl Preferences {
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const MEDIA_DESCRIPTION: &str = "Coop only supports NIP-96 media servers for now. If you're not sure about it, please keep the default value.";
-        const BACKUP_DESCRIPTION: &str =
-            "When a user sends a message, Coop won't back it up to the user's messaging relays";
-        const TRUSTED_DESCRIPTION: &str = "Show trusted requests by default";
-        const HIDE_AVATAR_DESCRIPTION: &str =
-            "Unload all avatar pictures to improve performance and reduce memory usage";
-        const PROXY_DESCRIPTION: &str =
-            "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)";
-
         let input_state = self.media_input.downgrade();
         let settings = AppSettings::get_global(cx).settings.as_ref();
 
@@ -101,7 +95,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Account"),
+                            .child(SharedString::new(t!("preferences.account_header"))),
                     )
                     .when_some(Identity::get_global(cx).profile(), |this, profile| {
                         this.child(
@@ -137,7 +131,9 @@ impl Render for Preferences {
                                                         .line_height(relative(1.3))
                                                         .text_xs()
                                                         .text_color(cx.theme().text_muted)
-                                                        .child("See your profile"),
+                                                        .child(SharedString::new(t!(
+                                                            "preferences.see_your_profile"
+                                                        ))),
                                                 ),
                                         )
                                         .on_click(cx.listener(|this, _, window, cx| {
@@ -169,7 +165,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Media Server"),
+                            .child(SharedString::new(t!("preferences.media_server_header"))),
                     )
                     .child(
                         div()
@@ -186,7 +182,10 @@ impl Render for Preferences {
                                         if let Some(input) = input_state.upgrade() {
                                             let value = input.read(cx).value();
                                             let Ok(url) = Url::parse(value) else {
-                                                window.push_notification("URL is not valid", cx);
+                                                window.push_notification(
+                                                    t!("preferences.url_not_valid"),
+                                                    cx,
+                                                );
                                                 return;
                                             };
 
@@ -202,7 +201,7 @@ impl Render for Preferences {
                         div()
                             .text_xs()
                             .text_color(cx.theme().text_muted)
-                            .child(MEDIA_DESCRIPTION),
+                            .child(SharedString::new(t!("preferences.media_description"))),
                     ),
             )
             .child(
@@ -218,39 +217,22 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Messages"),
+                            .child(SharedString::new(t!("preferences.messages_header"))),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(
-                                Switch::new("backup_messages")
-                                    .label("Backup messages")
-                                    .description(BACKUP_DESCRIPTION)
-                                    .checked(settings.backup_messages)
-                                    .on_click(|_, _window, cx| {
-                                        AppSettings::global(cx).update(cx, |this, cx| {
-                                            this.settings.backup_messages =
-                                                !this.settings.backup_messages;
-                                            cx.notify();
-                                        })
-                                    }),
-                            )
-                            .child(
-                                Switch::new("only_show_trusted")
-                                    .label("Only trusted")
-                                    .description(TRUSTED_DESCRIPTION)
-                                    .checked(settings.only_show_trusted)
-                                    .on_click(|_, _window, cx| {
-                                        AppSettings::global(cx).update(cx, |this, cx| {
-                                            this.settings.only_show_trusted =
-                                                !this.settings.only_show_trusted;
-                                            cx.notify();
-                                        })
-                                    }),
-                            ),
+                        div().flex().flex_col().gap_2().child(
+                            Switch::new("backup_messages")
+                                .label(t!("preferences.backup_messages_label"))
+                                .description(t!("preferences.backup_description"))
+                                .checked(settings.backup_messages)
+                                .on_click(|_, _window, cx| {
+                                    AppSettings::global(cx).update(cx, |this, cx| {
+                                        this.settings.backup_messages =
+                                            !this.settings.backup_messages;
+                                        cx.notify();
+                                    })
+                                }),
+                        ),
                     ),
             )
             .child(
@@ -266,7 +248,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Display"),
+                            .child(SharedString::new(t!("preferences.display_header"))),
                     )
                     .child(
                         div()
@@ -275,8 +257,8 @@ impl Render for Preferences {
                             .gap_2()
                             .child(
                                 Switch::new("hide_user_avatars")
-                                    .label("Hide user avatars")
-                                    .description(HIDE_AVATAR_DESCRIPTION)
+                                    .label(t!("preferences.hide_avatars_label"))
+                                    .description(t!("preferences.hide_avatar_description"))
                                     .checked(settings.hide_user_avatars)
                                     .on_click(|_, _window, cx| {
                                         AppSettings::global(cx).update(cx, |this, cx| {
@@ -288,8 +270,8 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("proxy_user_avatars")
-                                    .label("Proxy user avatars")
-                                    .description(PROXY_DESCRIPTION)
+                                    .label(t!("preferences.proxy_avatars_label"))
+                                    .description(t!("preferences.proxy_description"))
                                     .checked(settings.proxy_user_avatars)
                                     .on_click(|_, _window, cx| {
                                         AppSettings::global(cx).update(cx, |this, cx| {

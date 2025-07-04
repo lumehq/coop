@@ -22,6 +22,8 @@ pub mod room;
 
 mod constants;
 
+i18n::init!();
+
 pub fn init(cx: &mut App) {
     ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
 }

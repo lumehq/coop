@@ -19,6 +19,8 @@ settings = { path = "../settings" }
 client_keys = { path = "../client_keys" }
 auto_update = { path = "../auto_update" }
 
+rust-i18n.workspace = true
+i18n.workspace = true
 gpui.workspace = true
 reqwest_client.workspace = true
 

@@ -1,3 +1,4 @@
+use i18n::t;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -170,11 +171,7 @@ impl Login {
             s if s.starts_with("nsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("ncryptsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("bunker://") => self.login_with_bunker(s, window, cx),
-            _ => self.set_error(
-                "You must provide a valid Private Key or Bunker.",
-                window,
-                cx,
-            ),
+            _ => self.set_error(t!("login.invalid_key"), window, cx),
         };
     }
 
@@ -195,17 +192,15 @@ impl Login {
             let view_ok = current_view.clone();
 
             let label: SharedString = if content.starts_with("nsec1") {
-                "Set password to encrypt your key *".into()
+                t!("login.set_password").into()
             } else {
-                "Password to decrypt your key *".into()
+                t!("login.password_to_decrypt").into()
             };
 
             let description: SharedString = if content.starts_with("ncryptsec1") {
-                "Coop will only store the encrypted version of your keys".into()
+                t!("login.password_description").into()
             } else {
-                "Coop will use the password to encrypt your keys. \
-                You will need this password to decrypt your keys for future use."
-                    .into()
+                t!("login.password_description_full").into()
             };
 
             this.overlay_closable(false)
@@ -215,7 +210,7 @@ impl Login {
                 .on_cancel(move |_, window, cx| {
                     view_cancel
                         .update(cx, |this, cx| {
-                            this.set_error("Password is required", window, cx);
+                            this.set_error(t!("login.password_is_required"), window, cx);
                         })
                         .ok();
                     true
@@ -259,7 +254,7 @@ impl Login {
                                     .flex()
                                     .flex_col()
                                     .gap_1()
-                                    .child("Confirm your password *")
+                                    .child(SharedString::new(t!("login.confirm_password")))
                                     .child(TextInput::new(&confirm_input).small()),
                             )
                         })
@@ -282,12 +277,12 @@ impl Login {
         cx: &mut Context<Self>,
     ) {
         let Some(password) = password else {
-            self.set_error("Password is required", window, cx);
+            self.set_error(t!("login.password_is_required"), window, cx);
             return;
         };
 
         if password.is_empty() {
-            self.set_error("Password is required", window, cx);
+            self.set_error(t!("login.password_is_required"), window, cx);
             return;
         }
 
@@ -298,17 +293,17 @@ impl Login {
         }
 
         let Some(confirm) = confirm else {
-            self.set_error("You must confirm your password", window, cx);
+            self.set_error(t!("login.must_confirm_password"), window, cx);
             return;
         };
 
         if confirm.is_empty() {
-            self.set_error("You must confirm your password", window, cx);
+            self.set_error(t!("login.must_confirm_password"), window, cx);
             return;
         }
 
         if password != confirm {
-            self.set_error("Passwords do not match", window, cx);
+            self.set_error(t!("login.password_not_match"), window, cx);
             return;
         }
 
@@ -335,13 +330,13 @@ impl Login {
                 this.set_signer(keys, window, cx);
             });
         } else {
-            self.set_error("Secret Key is invalid", window, cx);
+            self.set_error(t!("login.key_invalid"), window, cx);
         }
     }
 
     fn login_with_bunker(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(uri) = NostrConnectURI::parse(content) else {
-            self.set_error("Bunker URL is not valid", window, cx);
+            self.set_error(t!("login.bunker_invalid"), window, cx);
             return;
         };
 
@@ -376,7 +371,7 @@ impl Login {
             match signer.bunker_uri().await {
                 Ok(bunker_uri) => {
                     cx.update(|window, cx| {
-                        window.push_notification("Logging in...", cx);
+                        window.push_notification(t!("login.logging_in"), cx);
                         Identity::global(cx).update(cx, |this, cx| {
                             this.write_bunker(&bunker_uri, cx);
                             this.set_signer(signer, window, cx);
@@ -441,7 +436,7 @@ impl Login {
     fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(relay_url) = RelayUrl::parse(self.relay_input.read(cx).value().to_string().as_str())
         else {
-            window.push_notification(Notification::error("Relay URL is not valid."), cx);
+            window.push_notification(Notification::error(t!("relays.invalid")), cx);
             return;
         };
 
@@ -561,12 +556,12 @@ impl Render for Login {
                                             .text_xl()
                                             .font_semibold()
                                             .line_height(relative(1.3))
-                                            .child("Welcome Back!"),
+                                            .child(SharedString::new(t!("login.title"))),
                                     )
                                     .child(
                                         div()
                                             .text_color(cx.theme().text_muted)
-                                            .child("Continue with Private Key or Bunker"),
+                                            .child(SharedString::new(t!("login.key_description"))),
                                     ),
                             )
                             .child(
@@ -577,7 +572,7 @@ impl Render for Login {
                                     .child(TextInput::new(&self.key_input))
                                     .child(
                                         Button::new("login")
-                                            .label("Continue")
+                                            .label(t!("common.continue"))
                                             .primary()
                                             .loading(self.logging_in)
                                             .disabled(self.logging_in)
@@ -591,8 +586,9 @@ impl Render for Login {
                                                 .text_xs()
                                                 .text_center()
                                                 .text_color(cx.theme().text_muted)
-                                                .child(SharedString::from(format!(
-                                                    "Approve connection request from your signer in {i} seconds"
+                                                .child(SharedString::new(t!(
+                                                    "login.approve_message",
+                                                    i = i
                                                 ))),
                                         )
                                     })
@@ -632,13 +628,13 @@ impl Render for Login {
                                             .font_semibold()
                                             .line_height(relative(1.2))
                                             .text_color(cx.theme().text)
-                                            .child("Continue with Nostr Connect"),
+                                            .child(SharedString::new(t!("login.nostr_connect"))),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().text_muted)
-                                            .child("Use Nostr Connect apps to scan the code"),
+                                            .child(SharedString::new(t!("login.scan_qr"))),
                                     ),
                             )
                             .when_some(self.qr_image.read(cx).clone(), |this, qr| {
@@ -663,22 +659,11 @@ impl Render for Login {
                                         .bg(cx.theme().background)
                                         .child(img(qr).h_64())
                                         .on_click(cx.listener(move |this, _, window, cx| {
-                                            #[cfg(any(
-                                                target_os = "linux",
-                                                target_os = "freebsd"
-                                            ))]
-                                            cx.write_to_clipboard(ClipboardItem::new_string(
-                                                this.connection_string.read(cx).to_string(),
-                                            ));
-                                            #[cfg(any(
-                                                target_os = "macos",
-                                                target_os = "windows"
-                                            ))]
                                             cx.write_to_clipboard(ClipboardItem::new_string(
                                                 this.connection_string.read(cx).to_string(),
                                             ));
                                             window.push_notification(
-                                                "Connection String has been copied",
+                                                t!("common.copied").to_string(),
                                                 cx,
                                             );
                                         })),
@@ -694,7 +679,7 @@ impl Render for Login {
                                     .child(TextInput::new(&self.relay_input).xsmall())
                                     .child(
                                         Button::new("change")
-                                            .label("Change")
+                                            .label(t!("common.change"))
                                             .ghost()
                                             .xsmall()
                                             .on_click(cx.listener(move |this, _, window, cx| {

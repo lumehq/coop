@@ -8,6 +8,8 @@ publish.workspace = true
 common = { path = "../common" }
 theme = { path = "../theme" }
 
+rust-i18n.workspace = true
+i18n.workspace = true
 nostr-sdk.workspace = true
 gpui.workspace = true
 smol.workspace = true

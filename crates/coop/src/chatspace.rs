@@ -8,8 +8,9 @@ use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
-    Render, Styled, Subscription, Task, Window,
+    Render, SharedString, Styled, Subscription, Task, Window,
 };
+use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
 use serde::Deserialize;
@@ -55,6 +56,10 @@ pub enum ModalKind {
 }
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = story, no_json)]
+pub struct SelectLocale(SharedString);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = modal, no_json)]
 pub struct ToggleModal {
     pub modal: ModalKind,
@@ -91,17 +96,14 @@ impl ChatSpace {
                 |_this: &mut Self, state, window, cx| {
                     if !state.read(cx).has_keys() {
                         window.open_modal(cx, |this, _window, cx| {
-                            const DESCRIPTION: &str =
-                                "Allow Coop to read the client keys stored in Keychain to continue";
-
                             this.overlay_closable(false)
                                 .show_close(false)
                                 .keyboard(false)
                                 .confirm()
                                 .button_props(
                                     ModalButtonProps::default()
-                                        .cancel_text("Create New Keys")
-                                        .ok_text("Allow"),
+                                        .cancel_text(t!("chatspace.create_new_keys"))
+                                        .ok_text(t!("common.allow")),
                                 )
                                 .child(
                                     div()
@@ -119,9 +121,13 @@ impl ChatSpace {
                                             div()
                                                 .font_semibold()
                                                 .text_color(cx.theme().text_muted)
-                                                .child("Warning"),
+                                                .child(SharedString::new(t!("chatspace.warning"))),
                                         )
-                                        .child(div().line_height(relative(1.4)).child(DESCRIPTION)),
+                                        .child(div().line_height(relative(1.4)).child(
+                                            SharedString::new(t!(
+                                                "chatspace.allow_keychain_access"
+                                            )),
+                                        )),
                                 )
                                 .on_cancel(|_, _window, cx| {
                                     ClientKeys::global(cx).update(cx, |this, cx| {
@@ -182,7 +188,7 @@ impl ChatSpace {
                             });
                         } else {
                             window.push_notification(
-                                "Failed to open room. Please try again later.",
+                                SharedString::new(t!("chatspace.failed_to_open_room")),
                                 cx,
                             );
                         }
@@ -264,7 +270,7 @@ impl ChatSpace {
 
         window.open_modal(cx, move |modal, _, _| {
             modal
-                .title("Preferences")
+                .title(SharedString::new(t!("chatspace.preferences_title")))
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(settings.clone())
         });
@@ -349,7 +355,7 @@ impl Render for ChatSpace {
                                         .px_2()
                                         .child(
                                             Button::new("appearance")
-                                                .tooltip("Change the app's appearance")
+                                                .tooltip(t!("chatspace.appearance_tooltip"))
                                                 .small()
                                                 .ghost()
                                                 .map(|this| {
@@ -365,7 +371,7 @@ impl Render for ChatSpace {
                                         )
                                         .child(
                                             Button::new("preferences")
-                                                .tooltip("Open Preferences")
+                                                .tooltip(t!("chatspace.preferences_tooltip"))
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Settings)
@@ -375,7 +381,7 @@ impl Render for ChatSpace {
                                         )
                                         .child(
                                             Button::new("logout")
-                                                .tooltip("Log Out")
+                                                .tooltip(t!("common.logout"))
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Logout)

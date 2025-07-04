@@ -8,6 +8,7 @@ use gpui::{
     FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
+use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -131,9 +132,6 @@ impl Focusable for Onboarding {
 
 impl Render for Onboarding {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const TITLE: &str = "Welcome to Coop!";
-        const SUBTITLE: &str = "Secure Communication on Nostr.";
-
         let auto_login = AppSettings::get_global(cx).settings.auto_login;
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
@@ -165,9 +163,13 @@ impl Render for Onboarding {
                                     .text_xl()
                                     .font_semibold()
                                     .line_height(relative(1.3))
-                                    .child(TITLE),
+                                    .child(SharedString::new(t!("welcome.title"))),
                             )
-                            .child(div().text_color(cx.theme().text_muted).child(SUBTITLE)),
+                            .child(
+                                div()
+                                    .text_color(cx.theme().text_muted)
+                                    .child(SharedString::new(t!("welcome.subtitle"))),
+                            ),
                     ),
             )
             .map(|this| {
@@ -201,7 +203,9 @@ impl Render for Onboarding {
                                                 .items_center()
                                                 .justify_center()
                                                 .gap_2()
-                                                .child("Continue as")
+                                                .child(SharedString::new(t!(
+                                                    "onboarding.choose_account"
+                                                )))
                                                 .child(
                                                     div()
                                                         .flex()
@@ -233,7 +237,7 @@ impl Render for Onboarding {
                         )
                         .child(
                             Checkbox::new("auto_login")
-                                .label("Automatically log in next time")
+                                .label(SharedString::new(t!("onboarding.auto_login")))
                                 .checked(auto_login)
                                 .on_click(|_, _window, cx| {
                                     AppSettings::global(cx).update(cx, |this, cx| {
@@ -246,7 +250,7 @@ impl Render for Onboarding {
                             div().w_24().absolute().bottom_4().right_4().child(
                                 Button::new("unload")
                                     .icon(IconName::Logout)
-                                    .label("Logout")
+                                    .label(SharedString::new(t!("common.logout")))
                                     .ghost()
                                     .small()
                                     .disabled(self.loading)
@@ -267,7 +271,7 @@ impl Render for Onboarding {
                             .child(
                                 Button::new("continue_btn")
                                     .icon(Icon::new(IconName::ArrowRight))
-                                    .label("Start Messaging")
+                                    .label(SharedString::new(t!("onboarding.start_messaging")))
                                     .primary()
                                     .reverse()
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -276,7 +280,7 @@ impl Render for Onboarding {
                             )
                             .child(
                                 Button::new("login_btn")
-                                    .label("Already have an account? Log in.")
+                                    .label(SharedString::new(t!("onboarding.already_have_account")))
                                     .ghost()
                                     .underline()
                                     .on_click(cx.listener(move |_, _, window, cx| {

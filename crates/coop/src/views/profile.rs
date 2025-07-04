@@ -6,8 +6,9 @@ use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
-    PathPromptOptions, Render, Styled, Task, Window,
+    PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
+use i18n::t;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
@@ -32,7 +33,8 @@ pub struct Profile {
 
 impl Profile {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
+        let name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("profile.placeholder_name")));
         let avatar_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
         let website_input =
@@ -40,7 +42,7 @@ impl Profile {
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
-                .placeholder("A short introduce about you.")
+                .placeholder(t!("profile.placeholder_bio"))
         });
 
         cx.new(|cx| {
@@ -124,10 +126,8 @@ impl Profile {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         nostr_sdk::async_utility::task::spawn(async move {
-                            if let Ok(url) =
-                                nip96_upload(shared_state().client(), &nip96_server, file_data)
-                                    .await
-                            {
+                            let client = shared_state().client();
+                            if let Ok(url) = nip96_upload(client, &nip96_server, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
@@ -197,14 +197,20 @@ impl Profile {
             Ok(())
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            if task.await.is_ok() {
+        cx.spawn_in(window, async move |this, cx| match task.await {
+            Ok(_) => {
                 cx.update(|window, cx| {
+                    window.push_notification(t!("profile.updated_successfully"), cx);
                     this.update(cx, |this, cx| {
                         this.set_submitting(false, cx);
-                        window.push_notification("Your profile has been updated successfully", cx);
                     })
                     .ok();
+                })
+                .ok();
+            }
+            Err(e) => {
+                cx.update(|window, cx| {
+                    window.push_notification(e.to_string(), cx);
                 })
                 .ok();
             }
@@ -263,7 +269,7 @@ impl Render for Profile {
                     .child(
                         Button::new("upload")
                             .icon(IconName::Upload)
-                            .label("Change")
+                            .label(t!("common.change"))
                             .ghost()
                             .small()
                             .disabled(self.is_loading || self.is_submitting)
@@ -279,7 +285,7 @@ impl Render for Profile {
                     .flex_col()
                     .gap_1()
                     .text_sm()
-                    .child("Name:")
+                    .child(SharedString::new(t!("profile.label_name")))
                     .child(TextInput::new(&self.name_input).small()),
             )
             .child(
@@ -288,7 +294,7 @@ impl Render for Profile {
                     .flex_col()
                     .gap_1()
                     .text_sm()
-                    .child("Website:")
+                    .child(SharedString::new(t!("profile.label_website")))
                     .child(TextInput::new(&self.website_input).small()),
             )
             .child(
@@ -297,13 +303,13 @@ impl Render for Profile {
                     .flex_col()
                     .gap_1()
                     .text_sm()
-                    .child("Bio:")
+                    .child(SharedString::new(t!("profile.label_bio")))
                     .child(TextInput::new(&self.bio_input).small()),
             )
             .child(
                 div().py_3().child(
                     Button::new("submit")
-                        .label("Update")
+                        .label(SharedString::new(t!("common.update")))
                         .primary()
                         .disabled(self.is_loading || self.is_submitting)
                         .loading(self.is_submitting)

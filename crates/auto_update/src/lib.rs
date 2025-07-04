@@ -12,6 +12,8 @@ use smol::io::AsyncWriteExt;
 use smol::process::Command;
 use tempfile::TempDir;
 
+i18n::init!();
+
 struct GlobalAutoUpdate(Entity<AutoUpdater>);
 
 impl Global for GlobalAutoUpdate {}

@@ -6,6 +6,7 @@ use gpui::{
     FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
     Styled, Window,
 };
+use i18n::t;
 use identity::Identity;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -40,16 +41,19 @@ impl NewAccount {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
-
-        let avatar_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+        let name_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(SharedString::new(t!("profile.placeholder_name")))
+        });
 
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
-                .placeholder("A short introduce about you.")
+                .placeholder(SharedString::new(t!("profile.placeholder_bio")))
         });
+
+        let avatar_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.png"));
 
         Self {
             name_input,
@@ -93,7 +97,7 @@ impl NewAccount {
                 .on_cancel(move |_, window, cx| {
                     view_cancel
                         .update(cx, |_this, cx| {
-                            window.push_notification("Password is invalid", cx)
+                            window.push_notification(t!("new_account.password_invalid"), cx)
                         })
                         .ok();
                     true
@@ -121,7 +125,7 @@ impl NewAccount {
                         .flex_col()
                         .gap_1()
                         .text_sm()
-                        .child("Set password to encrypt your key *")
+                        .child(SharedString::new(t!("new_account.set_password_prompt")))
                         .child(TextInput::new(&pwd_input).small()),
                 )
         });
@@ -258,7 +262,7 @@ impl Render for NewAccount {
                     .text_lg()
                     .font_semibold()
                     .line_height(relative(1.3))
-                    .child("Create New Account"),
+                    .child(SharedString::new(t!("new_account.title"))),
             )
             .child(
                 div()
@@ -294,7 +298,7 @@ impl Render for NewAccount {
                             })
                             .child(
                                 Button::new("upload")
-                                    .label("Set Profile Picture")
+                                    .label(t!("profile.set_profile_picture"))
                                     .icon(Icon::new(IconName::Plus))
                                     .ghost()
                                     .small()
@@ -311,7 +315,7 @@ impl Render for NewAccount {
                             .flex_col()
                             .gap_1()
                             .text_sm()
-                            .child("Name *:")
+                            .child(SharedString::new(t!("profile.label_name")))
                             .child(TextInput::new(&self.name_input).small()),
                     )
                     .child(
@@ -320,7 +324,7 @@ impl Render for NewAccount {
                             .flex_col()
                             .gap_1()
                             .text_sm()
-                            .child("Bio:")
+                            .child(SharedString::new(t!("profile.label_bio")))
                             .child(TextInput::new(&self.bio_input).small()),
                     )
                     .child(
@@ -332,7 +336,7 @@ impl Render for NewAccount {
                     )
                     .child(
                         Button::new("submit")
-                            .label("Continue")
+                            .label(SharedString::new(t!("common.continue")))
                             .primary()
                             .loading(self.is_submitting)
                             .disabled(self.is_submitting || self.is_uploading)

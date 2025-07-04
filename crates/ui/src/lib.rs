@@ -42,6 +42,8 @@ mod styled;
 mod title_bar;
 mod window_border;
 
+i18n::init!();
+
 /// Initialize the UI module.
 ///
 /// This must be called before using any of the UI components.

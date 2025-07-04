@@ -35,6 +35,7 @@ use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
+use i18n::t;
 
 mod element;
 
@@ -74,10 +75,10 @@ impl Sidebar {
         let indicator = cx.new(|_| None);
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
-        let trusted_only = AppSettings::get_global(cx).settings.only_show_trusted;
 
-        let find_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
+        let find_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("sidebar.find_or_start_conversation"))
+        });
 
         let chats = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
@@ -121,12 +122,12 @@ impl Sidebar {
         ));
 
         Self {
-            name: "Chat Sidebar".into(),
+            name: "Sidebar".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            trusted_only,
+            trusted_only: false,
             indicator,
             active_filter,
             find_input,
@@ -217,16 +218,19 @@ impl Sidebar {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             if result.is_empty() {
-                                let msg =
-                                    format!("There are no users matching query {query_cloned}");
-                                window.push_notification(Notification::info(msg), cx);
+                                window.push_notification(
+                                    Notification::info(t!("sidebar.empty", query = query_cloned)),
+                                    cx,
+                                );
                                 this.set_finding(false, cx);
                             } else {
-                                let result = result
-                                    .into_iter()
-                                    .map(|room| cx.new(|_| room))
-                                    .collect_vec();
-                                this.global_result(result, cx);
+                                this.global_result(
+                                    result
+                                        .into_iter()
+                                        .map(|room| cx.new(|_| room))
+                                        .collect_vec(),
+                                    cx,
+                                );
                             }
                         })
                         .ok();
@@ -235,10 +239,7 @@ impl Sidebar {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title("Search Error"),
-                            cx,
-                        );
+                        window.push_notification(Notification::error(e.to_string()), cx);
                     })
                     .ok();
                 }
@@ -259,7 +260,7 @@ impl Sidebar {
         };
 
         let Some(public_key) = public_key else {
-            window.push_notification("Public Key is not valid", cx);
+            window.push_notification(t!("common.pubkey_invalid"), cx);
             self.set_finding(false, cx);
             return;
         };
@@ -303,10 +304,7 @@ impl Sidebar {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title("Search Error"),
-                            cx,
-                        );
+                        window.push_notification(Notification::error(e.to_string()), cx);
                     })
                     .ok();
                 }
@@ -320,19 +318,19 @@ impl Sidebar {
 
         // Return if search is in progress
         if self.finding {
-            window.push_notification("There is another search in progress", cx);
+            window.push_notification(t!("sidebar.search_in_progress"), cx);
             return;
         }
 
         // Return if the query is empty
         if query.is_empty() {
-            window.push_notification("Cannot search with an empty query", cx);
+            window.push_notification(t!("sidebar.empty_query"), cx);
             return;
         }
 
         // Return if the query starts with "nsec1" or "note1"
         if query.starts_with("nsec1") || query.starts_with("note1") {
-            window.push_notification("Coop does not support searching with this query", cx);
+            window.push_notification(t!("sidebar.not_support"), cx);
             return;
         }
 
@@ -432,12 +430,12 @@ impl Sidebar {
             room
         } else {
             let Some(result) = self.global_result.read(cx).as_ref() else {
-                window.push_notification("Failed to open room. Please try again later.", cx);
+                window.push_notification(t!("common.room_error"), cx);
                 return;
             };
 
             let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() else {
-                window.push_notification("Failed to open room. Please try again later.", cx);
+                window.push_notification(t!("common.room_error"), cx);
                 return;
             };
 
@@ -457,7 +455,7 @@ impl Sidebar {
 
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
-                .title("Direct Messages")
+                .title(SharedString::new(t!("sidebar.direct_messages")))
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(compose.clone())
         });
@@ -465,40 +463,30 @@ impl Sidebar {
 
     fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.open_modal(cx, move |this, _window, cx| {
-            const BODY_1: &str =
-                "Coop is downloading all your messages from the messaging relays. \
-                Depending on your total number of messages, this process may take up to \
-                15 minutes if you're using Nostr Connect.";
-            const BODY_2: &str =
-                "Please be patient - you only need to do this full download once. \
-                Next time, Coop will only download new messages.";
-            const DESCRIPTION: &str = "You still can use the app normally \
-                while messages are processing in the background";
-
-            this.child(
-                div()
-                    .pt_8()
-                    .pb_4()
-                    .px_4()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .text_sm()
-                            .child(BODY_1)
-                            .child(BODY_2),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(DESCRIPTION),
-                    ),
-            )
+            this.title(SharedString::new(t!("sidebar.loading_modal_title")))
+                .child(
+                    div()
+                        .px_4()
+                        .pb_4()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .text_sm()
+                                .child(SharedString::new(t!("sidebar.loading_modal_body_1")))
+                                .child(SharedString::new(t!("sidebar.loading_modal_body_2"))),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child(SharedString::new(t!("sidebar.loading_modal_description"))),
+                        ),
+                )
         });
     }
 
@@ -535,7 +523,7 @@ impl Sidebar {
             .child(
                 Button::new("compose")
                     .icon(IconName::PlusFill)
-                    .tooltip("Create DM or Group DM")
+                    .tooltip(t!("sidebar.dm_tooltip"))
                     .small()
                     .primary()
                     .rounded(ButtonRounded::Full)
@@ -659,7 +647,7 @@ impl Render for Sidebar {
                     TextInput::new(&self.find_input).small().suffix(
                         Button::new("find")
                             .icon(IconName::Search)
-                            .tooltip("Press Enter to search")
+                            .tooltip(t!("sidebar.press_enter_to_search"))
                             .transparent()
                             .small(),
                     ),
@@ -712,8 +700,8 @@ impl Render for Sidebar {
                                     .gap_2()
                                     .child(
                                         Button::new("all")
-                                            .label("All")
-                                            .tooltip("All ongoing conversations")
+                                            .label(t!("sidebar.all_button"))
+                                            .tooltip(t!("sidebar.all_conversations_tooltip"))
                                             .when_some(
                                                 self.indicator.read(cx).as_ref(),
                                                 |this, kind| {
@@ -738,8 +726,8 @@ impl Render for Sidebar {
                                     )
                                     .child(
                                         Button::new("requests")
-                                            .label("Requests")
-                                            .tooltip("Incoming new conversations")
+                                            .label(t!("sidebar.requests_button"))
+                                            .tooltip(t!("sidebar.requests_tooltip"))
                                             .when_some(
                                                 self.indicator.read(cx).as_ref(),
                                                 |this, kind| {
@@ -766,7 +754,7 @@ impl Render for Sidebar {
                             .when(!self.filter(&RoomKind::Ongoing, cx), |this| {
                                 this.child(
                                     Button::new("trusted")
-                                        .tooltip("Only show rooms from trusted contacts")
+                                        .tooltip(t!("sidebar.trusted_contacts_tooltip"))
                                         .map(|this| {
                                             if self.trusted_only {
                                                 this.icon(IconName::FilterFill)
@@ -835,19 +823,21 @@ impl Render for Sidebar {
                                             .gap_1()
                                             .line_height(relative(1.2))
                                             .child(Indicator::new().xsmall())
-                                            .child("Retrieving messages..."),
+                                            .child(SharedString::new(t!(
+                                                "sidebar.retrieving_messages"
+                                            ))),
                                     )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().text_muted)
-                                            .child("This may take some time"),
-                                    ),
+                                    .child(div().text_color(cx.theme().text_muted).child(
+                                        SharedString::new(t!(
+                                            "sidebar.retrieving_messages_description"
+                                        )),
+                                    )),
                             )
                             // Info button
                             .child(
                                 Button::new("help")
                                     .icon(IconName::Info)
-                                    .tooltip("Why you're seeing this")
+                                    .tooltip(t!("sidebar.why_seeing_this_tooltip"))
                                     .small()
                                     .ghost()
                                     .rounded(ButtonRounded::Full)

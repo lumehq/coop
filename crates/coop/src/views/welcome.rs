@@ -89,7 +89,7 @@ impl Render for Welcome {
                     )
                     .child(
                         div()
-                            .child("coop on nostr.")
+                            .child("coop on nostr")
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
                             .text_sm(),
