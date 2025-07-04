@@ -3,7 +3,7 @@ use gpui::{
     div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, Styled, Window,
 };
-use rust_i18n::t;
+use i18n::t;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};

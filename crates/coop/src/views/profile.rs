@@ -8,8 +8,8 @@ use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
     PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
+use i18n::t;
 use nostr_sdk::prelude::*;
-use rust_i18n::t;
 use settings::AppSettings;
 use smol::fs;
 use theme::ActiveTheme;

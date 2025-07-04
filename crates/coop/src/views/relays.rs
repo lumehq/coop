@@ -7,8 +7,8 @@ use gpui::{
     IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign,
     UniformList, Window,
 };
+use i18n::t;
 use nostr_sdk::prelude::*;
-use rust_i18n::t;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -32,9 +32,7 @@ pub struct Relays {
 
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("wss://example.com"))
-        });
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
                 let client = shared_state().client();

@@ -1,4 +1,4 @@
-use rust_i18n::t;
+use i18n::t;
 use std::sync::Arc;
 use std::time::Duration;
 

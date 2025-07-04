@@ -54,6 +54,58 @@ relays:
     pt: "Por favor, adicione alguns relays."
     ko: "일부 relay를 추가하세요."
 
+onboarding:
+  choose_account:
+    en: "Continue as"
+    zh-CN: "继续作为"
+    zh-TW: "繼續作為"
+    ru: "Продолжить как"
+    vi: "Tiếp tục với"
+    ja: "として継続する"
+    es: "Continuar como"
+    pt: "Continuar como"
+    ko: "계속해서"
+  auto_login:
+    en: "Automatically login in the next time"
+    zh-CN: "自动登录下一次"
+    zh-TW: "自動登入下一次"
+    ru: "Автоматический вход в следующий раз"
+    vi: "Đăng nhập tự động lần sau"
+    ja: "次のログインで自動ログインする"
+    es: "Inicio de sesión automático en la próxima ocasión"
+    pt: "Login automático na próxima vez"
+    ko: "다음에 자동 로그인"
+  logout:
+    en: "Logout"
+    zh-CN: "登出"
+    zh-TW: "登出"
+    ru: "Выйти"
+    vi: "Đăng xuất"
+    ja: "ログアウト"
+    es: "Cerrar sesión"
+    pt: "Sair"
+    ko: "로그아웃"
+  start_messaging:
+    en: "Start Messaging"
+    zh-CN: "开始聊天"
+    zh-TW: "開始聊天"
+    ru: "Начать общение"
+    vi: "Bắt đầu trò chuyện"
+    ja: "メッセージングを開始する"
+    es: "Iniciar mensajería"
+    pt: "Iniciar mensagens"
+    ko: "메시지 시작"
+  already_have_account:
+    en: "Already have an account? Log in."
+    zh-CN: "已有账号？登录。"
+    zh-TW: "已有帳號？登入。"
+    ru: "Уже есть аккаунт? Войти."
+    vi: "Đã có tài khoản? Đăng nhập."
+    ja: "既にアカウントをお持ちですか？ログインしてください。"
+    es: "¿Ya tienes una cuenta? Inicia sesión."
+    pt: "Já tem uma conta? Faça login."
+    ko: "계정이 있으신가요? 로그인하세요."
+
 startup:
   auto_login_in_progress:
     en: "Auto login in progress"

@@ -6,8 +6,8 @@ use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use i18n::t;
 use identity::Identity;
-use rust_i18n::t;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;

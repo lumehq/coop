@@ -35,7 +35,7 @@ use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
-use rust_i18n::t;
+use i18n::t;
 
 mod element;
 

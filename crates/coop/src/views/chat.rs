@@ -16,10 +16,10 @@ use gpui::{
     PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
     Styled, StyledImage, Subscription, Window,
 };
+use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use rust_i18n::t;
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};

@@ -13,7 +13,6 @@ settings = { path = "../settings" }
 
 rust-i18n.workspace = true
 i18n.workspace = true
-
 nostr-sdk.workspace = true
 nostr-connect.workspace = true
 oneshot.workspace = true

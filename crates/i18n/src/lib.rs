@@ -26,4 +26,5 @@ macro_rules! init {
     };
 }
 
-pub use rust_i18n::{set_locale, t};
+pub use rust_i18n::set_locale;
+pub use rust_i18n::t;

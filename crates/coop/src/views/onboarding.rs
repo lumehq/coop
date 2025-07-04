@@ -8,10 +8,10 @@ use gpui::{
     FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
+use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use rust_i18n::t;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;

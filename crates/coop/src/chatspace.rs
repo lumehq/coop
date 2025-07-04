@@ -10,9 +10,9 @@ use gpui::{
     div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
     Render, SharedString, Styled, Subscription, Task, Window,
 };
+use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
-use rust_i18n::t;
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};

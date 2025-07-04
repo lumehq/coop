@@ -6,9 +6,9 @@ use gpui::{
     FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
     Styled, Window,
 };
+use i18n::t;
 use identity::Identity;
 use nostr_sdk::prelude::*;
-use rust_i18n::t;
 use settings::AppSettings;
 use smol::fs;
 use theme::ActiveTheme;

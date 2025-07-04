@@ -13,9 +13,9 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Task, TextAlign, Window,
 };
+use i18n::t;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use rust_i18n::t;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
