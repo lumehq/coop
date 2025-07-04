@@ -35,6 +35,7 @@ use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
+use rust_i18n::t;
 
 mod element;
 
@@ -75,8 +76,9 @@ impl Sidebar {
         let local_result = cx.new(|_| None);
         let global_result = cx.new(|_| None);
 
-        let find_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Find or start a conversation"));
+        let find_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("sidebar.find_or_start_conversation"))
+        });
 
         let chats = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
@@ -120,7 +122,7 @@ impl Sidebar {
         ));
 
         Self {
-            name: "Chat Sidebar".into(),
+            name: "Sidebar".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
@@ -464,40 +466,31 @@ impl Sidebar {
 
     fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.open_modal(cx, move |this, _window, cx| {
-            const BODY_1: &str =
-                "Coop is downloading all your messages from the messaging relays. \
-                Depending on your total number of messages, this process may take up to \
-                15 minutes if you're using Nostr Connect.";
-            const BODY_2: &str =
-                "Please be patient - you only need to do this full download once. \
-                Next time, Coop will only download new messages.";
-            const DESCRIPTION: &str = "You still can use the app normally \
-                while messages are processing in the background";
-
-            this.child(
-                div()
-                    .pt_8()
-                    .pb_4()
-                    .px_4()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .text_sm()
-                            .child(BODY_1)
-                            .child(BODY_2),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(DESCRIPTION),
-                    ),
-            )
+            this.title(SharedString::new(t!("sidebar.loading_modal_title")))
+                .child(
+                    div()
+                        .pt_8()
+                        .pb_4()
+                        .px_4()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .text_sm()
+                                .child(SharedString::new(t!("sidebar.loading_modal_body_1")))
+                                .child(SharedString::new(t!("sidebar.loading_modal_body_2"))),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child(SharedString::new(t!("sidebar.loading_modal_description"))),
+                        ),
+                )
         });
     }
 
@@ -658,7 +651,7 @@ impl Render for Sidebar {
                     TextInput::new(&self.find_input).small().suffix(
                         Button::new("find")
                             .icon(IconName::Search)
-                            .tooltip("Press Enter to search")
+                            .tooltip(t!("sidebar.press_enter_to_search"))
                             .transparent()
                             .small(),
                     ),
@@ -711,8 +704,8 @@ impl Render for Sidebar {
                                     .gap_2()
                                     .child(
                                         Button::new("all")
-                                            .label("All")
-                                            .tooltip("All ongoing conversations")
+                                            .label(t!("sidebar.all_button"))
+                                            .tooltip(t!("sidebar.all_conversations_tooltip"))
                                             .when_some(
                                                 self.indicator.read(cx).as_ref(),
                                                 |this, kind| {
@@ -737,8 +730,8 @@ impl Render for Sidebar {
                                     )
                                     .child(
                                         Button::new("requests")
-                                            .label("Requests")
-                                            .tooltip("Incoming new conversations")
+                                            .label(t!("sidebar.requests_button"))
+                                            .tooltip(t!("sidebar.requests_tooltip"))
                                             .when_some(
                                                 self.indicator.read(cx).as_ref(),
                                                 |this, kind| {
@@ -765,7 +758,7 @@ impl Render for Sidebar {
                             .when(!self.filter(&RoomKind::Ongoing, cx), |this| {
                                 this.child(
                                     Button::new("trusted")
-                                        .tooltip("Only show rooms from trusted contacts")
+                                        .tooltip(t!("sidebar.trusted_contacts_tooltip"))
                                         .map(|this| {
                                             if self.trusted_only {
                                                 this.icon(IconName::FilterFill)
@@ -834,19 +827,21 @@ impl Render for Sidebar {
                                             .gap_1()
                                             .line_height(relative(1.2))
                                             .child(Indicator::new().xsmall())
-                                            .child("Retrieving messages..."),
+                                            .child(SharedString::new(t!(
+                                                "sidebar.retrieving_messages"
+                                            ))),
                                     )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().text_muted)
-                                            .child("This may take some time"),
-                                    ),
+                                    .child(div().text_color(cx.theme().text_muted).child(
+                                        SharedString::new(t!(
+                                            "sidebar.retrieving_messages_description"
+                                        )),
+                                    )),
                             )
                             // Info button
                             .child(
                                 Button::new("help")
                                     .icon(IconName::Info)
-                                    .tooltip("Why you're seeing this")
+                                    .tooltip(t!("sidebar.why_seeing_this_tooltip"))
                                     .small()
                                     .ghost()
                                     .rounded(ButtonRounded::Full)

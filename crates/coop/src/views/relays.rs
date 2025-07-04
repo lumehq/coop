@@ -4,9 +4,11 @@ use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, Styled, Subscription, Task, TextAlign, UniformList, Window,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign,
+    UniformList, Window,
 };
 use nostr_sdk::prelude::*;
+use rust_i18n::t;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -14,8 +16,6 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::{ContextModal, Disableable, IconName, Sizable};
 
 const MIN_HEIGHT: f32 = 200.0;
-const MESSAGE: &str = "In order to receive messages from others, you need to setup at least one Messaging Relay. You can use the recommend relays or add more.";
-const HELP_TEXT: &str = "Please add some relays.";
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
     Relays::new(window, cx)
@@ -32,7 +32,9 @@ pub struct Relays {
 
 impl Relays {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(SharedString::new(t!("relays.placeholder")))
+        });
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
                 let client = shared_state().client();
@@ -270,7 +272,7 @@ impl Relays {
             .justify_center()
             .text_sm()
             .text_align(TextAlign::Center)
-            .child(HELP_TEXT)
+            .child(SharedString::new(t!("relays.add_some_relays")))
     }
 }
 
@@ -294,7 +296,7 @@ impl Render for Relays {
                         div()
                             .text_sm()
                             .text_color(cx.theme().text_muted)
-                            .child(MESSAGE),
+                            .child(SharedString::new(t!("relays.description"))),
                     )
                     .child(
                         div()
@@ -312,7 +314,7 @@ impl Render for Relays {
                                     .child(
                                         Button::new("add_relay_btn")
                                             .icon(IconName::Plus)
-                                            .label("Add")
+                                            .label(t!("relays.add"))
                                             .small()
                                             .ghost()
                                             .rounded_md()
@@ -334,7 +336,7 @@ impl Render for Relays {
             )
             .child(
                 Button::new("submti")
-                    .label("Update")
+                    .label(t!("relays.update"))
                     .primary()
                     .w_full()
                     .loading(self.is_loading)

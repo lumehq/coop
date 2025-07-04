@@ -1,3 +1,4 @@
+use rust_i18n::t;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,8 +50,9 @@ impl Login {
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
         // nsec or bunker_uri (NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md)
-        let key_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
+        let key_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(SharedString::new(t!("login.placeholder")))
+        });
 
         let relay_input =
             cx.new(|cx| InputState::new(window, cx).default_value(NOSTR_CONNECT_RELAY));
@@ -638,7 +640,7 @@ impl Render for Login {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().text_muted)
-                                            .child("Use Nostr Connect apps to scan the code"),
+                                            .child(SharedString::new(t!("login.scan_qr"))),
                                     ),
                             )
                             .when_some(self.qr_image.read(cx).clone(), |this, qr| {
@@ -678,7 +680,7 @@ impl Render for Login {
                                                 this.connection_string.read(cx).to_string(),
                                             ));
                                             window.push_notification(
-                                                "Connection String has been copied",
+                                                t!("login.connection_string_copied").to_string(),
                                                 cx,
                                             );
                                         })),
@@ -694,7 +696,7 @@ impl Render for Login {
                                     .child(TextInput::new(&self.relay_input).xsmall())
                                     .child(
                                         Button::new("change")
-                                            .label("Change")
+                                            .label(SharedString::new(t!("login.change")))
                                             .ghost()
                                             .xsmall()
                                             .on_click(cx.listener(move |this, _, window, cx| {

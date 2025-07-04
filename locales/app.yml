@@ -1,0 +1,431 @@
+_version: 2
+welcome:
+  title:
+    en: Welcome to Coop!
+    zh-CN: <TODO>
+  subtitle:
+    en: Secure Communication on Nostr.
+    zh-CN: <TODO>
+  coop_on_nostr:
+    en: coop on nostr.
+    zh-CN: <TODO>
+login:
+  placeholder:
+    en: nsec... or bunker://...
+    zh-CN: <TODO>
+  connection_string_copied:
+    en: Connection String has been copied
+    zh-CN: <TODO>
+  change:
+    en: Change
+    zh-CN: <TODO>
+  scan_qr:
+    en: Use Nostr Connect apps to scan the code
+    zh-CN: <TODO>
+onboarding:
+  choose_account:
+    en: Choose an account to continue
+    zh-CN: <TODO>
+  auto_login:
+    en: Automatically log in next time
+    zh-CN: <TODO>
+  logout:
+    en: Logout
+    zh-CN: <TODO>
+  start_messaging:
+    en: Start Messaging
+    zh-CN: <TODO>
+  already_have_account:
+    en: Already have an account? Log in.
+    zh-CN: <TODO>
+new_account:
+  name_placeholder:
+    en: Alice
+    zh-CN: <TODO>
+  avatar_placeholder:
+    en: https://example.com/avatar.jpg
+    zh-CN: <TODO>
+  bio_placeholder:
+    en: A short introduce about you.
+    zh-CN: <TODO>
+  password_invalid:
+    en: Password is invalid
+    zh-CN: <TODO>
+  title:
+    en: Create New Account
+    zh-CN: <TODO>
+  set_profile_picture:
+    en: Set Profile Picture
+    zh-CN: <TODO>
+  name_label:
+    en: "Name *:"
+    zh-CN: <TODO>
+  bio_label:
+    en: "Bio:"
+    zh-CN: <TODO>
+  continue:
+    en: Continue
+    zh-CN: <TODO>
+  password_prompt:
+    en: Enter a password to encrypt your new account
+    zh-CN: <TODO>
+  set_password_prompt:
+    en: Set password to encrypt your key *
+    zh-CN: <TODO>
+  password_help:
+    en: This password is used to unlock your account, do not forget it.
+    zh-CN: <TODO>
+  confirm:
+    en: Confirm
+    zh-CN: <TODO>
+  cancel:
+    en: Cancel
+    zh-CN: <TODO>
+relays:
+  description:
+    en: "In order to receive messages from others, you need to setup at least one Messaging Relay. You can use the recommend relays or add more."
+    zh-CN: <TODO>
+  add_some_relays:
+    en: "Please add some relays."
+    zh-CN: <TODO>
+  placeholder:
+    en: "wss://example.com"
+    zh-CN: <TODO>
+  add:
+    en: "Add"
+    zh-CN: <TODO>
+  update:
+    en: "Update"
+    zh-CN: <TODO>
+  relay_added:
+    en: "Relay added"
+    zh-CN: <TODO>
+  failed_to_add_relay:
+    en: "Failed to add relay"
+    zh-CN: <TODO>
+  failed_to_update_relays:
+    en: "Failed to update relays"
+    zh-CN: <TODO>
+  relays_updated:
+    en: "Relays updated"
+    zh-CN: <TODO>
+chatspace:
+  allow_keychain_access:
+    en: "Allow Coop to read the client keys stored in Keychain to continue"
+    zh-CN: <TODO>
+  create_new_keys:
+    en: "Create New Keys"
+    zh-CN: <TODO>
+  allow:
+    en: "Allow"
+    zh-CN: <TODO>
+  setup_messaging_relays_prompt:
+    en: "It seems that you haven't set up your messaging relays yet. Please set them up to continue."
+    zh-CN: <TODO>
+  setup:
+    en: "Set up"
+    zh-CN: <TODO>
+  tooltip_appearance:
+    en: "Change the app's appearance"
+    zh-CN: <TODO>
+  tooltip_preferences:
+    en: "Open Preferences"
+    zh-CN: <TODO>
+  tooltip_logout:
+    en: "Log Out"
+    zh-CN: <TODO>
+  warning:
+    en: "Warning"
+    zh-CN: <TODO>
+  failed_to_open_room:
+    en: "Failed to open room. Please try again later."
+    zh-CN: <TODO>
+  preferences_title:
+    en: "Preferences"
+    zh-CN: <TODO>
+startup:
+  title:
+    en: "Startup"
+    zh-CN: <TODO>
+  auto_login_in_progress:
+    en: "Auto login in progress"
+    zh-CN: <TODO>
+  stuck:
+    en: "Stuck?"
+    zh-CN: <TODO>
+  reset:
+    en: "Reset"
+    zh-CN: <TODO>
+subject:
+  placeholder:
+    en: "Exciting Project..."
+    zh-CN: <TODO>
+  room_not_found:
+    en: "Room not found"
+    zh-CN: <TODO>
+  help_text:
+    en: "Subject will be updated when you send a message."
+    zh-CN: <TODO>
+  label_change:
+    en: "Change"
+    zh-CN: <TODO>
+profile:
+  placeholder_name:
+    en: "Alice"
+    zh-CN: <TODO>
+  placeholder_avatar:
+    en: "https://example.com/avatar.jpg"
+    zh-CN: <TODO>
+  placeholder_website:
+    en: "https://your-website.com"
+    zh-CN: <TODO>
+  placeholder_bio:
+    en: "A short introduce about you."
+    zh-CN: <TODO>
+  no_file_selected:
+    en: "No file selected"
+    zh-CN: <TODO>
+  failed_to_upload:
+    en: "Failed to upload file"
+    zh-CN: <TODO>
+  updated_successfully:
+    en: "Your profile has been updated successfully"
+    zh-CN: <TODO>
+  button_change:
+    en: "Change"
+    zh-CN: <TODO>
+  label_name:
+    en: "Name:"
+    zh-CN: <TODO>
+  label_website:
+    en: "Website:"
+    zh-CN: <TODO>
+  label_bio:
+    en: "Bio:"
+    zh-CN: <TODO>
+  button_update:
+    en: "Update"
+    zh-CN: <TODO>
+preferences:
+  modal_profile_title:
+    en: "Profile"
+    zh-CN: <TODO>
+  modal_relays_title:
+    en: "Edit your Messaging Relays"
+    zh-CN: <TODO>
+  media_description:
+    en: "Coop currently only supports NIP-96 media servers. If you're unsure, please keep the default value."
+    zh-CN: <TODO>
+  backup_description:
+    en: "When you send a message, Coop will also send it to your configured Messaging Relays. You can disable this if you want all sent messages to disappear when you log out."
+    zh-CN: <TODO>
+  hide_avatar_description:
+    en: "Unload all avatar pictures to improve performance and reduce memory usage."
+    zh-CN: <TODO>
+  proxy_description:
+    en: "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)."
+    zh-CN: <TODO>
+  account_header:
+    en: "Account"
+    zh-CN: <TODO>
+  see_your_profile:
+    en: "See your profile"
+    zh-CN: <TODO>
+  dm_relays_button:
+    en: "DM Relays"
+    zh-CN: <TODO>
+  media_server_header:
+    en: "Media Server"
+    zh-CN: <TODO>
+  messages_header:
+    en: "Messages"
+    zh-CN: <TODO>
+  backup_messages_label:
+    en: "Backup messages"
+    zh-CN: <TODO>
+  display_header:
+    en: "Display"
+    zh-CN: <TODO>
+  hide_avatars_label:
+    en: "Hide user avatars"
+    zh-CN: <TODO>
+  proxy_avatars_label:
+    en: "Proxy user avatars"
+    zh-CN: <TODO>
+  url_not_valid:
+    en: "URL is not valid"
+    zh-CN: <TODO>
+
+compose:
+  placeholder_npub:
+    en: "npub or nprofile..."
+    zh-CN: <TODO>
+  placeholder_title:
+    en: "Family...(Optional)"
+    zh-CN: <TODO>
+  notification_contacts_title:
+    en: "Contacts"
+    zh-CN: <TODO>
+  create_dm_button:
+    en: "Create DM"
+    zh-CN: <TODO>
+  creating_dm_button:
+    en: "Creating DM..."
+    zh-CN: <TODO>
+  create_group_dm_button:
+    en: "Create Group DM"
+    zh-CN: <TODO>
+  to_label:
+    en: "To:"
+    zh-CN: <TODO>
+  no_contacts_message:
+    en: "No contacts"
+    zh-CN: <TODO>
+  no_contacts_description:
+    en: "Your recently contacts will appear here."
+    zh-CN: <TODO>
+  contact_already_added:
+    en: "Contact already added: {name}"
+    zh-CN: <TODO>
+  invalid_contact:
+    en: "Invalid contact: {error}"
+    zh-CN: <TODO>
+  invalid_nip05:
+    en: "Invalid Nip05"
+    zh-CN: <TODO>
+  invalid_public_key:
+    en: "Public Key is not valid"
+    zh-CN: <TODO>
+  failed_to_parse_user_input:
+    en: "Failed to parse user input"
+    zh-CN: <TODO>
+  select_at_least_one_contact:
+    en: "Select at least one contact"
+    zh-CN: <TODO>
+  room_already_exists:
+    en: "Room already exists"
+    zh-CN: <TODO>
+  receiver_required:
+    en: "You need to add at least 1 receiver"
+    zh-CN: <TODO>
+  profile_not_found:
+    en: "Profile not found"
+    zh-CN: <TODO>
+  description:
+    en: "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com)."
+    zh-CN: <TODO>
+  subject_label:
+    en: "Subject:"
+    zh-CN: <TODO>
+  invalid_nip19_profile:
+    en: "Invalid nprofile"
+    zh-CN: <TODO>
+  error:
+    en: "Error: {error}"
+    zh-CN: <TODO>
+
+chat:
+  private_conversation_notice:
+    en: "This conversation is private. Only members can see each other's messages."
+    zh-CN: <TODO>
+  placeholder:
+    en: "Message..."
+    zh-CN: <TODO>
+  empty_message_error:
+    en: "Cannot send an empty message"
+    zh-CN: <TODO>
+  message_sent_success:
+    en: "Message sent"
+    zh-CN: <TODO>
+  message_sent_fail_title:
+    en: "Failed to send message"
+    zh-CN: <TODO>
+  upload_prompt_title:
+    en: "Select a media file to upload"
+    zh-CN: <TODO>
+  upload_fail_title:
+    en: "Failed to upload media"
+    zh-CN: <TODO>
+  unsupported_file_type_error:
+    en: "Unsupported file type"
+    zh-CN: <TODO>
+  send_fail_details_prompt:
+    en: "Failed to send message. Click to see details."
+    zh-CN: <TODO>
+  error_logs_title:
+    en: "Error Logs"
+    zh-CN: <TODO>
+  copy_message_button:
+    en: "Copy Message"
+    zh-CN: <TODO>
+  reply_button:
+    en: "Reply"
+    zh-CN: <TODO>
+  copy_note_id_button:
+    en: "Copy Note ID"
+    zh-CN: <TODO>
+  self_author_name:
+    en: "You"
+    zh-CN: <TODO>
+  change_subject_button:
+    en: "Change Subject"
+    zh-CN: <TODO>
+  change_subject_modal_title:
+    en: "Change the subject of the conversation"
+    zh-CN: <TODO>
+  call_button:
+    en: "Call"
+    zh-CN: <TODO>
+
+sidebar:
+  title:
+    en: "Chat Sidebar"
+    zh-CN: <TODO>
+  find_or_start_conversation:
+    en: "Find or start a conversation"
+    zh-CN: <TODO>
+  press_enter_to_search:
+    en: "Press Enter to search"
+    zh-CN: <TODO>
+  all_button:
+    en: "All"
+    zh-CN: <TODO>
+  all_conversations_tooltip:
+    en: "All ongoing conversations"
+    zh-CN: <TODO>
+  requests_button:
+    en: "Requests"
+    zh-CN: <TODO>
+  requests_tooltip:
+    en: "Incoming new conversations"
+    zh-CN: <TODO>
+  trusted_contacts_tooltip:
+    en: "Only show rooms from trusted contacts"
+    zh-CN: <TODO>
+  retrieving_messages:
+    en: "Retrieving messages..."
+    zh-CN: <TODO>
+  retrieving_messages_description:
+    en: "This may take some time"
+    zh-CN: <TODO>
+  why_seeing_this_tooltip:
+    en: "Why you're seeing this"
+    zh-CN: <TODO>
+  loading_modal_title:
+    en: "Retrieving Your Messages"
+    zh-CN: <TODO>
+  loading_modal_body_1:
+    en: "Coop is downloading all your messages from the messaging relays. Depending on your total number of messages, this process may take up to 15 minutes if you're using Nostr Connect."
+    zh-CN: <TODO>
+  loading_modal_body_2:
+    en: "Please be patient - you only need to do this full download once. Next time, Coop will only download new messages."
+    zh-CN: <TODO>
+  loading_modal_description:
+    en: "You still can use the app normally while messages are processing in the background"
+    zh-CN: <TODO>
+  send_to_label:
+    en: "Send to:"
+    zh-CN: <TODO>
+  replying_to_label:
+    en: "Replying to"
+    zh-CN: <TODO>

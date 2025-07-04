@@ -4,9 +4,10 @@ use gpui::http_client::Url;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use identity::Identity;
+use rust_i18n::t;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -52,7 +53,7 @@ impl Preferences {
 
         window.open_modal(cx, move |modal, _, _| {
             modal
-                .title("Profile")
+                .title(SharedString::new(t!("preferences.modal_profile_title")))
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(profile.clone())
         });
@@ -63,7 +64,7 @@ impl Preferences {
 
         window.open_modal(cx, move |this, _, _| {
             this.width(px(DEFAULT_MODAL_WIDTH))
-                .title("Edit your Messaging Relays")
+                .title(SharedString::new(t!("preferences.modal_relays_title")))
                 .child(relays.clone())
         });
     }
@@ -71,19 +72,6 @@ impl Preferences {
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const MEDIA_DESCRIPTION: &str = "Coop currently only supports NIP-96 media servers. \
-                                         If you're unsure, please keep the default value.";
-
-        const BACKUP_DESCRIPTION: &str = "When you send a message, Coop will also send it to \
-                                          your configured Messaging Relays. You can disable this \
-                                          if you want all sent messages to disappear when you log out.";
-
-        const HIDE_AVATAR_DESCRIPTION: &str = "Unload all avatar pictures to improve performance \
-                                               and reduce memory usage.";
-
-        const PROXY_DESCRIPTION: &str = "Use wsrv.nl to resize and downscale avatar pictures \
-                                         (saves ~50MB of data).";
-
         let input_state = self.media_input.downgrade();
         let settings = AppSettings::get_global(cx).settings.as_ref();
 
@@ -105,7 +93,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Account"),
+                            .child(SharedString::new(t!("preferences.account_header"))),
                     )
                     .when_some(Identity::get_global(cx).profile(), |this, profile| {
                         this.child(
@@ -141,7 +129,9 @@ impl Render for Preferences {
                                                         .line_height(relative(1.3))
                                                         .text_xs()
                                                         .text_color(cx.theme().text_muted)
-                                                        .child("See your profile"),
+                                                        .child(SharedString::new(t!(
+                                                            "preferences.see_your_profile"
+                                                        ))),
                                                 ),
                                         )
                                         .on_click(cx.listener(|this, _, window, cx| {
@@ -150,7 +140,7 @@ impl Render for Preferences {
                                 )
                                 .child(
                                     Button::new("relays")
-                                        .label("DM Relays")
+                                        .label(t!("preferences.dm_relays_button"))
                                         .ghost()
                                         .small()
                                         .on_click(cx.listener(|this, _, window, cx| {
@@ -173,7 +163,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Media Server"),
+                            .child(SharedString::new(t!("preferences.media_server_header"))),
                     )
                     .child(
                         div()
@@ -190,7 +180,12 @@ impl Render for Preferences {
                                         if let Some(input) = input_state.upgrade() {
                                             let value = input.read(cx).value();
                                             let Ok(url) = Url::parse(value) else {
-                                                window.push_notification("URL is not valid", cx);
+                                                window.push_notification(
+                                                    SharedString::new(t!(
+                                                        "preferences.url_not_valid"
+                                                    )),
+                                                    cx,
+                                                );
                                                 return;
                                             };
 
@@ -206,7 +201,7 @@ impl Render for Preferences {
                         div()
                             .text_xs()
                             .text_color(cx.theme().text_muted)
-                            .child(MEDIA_DESCRIPTION),
+                            .child(SharedString::new(t!("preferences.media_description"))),
                     ),
             )
             .child(
@@ -222,13 +217,13 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Messages"),
+                            .child(SharedString::new(t!("preferences.messages_header"))),
                     )
                     .child(
                         div().flex().flex_col().gap_2().child(
                             Switch::new("backup_messages")
-                                .label("Backup messages")
-                                .description(BACKUP_DESCRIPTION)
+                                .label(t!("preferences.backup_messages_label"))
+                                .description(t!("preferences.backup_description"))
                                 .checked(settings.backup_messages)
                                 .on_click(|_, _window, cx| {
                                     AppSettings::global(cx).update(cx, |this, cx| {
@@ -253,7 +248,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child("Display"),
+                            .child(SharedString::new(t!("preferences.display_header"))),
                     )
                     .child(
                         div()
@@ -262,8 +257,8 @@ impl Render for Preferences {
                             .gap_2()
                             .child(
                                 Switch::new("hide_user_avatars")
-                                    .label("Hide user avatars")
-                                    .description(HIDE_AVATAR_DESCRIPTION)
+                                    .label(t!("preferences.hide_avatars_label"))
+                                    .description(t!("preferences.hide_avatar_description"))
                                     .checked(settings.hide_user_avatars)
                                     .on_click(|_, _window, cx| {
                                         AppSettings::global(cx).update(cx, |this, cx| {
@@ -275,8 +270,8 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("proxy_user_avatars")
-                                    .label("Proxy user avatars")
-                                    .description(PROXY_DESCRIPTION)
+                                    .label(t!("preferences.proxy_avatars_label"))
+                                    .description(t!("preferences.proxy_description"))
                                     .checked(settings.proxy_user_avatars)
                                     .on_click(|_, _window, cx| {
                                         AppSettings::global(cx).update(cx, |this, cx| {

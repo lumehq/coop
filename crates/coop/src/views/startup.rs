@@ -4,6 +4,7 @@ use gpui::{
     IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
 use identity::Identity;
+use rust_i18n::t;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -23,7 +24,7 @@ pub struct Startup {
 impl Startup {
     fn new(_window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self {
-            name: "Welcome".into(),
+            name: "Startup".into(),
             focus_handle: cx.focus_handle(),
         })
     }
@@ -89,10 +90,9 @@ impl Render for Startup {
                             .gap_2()
                             .when(logging_in, |this| {
                                 this.child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(cx.theme().text)
-                                        .child("Auto login in progress"),
+                                    div().text_sm().text_color(cx.theme().text).child(
+                                        SharedString::new(t!("startup.auto_login_in_progress")),
+                                    ),
                                 )
                             })
                             .child(Indicator::new().small()),
@@ -110,11 +110,11 @@ impl Render for Startup {
                                 .text_xs()
                                 .font_semibold()
                                 .text_color(cx.theme().text_muted)
-                                .child("Stuck?"),
+                                .child(SharedString::new(t!("startup.stuck"))),
                         )
                         .child(
                             Button::new("reset")
-                                .label("Reset")
+                                .label(SharedString::new(t!("startup.reset")))
                                 .small()
                                 .ghost()
                                 .on_click(|_, window, cx| {

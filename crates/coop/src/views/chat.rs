@@ -19,6 +19,7 @@ use gpui::{
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use rust_i18n::t;
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -73,10 +74,7 @@ impl Chat {
 
         let messages = cx.new(|_| {
             let message = Message::builder()
-                .content(
-                    "This conversation is private. Only members can see each other's messages."
-                        .into(),
-                )
+                .content(t!("chat.private_conversation_notice").into())
                 .build_rc()
                 .unwrap();
 
@@ -85,7 +83,7 @@ impl Chat {
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Message...")
+                .placeholder(t!("chat.placeholder"))
                 .multi_line()
                 .prevent_new_line_on_enter()
                 .rows(1)
@@ -103,7 +101,10 @@ impl Chat {
                 move |this: &mut Self, input, event, window, cx| {
                     if let InputEvent::PressEnter { .. } = event {
                         if input.read(cx).value().trim().is_empty() {
-                            window.push_notification("Cannot send an empty message", cx);
+                            window.push_notification(
+                                Notification::new(t!("chat.empty_message_error")),
+                                cx,
+                            );
                         } else {
                             this.send_message(window, cx);
                         }
@@ -498,7 +499,7 @@ impl Chat {
                             .gap_1()
                             .text_xs()
                             .text_color(cx.theme().text_muted)
-                            .child("Replying to:")
+                            .child(SharedString::new(t!("chat.replying_to_label")))
                             .child(
                                 div()
                                     .text_color(cx.theme().text_accent)
@@ -687,13 +688,17 @@ impl Chat {
                                         .text_xs()
                                         .italic()
                                         .child(Icon::new(IconName::Info).small())
-                                        .child("Failed to send message. Click to see details.")
+                                        .child(SharedString::new(t!(
+                                            "chat.send_fail_details_prompt"
+                                        )))
                                         .on_click(move |_, window, cx| {
                                             let errors = errors.clone();
 
                                             window.open_modal(cx, move |this, _window, cx| {
-                                                this.title("Error Logs")
-                                                    .child(message_errors(errors.clone(), cx))
+                                                this.title(SharedString::new(t!(
+                                                    "chat.error_logs_title"
+                                                )))
+                                                .child(message_errors(errors.clone(), cx))
                                             });
                                         }),
                                 )
@@ -705,7 +710,7 @@ impl Chat {
                 vec![
                     Button::new("reply")
                         .icon(IconName::Reply)
-                        .tooltip("Reply")
+                        .tooltip(t!("chat.reply_button"))
                         .small()
                         .ghost()
                         .on_click({
@@ -716,7 +721,7 @@ impl Chat {
                         }),
                     Button::new("copy")
                         .icon(IconName::Copy)
-                        .tooltip("Copy Message")
+                        .tooltip(t!("chat.copy_message_button"))
                         .small()
                         .ghost()
                         .on_click({
@@ -779,12 +784,12 @@ impl Panel for Chat {
 
         let button = Button::new("subject")
             .icon(IconName::EditFill)
-            .tooltip("Change Subject")
+            .tooltip(t!("chat.change_subject_button"))
             .on_click(move |_, window, cx| {
                 let subject = subject::init(id, subject.clone(), window, cx);
 
                 window.open_modal(cx, move |this, _window, _cx| {
-                    this.title("Change the subject of the conversation")
+                    this.title(SharedString::new(t!("chat.change_subject_modal_title")))
                         .child(subject.clone())
                 });
             });
@@ -896,7 +901,7 @@ fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
                         .items_baseline()
                         .gap_1()
                         .text_color(cx.theme().text_muted)
-                        .child("Send to:")
+                        .child(SharedString::new(t!("chat.send_to_label")))
                         .child(error.profile.render_name()),
                 )
                 .child(error.message)

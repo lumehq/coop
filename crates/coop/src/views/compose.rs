@@ -15,14 +15,17 @@ use gpui::{
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use rust_i18n::t;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::input::{InputEvent, InputState, TextInput};
-use ui::notification::Notification;
-use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{
+    button::{Button, ButtonVariants},
+    input::{InputEvent, InputState, TextInput},
+    notification::Notification,
+    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
+};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
@@ -72,10 +75,10 @@ pub struct Compose {
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         let user_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("npub or nprofile..."));
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("compose.placeholder_npub")));
 
         let title_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Family...(Optional)"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("compose.placeholder_title")));
 
         let error_message = cx.new(|_| None);
         let mut subscriptions = smallvec![];
@@ -114,7 +117,9 @@ impl Compose {
                 Err(e) => {
                     cx.update(|window, cx| {
                         window.push_notification(
-                            Notification::error(e.to_string()).title("Contacts"),
+                            Notification::error(e.to_string()).title(SharedString::new(t!(
+                                "compose.notification_contacts_title"
+                            ))),
                             cx,
                         );
                     })
@@ -139,7 +144,7 @@ impl Compose {
         let public_keys: Vec<PublicKey> = self.selected(cx);
 
         if public_keys.is_empty() {
-            self.set_error(Some("You need to add at least 1 receiver".into()), cx);
+            self.set_error(Some(SharedString::new(t!("compose.receiver_required"))), cx);
             return;
         }
 
@@ -171,28 +176,30 @@ impl Compose {
             Ok(room)
         });
 
-        cx.spawn_in(window, async move |this, cx| match event.await {
-            Ok(room) => {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_submitting(false, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            match event.await {
+                Ok(room) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.set_submitting(false, cx);
+                        })
+                        .ok();
+
+                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                            this.push_room(cx.new(|_| room), cx);
+                        });
+
+                        window.close_modal(cx);
                     })
                     .ok();
-
-                    ChatRegistry::global(cx).update(cx, |this, cx| {
-                        this.push_room(cx.new(|_| room), cx);
-                    });
-
-                    window.close_modal(cx);
-                })
-                .ok();
-            }
-            Err(e) => {
-                this.update(cx, |this, cx| {
-                    this.set_error(Some(e.to_string().into()), cx);
-                })
-                .ok();
-            }
+                }
+                Err(e) => {
+                    this.update(cx, |this, cx| {
+                        this.set_error(Some(e.to_string().into()), cx);
+                    })
+                    .ok();
+                }
+            };
         })
         .detach();
     }
@@ -211,6 +218,17 @@ impl Compose {
         {
             self.contacts.insert(0, cx.new(|_| contact));
             cx.notify();
+        } else {
+            self.set_error(
+                Some(
+                    t!(
+                        "compose.contact_already_added",
+                        name = contact.profile.name()
+                    )
+                    .into(),
+                ),
+                cx,
+            );
         }
     }
 
@@ -259,7 +277,7 @@ impl Compose {
 
                     Ok(contact)
                 } else {
-                    Err(anyhow!("Profile not found"))
+                    Err(anyhow!(t!("compose.profile_not_found")))
                 }
             })
         } else if content.starts_with("nprofile1") {
@@ -418,13 +436,12 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const DESCRIPTION: &str =
-            "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).";
-
-        let label: SharedString = if self.contacts.len() > 1 {
-            "Create Group DM".into()
+        let label = if self.submitting {
+            t!("compose.creating_dm_button")
+        } else if self.contacts.len() > 1 {
+            t!("compose.create_group_dm_button")
         } else {
-            "Create DM".into()
+            t!("compose.create_dm_button")
         };
 
         div()
@@ -436,7 +453,7 @@ impl Render for Compose {
                     .px_3()
                     .text_sm()
                     .text_color(cx.theme().text_muted)
-                    .child(DESCRIPTION),
+                    .child(SharedString::new(t!("compose.description"))),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
                 this.child(div().px_3().text_xs().text_color(red()).child(msg.clone()))
@@ -450,7 +467,12 @@ impl Render for Compose {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().text_sm().font_semibold().child("Subject:"))
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .child(SharedString::new(t!("compose.subject_label"))),
+                        )
                         .child(TextInput::new(&self.title_input).small().appearance(false)),
                 ),
             )
@@ -466,7 +488,12 @@ impl Render for Compose {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(div().text_sm().font_semibold().child("To:"))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .child(SharedString::new(t!("compose.to_label"))),
+                            )
                             .child(
                                 div()
                                     .flex()
@@ -505,13 +532,16 @@ impl Render for Compose {
                                             .text_xs()
                                             .font_semibold()
                                             .line_height(relative(1.2))
-                                            .child("No contacts"),
+                                            .child(SharedString::new(t!(
+                                                "compose.no_contacts_message"
+                                            ))),
                                     )
                                     .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().text_muted)
-                                            .child("Your recently contacts will appear here."),
+                                        div().text_xs().text_color(cx.theme().text_muted).child(
+                                            SharedString::new(t!(
+                                                "compose.no_contacts_description"
+                                            )),
+                                        ),
                                     ),
                             )
                         } else {

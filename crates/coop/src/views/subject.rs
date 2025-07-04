@@ -1,8 +1,9 @@
 use chats::ChatRegistry;
 use gpui::{
     div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement, Render, Styled, Window,
+    ParentElement, Render, SharedString, Styled, Window,
 };
+use rust_i18n::t;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
@@ -31,7 +32,7 @@ impl Subject {
         cx: &mut App,
     ) -> Entity<Self> {
         let input = cx.new(|cx| {
-            let mut this = InputState::new(window, cx).placeholder("Exciting Project...");
+            let mut this = InputState::new(window, cx).placeholder(t!("subject.placeholder"));
             if let Some(text) = subject.clone() {
                 this.set_value(text, window, cx);
             }
@@ -56,15 +57,13 @@ impl Subject {
             });
             window.close_modal(cx);
         } else {
-            window.push_notification("Room not found", cx);
+            window.push_notification(SharedString::new(t!("subject.room_not_found")), cx);
         }
     }
 }
 
 impl Render for Subject {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const HELP_TEXT: &str = "Subject will be updated when you send a message.";
-
         div()
             .track_focus(&self.focus_handle)
             .size_full()
@@ -90,12 +89,12 @@ impl Render for Subject {
                             .text_xs()
                             .italic()
                             .text_color(cx.theme().text_placeholder)
-                            .child(HELP_TEXT),
+                            .child(SharedString::new(t!("subject.help_text"))),
                     ),
             )
             .child(
                 Button::new("submit")
-                    .label("Change")
+                    .label(SharedString::new(t!("subject.label_change")))
                     .primary()
                     .w_full()
                     .on_click(cx.listener(|this, _, window, cx| this.update(window, cx))),

@@ -2,6 +2,7 @@ use gpui::{
     div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
     IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
+use rust_i18n::t;
 use theme::ActiveTheme;
 use ui::button::Button;
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -89,7 +90,7 @@ impl Render for Welcome {
                     )
                     .child(
                         div()
-                            .child("coop on nostr.")
+                            .child(SharedString::new(t!("welcome.coop_on_nostr")))
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
                             .text_sm(),
