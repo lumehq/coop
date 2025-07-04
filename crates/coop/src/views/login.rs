@@ -663,7 +663,7 @@ impl Render for Login {
                                                 this.connection_string.read(cx).to_string(),
                                             ));
                                             window.push_notification(
-                                                t!("login.connection_string_copied").to_string(),
+                                                t!("common.copied").to_string(),
                                                 cx,
                                             );
                                         })),
@@ -679,7 +679,7 @@ impl Render for Login {
                                     .child(TextInput::new(&self.relay_input).xsmall())
                                     .child(
                                         Button::new("change")
-                                            .label(SharedString::new(t!("common.change")))
+                                            .label(t!("common.change"))
                                             .ghost()
                                             .xsmall()
                                             .on_click(cx.listener(move |this, _, window, cx| {

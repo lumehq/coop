@@ -466,9 +466,8 @@ impl Sidebar {
             this.title(SharedString::new(t!("sidebar.loading_modal_title")))
                 .child(
                     div()
-                        .pt_8()
-                        .pb_4()
                         .px_4()
+                        .pb_4()
                         .flex()
                         .flex_col()
                         .gap_2()

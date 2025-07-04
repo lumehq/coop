@@ -56,6 +56,10 @@ pub enum ModalKind {
 }
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = story, no_json)]
+pub struct SelectLocale(SharedString);
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = modal, no_json)]
 pub struct ToggleModal {
     pub modal: ModalKind,
@@ -99,7 +103,7 @@ impl ChatSpace {
                                 .button_props(
                                     ModalButtonProps::default()
                                         .cancel_text(t!("chatspace.create_new_keys"))
-                                        .ok_text(t!("chatspace.allow")),
+                                        .ok_text(t!("common.allow")),
                                 )
                                 .child(
                                     div()
@@ -351,7 +355,7 @@ impl Render for ChatSpace {
                                         .px_2()
                                         .child(
                                             Button::new("appearance")
-                                                .tooltip(t!("chatspace.tooltip_appearance"))
+                                                .tooltip(t!("chatspace.appearance_tooltip"))
                                                 .small()
                                                 .ghost()
                                                 .map(|this| {
@@ -367,7 +371,7 @@ impl Render for ChatSpace {
                                         )
                                         .child(
                                             Button::new("preferences")
-                                                .tooltip(t!("chatspace.tooltip_preferences"))
+                                                .tooltip(t!("chatspace.preferences_tooltip"))
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Settings)
@@ -377,7 +381,7 @@ impl Render for ChatSpace {
                                         )
                                         .child(
                                             Button::new("logout")
-                                                .tooltip(t!("chatspace.tooltip_logout"))
+                                                .tooltip(t!("common.logout"))
                                                 .small()
                                                 .ghost()
                                                 .icon(IconName::Logout)

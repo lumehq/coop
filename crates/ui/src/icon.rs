@@ -39,6 +39,7 @@ pub enum IconName {
     FilterFill,
     Inbox,
     Info,
+    Language,
     Loader,
     Logout,
     Moon,
@@ -108,6 +109,7 @@ impl IconName {
             Self::FilterFill => "icons/filter-fill.svg",
             Self::Inbox => "icons/inbox.svg",
             Self::Info => "icons/info.svg",
+            Self::Language => "icons/language.svg",
             Self::Loader => "icons/loader.svg",
             Self::Logout => "icons/logout.svg",
             Self::Moon => "icons/moon.svg",
@@ -304,7 +306,7 @@ impl Render for Icon {
                 Size::Medium => this.size_5(),
                 Size::Large => this.size_6(),
             })
-            .path(self.path.clone())
+            .when(!self.path.is_empty(), |this| this.path(self.path.clone()))
             .when_some(self.rotation, |this, rotation| {
                 this.with_transformation(Transformation::rotate(rotation))
             })

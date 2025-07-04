@@ -71,6 +71,36 @@ common:
     es: "No se pudo abrir el salón. Por favor, inténtalo de nuevo más tarde."
     pt: "Falha ao abrir sala. Por favor, tente novamente mais tarde."
     ko: "방을 열지 못했습니다. 나중에 다시 시도해주세요."
+  allow:
+    en: "Allow"
+    zh-CN: "允许"
+    zh-TW: "允許"
+    ru: "Разрешить"
+    vi: "Cho phép"
+    ja: "許可"
+    es: "Permitir"
+    pt: "Permitir"
+    ko: "허용"
+  logout:
+    en: "Logout"
+    zh-CN: "登出"
+    zh-TW: "登出"
+    ru: "Выйти"
+    vi: "Đăng xuất"
+    ja: "ログアウト"
+    es: "Cerrar sesión"
+    pt: "Sair"
+    ko: "로그아웃"
+  copied:
+    en: "Copied"
+    zh-CN: "已复制"
+    zh-TW: "已複製"
+    ru: "Скопировано"
+    vi: "Đã sao chép"
+    ja: "コピーしました"
+    es: "Copiado"
+    pt: "Copiado"
+    ko: "복사됨"
 
 welcome:
   title:
@@ -115,16 +145,6 @@ onboarding:
     es: "Inicio de sesión automático en la próxima ocasión"
     pt: "Login automático na próxima vez"
     ko: "다음에 자동 로그인"
-  logout:
-    en: "Logout"
-    zh-CN: "登出"
-    zh-TW: "登出"
-    ru: "Выйти"
-    vi: "Đăng xuất"
-    ja: "ログアウト"
-    es: "Cerrar sesión"
-    pt: "Sair"
-    ko: "로그아웃"
   start_messaging:
     en: "Start Messaging"
     zh-CN: "开始聊天"
@@ -381,6 +401,48 @@ login:
     es: "Iniciando sesión..."
     pt: "Entrando..."
     ko: "로그인 중..."
+
+chatspace:
+  create_new_keys:
+    en: "Create New Keys"
+    zh-CN: "创建新密钥"
+    zh-TW: "建立新金鑰"
+    ru: "Создать новые ключи"
+    vi: "Tạo khóa mới"
+    ja: "新しいキーを作成する"
+    es: "Crear nuevas claves"
+    pt: "Criar novas chaves"
+    ko: "새 키 생성"
+  appearance_tooltip:
+    en: "Change the app's appearance"
+    zh-CN: "更改应用程序外观"
+    zh-TW: "更改應用程式外觀"
+    ru: "Изменить внешний вид приложения"
+    vi: "Thay đổi giao diện ứng dụng"
+    ja: "アプリケーションの外観を変更する"
+    es: "Cambiar la apariencia de la aplicación"
+    pt: "Alterar a aparência do aplicativo"
+    ko: "앱 모양 변경"
+  preferences_tooltip:
+    en: "Open Preferences"
+    zh-CN: "打开偏好设置"
+    zh-TW: "打開偏好設定"
+    ru: "Открыть настройки"
+    vi: "Mở cài đặt"
+    ja: "設定を開く"
+    es: "Abrir Preferencias"
+    pt: "Abrir Preferências"
+    ko: "설정 열기"
+  languages_tooltip:
+    en: "Change the app's language"
+    zh-CN: "更改应用程序语言"
+    zh-TW: "更改應用程式語言"
+    ru: "Изменить язык приложения"
+    vi: "Thay đổi ngôn ngữ ứng dụng"
+    ja: "アプリケーションの言語を変更する"
+    es: "Cambiar el idioma de la aplicación"
+    pt: "Alterar o idioma do aplicativo"
+    ko: "앱 언어 변경"
 
 relays:
   description:

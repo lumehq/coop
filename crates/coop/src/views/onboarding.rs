@@ -250,7 +250,7 @@ impl Render for Onboarding {
                             div().w_24().absolute().bottom_4().right_4().child(
                                 Button::new("unload")
                                     .icon(IconName::Logout)
-                                    .label(SharedString::new(t!("onboarding.logout")))
+                                    .label(SharedString::new(t!("common.logout")))
                                     .ghost()
                                     .small()
                                     .disabled(self.loading)
