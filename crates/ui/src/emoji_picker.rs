@@ -14,6 +14,7 @@ use crate::input::InputState;
 use crate::popover::{Popover, PopoverContent};
 use crate::Icon;
 
+/// Emit a emoji to target input
 #[derive(Action, PartialEq, Clone, Debug, Deserialize)]
 #[action(namespace = emoji, no_json)]
 pub struct EmitEmoji(pub SharedString);

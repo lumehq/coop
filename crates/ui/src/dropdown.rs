@@ -12,6 +12,8 @@ use crate::input::clear_button::clear_button;
 use crate::list::{List, ListDelegate, ListItem};
 use crate::{h_flex, v_flex, Disableable as _, Icon, IconName, Sizable, Size, StyleSized};
 
+const CONTEXT: &str = "Dropdown";
+
 #[derive(Clone)]
 pub enum ListEvent {
     /// Single click or move to selected row.
@@ -22,7 +24,6 @@ pub enum ListEvent {
     Cancel,
 }
 
-const CONTEXT: &str = "Dropdown";
 pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("up", SelectPrev, Some(CONTEXT)),

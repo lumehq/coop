@@ -24,6 +24,7 @@ use crate::history::History;
 use crate::scroll::ScrollbarState;
 use crate::Root;
 
+/// Define a custom action for Enter button
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = input, no_json)]
 pub struct Enter {
@@ -34,43 +35,81 @@ pub struct Enter {
 actions!(
     input,
     [
+        /// A action that will trigger when user presses backspace button
         Backspace,
+        /// Delete a chacracter
         Delete,
+        /// Delete all characters from current position to the beginning of the line
         DeleteToBeginningOfLine,
+        /// Delete all characters from current position to the end of the line
         DeleteToEndOfLine,
+        /// Delete all characters from current position to the previous word
         DeleteToPreviousWordStart,
+        /// Delete all characters from current position to the end of the next word
         DeleteToNextWordEnd,
+        /// Move the cursor to up position
         Up,
+        /// Move the cursor to down position
         Down,
+        /// Move the cursor to left position
         Left,
+        /// Move the cursor to right position
         Right,
+        /// Select up
         SelectUp,
+        /// Select down
         SelectDown,
+        /// Select left
         SelectLeft,
+        /// Select right
         SelectRight,
+        /// Select all characters
         SelectAll,
+        /// A action that will trigger when user presses home button
         Home,
+        /// A action that will trigger when user presses end button
         End,
+        /// Select all characters to the start of the line
         SelectToStartOfLine,
+        /// Select all characters to the end of the line
         SelectToEndOfLine,
+        /// Select all characters to the start of the input
         SelectToStart,
+        /// Select all characters to the start of the input
         SelectToEnd,
+        /// Select all characters to the start of the previous word
         SelectToPreviousWordStart,
+        /// Select all characters to the end of the next word
         SelectToNextWordEnd,
+        /// Show character palette
         ShowCharacterPalette,
+        /// Copy
         Copy,
+        /// Cut
         Cut,
+        /// paste
         Paste,
+        /// Undow
         Undo,
+        /// Redo
         Redo,
+        /// New line
         NewLine,
+        /// Move to the start of line
         MoveToStartOfLine,
+        /// Move to the end of line
         MoveToEndOfLine,
+        /// Move to the start of the input
         MoveToStart,
+        /// Move to the end of the input
         MoveToEnd,
+        /// Move to the previous word
         MoveToPreviousWord,
+        /// Move to the next word
         MoveToNextWord,
+        /// Trigger when text changed
         TextChanged,
+        /// A action that will trigger when user presses escape button
         Escape
     ]
 );

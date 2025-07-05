@@ -17,7 +17,15 @@ pub mod panel;
 pub mod stack_panel;
 pub mod tab_panel;
 
-actions!(dock, [ToggleZoom, ClosePanel]);
+actions!(
+    dock,
+    [
+        /// Zoom the current panel
+        ToggleZoom,
+        /// Close the current panel
+        ClosePanel
+    ]
+);
 
 pub enum DockEvent {
     /// The layout of the dock has changed, subscribers this to save the layout.

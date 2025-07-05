@@ -17,7 +17,19 @@ use crate::popover::Popover;
 use crate::scroll::{Scrollbar, ScrollbarState};
 use crate::{h_flex, v_flex, Icon, IconName, Selectable, Sizable as _, StyledExt};
 
-actions!(menu, [Confirm, Dismiss, SelectNext, SelectPrev]);
+actions!(
+    menu,
+    [
+        /// Trigger confirm action when user presses enter button
+        Confirm,
+        /// Trigger dismiss action when user presses escape button
+        Dismiss,
+        /// Select the next item when user presses up button
+        SelectNext,
+        /// Select the previous item when user preses down button
+        SelectPrev
+    ]
+);
 
 const ITEM_HEIGHT: Pixels = px(26.);
 

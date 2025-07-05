@@ -233,7 +233,7 @@ impl ThemeColor {
             border_focused: brand().dark().step_7(),
             border_selected: brand().dark().step_7(),
             border_transparent: gpui::transparent_black(),
-            border_disabled: neutral().light().step_3(),
+            border_disabled: neutral().dark().step_3(),
             elevated_surface_background: neutral().dark().step_3(),
             surface_background: neutral().dark().step_2(),
             background: neutral().dark().step_1(),
