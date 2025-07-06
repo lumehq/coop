@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::{fs, mem};
@@ -11,7 +11,6 @@ use constants::{
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
-use smol::lock::RwLock;
 use smol::Task;
 
 use crate::constants::{BATCH_CHANNEL_LIMIT, GLOBAL_CHANNEL_LIMIT};
@@ -26,16 +25,24 @@ static GLOBALS: OnceLock<Globals> = OnceLock::new();
 /// Signals sent through the global event channel to notify UI components
 #[derive(Debug)]
 pub enum NostrSignal {
-    /// New gift wrap event received
-    Event(Event),
+    /// Received a new metadata event from Relay Pool
+    Metadata(Event),
+
+    /// Received a new gift wrap event from Relay Pool
+    GiftWrap(Event),
+
     /// Finished processing all gift wrap events
     Finish,
+
     /// Partially finished processing all gift wrap events
     PartialFinish,
+
     /// Receives EOSE response from relay pool
     Eose(SubscriptionId),
+
     /// Notice from Relay Pool
     Notice(String),
+
     /// Application update event received
     AppUpdate(Event),
 }
@@ -47,9 +54,6 @@ pub struct Globals {
 
     /// Determines if this is the first time user run Coop
     first_run: bool,
-
-    /// Cache of user profiles mapped by their public keys
-    persons: RwLock<BTreeMap<PublicKey, Option<Metadata>>>,
 
     /// Channel sender for broadcasting global Nostr events to UI
     global_sender: smol::channel::Sender<NostrSignal>,
@@ -88,7 +92,6 @@ pub fn shared_state() -> &'static Globals {
 
         Globals {
             client: ClientBuilder::default().database(lmdb).opts(opts).build(),
-            persons: RwLock::new(BTreeMap::new()),
             first_run,
             global_sender,
             global_receiver,
@@ -104,7 +107,6 @@ impl Globals {
     /// Starts the global event processing system and metadata batching
     pub async fn start(&self) {
         self.connect().await;
-        self.preload_metadata().await;
         self.subscribe_for_app_updates().await;
         self.batching_metadata().detach(); // .detach() to keep running in background
 
@@ -138,7 +140,8 @@ impl Globals {
                                 }
                             }
                             Kind::Metadata => {
-                                self.insert_person_from_event(&event).await;
+                                self.send_signal(NostrSignal::Metadata(event.into_owned()))
+                                    .await;
                             }
                             Kind::ContactList => {
                                 self.extract_pubkeys_and_sync(&event).await;
@@ -157,6 +160,28 @@ impl Globals {
                 }
             }
         }
+    }
+
+    /// Connects to bootstrap and configured relays
+    pub(crate) async fn connect(&self) {
+        for relay in BOOTSTRAP_RELAYS.into_iter() {
+            if let Err(e) = self.client.add_relay(relay).await {
+                log::error!("Failed to add relay {relay}: {e}");
+            }
+        }
+
+        log::info!("Connected to bootstrap relays");
+
+        for relay in SEARCH_RELAYS.into_iter() {
+            if let Err(e) = self.client.add_relay(relay).await {
+                log::error!("Failed to add relay {relay}: {e}");
+            }
+        }
+
+        log::info!("Connected to search relays");
+
+        // Establish connection to relays
+        self.client.connect().await;
     }
 
     /// Gets a reference to the Nostr Client instance
@@ -308,83 +333,6 @@ impl Globals {
         }
     }
 
-    /// Gets a person's profile from cache or creates default (blocking)
-    pub fn person(&self, public_key: &PublicKey) -> Profile {
-        let metadata = if let Some(metadata) = self.persons.read_blocking().get(public_key) {
-            metadata.clone().unwrap_or_default()
-        } else {
-            Metadata::default()
-        };
-
-        Profile::new(*public_key, metadata)
-    }
-
-    /// Gets a person's profile from cache or creates default (async)
-    pub async fn async_person(&self, public_key: &PublicKey) -> Profile {
-        let metadata = if let Some(metadata) = self.persons.read().await.get(public_key) {
-            metadata.clone().unwrap_or_default()
-        } else {
-            Metadata::default()
-        };
-
-        Profile::new(*public_key, metadata)
-    }
-
-    /// Check if a person exists or not
-    pub async fn has_person(&self, public_key: &PublicKey) -> bool {
-        self.persons.read().await.contains_key(public_key)
-    }
-
-    /// Inserts or updates a person's metadata
-    pub async fn insert_person(&self, public_key: PublicKey, metadata: Option<Metadata>) {
-        self.persons
-            .write()
-            .await
-            .entry(public_key)
-            .and_modify(|entry| {
-                if entry.is_none() {
-                    *entry = metadata.clone();
-                }
-            })
-            .or_insert_with(|| metadata);
-    }
-
-    /// Inserts or updates a person's metadata from a Kind::Metadata event
-    pub(crate) async fn insert_person_from_event(&self, event: &Event) {
-        let metadata = Metadata::from_json(&event.content).ok();
-
-        self.persons
-            .write()
-            .await
-            .entry(event.pubkey)
-            .and_modify(|entry| {
-                if entry.is_none() {
-                    *entry = metadata.clone();
-                }
-            })
-            .or_insert_with(|| metadata);
-    }
-
-    /// Connects to bootstrap and configured relays
-    pub(crate) async fn connect(&self) {
-        for relay in BOOTSTRAP_RELAYS.into_iter() {
-            if let Err(e) = self.client.add_relay(relay).await {
-                log::error!("Failed to add relay {relay}: {e}");
-            }
-        }
-
-        for relay in SEARCH_RELAYS.into_iter() {
-            if let Err(e) = self.client.add_relay(relay).await {
-                log::error!("Failed to add relay {relay}: {e}");
-            }
-        }
-
-        // Establish connection to relays
-        self.client.connect().await;
-
-        log::info!("Connected to bootstrap relays");
-    }
-
     /// Subscribes to user-specific data feeds (DMs, mentions, etc.)
     pub async fn subscribe_for_user_data(&self, public_key: PublicKey) {
         let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
@@ -476,15 +424,6 @@ impl Globals {
         log::info!("Subscribed to app updates");
     }
 
-    pub(crate) async fn preload_metadata(&self) {
-        let filter = Filter::new().kind(Kind::Metadata).limit(100);
-        if let Ok(events) = self.client.database().query(filter).await {
-            for event in events.into_iter() {
-                self.insert_person_from_event(&event).await;
-            }
-        }
-    }
-
     /// Stores an unwrapped event in local database with reference to original
     pub(crate) async fn set_unwrapped(
         &self,
@@ -569,7 +508,7 @@ impl Globals {
 
         // Send a notify to GPUI if this is a new message
         if incoming {
-            self.send_signal(NostrSignal::Event(event)).await;
+            self.send_signal(NostrSignal::GiftWrap(event)).await;
         }
 
         is_cached

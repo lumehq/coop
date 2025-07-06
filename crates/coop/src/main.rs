@@ -119,11 +119,6 @@ fn main() {
                             let auto_updater = AutoUpdater::global(cx);
 
                             match signal {
-                                NostrSignal::Event(event) => {
-                                    chats.update(cx, |this, cx| {
-                                        this.event_to_message(event, window, cx);
-                                    });
-                                }
                                 // Load chat rooms and stop the loading status
                                 NostrSignal::Finish => {
                                     chats.update(cx, |this, cx| {
@@ -135,6 +130,16 @@ fn main() {
                                 NostrSignal::PartialFinish => {
                                     chats.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
+                                    });
+                                }
+                                NostrSignal::Metadata(event) => {
+                                    chats.update(cx, |this, cx| {
+                                        this.insert_or_update_person(event, cx);
+                                    });
+                                }
+                                NostrSignal::GiftWrap(event) => {
+                                    chats.update(cx, |this, cx| {
+                                        this.event_to_message(event, window, cx);
                                     });
                                 }
                                 NostrSignal::Eose(subscription_id) => {

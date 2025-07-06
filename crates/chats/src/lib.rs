@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Error;
 use common::room_hash;
@@ -39,15 +39,12 @@ pub enum RoomEmitter {
 }
 
 /// Main registry for managing chat rooms and user profiles
-///
-/// The ChatRegistry is responsible for:
-/// - Managing chat rooms and their states
-/// - Tracking user profiles
-/// - Loading room data from the lmdb
-/// - Handling messages and room creation
 pub struct ChatRegistry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
+
+    /// Collection of all persons (user profiles)
+    pub persons: BTreeMap<PublicKey, Entity<Profile>>,
 
     /// Indicates if rooms are currently being loaded
     ///
@@ -56,7 +53,7 @@ pub struct ChatRegistry {
 
     /// Subscriptions for observing changes
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl EventEmitter<RoomEmitter> for ChatRegistry {}
@@ -81,6 +78,11 @@ impl ChatRegistry {
     fn new(cx: &mut Context<Self>) -> Self {
         let mut subscriptions = smallvec![];
 
+        // Load all user profiles from the database when the ChatRegistry is created
+        subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
+            this.get_all_profiles_from_db(cx);
+        }));
+
         // When any Room is created, load metadata for all members
         subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
             this.load_metadata(cx).detach();
@@ -88,8 +90,67 @@ impl ChatRegistry {
 
         Self {
             rooms: vec![],
+            persons: BTreeMap::new(),
             loading: true,
             subscriptions,
+        }
+    }
+
+    pub(crate) fn get_all_profiles_from_db(&mut self, cx: &mut Context<Self>) {
+        let load_profiles = self.load_profiles(cx);
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(profiles) = load_profiles.await {
+                this.update(cx, |this, cx| {
+                    for profile in profiles {
+                        this.persons
+                            .insert(profile.public_key(), cx.new(|_| profile));
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn load_profiles(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
+        cx.background_spawn(async move {
+            let database = shared_state().client().database();
+            let filter = Filter::new().kind(Kind::Metadata).limit(100);
+
+            let events = database.query(filter).await?;
+            let mut profiles = vec![];
+
+            for event in events.into_iter() {
+                let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                let profile = Profile::new(event.pubkey, metadata);
+                profiles.push(profile);
+            }
+
+            Ok(profiles)
+        })
+    }
+
+    pub fn get_person(&self, public_key: PublicKey, cx: &App) -> Option<Profile> {
+        self.persons.get(&public_key).map(|e| e.read(cx)).cloned()
+    }
+
+    pub fn insert_or_update_person(&mut self, event: Event, cx: &mut App) {
+        let public_key = event.pubkey;
+        let Ok(metadata) = Metadata::from_json(event.content) else {
+            // Invalid metadata, no need to process further.
+            return;
+        };
+
+        if let Some(person) = self.persons.get(&public_key) {
+            person.update(cx, |this, cx| {
+                *this = Profile::new(public_key, metadata);
+                cx.notify();
+            });
+        } else {
+            self.persons
+                .insert(public_key, cx.new(|_| Profile::new(public_key, metadata)));
         }
     }
 
