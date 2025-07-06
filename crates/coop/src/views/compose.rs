@@ -4,8 +4,8 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use chats::room::{Room, RoomKind};
 use chats::ChatRegistry;
+use common::display::DisplayProfile;
 use common::nip05::nip05_profile;
-use common::profile::RenderProfile;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -399,8 +399,8 @@ impl Compose {
                             .items_center()
                             .gap_3()
                             .text_sm()
-                            .child(img(profile.render_avatar(proxy)).size_7().flex_shrink_0())
-                            .child(profile.render_name()),
+                            .child(img(profile.avatar_url(proxy)).size_7().flex_shrink_0())
+                            .child(profile.display_name()),
                     )
                     .when(selected, |this| {
                         this.child(

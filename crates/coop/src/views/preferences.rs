@@ -1,4 +1,4 @@
-use common::profile::RenderProfile;
+use common::display::DisplayProfile;
 use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
 use gpui::http_client::Url;
 use gpui::prelude::FluentBuilder;
@@ -76,6 +76,7 @@ impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let input_state = self.media_input.downgrade();
         let settings = AppSettings::get_global(cx).settings.as_ref();
+        let profile = Identity::read_global(cx).profile();
 
         div()
             .track_focus(&self.focus_handle)
@@ -97,7 +98,7 @@ impl Render for Preferences {
                             .font_semibold()
                             .child(SharedString::new(t!("preferences.account_header"))),
                     )
-                    .when_some(Identity::get_global(cx).profile(), |this, profile| {
+                    .when_some(profile, |this, profile| {
                         this.child(
                             div()
                                 .w_full()
@@ -112,7 +113,7 @@ impl Render for Preferences {
                                         .gap_2()
                                         .child(
                                             Avatar::new(
-                                                profile.render_avatar(settings.proxy_user_avatars),
+                                                profile.avatar_url(settings.proxy_user_avatars),
                                             )
                                             .size(rems(2.4)),
                                         )
@@ -124,7 +125,7 @@ impl Render for Preferences {
                                                     div()
                                                         .line_height(relative(1.3))
                                                         .font_semibold()
-                                                        .child(profile.render_name()),
+                                                        .child(profile.display_name()),
                                                 )
                                                 .child(
                                                     div()

@@ -42,7 +42,7 @@ impl Identity {
     }
 
     /// Retrieve the Identity instance
-    pub fn get_global(cx: &App) -> &Self {
+    pub fn read_global(cx: &App) -> &Self {
         cx.global::<GlobalIdentity>().0.read(cx)
     }
 

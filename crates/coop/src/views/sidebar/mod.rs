@@ -6,8 +6,8 @@ use anyhow::Error;
 use chats::room::{Room, RoomKind};
 use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
+use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
-use common::profile::RenderProfile;
 use element::DisplayRoom;
 use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::shared_state;
@@ -508,15 +508,15 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(Avatar::new(profile.render_avatar(proxy)).size(rems(1.75)))
-                    .child(profile.render_name())
+                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
+                    .child(profile.display_name())
                     .on_click(cx.listener({
                         let Ok(public_key) = profile.public_key().to_bech32();
                         let item = ClipboardItem::new_string(public_key);
 
                         move |_, _, window, cx| {
                             cx.write_to_clipboard(item.clone());
-                            window.push_notification("User's NPUB is copied", cx);
+                            window.push_notification(t!("common.copied"), cx);
                         }
                     })),
             )
@@ -617,6 +617,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let chats = ChatRegistry::read_global(cx);
+        let profile = Identity::read_global(cx).profile();
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
@@ -638,7 +639,7 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(Identity::get_global(cx).profile(), |this, profile| {
+            .when_some(profile, |this, profile| {
                 this.child(self.account(&profile, cx))
             })
             // Search Input

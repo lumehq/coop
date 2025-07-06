@@ -6,8 +6,8 @@ use std::sync::Arc;
 use chats::message::Message;
 use chats::room::{Room, RoomKind, SendError};
 use chats::ChatRegistry;
+use common::display::DisplayProfile;
 use common::nip96::nip96_upload;
-use common::profile::RenderProfile;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -213,7 +213,7 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(account) = Identity::get_global(cx).profile() else {
+        let Some(account) = Identity::read_global(cx).profile() else {
             return false;
         };
 
@@ -490,7 +490,7 @@ impl Chat {
                             .child(
                                 div()
                                     .text_color(cx.theme().text_accent)
-                                    .child(profile.render_name()),
+                                    .child(profile.display_name()),
                             ),
                     )
                     .child(
@@ -551,7 +551,7 @@ impl Chat {
                     .flex()
                     .gap_3()
                     .when(!hide_avatar, |this| {
-                        this.child(Avatar::new(author.render_avatar(proxy)).size(rems(2.)))
+                        this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
                     })
                     .child(
                         div()
@@ -570,7 +570,7 @@ impl Chat {
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
-                                            .child(author.render_name()),
+                                            .child(author.display_name()),
                                     )
                                     .child(
                                         div()
@@ -603,7 +603,7 @@ impl Chat {
                                                     .child(
                                                         div()
                                                             .text_color(cx.theme().text_accent)
-                                                            .child(author.render_name()),
+                                                            .child(author.display_name()),
                                                     )
                                                     .child(
                                                         div()
@@ -852,7 +852,7 @@ fn message_errors(errors: SmallVec<[SendError; 1]>, cx: &App) -> Div {
                         .gap_1()
                         .text_color(cx.theme().text_muted)
                         .child(SharedString::new(t!("chat.send_to_label")))
-                        .child(error.profile.render_name()),
+                        .child(error.profile.display_name()),
                 )
                 .child(error.message)
         }))

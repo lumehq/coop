@@ -187,10 +187,7 @@ impl ChatSpace {
                                 this.add_panel(panel, placement, window, cx);
                             });
                         } else {
-                            window.push_notification(
-                                SharedString::new(t!("chatspace.failed_to_open_room")),
-                                cx,
-                            );
+                            window.push_notification(t!("chatspace.failed_to_open_room"), cx);
                         }
                     }
                 },

@@ -207,6 +207,12 @@ impl ChatRegistry {
             .collect()
     }
 
+    /// Add a new room to the start of list.
+    pub fn add_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
+        self.rooms.insert(0, room);
+        cx.notify();
+    }
+
     /// Sort rooms by their created at.
     pub fn sort(&mut self, cx: &mut Context<Self>) {
         self.rooms.sort_by_key(|ev| Reverse(ev.read(cx).created_at));
@@ -235,6 +241,12 @@ impl ChatRegistry {
             .filter(|room| room.read(cx).members.contains(&public_key))
             .cloned()
             .collect()
+    }
+
+    /// Set the loading status of the registry.
+    pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.loading = status;
+        cx.notify();
     }
 
     /// Load all rooms from the lmdb.
@@ -360,18 +372,15 @@ impl ChatRegistry {
 
     /// Push a new Room to the global registry
     pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
-        let weak_room = if let Some(room) = self
-            .rooms
-            .iter()
-            .find(|this| this.read(cx).id == room.read(cx).id)
-        {
+        let other_id = room.read(cx).id;
+        let find_room = self.rooms.iter().find(|this| this.read(cx).id == other_id);
+
+        let weak_room = if let Some(room) = find_room {
             room.downgrade()
         } else {
             let weak_room = room.downgrade();
-
-            // Add this room to the global registry
-            self.rooms.insert(0, room);
-            cx.notify();
+            // Add this room to the registry
+            self.add_room(room, cx);
 
             weak_room
         };
@@ -386,7 +395,8 @@ impl ChatRegistry {
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
         let author = event.pubkey;
-        let Some(public_key) = Identity::get_global(cx).profile().map(|i| i.public_key()) else {
+
+        let Some(profile) = Identity::read_global(cx).profile() else {
             return;
         };
 
@@ -396,7 +406,7 @@ impl ChatRegistry {
                 this.created_at(event.created_at, cx);
 
                 // Set this room is ongoing if the new message is from current user
-                if author == public_key {
+                if author == profile.public_key() {
                     this.set_ongoing(cx);
                 }
 
@@ -408,22 +418,17 @@ impl ChatRegistry {
 
             // Re-sort the rooms registry by their created at
             self.sort(cx);
-
-            cx.notify();
         } else {
             let room = Room::new(&event).kind(RoomKind::Unknown);
             let kind = room.kind;
 
             // Push the new room to the front of the list
-            self.rooms.insert(0, cx.new(|_| room));
+            self.add_room(cx.new(|_| room), cx);
 
-            cx.emit(RoomEmitter::Request(kind));
-            cx.notify();
+            // Notify the UI about the new room
+            cx.defer_in(window, move |_this, _window, cx| {
+                cx.emit(RoomEmitter::Request(kind));
+            });
         }
-    }
-
-    pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.loading = status;
-        cx.notify();
     }
 }

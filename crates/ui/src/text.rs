@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use common::profile::RenderProfile;
+use common::display::DisplayProfile;
 use gpui::{
     AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
     SharedString, StyledText, UnderlineStyle, Window,
@@ -280,7 +280,7 @@ pub fn render_plain_text_mut(
 
             if let Some(profile) = profile_match {
                 // Profile found - create a mention
-                let display_name = format!("@{}", profile.render_name());
+                let display_name = format!("@{}", profile.display_name());
 
                 // Replace mention with profile name
                 text.replace_range(range.clone(), &display_name);

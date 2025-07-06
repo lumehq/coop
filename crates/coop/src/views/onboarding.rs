@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use common::profile::RenderProfile;
+use common::display::DisplayProfile;
 use global::constants::ACCOUNT_D;
 use global::shared_state;
 use gpui::prelude::FluentBuilder;
@@ -213,15 +213,13 @@ impl Render for Onboarding {
                                                         .gap_1()
                                                         .font_semibold()
                                                         .child(
-                                                            Avatar::new(
-                                                                profile.render_avatar(proxy),
-                                                            )
-                                                            .size(rems(1.5)),
+                                                            Avatar::new(profile.avatar_url(proxy))
+                                                                .size(rems(1.5)),
                                                         )
                                                         .child(
                                                             div()
                                                                 .pb_px()
-                                                                .child(profile.render_name()),
+                                                                .child(profile.display_name()),
                                                         ),
                                                 ),
                                         )

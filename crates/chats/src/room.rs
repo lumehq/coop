@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
-use common::profile::RenderProfile;
+use common::display::DisplayProfile;
 use global::shared_state;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use identity::Identity;
@@ -222,7 +222,7 @@ impl Room {
         if let Some(subject) = self.subject.clone() {
             subject
         } else {
-            self.names(cx)
+            self.merge_name(cx)
         }
     }
 
@@ -246,16 +246,19 @@ impl Room {
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
         } else if !self.is_group() {
-            self.first_member(cx).render_avatar(proxy)
+            self.first_member(cx).avatar_url(proxy)
         } else {
             "brand/group.png".into()
         }
     }
 
+    /// Get the first member of the room.
+    ///
+    /// First member is always different from the current user.
     pub(crate) fn first_member(&self, cx: &App) -> Profile {
         let registry = ChatRegistry::read_global(cx);
 
-        if let Some(account) = Identity::get_global(cx).profile() {
+        if let Some(account) = Identity::read_global(cx).profile() {
             self.members
                 .iter()
                 .filter(|&pubkey| pubkey != &account.public_key())
@@ -268,20 +271,21 @@ impl Room {
         }
     }
 
-    pub(crate) fn names(&self, cx: &App) -> SharedString {
+    /// Merge the names of the first two members of the room.
+    pub(crate) fn merge_name(&self, cx: &App) -> SharedString {
         let registry = ChatRegistry::read_global(cx);
 
         if self.is_group() {
             let profiles = self
                 .members
                 .iter()
-                .map(|public_key| registry.get_person(public_key, cx))
+                .map(|pk| registry.get_person(pk, cx))
                 .collect::<Vec<_>>();
 
             let mut name = profiles
                 .iter()
                 .take(2)
-                .map(|profile| profile.render_name())
+                .map(|p| p.display_name())
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -291,7 +295,7 @@ impl Room {
 
             name.into()
         } else {
-            self.first_member(cx).render_name()
+            self.first_member(cx).display_name()
         }
     }
 
@@ -469,7 +473,7 @@ impl Room {
         replies: Option<&Vec<Message>>,
         cx: &App,
     ) -> Option<Message> {
-        let author = Identity::get_global(cx).profile()?;
+        let author = Identity::read_global(cx).profile()?;
         let public_key = author.public_key();
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
