@@ -3,8 +3,6 @@ use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 
-i18n::init!();
-
 pub fn init(cx: &mut App) {
     ClientKeys::set_global(cx.new(ClientKeys::new), cx);
 }

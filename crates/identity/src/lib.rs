@@ -21,8 +21,6 @@ use ui::input::{InputState, TextInput};
 use ui::notification::Notification;
 use ui::{ContextModal, Sizable};
 
-i18n::init!();
-
 pub fn init(window: &mut Window, cx: &mut App) {
     Identity::set_global(cx.new(|cx| Identity::new(window, cx)), cx);
 }
