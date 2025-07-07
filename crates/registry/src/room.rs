@@ -12,7 +12,7 @@ use settings::AppSettings;
 use smallvec::SmallVec;
 
 use crate::message::Message;
-use crate::ChatRegistry;
+use crate::Registry;
 
 pub(crate) const NOW: &str = "now";
 pub(crate) const SECONDS_IN_MINUTE: i64 = 60;
@@ -261,7 +261,7 @@ impl Room {
     ///
     /// First member is always different from the current user.
     pub(crate) fn first_member(&self, cx: &App) -> Profile {
-        let registry = ChatRegistry::read_global(cx);
+        let registry = Registry::read_global(cx);
 
         if let Some(account) = Identity::read_global(cx).profile() {
             self.members
@@ -278,7 +278,7 @@ impl Room {
 
     /// Merge the names of the first two members of the room.
     pub(crate) fn merge_name(&self, cx: &App) -> SharedString {
-        let registry = ChatRegistry::read_global(cx);
+        let registry = Registry::read_global(cx);
 
         if self.is_group() {
             let profiles = self

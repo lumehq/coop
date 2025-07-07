@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::Error;
-use chats::{ChatRegistry, RoomEmitter};
 use client_keys::ClientKeys;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
@@ -13,6 +12,7 @@ use gpui::{
 use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
+use registry::{Registry, RoomEmitter};
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
@@ -84,7 +84,7 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let chats = ChatRegistry::global(cx);
+            let registry = Registry::global(cx);
             let client_keys = ClientKeys::global(cx);
             let identity = Identity::global(cx);
             let mut subscriptions = smallvec![];
@@ -157,7 +157,7 @@ impl ChatSpace {
                         this.open_onboarding(window, cx);
                     } else {
                         // Load all chat rooms from database
-                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                        Registry::global(cx).update(cx, |this, cx| {
                             this.load_rooms(window, cx);
                         });
                         // Open chat panels
@@ -175,7 +175,7 @@ impl ChatSpace {
 
             // Subscribe to open chat room requests
             subscriptions.push(cx.subscribe_in(
-                &chats,
+                &registry,
                 window,
                 |this: &mut Self, _state, event, window, cx| {
                     if let RoomEmitter::Open(room) = event {

@@ -2,8 +2,6 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use chats::room::{Room, RoomKind};
-use chats::ChatRegistry;
 use common::display::DisplayProfile;
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
@@ -17,6 +15,8 @@ use gpui::{
 use i18n::t;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::room::{Room, RoomKind};
+use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
@@ -202,7 +202,7 @@ impl Compose {
                         })
                         .ok();
 
-                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                        Registry::global(cx).update(cx, |this, cx| {
                             this.push_room(cx.new(|_| room), cx);
                         });
 
@@ -368,7 +368,7 @@ impl Compose {
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
-        let registry = ChatRegistry::read_global(cx);
+        let registry = Registry::read_global(cx);
         let mut items = Vec::with_capacity(self.contacts.len());
 
         for ix in range {

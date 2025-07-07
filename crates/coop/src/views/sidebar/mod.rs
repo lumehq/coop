@@ -3,8 +3,6 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::Error;
-use chats::room::{Room, RoomKind};
-use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
@@ -22,6 +20,8 @@ use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::room::{Room, RoomKind};
+use registry::{Registry, RoomEmitter};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -80,7 +80,7 @@ impl Sidebar {
             InputState::new(window, cx).placeholder(t!("sidebar.find_or_start_conversation"))
         });
 
-        let chats = ChatRegistry::global(cx);
+        let chats = Registry::global(cx);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(cx.subscribe_in(
@@ -290,7 +290,7 @@ impl Sidebar {
             match task.await {
                 Ok((profile, room)) => {
                     this.update(cx, |this, cx| {
-                        let chats = ChatRegistry::global(cx);
+                        let chats = Registry::global(cx);
                         let result = chats
                             .read(cx)
                             .search_by_public_key(profile.public_key(), cx);
@@ -343,7 +343,7 @@ impl Sidebar {
             return;
         };
 
-        let chats = ChatRegistry::global(cx);
+        let chats = Registry::global(cx);
         let result = chats.read(cx).search(&query, cx);
 
         if result.is_empty() {
@@ -426,7 +426,7 @@ impl Sidebar {
     }
 
     fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let room = if let Some(room) = ChatRegistry::read_global(cx).room(&id, cx) {
+        let room = if let Some(room) = Registry::read_global(cx).room(&id, cx) {
             room
         } else {
             let Some(result) = self.global_result.read(cx).as_ref() else {
@@ -445,7 +445,7 @@ impl Sidebar {
             room
         };
 
-        ChatRegistry::global(cx).update(cx, |this, cx| {
+        Registry::global(cx).update(cx, |this, cx| {
             this.push_room(room, cx);
         });
     }
@@ -616,7 +616,7 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let chats = ChatRegistry::read_global(cx);
+        let chats = Registry::read_global(cx);
         let profile = Identity::read_global(cx).profile();
 
         // Get rooms from either search results or the chat registry

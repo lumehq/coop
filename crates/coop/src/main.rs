@@ -5,7 +5,6 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use asset::Assets;
 use auto_update::AutoUpdater;
-use chats::ChatRegistry;
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
 use global::constants::{
@@ -23,6 +22,7 @@ use gpui::{point, SharedString, TitlebarOptions};
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::Registry;
 use smol::channel::{self, Sender};
 use theme::Theme;
 use ui::Root;
@@ -236,6 +236,8 @@ fn main() {
                 cx.activate(true);
                 // Initialize components
                 ui::init(cx);
+                // Initialize app registry
+                registry::init(cx);
                 // Initialize settings
                 settings::init(cx);
                 // Initialize client keys
@@ -244,8 +246,6 @@ fn main() {
                 identity::init(window, cx);
                 // Initialize auto update
                 auto_update::init(cx);
-                // Initialize chat state
-                chats::init(cx);
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
@@ -253,39 +253,43 @@ fn main() {
 
                     while let Ok(signal) = signal_rx.recv().await {
                         cx.update(|window, cx| {
-                            let chats = ChatRegistry::global(cx);
+                            let registry = Registry::global(cx);
                             let auto_updater = AutoUpdater::global(cx);
 
                             match signal {
                                 // Load chat rooms and stop the loading status
                                 NostrSignal::Finish => {
-                                    chats.update(cx, |this, cx| {
+                                    registry.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
                                         this.set_loading(false, cx);
                                     });
                                 }
                                 // Load chat rooms without setting as finished
                                 NostrSignal::PartialFinish => {
-                                    chats.update(cx, |this, cx| {
+                                    registry.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
                                     });
                                 }
-                                NostrSignal::Metadata(event) => {
-                                    chats.update(cx, |this, cx| {
-                                        this.insert_or_update_person(event, cx);
-                                    });
-                                }
-                                NostrSignal::GiftWrap(event) => {
-                                    chats.update(cx, |this, cx| {
-                                        this.event_to_message(event, window, cx);
-                                    });
-                                }
+                                // Load chat rooms without setting as finished
                                 NostrSignal::Eose(subscription_id) => {
+                                    // Only load chat rooms if the subscription ID matches the all_messages_sub_id
                                     if subscription_id == all_messages_sub_id {
-                                        chats.update(cx, |this, cx| {
+                                        registry.update(cx, |this, cx| {
                                             this.load_rooms(window, cx);
                                         });
                                     }
+                                }
+                                // Add the new metadata to the registry or update the existing one
+                                NostrSignal::Metadata(event) => {
+                                    registry.update(cx, |this, cx| {
+                                        this.insert_or_update_person(event, cx);
+                                    });
+                                }
+                                // Convert the gift wrapped message to a message
+                                NostrSignal::GiftWrap(event) => {
+                                    registry.update(cx, |this, cx| {
+                                        this.event_to_message(event, window, cx);
+                                    });
                                 }
                                 NostrSignal::Notice(_msg) => {
                                     // window.push_notification(msg, cx);

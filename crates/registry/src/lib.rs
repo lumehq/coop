@@ -23,12 +23,12 @@ pub mod room;
 i18n::init!();
 
 pub fn init(cx: &mut App) {
-    ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
+    Registry::set_global(cx.new(Registry::new), cx);
 }
 
-struct GlobalChatRegistry(Entity<ChatRegistry>);
+struct GlobalRegistry(Entity<Registry>);
 
-impl Global for GlobalChatRegistry {}
+impl Global for GlobalRegistry {}
 
 #[derive(Debug)]
 pub enum RoomEmitter {
@@ -37,7 +37,7 @@ pub enum RoomEmitter {
 }
 
 /// Main registry for managing chat rooms and user profiles
-pub struct ChatRegistry {
+pub struct Registry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
 
@@ -54,29 +54,29 @@ pub struct ChatRegistry {
     subscriptions: SmallVec<[Subscription; 2]>,
 }
 
-impl EventEmitter<RoomEmitter> for ChatRegistry {}
+impl EventEmitter<RoomEmitter> for Registry {}
 
-impl ChatRegistry {
-    /// Retrieve the Global ChatRegistry instance
+impl Registry {
+    /// Retrieve the Global Registry state
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalChatRegistry>().0.clone()
+        cx.global::<GlobalRegistry>().0.clone()
     }
 
-    /// Retrieve the ChatRegistry instance
+    /// Retrieve the Registry instance
     pub fn read_global(cx: &App) -> &Self {
-        cx.global::<GlobalChatRegistry>().0.read(cx)
+        cx.global::<GlobalRegistry>().0.read(cx)
     }
 
-    /// Set the global ChatRegistry instance
+    /// Set the global Registry instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalChatRegistry(state));
+        cx.set_global(GlobalRegistry(state));
     }
 
-    /// Create a new ChatRegistry instance
-    fn new(cx: &mut Context<Self>) -> Self {
+    /// Create a new Registry instance
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let mut subscriptions = smallvec![];
 
-        // Load all user profiles from the database when the ChatRegistry is created
+        // Load all user profiles from the database when the Registry is created
         subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
             let task = this.load_local_person(cx);
             this.set_persons_from_task(task, cx);

@@ -936,29 +936,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chats"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "chrono",
- "common",
- "fuzzy-matcher",
- "global",
- "gpui",
- "i18n",
- "identity",
- "itertools 0.13.0",
- "log",
- "nostr",
- "nostr-sdk",
- "oneshot",
- "rust-i18n",
- "settings",
- "smallvec",
- "smol",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1195,7 +1172,6 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "auto_update",
- "chats",
  "client_keys",
  "common",
  "dirs 5.0.1",
@@ -1210,6 +1186,7 @@ dependencies = [
  "nostr-connect",
  "nostr-sdk",
  "oneshot",
+ "registry",
  "reqwest_client",
  "rust-embed",
  "rust-i18n",
@@ -4783,6 +4760,29 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "registry"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "common",
+ "fuzzy-matcher",
+ "global",
+ "gpui",
+ "i18n",
+ "identity",
+ "itertools 0.13.0",
+ "log",
+ "nostr",
+ "nostr-sdk",
+ "oneshot",
+ "rust-i18n",
+ "settings",
+ "smallvec",
+ "smol",
+]
 
 [[package]]
 name = "reqwest"

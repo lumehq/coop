@@ -3,9 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use chats::message::Message;
-use chats::room::{Room, RoomKind, SendError};
-use chats::ChatRegistry;
 use common::display::DisplayProfile;
 use common::nip96::nip96_upload;
 use global::nostr_client;
@@ -21,6 +18,9 @@ use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::message::Message;
+use registry::room::{Room, RoomKind, SendError};
+use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -464,7 +464,7 @@ impl Chat {
     }
 
     fn render_reply(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
-        let registry = ChatRegistry::read_global(cx);
+        let registry = Registry::read_global(cx);
         let profile = registry.get_person(&message.author, cx);
 
         div()
@@ -526,7 +526,7 @@ impl Chat {
 
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
-        let registry = ChatRegistry::read_global(cx);
+        let registry = Registry::read_global(cx);
 
         let message = message.borrow();
         let author = registry.get_person(&message.author, cx);

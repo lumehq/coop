@@ -1,9 +1,9 @@
-use chats::ChatRegistry;
 use gpui::{
     div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, Styled, Window,
 };
 use i18n::t;
+use registry::Registry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
@@ -47,7 +47,7 @@ impl Subject {
     }
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = ChatRegistry::global(cx).read(cx);
+        let registry = Registry::global(cx).read(cx);
         let subject = self.input.read(cx).value().clone();
 
         if let Some(room) = registry.room(&self.id, cx) {
