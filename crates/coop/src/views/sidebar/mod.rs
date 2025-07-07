@@ -10,7 +10,7 @@ use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
 use element::DisplayRoom;
 use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context,
@@ -154,7 +154,7 @@ impl Sidebar {
         let query_cloned = query.clone();
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
 
             let filter = Filter::new()
                 .kind(Kind::Metadata)
@@ -266,7 +266,7 @@ impl Sidebar {
         };
 
         let task: Task<Result<(Profile, Room), Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await.unwrap();
             let user_pubkey = signer.get_public_key().await.unwrap();
 

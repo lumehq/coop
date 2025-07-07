@@ -6,7 +6,7 @@ use chats::room::{Room, RoomKind};
 use chats::ChatRegistry;
 use common::display::DisplayProfile;
 use common::nip05::nip05_profile;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, red, relative, uniform_list, App, AppContext, Context, Entity,
@@ -97,7 +97,7 @@ impl Compose {
         ));
 
         let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
@@ -158,7 +158,7 @@ impl Compose {
         }
 
         let event: Task<Result<Room, anyhow::Error>> = cx.background_spawn(async move {
-            let signer = shared_state().client().signer().await?;
+            let signer = nostr_client().signer().await?;
             let public_key = signer.get_public_key().await?;
 
             let room = EventBuilder::private_msg_rumor(public_keys[0], "")
@@ -256,8 +256,7 @@ impl Compose {
 
                 if let Ok(Some(profile)) = rx.await {
                     let public_key = profile.public_key;
-                    let metadata = shared_state()
-                        .client()
+                    let metadata = nostr_client()
                         .fetch_metadata(public_key, Duration::from_secs(2))
                         .await?
                         .unwrap_or_default();
@@ -279,8 +278,7 @@ impl Compose {
             };
 
             cx.background_spawn(async move {
-                let metadata = shared_state()
-                    .client()
+                let metadata = nostr_client()
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?
                     .unwrap_or_default();
@@ -297,8 +295,7 @@ impl Compose {
             };
 
             cx.background_spawn(async move {
-                let metadata = shared_state()
-                    .client()
+                let metadata = nostr_client()
                     .fetch_metadata(public_key, Duration::from_secs(2))
                     .await?
                     .unwrap_or_default();

@@ -4,7 +4,7 @@ use anyhow::Error;
 use chats::{ChatRegistry, RoomEmitter};
 use client_keys::ClientKeys;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
@@ -280,7 +280,7 @@ impl ChatSpace {
 
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
         cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let filter = Filter::new()

@@ -8,7 +8,7 @@ use chats::room::{Room, RoomKind, SendError};
 use chats::ChatRegistry;
 use common::display::DisplayProfile;
 use common::nip96::nip96_upload;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, rems, white, Action, AnyElement, App, AppContext, ClipboardItem,
@@ -375,9 +375,7 @@ impl Chat {
 
                         // Spawn task via async utility instead of GPUI context
                         nostr_sdk::async_utility::task::spawn(async move {
-                            let url = nip96_upload(shared_state().client(), &nip96, file_data)
-                                .await
-                                .ok();
+                            let url = nip96_upload(nostr_client(), &nip96, file_data).await.ok();
                             _ = tx.send(url);
                         });
 

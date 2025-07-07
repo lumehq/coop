@@ -5,7 +5,7 @@ use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::shared_state;
+use global::nostr_client;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
 };
@@ -19,8 +19,6 @@ use crate::room::Room;
 
 pub mod message;
 pub mod room;
-
-mod constants;
 
 i18n::init!();
 
@@ -122,10 +120,8 @@ impl ChatRegistry {
 
     pub(crate) fn load_local_person(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
         cx.background_spawn(async move {
-            let database = shared_state().client().database();
             let filter = Filter::new().kind(Kind::Metadata).limit(100);
-
-            let events = database.query(filter).await?;
+            let events = nostr_client().database().query(filter).await?;
             let mut profiles = vec![];
 
             for event in events.into_iter() {
@@ -260,7 +256,7 @@ impl ChatRegistry {
         log::info!("Starting to load rooms from database...");
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 

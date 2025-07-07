@@ -1,5 +1,4 @@
-use global::constants::KEYRING_URL;
-use global::shared_state;
+use global::{constants::KEYRING_URL, first_run};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -66,7 +65,7 @@ impl ClientKeys {
                     this.set_keys(Some(keys), false, true, cx);
                 })
                 .ok();
-            } else if shared_state().first_run() {
+            } else if *first_run() {
                 // Generate a new keys and update
                 this.update(cx, |this, cx| {
                     this.new_keys(cx);

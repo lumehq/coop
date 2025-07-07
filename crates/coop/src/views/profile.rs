@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use common::nip96::nip96_upload;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
@@ -57,7 +57,7 @@ impl Profile {
             };
 
             let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
-                let client = shared_state().client();
+                let client = nostr_client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
                 let metadata = client
@@ -106,7 +106,7 @@ impl Profile {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nip96_server = AppSettings::get_global(cx).settings.media_server.clone();
+        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
         let avatar_input = self.avatar_input.downgrade();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -126,8 +126,7 @@ impl Profile {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         nostr_sdk::async_utility::task::spawn(async move {
-                            let client = shared_state().client();
-                            if let Ok(url) = nip96_upload(client, &nip96_server, file_data).await {
+                            if let Ok(url) = nip96_upload(nostr_client(), &nip96, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
@@ -193,27 +192,29 @@ impl Profile {
         }
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let _ = shared_state().client().set_metadata(&new_metadata).await?;
+            nostr_client().set_metadata(&new_metadata).await?;
             Ok(())
         });
 
-        cx.spawn_in(window, async move |this, cx| match task.await {
-            Ok(_) => {
-                cx.update(|window, cx| {
-                    window.push_notification(t!("profile.updated_successfully"), cx);
-                    this.update(cx, |this, cx| {
-                        this.set_submitting(false, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(_) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(t!("profile.updated_successfully"), cx);
+                        this.update(cx, |this, cx| {
+                            this.set_submitting(false, cx);
+                        })
+                        .ok();
                     })
                     .ok();
-                })
-                .ok();
-            }
-            Err(e) => {
-                cx.update(|window, cx| {
-                    window.push_notification(e.to_string(), cx);
-                })
-                .ok();
-            }
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                    })
+                    .ok();
+                }
+            };
         })
         .detach();
     }

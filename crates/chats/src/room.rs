@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use common::display::DisplayProfile;
-use global::shared_state;
+use global::nostr_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use identity::Identity;
 use itertools::Itertools;
@@ -11,9 +11,14 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::SmallVec;
 
-use crate::constants::{DAYS_IN_MONTH, HOURS_IN_DAY, MINUTES_IN_HOUR, NOW, SECONDS_IN_MINUTE};
 use crate::message::Message;
 use crate::ChatRegistry;
+
+pub(crate) const NOW: &str = "now";
+pub(crate) const SECONDS_IN_MINUTE: i64 = 60;
+pub(crate) const MINUTES_IN_HOUR: i64 = 60;
+pub(crate) const HOURS_IN_DAY: i64 = 24;
+pub(crate) const DAYS_IN_MONTH: i64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct Incoming(pub Message);
@@ -312,7 +317,7 @@ impl Room {
         let public_keys = self.members.clone();
 
         cx.background_spawn(async move {
-            let database = shared_state().client().database();
+            let database = nostr_client().database();
             let mut profiles = vec![];
 
             for public_key in public_keys.into_iter() {
@@ -344,7 +349,7 @@ impl Room {
         cx.background_spawn(async move {
             let mut messages = vec![];
             let parser = NostrParser::new();
-            let database = shared_state().client().database();
+            let database = nostr_client().database();
 
             // Get all events from database
             let events = database
@@ -555,7 +560,7 @@ impl Room {
         let backup = AppSettings::get_global(cx).settings.backup_messages;
 
         cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 

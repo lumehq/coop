@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use common::display::DisplayProfile;
 use global::constants::ACCOUNT_D;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -46,14 +46,12 @@ impl Onboarding {
         let local_account = cx.new(|_| None);
 
         let task = cx.background_spawn(async move {
-            let database = shared_state().client().database();
-
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_D)
                 .limit(1);
 
-            if let Some(event) = database.query(filter).await?.first_owned() {
+            if let Some(event) = nostr_client().database().query(filter).await?.first_owned() {
                 let public_key = event
                     .tags
                     .public_keys()
@@ -62,10 +60,14 @@ impl Onboarding {
                     .first()
                     .cloned()
                     .unwrap();
-                let metadata = database.metadata(public_key).await?.unwrap_or_default();
-                let profile = Profile::new(public_key, metadata);
 
-                Ok(profile)
+                let metadata = nostr_client()
+                    .database()
+                    .metadata(public_key)
+                    .await?
+                    .unwrap_or_default();
+
+                Ok(Profile::new(public_key, metadata))
             } else {
                 Err(anyhow!("Not found"))
             }

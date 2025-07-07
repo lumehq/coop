@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context as _, Error};
-use global::shared_state;
+use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, Global, SemanticVersion, Task};
 use nostr_sdk::prelude::*;
 use smol::fs::{self, File};
@@ -128,10 +128,9 @@ impl AutoUpdater {
         self.set_status(AutoUpdateStatus::Downloading, cx);
 
         let task: Task<Result<(TempDir, PathBuf), Error>> = cx.background_spawn(async move {
-            let database = shared_state().client().database();
             let ids = event.tags.event_ids().copied();
             let filter = Filter::new().ids(ids).kind(Kind::FileMetadata);
-            let events = database.query(filter).await?;
+            let events = nostr_client().database().query(filter).await?;
 
             if let Some(event) = events.into_iter().find(|event| event.content == OS) {
                 let tag = event.tags.find(TagKind::Url).context("url not found")?;
