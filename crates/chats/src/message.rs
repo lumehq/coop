@@ -24,7 +24,7 @@ pub struct Message {
     /// When the message was created
     pub created_at: Timestamp,
     /// List of mentioned public keys in the message
-    pub mentions: SmallVec<[PublicKey; 3]>,
+    pub mentions: SmallVec<[PublicKey; 2]>,
     /// List of EventIds this message is replying to
     pub replies_to: Option<SmallVec<[EventId; 1]>>,
     /// Any errors that occurred while sending this message
@@ -38,7 +38,7 @@ pub struct MessageBuilder {
     author: PublicKey,
     content: Option<SharedString>,
     created_at: Option<Timestamp>,
-    mentions: SmallVec<[PublicKey; 3]>,
+    mentions: SmallVec<[PublicKey; 2]>,
     replies_to: Option<SmallVec<[EventId; 1]>>,
     errors: Option<SmallVec<[SendError; 1]>>,
 }

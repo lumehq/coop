@@ -58,26 +58,17 @@ impl PartialOrd for Room {
     }
 }
 
-impl Eq for Room {}
-
 impl PartialEq for Room {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
+impl Eq for Room {}
+
 impl EventEmitter<Incoming> for Room {}
 
 impl Room {
-    /// Creates a new Room instance from a Nostr event
-    ///
-    /// # Arguments
-    ///
-    /// * `event` - The Nostr event containing chat information
-    ///
-    /// # Returns
-    ///
-    /// A new Room instance with information extracted from the event
     pub fn new(event: &Event) -> Self {
         let id = common::room_hash(event);
         let created_at = event.created_at;
@@ -157,8 +148,8 @@ impl Room {
     ///
     /// * `created_at` - The new Timestamp to set
     /// * `cx` - The context to notify about the update
-    pub fn created_at(&mut self, created_at: Timestamp, cx: &mut Context<Self>) {
-        self.created_at = created_at;
+    pub fn created_at(&mut self, created_at: impl Into<Timestamp>, cx: &mut Context<Self>) {
+        self.created_at = created_at.into();
         cx.notify();
     }
 
@@ -168,7 +159,7 @@ impl Room {
     ///
     /// * `subject` - The new subject to set
     /// * `cx` - The context to notify about the update
-    pub fn subject(&mut self, subject: String, cx: &mut Context<Self>) {
+    pub fn subject(&mut self, subject: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.subject = Some(subject.into());
         cx.notify();
     }
@@ -179,11 +170,23 @@ impl Room {
     ///
     /// * `picture` - The new subject to set
     /// * `cx` - The context to notify about the update
-    pub fn picture(&mut self, picture: String, cx: &mut Context<Self>) {
+    pub fn picture(&mut self, picture: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.picture = Some(picture.into());
         cx.notify();
     }
 
+    /// Returns a human-readable string representing how long ago the room was created
+    ///
+    /// The string will be formatted differently based on the time elapsed:
+    /// - Less than a minute: "now"
+    /// - Less than an hour: "Xm" (minutes)
+    /// - Less than a day: "Xh" (hours)
+    /// - Less than a month: "Xd" (days)
+    /// - More than a month: "MMM DD" (month abbreviation and day)
+    ///
+    /// # Returns
+    ///
+    /// A SharedString containing the formatted time representation
     pub fn ago(&self) -> SharedString {
         let input_time = match Local.timestamp_opt(self.created_at.as_u64() as i64, 0) {
             chrono::LocalResult::Single(time) => time,
@@ -203,6 +206,18 @@ impl Room {
         .into()
     }
 
+    /// Gets the display name for the room
+    ///
+    /// If the room has a subject set, that will be used as the display name.
+    /// Otherwise, it will generate a name based on the room members.
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The application context
+    ///
+    /// # Returns
+    ///
+    /// A SharedString containing the display name
     pub fn display_name(&self, cx: &App) -> SharedString {
         if let Some(subject) = self.subject.clone() {
             subject
@@ -211,6 +226,20 @@ impl Room {
         }
     }
 
+    /// Gets the display image for the room
+    ///
+    /// The image is determined by:
+    /// - The room's picture if set
+    /// - The first member's avatar for 1:1 chats
+    /// - A default group image for group chats
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The application context
+    ///
+    /// # Returns
+    ///
+    /// A SharedString containing the image path or URL
     pub fn display_image(&self, cx: &App) -> SharedString {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
 
@@ -266,6 +295,15 @@ impl Room {
         }
     }
 
+    /// Loads all profiles for this room members from the database
+    ///
+    /// # Arguments
+    ///
+    /// * `cx` - The App context
+    ///
+    /// # Returns
+    ///
+    /// A Task that resolves to Result<Vec<Profile>, Error> containing all profiles for this room
     pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<Vec<Profile>, Error>> {
         let public_keys = self.members.clone();
 
@@ -290,8 +328,7 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// A Task that resolves to Result<Vec<RoomMessage>, Error> containing
-    /// all messages for this room
+    /// A Task that resolves to Result<Vec<RoomMessage>, Error> containing all messages for this room
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Message>, Error>> {
         let pubkeys = self.members.clone();
 
