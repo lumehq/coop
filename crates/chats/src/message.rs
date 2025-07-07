@@ -5,6 +5,7 @@ use std::rc::Rc;
 use chrono::{Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
 
 use crate::room::SendError;
 
@@ -15,54 +16,50 @@ use crate::room::SendError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     /// Unique identifier of the message (EventId from nostr_sdk)
-    pub id: Option<EventId>,
-    /// Author profile information
-    pub author: Option<Profile>,
+    pub id: EventId,
+    /// Author's public key
+    pub author: PublicKey,
     /// The content/text of the message
     pub content: SharedString,
     /// When the message was created
     pub created_at: Timestamp,
-    /// List of mentioned profiles in the message
-    pub mentions: Vec<Profile>,
+    /// List of mentioned public keys in the message
+    pub mentions: SmallVec<[PublicKey; 3]>,
     /// List of EventIds this message is replying to
-    pub replies_to: Option<Vec<EventId>>,
+    pub replies_to: Option<SmallVec<[EventId; 1]>>,
     /// Any errors that occurred while sending this message
-    pub errors: Option<Vec<SendError>>,
+    pub errors: Option<SmallVec<[SendError; 1]>>,
 }
 
 /// Builder pattern implementation for constructing Message objects.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MessageBuilder {
-    id: Option<EventId>,
-    author: Option<Profile>,
-    content: Option<String>,
+    id: EventId,
+    author: PublicKey,
+    content: Option<SharedString>,
     created_at: Option<Timestamp>,
-    mentions: Vec<Profile>,
-    replies_to: Option<Vec<EventId>>,
-    errors: Option<Vec<SendError>>,
+    mentions: SmallVec<[PublicKey; 3]>,
+    replies_to: Option<SmallVec<[EventId; 1]>>,
+    errors: Option<SmallVec<[SendError; 1]>>,
 }
 
 impl MessageBuilder {
     /// Creates a new MessageBuilder with default values
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the message ID
-    pub fn id(mut self, id: EventId) -> Self {
-        self.id = Some(id);
-        self
-    }
-
-    /// Sets the message author
-    pub fn author(mut self, author: Profile) -> Self {
-        self.author = Some(author);
-        self
+    pub fn new(id: EventId, author: PublicKey) -> Self {
+        Self {
+            id,
+            author,
+            content: None,
+            created_at: None,
+            mentions: smallvec![],
+            replies_to: None,
+            errors: None,
+        }
     }
 
     /// Sets the message content
-    pub fn content(mut self, content: String) -> Self {
-        self.content = Some(content);
+    pub fn content(mut self, content: impl Into<SharedString>) -> Self {
+        self.content = Some(content.into());
         self
     }
 
@@ -73,7 +70,7 @@ impl MessageBuilder {
     }
 
     /// Adds a single mention to the message
-    pub fn mention(mut self, mention: Profile) -> Self {
+    pub fn mention(mut self, mention: PublicKey) -> Self {
         self.mentions.push(mention);
         self
     }
@@ -81,7 +78,7 @@ impl MessageBuilder {
     /// Adds multiple mentions to the message
     pub fn mentions<I>(mut self, mentions: I) -> Self
     where
-        I: IntoIterator<Item = Profile>,
+        I: IntoIterator<Item = PublicKey>,
     {
         self.mentions.extend(mentions);
         self
@@ -89,7 +86,7 @@ impl MessageBuilder {
 
     /// Sets a single message this is replying to
     pub fn reply_to(mut self, reply_to: EventId) -> Self {
-        self.replies_to = Some(vec![reply_to]);
+        self.replies_to = Some(smallvec![reply_to]);
         self
     }
 
@@ -98,7 +95,7 @@ impl MessageBuilder {
     where
         I: IntoIterator<Item = EventId>,
     {
-        let replies: Vec<EventId> = replies_to.into_iter().collect();
+        let replies: SmallVec<[EventId; 1]> = replies_to.into_iter().collect();
         if !replies.is_empty() {
             self.replies_to = Some(replies);
         }
@@ -124,7 +121,7 @@ impl MessageBuilder {
         Ok(Message {
             id: self.id,
             author: self.author,
-            content: self.content.ok_or("Content is required")?.into(),
+            content: self.content.ok_or("Content is required")?,
             created_at: self.created_at.unwrap_or_else(Timestamp::now),
             mentions: self.mentions,
             replies_to: self.replies_to,
@@ -135,8 +132,8 @@ impl MessageBuilder {
 
 impl Message {
     /// Creates a new MessageBuilder
-    pub fn builder() -> MessageBuilder {
-        MessageBuilder::new()
+    pub fn builder(id: EventId, author: PublicKey) -> MessageBuilder {
+        MessageBuilder::new(id, author)
     }
 
     /// Converts the message into an Rc<RefCell<Message>>

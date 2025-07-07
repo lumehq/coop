@@ -65,7 +65,7 @@ impl ChatRegistry {
     }
 
     /// Retrieve the ChatRegistry instance
-    pub fn get_global(cx: &App) -> &Self {
+    pub fn read_global(cx: &App) -> &Self {
         cx.global::<GlobalChatRegistry>().0.read(cx)
     }
 
@@ -80,12 +80,16 @@ impl ChatRegistry {
 
         // Load all user profiles from the database when the ChatRegistry is created
         subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
-            this.get_all_profiles_from_db(cx);
+            let task = this.load_local_person(cx);
+            this.set_persons_from_task(task, cx);
         }));
 
-        // When any Room is created, load metadata for all members
+        // When any Room is created, load members metadata
         subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
-            this.load_metadata(cx).detach();
+            let task = this.load_metadata(cx);
+            Self::global(cx).update(cx, |this, cx| {
+                this.set_persons_from_task(task, cx);
+            });
         }));
 
         Self {
@@ -96,11 +100,13 @@ impl ChatRegistry {
         }
     }
 
-    pub(crate) fn get_all_profiles_from_db(&mut self, cx: &mut Context<Self>) {
-        let load_profiles = self.load_profiles(cx);
-
+    pub(crate) fn set_persons_from_task(
+        &mut self,
+        task: Task<Result<Vec<Profile>, Error>>,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |this, cx| {
-            if let Ok(profiles) = load_profiles.await {
+            if let Ok(profiles) = task.await {
                 this.update(cx, |this, cx| {
                     for profile in profiles {
                         this.persons
@@ -114,7 +120,7 @@ impl ChatRegistry {
         .detach();
     }
 
-    pub(crate) fn load_profiles(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
+    pub(crate) fn load_local_person(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
         cx.background_spawn(async move {
             let database = shared_state().client().database();
             let filter = Filter::new().kind(Kind::Metadata).limit(100);
@@ -132,8 +138,23 @@ impl ChatRegistry {
         })
     }
 
-    pub fn get_person(&self, public_key: PublicKey, cx: &App) -> Option<Profile> {
-        self.persons.get(&public_key).map(|e| e.read(cx)).cloned()
+    pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
+        self.persons
+            .get(public_key)
+            .map(|e| e.read(cx))
+            .cloned()
+            .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
+    }
+
+    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Option<Profile>> {
+        let mut profiles = vec![];
+
+        for public_key in public_keys.iter() {
+            let profile = self.persons.get(public_key).map(|e| e.read(cx)).cloned();
+            profiles.push(profile);
+        }
+
+        profiles
     }
 
     pub fn insert_or_update_person(&mut self, event: Event, cx: &mut App) {

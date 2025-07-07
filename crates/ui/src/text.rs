@@ -45,7 +45,7 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new(content: String, profiles: &[Profile]) -> Self {
+    pub fn new(content: String, profiles: &[Option<Profile>]) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
         let mut link_ranges = Vec::new();
@@ -156,7 +156,7 @@ impl RichText {
 
 pub fn render_plain_text_mut(
     content: &str,
-    profiles: &[Profile],
+    profiles: &[Option<Profile>],
     text: &mut String,
     highlights: &mut Vec<(Range<usize>, Highlight)>,
     link_ranges: &mut Vec<Range<usize>>,
@@ -168,7 +168,11 @@ pub fn render_plain_text_mut(
     // Create a profile lookup using PublicKey directly
     let profile_lookup: HashMap<PublicKey, Profile> = profiles
         .iter()
-        .map(|profile| (profile.public_key(), profile.clone()))
+        .filter_map(|profile| {
+            profile
+                .as_ref()
+                .map(|profile| (profile.public_key(), profile.clone()))
+        })
         .collect();
 
     // Process regular URLs using linkify

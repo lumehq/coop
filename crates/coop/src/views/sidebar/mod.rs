@@ -18,6 +18,7 @@ use gpui::{
     Render, RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription,
     Task, Window,
 };
+use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -35,7 +36,6 @@ use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
-use i18n::t;
 
 mod element;
 
@@ -426,7 +426,7 @@ impl Sidebar {
     }
 
     fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let room = if let Some(room) = ChatRegistry::get_global(cx).room(&id, cx) {
+        let room = if let Some(room) = ChatRegistry::read_global(cx).room(&id, cx) {
             room
         } else {
             let Some(result) = self.global_result.read(cx).as_ref() else {
@@ -616,7 +616,7 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let chats = ChatRegistry::get_global(cx);
+        let chats = ChatRegistry::read_global(cx);
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
