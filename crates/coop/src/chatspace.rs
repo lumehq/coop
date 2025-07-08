@@ -153,7 +153,7 @@ impl ChatSpace {
                 &identity,
                 window,
                 |this: &mut Self, state, window, cx| {
-                    if !state.read(cx).has_profile() {
+                    if !state.read(cx).has_signer() {
                         this.open_onboarding(window, cx);
                     } else {
                         // Load all chat rooms from database

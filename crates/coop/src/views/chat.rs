@@ -213,11 +213,11 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(account) = Identity::read_global(cx).profile() else {
+        let Some(identity) = Identity::read_global(cx).public_key() else {
             return false;
         };
 
-        if new_msg.author != account.public_key() {
+        if new_msg.author != identity {
             return false;
         }
 
@@ -226,7 +226,7 @@ impl Chat {
         self.messages
             .read(cx)
             .iter()
-            .filter(|m| m.borrow().author == account.public_key())
+            .filter(|m| m.borrow().author == identity)
             .any(|existing| {
                 let existing = existing.borrow();
                 // Check if messages are within the time window

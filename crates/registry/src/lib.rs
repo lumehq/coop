@@ -392,7 +392,7 @@ impl Registry {
         let id = room_hash(&event);
         let author = event.pubkey;
 
-        let Some(profile) = Identity::read_global(cx).profile() else {
+        let Some(identity) = Identity::read_global(cx).public_key() else {
             return;
         };
 
@@ -402,7 +402,7 @@ impl Registry {
                 this.created_at(event.created_at, cx);
 
                 // Set this room is ongoing if the new message is from current user
-                if author == profile.public_key() {
+                if author == identity {
                     this.set_ongoing(cx);
                 }
 

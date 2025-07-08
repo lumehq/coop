@@ -263,14 +263,14 @@ impl Room {
     pub(crate) fn first_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
 
-        if let Some(account) = Identity::read_global(cx).profile() {
+        if let Some(identity) = Identity::read_global(cx).public_key().as_ref() {
             self.members
                 .iter()
-                .filter(|&pubkey| pubkey != &account.public_key())
+                .filter(|&pubkey| pubkey != identity)
                 .collect::<Vec<_>>()
                 .first()
                 .map(|public_key| registry.get_person(public_key, cx))
-                .unwrap_or(account)
+                .unwrap_or(registry.get_person(identity, cx))
         } else {
             registry.get_person(&self.members[0], cx)
         }
@@ -478,8 +478,7 @@ impl Room {
         replies: Option<&Vec<Message>>,
         cx: &App,
     ) -> Option<Message> {
-        let author = Identity::read_global(cx).profile()?;
-        let public_key = author.public_key();
+        let public_key = Identity::read_global(cx).public_key()?;
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
         // Add event reference if it's present (replying to another event)
@@ -526,7 +525,7 @@ impl Room {
             }
         }
 
-        Message::builder(event.id.unwrap(), author.public_key())
+        Message::builder(event.id.unwrap(), public_key)
             .content(event.content)
             .created_at(event.created_at)
             .replies_to(replies_to)

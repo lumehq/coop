@@ -184,9 +184,9 @@ dependencies = [
 
 [[package]]
 name = "async-channel"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c74e56284d2188cabb6ad99603d1ace887a5d7e7b695d01b728155ed9ed427"
+checksum = "924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2"
 dependencies = [
  "concurrent-queue",
  "event-listener-strategy",
@@ -730,9 +730,9 @@ dependencies = [
 
 [[package]]
 name = "blocking"
-version = "1.6.1"
+version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "703f41c54fc768e63e091340b424302bb1c29ef4aa0c7f10fe849dfb114d29ea"
+checksum = "e83f8d02be6967315521be875afa792a316e28d57b5a2d401897e2a7921b7f21"
 dependencies = [
  "async-channel",
  "async-task",
@@ -856,9 +856,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.27"
+version = "1.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d487aa071b5f64da6f19a3e848e3578944b726ee5a4854b82172f02aa876bfdc"
+checksum = "5c1599538de2394445747c8cf7935946e3cc27e9625f889d979bfb2aaf569362"
 dependencies = [
  "jobserver",
  "libc",
@@ -1075,7 +1075,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1462,7 +1462,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2308,7 +2308,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2400,7 +2400,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2623,7 +2623,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2640,7 +2640,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -2708,9 +2708,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc2fdfdbff08affe55bb779f33b053aa1fe5dd5b54c257343c17edfa55711bdb"
+checksum = "7f66d5bd4c6f02bf0542fad85d626775bab9258cf795a4256dcaf3161114d1df"
 dependencies = [
  "base64",
  "bytes",
@@ -3417,7 +3417,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3640,7 +3640,7 @@ dependencies = [
 [[package]]
 name = "nostr"
 version = "0.42.1"
-source = "git+https://github.com/rust-nostr/nostr#5a1aacb2fecdb4177574345a1b07ffbfa99e006d"
+source = "git+https://github.com/rust-nostr/nostr#c4d16c691f5bc03448cf95bb8b2f59f7d5d0ca79"
 dependencies = [
  "aes",
  "base64",
@@ -3663,7 +3663,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#5a1aacb2fecdb4177574345a1b07ffbfa99e006d"
+source = "git+https://github.com/rust-nostr/nostr#c4d16c691f5bc03448cf95bb8b2f59f7d5d0ca79"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3675,7 +3675,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#5a1aacb2fecdb4177574345a1b07ffbfa99e006d"
+source = "git+https://github.com/rust-nostr/nostr#c4d16c691f5bc03448cf95bb8b2f59f7d5d0ca79"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3686,7 +3686,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#5a1aacb2fecdb4177574345a1b07ffbfa99e006d"
+source = "git+https://github.com/rust-nostr/nostr#c4d16c691f5bc03448cf95bb8b2f59f7d5d0ca79"
 dependencies = [
  "async-utility",
  "heed",
@@ -3699,7 +3699,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#5a1aacb2fecdb4177574345a1b07ffbfa99e006d"
+source = "git+https://github.com/rust-nostr/nostr#c4d16c691f5bc03448cf95bb8b2f59f7d5d0ca79"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3715,7 +3715,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.42.0"
-source = "git+https://github.com/rust-nostr/nostr#5a1aacb2fecdb4177574345a1b07ffbfa99e006d"
+source = "git+https://github.com/rust-nostr/nostr#c4d16c691f5bc03448cf95bb8b2f59f7d5d0ca79"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4722,7 +4722,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "derive_refineable",
  "workspace-hack",
@@ -4875,7 +4875,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4907,9 +4907,9 @@ dependencies = [
 
 [[package]]
 name = "rgb"
-version = "0.8.50"
+version = "0.8.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57397d16646700483b67d2dd6511d79318f9d057fdbd21a4066aeac8b41d310a"
+checksum = "a457e416a0f90d246a4c3288bd7a25b2304ca727f253f95be383dd17af56be8f"
 dependencies = [
  "bytemuck",
 ]
@@ -5238,9 +5238,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1375ba8ef45a6f15d83fa8748f1079428295d403d6ea991d09ab100155fbc06d"
+checksum = "82d20c4491bc164fa2f6c5d44565947a52ad80b9505d8e36f8d54c27c739fcd0"
 dependencies = [
  "dyn-clone",
  "indexmap",
@@ -5252,9 +5252,9 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b13ed22d6d49fe23712e068770b5c4df4a693a2b02eeff8e7ca3135627a24f6"
+checksum = "33d020396d1d138dc19f1165df7545479dcd58d93810dc5d646a16e55abefa80"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5357,7 +5357,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "anyhow",
  "serde",
@@ -5733,7 +5733,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "arrayvec",
  "log",
@@ -6129,9 +6129,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.46.0"
+version = "1.46.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1140bb80481756a8cbe10541f37433b459c5aa1e727b4c020fbfebdc25bf3ec4"
+checksum = "0cc3a2344dafbe23a245241fe8b09735b521110d30fcefbbd5feb1797ca35d17"
 dependencies = [
  "backtrace",
  "bytes",
@@ -6642,7 +6642,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#5253702200f4fb491b6608ac0a0c6df89b224b0f"
+source = "git+https://github.com/zed-industries/zed#f1db3b4e1d639b3aacbe472ddeb4471d844d4e04"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7734,9 +7734,9 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "5.7.1"
+version = "5.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3a7c7cee313d044fca3f48fa782cb750c79e4ca76ba7bc7718cd4024cdf6f68"
+checksum = "597f45e98bc7e6f0988276012797855613cd8269e23b5be62cc4e5d28b7e515d"
 dependencies = [
  "async-broadcast",
  "async-executor",
@@ -7767,9 +7767,9 @@ dependencies = [
 
 [[package]]
 name = "zbus_macros"
-version = "5.7.1"
+version = "5.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a17e7e5eec1550f747e71a058df81a9a83813ba0f6a95f39c4e218bdc7ba366a"
+checksum = "e5c8e4e14dcdd9d97a98b189cd1220f30e8394ad271e8c987da84f73693862c2"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -7918,9 +7918,9 @@ dependencies = [
 
 [[package]]
 name = "zvariant"
-version = "5.5.3"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d30786f75e393ee63a21de4f9074d4c038d52c5b1bb4471f955db249f9dffb1"
+checksum = "d91b3680bb339216abd84714172b5138a4edac677e641ef17e1d8cb1b3ca6e6f"
 dependencies = [
  "endi",
  "enumflags2",
@@ -7933,9 +7933,9 @@ dependencies = [
 
 [[package]]
 name = "zvariant_derive"
-version = "5.5.3"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75fda702cd42d735ccd48117b1630432219c0e9616bf6cb0f8350844ee4d9580"
+checksum = "3a8c68501be459a8dbfffbe5d792acdd23b4959940fc87785fb013b32edbc208"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

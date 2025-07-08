@@ -30,7 +30,7 @@ struct GlobalIdentity(Entity<Identity>);
 impl Global for GlobalIdentity {}
 
 pub struct Identity {
-    profile: Option<Profile>,
+    public_key: Option<PublicKey>,
     auto_logging_in_progress: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
@@ -66,13 +66,13 @@ impl Identity {
                     this.set_logging_in(true, cx);
                     this.load(window, cx);
                 } else {
-                    this.set_profile(None, cx);
+                    this.set_public_key(None, cx);
                 }
             }),
         );
 
         Self {
-            profile: None,
+            public_key: None,
             auto_logging_in_progress: false,
             subscriptions,
         }
@@ -106,7 +106,7 @@ impl Identity {
                 .ok();
             } else {
                 this.update(cx, |this, cx| {
-                    this.set_profile(None, cx);
+                    this.set_public_key(None, cx);
                 })
                 .ok();
             }
@@ -115,24 +115,30 @@ impl Identity {
     }
 
     pub fn unload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task = cx.background_spawn(async move {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_D)
-                .limit(1);
+                .identifier(ACCOUNT_D);
 
             // Unset signer
             client.unset_signer().await;
-
             // Delete account
-            client.database().delete(filter).await.is_ok()
+            client.database().delete(filter).await?;
+
+            Ok(())
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            if task.await {
+        cx.spawn_in(window, async move |this, cx| match task.await {
+            Ok(_) => {
                 this.update(cx, |this, cx| {
-                    this.set_profile(None, cx);
+                    this.set_public_key(None, cx);
+                })
+                .ok();
+            }
+            Err(e) => {
+                cx.update(|window, cx| {
+                    window.push_notification(Notification::error(e.to_string()), cx);
                 })
                 .ok();
             }
@@ -152,13 +158,13 @@ impl Identity {
                 self.login_with_bunker(uri, window, cx);
             } else {
                 window.push_notification(Notification::error("Bunker URI is invalid"), cx);
-                self.set_profile(None, cx);
+                self.set_public_key(None, cx);
             }
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(secret) {
             self.login_with_keys(enc, window, cx);
         } else {
             window.push_notification(Notification::error("Secret Key is invalid"), cx);
-            self.set_profile(None, cx);
+            self.set_public_key(None, cx);
         }
     }
 
@@ -176,7 +182,7 @@ impl Identity {
                 Notification::error("Bunker URI is invalid").title("Nostr Connect"),
                 cx,
             );
-            self.set_profile(None, cx);
+            self.set_public_key(None, cx);
             return;
         };
         // Automatically open auth url
@@ -196,12 +202,9 @@ impl Identity {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title("Nostr Connect"),
-                            cx,
-                        );
+                        window.push_notification(Notification::error(e.to_string()), cx);
                         this.update(cx, |this, cx| {
-                            this.set_profile(None, cx);
+                            this.set_public_key(None, cx);
                         })
                         .ok();
                     })
@@ -239,7 +242,7 @@ impl Identity {
                 .on_cancel(move |_, _window, cx| {
                     entity
                         .update(cx, |this, cx| {
-                            this.set_profile(None, cx);
+                            this.set_public_key(None, cx);
                         })
                         .ok();
                     // Close modal
@@ -337,29 +340,22 @@ impl Identity {
     where
         S: NostrSigner + 'static,
     {
-        let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<PublicKey, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let public_key = signer.get_public_key().await?;
-
             // Update signer
             client.set_signer(signer).await;
+            // Subscribe for user metadata
+            Self::subscribe(client, public_key).await?;
 
-            // Fetch user's metadata
-            let metadata = client
-                .fetch_metadata(public_key, Duration::from_secs(3))
-                .await?
-                .unwrap_or_default();
-
-            // Create user's profile with public key and metadata
-            Ok(Profile::new(public_key, metadata))
+            Ok(public_key)
         });
 
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
-                Ok(profile) => {
+                Ok(public_key) => {
                     this.update(cx, |this, cx| {
-                        this.subscribe(cx).detach();
-                        this.set_profile(Some(profile), cx);
+                        this.set_public_key(Some(public_key), cx);
                     })
                     .ok();
                 }
@@ -385,13 +381,11 @@ impl Identity {
         let keys = Keys::generate();
         let async_keys = keys.clone();
 
-        let task: Task<Result<Profile, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<PublicKey, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let public_key = async_keys.public_key();
-
             // Update signer
             client.set_signer(async_keys).await;
-
             // Set metadata
             client.set_metadata(&metadata).await?;
 
@@ -420,16 +414,18 @@ impl Identity {
             client.send_event_builder(relay_list).await?;
             client.send_event_builder(dm_relay).await?;
 
-            Ok(Profile::new(public_key, metadata))
+            // Subscribe for user metadata
+            Self::subscribe(client, public_key).await?;
+
+            Ok(public_key)
         });
 
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
-                Ok(profile) => {
+                Ok(public_key) => {
                     this.update(cx, |this, cx| {
-                        this.subscribe(cx).detach();
                         this.write_keys(&keys, password, cx);
-                        this.set_profile(Some(profile), cx);
+                        this.set_public_key(Some(public_key), cx);
                     })
                     .ok();
                 }
@@ -501,19 +497,19 @@ impl Identity {
         .detach();
     }
 
-    pub(crate) fn set_profile(&mut self, profile: Option<Profile>, cx: &mut Context<Self>) {
-        self.profile = profile;
+    pub(crate) fn set_public_key(&mut self, public_key: Option<PublicKey>, cx: &mut Context<Self>) {
+        self.public_key = public_key;
         cx.notify();
     }
 
-    /// Returns the current profile
-    pub fn profile(&self) -> Option<Profile> {
-        self.profile.as_ref().cloned()
+    /// Returns the current identity's public key
+    pub fn public_key(&self) -> Option<PublicKey> {
+        self.public_key
     }
 
-    /// Returns true if a profile is currently loaded
-    pub fn has_profile(&self) -> bool {
-        self.profile.is_some()
+    /// Returns true if a signer is currently set
+    pub fn has_signer(&self) -> bool {
+        self.public_key.is_some()
     }
 
     pub fn logging_in(&self) -> bool {
@@ -525,75 +521,59 @@ impl Identity {
         cx.notify();
     }
 
-    pub(crate) fn subscribe(&mut self, cx: &App) -> Task<Result<(), Error>> {
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+    pub(crate) async fn subscribe(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+        let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+        let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-            let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-            let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        client
+            .subscribe(
+                Filter::new()
+                    .author(public_key)
+                    .kinds(vec![
+                        Kind::Metadata,
+                        Kind::ContactList,
+                        Kind::MuteList,
+                        Kind::SimpleGroups,
+                        Kind::InboxRelays,
+                        Kind::RelayList,
+                    ])
+                    .since(Timestamp::now()),
+                None,
+            )
+            .await?;
 
-            client
-                .subscribe(
-                    Filter::new()
-                        .author(public_key)
-                        .kinds(vec![
-                            Kind::Metadata,
-                            Kind::ContactList,
-                            Kind::MuteList,
-                            Kind::SimpleGroups,
-                            Kind::InboxRelays,
-                            Kind::RelayList,
-                        ])
-                        .since(Timestamp::now()),
-                    None,
-                )
-                .await
-                .ok();
+        client
+            .subscribe(
+                Filter::new()
+                    .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::RelayList])
+                    .author(public_key)
+                    .limit(10),
+                Some(opts),
+            )
+            .await?;
 
-            client
-                .subscribe(
-                    Filter::new()
-                        .kinds(vec![
-                            Kind::ContactList,
-                            Kind::RelayList,
-                            Kind::InboxRelays,
-                            Kind::MuteList,
-                        ])
-                        .author(public_key)
-                        .limit(10),
-                    Some(
-                        SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
-                    ),
-                )
-                .await
-                .ok();
+        client
+            .subscribe_with_id(
+                all_messages_sub_id,
+                Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
+                Some(opts),
+            )
+            .await?;
 
-            client
-                .subscribe_with_id(
-                    all_messages_sub_id,
-                    Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
-                    Some(opts),
-                )
-                .await
-                .ok();
+        client
+            .subscribe_with_id(
+                new_messages_sub_id,
+                Filter::new()
+                    .kind(Kind::GiftWrap)
+                    .pubkey(public_key)
+                    .limit(0),
+                None,
+            )
+            .await?;
 
-            client
-                .subscribe_with_id(
-                    new_messages_sub_id,
-                    Filter::new()
-                        .kind(Kind::GiftWrap)
-                        .pubkey(public_key)
-                        .limit(0),
-                    None,
-                )
-                .await
-                .ok();
+        log::info!("Getting all user's metadata and messages...");
 
-            log::info!("Getting all user's metadata and messages...");
-            Ok(())
-        })
+        Ok(())
     }
 }

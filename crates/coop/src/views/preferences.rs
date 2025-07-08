@@ -8,6 +8,7 @@ use gpui::{
 };
 use i18n::t;
 use identity::Identity;
+use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -74,9 +75,14 @@ impl Preferences {
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let input_state = self.media_input.downgrade();
+        let registry = Registry::read_global(cx);
         let settings = AppSettings::get_global(cx).settings.as_ref();
-        let profile = Identity::read_global(cx).profile();
+
+        let profile = Identity::read_global(cx)
+            .public_key()
+            .map(|pk| registry.get_person(&pk, cx));
+
+        let input_state = self.media_input.downgrade();
 
         div()
             .track_focus(&self.focus_handle)

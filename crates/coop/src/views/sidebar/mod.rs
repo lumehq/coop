@@ -616,8 +616,11 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let chats = Registry::read_global(cx);
-        let profile = Identity::read_global(cx).profile();
+        let registry = Registry::read_global(cx);
+
+        let profile = Identity::read_global(cx)
+            .public_key()
+            .map(|pk| registry.get_person(&pk, cx));
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
@@ -625,9 +628,9 @@ impl Render for Sidebar {
         } else {
             #[allow(clippy::collapsible_else_if)]
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
-                chats.ongoing_rooms(cx)
+                registry.ongoing_rooms(cx)
             } else {
-                chats.request_rooms(self.trusted_only, cx)
+                registry.request_rooms(self.trusted_only, cx)
             }
         };
 
@@ -771,7 +774,7 @@ impl Render for Sidebar {
                                 )
                             }),
                     )
-                    .when(chats.loading, |this| {
+                    .when(registry.loading, |this| {
                         this.child(
                             div()
                                 .flex_1()
@@ -792,7 +795,7 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
-            .when(chats.loading, |this| {
+            .when(registry.loading, |this| {
                 this.child(
                     div().absolute().bottom_4().px_4().child(
                         div()
