@@ -6,6 +6,7 @@ use chats::room::{Room, RoomKind};
 use chats::ChatRegistry;
 use common::display::DisplayProfile;
 use common::nip05::nip05_profile;
+use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -20,33 +21,31 @@ use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    input::{InputEvent, InputState, TextInput},
-    notification::Notification,
-    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
+use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Contact {
-    profile: Profile,
+    public_key: PublicKey,
     select: bool,
 }
 
-impl AsRef<Profile> for Contact {
-    fn as_ref(&self) -> &Profile {
-        &self.profile
+impl AsRef<PublicKey> for Contact {
+    fn as_ref(&self) -> &PublicKey {
+        &self.public_key
     }
 }
 
 impl Contact {
-    pub fn new(profile: Profile) -> Self {
+    pub fn new(public_key: PublicKey) -> Self {
         Self {
-            profile,
+            public_key,
             select: false,
         }
     }
@@ -88,10 +87,8 @@ impl Compose {
             &user_input,
             window,
             move |this, _input, event, window, cx| {
-                match event {
-                    InputEvent::PressEnter { .. } => this.add_and_select_contact(window, cx),
-                    InputEvent::Change(_) => {}
-                    _ => {}
+                if let InputEvent::PressEnter { .. } = event {
+                    this.add_and_select_contact(window, cx)
                 };
             },
         ));
@@ -101,7 +98,10 @@ impl Compose {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
-            let contacts = profiles.into_iter().map(Contact::new).collect_vec();
+            let contacts = profiles
+                .into_iter()
+                .map(|profile| Contact::new(profile.public_key()))
+                .collect_vec();
 
             Ok(contacts)
         });
@@ -133,6 +133,18 @@ impl Compose {
             error_message,
             subscriptions,
         }
+    }
+
+    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
+
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
     }
 
     pub fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -209,15 +221,12 @@ impl Compose {
         if !self
             .contacts
             .iter()
-            .any(|e| e.read(cx).profile.public_key() == contact.profile.public_key())
+            .any(|e| e.read(cx).public_key == contact.public_key)
         {
             self.contacts.insert(0, cx.new(|_| contact));
             cx.notify();
         } else {
-            self.set_error(
-                Some(t!("compose.contact_existed", name = contact.profile.name()).into()),
-                cx,
-            );
+            self.set_error(Some(t!("compose.contact_existed").into()), cx);
         }
     }
 
@@ -226,7 +235,7 @@ impl Compose {
             .iter()
             .filter_map(|contact| {
                 if contact.read(cx).select {
-                    Some(contact.read(cx).profile.public_key())
+                    Some(contact.read(cx).public_key)
                 } else {
                     None
                 }
@@ -255,13 +264,11 @@ impl Compose {
                 });
 
                 if let Ok(Some(profile)) = rx.await {
+                    let client = nostr_client();
                     let public_key = profile.public_key;
-                    let metadata = nostr_client()
-                        .fetch_metadata(public_key, Duration::from_secs(2))
-                        .await?
-                        .unwrap_or_default();
-                    let profile = Profile::new(public_key, metadata);
-                    let contact = Contact::new(profile).select();
+                    let contact = Contact::new(public_key).select();
+
+                    Self::request_metadata(client, public_key).await?;
 
                     Ok(contact)
                 } else {
@@ -278,13 +285,10 @@ impl Compose {
             };
 
             cx.background_spawn(async move {
-                let metadata = nostr_client()
-                    .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?
-                    .unwrap_or_default();
+                let client = nostr_client();
+                let contact = Contact::new(public_key).select();
 
-                let profile = Profile::new(public_key, metadata);
-                let contact = Contact::new(profile).select();
+                Self::request_metadata(client, public_key).await?;
 
                 Ok(contact)
             })
@@ -295,39 +299,38 @@ impl Compose {
             };
 
             cx.background_spawn(async move {
-                let metadata = nostr_client()
-                    .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?
-                    .unwrap_or_default();
+                let client = nostr_client();
+                let contact = Contact::new(public_key).select();
 
-                let profile = Profile::new(public_key, metadata);
-                let contact = Contact::new(profile).select();
+                Self::request_metadata(client, public_key).await?;
 
                 Ok(contact)
             })
         };
 
-        cx.spawn_in(window, async move |this, cx| match task.await {
-            Ok(contact) => {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.push_contact(contact, cx);
-                        this.set_adding(false, cx);
-                        this.user_input.update(cx, |this, cx| {
-                            this.set_value("", window, cx);
-                            this.set_loading(false, cx);
-                        });
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(contact) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.push_contact(contact, cx);
+                            this.set_adding(false, cx);
+                            this.user_input.update(cx, |this, cx| {
+                                this.set_value("", window, cx);
+                                this.set_loading(false, cx);
+                            });
+                        })
+                        .ok();
                     })
                     .ok();
-                })
-                .ok();
-            }
-            Err(e) => {
-                this.update(cx, |this, cx| {
-                    this.set_error(Some(e.to_string().into()), cx);
-                })
-                .ok();
-            }
+                }
+                Err(e) => {
+                    this.update(cx, |this, cx| {
+                        this.set_error(Some(e.to_string().into()), cx);
+                    })
+                    .ok();
+                }
+            };
         })
         .detach();
     }
@@ -371,6 +374,7 @@ impl Compose {
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let registry = ChatRegistry::read_global(cx);
         let mut items = Vec::with_capacity(self.contacts.len());
 
         for ix in range {
@@ -378,7 +382,8 @@ impl Compose {
                 continue;
             };
 
-            let profile = entity.read(cx).as_ref();
+            let public_key = entity.read(cx).as_ref();
+            let profile = registry.get_person(public_key, cx);
             let selected = entity.read(cx).select;
 
             items.push(

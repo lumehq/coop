@@ -21,6 +21,7 @@ use gpui::{
 use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smol::channel::{self, Sender};
 use theme::Theme;
@@ -338,10 +339,12 @@ async fn handle_nostr_notifications(
     mta_tx: &Sender<PublicKey>,
     event_tx: &Sender<Event>,
 ) -> Result<(), Error> {
-    let mut notifications = client.notifications();
-    let mut processed_events: BTreeSet<EventId> = BTreeSet::new();
     let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+    let mut notifications = client.notifications();
+    let mut processed_events: BTreeSet<EventId> = BTreeSet::new();
+    let mut processed_dm_relays: BTreeSet<PublicKey> = BTreeSet::new();
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Message { message, .. } = notification else {
@@ -362,8 +365,8 @@ async fn handle_nostr_notifications(
                 match event.kind {
                     Kind::GiftWrap => {
                         if *subscription_id == new_messages_sub_id {
-                            _ = try_unwrap_event(client, signal_tx, mta_tx, event.as_ref(), false)
-                                .await;
+                            let event = event.as_ref();
+                            _ = try_unwrap_event(client, signal_tx, mta_tx, event, false).await;
                         } else {
                             event_tx.send(event.into_owned()).await.ok();
                         }
@@ -379,6 +382,31 @@ async fn handle_nostr_notifications(
                             for public_key in event.tags.public_keys().copied() {
                                 mta_tx.send(public_key).await.ok();
                             }
+                        }
+                    }
+                    Kind::RelayList => {
+                        if processed_dm_relays.contains(&event.pubkey) {
+                            continue;
+                        }
+                        // Skip public keys that have already been processed
+                        processed_dm_relays.insert(event.pubkey);
+
+                        let filter = Filter::new()
+                            .author(event.pubkey)
+                            .kind(Kind::InboxRelays)
+                            .limit(1);
+
+                        let relay_urls = nip65::extract_owned_relay_list(event.into_owned())
+                            .map(|(url, _)| url)
+                            .collect_vec();
+
+                        if !relay_urls.is_empty() {
+                            client
+                                .subscribe_to(relay_urls, filter, Some(opts))
+                                .await
+                                .ok();
+
+                            log::info!("Subscribe for messaging relays")
                         }
                     }
                     Kind::ReleaseArtifactSet => {
@@ -440,7 +468,7 @@ async fn check_author(client: &Client, event: &Event) -> Result<bool, Error> {
 
 async fn sync_data_for_pubkeys(client: &Client, public_keys: BTreeSet<PublicKey>) {
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays];
+    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
 
     let filter = Filter::new()
         .limit(public_keys.len() * kinds.len())
