@@ -7,7 +7,7 @@ use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
 use element::DisplayRoom;
-use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
+use global::constants::{BOOTSTRAP_RELAYS, DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -135,6 +135,18 @@ impl Sidebar {
             global_result,
             subscriptions,
         }
+    }
+
+    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
+
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
     }
 
     fn debounced_search(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
@@ -265,39 +277,34 @@ impl Sidebar {
             return;
         };
 
-        let task: Task<Result<(Profile, Room), Error>> = cx.background_spawn(async move {
+        let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let signer = client.signer().await.unwrap();
-            let user_pubkey = signer.get_public_key().await.unwrap();
-
-            let metadata = client
-                .fetch_metadata(public_key, Duration::from_secs(3))
-                .await?
-                .unwrap_or_default();
+            let signer = client.signer().await?;
+            let identity = signer.get_public_key().await?;
+            // Request metadata for this user
+            Self::request_metadata(client, public_key).await?;
 
             let event = EventBuilder::private_msg_rumor(public_key, "")
-                .build(user_pubkey)
+                .build(identity)
                 .sign(&Keys::generate())
                 .await?;
 
-            let profile = Profile::new(public_key, metadata);
             let room = Room::new(&event);
 
-            Ok((profile, room))
+            Ok(room)
         });
 
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
-                Ok((profile, room)) => {
+                Ok(room) => {
                     this.update(cx, |this, cx| {
-                        let chats = Registry::global(cx);
-                        let result = chats
-                            .read(cx)
-                            .search_by_public_key(profile.public_key(), cx);
+                        let registry = Registry::read_global(cx);
+                        let result = registry.search_by_public_key(public_key, cx);
 
                         if !result.is_empty() {
                             this.local_result(result, cx);
                         }
+
                         this.global_result(vec![cx.new(|_| room)], cx);
                     })
                     .ok();
