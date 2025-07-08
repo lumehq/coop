@@ -208,10 +208,11 @@ impl Sidebar {
                             .sign(&Keys::generate())
                             .await
                         {
-                            if let Err(e) = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await
-                            {
-                                log::error!("Send error: {e}")
-                            }
+                            let room = Room::new(&event).kind(RoomKind::Ongoing);
+                            // Subscribe for metadata updates
+                            Self::request_metadata(client, public_key).await.ok();
+                            // Send the room to the channel
+                            tx.send(room).await.ok();
                         }
                     }
                 });
@@ -261,17 +262,7 @@ impl Sidebar {
     }
 
     fn search_by_user(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let public_key = if query.starts_with("npub1") {
-            PublicKey::parse(query).ok()
-        } else if query.starts_with("nprofile1") {
-            Nip19Profile::from_bech32(query)
-                .map(|nip19| nip19.public_key)
-                .ok()
-        } else {
-            None
-        };
-
-        let Some(public_key) = public_key else {
+        let Ok(public_key) = common::parse_pubkey_from_str(query) else {
             window.push_notification(t!("common.pubkey_invalid"), cx);
             self.set_finding(false, cx);
             return;
@@ -281,14 +272,13 @@ impl Sidebar {
             let client = nostr_client();
             let signer = client.signer().await?;
             let identity = signer.get_public_key().await?;
+
             // Request metadata for this user
             Self::request_metadata(client, public_key).await?;
 
-            let event = EventBuilder::private_msg_rumor(public_key, "")
-                .build(identity)
-                .sign(&Keys::generate())
-                .await?;
-
+            // Create a gift wrap event to represent as room
+            let builder = EventBuilder::private_msg_rumor(public_key, "");
+            let event = builder.build(identity).sign(&Keys::generate()).await?;
             let room = Room::new(&event);
 
             Ok(room)
@@ -323,15 +313,14 @@ impl Sidebar {
     fn search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let query = self.find_input.read(cx).value().to_string();
 
-        // Return if search is in progress
-        if self.finding {
-            window.push_notification(t!("sidebar.search_in_progress"), cx);
+        // Return if the query is empty
+        if query.is_empty() {
             return;
         }
 
-        // Return if the query is empty
-        if query.is_empty() {
-            window.push_notification(t!("sidebar.empty_query"), cx);
+        // Return if search is in progress
+        if self.finding {
+            window.push_notification(t!("sidebar.search_in_progress"), cx);
             return;
         }
 
@@ -385,12 +374,13 @@ impl Sidebar {
 
     fn set_finding(&mut self, status: bool, cx: &mut Context<Self>) {
         self.finding = status;
-        cx.notify();
         // Disable the input to prevent duplicate requests
         self.find_input.update(cx, |this, cx| {
             this.set_disabled(status, cx);
             this.set_loading(status, cx);
         });
+
+        cx.notify();
     }
 
     fn clear_search_results(&mut self, cx: &mut Context<Self>) {
