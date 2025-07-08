@@ -110,7 +110,7 @@ impl Compose {
             match get_contacts.await {
                 Ok(contacts) => {
                     this.update(cx, |this, cx| {
-                        this.contacts(contacts, cx);
+                        this.extend_contacts(contacts, cx);
                     })
                     .ok();
                 }
@@ -145,6 +145,16 @@ impl Compose {
             .await?;
 
         Ok(())
+    }
+
+    fn parse_pubkey(content: &str) -> Result<PublicKey, Error> {
+        if content.starts_with("nprofile1") {
+            Ok(Nip19Profile::from_bech32(content)?.public_key)
+        } else if content.starts_with("npub1") {
+            Ok(PublicKey::parse(content)?)
+        } else {
+            Err(anyhow!(t!("common.pubkey_invalid")))
+        }
     }
 
     pub fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -211,7 +221,10 @@ impl Compose {
         .detach();
     }
 
-    fn contacts(&mut self, contacts: impl IntoIterator<Item = Contact>, cx: &mut Context<Self>) {
+    fn extend_contacts<I>(&mut self, contacts: I, cx: &mut Context<Self>)
+    where
+        I: IntoIterator<Item = Contact>,
+    {
         self.contacts
             .extend(contacts.into_iter().map(|contact| cx.new(|_| contact)));
         cx.notify();
@@ -254,7 +267,7 @@ impl Compose {
             this.set_loading(true, cx);
         });
 
-        let task: Task<Result<Contact, anyhow::Error>> = if content.contains("@") {
+        let task: Task<Result<Contact, Error>> = if content.contains("@") {
             cx.background_spawn(async move {
                 let (tx, rx) = oneshot::channel::<Option<Nip05Profile>>();
 
@@ -275,15 +288,7 @@ impl Compose {
                     Err(anyhow!(t!("common.not_found")))
                 }
             })
-        } else if content.starts_with("nprofile1") {
-            let Some(public_key) = Nip19Profile::from_bech32(&content)
-                .map(|nip19| nip19.public_key)
-                .ok()
-            else {
-                self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
-                return;
-            };
-
+        } else if let Ok(public_key) = Self::parse_pubkey(&content) {
             cx.background_spawn(async move {
                 let client = nostr_client();
                 let contact = Contact::new(public_key).select();
@@ -293,19 +298,8 @@ impl Compose {
                 Ok(contact)
             })
         } else {
-            let Ok(public_key) = PublicKey::parse(&content) else {
-                self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
-                return;
-            };
-
-            cx.background_spawn(async move {
-                let client = nostr_client();
-                let contact = Contact::new(public_key).select();
-
-                Self::request_metadata(client, public_key).await?;
-
-                Ok(contact)
-            })
+            self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
+            return;
         };
 
         cx.spawn_in(window, async move |this, cx| {
@@ -390,7 +384,8 @@ impl Compose {
                 div()
                     .id(ix)
                     .w_full()
-                    .h_10()
+                    .h_11()
+                    .py_1()
                     .px_3()
                     .flex()
                     .items_center()
@@ -408,7 +403,7 @@ impl Compose {
                         this.child(
                             Icon::new(IconName::CheckCircleFill)
                                 .small()
-                                .text_color(cx.theme().ring),
+                                .text_color(cx.theme().text_accent),
                         )
                     })
                     .hover(|this| this.bg(cx.theme().elevated_surface_background))
@@ -544,7 +539,6 @@ impl Render for Compose {
                                         this.list_items(range, cx)
                                     }),
                                 )
-                                .pb_4()
                                 .min_h(px(280.)),
                             )
                         }
