@@ -3,16 +3,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use chats::message::Message;
-use chats::room::{Room, RoomKind, SendError};
+use common::display::DisplayProfile;
 use common::nip96::nip96_upload;
-use common::profile::RenderProfile;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
-    ClipboardItem, Context, Div, Element, Empty, Entity, EventEmitter, Flatten, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit, ParentElement,
+    div, img, list, px, red, rems, white, Action, AnyElement, App, AppContext, ClipboardItem,
+    Context, Div, Element, Empty, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit, ParentElement,
     PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
     Styled, StyledImage, Subscription, Window,
 };
@@ -20,6 +18,9 @@ use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::message::Message;
+use registry::room::{Room, RoomKind, SendError};
+use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -71,15 +72,7 @@ impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let attaches = cx.new(|_| None);
         let replies_to = cx.new(|_| None);
-
-        let messages = cx.new(|_| {
-            let message = Message::builder()
-                .content(t!("chat.private_conversation_notice").into())
-                .build_rc()
-                .unwrap();
-
-            vec![message]
-        });
+        let messages = cx.new(|_| vec![]);
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -220,15 +213,11 @@ impl Chat {
 
     // TODO: find a better way to prevent duplicate messages during optimistic updates
     fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(account) = Identity::get_global(cx).profile() else {
+        let Some(identity) = Identity::read_global(cx).public_key() else {
             return false;
         };
 
-        let Some(author) = new_msg.author.as_ref() else {
-            return false;
-        };
-
-        if account.public_key() != author.public_key() {
+        if new_msg.author != identity {
             return false;
         }
 
@@ -237,12 +226,7 @@ impl Chat {
         self.messages
             .read(cx)
             .iter()
-            .filter(|m| {
-                m.borrow()
-                    .author
-                    .as_ref()
-                    .is_some_and(|p| p.public_key() == account.public_key())
-            })
+            .filter(|m| m.borrow().author == identity)
             .any(|existing| {
                 let existing = existing.borrow();
                 // Check if messages are within the time window
@@ -297,10 +281,10 @@ impl Chat {
                             });
 
                             this.messages.update(cx, |this, cx| {
-                                if let Some(msg) = id.and_then(|id| {
-                                    this.iter().find(|msg| msg.borrow().id == Some(id)).cloned()
-                                }) {
-                                    msg.borrow_mut().errors = Some(reports);
+                                if let Some(msg) =
+                                    this.iter().find(|msg| msg.borrow().id == id).cloned()
+                                {
+                                    msg.borrow_mut().errors = Some(reports.into());
                                     cx.notify();
                                 }
                             });
@@ -330,7 +314,7 @@ impl Chat {
             .messages
             .read(cx)
             .iter()
-            .position(|m| m.borrow().id == Some(id))
+            .position(|m| m.borrow().id == id)
         {
             self.list_state.scroll_to_reveal_item(ix);
         }
@@ -350,7 +334,7 @@ impl Chat {
     fn remove_reply(&mut self, id: EventId, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
             if let Some(replies) = this {
-                if let Some(ix) = replies.iter().position(|m| m.id == Some(id)) {
+                if let Some(ix) = replies.iter().position(|m| m.id == id) {
                     replies.remove(ix);
                     cx.notify();
                 }
@@ -391,9 +375,7 @@ impl Chat {
 
                         // Spawn task via async utility instead of GPUI context
                         nostr_sdk::async_utility::task::spawn(async move {
-                            let url = nip96_upload(shared_state().client(), &nip96, file_data)
-                                .await
-                                .ok();
+                            let url = nip96_upload(nostr_client(), &nip96, file_data).await.ok();
                             _ = tx.send(url);
                         });
 
@@ -482,6 +464,9 @@ impl Chat {
     }
 
     fn render_reply(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
+        let registry = Registry::read_global(cx);
+        let profile = registry.get_person(&message.author, cx);
+
         div()
             .w_full()
             .pl_2()
@@ -503,7 +488,7 @@ impl Chat {
                             .child(
                                 div()
                                     .text_color(cx.theme().text_accent)
-                                    .child(message.author.as_ref().unwrap().render_name()),
+                                    .child(profile.display_name()),
                             ),
                     )
                     .child(
@@ -512,7 +497,7 @@ impl Chat {
                             .xsmall()
                             .ghost()
                             .on_click({
-                                let id = message.id.unwrap();
+                                let id = message.id;
                                 cx.listener(move |this, _, _, cx| {
                                     this.remove_reply(id, cx);
                                 })
@@ -541,43 +526,16 @@ impl Chat {
 
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
+        let registry = Registry::read_global(cx);
 
         let message = message.borrow();
-
-        // Message without ID, Author probably the placeholder
-        let (Some(id), Some(author)) = (message.id, message.author.as_ref()) else {
-            return div()
-                .id(ix)
-                .group("")
-                .w_full()
-                .relative()
-                .flex()
-                .gap_3()
-                .px_3()
-                .py_2()
-                .w_full()
-                .h_32()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .text_center()
-                .text_xs()
-                .text_color(cx.theme().text_placeholder)
-                .line_height(relative(1.3))
-                .child(
-                    svg()
-                        .path("brand/coop.svg")
-                        .size_10()
-                        .text_color(cx.theme().elevated_surface_background),
-                )
-                .child(message.content.clone());
-        };
+        let author = registry.get_person(&message.author, cx);
+        let mentions = registry.get_group_person(&message.mentions, cx);
 
         let texts = self
             .text_data
-            .entry(id)
-            .or_insert_with(|| RichText::new(message.content.to_string(), &message.mentions));
+            .entry(message.id)
+            .or_insert_with(|| RichText::new(message.content.to_string(), &mentions));
 
         div()
             .id(ix)
@@ -591,7 +549,7 @@ impl Chat {
                     .flex()
                     .gap_3()
                     .when(!hide_avatar, |this| {
-                        this.child(Avatar::new(author.render_avatar(proxy)).size(rems(2.)))
+                        this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
                     })
                     .child(
                         div()
@@ -610,7 +568,7 @@ impl Chat {
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
-                                            .child(author.render_name()),
+                                            .child(author.display_name()),
                                     )
                                     .child(
                                         div()
@@ -627,7 +585,7 @@ impl Chat {
                                             .messages
                                             .read(cx)
                                             .iter()
-                                            .find(|msg| msg.borrow().id == Some(*id))
+                                            .find(|msg| msg.borrow().id == *id)
                                             .cloned()
                                         {
                                             let message = message.borrow();
@@ -643,13 +601,7 @@ impl Chat {
                                                     .child(
                                                         div()
                                                             .text_color(cx.theme().text_accent)
-                                                            .child(
-                                                                message
-                                                                    .author
-                                                                    .as_ref()
-                                                                    .unwrap()
-                                                                    .render_name(),
-                                                            ),
+                                                            .child(author.display_name()),
                                                     )
                                                     .child(
                                                         div()
@@ -664,7 +616,7 @@ impl Chat {
                                                             .elevated_surface_background)
                                                     })
                                                     .on_click({
-                                                        let id = message.id.unwrap();
+                                                        let id = message.id;
                                                         cx.listener(move |this, _, _, cx| {
                                                             this.scroll_to(id, cx)
                                                         })
@@ -881,7 +833,7 @@ fn message_border(cx: &App) -> Div {
         .bg(cx.theme().border_transparent)
 }
 
-fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
+fn message_errors(errors: SmallVec<[SendError; 1]>, cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
@@ -898,7 +850,7 @@ fn message_errors(errors: Vec<SendError>, cx: &App) -> Div {
                         .gap_1()
                         .text_color(cx.theme().text_muted)
                         .child(SharedString::new(t!("chat.send_to_label")))
-                        .child(error.profile.render_name()),
+                        .child(error.profile.display_name()),
                 )
                 .child(error.message)
         }))

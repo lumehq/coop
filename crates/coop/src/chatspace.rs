@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::Error;
-use chats::{ChatRegistry, RoomEmitter};
 use client_keys::ClientKeys;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
@@ -13,6 +12,7 @@ use gpui::{
 use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
+use registry::{Registry, RoomEmitter};
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
@@ -84,7 +84,7 @@ impl ChatSpace {
         });
 
         cx.new(|cx| {
-            let chats = ChatRegistry::global(cx);
+            let registry = Registry::global(cx);
             let client_keys = ClientKeys::global(cx);
             let identity = Identity::global(cx);
             let mut subscriptions = smallvec![];
@@ -153,11 +153,11 @@ impl ChatSpace {
                 &identity,
                 window,
                 |this: &mut Self, state, window, cx| {
-                    if !state.read(cx).has_profile() {
+                    if !state.read(cx).has_signer() {
                         this.open_onboarding(window, cx);
                     } else {
                         // Load all chat rooms from database
-                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                        Registry::global(cx).update(cx, |this, cx| {
                             this.load_rooms(window, cx);
                         });
                         // Open chat panels
@@ -175,7 +175,7 @@ impl ChatSpace {
 
             // Subscribe to open chat room requests
             subscriptions.push(cx.subscribe_in(
-                &chats,
+                &registry,
                 window,
                 |this: &mut Self, _state, event, window, cx| {
                     if let RoomEmitter::Open(room) = event {
@@ -187,10 +187,7 @@ impl ChatSpace {
                                 this.add_panel(panel, placement, window, cx);
                             });
                         } else {
-                            window.push_notification(
-                                SharedString::new(t!("chatspace.failed_to_open_room")),
-                                cx,
-                            );
+                            window.push_notification(t!("chatspace.failed_to_open_room"), cx);
                         }
                     }
                 },
@@ -283,7 +280,7 @@ impl ChatSpace {
 
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
         cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let filter = Filter::new()

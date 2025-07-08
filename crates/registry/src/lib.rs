@@ -1,11 +1,11 @@
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Error;
 use common::room_hash;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::shared_state;
+use global::nostr_client;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
 };
@@ -20,17 +20,15 @@ use crate::room::Room;
 pub mod message;
 pub mod room;
 
-mod constants;
-
 i18n::init!();
 
 pub fn init(cx: &mut App) {
-    ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
+    Registry::set_global(cx.new(Registry::new), cx);
 }
 
-struct GlobalChatRegistry(Entity<ChatRegistry>);
+struct GlobalRegistry(Entity<Registry>);
 
-impl Global for GlobalChatRegistry {}
+impl Global for GlobalRegistry {}
 
 #[derive(Debug)]
 pub enum RoomEmitter {
@@ -39,15 +37,12 @@ pub enum RoomEmitter {
 }
 
 /// Main registry for managing chat rooms and user profiles
-///
-/// The ChatRegistry is responsible for:
-/// - Managing chat rooms and their states
-/// - Tracking user profiles
-/// - Loading room data from the lmdb
-/// - Handling messages and room creation
-pub struct ChatRegistry {
+pub struct Registry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
+
+    /// Collection of all persons (user profiles)
+    pub persons: BTreeMap<PublicKey, Entity<Profile>>,
 
     /// Indicates if rooms are currently being loaded
     ///
@@ -56,40 +51,123 @@ pub struct ChatRegistry {
 
     /// Subscriptions for observing changes
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
-impl EventEmitter<RoomEmitter> for ChatRegistry {}
+impl EventEmitter<RoomEmitter> for Registry {}
 
-impl ChatRegistry {
-    /// Retrieve the Global ChatRegistry instance
+impl Registry {
+    /// Retrieve the Global Registry state
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalChatRegistry>().0.clone()
+        cx.global::<GlobalRegistry>().0.clone()
     }
 
-    /// Retrieve the ChatRegistry instance
-    pub fn get_global(cx: &App) -> &Self {
-        cx.global::<GlobalChatRegistry>().0.read(cx)
+    /// Retrieve the Registry instance
+    pub fn read_global(cx: &App) -> &Self {
+        cx.global::<GlobalRegistry>().0.read(cx)
     }
 
-    /// Set the global ChatRegistry instance
+    /// Set the global Registry instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalChatRegistry(state));
+        cx.set_global(GlobalRegistry(state));
     }
 
-    /// Create a new ChatRegistry instance
-    fn new(cx: &mut Context<Self>) -> Self {
+    /// Create a new Registry instance
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let mut subscriptions = smallvec![];
 
-        // When any Room is created, load metadata for all members
+        // Load all user profiles from the database when the Registry is created
+        subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
+            let task = this.load_local_person(cx);
+            this.set_persons_from_task(task, cx);
+        }));
+
+        // When any Room is created, load members metadata
         subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
-            this.load_metadata(cx).detach();
+            let task = this.load_metadata(cx);
+            Self::global(cx).update(cx, |this, cx| {
+                this.set_persons_from_task(task, cx);
+            });
         }));
 
         Self {
             rooms: vec![],
+            persons: BTreeMap::new(),
             loading: true,
             subscriptions,
+        }
+    }
+
+    pub(crate) fn set_persons_from_task(
+        &mut self,
+        task: Task<Result<Vec<Profile>, Error>>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            if let Ok(profiles) = task.await {
+                this.update(cx, |this, cx| {
+                    for profile in profiles {
+                        this.persons
+                            .insert(profile.public_key(), cx.new(|_| profile));
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn load_local_person(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
+        cx.background_spawn(async move {
+            let filter = Filter::new().kind(Kind::Metadata).limit(100);
+            let events = nostr_client().database().query(filter).await?;
+            let mut profiles = vec![];
+
+            for event in events.into_iter() {
+                let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                let profile = Profile::new(event.pubkey, metadata);
+                profiles.push(profile);
+            }
+
+            Ok(profiles)
+        })
+    }
+
+    pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
+        self.persons
+            .get(public_key)
+            .map(|e| e.read(cx))
+            .cloned()
+            .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
+    }
+
+    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Option<Profile>> {
+        let mut profiles = vec![];
+
+        for public_key in public_keys.iter() {
+            let profile = self.persons.get(public_key).map(|e| e.read(cx)).cloned();
+            profiles.push(profile);
+        }
+
+        profiles
+    }
+
+    pub fn insert_or_update_person(&mut self, event: Event, cx: &mut App) {
+        let public_key = event.pubkey;
+        let Ok(metadata) = Metadata::from_json(event.content) else {
+            // Invalid metadata, no need to process further.
+            return;
+        };
+
+        if let Some(person) = self.persons.get(&public_key) {
+            person.update(cx, |this, cx| {
+                *this = Profile::new(public_key, metadata);
+                cx.notify();
+            });
+        } else {
+            self.persons
+                .insert(public_key, cx.new(|_| Profile::new(public_key, metadata)));
         }
     }
 
@@ -125,6 +203,12 @@ impl ChatRegistry {
             .collect()
     }
 
+    /// Add a new room to the start of list.
+    pub fn add_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
+        self.rooms.insert(0, room);
+        cx.notify();
+    }
+
     /// Sort rooms by their created at.
     pub fn sort(&mut self, cx: &mut Context<Self>) {
         self.rooms.sort_by_key(|ev| Reverse(ev.read(cx).created_at));
@@ -155,6 +239,12 @@ impl ChatRegistry {
             .collect()
     }
 
+    /// Set the loading status of the registry.
+    pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.loading = status;
+        cx.notify();
+    }
+
     /// Load all rooms from the lmdb.
     ///
     /// This method:
@@ -166,7 +256,7 @@ impl ChatRegistry {
         log::info!("Starting to load rooms from database...");
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -278,18 +368,15 @@ impl ChatRegistry {
 
     /// Push a new Room to the global registry
     pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
-        let weak_room = if let Some(room) = self
-            .rooms
-            .iter()
-            .find(|this| this.read(cx).id == room.read(cx).id)
-        {
+        let other_id = room.read(cx).id;
+        let find_room = self.rooms.iter().find(|this| this.read(cx).id == other_id);
+
+        let weak_room = if let Some(room) = find_room {
             room.downgrade()
         } else {
             let weak_room = room.downgrade();
-
-            // Add this room to the global registry
-            self.rooms.insert(0, room);
-            cx.notify();
+            // Add this room to the registry
+            self.add_room(room, cx);
 
             weak_room
         };
@@ -304,7 +391,8 @@ impl ChatRegistry {
     pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = room_hash(&event);
         let author = event.pubkey;
-        let Some(public_key) = Identity::get_global(cx).profile().map(|i| i.public_key()) else {
+
+        let Some(identity) = Identity::read_global(cx).public_key() else {
             return;
         };
 
@@ -314,7 +402,7 @@ impl ChatRegistry {
                 this.created_at(event.created_at, cx);
 
                 // Set this room is ongoing if the new message is from current user
-                if author == public_key {
+                if author == identity {
                     this.set_ongoing(cx);
                 }
 
@@ -326,22 +414,17 @@ impl ChatRegistry {
 
             // Re-sort the rooms registry by their created at
             self.sort(cx);
-
-            cx.notify();
         } else {
             let room = Room::new(&event).kind(RoomKind::Unknown);
             let kind = room.kind;
 
             // Push the new room to the front of the list
-            self.rooms.insert(0, cx.new(|_| room));
+            self.add_room(cx.new(|_| room), cx);
 
-            cx.emit(RoomEmitter::Request(kind));
-            cx.notify();
+            // Notify the UI about the new room
+            cx.defer_in(window, move |_this, _window, cx| {
+                cx.emit(RoomEmitter::Request(kind));
+            });
         }
-    }
-
-    pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.loading = status;
-        cx.notify();
     }
 }

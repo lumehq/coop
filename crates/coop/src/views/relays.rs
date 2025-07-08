@@ -1,6 +1,6 @@
 use anyhow::Error;
 use global::constants::NEW_MESSAGE_SUB_ID;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
@@ -35,7 +35,7 @@ impl Relays {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
         let relays = cx.new(|cx| {
             let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-                let client = shared_state().client();
+                let client = nostr_client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
                 let filter = Filter::new()
@@ -106,7 +106,7 @@ impl Relays {
 
         let relays = self.relays.read(cx).clone();
         let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 

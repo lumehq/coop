@@ -1,5 +1,5 @@
 use common::nip96::nip96_upload;
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten,
@@ -102,7 +102,7 @@ impl NewAccount {
                         .ok();
                     true
                 })
-                .on_ok(move |_, _window, cx| {
+                .on_ok(move |_, window, cx| {
                     let metadata = metadata.clone();
                     let value = weak_input
                         .read_with(cx, |state, _cx| state.value().to_owned())
@@ -110,7 +110,7 @@ impl NewAccount {
 
                     if let Some(password) = value {
                         Identity::global(cx).update(cx, |this, cx| {
-                            this.new_identity(Keys::generate(), password.to_string(), metadata, cx);
+                            this.new_identity(password.to_string(), metadata, window, cx);
                         });
                     }
 
@@ -161,9 +161,7 @@ impl NewAccount {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         nostr_sdk::async_utility::task::spawn(async move {
-                            if let Ok(url) =
-                                nip96_upload(shared_state().client(), &nip96, file_data).await
-                            {
+                            if let Ok(url) = nip96_upload(nostr_client(), &nip96, file_data).await {
                                 _ = tx.send(url);
                             }
                         });

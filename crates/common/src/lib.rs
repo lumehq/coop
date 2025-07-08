@@ -8,10 +8,10 @@ use nostr_sdk::prelude::*;
 use qrcode_generator::QrCodeEcc;
 
 pub mod debounced_delay;
+pub mod display;
 pub mod handle_auth;
 pub mod nip05;
 pub mod nip96;
-pub mod profile;
 
 pub fn room_hash(event: &Event) -> u64 {
     let mut hasher = DefaultHasher::new();

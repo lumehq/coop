@@ -3,14 +3,12 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::Error;
-use chats::room::{Room, RoomKind};
-use chats::{ChatRegistry, RoomEmitter};
 use common::debounced_delay::DebouncedDelay;
+use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
-use common::profile::RenderProfile;
 use element::DisplayRoom;
 use global::constants::{DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
-use global::shared_state;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context,
@@ -18,9 +16,12 @@ use gpui::{
     Render, RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription,
     Task, Window,
 };
+use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::room::{Room, RoomKind};
+use registry::{Registry, RoomEmitter};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -35,7 +36,6 @@ use ui::skeleton::Skeleton;
 use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
-use i18n::t;
 
 mod element;
 
@@ -80,7 +80,7 @@ impl Sidebar {
             InputState::new(window, cx).placeholder(t!("sidebar.find_or_start_conversation"))
         });
 
-        let chats = ChatRegistry::global(cx);
+        let chats = Registry::global(cx);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(cx.subscribe_in(
@@ -154,7 +154,7 @@ impl Sidebar {
         let query_cloned = query.clone();
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
 
             let filter = Filter::new()
                 .kind(Kind::Metadata)
@@ -266,7 +266,7 @@ impl Sidebar {
         };
 
         let task: Task<Result<(Profile, Room), Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await.unwrap();
             let user_pubkey = signer.get_public_key().await.unwrap();
 
@@ -290,7 +290,7 @@ impl Sidebar {
             match task.await {
                 Ok((profile, room)) => {
                     this.update(cx, |this, cx| {
-                        let chats = ChatRegistry::global(cx);
+                        let chats = Registry::global(cx);
                         let result = chats
                             .read(cx)
                             .search_by_public_key(profile.public_key(), cx);
@@ -343,7 +343,7 @@ impl Sidebar {
             return;
         };
 
-        let chats = ChatRegistry::global(cx);
+        let chats = Registry::global(cx);
         let result = chats.read(cx).search(&query, cx);
 
         if result.is_empty() {
@@ -426,7 +426,7 @@ impl Sidebar {
     }
 
     fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let room = if let Some(room) = ChatRegistry::get_global(cx).room(&id, cx) {
+        let room = if let Some(room) = Registry::read_global(cx).room(&id, cx) {
             room
         } else {
             let Some(result) = self.global_result.read(cx).as_ref() else {
@@ -445,7 +445,7 @@ impl Sidebar {
             room
         };
 
-        ChatRegistry::global(cx).update(cx, |this, cx| {
+        Registry::global(cx).update(cx, |this, cx| {
             this.push_room(room, cx);
         });
     }
@@ -508,15 +508,15 @@ impl Sidebar {
                     .gap_2()
                     .text_sm()
                     .font_semibold()
-                    .child(Avatar::new(profile.render_avatar(proxy)).size(rems(1.75)))
-                    .child(profile.render_name())
+                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
+                    .child(profile.display_name())
                     .on_click(cx.listener({
                         let Ok(public_key) = profile.public_key().to_bech32();
                         let item = ClipboardItem::new_string(public_key);
 
                         move |_, _, window, cx| {
                             cx.write_to_clipboard(item.clone());
-                            window.push_notification("User's NPUB is copied", cx);
+                            window.push_notification(t!("common.copied"), cx);
                         }
                     })),
             )
@@ -616,7 +616,11 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let chats = ChatRegistry::get_global(cx);
+        let registry = Registry::read_global(cx);
+
+        let profile = Identity::read_global(cx)
+            .public_key()
+            .map(|pk| registry.get_person(&pk, cx));
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx) {
@@ -624,9 +628,9 @@ impl Render for Sidebar {
         } else {
             #[allow(clippy::collapsible_else_if)]
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
-                chats.ongoing_rooms(cx)
+                registry.ongoing_rooms(cx)
             } else {
-                chats.request_rooms(self.trusted_only, cx)
+                registry.request_rooms(self.trusted_only, cx)
             }
         };
 
@@ -638,7 +642,7 @@ impl Render for Sidebar {
             .flex_col()
             .gap_3()
             // Account
-            .when_some(Identity::get_global(cx).profile(), |this, profile| {
+            .when_some(profile, |this, profile| {
                 this.child(self.account(&profile, cx))
             })
             // Search Input
@@ -770,7 +774,7 @@ impl Render for Sidebar {
                                 )
                             }),
                     )
-                    .when(chats.loading, |this| {
+                    .when(registry.loading, |this| {
                         this.child(
                             div()
                                 .flex_1()
@@ -791,7 +795,7 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
-            .when(chats.loading, |this| {
+            .when(registry.loading, |this| {
                 this.child(
                     div().absolute().bottom_4().px_4().child(
                         div()

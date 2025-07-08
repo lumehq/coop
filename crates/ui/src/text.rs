@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use common::profile::RenderProfile;
+use common::display::DisplayProfile;
 use gpui::{
     AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
     SharedString, StyledText, UnderlineStyle, Window,
@@ -45,7 +45,7 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new(content: String, profiles: &[Profile]) -> Self {
+    pub fn new(content: String, profiles: &[Option<Profile>]) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
         let mut link_ranges = Vec::new();
@@ -156,7 +156,7 @@ impl RichText {
 
 pub fn render_plain_text_mut(
     content: &str,
-    profiles: &[Profile],
+    profiles: &[Option<Profile>],
     text: &mut String,
     highlights: &mut Vec<(Range<usize>, Highlight)>,
     link_ranges: &mut Vec<Range<usize>>,
@@ -168,7 +168,11 @@ pub fn render_plain_text_mut(
     // Create a profile lookup using PublicKey directly
     let profile_lookup: HashMap<PublicKey, Profile> = profiles
         .iter()
-        .map(|profile| (profile.public_key(), profile.clone()))
+        .filter_map(|profile| {
+            profile
+                .as_ref()
+                .map(|profile| (profile.public_key(), profile.clone()))
+        })
         .collect();
 
     // Process regular URLs using linkify
@@ -276,7 +280,7 @@ pub fn render_plain_text_mut(
 
             if let Some(profile) = profile_match {
                 // Profile found - create a mention
-                let display_name = format!("@{}", profile.render_name());
+                let display_name = format!("@{}", profile.display_name());
 
                 // Replace mention with profile name
                 text.replace_range(range.clone(), &display_name);

@@ -2,11 +2,10 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use chats::room::{Room, RoomKind};
-use chats::ChatRegistry;
+use common::display::DisplayProfile;
 use common::nip05::nip05_profile;
-use common::profile::RenderProfile;
-use global::shared_state;
+use global::constants::BOOTSTRAP_RELAYS;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, red, relative, uniform_list, App, AppContext, Context, Entity,
@@ -16,37 +15,37 @@ use gpui::{
 use i18n::t;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::room::{Room, RoomKind};
+use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
-use ui::{
-    button::{Button, ButtonVariants},
-    input::{InputEvent, InputState, TextInput},
-    notification::Notification,
-    ContextModal, Disableable, Icon, IconName, Sizable, StyledExt,
-};
+use ui::button::{Button, ButtonVariants};
+use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
+use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Contact {
-    profile: Profile,
+    public_key: PublicKey,
     select: bool,
 }
 
-impl AsRef<Profile> for Contact {
-    fn as_ref(&self) -> &Profile {
-        &self.profile
+impl AsRef<PublicKey> for Contact {
+    fn as_ref(&self) -> &PublicKey {
+        &self.public_key
     }
 }
 
 impl Contact {
-    pub fn new(profile: Profile) -> Self {
+    pub fn new(public_key: PublicKey) -> Self {
         Self {
-            profile,
+            public_key,
             select: false,
         }
     }
@@ -88,20 +87,21 @@ impl Compose {
             &user_input,
             window,
             move |this, _input, event, window, cx| {
-                match event {
-                    InputEvent::PressEnter { .. } => this.add_and_select_contact(window, cx),
-                    InputEvent::Change(_) => {}
-                    _ => {}
+                if let InputEvent::PressEnter { .. } = event {
+                    this.add_and_select_contact(window, cx)
                 };
             },
         ));
 
         let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
-            let client = shared_state().client();
+            let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
-            let contacts = profiles.into_iter().map(Contact::new).collect_vec();
+            let contacts = profiles
+                .into_iter()
+                .map(|profile| Contact::new(profile.public_key()))
+                .collect_vec();
 
             Ok(contacts)
         });
@@ -110,7 +110,7 @@ impl Compose {
             match get_contacts.await {
                 Ok(contacts) => {
                     this.update(cx, |this, cx| {
-                        this.contacts(contacts, cx);
+                        this.extend_contacts(contacts, cx);
                     })
                     .ok();
                 }
@@ -132,6 +132,28 @@ impl Compose {
             user_input,
             error_message,
             subscriptions,
+        }
+    }
+
+    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
+
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
+    }
+
+    fn parse_pubkey(content: &str) -> Result<PublicKey, Error> {
+        if content.starts_with("nprofile1") {
+            Ok(Nip19Profile::from_bech32(content)?.public_key)
+        } else if content.starts_with("npub1") {
+            Ok(PublicKey::parse(content)?)
+        } else {
+            Err(anyhow!(t!("common.pubkey_invalid")))
         }
     }
 
@@ -158,7 +180,7 @@ impl Compose {
         }
 
         let event: Task<Result<Room, anyhow::Error>> = cx.background_spawn(async move {
-            let signer = shared_state().client().signer().await?;
+            let signer = nostr_client().signer().await?;
             let public_key = signer.get_public_key().await?;
 
             let room = EventBuilder::private_msg_rumor(public_keys[0], "")
@@ -180,7 +202,7 @@ impl Compose {
                         })
                         .ok();
 
-                        ChatRegistry::global(cx).update(cx, |this, cx| {
+                        Registry::global(cx).update(cx, |this, cx| {
                             this.push_room(cx.new(|_| room), cx);
                         });
 
@@ -199,7 +221,10 @@ impl Compose {
         .detach();
     }
 
-    fn contacts(&mut self, contacts: impl IntoIterator<Item = Contact>, cx: &mut Context<Self>) {
+    fn extend_contacts<I>(&mut self, contacts: I, cx: &mut Context<Self>)
+    where
+        I: IntoIterator<Item = Contact>,
+    {
         self.contacts
             .extend(contacts.into_iter().map(|contact| cx.new(|_| contact)));
         cx.notify();
@@ -209,15 +234,12 @@ impl Compose {
         if !self
             .contacts
             .iter()
-            .any(|e| e.read(cx).profile.public_key() == contact.profile.public_key())
+            .any(|e| e.read(cx).public_key == contact.public_key)
         {
             self.contacts.insert(0, cx.new(|_| contact));
             cx.notify();
         } else {
-            self.set_error(
-                Some(t!("compose.contact_existed", name = contact.profile.name()).into()),
-                cx,
-            );
+            self.set_error(Some(t!("compose.contact_existed").into()), cx);
         }
     }
 
@@ -226,7 +248,7 @@ impl Compose {
             .iter()
             .filter_map(|contact| {
                 if contact.read(cx).select {
-                    Some(contact.read(cx).profile.public_key())
+                    Some(contact.read(cx).public_key)
                 } else {
                     None
                 }
@@ -245,7 +267,7 @@ impl Compose {
             this.set_loading(true, cx);
         });
 
-        let task: Task<Result<Contact, anyhow::Error>> = if content.contains("@") {
+        let task: Task<Result<Contact, Error>> = if content.contains("@") {
             cx.background_spawn(async move {
                 let (tx, rx) = oneshot::channel::<Option<Nip05Profile>>();
 
@@ -255,82 +277,54 @@ impl Compose {
                 });
 
                 if let Ok(Some(profile)) = rx.await {
+                    let client = nostr_client();
                     let public_key = profile.public_key;
-                    let metadata = shared_state()
-                        .client()
-                        .fetch_metadata(public_key, Duration::from_secs(2))
-                        .await?
-                        .unwrap_or_default();
-                    let profile = Profile::new(public_key, metadata);
-                    let contact = Contact::new(profile).select();
+                    let contact = Contact::new(public_key).select();
+
+                    Self::request_metadata(client, public_key).await?;
 
                     Ok(contact)
                 } else {
                     Err(anyhow!(t!("common.not_found")))
                 }
             })
-        } else if content.starts_with("nprofile1") {
-            let Some(public_key) = Nip19Profile::from_bech32(&content)
-                .map(|nip19| nip19.public_key)
-                .ok()
-            else {
-                self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
-                return;
-            };
-
+        } else if let Ok(public_key) = Self::parse_pubkey(&content) {
             cx.background_spawn(async move {
-                let metadata = shared_state()
-                    .client()
-                    .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?
-                    .unwrap_or_default();
+                let client = nostr_client();
+                let contact = Contact::new(public_key).select();
 
-                let profile = Profile::new(public_key, metadata);
-                let contact = Contact::new(profile).select();
+                Self::request_metadata(client, public_key).await?;
 
                 Ok(contact)
             })
         } else {
-            let Ok(public_key) = PublicKey::parse(&content) else {
-                self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
-                return;
-            };
-
-            cx.background_spawn(async move {
-                let metadata = shared_state()
-                    .client()
-                    .fetch_metadata(public_key, Duration::from_secs(2))
-                    .await?
-                    .unwrap_or_default();
-
-                let profile = Profile::new(public_key, metadata);
-                let contact = Contact::new(profile).select();
-
-                Ok(contact)
-            })
+            self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
+            return;
         };
 
-        cx.spawn_in(window, async move |this, cx| match task.await {
-            Ok(contact) => {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.push_contact(contact, cx);
-                        this.set_adding(false, cx);
-                        this.user_input.update(cx, |this, cx| {
-                            this.set_value("", window, cx);
-                            this.set_loading(false, cx);
-                        });
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(contact) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.push_contact(contact, cx);
+                            this.set_adding(false, cx);
+                            this.user_input.update(cx, |this, cx| {
+                                this.set_value("", window, cx);
+                                this.set_loading(false, cx);
+                            });
+                        })
+                        .ok();
                     })
                     .ok();
-                })
-                .ok();
-            }
-            Err(e) => {
-                this.update(cx, |this, cx| {
-                    this.set_error(Some(e.to_string().into()), cx);
-                })
-                .ok();
-            }
+                }
+                Err(e) => {
+                    this.update(cx, |this, cx| {
+                        this.set_error(Some(e.to_string().into()), cx);
+                    })
+                    .ok();
+                }
+            };
         })
         .detach();
     }
@@ -374,6 +368,7 @@ impl Compose {
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let registry = Registry::read_global(cx);
         let mut items = Vec::with_capacity(self.contacts.len());
 
         for ix in range {
@@ -381,14 +376,16 @@ impl Compose {
                 continue;
             };
 
-            let profile = entity.read(cx).as_ref();
+            let public_key = entity.read(cx).as_ref();
+            let profile = registry.get_person(public_key, cx);
             let selected = entity.read(cx).select;
 
             items.push(
                 div()
                     .id(ix)
                     .w_full()
-                    .h_10()
+                    .h_11()
+                    .py_1()
                     .px_3()
                     .flex()
                     .items_center()
@@ -399,14 +396,14 @@ impl Compose {
                             .items_center()
                             .gap_3()
                             .text_sm()
-                            .child(img(profile.render_avatar(proxy)).size_7().flex_shrink_0())
-                            .child(profile.render_name()),
+                            .child(img(profile.avatar_url(proxy)).size_7().flex_shrink_0())
+                            .child(profile.display_name()),
                     )
                     .when(selected, |this| {
                         this.child(
                             Icon::new(IconName::CheckCircleFill)
                                 .small()
-                                .text_color(cx.theme().ring),
+                                .text_color(cx.theme().text_accent),
                         )
                     })
                     .hover(|this| this.bg(cx.theme().elevated_surface_background))
@@ -542,7 +539,6 @@ impl Render for Compose {
                                         this.list_items(range, cx)
                                     }),
                                 )
-                                .pb_4()
                                 .min_h(px(280.)),
                             )
                         }

@@ -7,12 +7,16 @@ pub const ACCOUNT_D: &str = "coop:account";
 pub const SETTINGS_D: &str = "coop:settings";
 
 /// Bootstrap Relays.
-pub const BOOTSTRAP_RELAYS: [&str; 4] = [
+pub const BOOTSTRAP_RELAYS: [&str; 5] = [
     "wss://relay.damus.io",
     "wss://relay.primal.net",
+    "wss://nostr.Wine",
     "wss://user.kindpag.es",
     "wss://purplepag.es",
 ];
+
+/// Search Relays.
+pub const SEARCH_RELAYS: [&str; 2] = ["wss://search.nos.today", "wss://relay.nostr.band"];
 
 /// NIP65 Relays. Used for new account
 pub const NIP65_RELAYS: [&str; 4] = [
@@ -24,9 +28,6 @@ pub const NIP65_RELAYS: [&str; 4] = [
 
 /// Messaging Relays. Used for new account
 pub const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
-
-/// Search Relays.
-pub const SEARCH_RELAYS: [&str; 2] = ["wss://search.nos.today", "wss://relay.nostr.band"];
 
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
@@ -54,6 +55,3 @@ pub const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 
 /// Default NIP96 Media Server.
 pub const NIP96_SERVER: &str = "https://nostrmedia.com";
-
-pub(crate) const GLOBAL_CHANNEL_LIMIT: usize = 2048;
-pub(crate) const BATCH_CHANNEL_LIMIT: usize = 2048;

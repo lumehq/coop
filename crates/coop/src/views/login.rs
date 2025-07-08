@@ -1,4 +1,3 @@
-use i18n::t;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +11,7 @@ use gpui::{
     EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
+use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -581,15 +581,13 @@ impl Render for Login {
                                             })),
                                     )
                                     .when_some(self.countdown.read(cx).as_ref(), |this, i| {
+                                        let msg = t!("login.approve_message", i = i);
                                         this.child(
                                             div()
                                                 .text_xs()
                                                 .text_center()
                                                 .text_color(cx.theme().text_muted)
-                                                .child(SharedString::new(t!(
-                                                    "login.approve_message",
-                                                    i = i
-                                                ))),
+                                                .child(SharedString::new(msg)),
                                         )
                                     })
                                     .when_some(self.error.read(cx).clone(), |this, error| {
