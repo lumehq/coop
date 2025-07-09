@@ -249,7 +249,10 @@ impl Sidebar {
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx);
+                        this.update(cx, |this, cx| {
+                            window.push_notification(e.to_string(), cx);
+                            this.set_finding(false, window, cx);
+                        })
                     })
                     .ok();
                 }
@@ -264,11 +267,11 @@ impl Sidebar {
             self.set_finding(false, window, cx);
             return;
         };
+
+        let client = nostr_client();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
-            let client = nostr_client();
-
             if let Ok(profile) = common::nip05::nip05_profile(&address).await {
                 let public_key = profile.public_key;
                 // Request for user metadata
@@ -280,32 +283,36 @@ impl Sidebar {
             }
         });
 
-        cx.spawn_in(window, async move |this, cx| match task.await {
-            Ok(result) => {
-                match result {
-                    Ok(room) => {
-                        cx.update(|window, cx| {
-                            this.update(cx, |this, cx| {
-                                this.results(vec![cx.new(|_| room)], true, window, cx);
-                            })
-                            .ok();
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(Ok(room)) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.results(vec![cx.new(|_| room)], true, window, cx);
                         })
                         .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|window, cx| {
+                    })
+                    .ok();
+                }
+                Ok(Err(e)) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
                             window.push_notification(e.to_string(), cx);
+                            this.set_finding(false, window, cx);
                         })
-                        .ok();
-                    }
-                };
-            }
-            Err(e) => {
-                cx.update(|window, cx| {
-                    window.push_notification(e.to_string(), cx);
-                })
-                .ok();
-            }
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            window.push_notification(e.to_string(), cx);
+                            this.set_finding(false, window, cx);
+                        })
+                    })
+                    .ok();
+                }
+            };
         })
         .detach();
     }
@@ -386,10 +393,13 @@ impl Sidebar {
             return;
         };
 
-        // Process to search by NIP05 if query is a address (email-like)
-        if query.contains('@') {
-            self.search_by_nip05(&query, window, cx);
-            return;
+        // Process to search by NIP05 if query is a valid NIP-05 identifier (name@domain.tld)
+        if query.split('@').count() == 2 {
+            let parts: Vec<&str> = query.split('@').collect();
+            if !parts[0].is_empty() && !parts[1].is_empty() && parts[1].contains('.') {
+                self.search_by_nip05(&query, window, cx);
+                return;
+            }
         }
 
         let chats = Registry::read_global(cx);
