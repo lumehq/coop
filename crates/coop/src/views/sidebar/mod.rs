@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
@@ -16,6 +16,7 @@ use gpui::{
     Render, RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription,
     Task, Window,
 };
+use gpui_tokio::Tokio;
 use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
@@ -149,6 +150,15 @@ impl Sidebar {
         Ok(())
     }
 
+    async fn create_temp_room(identity: PublicKey, public_key: PublicKey) -> Result<Room, Error> {
+        let keys = Keys::generate();
+        let builder = EventBuilder::private_msg_rumor(public_key, "");
+        let event = builder.build(identity).sign(&keys).await?;
+        let room = Room::new(&event).kind(RoomKind::Ongoing);
+
+        Ok(room)
+    }
+
     fn debounced_search(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn_in(window, async move |this, cx| {
             cx.update(|window, cx| {
@@ -162,83 +172,73 @@ impl Sidebar {
     }
 
     fn search_by_nip50(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let query = query.to_owned();
-        let query_cloned = query.clone();
-
         let Some(identity) = Identity::read_global(cx).public_key() else {
             // User is not logged in. Stop searching
             self.set_finding(false, window, cx);
             return;
         };
 
-        let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
+        let query = query.to_owned();
+        let query_cloned = query.clone();
+
+        let task = Tokio::spawn(cx, async move {
             let client = nostr_client();
+            let timeout = Duration::from_secs(2);
+            let mut rooms: BTreeSet<Room> = BTreeSet::new();
+            let mut processed: BTreeSet<PublicKey> = BTreeSet::new();
 
             let filter = Filter::new()
                 .kind(Kind::Metadata)
                 .search(query.to_lowercase())
                 .limit(FIND_LIMIT);
 
-            let events = client
-                .fetch_events_from(SEARCH_RELAYS, filter, Duration::from_secs(2))
-                .await?
-                .into_iter()
-                .unique_by(|event| event.pubkey)
-                .collect_vec();
-
-            let mut rooms = BTreeSet::new();
-
-            // Process to verify the search results
-            if !events.is_empty() {
-                let (tx, rx) = smol::channel::bounded::<Room>(events.len());
-
-                nostr_sdk::async_utility::task::spawn(async move {
-                    for event in events.into_iter() {
-                        let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                        let Some(target) = metadata.nip05.as_ref() else {
-                            // Skip if NIP-05 is not found
-                            continue;
-                        };
-
-                        if !nip05_verify(event.pubkey, target).await.unwrap_or(false) {
-                            // Skip if NIP-05 is not valid or failed to verify
-                            continue;
-                        };
-
-                        let builder = EventBuilder::private_msg_rumor(event.pubkey, "");
-                        let keys = Keys::generate();
-
-                        if let Ok(event) = builder.build(identity).sign(&keys).await {
-                            _ = tx.send(Room::new(&event).kind(RoomKind::Ongoing)).await;
-                        }
+            if let Ok(events) = client
+                .fetch_events_from(SEARCH_RELAYS, filter, timeout)
+                .await
+            {
+                // Process to verify the search results
+                for event in events.into_iter() {
+                    if processed.contains(&event.pubkey) {
+                        continue;
                     }
-                });
+                    processed.insert(event.pubkey);
 
-                while let Ok(room) = rx.recv().await {
-                    rooms.insert(room);
+                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
+
+                    // Skip if NIP-05 is not found
+                    let Some(target) = metadata.nip05.as_ref() else {
+                        continue;
+                    };
+
+                    // Skip if NIP-05 is not valid or failed to verify
+                    if !nip05_verify(event.pubkey, target).await.unwrap_or(false) {
+                        continue;
+                    };
+
+                    if let Ok(room) = Self::create_temp_room(identity, event.pubkey).await {
+                        rooms.insert(room);
+                    }
                 }
             }
 
-            Ok(rooms)
+            rooms
         });
 
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
-                Ok(result) => {
+                Ok(results) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            if result.is_empty() {
+                            if results.is_empty() {
                                 window.push_notification(
-                                    Notification::info(t!("sidebar.empty", query = query_cloned)),
+                                    t!("sidebar.empty", query = query_cloned),
                                     cx,
                                 );
 
                                 this.set_finding(false, window, cx);
                             } else {
-                                let rooms = result
-                                    .into_iter()
-                                    .map(|room| cx.new(|_| room))
-                                    .collect_vec();
+                                let rooms =
+                                    results.into_iter().map(|r| cx.new(|_| r)).collect_vec();
 
                                 this.results(rooms, true, window, cx);
                             }
@@ -259,7 +259,55 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        //
+        let Some(identity) = Identity::read_global(cx).public_key() else {
+            // User is not logged in. Stop searching
+            self.set_finding(false, window, cx);
+            return;
+        };
+        let address = query.to_owned();
+
+        let task = Tokio::spawn(cx, async move {
+            let client = nostr_client();
+
+            if let Ok(profile) = common::nip05::nip05_profile(&address).await {
+                let public_key = profile.public_key;
+                // Request for user metadata
+                Self::request_metadata(client, public_key).await.ok();
+                // Return a temporary room
+                Self::create_temp_room(identity, public_key).await
+            } else {
+                Err(anyhow!("Failed to get user's profile via address"))
+            }
+        });
+
+        cx.spawn_in(window, async move |this, cx| match task.await {
+            Ok(result) => {
+                match result {
+                    Ok(room) => {
+                        cx.update(|window, cx| {
+                            this.update(cx, |this, cx| {
+                                this.results(vec![cx.new(|_| room)], true, window, cx);
+                            })
+                            .ok();
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(e.to_string(), cx);
+                        })
+                        .ok();
+                    }
+                };
+            }
+            Err(e) => {
+                cx.update(|window, cx| {
+                    window.push_notification(e.to_string(), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
     fn search_by_pubkey(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -282,12 +330,7 @@ impl Sidebar {
             Self::request_metadata(client, public_key).await?;
 
             // Create a gift wrap event to represent as room
-            let builder = EventBuilder::private_msg_rumor(public_key, "");
-            let keys = Keys::generate();
-            let event = builder.build(identity).sign(&keys).await?;
-            let room = Room::new(&event).kind(RoomKind::Ongoing);
-
-            Ok(room)
+            Self::create_temp_room(identity, public_key).await
         });
 
         cx.spawn_in(window, async move |this, cx| {
