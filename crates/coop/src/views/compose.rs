@@ -147,16 +147,6 @@ impl Compose {
         Ok(())
     }
 
-    fn parse_pubkey(content: &str) -> Result<PublicKey, Error> {
-        if content.starts_with("nprofile1") {
-            Ok(Nip19Profile::from_bech32(content)?.public_key)
-        } else if content.starts_with("npub1") {
-            Ok(PublicKey::parse(content)?)
-        } else {
-            Err(anyhow!(t!("common.pubkey_invalid")))
-        }
-    }
-
     pub fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let public_keys: Vec<PublicKey> = self.selected(cx);
 
@@ -288,7 +278,7 @@ impl Compose {
                     Err(anyhow!(t!("common.not_found")))
                 }
             })
-        } else if let Ok(public_key) = Self::parse_pubkey(&content) {
+        } else if let Ok(public_key) = common::parse_pubkey_from_str(&content) {
             cx.background_spawn(async move {
                 let client = nostr_client();
                 let contact = Contact::new(public_key).select();

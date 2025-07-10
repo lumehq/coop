@@ -234,6 +234,8 @@ fn main() {
             // Root Entity
             cx.new(|cx| {
                 cx.activate(true);
+                // Initialize the tokio runtime
+                gpui_tokio::init(cx);
                 // Initialize components
                 ui::init(cx);
                 // Initialize app registry

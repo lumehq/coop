@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use gpui::{Image, ImageFormat};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -30,6 +31,16 @@ pub fn room_hash(event: &Event) -> u64 {
         .hash(&mut hasher);
 
     hasher.finish()
+}
+
+pub fn parse_pubkey_from_str(content: &str) -> Result<PublicKey, anyhow::Error> {
+    if content.starts_with("nprofile1") {
+        Ok(Nip19Profile::from_bech32(content)?.public_key)
+    } else if content.starts_with("npub1") {
+        Ok(PublicKey::parse(content)?)
+    } else {
+        Err(anyhow!("Invalid public key"))
+    }
 }
 
 pub fn string_to_qr(data: &str) -> Option<Arc<Image>> {
