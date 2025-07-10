@@ -463,7 +463,7 @@ impl Chat {
             }))
     }
 
-    fn render_reply(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
+    fn render_reply_to(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
         let profile = registry.get_person(&message.author, cx);
 
@@ -535,7 +535,7 @@ impl Chat {
         let texts = self
             .text_data
             .entry(message.id)
-            .or_insert_with(|| RichText::new(message.content.to_string(), &mentions));
+            .or_insert_with(|| RichText::new(&message.content, &mentions));
 
         div()
             .id(ix)
@@ -628,7 +628,7 @@ impl Chat {
                                     items
                                 })
                             })
-                            .child(texts.element("body".into(), window, cx))
+                            .child(texts.element(ix.into(), window, cx))
                             .when_some(message.errors.clone(), |this, errors| {
                                 this.child(
                                     div()
@@ -780,7 +780,7 @@ impl Render for Chat {
                                     let mut items = vec![];
 
                                     for message in messages.iter() {
-                                        items.push(self.render_reply(message, cx));
+                                        items.push(self.render_reply_to(message, cx));
                                     }
 
                                     items

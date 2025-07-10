@@ -34,7 +34,7 @@ impl From<HighlightStyle> for Highlight {
 type CustomRangeTooltipFn =
     Option<Arc<dyn Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView>>>;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct RichText {
     pub text: SharedString,
     pub highlights: Vec<(Range<usize>, Highlight)>,
@@ -45,14 +45,14 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new(content: String, profiles: &[Option<Profile>]) -> Self {
+    pub fn new(content: &str, profiles: &[Option<Profile>]) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
         let mut link_ranges = Vec::new();
         let mut link_urls = Vec::new();
 
         render_plain_text_mut(
-            &content,
+            content,
             profiles,
             &mut text,
             &mut highlights,
@@ -72,10 +72,10 @@ impl RichText {
         }
     }
 
-    pub fn set_tooltip_builder_for_custom_ranges(
-        &mut self,
-        f: impl Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView> + 'static,
-    ) {
+    pub fn set_tooltip_builder_for_custom_ranges<F>(&mut self, f: F)
+    where
+        F: Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView> + 'static,
+    {
         self.custom_ranges_tooltip_fn = Some(Arc::new(f));
     }
 
@@ -113,15 +113,13 @@ impl RichText {
         )
         .on_click(self.link_ranges.clone(), {
             let link_urls = self.link_urls.clone();
-            move |ix, _, cx| {
+            move |ix, _window, cx| {
                 let url = &link_urls[ix];
+
                 if url.starts_with("http") {
                     cx.open_url(url);
-                }
-                // Handle mention URLs
-                else if url.starts_with("mention:") {
-                    // Handle mention clicks
-                    // For example: cx.emit_custom_event(MentionClicked(url.strip_prefix("mention:").unwrap().to_string()));
+                } else if url.starts_with("mention:") {
+                    //
                 }
             }
         })
