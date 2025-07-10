@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
@@ -39,7 +39,7 @@ use crate::views::compose;
 
 mod element;
 
-const FIND_DELAY: u64 = 700;
+const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
@@ -288,13 +288,7 @@ impl Sidebar {
         .detach();
     }
 
-    fn search_by_nip05(
-        &mut self,
-        query: &str,
-        rx: smol::channel::Receiver<()>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(identity) = Identity::read_global(cx).public_key() else {
             // User is not logged in. Stop searching
             self.set_finding(false, window, cx);
@@ -303,30 +297,24 @@ impl Sidebar {
         };
 
         let address = query.to_owned();
-        let address_clone = address.clone();
 
-        let task = smol::future::or(
-            Tokio::spawn(cx, async move {
-                let client = nostr_client();
-                if let Ok(profile) = common::nip05::nip05_profile(&address_clone).await {
-                    let public_key = profile.public_key;
-                    // Request for user metadata
-                    Self::request_metadata(client, public_key).await.ok();
-                    // Return a temporary room
-                    Self::create_temp_room(identity, public_key).await.ok()
-                } else {
-                    None
-                }
-            }),
-            Tokio::spawn(cx, async move {
-                let _ = rx.recv().await.is_ok();
-                None
-            }),
-        );
+        let task = Tokio::spawn(cx, async move {
+            let client = nostr_client();
+
+            if let Ok(profile) = common::nip05::nip05_profile(&address).await {
+                let public_key = profile.public_key;
+                // Request for user metadata
+                Self::request_metadata(client, public_key).await.ok();
+                // Return a temporary room
+                Self::create_temp_room(identity, public_key).await
+            } else {
+                Err(anyhow!(t!("sidebar.addr_error")))
+            }
+        });
 
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
-                Ok(Some(room)) => {
+                Ok(Ok(room)) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             this.results(vec![cx.new(|_| room)], true, window, cx);
@@ -335,10 +323,10 @@ impl Sidebar {
                     })
                     .ok();
                 }
-                Ok(None) => {
+                Ok(Err(e)) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            window.push_notification(t!("sidebar.empty", query = address), cx);
+                            window.push_notification(e.to_string(), cx);
                             this.set_cancel_handle(None, cx);
                             this.set_finding(false, window, cx);
                         })
@@ -451,8 +439,7 @@ impl Sidebar {
         if query.split('@').count() == 2 {
             let parts: Vec<&str> = query.split('@').collect();
             if !parts[0].is_empty() && !parts[1].is_empty() && parts[1].contains('.') {
-                self.set_cancel_handle(Some(tx_clone), cx);
-                self.search_by_nip05(&query, rx, window, cx);
+                self.search_by_nip05(&query, window, cx);
                 return;
             }
         }
@@ -761,6 +748,8 @@ impl Render for Sidebar {
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
             results.to_owned()
+        } else if let Some(results) = self.global_result.read(cx).as_ref() {
+            results.to_owned()
         } else {
             #[allow(clippy::collapsible_else_if)]
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
@@ -783,37 +772,27 @@ impl Render for Sidebar {
             })
             // Search Input
             .child(
-                div().px_3().w_full().h_7().flex_none().child(
-                    TextInput::new(&self.find_input).small().suffix(
-                        Button::new("find")
-                            .icon(IconName::Search)
-                            .tooltip(t!("sidebar.press_enter_to_search"))
-                            .transparent()
-                            .small(),
+                div()
+                    .relative()
+                    .px_3()
+                    .w_full()
+                    .h_7()
+                    .flex_none()
+                    .flex()
+                    .child(
+                        TextInput::new(&self.find_input)
+                            .small()
+                            .cleanable()
+                            .appearance(true)
+                            .suffix(
+                                Button::new("find")
+                                    .icon(IconName::Search)
+                                    .tooltip(t!("sidebar.press_enter_to_search"))
+                                    .transparent()
+                                    .small(),
+                            ),
                     ),
-                ),
             )
-            // Global Search Results
-            .when_some(self.global_result.read(cx).as_ref(), |this, rooms| {
-                this.child(div().px_2().w_full().flex().flex_col().gap_1().children({
-                    let mut items = Vec::with_capacity(rooms.len());
-
-                    for (ix, room) in rooms.iter().enumerate() {
-                        let this = room.read(cx);
-                        let id = this.id;
-                        let label = this.display_name(cx);
-                        let img = this.display_image(cx);
-
-                        let handler = cx.listener(move |this, _, window, cx| {
-                            this.open_room(id, window, cx);
-                        });
-
-                        items.push(DisplayRoom::new(ix).img(img).label(label).on_click(handler))
-                    }
-
-                    items
-                }))
-            })
             // Chat Rooms
             .child(
                 div()

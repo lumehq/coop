@@ -101,6 +101,16 @@ common:
     es: "Copiado"
     pt: "Copiado"
     ko: "복사됨"
+  clear:
+    en: "Clear"
+    zh-CN: "清除"
+    zh-TW: "清除"
+    ru: "Очистить"
+    vi: "Xóa"
+    ja: "クリア"
+    es: "Limpiar"
+    pt: "Limpar"
+    ko: "지우기"
 
 welcome:
   title:
@@ -977,26 +987,16 @@ sidebar:
     es: "Hay otra búsqueda en curso"
     pt: "Outra pesquisa está em andamento"
     ko: "다른 검색이 진행 중입니다"
-  empty_query:
-    en: "Cannot search with an empty query"
-    zh-CN: "无法使用空查询进行搜索"
-    zh-TW: "無法使用空查詢進行搜尋"
-    ru: "Невозможно выполнить поиск с пустым запросом"
-    vi: "Không thể tìm kiếm với truy vấn rỗng"
-    ja: "空のクエリで検索することはできません"
-    es: "No se puede buscar con una consulta vacía"
-    pt: "Não é possível pesquisar com uma consulta vazia"
-    ko: "빈 쿼리로 검색할 수 없습니다"
-  not_support:
-    en: "Coop does not support searching with this query"
-    zh-CN: "Coop 不支持使用此查询进行搜索"
-    zh-TW: "Coop 不支援使用此查詢進行搜尋"
-    ru: "Coop не поддерживает поиск с этим запросом"
-    vi: "Coop không hỗ trợ tìm kiếm với truy vấn này"
-    ja: "Coopはこのクエリで検索をサポートしていません"
-    es: "Coop no admite buscar con esta consulta"
-    pt: "Coop não suporta pesquisar com esta consulta"
-    ko: "Coop은 이 쿼리로 검색을 지원하지 않습니다"
+  addr_error:
+    en: "Failed to get profile via address"
+    zh-CN: "通过地址获取资料失败"
+    zh-TW: "透過地址獲取資料失敗"
+    ru: "Не удалось получить профиль по адресу"
+    vi: "Không thể lấy thông tin theo địa chỉ"
+    ja: "アドレスからプロフィールを取得できませんでした"
+    es: "No se pudo obtener el perfil a través de la dirección"
+    pt: "Falha ao obter perfil pelo endereço"
+    ko: "주소를 통해 프로필을 가져오지 못했습니다"
   direct_messages:
     en: "Direct Messages"
     zh-CN: "私信"
