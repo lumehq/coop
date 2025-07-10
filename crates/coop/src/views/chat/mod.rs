@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use common::display::DisplayProfile;
 use common::nip96::nip96_upload;
 use global::nostr_client;
@@ -14,6 +15,7 @@ use gpui::{
     PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
     Styled, StyledImage, Subscription, Window,
 };
+use gpui_tokio::Tokio;
 use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
@@ -39,6 +41,9 @@ use ui::{
 };
 
 use crate::views::subject;
+
+mod attachment;
+mod message;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
@@ -349,69 +354,80 @@ impl Chat {
         });
     }
 
-    fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.uploading {
             return;
         }
-
+        // Block the upload button to until current task is resolved
         self.uploading(true, cx);
 
-        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
+        // Get the user's configured NIP96 server
+        let nip96_server = AppSettings::get_global(cx).settings.media_server.clone();
+
+        // Open native file dialog
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
         });
 
-        cx.spawn_in(window, async move |this, cx| {
+        let task = Tokio::spawn(cx, async move {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
-                    let Some(path) = paths.pop() else {
-                        return;
-                    };
+                    if let Some(path) = paths.pop() {
+                        let file = fs::read(path).await?;
+                        let url = nip96_upload(nostr_client(), &nip96_server, file).await?;
 
-                    if let Ok(file_data) = fs::read(path).await {
-                        let (tx, rx) = oneshot::channel::<Option<Url>>();
-
-                        // Spawn task via async utility instead of GPUI context
-                        nostr_sdk::async_utility::task::spawn(async move {
-                            let url = nip96_upload(nostr_client(), &nip96, file_data).await.ok();
-                            _ = tx.send(url);
-                        });
-
-                        if let Ok(Some(url)) = rx.await {
-                            this.update(cx, |this, cx| {
-                                this.uploading(false, cx);
-                                this.attaches.update(cx, |this, cx| {
-                                    if let Some(model) = this.as_mut() {
-                                        model.push(url);
-                                    } else {
-                                        *this = Some(vec![url]);
-                                    }
-                                    cx.notify();
-                                });
-                            })
-                            .ok();
-                        } else {
-                            this.update(cx, |this, cx| {
-                                this.uploading(false, cx);
-                            })
-                            .ok();
-                        }
+                        Ok(url)
+                    } else {
+                        Err(anyhow!("Path not found"))
                     }
                 }
-                Ok(None) => {
+                Ok(None) => Err(anyhow!("User cancelled")),
+                Err(e) => Err(anyhow!("File dialog error: {e}")),
+            }
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match Flatten::flatten(task.await.map_err(|e| e.into())) {
+                Ok(Ok(url)) => {
+                    this.update(cx, |this, cx| {
+                        this.attach(url, cx);
+                    })
+                    .ok();
+                }
+                Ok(Err(e)) => {
+                    log::warn!("User cancelled: {e}");
                     this.update(cx, |this, cx| {
                         this.uploading(false, cx);
                     })
                     .ok();
                 }
                 Err(e) => {
-                    log::error!("System error: {e}")
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            window.push_notification(e.to_string(), cx);
+                            this.uploading(false, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
                 }
             }
         })
         .detach();
+    }
+
+    fn attach(&mut self, url: Url, cx: &mut Context<Self>) {
+        self.attaches.update(cx, |this, cx| {
+            if let Some(model) = this.as_mut() {
+                model.push(url);
+            } else {
+                *this = Some(vec![url]);
+            }
+            cx.notify();
+        });
+        self.uploading(false, cx);
     }
 
     fn remove_media(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
@@ -806,7 +822,7 @@ impl Render for Chat {
                                                     .loading(self.uploading)
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
-                                                            this.upload_media(window, cx);
+                                                            this.upload(window, cx);
                                                         },
                                                     )),
                                             )
