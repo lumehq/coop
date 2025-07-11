@@ -5,7 +5,6 @@ use std::rc::Rc;
 use chrono::{Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
-use smallvec::{smallvec, SmallVec};
 
 use crate::room::SendError;
 
@@ -24,11 +23,11 @@ pub struct Message {
     /// When the message was created
     pub created_at: Timestamp,
     /// List of mentioned public keys in the message
-    pub mentions: SmallVec<[PublicKey; 2]>,
+    pub mentions: Vec<PublicKey>,
     /// List of EventIds this message is replying to
-    pub replies_to: Option<SmallVec<[EventId; 1]>>,
+    pub replies_to: Option<Vec<EventId>>,
     /// Any errors that occurred while sending this message
-    pub errors: Option<SmallVec<[SendError; 1]>>,
+    pub errors: Option<Vec<SendError>>,
 }
 
 /// Builder pattern implementation for constructing Message objects.
@@ -38,9 +37,9 @@ pub struct MessageBuilder {
     author: PublicKey,
     content: Option<SharedString>,
     created_at: Option<Timestamp>,
-    mentions: SmallVec<[PublicKey; 2]>,
-    replies_to: Option<SmallVec<[EventId; 1]>>,
-    errors: Option<SmallVec<[SendError; 1]>>,
+    mentions: Vec<PublicKey>,
+    replies_to: Option<Vec<EventId>>,
+    errors: Option<Vec<SendError>>,
 }
 
 impl MessageBuilder {
@@ -51,7 +50,7 @@ impl MessageBuilder {
             author,
             content: None,
             created_at: None,
-            mentions: smallvec![],
+            mentions: vec![],
             replies_to: None,
             errors: None,
         }
@@ -86,7 +85,7 @@ impl MessageBuilder {
 
     /// Sets a single message this is replying to
     pub fn reply_to(mut self, reply_to: EventId) -> Self {
-        self.replies_to = Some(smallvec![reply_to]);
+        self.replies_to = Some(vec![reply_to]);
         self
     }
 
@@ -95,7 +94,7 @@ impl MessageBuilder {
     where
         I: IntoIterator<Item = EventId>,
     {
-        let replies: SmallVec<[EventId; 1]> = replies_to.into_iter().collect();
+        let replies: Vec<EventId> = replies_to.into_iter().collect();
         if !replies.is_empty() {
             self.replies_to = Some(replies);
         }

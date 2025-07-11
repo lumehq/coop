@@ -26,7 +26,7 @@ pub struct Incoming(pub Message);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendError {
     pub profile: Profile,
-    pub message: String,
+    pub message: SharedString,
 }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -615,7 +615,7 @@ impl Room {
                     let profile = Profile::new(*receiver, metadata);
                     let report = SendError {
                         profile,
-                        message: e.to_string(),
+                        message: e.to_string().into(),
                     };
 
                     reports.push(report);
@@ -636,7 +636,7 @@ impl Room {
                     let profile = Profile::new(*current_user, metadata);
                     let report = SendError {
                         profile,
-                        message: e.to_string(),
+                        message: e.to_string().into(),
                     };
                     reports.push(report);
                 }
