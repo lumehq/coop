@@ -6457,7 +6457,6 @@ name = "ui"
 version = "1.0.0"
 dependencies = [
  "anyhow",
- "chrono",
  "common",
  "emojis",
  "gpui",
@@ -6465,9 +6464,9 @@ dependencies = [
  "image",
  "itertools 0.13.0",
  "linkify",
+ "log",
  "nostr-sdk",
  "once_cell",
- "paste",
  "regex",
  "rust-i18n",
  "serde",

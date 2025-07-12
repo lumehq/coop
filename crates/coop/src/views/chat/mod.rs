@@ -40,7 +40,6 @@ use ui::{
     v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable, StyledExt,
 };
 
-mod attachment;
 mod subject;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]

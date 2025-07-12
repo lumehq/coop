@@ -4,13 +4,14 @@ use std::sync::Arc;
 
 use common::display::DisplayProfile;
 use gpui::{
-    AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
-    SharedString, StyledText, UnderlineStyle, Window,
+    Action, AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText,
+    IntoElement, SharedString, StyledText, UnderlineStyle, Window,
 };
 use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::Deserialize;
 use theme::ActiveTheme;
 
 static NOSTR_URI_REGEX: Lazy<Regex> =
@@ -18,6 +19,16 @@ static NOSTR_URI_REGEX: Lazy<Regex> =
 
 static BECH32_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\b(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+\b").unwrap());
+
+#[derive(Action, Clone, PartialEq, Eq, Deserialize, Debug)]
+#[action(namespace = rich_text, no_json)]
+pub struct OpenMention(String);
+
+impl OpenMention {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
@@ -113,13 +124,13 @@ impl RichText {
         )
         .on_click(self.link_ranges.clone(), {
             let link_urls = self.link_urls.clone();
-            move |ix, _window, cx| {
+            move |ix, window, cx| {
                 let url = &link_urls[ix];
 
                 if url.starts_with("http") {
                     cx.open_url(url);
                 } else if url.starts_with("mention:") {
-                    //
+                    window.dispatch_action(Box::new(OpenMention(url.replace("mention:", ""))), cx);
                 }
             }
         })
@@ -291,7 +302,7 @@ pub fn render_plain_text_mut(
 
                 // Make it clickable
                 link_ranges.push(new_range);
-                link_urls.push(format!("mention:{entity_without_prefix}"));
+                link_urls.push(format!("mention:{}", profile.public_key().to_hex()));
 
                 // Adjust subsequent ranges if needed
                 if length_diff != 0 {
