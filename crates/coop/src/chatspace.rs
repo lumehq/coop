@@ -6,8 +6,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
-    Render, SharedString, Styled, Subscription, Task, Window,
+    div, px, relative, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
 };
 use i18n::t;
 use identity::Identity;
@@ -21,6 +21,7 @@ use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{DockArea, DockItem};
 use ui::modal::ModalButtonProps;
+use ui::text::OpenMention;
 use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
 use crate::views::chat::{self, Chat};
@@ -307,6 +308,15 @@ impl ChatSpace {
         });
     }
 
+    fn on_mention(&mut self, action: &OpenMention, window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(public_key) = PublicKey::parse(action.as_str()) {
+            window.open_modal(cx, |this, window, cx| {
+                //
+                this.child("TODO")
+            });
+        }
+    }
+
     pub(crate) fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
         if let Some(Some(root)) = window.root::<Root>() {
             if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
@@ -329,6 +339,7 @@ impl Render for ChatSpace {
         let notification_layer = Root::render_notification_layer(window, cx);
 
         div()
+            .on_action(cx.listener(Self::on_mention))
             .relative()
             .size_full()
             .child(

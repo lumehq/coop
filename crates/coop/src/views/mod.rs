@@ -8,5 +8,4 @@ pub mod profile;
 pub mod relays;
 pub mod sidebar;
 pub mod startup;
-pub mod subject;
 pub mod welcome;

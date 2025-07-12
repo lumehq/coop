@@ -572,8 +572,12 @@ impl DockArea {
                 }
             }
             DockPlacement::Center => {
+                let focus_handle = panel.focus_handle(cx);
+                // Add panel
                 self.items
                     .add_panel(panel, &cx.entity().downgrade(), window, cx);
+                // Focus to the newly added panel
+                window.focus(&focus_handle);
             }
         }
     }

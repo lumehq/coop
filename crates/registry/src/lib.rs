@@ -142,11 +142,11 @@ impl Registry {
             .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
     }
 
-    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Option<Profile>> {
+    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Profile> {
         let mut profiles = vec![];
 
         for public_key in public_keys.iter() {
-            let profile = self.persons.get(public_key).map(|e| e.read(cx)).cloned();
+            let profile = self.get_person(public_key, cx);
             profiles.push(profile);
         }
 
