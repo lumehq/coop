@@ -128,7 +128,7 @@ welcome:
     zh-CN: "安全的 Nostr 通信"
     zh-TW: "安全的 Nostr 通信"
     ru: "Безопасная коммуникация на Nostr"
-    vi: "Trò chuyện toàn trên Nostr"
+    vi: "Trò chuyện an toàn trên Nostr"
     ja: "Nostr 上のセキュアなコミュニケーション"
     es: "Comunicación segura en Nostr"
     pt: "Comunicação segura no Nostr"
@@ -453,6 +453,16 @@ chatspace:
     es: "Cambiar el idioma de la aplicación"
     pt: "Alterar o idioma do aplicativo"
     ko: "앱 언어 변경"
+  share_profile:
+    en: "Share Profile"
+    zh-CN: "分享个人资料"
+    zh-TW: "分享個人資料"
+    ru: "Поделиться профилем"
+    vi: "Chia sẻ hồ sơ"
+    ja: "プロフィールを共有する"
+    es: "Compartir perfil"
+    pt: "Compartilhar perfil"
+    ko: "프로필 공유"
 
 relays:
   description:

@@ -8,7 +8,7 @@ pub use window_border::{window_border, WindowBorder};
 
 pub use crate::Disableable;
 
-pub(crate) mod actions;
+pub mod actions;
 pub mod animation;
 pub mod avatar;
 pub mod button;

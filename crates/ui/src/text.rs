@@ -4,31 +4,22 @@ use std::sync::Arc;
 
 use common::display::DisplayProfile;
 use gpui::{
-    Action, AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText,
-    IntoElement, SharedString, StyledText, UnderlineStyle, Window,
+    AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
+    SharedString, StyledText, UnderlineStyle, Window,
 };
 use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::Deserialize;
 use theme::ActiveTheme;
+
+use crate::actions::OpenProfile;
 
 static NOSTR_URI_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"nostr:(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+").unwrap());
 
 static BECH32_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\b(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+\b").unwrap());
-
-#[derive(Action, Clone, PartialEq, Eq, Deserialize, Debug)]
-#[action(namespace = rich_text, no_json)]
-pub struct OpenMention(String);
-
-impl OpenMention {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
@@ -130,7 +121,12 @@ impl RichText {
                 if url.starts_with("http") {
                     cx.open_url(url);
                 } else if url.starts_with("mention:") {
-                    window.dispatch_action(Box::new(OpenMention(url.replace("mention:", ""))), cx);
+                    let clean_url = url.replace("mention:", "");
+                    let Ok(public_key) = PublicKey::parse(&clean_url) else {
+                        log::error!("Failed to parse public key from: {clean_url}");
+                        return;
+                    };
+                    window.dispatch_action(Box::new(OpenProfile(public_key)), cx);
                 }
             }
         })
