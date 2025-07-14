@@ -2,34 +2,33 @@ use std::sync::Arc;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
-use common::display::DisplayProfile;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, Action, App, AppContext, Axis, ClipboardItem, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
-    Task, Window,
+    div, px, relative, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
 };
 use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
 use registry::{Registry, RoomEmitter};
 use serde::Deserialize;
-use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use ui::actions::OpenProfile;
-use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{DockArea, DockItem};
 use ui::modal::ModalButtonProps;
-use ui::{v_flex, ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
+use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
 use crate::views::chat::{self, Chat};
-use crate::views::{login, new_account, onboarding, preferences, sidebar, startup, welcome};
+use crate::views::user_profile::UserProfile;
+use crate::views::{
+    login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
+};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
@@ -74,7 +73,7 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
     toolbar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 4]>,
+    subscriptions: SmallVec<[Subscription; 5]>,
 }
 
 impl ChatSpace {
@@ -172,9 +171,16 @@ impl ChatSpace {
             ));
 
             // Automatically load messages when chat panel opens
-            subscriptions.push(cx.observe_new::<Chat>(|this: &mut Chat, window, cx| {
+            subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
                 if let Some(window) = window {
                     this.load_messages(window, cx);
+                }
+            }));
+
+            // Automatically run on_load function from UserProfile
+            subscriptions.push(cx.observe_new::<UserProfile>(|this, window, cx| {
+                if let Some(window) = window {
+                    this.on_load(window, cx);
                 }
             }));
 
@@ -313,95 +319,12 @@ impl ChatSpace {
     }
 
     fn on_open_profile(&mut self, a: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
-        let registry = Registry::read_global(cx);
-        let profile = registry.get_person(&a.0, cx);
-        let public_key = profile.public_key();
+        let public_key = a.0;
+        let profile = user_profile::init(public_key, window, cx);
 
-        window.open_modal(cx, move |this, _window, cx| {
-            let Ok(bech32) = public_key.to_bech32();
-            let shared_bech32 = SharedString::new(bech32);
-
-            this.child(
-                v_flex()
-                    .px_4()
-                    .pt_8()
-                    .pb_4()
-                    .gap_4()
-                    .child(
-                        v_flex()
-                            .gap_3()
-                            .items_center()
-                            .justify_center()
-                            .child(Avatar::new(profile.avatar_url(proxy)).size(rems(4.)))
-                            .text_center()
-                            .child(
-                                v_flex()
-                                    .child(
-                                        div()
-                                            .font_semibold()
-                                            .line_height(relative(1.25))
-                                            .child(profile.display_name()),
-                                    )
-                                    .when_some(profile.metadata().nip05, |this, nip05| {
-                                        this.child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(cx.theme().text_muted)
-                                                .child(nip05),
-                                        )
-                                    }),
-                            ),
-                    )
-                    .child(
-                        v_flex()
-                            .gap_1()
-                            .text_sm()
-                            .child(div().text_color(cx.theme().text_muted).child("Public Key:"))
-                            .child(
-                                div()
-                                    .p_1p5()
-                                    .rounded_md()
-                                    .bg(cx.theme().surface_background)
-                                    .truncate()
-                                    .text_ellipsis()
-                                    .line_clamp(1)
-                                    .child(shared_bech32),
-                            ),
-                    )
-                    .child(
-                        v_flex()
-                            .gap_1()
-                            .text_sm()
-                            .child(
-                                div()
-                                    .text_color(cx.theme().text_muted)
-                                    .child(SharedString::new(t!("profile.label_bio"))),
-                            )
-                            .when_some(profile.metadata().about, |this, bio| {
-                                this.child(
-                                    div()
-                                        .p_1p5()
-                                        .rounded_md()
-                                        .bg(cx.theme().surface_background)
-                                        .child(bio),
-                                )
-                            }),
-                    )
-                    .child(
-                        Button::new("share-profile")
-                            .label("Share Profile")
-                            .primary()
-                            .small()
-                            .on_click(move |_this, _window, cx| {
-                                let content = ClipboardItem::new_string(format!(
-                                    "https://njump.me/{}",
-                                    public_key.to_bech32().unwrap()
-                                ));
-                                cx.write_to_clipboard(content);
-                            }),
-                    ),
-            )
+        window.open_modal(cx, move |this, _window, _cx| {
+            // user_profile::init(public_key, window, cx)
+            this.child(profile.clone())
         });
     }
 

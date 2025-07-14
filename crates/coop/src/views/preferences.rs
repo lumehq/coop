@@ -17,7 +17,7 @@ use ui::input::{InputState, TextInput};
 use ui::switch::Switch;
 use ui::{ContextModal, IconName, Sizable, Size, StyledExt};
 
-use crate::views::{profile, relays};
+use crate::views::{edit_profile, relays};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     Preferences::new(window, cx)
@@ -49,15 +49,15 @@ impl Preferences {
         })
     }
 
-    fn open_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let profile = profile::init(window, cx);
+    fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let edit_profile = edit_profile::init(window, cx);
 
         window.open_modal(cx, move |modal, _window, _cx| {
             let title = SharedString::new(t!("preferences.modal_profile_title"));
             modal
                 .title(title)
                 .width(px(DEFAULT_MODAL_WIDTH))
-                .child(profile.clone())
+                .child(edit_profile.clone())
         });
     }
 
@@ -143,8 +143,8 @@ impl Render for Preferences {
                                                         ))),
                                                 ),
                                         )
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.open_profile(window, cx);
+                                        .on_click(cx.listener(move |this, _e, window, cx| {
+                                            this.open_edit_profile(window, cx);
                                         })),
                                 )
                                 .child(
@@ -152,7 +152,7 @@ impl Render for Preferences {
                                         .label("DM Relays")
                                         .ghost()
                                         .small()
-                                        .on_click(cx.listener(|this, _, window, cx| {
+                                        .on_click(cx.listener(move |this, _e, window, cx| {
                                             this.open_relays(window, cx);
                                         })),
                                 ),

@@ -235,6 +235,8 @@ impl Identity {
             let weak_input = weak_input.clone();
             let weak_error = weak_error.clone();
 
+            log::info!("open modal");
+
             this.overlay_closable(false)
                 .show_close(false)
                 .keyboard(false)
