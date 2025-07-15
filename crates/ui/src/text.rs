@@ -15,21 +15,33 @@ use theme::ActiveTheme;
 
 use crate::actions::OpenProfile;
 
+static URL_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(/.*)?$").unwrap());
+
 static NOSTR_URI_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"nostr:(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+").unwrap());
 
-static BECH32_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\b(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+\b").unwrap());
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
-    Highlight(HighlightStyle),
+    Link(HighlightStyle),
     Mention,
+}
+
+impl Highlight {
+    fn link() -> Self {
+        Self::Link(HighlightStyle {
+            underline: Some(UnderlineStyle {
+                thickness: 1.0.into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
 }
 
 impl From<HighlightStyle> for Highlight {
     fn from(style: HighlightStyle) -> Self {
-        Self::Highlight(style)
+        Self::Link(style)
     }
 }
 
@@ -92,7 +104,7 @@ impl RichText {
                     (
                         range.clone(),
                         match highlight {
-                            Highlight::Highlight(highlight) => {
+                            Highlight::Link(highlight) => {
                                 // Check if this is a link highlight by seeing if it has an underline
                                 if highlight.underline.is_some() {
                                     // It's a link, so apply the link color
@@ -159,7 +171,7 @@ impl RichText {
     }
 }
 
-pub fn render_plain_text_mut(
+fn render_plain_text_mut(
     content: &str,
     profiles: &[Profile],
     text: &mut String,
@@ -210,76 +222,35 @@ pub fn render_plain_text_mut(
         }
     }
 
-    // Process raw bech32 entities (without nostr: prefix)
-    let mut bech32_matches: Vec<(Range<usize>, String)> = Vec::new();
-
-    for bech32_match in BECH32_REGEX.find_iter(content) {
-        let start = bech32_match.start();
-        let end = bech32_match.end();
-        let range = start..end;
-        let bech32_entity = bech32_match.as_str().to_string();
-
-        // Check if this entity overlaps with any already processed matches
-        let overlaps_with_url = url_matches
-            .iter()
-            .any(|(url_range, _)| url_range.start < range.end && range.start < url_range.end);
-
-        let overlaps_with_nostr = nostr_matches
-            .iter()
-            .any(|(nostr_range, _)| nostr_range.start < range.end && range.start < nostr_range.end);
-
-        if !overlaps_with_url && !overlaps_with_nostr {
-            bech32_matches.push((range, bech32_entity));
-        }
-    }
-
     // Combine all matches for processing from end to start
     let mut all_matches = Vec::new();
     all_matches.extend(url_matches);
     all_matches.extend(nostr_matches);
-    all_matches.extend(bech32_matches);
 
     // Sort by position (end to start) to avoid changing positions when replacing text
     all_matches.sort_by(|(range_a, _), (range_b, _)| range_b.start.cmp(&range_a.start));
 
     // Process all matches
     for (range, entity) in all_matches {
-        if entity.starts_with("http") {
-            // Regular URL
-            highlights.push((
-                range.clone(),
-                Highlight::Highlight(HighlightStyle {
-                    underline: Some(UnderlineStyle {
-                        thickness: 1.0.into(),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-            ));
-
+        // Handle URL token
+        if is_url(&entity) {
+            // Add underline highlight
+            highlights.push((range.clone(), Highlight::link()));
+            // Make it clickable
             link_ranges.push(range);
             link_urls.push(entity);
-        } else {
-            let entity_without_prefix = if entity.starts_with("nostr:") {
-                entity.strip_prefix("nostr:").unwrap_or(&entity)
-            } else {
-                &entity
+            continue;
+        };
+
+        // Handle Nostr URI token
+        if entity.starts_with("nostr:") {
+            let content = entity.strip_prefix("nostr:").unwrap_or(&entity);
+            // Convert this token to public key
+            let Ok(public_key) = common::parse_pubkey_from_str(content) else {
+                continue;
             };
 
-            // Try to find a matching profile if this is npub or nprofile
-            let profile_match = if entity_without_prefix.starts_with("npub") {
-                PublicKey::from_bech32(entity_without_prefix)
-                    .ok()
-                    .and_then(|pubkey| profile_lookup.get(&pubkey).cloned())
-            } else if entity_without_prefix.starts_with("nprofile") {
-                Nip19Profile::from_bech32(entity_without_prefix)
-                    .ok()
-                    .and_then(|profile| profile_lookup.get(&profile.public_key).cloned())
-            } else {
-                None
-            };
-
-            if let Some(profile) = profile_match {
+            if let Some(profile) = profile_lookup.get(&public_key).cloned() {
                 // Profile found - create a mention
                 let display_name = format!("@{}", profile.display_name());
 
@@ -289,13 +260,11 @@ pub fn render_plain_text_mut(
                 // Adjust ranges
                 let new_length = display_name.len();
                 let length_diff = new_length as isize - (range.end - range.start) as isize;
-
                 // New range for the replacement
                 let new_range = range.start..(range.start + new_length);
 
                 // Add highlight for the profile name
                 highlights.push((new_range.clone(), Highlight::Mention));
-
                 // Make it clickable
                 link_ranges.push(new_range);
                 link_urls.push(format!("mention:{}", profile.public_key().to_hex()));
@@ -305,11 +274,12 @@ pub fn render_plain_text_mut(
                     adjust_ranges(highlights, link_ranges, range.end, length_diff);
                 }
             } else {
+                let Ok(bech32) = public_key.to_bech32();
                 // No profile match or not a profile entity - create njump.me link
-                let njump_url = format!("https://njump.me/{entity_without_prefix}");
+                let njump_url = format!("https://njump.me/{bech32}");
 
                 // Create a shortened display format for the URL
-                let shortened_entity = format_shortened_entity(entity_without_prefix);
+                let shortened_entity = format_shortened_entity(&bech32);
                 let display_text = format!("https://njump.me/{shortened_entity}");
 
                 // Replace the original entity with the shortened display version
@@ -318,22 +288,11 @@ pub fn render_plain_text_mut(
                 // Adjust the ranges
                 let new_length = display_text.len();
                 let length_diff = new_length as isize - (range.end - range.start) as isize;
-
                 // New range for the replacement
                 let new_range = range.start..(range.start + new_length);
 
                 // Add underline highlight
-                highlights.push((
-                    new_range.clone(),
-                    Highlight::Highlight(HighlightStyle {
-                        underline: Some(UnderlineStyle {
-                            thickness: 1.0.into(),
-                            ..Default::default()
-                        }),
-                        ..Default::default()
-                    }),
-                ));
-
+                highlights.push((new_range.clone(), Highlight::link()));
                 // Make it clickable
                 link_ranges.push(new_range);
                 link_urls.push(njump_url);
@@ -344,7 +303,13 @@ pub fn render_plain_text_mut(
                 }
             }
         }
+        // Ignore the rest of the tokens
     }
+}
+
+/// Check if a string is a URL
+fn is_url(s: &str) -> bool {
+    URL_REGEX.is_match(s)
 }
 
 /// Format a bech32 entity with ellipsis and last 4 characters
