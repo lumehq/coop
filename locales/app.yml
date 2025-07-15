@@ -609,6 +609,16 @@ profile:
     es: "Biografía:"
     pt: "Bio:"
     ko: "소개:"
+  unknown:
+    en: "Unknown contact"
+    zh-CN: "未知联系人"
+    zh-TW: "未知聯絡人"
+    ru: "Неизвестный контакт"
+    vi: "Liên hệ không xác định"
+    ja: "不明な連絡先"
+    es: "Contacto desconocido"
+    pt: "Contato desconhecido"
+    ko: "알 수 없는 연락처"
 
 preferences:
   modal_profile_title:
