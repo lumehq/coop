@@ -47,6 +47,13 @@ Coop is built using Rust and GPUI. All Nostr related stuffs handled by [Rust Nos
 - **Cargo**: Rust's package manager, which comes bundled with the Rust installation.
 - **Git**: To clone the repository and manage version control.
 
+#### Linux Ubuntu Prerequisites
+- **x11**:Provides the X11 client-side library development headers and tools needed for compiling applications that use the X Window System. `sudo apt install libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev` `sudo apt install libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev`
+- **build-essential**: Required to build debian files in Ubuntu. `sudo apt install build-essential pkg-config`
+-**openSSL**: OpenSSL is a comprehensive open-source cryptography library and command-line tool used for secure communications and certificate management. `sudo apt install openssl` `sudo apt install libssl-dev`
+
+
+
 #### Setting Up the Development Environment
 
 1. Clone the repository:
