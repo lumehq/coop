@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
 use global::nostr_client;
@@ -15,7 +17,7 @@ use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
-use ui::{h_flex, v_flex, Icon, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<UserProfile> {
     UserProfile::new(public_key, window, cx)
@@ -25,6 +27,7 @@ pub struct UserProfile {
     public_key: PublicKey,
     followed: bool,
     verified: bool,
+    copied: bool,
 }
 
 impl UserProfile {
@@ -33,6 +36,7 @@ impl UserProfile {
             public_key,
             followed: false,
             verified: false,
+            copied: false,
         })
     }
 
@@ -96,10 +100,37 @@ impl UserProfile {
         self.profile(cx).metadata().nip05
     }
 
-    fn share(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn open_njump(&mut self, _window: &mut Window, cx: &mut App) {
         let Ok(bech32) = self.public_key.to_bech32();
-        let item = ClipboardItem::new_string(format!("https://njump.me/{bech32}"));
+        cx.open_url(&format!("https://njump.me/{bech32}"));
+    }
+
+    fn copy_pubkey(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Ok(bech32) = self.public_key.to_bech32();
+        let item = ClipboardItem::new_string(bech32);
         cx.write_to_clipboard(item);
+
+        self.set_copied(true, window, cx);
+    }
+
+    fn set_copied(&mut self, status: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.copied = status;
+        cx.notify();
+
+        // Reset the copied state after a delay
+        if status {
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(Duration::from_secs(2)).await;
+                cx.update(|window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.set_copied(false, window, cx);
+                    })
+                    .ok();
+                })
+                .ok();
+            })
+            .detach();
+        }
     }
 }
 
@@ -169,16 +200,41 @@ impl Render for UserProfile {
                 v_flex()
                     .gap_1()
                     .text_sm()
-                    .child(div().text_color(cx.theme().text_muted).child("Public Key:"))
                     .child(
                         div()
-                            .p_1p5()
-                            .rounded_md()
-                            .bg(cx.theme().elevated_surface_background)
-                            .truncate()
-                            .text_ellipsis()
-                            .line_clamp(1)
-                            .child(shared_bech32),
+                            .block()
+                            .text_color(cx.theme().text_muted)
+                            .child("Public Key:"),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .p_1p5()
+                                    .h_9()
+                                    .rounded_md()
+                                    .bg(cx.theme().elevated_surface_background)
+                                    .truncate()
+                                    .text_ellipsis()
+                                    .line_clamp(1)
+                                    .child(shared_bech32),
+                            )
+                            .child(
+                                Button::new("copy-pubkey")
+                                    .icon({
+                                        if self.copied {
+                                            IconName::CheckCircleFill
+                                        } else {
+                                            IconName::Copy
+                                        }
+                                    })
+                                    .ghost()
+                                    .disabled(self.copied)
+                                    .on_click(cx.listener(move |this, _e, window, cx| {
+                                        this.copy_pubkey(window, cx);
+                                    })),
+                            ),
                     ),
             )
             .child(
@@ -201,12 +257,12 @@ impl Render for UserProfile {
                     }),
             )
             .child(
-                Button::new("share-profile")
-                    .label("Share Profile")
+                Button::new("open-njump")
+                    .label(t!("profile.njump"))
                     .primary()
                     .small()
                     .on_click(cx.listener(move |this, _e, window, cx| {
-                        this.share(window, cx);
+                        this.open_njump(window, cx);
                     })),
             )
     }

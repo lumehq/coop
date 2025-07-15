@@ -619,6 +619,16 @@ profile:
     es: "Contacto desconocido"
     pt: "Contato desconhecido"
     ko: "알 수 없는 연락처"
+  njump:
+    en: "Open in njump.me"
+    zh-CN: "在njump.me中打开"
+    zh-TW: "在njump.me中打開"
+    ru: "Открыть в njump.me"
+    vi: "Mở trong njump.me"
+    ja: "njump.meで開く"
+    es: "Abrir en njump.me"
+    pt: "Abrir no njump.me"
+    ko: "njump.me에서 열기"
 
 preferences:
   modal_profile_title:
