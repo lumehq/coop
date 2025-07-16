@@ -1,12 +1,12 @@
 pub mod chat;
 pub mod compose;
+pub mod edit_profile;
 pub mod login;
 pub mod new_account;
 pub mod onboarding;
 pub mod preferences;
-pub mod profile;
 pub mod relays;
 pub mod sidebar;
 pub mod startup;
-pub mod subject;
+pub mod user_profile;
 pub mod welcome;

@@ -128,7 +128,7 @@ welcome:
     zh-CN: "安全的 Nostr 通信"
     zh-TW: "安全的 Nostr 通信"
     ru: "Безопасная коммуникация на Nostr"
-    vi: "Trò chuyện toàn trên Nostr"
+    vi: "Trò chuyện an toàn trên Nostr"
     ja: "Nostr 上のセキュアなコミュニケーション"
     es: "Comunicación segura en Nostr"
     pt: "Comunicação segura no Nostr"
@@ -453,6 +453,16 @@ chatspace:
     es: "Cambiar el idioma de la aplicación"
     pt: "Alterar o idioma do aplicativo"
     ko: "앱 언어 변경"
+  share_profile:
+    en: "Share Profile"
+    zh-CN: "分享个人资料"
+    zh-TW: "分享個人資料"
+    ru: "Поделиться профилем"
+    vi: "Chia sẻ hồ sơ"
+    ja: "プロフィールを共有する"
+    es: "Compartir perfil"
+    pt: "Compartilhar perfil"
+    ko: "프로필 공유"
 
 relays:
   description:
@@ -599,6 +609,26 @@ profile:
     es: "Biografía:"
     pt: "Bio:"
     ko: "소개:"
+  unknown:
+    en: "Unknown contact"
+    zh-CN: "未知联系人"
+    zh-TW: "未知聯絡人"
+    ru: "Неизвестный контакт"
+    vi: "Liên hệ không xác định"
+    ja: "不明な連絡先"
+    es: "Contacto desconocido"
+    pt: "Contato desconhecido"
+    ko: "알 수 없는 연락처"
+  njump:
+    en: "Open in njump.me"
+    zh-CN: "在njump.me中打开"
+    zh-TW: "在njump.me中打開"
+    ru: "Открыть в njump.me"
+    vi: "Mở trong njump.me"
+    ja: "njump.meで開く"
+    es: "Abrir en njump.me"
+    pt: "Abrir no njump.me"
+    ko: "njump.me에서 열기"
 
 preferences:
   modal_profile_title:
@@ -945,6 +975,16 @@ chat:
     es: "Cambiar el asunto de la conversación"
     pt: "Alterar o assunto da conversa"
     ko: "대화 제목 변경"
+  replying_to_label:
+    en: "Replying to:"
+    zh-CN: "回复："
+    zh-TW: "回覆："
+    ru: "Ответ на:"
+    vi: "Trả lời:"
+    ja: "返信先："
+    es: "Respondiendo a:"
+    pt: "Respondendo a:"
+    ko: "답장 대상:"
 
 sidebar:
   find_or_start_conversation:
@@ -1144,16 +1184,6 @@ sidebar:
     es: "Enviar a:"
     pt: "Enviar para:"
     ko: "보내기:"
-  replying_to_label:
-    en: "Replying to:"
-    zh-CN: "回复："
-    zh-TW: "回覆："
-    ru: "Ответ на:"
-    vi: "Trả lời:"
-    ja: "返信先："
-    es: "Respondiendo a:"
-    pt: "Respondendo a:"
-    ko: "답장 대상:"
   send_fail:
     en: "Failed to send message. Click to see details."
     zh-CN: "发送消息失败。点击查看详情。"

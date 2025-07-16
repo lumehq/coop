@@ -7,8 +7,6 @@ publish.workspace = true
 [dependencies]
 common = { path = "../common" }
 global = { path = "../global" }
-identity = { path = "../identity" }
-settings = { path = "../settings" }
 
 rust-i18n.workspace = true
 i18n.workspace = true

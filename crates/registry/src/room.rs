@@ -5,10 +5,8 @@ use chrono::{Local, TimeZone};
 use common::display::DisplayProfile;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use settings::AppSettings;
 use smallvec::SmallVec;
 
 use crate::message::Message;
@@ -26,7 +24,7 @@ pub struct Incoming(pub Message);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendError {
     pub profile: Profile,
-    pub message: String,
+    pub message: SharedString,
 }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -123,6 +121,27 @@ impl Room {
     /// The modified Room instance with the new kind
     pub fn kind(mut self, kind: RoomKind) -> Self {
         self.kind = kind;
+        self
+    }
+
+    /// Sets the rearrange_by field of the room and returns the modified room
+    ///
+    /// This is a builder-style method that allows chaining room modifications.
+    ///
+    /// # Arguments
+    ///
+    /// * `rearrange_by` - The PublicKey to set for rearranging the member list
+    ///
+    /// # Returns
+    ///
+    /// The modified Room instance with the new member list after rearrangement
+    pub fn rearrange_by(mut self, rearrange_by: PublicKey) -> Self {
+        let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) = self
+            .members
+            .into_iter()
+            .partition(|key| key != &rearrange_by);
+        self.members = not_match.into();
+        self.members.extend(matches);
         self
     }
 
@@ -240,14 +259,13 @@ impl Room {
     ///
     /// # Arguments
     ///
+    /// * `proxy` - Whether to use the proxy for the avatar URL
     /// * `cx` - The application context
     ///
     /// # Returns
     ///
     /// A SharedString containing the image path or URL
-    pub fn display_image(&self, cx: &App) -> SharedString {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
-
+    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
         } else if !self.is_group() {
@@ -262,18 +280,7 @@ impl Room {
     /// First member is always different from the current user.
     pub(crate) fn first_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
-
-        if let Some(identity) = Identity::read_global(cx).public_key().as_ref() {
-            self.members
-                .iter()
-                .filter(|&pubkey| pubkey != identity)
-                .collect::<Vec<_>>()
-                .first()
-                .map(|public_key| registry.get_person(public_key, cx))
-                .unwrap_or(registry.get_person(identity, cx))
-        } else {
-            registry.get_person(&self.members[0], cx)
-        }
+        registry.get_person(&self.members[0], cx)
     }
 
     /// Merge the names of the first two members of the room.
@@ -474,11 +481,10 @@ impl Room {
     /// or `None` if no account is found.
     pub fn create_temp_message(
         &self,
+        public_key: PublicKey,
         content: &str,
         replies: Option<&Vec<Message>>,
-        cx: &App,
     ) -> Option<Message> {
-        let public_key = Identity::read_global(cx).public_key()?;
         let builder = EventBuilder::private_msg_rumor(public_key, content);
 
         // Add event reference if it's present (replying to another event)
@@ -549,6 +555,7 @@ impl Room {
         &self,
         content: &str,
         replies: Option<&Vec<Message>>,
+        backup: bool,
         cx: &App,
     ) -> Task<Result<Vec<SendError>, Error>> {
         let content = content.to_owned();
@@ -556,7 +563,6 @@ impl Room {
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = self.members.clone();
-        let backup = AppSettings::get_global(cx).settings.backup_messages;
 
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -615,7 +621,7 @@ impl Room {
                     let profile = Profile::new(*receiver, metadata);
                     let report = SendError {
                         profile,
-                        message: e.to_string(),
+                        message: e.to_string().into(),
                     };
 
                     reports.push(report);
@@ -636,7 +642,7 @@ impl Room {
                     let profile = Profile::new(*current_user, metadata);
                     let report = SendError {
                         profile,
-                        message: e.to_string(),
+                        message: e.to_string().into(),
                     };
                     reports.push(report);
                 }

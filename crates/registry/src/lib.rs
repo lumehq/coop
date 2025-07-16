@@ -9,7 +9,6 @@ use global::nostr_client;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
 };
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -142,11 +141,11 @@ impl Registry {
             .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
     }
 
-    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Option<Profile>> {
+    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Profile> {
         let mut profiles = vec![];
 
         for public_key in public_keys.iter() {
-            let profile = self.persons.get(public_key).map(|e| e.read(cx)).cloned();
+            let profile = self.get_person(public_key, cx);
             profiles.push(profile);
         }
 
@@ -315,11 +314,19 @@ impl Registry {
                 let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
 
                 if is_ongoing {
-                    rooms.insert(Room::new(&event).kind(RoomKind::Ongoing));
+                    rooms.insert(
+                        Room::new(&event)
+                            .kind(RoomKind::Ongoing)
+                            .rearrange_by(public_key),
+                    );
                 } else if is_trust {
-                    rooms.insert(Room::new(&event).kind(RoomKind::Trusted));
+                    rooms.insert(
+                        Room::new(&event)
+                            .kind(RoomKind::Trusted)
+                            .rearrange_by(public_key),
+                    );
                 } else {
-                    rooms.insert(Room::new(&event));
+                    rooms.insert(Room::new(&event).rearrange_by(public_key));
                 }
             }
 
@@ -388,13 +395,15 @@ impl Registry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn event_to_message(
+        &mut self,
+        identity: PublicKey,
+        event: Event,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let id = room_hash(&event);
         let author = event.pubkey;
-
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            return;
-        };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             // Update room
@@ -415,15 +424,16 @@ impl Registry {
             // Re-sort the rooms registry by their created at
             self.sort(cx);
         } else {
-            let room = Room::new(&event).kind(RoomKind::Unknown);
-            let kind = room.kind;
+            let room = Room::new(&event)
+                .kind(RoomKind::Unknown)
+                .rearrange_by(identity);
 
             // Push the new room to the front of the list
             self.add_room(cx.new(|_| room), cx);
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RoomEmitter::Request(kind));
+                cx.emit(RoomEmitter::Request(RoomKind::Unknown));
             });
         }
     }

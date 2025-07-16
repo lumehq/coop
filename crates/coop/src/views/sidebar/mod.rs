@@ -684,6 +684,7 @@ impl Sidebar {
         range: Range<usize>,
         cx: &Context<Self>,
     ) -> Vec<impl IntoElement> {
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let mut items = Vec::with_capacity(range.end - range.start);
 
         for ix in range {
@@ -692,7 +693,7 @@ impl Sidebar {
                 let id = this.id;
                 let ago = this.ago();
                 let label = this.display_name(cx);
-                let img = this.display_image(cx);
+                let img = this.display_image(proxy, cx);
 
                 let handler = cx.listener(move |this, _, window, cx| {
                     this.open_room(id, window, cx);

@@ -17,11 +17,11 @@ use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::{ContextModal, Disableable, IconName, Sizable};
 
-pub fn init(window: &mut Window, cx: &mut App) -> Entity<Profile> {
-    Profile::new(window, cx)
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<EditProfile> {
+    EditProfile::new(window, cx)
 }
 
-pub struct Profile {
+pub struct EditProfile {
     profile: Option<Metadata>,
     name_input: Entity<InputState>,
     avatar_input: Entity<InputState>,
@@ -31,7 +31,7 @@ pub struct Profile {
     is_submitting: bool,
 }
 
-impl Profile {
+impl EditProfile {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("profile.placeholder_name")));
@@ -70,7 +70,7 @@ impl Profile {
             cx.spawn_in(window, async move |this, cx| {
                 if let Ok(Some(metadata)) = task.await {
                     cx.update(|window, cx| {
-                        this.update(cx, |this: &mut Profile, cx| {
+                        this.update(cx, |this: &mut EditProfile, cx| {
                             this.avatar_input.update(cx, |this, cx| {
                                 if let Some(avatar) = metadata.picture.as_ref() {
                                     this.set_value(avatar, window, cx);
@@ -230,7 +230,7 @@ impl Profile {
     }
 }
 
-impl Render for Profile {
+impl Render for EditProfile {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()

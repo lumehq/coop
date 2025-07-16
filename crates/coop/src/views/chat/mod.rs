@@ -3,17 +3,19 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use common::display::DisplayProfile;
 use common::nip96::nip96_upload;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, rems, white, Action, AnyElement, App, AppContext, ClipboardItem,
-    Context, Div, Element, Empty, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ListAlignment, ListState, ObjectFit, ParentElement,
-    PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
-    Styled, StyledImage, Subscription, Window,
+    Context, Element, Empty, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, ObjectFit,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
+use gpui_tokio::Tokio;
 use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
@@ -38,7 +40,7 @@ use ui::{
     v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable, StyledExt,
 };
 
-use crate::views::subject;
+mod subject;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
@@ -63,6 +65,7 @@ pub struct Chat {
     // Media Attachment
     attaches: Entity<Option<Vec<Url>>>,
     uploading: bool,
+    // System
     image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
@@ -91,17 +94,14 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Self, input, event, window, cx| {
-                    if let InputEvent::PressEnter { .. } = event {
-                        if input.read(cx).value().trim().is_empty() {
-                            window.push_notification(
-                                Notification::new(t!("chat.empty_message_error")),
-                                cx,
-                            );
-                        } else {
-                            this.send_message(window, cx);
-                        }
+                move |this: &mut Self, input, event, window, cx| match event {
+                    InputEvent::PressEnter { .. } => {
+                        this.send_message(window, cx);
                     }
+                    InputEvent::Change(text) => {
+                        this.mention_popup(text, input, cx);
+                    }
+                    _ => {}
                 },
             ));
 
@@ -189,8 +189,12 @@ impl Chat {
         .detach();
     }
 
-    /// Get user input message including all attachments
-    fn message(&self, cx: &Context<Self>) -> String {
+    fn mention_popup(&mut self, _text: &str, _input: &Entity<InputState>, _cx: &mut Context<Self>) {
+        // TODO: open mention popup at current cursor position
+    }
+
+    /// Get user input content and merged all attachments
+    fn input_content(&self, cx: &Context<Self>) -> String {
         let mut content = self.input.read(cx).value().trim().to_string();
 
         // Get all attaches and merge its with message
@@ -238,21 +242,40 @@ impl Chat {
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Return if user is not logged in
+        let Some(identity) = Identity::read_global(cx).public_key() else {
+            // window.push_notification("Login is required", cx);
+            return;
+        };
+
+        // Get the message which includes all attachments
+        let content = self.input_content(cx);
+        // Get the backup setting
+        let backup = AppSettings::get_global(cx).settings.backup_messages;
+
+        // Return if message is empty
+        if content.trim().is_empty() {
+            window.push_notification(t!("chat.empty_message_error"), cx);
+            return;
+        }
+
+        // Temporary disable input
         self.input.update(cx, |this, cx| {
             this.set_loading(true, cx);
             this.set_disabled(true, cx);
         });
 
-        // Get the message which includes all attachments
-        let content = self.message(cx);
         // Get replies_to if it's present
         let replies = self.replies_to.read(cx).as_ref();
+
         // Get the current room entity
         let room = self.room.read(cx);
+
         // Create a temporary message for optimistic update
-        let temp_message = room.create_temp_message(&content, replies, cx);
+        let temp_message = room.create_temp_message(identity, &content, replies);
+
         // Create a task for sending the message in the background
-        let send_message = room.send_in_background(&content, replies, cx);
+        let send_message = room.send_in_background(&content, replies, backup, cx);
 
         if let Some(message) = temp_message {
             let id = message.id;
@@ -284,7 +307,7 @@ impl Chat {
                                 if let Some(msg) =
                                     this.iter().find(|msg| msg.borrow().id == id).cloned()
                                 {
-                                    msg.borrow_mut().errors = Some(reports.into());
+                                    msg.borrow_mut().errors = Some(reports);
                                     cx.notify();
                                 }
                             });
@@ -320,7 +343,24 @@ impl Chat {
         }
     }
 
-    fn reply(&mut self, message: Message, cx: &mut Context<Self>) {
+    fn copy_message(&self, ix: usize, cx: &Context<Self>) {
+        let Some(item) = self
+            .messages
+            .read(cx)
+            .get(ix)
+            .map(|m| ClipboardItem::new_string(m.borrow().content.to_string()))
+        else {
+            return;
+        };
+
+        cx.write_to_clipboard(item);
+    }
+
+    fn reply_to(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let Some(message) = self.messages.read(cx).get(ix).map(|m| m.borrow().clone()) else {
+            return;
+        };
+
         self.replies_to.update(cx, |this, cx| {
             if let Some(replies) = this {
                 replies.push(message);
@@ -349,72 +389,83 @@ impl Chat {
         });
     }
 
-    fn upload_media(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.uploading {
             return;
         }
-
+        // Block the upload button to until current task is resolved
         self.uploading(true, cx);
 
-        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
+        // Get the user's configured NIP96 server
+        let nip96_server = AppSettings::get_global(cx).settings.media_server.clone();
+
+        // Open native file dialog
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
         });
 
-        cx.spawn_in(window, async move |this, cx| {
+        let task = Tokio::spawn(cx, async move {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
-                    let Some(path) = paths.pop() else {
-                        return;
-                    };
+                    if let Some(path) = paths.pop() {
+                        let file = fs::read(path).await?;
+                        let url = nip96_upload(nostr_client(), &nip96_server, file).await?;
 
-                    if let Ok(file_data) = fs::read(path).await {
-                        let (tx, rx) = oneshot::channel::<Option<Url>>();
-
-                        // Spawn task via async utility instead of GPUI context
-                        nostr_sdk::async_utility::task::spawn(async move {
-                            let url = nip96_upload(nostr_client(), &nip96, file_data).await.ok();
-                            _ = tx.send(url);
-                        });
-
-                        if let Ok(Some(url)) = rx.await {
-                            this.update(cx, |this, cx| {
-                                this.uploading(false, cx);
-                                this.attaches.update(cx, |this, cx| {
-                                    if let Some(model) = this.as_mut() {
-                                        model.push(url);
-                                    } else {
-                                        *this = Some(vec![url]);
-                                    }
-                                    cx.notify();
-                                });
-                            })
-                            .ok();
-                        } else {
-                            this.update(cx, |this, cx| {
-                                this.uploading(false, cx);
-                            })
-                            .ok();
-                        }
+                        Ok(url)
+                    } else {
+                        Err(anyhow!("Path not found"))
                     }
                 }
-                Ok(None) => {
+                Ok(None) => Err(anyhow!("User cancelled")),
+                Err(e) => Err(anyhow!("File dialog error: {e}")),
+            }
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match Flatten::flatten(task.await.map_err(|e| e.into())) {
+                Ok(Ok(url)) => {
+                    this.update(cx, |this, cx| {
+                        this.add_attachment(url, cx);
+                    })
+                    .ok();
+                }
+                Ok(Err(e)) => {
+                    log::warn!("User cancelled: {e}");
                     this.update(cx, |this, cx| {
                         this.uploading(false, cx);
                     })
                     .ok();
                 }
                 Err(e) => {
-                    log::error!("System error: {e}")
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            window.push_notification(e.to_string(), cx);
+                            this.uploading(false, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
                 }
             }
         })
         .detach();
     }
 
-    fn remove_media(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
+    fn add_attachment(&mut self, url: Url, cx: &mut Context<Self>) {
+        self.attaches.update(cx, |this, cx| {
+            if let Some(model) = this.as_mut() {
+                model.push(url);
+            } else {
+                *this = Some(vec![url]);
+            }
+            cx.notify();
+        });
+        self.uploading(false, cx);
+    }
+
+    fn remove_attachment(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
         self.attaches.update(cx, |model, cx| {
             if let Some(urls) = model.as_mut() {
                 if let Some(ix) = urls.iter().position(|x| x == url) {
@@ -459,11 +510,11 @@ impl Chat {
                     .child(Icon::new(IconName::Close).size_2().text_color(white())),
             )
             .on_click(cx.listener(move |this, _, window, cx| {
-                this.remove_media(&url, window, cx);
+                this.remove_attachment(&url, window, cx);
             }))
     }
 
-    fn render_reply(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
+    fn render_reply_to(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
         let profile = registry.get_person(&message.author, cx);
 
@@ -520,22 +571,19 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let Some(message) = self.messages.read(cx).get(ix) else {
+        let Some(message) = self.messages.read(cx).get(ix).map(|m| m.borrow()) else {
             return div().id(ix);
         };
 
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
         let registry = Registry::read_global(cx);
-
-        let message = message.borrow();
         let author = registry.get_person(&message.author, cx);
-        let mentions = registry.get_group_person(&message.mentions, cx);
 
         let texts = self
             .text_data
             .entry(message.id)
-            .or_insert_with(|| RichText::new(message.content.to_string(), &mentions));
+            .or_insert_with(|| RichText::new(&message.content, cx));
 
         div()
             .id(ix)
@@ -578,122 +626,162 @@ impl Chat {
                             )
                             .when_some(message.replies_to.as_ref(), |this, replies| {
                                 this.w_full().children({
-                                    let mut items = vec![];
+                                    let mut items = Vec::with_capacity(replies.len());
+                                    let messages = self.messages.read(cx);
 
-                                    for (ix, id) in replies.iter().enumerate() {
-                                        if let Some(message) = self
-                                            .messages
-                                            .read(cx)
+                                    for (ix, id) in replies.iter().cloned().enumerate() {
+                                        let Some(message) = messages
                                             .iter()
-                                            .find(|msg| msg.borrow().id == *id)
-                                            .cloned()
-                                        {
-                                            let message = message.borrow();
+                                            .map(|m| m.borrow())
+                                            .find(|m| m.id == id)
+                                        else {
+                                            continue;
+                                        };
 
-                                            items.push(
-                                                div()
-                                                    .id(ix)
-                                                    .w_full()
-                                                    .px_2()
-                                                    .border_l_2()
-                                                    .border_color(cx.theme().element_selected)
-                                                    .text_sm()
-                                                    .child(
-                                                        div()
-                                                            .text_color(cx.theme().text_accent)
-                                                            .child(author.display_name()),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .w_full()
-                                                            .text_ellipsis()
-                                                            .line_clamp(1)
-                                                            .child(message.content.clone()),
-                                                    )
-                                                    .hover(|this| {
-                                                        this.bg(cx
-                                                            .theme()
-                                                            .elevated_surface_background)
-                                                    })
-                                                    .on_click({
-                                                        let id = message.id;
-                                                        cx.listener(move |this, _, _, cx| {
-                                                            this.scroll_to(id, cx)
-                                                        })
-                                                    }),
-                                            );
-                                        }
+                                        items.push(
+                                            div()
+                                                .id(ix)
+                                                .w_full()
+                                                .px_2()
+                                                .border_l_2()
+                                                .border_color(cx.theme().element_selected)
+                                                .text_sm()
+                                                .child(
+                                                    div()
+                                                        .text_color(cx.theme().text_accent)
+                                                        .child(author.display_name()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .w_full()
+                                                        .text_ellipsis()
+                                                        .line_clamp(1)
+                                                        .child(message.content.clone()),
+                                                )
+                                                .hover(|this| {
+                                                    this.bg(cx.theme().elevated_surface_background)
+                                                })
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.scroll_to(id, cx)
+                                                })),
+                                        );
                                     }
 
                                     items
                                 })
                             })
-                            .child(texts.element("body".into(), window, cx))
-                            .when_some(message.errors.clone(), |this, errors| {
-                                this.child(
-                                    div()
-                                        .id("")
-                                        .flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .text_color(gpui::red())
-                                        .text_xs()
-                                        .italic()
-                                        .child(Icon::new(IconName::Info).small())
-                                        .child(SharedString::new(t!("chat.send_fail")))
-                                        .on_click(move |_, window, cx| {
-                                            let errors = errors.clone();
-
-                                            window.open_modal(cx, move |this, _window, cx| {
-                                                this.title(SharedString::new(t!("chat.logs_title")))
-                                                    .child(message_errors(errors.clone(), cx))
-                                            });
-                                        }),
-                                )
+                            .child(texts.element(ix.into(), window, cx))
+                            .when_some(message.errors.as_ref(), |this, errors| {
+                                this.child(self.render_message_errors(errors, cx))
                             }),
                     ),
             )
-            .child(message_border(cx))
-            .child(message_actions(
+            .child(self.render_border(cx))
+            .child(self.render_actions(ix, cx))
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(move |this, _event, _window, cx| {
+                    this.copy_message(ix, cx);
+                }),
+            )
+            .on_double_click(cx.listener({
+                move |this, _event, _window, cx| {
+                    this.reply_to(ix, cx);
+                }
+            }))
+            .hover(|this| this.bg(cx.theme().surface_background))
+    }
+
+    fn render_message_errors(&self, errors: &[SendError], _cx: &Context<Self>) -> impl IntoElement {
+        let errors = Rc::new(errors.to_owned());
+
+        div()
+            .id("")
+            .flex()
+            .items_center()
+            .gap_1()
+            .text_color(gpui::red())
+            .text_xs()
+            .italic()
+            .child(Icon::new(IconName::Info).small())
+            .child(SharedString::new(t!("chat.send_fail")))
+            .on_click(move |_, window, cx| {
+                let errors = Rc::clone(&errors);
+
+                window.open_modal(cx, move |this, _window, cx| {
+                    this.title(SharedString::new(t!("chat.logs_title"))).child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .px_3()
+                            .pb_3()
+                            .children(errors.iter().map(|error| {
+                                div()
+                                    .text_sm()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_baseline()
+                                            .gap_1()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(SharedString::new(t!("chat.send_to_label")))
+                                            .child(error.profile.display_name()),
+                                    )
+                                    .child(error.message.clone())
+                            })),
+                    )
+                });
+            })
+    }
+
+    fn render_border(&self, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .group_hover("", |this| this.bg(cx.theme().element_active))
+            .absolute()
+            .left_0()
+            .top_0()
+            .w(px(2.))
+            .h_full()
+            .bg(cx.theme().border_transparent)
+    }
+
+    fn render_actions(&self, ix: usize, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .group_hover("", |this| this.visible())
+            .invisible()
+            .absolute()
+            .right_4()
+            .top_neg_2()
+            .shadow_sm()
+            .rounded_md()
+            .border_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().background)
+            .p_0p5()
+            .flex()
+            .gap_1()
+            .children({
                 vec![
                     Button::new("reply")
                         .icon(IconName::Reply)
                         .tooltip(t!("chat.reply_button"))
                         .small()
                         .ghost()
-                        .on_click({
-                            let message = message.clone();
-                            cx.listener(move |this, _event, _window, cx| {
-                                this.reply(message.clone(), cx);
-                            })
-                        }),
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.reply_to(ix, cx);
+                        })),
                     Button::new("copy")
                         .icon(IconName::Copy)
                         .tooltip(t!("chat.copy_message_button"))
                         .small()
                         .ghost()
-                        .on_click({
-                            let content = ClipboardItem::new_string(message.content.to_string());
-                            cx.listener(move |_this, _event, _window, cx| {
-                                cx.write_to_clipboard(content.clone())
-                            })
-                        }),
-                ],
-                cx,
-            ))
-            .on_mouse_down(gpui::MouseButton::Middle, {
-                let content = ClipboardItem::new_string(message.content.to_string());
-                cx.listener(move |_this, _event, _window, cx| {
-                    cx.write_to_clipboard(content.clone())
-                })
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.copy_message(ix, cx);
+                        })),
+                ]
             })
-            .on_double_click(cx.listener({
-                let message = message.clone();
-                move |this, _, _window, cx| {
-                    this.reply(message.clone(), cx);
-                }
-            }))
-            .hover(|this| this.bg(cx.theme().surface_background))
     }
 }
 
@@ -703,9 +791,10 @@ impl Panel for Chat {
     }
 
     fn title(&self, cx: &App) -> AnyElement {
-        self.room.read_with(cx, |this, _| {
+        self.room.read_with(cx, |this, cx| {
+            let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
             let label = this.display_name(cx);
-            let url = this.display_image(cx);
+            let url = this.display_image(proxy, cx);
 
             div()
                 .flex()
@@ -780,7 +869,7 @@ impl Render for Chat {
                                     let mut items = vec![];
 
                                     for message in messages.iter() {
-                                        items.push(self.render_reply(message, cx));
+                                        items.push(self.render_reply_to(message, cx));
                                     }
 
                                     items
@@ -806,7 +895,7 @@ impl Render for Chat {
                                                     .loading(self.uploading)
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
-                                                            this.upload_media(window, cx);
+                                                            this.upload(window, cx);
                                                         },
                                                     )),
                                             )
@@ -820,56 +909,4 @@ impl Render for Chat {
                     ),
             )
     }
-}
-
-fn message_border(cx: &App) -> Div {
-    div()
-        .group_hover("", |this| this.bg(cx.theme().element_active))
-        .absolute()
-        .left_0()
-        .top_0()
-        .w(px(2.))
-        .h_full()
-        .bg(cx.theme().border_transparent)
-}
-
-fn message_errors(errors: SmallVec<[SendError; 1]>, cx: &App) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .px_3()
-        .pb_3()
-        .children(errors.into_iter().map(|error| {
-            div()
-                .text_sm()
-                .child(
-                    div()
-                        .flex()
-                        .items_baseline()
-                        .gap_1()
-                        .text_color(cx.theme().text_muted)
-                        .child(SharedString::new(t!("chat.send_to_label")))
-                        .child(error.profile.display_name()),
-                )
-                .child(error.message)
-        }))
-}
-
-fn message_actions(buttons: impl IntoIterator<Item = impl IntoElement>, cx: &App) -> Div {
-    div()
-        .group_hover("", |this| this.visible())
-        .invisible()
-        .absolute()
-        .right_4()
-        .top_neg_2()
-        .shadow_sm()
-        .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().background)
-        .p_0p5()
-        .flex()
-        .gap_1()
-        .children(buttons)
 }

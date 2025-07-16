@@ -6,8 +6,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, Action, App, AppContext, Axis, Context, Entity, IntoElement, ParentElement,
-    Render, SharedString, Styled, Subscription, Task, Window,
+    div, px, relative, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
 };
 use i18n::t;
 use identity::Identity;
@@ -16,6 +16,7 @@ use registry::{Registry, RoomEmitter};
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
+use ui::actions::OpenProfile;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
@@ -24,7 +25,10 @@ use ui::modal::ModalButtonProps;
 use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
 use crate::views::chat::{self, Chat};
-use crate::views::{login, new_account, onboarding, preferences, sidebar, startup, welcome};
+use crate::views::user_profile::UserProfile;
+use crate::views::{
+    login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
+};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     ChatSpace::new(window, cx)
@@ -69,7 +73,7 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
     toolbar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 4]>,
+    subscriptions: SmallVec<[Subscription; 5]>,
 }
 
 impl ChatSpace {
@@ -167,9 +171,16 @@ impl ChatSpace {
             ));
 
             // Automatically load messages when chat panel opens
-            subscriptions.push(cx.observe_new::<Chat>(|this: &mut Chat, window, cx| {
+            subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
                 if let Some(window) = window {
                     this.load_messages(window, cx);
+                }
+            }));
+
+            // Automatically run on_load function from UserProfile
+            subscriptions.push(cx.observe_new::<UserProfile>(|this, window, cx| {
+                if let Some(window) = window {
+                    this.on_load(window, cx);
                 }
             }));
 
@@ -307,6 +318,16 @@ impl ChatSpace {
         });
     }
 
+    fn on_open_profile(&mut self, a: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
+        let public_key = a.0;
+        let profile = user_profile::init(public_key, window, cx);
+
+        window.open_modal(cx, move |this, _window, _cx| {
+            // user_profile::init(public_key, window, cx)
+            this.child(profile.clone())
+        });
+    }
+
     pub(crate) fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
         if let Some(Some(root)) = window.root::<Root>() {
             if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
@@ -329,6 +350,7 @@ impl Render for ChatSpace {
         let notification_layer = Root::render_notification_layer(window, cx);
 
         div()
+            .on_action(cx.listener(Self::on_open_profile))
             .relative()
             .size_full()
             .child(
