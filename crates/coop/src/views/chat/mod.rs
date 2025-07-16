@@ -569,14 +569,12 @@ impl Chat {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
         let registry = Registry::read_global(cx);
-
         let author = registry.get_person(&message.author, cx);
-        let mentions = registry.get_group_person(&message.mentions, cx);
 
         let texts = self
             .text_data
             .entry(message.id)
-            .or_insert_with(|| RichText::new(&message.content, &mentions));
+            .or_insert_with(|| RichText::new(&message.content, cx));
 
         div()
             .id(ix)

@@ -156,7 +156,7 @@ impl Sidebar {
         let keys = Keys::generate();
         let builder = EventBuilder::private_msg_rumor(public_key, "");
         let event = builder.build(identity).sign(&keys).await?;
-        let room = Room::new(&event, identity).kind(RoomKind::Ongoing);
+        let room = Room::new(&event).kind(RoomKind::Ongoing);
 
         Ok(room)
     }

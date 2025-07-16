@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -11,6 +10,7 @@ use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use registry::Registry;
 use theme::ActiveTheme;
 
 use crate::actions::OpenProfile;
@@ -38,6 +38,10 @@ impl Highlight {
             ..Default::default()
         })
     }
+
+    fn mention() -> Self {
+        Self::Mention
+    }
 }
 
 impl From<HighlightStyle> for Highlight {
@@ -60,7 +64,7 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new(content: &str, profiles: &[Profile]) -> Self {
+    pub fn new(content: &str, cx: &App) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
         let mut link_ranges = Vec::new();
@@ -68,11 +72,11 @@ impl RichText {
 
         render_plain_text_mut(
             content,
-            profiles,
             &mut text,
             &mut highlights,
             &mut link_ranges,
             &mut link_urls,
+            cx,
         );
 
         text.truncate(text.trim_end().len());
@@ -180,22 +184,19 @@ impl RichText {
 
 fn render_plain_text_mut(
     content: &str,
-    profiles: &[Profile],
     text: &mut String,
     highlights: &mut Vec<(Range<usize>, Highlight)>,
     link_ranges: &mut Vec<Range<usize>>,
     link_urls: &mut Vec<String>,
+    cx: &App,
 ) {
     // Copy the content directly
     text.push_str(content);
 
-    // Create a profile lookup using PublicKey directly
-    let profile_lookup: HashMap<PublicKey, Profile> = profiles
-        .iter()
-        .map(|profile| (profile.public_key(), profile.clone()))
-        .collect();
+    // Read the global registry
+    let registry = Registry::read_global(cx);
 
-    // Process regular URLs using linkify
+    // Initialize the link finder
     let mut finder = LinkFinder::new();
     finder.url_must_have_scheme(false);
     finder.kinds(&[LinkKind::Url]);
@@ -212,7 +213,7 @@ fn render_plain_text_mut(
         url_matches.push((range, url));
     }
 
-    // Process nostr entities with nostr: prefix
+    // Collect all nostr entities with nostr: prefix
     let mut nostr_matches: Vec<(Range<usize>, String)> = Vec::new();
 
     for nostr_match in NOSTR_URI_REGEX.find_iter(content) {
@@ -284,57 +285,27 @@ fn render_plain_text_mut(
                 continue;
             };
 
-            if let Some(profile) = profile_lookup.get(&public_key).cloned() {
-                // Profile found - create a mention
-                let display_name = format!("@{}", profile.display_name());
+            let profile = registry.get_person(&public_key, cx);
+            let display_name = format!("@{}", profile.display_name());
 
-                // Replace mention with profile name
-                text.replace_range(range.clone(), &display_name);
+            // Replace token with display name
+            text.replace_range(range.clone(), &display_name);
 
-                // Adjust ranges
-                let new_length = display_name.len();
-                let length_diff = new_length as isize - (range.end - range.start) as isize;
-                // New range for the replacement
-                let new_range = range.start..(range.start + new_length);
+            // Adjust ranges
+            let new_length = display_name.len();
+            let length_diff = new_length as isize - (range.end - range.start) as isize;
+            // New range for the replacement
+            let new_range = range.start..(range.start + new_length);
 
-                // Add highlight for the profile name
-                highlights.push((new_range.clone(), Highlight::Mention));
-                // Make it clickable
-                link_ranges.push(new_range);
-                link_urls.push(format!("mention:{}", profile.public_key().to_hex()));
+            // Add highlight for the profile name
+            highlights.push((new_range.clone(), Highlight::mention()));
+            // Make it clickable
+            link_ranges.push(new_range);
+            link_urls.push(format!("mention:{}", profile.public_key().to_hex()));
 
-                // Adjust subsequent ranges if needed
-                if length_diff != 0 {
-                    adjust_ranges(highlights, link_ranges, range.end, length_diff);
-                }
-            } else {
-                let Ok(bech32) = public_key.to_bech32();
-                // No profile match or not a profile entity - create njump.me link
-                let njump_url = format!("https://njump.me/{bech32}");
-
-                // Create a shortened display format for the URL
-                let shortened_entity = format_shortened_entity(&bech32);
-                let display_text = format!("https://njump.me/{shortened_entity}");
-
-                // Replace the original entity with the shortened display version
-                text.replace_range(range.clone(), &display_text);
-
-                // Adjust the ranges
-                let new_length = display_text.len();
-                let length_diff = new_length as isize - (range.end - range.start) as isize;
-                // New range for the replacement
-                let new_range = range.start..(range.start + new_length);
-
-                // Add underline highlight
-                highlights.push((new_range.clone(), Highlight::link()));
-                // Make it clickable
-                link_ranges.push(new_range);
-                link_urls.push(njump_url);
-
-                // Adjust subsequent ranges if needed
-                if length_diff != 0 {
-                    adjust_ranges(highlights, link_ranges, range.end, length_diff);
-                }
+            // Adjust subsequent ranges if needed
+            if length_diff != 0 {
+                adjust_ranges(highlights, link_ranges, range.end, length_diff);
             }
         }
         // Ignore the rest of the tokens

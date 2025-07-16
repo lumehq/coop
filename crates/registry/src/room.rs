@@ -47,8 +47,6 @@ pub struct Room {
     pub members: SmallVec<[PublicKey; 2]>,
     /// Kind
     pub kind: RoomKind,
-    /// Internal uses only
-    current_user: PublicKey,
 }
 
 impl Ord for Room {
@@ -74,7 +72,7 @@ impl Eq for Room {}
 impl EventEmitter<Incoming> for Room {}
 
 impl Room {
-    pub fn new(event: &Event, current_user: PublicKey) -> Self {
+    pub fn new(event: &Event) -> Self {
         let id = common::room_hash(event);
         let created_at = event.created_at;
 
@@ -101,13 +99,12 @@ impl Room {
         };
 
         Self {
-            kind: RoomKind::Unknown,
             id,
             created_at,
             subject,
             picture,
             members,
-            current_user,
+            kind: RoomKind::Unknown,
         }
     }
 
@@ -124,6 +121,27 @@ impl Room {
     /// The modified Room instance with the new kind
     pub fn kind(mut self, kind: RoomKind) -> Self {
         self.kind = kind;
+        self
+    }
+
+    /// Sets the rearrange_by field of the room and returns the modified room
+    ///
+    /// This is a builder-style method that allows chaining room modifications.
+    ///
+    /// # Arguments
+    ///
+    /// * `rearrange_by` - The PublicKey to set for rearranging the member list
+    ///
+    /// # Returns
+    ///
+    /// The modified Room instance with the new member list after rearrangement
+    pub fn rearrange_by(mut self, rearrange_by: PublicKey) -> Self {
+        let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) = self
+            .members
+            .into_iter()
+            .partition(|key| key != &rearrange_by);
+        self.members = not_match.into();
+        self.members.extend(matches);
         self
     }
 
@@ -262,14 +280,7 @@ impl Room {
     /// First member is always different from the current user.
     pub(crate) fn first_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
-
-        self.members
-            .iter()
-            .filter(|&pubkey| pubkey != &self.current_user)
-            .collect::<Vec<_>>()
-            .first()
-            .map(|public_key| registry.get_person(public_key, cx))
-            .unwrap_or(registry.get_person(&self.members[0], cx))
+        registry.get_person(&self.members[0], cx)
     }
 
     /// Merge the names of the first two members of the room.

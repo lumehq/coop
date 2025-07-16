@@ -6466,6 +6466,7 @@ dependencies = [
  "nostr-sdk",
  "once_cell",
  "regex",
+ "registry",
  "rust-i18n",
  "serde",
  "serde_json",
