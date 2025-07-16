@@ -94,17 +94,14 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Self, input, event, window, cx| {
-                    if let InputEvent::PressEnter { .. } = event {
-                        if input.read(cx).value().trim().is_empty() {
-                            window.push_notification(
-                                Notification::new(t!("chat.empty_message_error")),
-                                cx,
-                            );
-                        } else {
-                            this.send_message(window, cx);
-                        }
+                move |this: &mut Self, input, event, window, cx| match event {
+                    InputEvent::PressEnter { .. } => {
+                        this.send_message(window, cx);
                     }
+                    InputEvent::Change(text) => {
+                        this.mention_popup(text, input, cx);
+                    }
+                    _ => {}
                 },
             ));
 
@@ -192,6 +189,10 @@ impl Chat {
         .detach();
     }
 
+    fn mention_popup(&mut self, _text: &str, _input: &Entity<InputState>, _cx: &mut Context<Self>) {
+        // TODO: open mention popup at current cursor position
+    }
+
     /// Get user input content and merged all attachments
     fn input_content(&self, cx: &Context<Self>) -> String {
         let mut content = self.input.read(cx).value().trim().to_string();
@@ -241,20 +242,28 @@ impl Chat {
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let backup = AppSettings::get_global(cx).settings.backup_messages;
+        // Return if user is not logged in
         let Some(identity) = Identity::read_global(cx).public_key() else {
-            window.push_notification("Login is required", cx);
+            // window.push_notification("Login is required", cx);
             return;
         };
+
+        // Get the message which includes all attachments
+        let content = self.input_content(cx);
+        // Get the backup setting
+        let backup = AppSettings::get_global(cx).settings.backup_messages;
+
+        // Return if message is empty
+        if content.trim().is_empty() {
+            window.push_notification(t!("chat.empty_message_error"), cx);
+            return;
+        }
 
         // Temporary disable input
         self.input.update(cx, |this, cx| {
             this.set_loading(true, cx);
             this.set_disabled(true, cx);
         });
-
-        // Get the message which includes all attachments
-        let content = self.input_content(cx);
 
         // Get replies_to if it's present
         let replies = self.replies_to.read(cx).as_ref();
