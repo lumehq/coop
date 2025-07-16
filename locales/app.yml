@@ -1015,6 +1015,16 @@ chat:
     es: "Registros de errores"
     pt: "Registros de erros"
     ko: "오류 로그"
+  send_to_label:
+    en: "Send to:"
+    zh-CN: "发送至："
+    zh-TW: "傳送至："
+    ru: "Отправить:"
+    vi: "Gửi đến:"
+    ja: "送信先："
+    es: "Enviar a:"
+    pt: "Enviar para:"
+    ko: "보내기:"
 
 sidebar:
   find_or_start_conversation:
@@ -1204,13 +1214,3 @@ sidebar:
     es: "Todavía puedes usar la aplicación normalmente mientras los mensajes se procesan en segundo plano"
     pt: "Você ainda pode usar o aplicativo normalmente enquanto as mensagens são processadas em segundo plano"
     ko: "메시지가 백그라운드에서 처리되는 동안에도 앱을 정상적으로 사용할 수 있습니다"
-  send_to_label:
-    en: "Send to:"
-    zh-CN: "发送至："
-    zh-TW: "傳送至："
-    ru: "Отправить:"
-    vi: "Gửi đến:"
-    ja: "送信先："
-    es: "Enviar a:"
-    pt: "Enviar para:"
-    ko: "보내기:"
