@@ -20,6 +20,7 @@ use gpui::{
 use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::Registry;
@@ -257,6 +258,7 @@ fn main() {
                         cx.update(|window, cx| {
                             let registry = Registry::global(cx);
                             let auto_updater = AutoUpdater::global(cx);
+                            let identity = Identity::read_global(cx);
 
                             match signal {
                                 // Load chat rooms and stop the loading status
@@ -289,9 +291,11 @@ fn main() {
                                 }
                                 // Convert the gift wrapped message to a message
                                 NostrSignal::GiftWrap(event) => {
-                                    registry.update(cx, |this, cx| {
-                                        this.event_to_message(event, window, cx);
-                                    });
+                                    if let Some(public_key) = identity.public_key() {
+                                        registry.update(cx, |this, cx| {
+                                            this.event_to_message(public_key, event, window, cx);
+                                        });
+                                    }
                                 }
                                 NostrSignal::Notice(_msg) => {
                                     // window.push_notification(msg, cx);

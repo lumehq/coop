@@ -156,7 +156,7 @@ impl Sidebar {
         let keys = Keys::generate();
         let builder = EventBuilder::private_msg_rumor(public_key, "");
         let event = builder.build(identity).sign(&keys).await?;
-        let room = Room::new(&event).kind(RoomKind::Ongoing);
+        let room = Room::new(&event, identity).kind(RoomKind::Ongoing);
 
         Ok(room)
     }
@@ -684,6 +684,7 @@ impl Sidebar {
         range: Range<usize>,
         cx: &Context<Self>,
     ) -> Vec<impl IntoElement> {
+        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let mut items = Vec::with_capacity(range.end - range.start);
 
         for ix in range {
@@ -692,7 +693,7 @@ impl Sidebar {
                 let id = this.id;
                 let ago = this.ago();
                 let label = this.display_name(cx);
-                let img = this.display_image(cx);
+                let img = this.display_image(proxy, cx);
 
                 let handler = cx.listener(move |this, _, window, cx| {
                     this.open_room(id, window, cx);

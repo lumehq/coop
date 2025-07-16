@@ -178,7 +178,7 @@ impl Compose {
                 .build(public_key)
                 .sign(&Keys::generate())
                 .await
-                .map(|event| Room::new(&event).kind(RoomKind::Ongoing))?;
+                .map(|event| Room::new(&event, public_key).kind(RoomKind::Ongoing))?;
 
             Ok(room)
         });

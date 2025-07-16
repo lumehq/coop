@@ -9,7 +9,6 @@ use global::nostr_client;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
 };
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -315,11 +314,11 @@ impl Registry {
                 let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
 
                 if is_ongoing {
-                    rooms.insert(Room::new(&event).kind(RoomKind::Ongoing));
+                    rooms.insert(Room::new(&event, public_key).kind(RoomKind::Ongoing));
                 } else if is_trust {
-                    rooms.insert(Room::new(&event).kind(RoomKind::Trusted));
+                    rooms.insert(Room::new(&event, public_key).kind(RoomKind::Trusted));
                 } else {
-                    rooms.insert(Room::new(&event));
+                    rooms.insert(Room::new(&event, public_key));
                 }
             }
 
@@ -388,13 +387,15 @@ impl Registry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn event_to_message(
+        &mut self,
+        identity: PublicKey,
+        event: Event,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let id = room_hash(&event);
         let author = event.pubkey;
-
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            return;
-        };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             // Update room
@@ -415,7 +416,7 @@ impl Registry {
             // Re-sort the rooms registry by their created at
             self.sort(cx);
         } else {
-            let room = Room::new(&event).kind(RoomKind::Unknown);
+            let room = Room::new(&event, identity).kind(RoomKind::Unknown);
             let kind = room.kind;
 
             // Push the new room to the front of the list

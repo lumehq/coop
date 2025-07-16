@@ -241,6 +241,13 @@ impl Chat {
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let backup = AppSettings::get_global(cx).settings.backup_messages;
+        let Some(identity) = Identity::read_global(cx).public_key() else {
+            window.push_notification("Login is required", cx);
+            return;
+        };
+
+        // Temporary disable input
         self.input.update(cx, |this, cx| {
             this.set_loading(true, cx);
             this.set_disabled(true, cx);
@@ -248,14 +255,18 @@ impl Chat {
 
         // Get the message which includes all attachments
         let content = self.input_content(cx);
+
         // Get replies_to if it's present
         let replies = self.replies_to.read(cx).as_ref();
+
         // Get the current room entity
         let room = self.room.read(cx);
+
         // Create a temporary message for optimistic update
-        let temp_message = room.create_temp_message(&content, replies, cx);
+        let temp_message = room.create_temp_message(identity, &content, replies);
+
         // Create a task for sending the message in the background
-        let send_message = room.send_in_background(&content, replies, cx);
+        let send_message = room.send_in_background(&content, replies, backup, cx);
 
         if let Some(message) = temp_message {
             let id = message.id;
@@ -773,9 +784,10 @@ impl Panel for Chat {
     }
 
     fn title(&self, cx: &App) -> AnyElement {
-        self.room.read_with(cx, |this, _| {
+        self.room.read_with(cx, |this, cx| {
+            let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
             let label = this.display_name(cx);
-            let url = this.display_image(cx);
+            let url = this.display_image(proxy, cx);
 
             div()
                 .flex()
