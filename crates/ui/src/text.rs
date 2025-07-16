@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::display::DisplayProfile;
 use gpui::{
-    AnyElement, AnyView, App, ElementId, FontWeight, HighlightStyle, InteractiveText, IntoElement,
+    AnyElement, AnyView, App, ElementId, HighlightStyle, InteractiveText, IntoElement,
     SharedString, StyledText, UnderlineStyle, Window,
 };
 use linkify::{LinkFinder, LinkKind};
@@ -25,7 +25,7 @@ static NOSTR_URI_REGEX: Lazy<Regex> =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
     Link(HighlightStyle),
-    Mention,
+    Nostr,
 }
 
 impl Highlight {
@@ -39,8 +39,8 @@ impl Highlight {
         })
     }
 
-    fn mention() -> Self {
-        Self::Mention
+    fn nostr() -> Self {
+        Self::Nostr
     }
 }
 
@@ -120,9 +120,8 @@ impl RichText {
                                     *highlight
                                 }
                             }
-                            Highlight::Mention => HighlightStyle {
+                            Highlight::Nostr => HighlightStyle {
                                 color: Some(link_color),
-                                font_weight: Some(FontWeight::MEDIUM),
                                 ..Default::default()
                             },
                         },
@@ -135,8 +134,8 @@ impl RichText {
             move |ix, window, cx| {
                 let token = link_urls[ix].as_str();
 
-                if token.starts_with("mention:") {
-                    let clean_url = token.replace("mention:", "");
+                if token.starts_with("nostr:") {
+                    let clean_url = token.replace("nostr:", "");
                     let Ok(public_key) = PublicKey::parse(&clean_url) else {
                         log::error!("Failed to parse public key from: {clean_url}");
                         return;
@@ -193,9 +192,6 @@ fn render_plain_text_mut(
     // Copy the content directly
     text.push_str(content);
 
-    // Read the global registry
-    let registry = Registry::read_global(cx);
-
     // Initialize the link finder
     let mut finder = LinkFinder::new();
     finder.url_must_have_scheme(false);
@@ -248,67 +244,135 @@ fn render_plain_text_mut(
             // Make it clickable
             link_ranges.push(range);
             link_urls.push(entity);
+
             continue;
         };
 
-        // Handle Nostr URI token
-        if entity.starts_with("nostr:") {
-            let content = entity.strip_prefix("nostr:").unwrap_or(&entity);
-            // Convert this token to public key
-            let Ok(public_key) = common::parse_pubkey_from_str(content) else {
-                let njump_url = format!("https://njump.me/{content}");
-
-                // Create a shortened display format for the URL
-                let shortened_entity = format_shortened_entity(content);
-                let display_text = format!("https://njump.me/{shortened_entity}");
-
-                // Replace the original entity with the shortened display version
-                text.replace_range(range.clone(), &display_text);
-
-                // Adjust the ranges
-                let new_length = display_text.len();
-                let length_diff = new_length as isize - (range.end - range.start) as isize;
-                // New range for the replacement
-                let new_range = range.start..(range.start + new_length);
-
-                // Add underline highlight
-                highlights.push((new_range.clone(), Highlight::link()));
-                // Make it clickable
-                link_ranges.push(new_range);
-                link_urls.push(njump_url);
-
-                // Adjust subsequent ranges if needed
-                if length_diff != 0 {
-                    adjust_ranges(highlights, link_ranges, range.end, length_diff);
+        if let Ok(nip21) = Nip21::parse(&entity) {
+            match nip21 {
+                Nip21::Pubkey(public_key) => {
+                    render_pubkey(
+                        public_key,
+                        text,
+                        &range,
+                        highlights,
+                        link_ranges,
+                        link_urls,
+                        cx,
+                    );
                 }
-
-                continue;
-            };
-
-            let profile = registry.get_person(&public_key, cx);
-            let display_name = format!("@{}", profile.display_name());
-
-            // Replace token with display name
-            text.replace_range(range.clone(), &display_name);
-
-            // Adjust ranges
-            let new_length = display_name.len();
-            let length_diff = new_length as isize - (range.end - range.start) as isize;
-            // New range for the replacement
-            let new_range = range.start..(range.start + new_length);
-
-            // Add highlight for the profile name
-            highlights.push((new_range.clone(), Highlight::mention()));
-            // Make it clickable
-            link_ranges.push(new_range);
-            link_urls.push(format!("mention:{}", profile.public_key().to_hex()));
-
-            // Adjust subsequent ranges if needed
-            if length_diff != 0 {
-                adjust_ranges(highlights, link_ranges, range.end, length_diff);
+                Nip21::Profile(nip19_profile) => {
+                    render_pubkey(
+                        nip19_profile.public_key,
+                        text,
+                        &range,
+                        highlights,
+                        link_ranges,
+                        link_urls,
+                        cx,
+                    );
+                }
+                Nip21::EventId(event_id) => {
+                    render_bech32(
+                        event_id.to_bech32().unwrap(),
+                        text,
+                        &range,
+                        highlights,
+                        link_ranges,
+                        link_urls,
+                    );
+                }
+                Nip21::Event(nip19_event) => {
+                    render_bech32(
+                        nip19_event.to_bech32().unwrap(),
+                        text,
+                        &range,
+                        highlights,
+                        link_ranges,
+                        link_urls,
+                    );
+                }
+                Nip21::Coordinate(nip19_coordinate) => {
+                    render_bech32(
+                        nip19_coordinate.to_bech32().unwrap(),
+                        text,
+                        &range,
+                        highlights,
+                        link_ranges,
+                        link_urls,
+                    );
+                }
             }
         }
-        // Ignore the rest of the tokens
+    }
+
+    fn render_pubkey(
+        public_key: PublicKey,
+        text: &mut String,
+        range: &Range<usize>,
+        highlights: &mut Vec<(Range<usize>, Highlight)>,
+        link_ranges: &mut Vec<Range<usize>>,
+        link_urls: &mut Vec<String>,
+        cx: &App,
+    ) {
+        let registry = Registry::read_global(cx);
+        let profile = registry.get_person(&public_key, cx);
+        let display_name = format!("@{}", profile.display_name());
+
+        // Replace token with display name
+        text.replace_range(range.clone(), &display_name);
+
+        // Adjust ranges
+        let new_length = display_name.len();
+        let length_diff = new_length as isize - (range.end - range.start) as isize;
+        // New range for the replacement
+        let new_range = range.start..(range.start + new_length);
+
+        // Add highlight for the profile name
+        highlights.push((new_range.clone(), Highlight::nostr()));
+        // Make it clickable
+        link_ranges.push(new_range);
+        link_urls.push(format!("nostr:{}", profile.public_key().to_hex()));
+
+        // Adjust subsequent ranges if needed
+        if length_diff != 0 {
+            adjust_ranges(highlights, link_ranges, range.end, length_diff);
+        }
+    }
+
+    fn render_bech32(
+        bech32: String,
+        text: &mut String,
+        range: &Range<usize>,
+        highlights: &mut Vec<(Range<usize>, Highlight)>,
+        link_ranges: &mut Vec<Range<usize>>,
+        link_urls: &mut Vec<String>,
+    ) {
+        let njump_url = format!("https://njump.me/{bech32}");
+
+        // Create a shortened display format for the URL
+        let shortened_entity = format_shortened_entity(&bech32);
+        let display_text = format!("https://njump.me/{shortened_entity}");
+
+        // Replace the original entity with the shortened display version
+        text.replace_range(range.clone(), &display_text);
+
+        // Adjust the ranges
+        let new_length = display_text.len();
+        let length_diff = new_length as isize - (range.end - range.start) as isize;
+        // New range for the replacement
+        let new_range = range.start..(range.start + new_length);
+
+        // Add underline highlight
+        highlights.push((new_range.clone(), Highlight::link()));
+        // Make it clickable
+        link_ranges.push(new_range);
+        link_urls.push(njump_url);
+
+        // Adjust subsequent ranges if needed
+        if length_diff != 0 {
+            adjust_ranges(highlights, link_ranges, range.end, length_diff);
+        }
     }
 }
 
