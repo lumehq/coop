@@ -15,8 +15,9 @@ use theme::ActiveTheme;
 
 use crate::actions::OpenProfile;
 
-static URL_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(/.*)?$").unwrap());
+static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(?:[a-zA-Z]+://)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(/.*)?$").unwrap()
+});
 
 static NOSTR_URI_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"nostr:(npub|note|nprofile|nevent|naddr)[a-zA-Z0-9]+").unwrap());
@@ -128,17 +129,23 @@ impl RichText {
         .on_click(self.link_ranges.clone(), {
             let link_urls = self.link_urls.clone();
             move |ix, window, cx| {
-                let url = &link_urls[ix];
+                let token = link_urls[ix].as_str();
 
-                if url.starts_with("http") {
-                    cx.open_url(url);
-                } else if url.starts_with("mention:") {
-                    let clean_url = url.replace("mention:", "");
+                if token.starts_with("mention:") {
+                    let clean_url = token.replace("mention:", "");
                     let Ok(public_key) = PublicKey::parse(&clean_url) else {
                         log::error!("Failed to parse public key from: {clean_url}");
                         return;
                     };
                     window.dispatch_action(Box::new(OpenProfile(public_key)), cx);
+                } else if is_url(token) {
+                    if !token.starts_with("http") {
+                        cx.open_url(&format!("https://{token}"));
+                    } else {
+                        cx.open_url(token);
+                    }
+                } else {
+                    log::warn!("Unrecognized token {token}")
                 }
             }
         })
@@ -190,6 +197,7 @@ fn render_plain_text_mut(
 
     // Process regular URLs using linkify
     let mut finder = LinkFinder::new();
+    finder.url_must_have_scheme(false);
     finder.kinds(&[LinkKind::Url]);
 
     // Collect all URLs
@@ -247,6 +255,32 @@ fn render_plain_text_mut(
             let content = entity.strip_prefix("nostr:").unwrap_or(&entity);
             // Convert this token to public key
             let Ok(public_key) = common::parse_pubkey_from_str(content) else {
+                let njump_url = format!("https://njump.me/{content}");
+
+                // Create a shortened display format for the URL
+                let shortened_entity = format_shortened_entity(content);
+                let display_text = format!("https://njump.me/{shortened_entity}");
+
+                // Replace the original entity with the shortened display version
+                text.replace_range(range.clone(), &display_text);
+
+                // Adjust the ranges
+                let new_length = display_text.len();
+                let length_diff = new_length as isize - (range.end - range.start) as isize;
+                // New range for the replacement
+                let new_range = range.start..(range.start + new_length);
+
+                // Add underline highlight
+                highlights.push((new_range.clone(), Highlight::link()));
+                // Make it clickable
+                link_ranges.push(new_range);
+                link_urls.push(njump_url);
+
+                // Adjust subsequent ranges if needed
+                if length_diff != 0 {
+                    adjust_ranges(highlights, link_ranges, range.end, length_diff);
+                }
+
                 continue;
             };
 
