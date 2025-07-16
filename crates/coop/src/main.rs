@@ -21,7 +21,6 @@ use gpui::{point, SharedString, TitlebarOptions};
 #[cfg(target_os = "linux")]
 use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use identity::Identity;
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use smol::channel::{self, Sender};
@@ -406,17 +405,11 @@ async fn handle_nostr_notifications(
                             .kind(Kind::InboxRelays)
                             .limit(1);
 
-                        let relay_urls = nip65::extract_owned_relay_list(event.into_owned())
-                            .map(|(url, _)| url)
-                            .collect_vec();
-
-                        if !relay_urls.is_empty() {
-                            client
-                                .subscribe_to(relay_urls, filter, Some(opts))
-                                .await
-                                .ok();
-
-                            log::info!("Subscribe for messaging relays")
+                        if client.subscribe(filter, Some(opts)).await.is_ok() {
+                            log::info!(
+                                "Subscribed to get DM relays: {}",
+                                event.pubkey.to_bech32().unwrap()
+                            )
                         }
                     }
                     Kind::ReleaseArtifactSet => {

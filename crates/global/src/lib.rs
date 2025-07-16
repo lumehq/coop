@@ -1,5 +1,6 @@
 use std::fs;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
@@ -47,8 +48,18 @@ pub fn nostr_client() -> &'static Client {
             .install_default()
             .ok();
 
-        let opts = ClientOptions::new().gossip(true);
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
+
+        let opts = ClientOptions::new()
+            // Coop isn't social client,
+            // but it needs this option because it needs user's NIP65 Relays to fetch NIP17 Relays.
+            .gossip(true)
+            // TODO: Coop should handle authentication by itself
+            .automatic_authentication(true)
+            // Sleep after idle for 5 seconds
+            .sleep_when_idle(SleepWhenIdle::Enabled {
+                timeout: Duration::from_secs(5),
+            });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
     })
