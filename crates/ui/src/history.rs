@@ -156,3 +156,12 @@ where
         }
     }
 }
+
+impl<I> Default for History<I>
+where
+    I: HistoryItem,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
