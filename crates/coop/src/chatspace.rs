@@ -160,11 +160,6 @@ impl ChatSpace {
                     if !state.read(cx).has_signer() {
                         this.open_onboarding(window, cx);
                     } else {
-                        // Load all chat rooms from database
-                        Registry::global(cx).update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                        });
-                        // Open chat panels
                         this.open_chats(window, cx);
                     }
                 },
@@ -228,6 +223,11 @@ impl ChatSpace {
     pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Enable the toolbar for logged in users
         self.toolbar(true, cx);
+
+        // Load all chat rooms from database
+        Registry::global(cx).update(cx, |this, cx| {
+            this.load_rooms(window, cx);
+        });
 
         let weak_dock = self.dock.downgrade();
         let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));

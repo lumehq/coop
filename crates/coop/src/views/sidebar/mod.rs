@@ -576,41 +576,46 @@ impl Sidebar {
 
     fn open_compose(&self, window: &mut Window, cx: &mut Context<Self>) {
         let compose = compose::init(window, cx);
+        let title = SharedString::new(t!("sidebar.direct_messages"));
 
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
-                .title(SharedString::new(t!("sidebar.direct_messages")))
+                .title(title.clone())
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(compose.clone())
         });
     }
 
     fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let title = SharedString::new(t!("sidebar.loading_modal_title"));
+        let text_1 = SharedString::new(t!("sidebar.loading_modal_body_1"));
+        let text_2 = SharedString::new(t!("sidebar.loading_modal_body_2"));
+        let desc = SharedString::new(t!("sidebar.loading_modal_description"));
+
         window.open_modal(cx, move |this, _window, cx| {
-            this.title(SharedString::new(t!("sidebar.loading_modal_title")))
-                .child(
-                    div()
-                        .px_4()
-                        .pb_4()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .text_sm()
-                                .child(SharedString::new(t!("sidebar.loading_modal_body_1")))
-                                .child(SharedString::new(t!("sidebar.loading_modal_body_2"))),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().text_muted)
-                                .child(SharedString::new(t!("sidebar.loading_modal_description"))),
-                        ),
-                )
+            this.title(title.clone()).child(
+                div()
+                    .px_4()
+                    .pb_4()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .text_sm()
+                            .child(text_1.clone())
+                            .child(text_2.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(desc.clone()),
+                    ),
+            )
         });
     }
 

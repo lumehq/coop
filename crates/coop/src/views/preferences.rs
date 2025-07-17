@@ -51,11 +51,11 @@ impl Preferences {
 
     fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
         let edit_profile = edit_profile::init(window, cx);
+        let title = SharedString::new(t!("preferences.modal_profile_title"));
 
         window.open_modal(cx, move |modal, _window, _cx| {
-            let title = SharedString::new(t!("preferences.modal_profile_title"));
             modal
-                .title(title)
+                .title(title.clone())
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(edit_profile.clone())
         });
@@ -63,11 +63,11 @@ impl Preferences {
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
         let relays = relays::init(window, cx);
+        let title = SharedString::new(t!("preferences.modal_relays_title"));
 
         window.open_modal(cx, move |this, _window, _cx| {
-            let title = SharedString::new(t!("preferences.modal_relays_title"));
             this.width(px(DEFAULT_MODAL_WIDTH))
-                .title(title)
+                .title(title.clone())
                 .child(relays.clone())
         });
     }
