@@ -554,7 +554,7 @@ impl Element for TextElement {
         // Paint selections
         if window.is_window_active() {
             if let Some(path) = prepaint.selection_path.take() {
-                window.paint_path(path, cx.theme().selection);
+                window.paint_path(path, cx.theme().element_disabled);
             }
         }
 
