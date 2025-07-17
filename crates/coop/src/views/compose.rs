@@ -103,8 +103,6 @@ impl Compose {
                 .map(|profile| Contact::new(profile.public_key()))
                 .collect_vec();
 
-            log::info!("get contacts");
-
             Ok(contacts)
         });
 
