@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::ops::{Deref, Range};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -380,7 +381,9 @@ impl InputState {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let blink_cursor = cx.new(|_| BlinkCursor::new());
-        let history = History::new().group_interval(std::time::Duration::from_secs(1));
+        let history = History::new()
+            .max_undo(2000)
+            .group_interval(Duration::from_millis(600));
 
         let _subscriptions = vec![
             // Observe the blink cursor to repaint the view when it changes.
