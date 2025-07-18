@@ -43,6 +43,6 @@ impl DisplayProfile for Profile {
 
         let Ok(pubkey) = self.public_key().to_bech32();
 
-        format!("{}:{}", &pubkey[0..4], &pubkey[pubkey.len() - 4..]).into()
+        format!("{}:{}", &pubkey[0..5], &pubkey[pubkey.len() - 4..]).into()
     }
 }
