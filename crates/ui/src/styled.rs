@@ -1,6 +1,9 @@
 use std::fmt::{self, Display, Formatter};
 
-use gpui::{div, px, App, Axis, Div, Element, ElementId, EntityId, Pixels, Styled, Window};
+use gpui::{
+    div, px, App, Axis, Div, Element, ElementId, EntityId, Pixels, Refineable, StyleRefinement,
+    Styled, Window,
+};
 use serde::{Deserialize, Serialize};
 use theme::ActiveTheme;
 
@@ -27,12 +30,20 @@ macro_rules! font_weight {
 
 /// Extends [`gpui::Styled`] with specific styling methods.
 pub trait StyledExt: Styled + Sized {
+    /// Refine the style of this element, applying the given style refinement.
+    fn refine_style(mut self, style: &StyleRefinement) -> Self {
+        self.style().refine(style);
+        self
+    }
+
     /// Apply self into a horizontal flex layout.
+    #[inline]
     fn h_flex(self) -> Self {
         self.flex().flex_row().items_center()
     }
 
     /// Apply self into a vertical flex layout.
+    #[inline]
     fn v_flex(self) -> Self {
         self.flex().flex_col()
     }

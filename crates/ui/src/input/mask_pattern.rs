@@ -2,8 +2,6 @@ use gpui::SharedString;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum MaskToken {
-    /// 0 Digit, equivalent to `[0]`
-    // Digit0,
     /// Digit, equivalent to `[0-9]`
     Digit,
     /// Letter, equivalent to `[a-zA-Z]`

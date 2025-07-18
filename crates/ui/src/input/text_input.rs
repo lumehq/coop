@@ -1,7 +1,8 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, relative, AnyElement, App, DefiniteLength, Entity, InteractiveElement as _,
-    IntoElement, MouseButton, ParentElement as _, Rems, RenderOnce, Styled, Window,
+    IntoElement, MouseButton, ParentElement as _, Rems, RenderOnce, StyleRefinement, Styled,
+    Window,
 };
 use theme::ActiveTheme;
 
@@ -10,11 +11,12 @@ use crate::button::{Button, ButtonVariants as _};
 use crate::indicator::Indicator;
 use crate::input::clear_button::clear_button;
 use crate::scroll::{Scrollbar, ScrollbarAxis};
-use crate::{h_flex, IconName, Sizable, Size, StyleSized};
+use crate::{h_flex, IconName, Sizable, Size, StyleSized, StyledExt};
 
 #[derive(IntoElement)]
 pub struct TextInput {
     state: Entity<InputState>,
+    style: StyleRefinement,
     size: Size,
     no_gap: bool,
     prefix: Option<AnyElement>,
@@ -38,6 +40,7 @@ impl TextInput {
     pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
+            style: StyleRefinement::default(),
             size: Size::default(),
             no_gap: false,
             prefix: None,
@@ -276,8 +279,6 @@ impl RenderOnce for TextInput {
                 let entity_id = self.state.entity_id();
 
                 if state.last_layout.is_some() {
-                    let scroll_size = state.scroll_size;
-
                     this.relative().child(
                         div()
                             .absolute()
@@ -290,7 +291,7 @@ impl RenderOnce for TextInput {
                                     entity_id,
                                     state.scrollbar_state.clone(),
                                     state.scroll_handle.clone(),
-                                    scroll_size,
+                                    state.scroll_size,
                                 )
                                 .axis(ScrollbarAxis::Vertical),
                             ),
@@ -299,5 +300,6 @@ impl RenderOnce for TextInput {
                     this
                 }
             })
+            .refine_style(&self.style)
     }
 }

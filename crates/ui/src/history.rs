@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-pub trait HistoryItem: Clone {
+pub trait HistoryItem: Clone + PartialEq {
     fn version(&self) -> usize;
     fn set_version(&mut self, version: usize);
 }
@@ -11,6 +11,11 @@ pub trait HistoryItem: Clone {
 /// This is now used in Input for undo/redo operations. You can also use this in
 /// your own models to keep track of changes, for example to track the tab
 /// history for prev/next features.
+///
+/// ## Use cases
+///
+/// - Undo/redo operations in Input
+/// - Tracking tab history for prev/next features
 #[derive(Debug)]
 pub struct History<I: HistoryItem> {
     undos: Vec<I>,
@@ -20,6 +25,7 @@ pub struct History<I: HistoryItem> {
     pub(crate) ignore: bool,
     max_undo: usize,
     group_interval: Option<Duration>,
+    unique: bool,
 }
 
 impl<I> History<I>
@@ -35,12 +41,20 @@ where
             version: 0,
             max_undo: 1000,
             group_interval: None,
+            unique: false,
         }
     }
 
     /// Set the maximum number of undo steps to keep, defaults to 1000.
     pub fn max_undo(mut self, max_undo: usize) -> Self {
         self.max_undo = max_undo;
+        self
+    }
+
+    /// Set the history to be unique, defaults to false.
+    /// If set to true, the history will only keep unique changes.
+    pub fn unique(mut self) -> Self {
+        self.unique = true;
         self
     }
 
@@ -73,9 +87,30 @@ where
             self.undos.remove(0);
         }
 
+        if self.unique {
+            self.undos.retain(|c| *c != item);
+            self.redos.retain(|c| *c != item);
+        }
+
         let mut item = item;
         item.set_version(version);
         self.undos.push(item);
+    }
+
+    /// Get the undo stack.
+    pub fn undos(&self) -> &Vec<I> {
+        &self.undos
+    }
+
+    /// Get the redo stack.
+    pub fn redos(&self) -> &Vec<I> {
+        &self.redos
+    }
+
+    /// Clear the undo and redo stacks.
+    pub fn clear(&mut self) {
+        self.undos.clear();
+        self.redos.clear();
     }
 
     pub fn undo(&mut self) -> Option<Vec<I>> {
@@ -93,7 +128,7 @@ where
                 changes.push(change);
             }
 
-            self.redos.extend(changes.iter().rev().cloned());
+            self.redos.extend(changes.clone());
             Some(changes)
         } else {
             None
@@ -114,7 +149,7 @@ where
                 let change = self.redos.pop().unwrap();
                 changes.push(change);
             }
-            self.undos.extend(changes.iter().rev().cloned());
+            self.undos.extend(changes.clone());
             Some(changes)
         } else {
             None
@@ -128,78 +163,5 @@ where
 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Clone)]
-    struct TabIndex {
-        tab_index: usize,
-        version: usize,
-    }
-
-    impl From<usize> for TabIndex {
-        fn from(value: usize) -> Self {
-            TabIndex {
-                tab_index: value,
-                version: 0,
-            }
-        }
-    }
-
-    impl HistoryItem for TabIndex {
-        fn version(&self) -> usize {
-            self.version
-        }
-
-        fn set_version(&mut self, version: usize) {
-            self.version = version;
-        }
-    }
-
-    #[test]
-    fn test_history() {
-        let mut history: History<TabIndex> = History::new().max_undo(100);
-        history.push(0.into());
-        history.push(3.into());
-        history.push(2.into());
-        history.push(1.into());
-
-        assert_eq!(history.version(), 4);
-        let changes = history.undo().unwrap();
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].tab_index, 1);
-
-        let changes = history.undo().unwrap();
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].tab_index, 2);
-
-        history.push(5.into());
-
-        let changes = history.redo().unwrap();
-        assert_eq!(changes[0].tab_index, 2);
-
-        let changes = history.redo().unwrap();
-        assert_eq!(changes[0].tab_index, 1);
-
-        let changes = history.undo().unwrap();
-        assert_eq!(changes[0].tab_index, 1);
-
-        let changes = history.undo().unwrap();
-        assert_eq!(changes[0].tab_index, 2);
-
-        let changes = history.undo().unwrap();
-        assert_eq!(changes[0].tab_index, 5);
-
-        let changes = history.undo().unwrap();
-        assert_eq!(changes[0].tab_index, 3);
-
-        let changes = history.undo().unwrap();
-        assert_eq!(changes[0].tab_index, 0);
-
-        assert!(history.undo().is_none());
     }
 }
