@@ -5,7 +5,6 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
-use common::nip05::nip05_verify;
 use global::constants::{BOOTSTRAP_RELAYS, DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -153,10 +152,15 @@ impl Sidebar {
     }
 
     async fn create_temp_room(identity: PublicKey, public_key: PublicKey) -> Result<Room, Error> {
+        let client = nostr_client();
         let keys = Keys::generate();
         let builder = EventBuilder::private_msg_rumor(public_key, "");
         let event = builder.build(identity).sign(&keys).await?;
 
+        // Request to get user's metadata
+        Self::request_metadata(client, public_key).await?;
+
+        // Create a temporary room
         let room = Room::new(&event)
             .kind(RoomKind::Ongoing)
             .rearrange_by(identity);
@@ -184,24 +188,6 @@ impl Sidebar {
                 if event.pubkey == identity {
                     continue;
                 }
-
-                // Skip if metadata is invalid (mostly spam accounts)
-                let Ok(metadata) = Metadata::from_json(event.content) else {
-                    continue;
-                };
-
-                // Skip if NIP-05 is not found
-                let Some(target) = metadata.nip05.as_ref() else {
-                    continue;
-                };
-
-                // Skip if NIP-05 is not valid or failed to verify
-                if !nip05_verify(event.pubkey, target).await.unwrap_or(false) {
-                    continue;
-                };
-
-                // Request for user metadata
-                Self::request_metadata(client, event.pubkey).await.ok();
 
                 // Return a temporary room
                 if let Ok(room) = Self::create_temp_room(identity, event.pubkey).await {
@@ -308,14 +294,8 @@ impl Sidebar {
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
-            let client = nostr_client();
-
             if let Ok(profile) = common::nip05::nip05_profile(&address).await {
-                let public_key = profile.public_key;
-                // Request for user metadata
-                Self::request_metadata(client, public_key).await.ok();
-                // Return a temporary room
-                Self::create_temp_room(identity, public_key).await
+                Self::create_temp_room(identity, profile.public_key).await
             } else {
                 Err(anyhow!(t!("sidebar.addr_error")))
             }
@@ -371,11 +351,6 @@ impl Sidebar {
         };
 
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-
-            // Request metadata for this user
-            Self::request_metadata(client, public_key).await?;
-
             // Create a gift wrap event to represent as room
             Self::create_temp_room(identity, public_key).await
         });
@@ -704,21 +679,19 @@ impl Sidebar {
         for ix in range {
             if let Some(room) = rooms.get(ix) {
                 let this = room.read(cx);
-                let id = this.id;
-                let ago = this.ago();
-                let label = this.display_name(cx);
-                let img = this.display_image(proxy, cx);
-                let public_key = this.members[0];
-
-                let handler = cx.listener(move |this, _, window, cx| {
-                    this.open_room(id, window, cx);
+                let handler = cx.listener({
+                    let id = this.id;
+                    move |this, _, window, cx| {
+                        this.open_room(id, window, cx);
+                    }
                 });
 
                 items.push(
-                    RoomListItem::new(ix, public_key)
-                        .img(img)
-                        .label(label)
-                        .description(ago)
+                    RoomListItem::new(ix, this.members[0])
+                        .avatar(this.display_image(proxy, cx))
+                        .name(this.display_name(cx))
+                        .created_at(this.ago())
+                        .kind(this.kind)
                         .on_click(handler),
                 )
             }

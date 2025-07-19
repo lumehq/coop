@@ -548,6 +548,18 @@ subject:
     pt: "O assunto será atualizado quando você enviar uma mensagem."
     ko: "메시지를 보낼 때 제목이 업데이트됩니다."
 
+screening:
+  title:
+    en: "Screening"
+    zh-CN: "筛选"
+    zh-TW: "篩選"
+    ru: "Фильтрация"
+    vi: "Lọc"
+    ja: "フィルタリング"
+    es: "Filtrado"
+    pt: "Filtragem"
+    ko: "필터링"
+
 profile:
   title:
     en: "Profile"

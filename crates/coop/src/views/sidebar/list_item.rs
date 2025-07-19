@@ -7,21 +7,23 @@ use gpui::{
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
+use registry::room::RoomKind;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::actions::OpenProfile;
 use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
-use ui::StyledExt;
+use ui::{ContextModal, StyledExt};
 
 #[derive(IntoElement)]
 pub struct RoomListItem {
     ix: usize,
     base: Div,
     public_key: PublicKey,
-    img: Option<SharedString>,
-    label: Option<SharedString>,
-    description: Option<SharedString>,
+    name: Option<SharedString>,
+    avatar: Option<SharedString>,
+    created_at: Option<SharedString>,
+    kind: Option<RoomKind>,
     #[allow(clippy::type_complexity)]
     handler: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
 }
@@ -30,27 +32,33 @@ impl RoomListItem {
     pub fn new(ix: usize, public_key: PublicKey) -> Self {
         Self {
             ix,
-            base: div().h_9().w_full().px_1p5(),
             public_key,
-            img: None,
-            label: None,
-            description: None,
+            base: div().h_9().w_full().px_1p5(),
+            name: None,
+            avatar: None,
+            created_at: None,
+            kind: None,
             handler: Rc::new(|_, _, _| {}),
         }
     }
 
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
+    pub fn name(mut self, name: impl Into<SharedString>) -> Self {
+        self.name = Some(name.into());
         self
     }
 
-    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
-        self.description = Some(description.into());
+    pub fn created_at(mut self, created_at: impl Into<SharedString>) -> Self {
+        self.created_at = Some(created_at.into());
         self
     }
 
-    pub fn img(mut self, img: impl Into<SharedString>) -> Self {
-        self.img = Some(img.into());
+    pub fn avatar(mut self, avatar: impl Into<SharedString>) -> Self {
+        self.avatar = Some(avatar.into());
+        self
+    }
+
+    pub fn kind(mut self, kind: RoomKind) -> Self {
+        self.kind = Some(kind);
         self
     }
 
@@ -66,6 +74,7 @@ impl RoomListItem {
 impl RenderOnce for RoomListItem {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let public_key = self.public_key;
+        let kind = self.kind;
         let handler = self.handler.clone();
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
 
@@ -84,8 +93,8 @@ impl RenderOnce for RoomListItem {
                         .rounded_full()
                         .overflow_hidden()
                         .map(|this| {
-                            if let Some(path) = self.img {
-                                this.child(Avatar::new(path).size(rems(1.5)))
+                            if let Some(img) = self.avatar {
+                                this.child(Avatar::new(img).size(rems(1.5)))
                             } else {
                                 this.child(
                                     img("brand/avatar.png")
@@ -103,31 +112,53 @@ impl RenderOnce for RoomListItem {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .when_some(self.label, |this, label| {
+                    .when_some(self.name, |this, name| {
                         this.child(
                             div()
                                 .flex_1()
                                 .line_clamp(1)
                                 .text_ellipsis()
                                 .font_medium()
-                                .child(label),
+                                .child(name),
                         )
                     })
-                    .when_some(self.description, |this, description| {
+                    .when_some(self.created_at, |this, ago| {
                         this.child(
                             div()
                                 .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().text_placeholder)
-                                .child(description),
+                                .child(ago),
                         )
                     }),
             )
-            .hover(|this| this.bg(cx.theme().elevated_surface_background))
-            .on_click(move |ev, window, cx| handler(ev, window, cx))
             .context_menu(move |this, _window, _cx| {
                 // TODO: add share chat room
                 this.menu(t!("profile.view"), Box::new(OpenProfile(public_key)))
+            })
+            .hover(|this| this.bg(cx.theme().elevated_surface_background))
+            .on_click(move |event, window, cx| {
+                let handler = handler.clone();
+
+                if let Some(kind) = kind {
+                    if kind != RoomKind::Ongoing {
+                        let title = SharedString::new(t!("screening.title"));
+
+                        window.open_modal(cx, move |this, _window, _cx| {
+                            let handler_clone = handler.clone();
+
+                            this.title(title.clone()).child("TODO").on_ok(
+                                move |event, window, cx| {
+                                    handler_clone(event, window, cx);
+                                    // true to close the modal
+                                    true
+                                },
+                            )
+                        });
+                    } else {
+                        handler(event, window, cx)
+                    }
+                }
             })
     }
 }
