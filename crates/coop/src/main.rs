@@ -405,10 +405,11 @@ async fn handle_nostr_notifications(
                             .kind(Kind::InboxRelays)
                             .limit(1);
 
-                        if client.subscribe(filter, Some(opts)).await.is_ok() {
+                        if let Ok(output) = client.subscribe(filter, Some(opts)).await {
                             log::info!(
-                                "Subscribed to get DM relays: {}",
-                                event.pubkey.to_bech32().unwrap()
+                                "Subscribed to get DM relays: {} - Relays: {:?}",
+                                event.pubkey.to_bech32().unwrap(),
+                                output.success
                             )
                         }
                     }

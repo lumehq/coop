@@ -58,7 +58,7 @@ pub fn nostr_client() -> &'static Client {
             .automatic_authentication(true)
             // Sleep after idle for 5 seconds
             .sleep_when_idle(SleepWhenIdle::Enabled {
-                timeout: Duration::from_secs(5),
+                timeout: Duration::from_secs(10),
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
