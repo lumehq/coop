@@ -549,6 +549,26 @@ subject:
     ko: "메시지를 보낼 때 제목이 업데이트됩니다."
 
 profile:
+  title:
+    en: "Profile"
+    zh-CN: "个人资料"
+    zh-TW: "個人資料"
+    ru: "Профиль"
+    vi: "Hồ sơ"
+    ja: "プロフィール"
+    es: "Perfil"
+    pt: "Perfil"
+    ko: "프로필"
+  view:
+    en: "View Profile"
+    zh-CN: "查看个人资料"
+    zh-TW: "檢視個人資料"
+    ru: "Просмотреть профиль"
+    vi: "Xem hồ sơ"
+    ja: "プロフィールを表示する"
+    es: "Ver perfil"
+    pt: "Ver perfil"
+    ko: "프로필 보기"
   set_profile_picture:
     en: "Set Profile Picture"
     zh-CN: "设置个人资料图片"
@@ -641,16 +661,6 @@ profile:
     ko: "njump.me에서 열기"
 
 preferences:
-  modal_profile_title:
-    en: "Profile"
-    zh-CN: "个人资料"
-    zh-TW: "個人資料"
-    ru: "Профиль"
-    vi: "Hồ sơ"
-    ja: "プロフィール"
-    es: "Perfil"
-    pt: "Perfil"
-    ko: "프로필"
   modal_relays_title:
     en: "Edit your Messaging Relays"
     zh-CN: "编辑您的Messaging Relays"

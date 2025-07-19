@@ -6,7 +6,6 @@ use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
-use element::DisplayRoom;
 use global::constants::{BOOTSTRAP_RELAYS, DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -20,6 +19,7 @@ use gpui_tokio::Tokio;
 use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
+use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use registry::room::{Room, RoomKind};
 use registry::{Registry, RoomEmitter};
@@ -37,7 +37,7 @@ use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
 
-mod element;
+mod list_item;
 
 const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
@@ -156,7 +156,10 @@ impl Sidebar {
         let keys = Keys::generate();
         let builder = EventBuilder::private_msg_rumor(public_key, "");
         let event = builder.build(identity).sign(&keys).await?;
-        let room = Room::new(&event).kind(RoomKind::Ongoing);
+
+        let room = Room::new(&event)
+            .kind(RoomKind::Ongoing)
+            .rearrange_by(identity);
 
         Ok(room)
     }
@@ -165,7 +168,6 @@ impl Sidebar {
         let client = nostr_client();
         let timeout = Duration::from_secs(2);
         let mut rooms: BTreeSet<Room> = BTreeSet::new();
-        let mut processed: BTreeSet<PublicKey> = BTreeSet::new();
 
         let filter = Filter::new()
             .kind(Kind::Metadata)
@@ -177,13 +179,16 @@ impl Sidebar {
             .await
         {
             // Process to verify the search results
-            for event in events.into_iter() {
-                if processed.contains(&event.pubkey) {
+            for event in events.into_iter().unique_by(|event| event.pubkey) {
+                // Skip if author is match current user
+                if event.pubkey == identity {
                     continue;
                 }
-                processed.insert(event.pubkey);
 
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                // Skip if metadata is invalid (mostly spam accounts)
+                let Ok(metadata) = Metadata::from_json(event.content) else {
+                    continue;
+                };
 
                 // Skip if NIP-05 is not found
                 let Some(target) = metadata.nip05.as_ref() else {
@@ -195,6 +200,10 @@ impl Sidebar {
                     continue;
                 };
 
+                // Request for user metadata
+                Self::request_metadata(client, event.pubkey).await.ok();
+
+                // Return a temporary room
                 if let Ok(room) = Self::create_temp_room(identity, event.pubkey).await {
                     rooms.insert(room);
                 }
@@ -699,13 +708,14 @@ impl Sidebar {
                 let ago = this.ago();
                 let label = this.display_name(cx);
                 let img = this.display_image(proxy, cx);
+                let public_key = this.members[0];
 
                 let handler = cx.listener(move |this, _, window, cx| {
                     this.open_room(id, window, cx);
                 });
 
                 items.push(
-                    DisplayRoom::new(ix)
+                    RoomListItem::new(ix, public_key)
                         .img(img)
                         .label(label)
                         .description(ago)
