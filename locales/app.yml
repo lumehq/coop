@@ -671,6 +671,16 @@ profile:
     es: "Abrir en njump.me"
     pt: "Abrir no njump.me"
     ko: "njump.me에서 열기"
+  no_bio:
+    en: "No bio."
+    zh-CN: "无简介"
+    zh-TW: "無簡介"
+    ru: "Нет биографии"
+    vi: "Không có tiểu sử"
+    ja: "プロフィールなし"
+    es: "Sin biografía"
+    pt: "Sem biografia"
+    ko: "프로필 없음"
 
 preferences:
   modal_relays_title:

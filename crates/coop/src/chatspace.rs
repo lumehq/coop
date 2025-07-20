@@ -25,6 +25,7 @@ use ui::modal::ModalButtonProps;
 use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
 use crate::views::chat::{self, Chat};
+use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
     login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
@@ -73,7 +74,7 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
     toolbar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 5]>,
+    subscriptions: SmallVec<[Subscription; 6]>,
 }
 
 impl ChatSpace {
@@ -172,8 +173,15 @@ impl ChatSpace {
                 }
             }));
 
-            // Automatically run on_load function from UserProfile
+            // Automatically run on_load function when UserProfile is created
             subscriptions.push(cx.observe_new::<UserProfile>(|this, window, cx| {
+                if let Some(window) = window {
+                    this.on_load(window, cx);
+                }
+            }));
+
+            // Automatically run on_load function when Screening is created
+            subscriptions.push(cx.observe_new::<Screening>(|this, window, cx| {
                 if let Some(window) = window {
                     this.on_load(window, cx);
                 }

@@ -1,12 +1,10 @@
-use std::time::Duration;
-
 use common::display::DisplayProfile;
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, rems, App, AppContext, ClipboardItem, Context, Entity, IntoElement,
-    ParentElement, Render, SharedString, Styled, Task, Window,
+    div, relative, rems, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
+    SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::t;
@@ -16,27 +14,24 @@ use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::{h_flex, v_flex, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, Icon, IconName, Sizable, StyledExt};
 
-pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<UserProfile> {
-    UserProfile::new(public_key, window, cx)
+pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
+    Screening::new(public_key, window, cx)
 }
 
-pub struct UserProfile {
+pub struct Screening {
     public_key: PublicKey,
     followed: bool,
     verified: bool,
-    copied: bool,
 }
 
-impl UserProfile {
+impl Screening {
     pub fn new(public_key: PublicKey, _window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             public_key,
             followed: false,
             verified: false,
-            copied: false,
         })
     }
 
@@ -104,37 +99,9 @@ impl UserProfile {
         let Ok(bech32) = self.public_key.to_bech32();
         cx.open_url(&format!("https://njump.me/{bech32}"));
     }
-
-    fn copy_pubkey(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(bech32) = self.public_key.to_bech32();
-        let item = ClipboardItem::new_string(bech32);
-        cx.write_to_clipboard(item);
-
-        self.set_copied(true, window, cx);
-    }
-
-    fn set_copied(&mut self, status: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.copied = status;
-        cx.notify();
-
-        // Reset the copied state after a delay
-        if status {
-            cx.spawn_in(window, async move |this, cx| {
-                cx.background_executor().timer(Duration::from_secs(2)).await;
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_copied(false, window, cx);
-                    })
-                    .ok();
-                })
-                .ok();
-            })
-            .detach();
-        }
-    }
 }
 
-impl Render for UserProfile {
+impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let profile = self.profile(cx);
@@ -188,8 +155,6 @@ impl Render for UserProfile {
                     .when(!self.followed, |this| {
                         this.child(
                             div()
-                                .flex_initial()
-                                .w_auto()
                                 .p_1()
                                 .rounded_full()
                                 .bg(cx.theme().surface_background)
@@ -209,34 +174,15 @@ impl Render for UserProfile {
                             .child("Public Key:"),
                     )
                     .child(
-                        h_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .p_1p5()
-                                    .h_9()
-                                    .rounded_md()
-                                    .bg(cx.theme().elevated_surface_background)
-                                    .truncate()
-                                    .text_ellipsis()
-                                    .line_clamp(1)
-                                    .child(shared_bech32),
-                            )
-                            .child(
-                                Button::new("copy-pubkey")
-                                    .icon({
-                                        if self.copied {
-                                            IconName::CheckCircleFill
-                                        } else {
-                                            IconName::Copy
-                                        }
-                                    })
-                                    .ghost()
-                                    .disabled(self.copied)
-                                    .on_click(cx.listener(move |this, _e, window, cx| {
-                                        this.copy_pubkey(window, cx);
-                                    })),
-                            ),
+                        div()
+                            .p_1p5()
+                            .h_9()
+                            .rounded_md()
+                            .bg(cx.theme().elevated_surface_background)
+                            .truncate()
+                            .text_ellipsis()
+                            .line_clamp(1)
+                            .child(shared_bech32),
                     ),
             )
             .child(
@@ -248,27 +194,15 @@ impl Render for UserProfile {
                             .text_color(cx.theme().text_muted)
                             .child(SharedString::new(t!("profile.label_bio"))),
                     )
-                    .child(
-                        div()
-                            .p_1p5()
-                            .rounded_md()
-                            .bg(cx.theme().elevated_surface_background)
-                            .child(
-                                profile
-                                    .metadata()
-                                    .about
-                                    .unwrap_or(t!("profile.no_bio").to_string()),
-                            ),
-                    ),
-            )
-            .child(
-                Button::new("open-njump")
-                    .label(t!("profile.njump"))
-                    .primary()
-                    .small()
-                    .on_click(cx.listener(move |this, _e, window, cx| {
-                        this.open_njump(window, cx);
-                    })),
+                    .when_some(profile.metadata().about, |this, bio| {
+                        this.child(
+                            div()
+                                .p_1p5()
+                                .rounded_md()
+                                .bg(cx.theme().elevated_surface_background)
+                                .child(bio),
+                        )
+                    }),
             )
     }
 }

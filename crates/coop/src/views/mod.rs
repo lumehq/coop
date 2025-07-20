@@ -6,6 +6,7 @@ pub mod new_account;
 pub mod onboarding;
 pub mod preferences;
 pub mod relays;
+pub mod screening;
 pub mod sidebar;
 pub mod startup;
 pub mod user_profile;

@@ -15,6 +15,8 @@ use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
 use ui::{ContextModal, StyledExt};
 
+use crate::views::screening;
+
 #[derive(IntoElement)]
 pub struct RoomListItem {
     ix: usize,
@@ -143,17 +145,19 @@ impl RenderOnce for RoomListItem {
                 if let Some(kind) = kind {
                     if kind != RoomKind::Ongoing {
                         let title = SharedString::new(t!("screening.title"));
+                        let screening = screening::init(public_key, window, cx);
 
                         window.open_modal(cx, move |this, _window, _cx| {
                             let handler_clone = handler.clone();
 
-                            this.title(title.clone()).child("TODO").on_ok(
-                                move |event, window, cx| {
+                            this.confirm()
+                                .title(title.clone())
+                                .child(screening.clone())
+                                .on_ok(move |event, window, cx| {
                                     handler_clone(event, window, cx);
                                     // true to close the modal
                                     true
-                                },
-                            )
+                                })
                         });
                     } else {
                         handler(event, window, cx)
