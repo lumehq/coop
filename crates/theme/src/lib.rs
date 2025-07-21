@@ -3,6 +3,8 @@ use std::ops::{Deref, DerefMut};
 use colors::{brand, hsl, neutral};
 use gpui::{px, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance};
 
+use crate::colors::{danger, warning};
+
 mod colors;
 mod scale;
 
@@ -12,154 +14,91 @@ pub fn init(cx: &mut App) {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ThemeColor {
-    /// Border color. Used for most borders, is usually a high contrast color.
-    pub border: Hsla,
-    /// Border color. Used for deemphasized borders, like a visual divider between two sections
-    pub border_variant: Hsla,
-    /// Border color. Used for focused elements, like keyboard focused list item.
-    pub border_focused: Hsla,
-    /// Border color. Used for selected elements, like an active search filter or selected checkbox.
-    pub border_selected: Hsla,
-    /// Border color. Used for transparent borders. Used for placeholder borders when an element gains a border on state change.
-    pub border_transparent: Hsla,
-    /// Border color. Used for disabled elements, like a disabled input or button.
-    pub border_disabled: Hsla,
-    /// Background color. Used for elevated surfaces, like a context menu, popup, or dialog.
-    pub elevated_surface_background: Hsla,
-    /// Background color. Used for grounded surfaces like a panel or tab.
-    pub surface_background: Hsla,
-    /// Background color. Used for the app background and blank panels or windows.
+    // Surface colors
     pub background: Hsla,
-    /// Text color. Used for the foreground of an element.
-    pub element_foreground: Hsla,
-    /// Background color. Used for the background of an element that should have a different background than the surface it's on.
-    ///
-    /// Elements might include: Buttons, Inputs, Checkboxes, Radio Buttons...
-    ///
-    /// For an element that should have the same background as the surface it's on, use `ghost_element_background`.
-    pub element_background: Hsla,
-    /// Background color. Used for the hover state of an element that should have a different background than the surface it's on.
-    ///
-    /// Hover states are triggered by the mouse entering an element, or a finger touching an element on a touch screen.
-    pub element_hover: Hsla,
-    /// Background color. Used for the active state of an element that should have a different background than the surface it's on.
-    ///
-    /// Active states are triggered by the mouse button being pressed down on an element, or the Return button or other activator being pressed.
-    pub element_active: Hsla,
-    /// Background color. Used for the selected state of an element that should have a different background than the surface it's on.
-    ///
-    /// Selected states are triggered by the element being selected (or "activated") by the user.
-    ///
-    /// This could include a selected checkbox, a toggleable button that is toggled on, etc.
-    pub element_selected: Hsla,
-    /// Background Color. Used for the disabled state of a element that should have a different background than the surface it's on.
-    ///
-    /// Disabled states are shown when a user cannot interact with an element, like a disabled button or input.
-    pub element_disabled: Hsla,
-    /// Text color. Used for the foreground of an secondary element.
-    pub secondary_foreground: Hsla,
-    /// Background color. Used for the background of an secondary element that should have a different background than the surface it's on.
-    ///
-    /// Secondary elements might include: Buttons, Inputs, Checkboxes, Radio Buttons...
-    ///
-    /// For an element that should have the same background as the surface it's on, use `ghost_element_background`.
-    pub secondary_background: Hsla,
-    /// Background color. Used for the hover state of an secondary element that should have a different background than the surface it's on.
-    ///
-    /// Hover states are triggered by the mouse entering an element, or a finger touching an element on a touch screen.
-    pub secondary_hover: Hsla,
-    /// Background color. Used for the active state of an secondary element that should have a different background than the surface it's on.
-    ///
-    /// Active states are triggered by the mouse button being pressed down on an element, or the Return button or other activator being pressed.
-    pub secondary_active: Hsla,
-    /// Background color. Used for the selected state of an secondary element that should have a different background than the surface it's on.
-    ///
-    /// Selected states are triggered by the element being selected (or "activated") by the user.
-    ///
-    /// This could include a selected checkbox, a toggleable button that is toggled on, etc.
-    pub secondary_selected: Hsla,
-    /// Background Color. Used for the disabled state of an secondary element that should have a different background than the surface it's on.
-    ///
-    /// Disabled states are shown when a user cannot interact with an element, like a disabled button or input.
-    pub secondary_disabled: Hsla,
-    /// Background color. Used for the area that shows where a dragged element will be dropped.
-    pub drop_target_background: Hsla,
-    /// Used for the background of a ghost element that should have the same background as the surface it's on.
-    ///
-    /// Elements might include: Buttons, Inputs, Checkboxes, Radio Buttons...
-    ///
-    /// For an element that should have a different background than the surface it's on, use `element_background`.
-    pub ghost_element_background: Hsla,
-    /// Background Color. Used for the hover state of a ghost element that should have the same background as the surface it's on.
-    ///
-    /// Hover states are triggered by the mouse entering an element, or a finger touching an element on a touch screen.
-    pub ghost_element_hover: Hsla,
-    /// Background Color. Used for the active state of a ghost element that should have the same background as the surface it's on.
-    ///
-    /// Active states are triggered by the mouse button being pressed down on an element, or the Return button or other activator being pressed.
-    pub ghost_element_active: Hsla,
-    /// Background Color. Used for the selected state of a ghost element that should have the same background as the surface it's on.
-    ///
-    /// Selected states are triggered by the element being selected (or "activated") by the user.
-    ///
-    /// This could include a selected checkbox, a toggleable button that is toggled on, etc.
-    pub ghost_element_selected: Hsla,
-    /// Background Color. Used for the disabled state of a ghost element that should have the same background as the surface it's on.
-    ///
-    /// Disabled states are shown when a user cannot interact with an element, like a disabled button or input.
-    pub ghost_element_disabled: Hsla,
-    /// Text color. Default text color used for most text.
-    pub text: Hsla,
-    /// Text color. Color of muted or deemphasized text. It is a subdued version of the standard text color.
-    pub text_muted: Hsla,
-    /// Text color. Color of the placeholder text typically shown in input fields to guide the user to enter valid data.
-    pub text_placeholder: Hsla,
-    /// Text color. Color used for emphasis or highlighting certain text, like an active filter or a matched character in a search.
-    pub text_accent: Hsla,
-    /// Fill color. Used for the default fill color of an icon.
-    pub icon: Hsla,
-    /// Fill color. Used for the muted or deemphasized fill color of an icon.
-    ///
-    /// This might be used to show an icon in an inactive pane, or to deemphasize a series of icons to give them less visual weight.
-    pub icon_muted: Hsla,
-    /// Fill color. Used for the accent fill color of an icon.
-    ///
-    /// This might be used to show when a toggleable icon button is selected.
-    pub icon_accent: Hsla,
-    /// The color of the scrollbar thumb.
-    pub scrollbar_thumb_background: Hsla,
-    /// The color of the scrollbar thumb when hovered over.
-    pub scrollbar_thumb_hover_background: Hsla,
-    /// The border color of the scrollbar thumb.
-    pub scrollbar_thumb_border: Hsla,
-    /// The background color of the scrollbar track.
-    pub scrollbar_track_background: Hsla,
-    /// The border color of the scrollbar track.
-    pub scrollbar_track_border: Hsla,
-    /// Background color. Used for the background of a panel
+    pub surface_background: Hsla,
+    pub elevated_surface_background: Hsla,
     pub panel_background: Hsla,
-    /// Border color. Used for outline border.
-    pub ring: Hsla,
-    /// Background color. Used for inactive tab.
-    pub tab_inactive_background: Hsla,
-    /// Background color. Used for hovered tab.
-    pub tab_hover_background: Hsla,
-    /// Background color. Used for active tab.
-    pub tab_active_background: Hsla,
-    /// Background color. Used for Title Bar.
-    pub title_bar: Hsla,
-    /// Border color. Used for Title Bar.
-    pub title_bar_border: Hsla,
-    /// Background color. Used for modal's overlay.
     pub overlay: Hsla,
-    /// Background color. Used for cursor.
-    pub cursor: Hsla,
-    /// Window border color.
-    ///
-    /// # Platform specific:
-    ///
-    /// This is only works on Linux, other platforms we can't change the window border color.
+    pub title_bar: Hsla,
+    pub title_bar_border: Hsla,
     pub window_border: Hsla,
+
+    // Border colors
+    pub border: Hsla,
+    pub border_variant: Hsla,
+    pub border_focused: Hsla,
+    pub border_selected: Hsla,
+    pub border_transparent: Hsla,
+    pub border_disabled: Hsla,
+    pub ring: Hsla,
+
+    // Text colors
+    pub text: Hsla,
+    pub text_muted: Hsla,
+    pub text_placeholder: Hsla,
+    pub text_accent: Hsla,
+
+    // Icon colors
+    pub icon: Hsla,
+    pub icon_muted: Hsla,
+    pub icon_accent: Hsla,
+
+    // Element colors
+    pub element_foreground: Hsla,
+    pub element_background: Hsla,
+    pub element_hover: Hsla,
+    pub element_active: Hsla,
+    pub element_selected: Hsla,
+    pub element_disabled: Hsla,
+
+    // Secondary element colors
+    pub secondary_foreground: Hsla,
+    pub secondary_background: Hsla,
+    pub secondary_hover: Hsla,
+    pub secondary_active: Hsla,
+    pub secondary_selected: Hsla,
+    pub secondary_disabled: Hsla,
+
+    // Danger element colors
+    pub danger_foreground: Hsla,
+    pub danger_background: Hsla,
+    pub danger_hover: Hsla,
+    pub danger_active: Hsla,
+    pub danger_selected: Hsla,
+    pub danger_disabled: Hsla,
+
+    // Warning element colors
+    pub warning_foreground: Hsla,
+    pub warning_background: Hsla,
+    pub warning_hover: Hsla,
+    pub warning_active: Hsla,
+    pub warning_selected: Hsla,
+    pub warning_disabled: Hsla,
+
+    // Ghost element colors
+    pub ghost_element_background: Hsla,
+    pub ghost_element_hover: Hsla,
+    pub ghost_element_active: Hsla,
+    pub ghost_element_selected: Hsla,
+    pub ghost_element_disabled: Hsla,
+
+    // Tab colors
+    pub tab_inactive_background: Hsla,
+    pub tab_hover_background: Hsla,
+    pub tab_active_background: Hsla,
+
+    // Scrollbar colors
+    pub scrollbar_thumb_background: Hsla,
+    pub scrollbar_thumb_hover_background: Hsla,
+    pub scrollbar_thumb_border: Hsla,
+    pub scrollbar_track_background: Hsla,
+    pub scrollbar_track_border: Hsla,
+
+    // Interactive colors
+    pub drop_target_background: Hsla,
+    pub cursor: Hsla,
+    pub selection: Hsla,
 }
 
 /// The default colors for the theme.
@@ -171,55 +110,79 @@ impl ThemeColor {
     /// Themes that do not specify all colors are refined off of these defaults.
     pub fn light() -> Self {
         Self {
+            background: neutral().light().step_1(),
+            surface_background: neutral().light().step_2(),
+            elevated_surface_background: neutral().light().step_3(),
+            panel_background: gpui::white(),
+            overlay: neutral().light_alpha().step_3(),
+            title_bar: gpui::transparent_black(),
+            title_bar_border: gpui::transparent_black(),
+            window_border: hsl(240.0, 5.9, 78.0),
+
             border: neutral().light().step_6(),
             border_variant: neutral().light().step_5(),
             border_focused: brand().light().step_7(),
             border_selected: brand().light().step_7(),
             border_transparent: gpui::transparent_black(),
             border_disabled: neutral().light().step_3(),
-            elevated_surface_background: neutral().light().step_3(),
-            surface_background: neutral().light().step_2(),
-            background: neutral().light().step_1(),
+            ring: brand().light().step_8(),
+
+            text: neutral().light().step_12(),
+            text_muted: neutral().light().step_11(),
+            text_placeholder: neutral().light().step_10(),
+            text_accent: brand().light().step_11(),
+
+            icon: neutral().light().step_11(),
+            icon_muted: neutral().light().step_10(),
+            icon_accent: brand().light().step_11(),
+
             element_foreground: brand().light().step_12(),
             element_background: brand().light().step_9(),
             element_hover: brand().light_alpha().step_10(),
             element_active: brand().light().step_10(),
             element_selected: brand().light().step_11(),
             element_disabled: brand().light_alpha().step_3(),
+
             secondary_foreground: brand().light().step_12(),
             secondary_background: brand().light().step_3(),
             secondary_hover: brand().light_alpha().step_4(),
             secondary_active: brand().light().step_5(),
             secondary_selected: brand().light().step_5(),
             secondary_disabled: brand().light_alpha().step_3(),
-            drop_target_background: brand().light_alpha().step_2(),
+
+            danger_foreground: danger().light().step_12(),
+            danger_background: danger().light().step_9(),
+            danger_hover: danger().light_alpha().step_10(),
+            danger_active: danger().light().step_10(),
+            danger_selected: danger().light().step_11(),
+            danger_disabled: danger().light_alpha().step_3(),
+
+            warning_foreground: warning().light().step_12(),
+            warning_background: warning().light().step_9(),
+            warning_hover: warning().light_alpha().step_10(),
+            warning_active: warning().light().step_10(),
+            warning_selected: warning().light().step_11(),
+            warning_disabled: warning().light_alpha().step_3(),
+
             ghost_element_background: gpui::transparent_black(),
             ghost_element_hover: neutral().light_alpha().step_3(),
             ghost_element_active: neutral().light_alpha().step_4(),
             ghost_element_selected: neutral().light_alpha().step_5(),
             ghost_element_disabled: neutral().light_alpha().step_2(),
-            text: neutral().light().step_12(),
-            text_muted: neutral().light().step_11(),
-            text_placeholder: neutral().light().step_10(),
-            text_accent: brand().light().step_11(),
-            icon: neutral().light().step_11(),
-            icon_muted: neutral().light().step_10(),
-            icon_accent: brand().light().step_11(),
+
+            tab_inactive_background: neutral().light().step_3(),
+            tab_hover_background: neutral().light().step_4(),
+            tab_active_background: neutral().light().step_5(),
+
             scrollbar_thumb_background: neutral().light_alpha().step_3(),
             scrollbar_thumb_hover_background: neutral().light_alpha().step_4(),
             scrollbar_thumb_border: gpui::transparent_black(),
             scrollbar_track_background: gpui::transparent_black(),
             scrollbar_track_border: neutral().light().step_5(),
-            panel_background: gpui::white(),
-            ring: brand().light().step_8(),
-            tab_active_background: neutral().light().step_5(),
-            tab_hover_background: neutral().light().step_4(),
-            tab_inactive_background: neutral().light().step_3(),
-            title_bar: gpui::transparent_black(),
-            title_bar_border: gpui::transparent_black(),
-            overlay: neutral().light_alpha().step_3(),
+
+            drop_target_background: brand().light_alpha().step_2(),
             cursor: hsl(200., 100., 50.),
-            window_border: hsl(240.0, 5.9, 78.0),
+            selection: hsl(200., 100., 50.).opacity(5.),
         }
     }
 
@@ -228,55 +191,79 @@ impl ThemeColor {
     /// Themes that do not specify all colors are refined off of these defaults.
     pub fn dark() -> Self {
         Self {
+            background: neutral().dark().step_1(),
+            surface_background: neutral().dark().step_2(),
+            elevated_surface_background: neutral().dark().step_3(),
+            panel_background: gpui::black(),
+            overlay: neutral().dark_alpha().step_3(),
+            title_bar: gpui::transparent_black(),
+            title_bar_border: gpui::transparent_black(),
+            window_border: hsl(240.0, 3.7, 28.0),
+
             border: neutral().dark().step_6(),
             border_variant: neutral().dark().step_5(),
             border_focused: brand().dark().step_7(),
             border_selected: brand().dark().step_7(),
             border_transparent: gpui::transparent_black(),
             border_disabled: neutral().dark().step_3(),
-            elevated_surface_background: neutral().dark().step_3(),
-            surface_background: neutral().dark().step_2(),
-            background: neutral().dark().step_1(),
+            ring: brand().dark().step_8(),
+
+            text: neutral().dark().step_12(),
+            text_muted: neutral().dark().step_11(),
+            text_placeholder: neutral().dark().step_10(),
+            text_accent: brand().dark().step_11(),
+
+            icon: neutral().dark().step_11(),
+            icon_muted: neutral().dark().step_10(),
+            icon_accent: brand().dark().step_11(),
+
             element_foreground: brand().dark().step_1(),
             element_background: brand().dark().step_9(),
             element_hover: brand().dark_alpha().step_10(),
             element_active: brand().dark().step_10(),
             element_selected: brand().dark().step_11(),
             element_disabled: brand().dark_alpha().step_3(),
+
             secondary_foreground: brand().dark().step_12(),
             secondary_background: brand().dark().step_3(),
             secondary_hover: brand().dark_alpha().step_4(),
             secondary_active: brand().dark().step_5(),
             secondary_selected: brand().dark().step_5(),
             secondary_disabled: brand().dark_alpha().step_3(),
-            drop_target_background: brand().dark_alpha().step_2(),
+
+            danger_foreground: danger().dark().step_12(),
+            danger_background: danger().dark().step_9(),
+            danger_hover: danger().dark_alpha().step_10(),
+            danger_active: danger().dark().step_10(),
+            danger_selected: danger().dark().step_11(),
+            danger_disabled: danger().dark_alpha().step_3(),
+
+            warning_foreground: warning().dark().step_12(),
+            warning_background: warning().dark().step_9(),
+            warning_hover: warning().dark_alpha().step_10(),
+            warning_active: warning().dark().step_10(),
+            warning_selected: warning().dark().step_11(),
+            warning_disabled: warning().dark_alpha().step_3(),
+
             ghost_element_background: gpui::transparent_black(),
             ghost_element_hover: neutral().dark_alpha().step_3(),
             ghost_element_active: neutral().dark_alpha().step_4(),
             ghost_element_selected: neutral().dark_alpha().step_5(),
             ghost_element_disabled: neutral().dark_alpha().step_2(),
-            text: neutral().dark().step_12(),
-            text_muted: neutral().dark().step_11(),
-            text_placeholder: neutral().dark().step_10(),
-            text_accent: brand().dark().step_11(),
-            icon: neutral().dark().step_11(),
-            icon_muted: neutral().dark().step_10(),
-            icon_accent: brand().dark().step_11(),
+
+            tab_inactive_background: neutral().dark().step_3(),
+            tab_hover_background: neutral().dark().step_4(),
+            tab_active_background: neutral().dark().step_5(),
+
             scrollbar_thumb_background: neutral().dark_alpha().step_3(),
             scrollbar_thumb_hover_background: neutral().dark_alpha().step_4(),
             scrollbar_thumb_border: gpui::transparent_black(),
             scrollbar_track_background: gpui::transparent_black(),
             scrollbar_track_border: neutral().dark().step_5(),
-            panel_background: gpui::black(),
-            ring: brand().dark().step_8(),
-            tab_active_background: neutral().dark().step_5(),
-            tab_hover_background: neutral().dark().step_4(),
-            tab_inactive_background: neutral().dark().step_3(),
-            title_bar: gpui::transparent_black(),
-            title_bar_border: gpui::transparent_black(),
-            overlay: neutral().dark_alpha().step_3(),
+
+            drop_target_background: brand().dark_alpha().step_2(),
             cursor: hsl(200., 100., 50.),
-            window_border: hsl(240.0, 3.7, 28.0),
+            selection: hsl(200., 100., 50.).opacity(5.),
         }
     }
 }

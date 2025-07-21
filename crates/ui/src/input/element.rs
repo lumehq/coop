@@ -700,7 +700,7 @@ impl Element for TextElement {
 
         // Paint selections
         if let Some(path) = prepaint.selection_path.take() {
-            window.paint_path(path, cx.theme().element_disabled);
+            window.paint_path(path, cx.theme().selection);
         }
 
         // Paint text
