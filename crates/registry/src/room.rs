@@ -30,9 +30,8 @@ pub struct SendError {
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RoomKind {
     Ongoing,
-    Trusted,
     #[default]
-    Unknown,
+    Request,
 }
 
 #[derive(Debug)]
@@ -104,7 +103,7 @@ impl Room {
             subject,
             picture,
             members,
-            kind: RoomKind::Unknown,
+            kind: RoomKind::default(),
         }
     }
 

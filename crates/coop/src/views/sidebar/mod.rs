@@ -57,7 +57,6 @@ pub struct Sidebar {
     // Rooms
     indicator: Entity<Option<RoomKind>>,
     active_filter: Entity<RoomKind>,
-    trusted_only: bool,
     // GPUI
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
@@ -128,7 +127,6 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            trusted_only: false,
             cancel_handle,
             indicator,
             active_filter,
@@ -528,11 +526,6 @@ impl Sidebar {
         });
     }
 
-    fn set_trusted_only(&mut self, cx: &mut Context<Self>) {
-        self.trusted_only = !self.trusted_only;
-        cx.notify();
-    }
-
     fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let room = if let Some(room) = Registry::read_global(cx).room(&id, cx) {
             room
@@ -744,7 +737,7 @@ impl Render for Sidebar {
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
                 registry.ongoing_rooms(cx)
             } else {
-                registry.request_rooms(self.trusted_only, cx)
+                registry.request_rooms(cx)
             }
         };
 
@@ -855,28 +848,10 @@ impl Render for Sidebar {
                                             .rounded(ButtonRounded::Full)
                                             .selected(!self.filter(&RoomKind::Ongoing, cx))
                                             .on_click(cx.listener(|this, _, _, cx| {
-                                                this.set_filter(RoomKind::Unknown, cx);
+                                                this.set_filter(RoomKind::default(), cx);
                                             })),
                                     ),
-                            )
-                            .when(!self.filter(&RoomKind::Ongoing, cx), |this| {
-                                this.child(
-                                    Button::new("trusted")
-                                        .tooltip(t!("sidebar.trusted_contacts_tooltip"))
-                                        .map(|this| {
-                                            if self.trusted_only {
-                                                this.icon(IconName::FilterFill)
-                                            } else {
-                                                this.icon(IconName::Filter)
-                                            }
-                                        })
-                                        .small()
-                                        .transparent()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.set_trusted_only(cx);
-                                        })),
-                                )
-                            }),
+                            ),
                     )
                     .when(registry.loading, |this| {
                         this.child(

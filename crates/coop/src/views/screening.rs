@@ -15,7 +15,7 @@ use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
-use ui::{h_flex, v_flex, Icon, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
     Screening::new(public_key, window, cx)
@@ -111,6 +111,31 @@ impl Screening {
         let Ok(bech32) = self.public_key.to_bech32();
         cx.open_url(&format!("https://njump.me/{bech32}"));
     }
+
+    fn report(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let public_key = self.public_key;
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let builder = EventBuilder::report(
+                vec![Tag::public_key_report(public_key, Report::Impersonation)],
+                "scam/impersonation",
+            );
+            let _ = client.send_event_builder(builder).await?;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |_, cx| {
+            if task.await.is_ok() {
+                cx.update(|window, cx| {
+                    window.close_modal(cx);
+                    window.push_notification("Report submitted successfully", cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
 }
 
 impl Render for Screening {
@@ -157,24 +182,34 @@ impl Render for Screening {
                             .child(
                                 div()
                                     .p_1p5()
-                                    .h_6()
+                                    .h_9()
                                     .rounded_md()
                                     .bg(cx.theme().elevated_surface_background)
                                     .truncate()
                                     .text_ellipsis()
                                     .text_sm()
-                                    .line_height(relative(1.))
                                     .child(shared_bech32),
                             )
                             .child(
-                                Button::new("njump")
-                                    .tooltip(t!("profile.njump"))
-                                    .icon(IconName::OpenUrl)
-                                    .small()
-                                    .ghost()
-                                    .on_click(cx.listener(move |this, _e, window, cx| {
-                                        this.open_njump(window, cx);
-                                    })),
+                                h_flex()
+                                    .child(
+                                        Button::new("njump")
+                                            .tooltip(t!("profile.njump"))
+                                            .icon(IconName::OpenUrl)
+                                            .ghost()
+                                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                                this.open_njump(window, cx);
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("report")
+                                            .tooltip("Report as a scam or impostor")
+                                            .icon(IconName::Info)
+                                            .ghost()
+                                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                                this.report(window, cx);
+                                            })),
+                                    ),
                             ),
                     ),
             )

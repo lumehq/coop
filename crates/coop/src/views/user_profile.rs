@@ -188,12 +188,13 @@ impl Render for UserProfile {
                     .when(!self.followed, |this| {
                         this.child(
                             div()
-                                .flex_initial()
-                                .w_auto()
+                                .flex_none()
+                                .w_40()
                                 .p_1()
                                 .rounded_full()
-                                .bg(cx.theme().surface_background)
+                                .bg(cx.theme().elevated_surface_background)
                                 .text_xs()
+                                .font_semibold()
                                 .child(SharedString::new(t!("profile.unknown"))),
                         )
                     }),
@@ -213,7 +214,7 @@ impl Render for UserProfile {
                             .gap_1()
                             .child(
                                 div()
-                                    .p_1p5()
+                                    .p_2()
                                     .h_9()
                                     .rounded_md()
                                     .bg(cx.theme().elevated_surface_background)
@@ -250,7 +251,7 @@ impl Render for UserProfile {
                     )
                     .child(
                         div()
-                            .p_1p5()
+                            .p_2()
                             .rounded_md()
                             .bg(cx.theme().elevated_surface_background)
                             .child(
