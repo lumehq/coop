@@ -25,6 +25,7 @@ pub struct Settings {
     pub proxy_user_avatars: bool,
     pub hide_user_avatars: bool,
     pub backup_messages: bool,
+    pub screening: bool,
     pub auto_login: bool,
 }
 
@@ -62,10 +63,11 @@ impl AppSettings {
 
     fn new(cx: &mut Context<Self>) -> Self {
         let settings = Settings {
-            media_server: Url::parse("https://nostrmedia.com").expect("it's fine"),
+            media_server: Url::parse("https://nostrmedia.com").unwrap(),
             proxy_user_avatars: true,
             hide_user_avatars: false,
             backup_messages: true,
+            screening: true,
             auto_login: false,
         };
 

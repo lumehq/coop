@@ -14,6 +14,7 @@ use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
+use ui::button::{Button, ButtonVariants};
 use ui::{h_flex, v_flex, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
@@ -23,6 +24,7 @@ pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<
 pub struct Screening {
     public_key: PublicKey,
     followed: bool,
+    connections: usize,
     verified: bool,
 }
 
@@ -31,6 +33,7 @@ impl Screening {
         cx.new(|_| Self {
             public_key,
             followed: false,
+            connections: 0,
             verified: false,
         })
     }
@@ -43,15 +46,24 @@ impl Screening {
 
         let public_key = self.public_key;
 
-        let check_follow: Task<bool> = cx.background_spawn(async move {
+        let check_trust_score: Task<(bool, usize)> = cx.background_spawn(async move {
             let client = nostr_client();
-            let filter = Filter::new()
+
+            let follow = Filter::new()
                 .kind(Kind::ContactList)
                 .author(identity)
                 .pubkey(public_key)
                 .limit(1);
 
-            client.database().count(filter).await.unwrap_or(0) >= 1
+            let connection = Filter::new()
+                .kind(Kind::ContactList)
+                .pubkey(public_key)
+                .limit(1);
+
+            let is_follow = client.database().count(follow).await.unwrap_or(0) >= 1;
+            let connects = client.database().count(connection).await.unwrap_or(0);
+
+            (is_follow, connects)
         });
 
         let verify_nip05 = if let Some(address) = self.address(cx) {
@@ -63,11 +75,11 @@ impl Screening {
         };
 
         cx.spawn_in(window, async move |this, cx| {
-            let followed = check_follow.await;
+            let (followed, connections) = check_trust_score.await;
 
-            // Update the followed status
             this.update(cx, |this, cx| {
                 this.followed = followed;
+                this.connections = connections;
                 cx.notify();
             })
             .ok();
@@ -110,6 +122,7 @@ impl Render for Screening {
         let shared_bech32 = SharedString::new(bech32);
 
         v_flex()
+            .w_full()
             .px_4()
             .pt_8()
             .pb_4()
@@ -122,46 +135,11 @@ impl Render for Screening {
                     .text_center()
                     .child(Avatar::new(profile.avatar_url(proxy)).size(rems(4.)))
                     .child(
-                        v_flex()
-                            .child(
-                                div()
-                                    .font_semibold()
-                                    .line_height(relative(1.25))
-                                    .child(profile.display_name()),
-                            )
-                            .when_some(self.address(cx), |this, address| {
-                                this.child(
-                                    h_flex()
-                                        .justify_center()
-                                        .gap_1()
-                                        .text_xs()
-                                        .text_color(cx.theme().text_muted)
-                                        .child(address)
-                                        .when(self.verified, |this| {
-                                            this.child(
-                                                div()
-                                                    .relative()
-                                                    .text_color(cx.theme().text_accent)
-                                                    .child(
-                                                        Icon::new(IconName::CheckCircleFill)
-                                                            .small()
-                                                            .block(),
-                                                    ),
-                                            )
-                                        }),
-                                )
-                            }),
-                    )
-                    .when(!self.followed, |this| {
-                        this.child(
-                            div()
-                                .p_1()
-                                .rounded_full()
-                                .bg(cx.theme().surface_background)
-                                .text_xs()
-                                .child(SharedString::new(t!("profile.unknown"))),
-                        )
-                    }),
+                        div()
+                            .font_semibold()
+                            .line_height(relative(1.25))
+                            .child(profile.display_name()),
+                    ),
             )
             .child(
                 v_flex()
@@ -174,35 +152,109 @@ impl Render for Screening {
                             .child("Public Key:"),
                     )
                     .child(
-                        div()
-                            .p_1p5()
-                            .h_9()
-                            .rounded_md()
-                            .bg(cx.theme().elevated_surface_background)
-                            .truncate()
-                            .text_ellipsis()
-                            .line_clamp(1)
-                            .child(shared_bech32),
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .p_1p5()
+                                    .h_6()
+                                    .rounded_md()
+                                    .bg(cx.theme().elevated_surface_background)
+                                    .truncate()
+                                    .text_ellipsis()
+                                    .text_sm()
+                                    .line_height(relative(1.))
+                                    .child(shared_bech32),
+                            )
+                            .child(
+                                Button::new("njump")
+                                    .tooltip(t!("profile.njump"))
+                                    .icon(IconName::OpenUrl)
+                                    .small()
+                                    .ghost()
+                                    .on_click(cx.listener(move |this, _e, window, cx| {
+                                        this.open_njump(window, cx);
+                                    })),
+                            ),
                     ),
             )
             .child(
                 v_flex()
-                    .gap_1()
-                    .text_sm()
+                    .gap_2()
+                    .when_some(self.address(cx), |this, address| {
+                        this.child(h_flex().gap_2().map(|this| {
+                            if self.verified {
+                                this.text_sm()
+                                    .child(
+                                        Icon::new(IconName::CheckCircleFill)
+                                            .small()
+                                            .flex_shrink_0()
+                                            .text_color(cx.theme().icon_accent),
+                                    )
+                                    .child(div().flex_1().child(SharedString::new(t!(
+                                        "screening.verified",
+                                        address = address
+                                    ))))
+                            } else {
+                                this.text_sm()
+                                    .child(
+                                        Icon::new(IconName::CheckCircleFill)
+                                            .small()
+                                            .text_color(cx.theme().icon_muted),
+                                    )
+                                    .child(div().flex_1().child(SharedString::new(t!(
+                                        "screening.not_verified",
+                                        address = address
+                                    ))))
+                            }
+                        }))
+                    })
+                    .child(h_flex().gap_2().map(|this| {
+                        if !self.followed {
+                            this.text_sm()
+                                .child(
+                                    Icon::new(IconName::CheckCircleFill)
+                                        .small()
+                                        .text_color(cx.theme().icon_muted),
+                                )
+                                .child(SharedString::new(t!("screening.not_contact")))
+                        } else {
+                            this.text_sm()
+                                .child(
+                                    Icon::new(IconName::CheckCircleFill)
+                                        .small()
+                                        .text_color(cx.theme().icon_accent),
+                                )
+                                .child(SharedString::new(t!("screening.contact")))
+                        }
+                    }))
                     .child(
-                        div()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::new(t!("profile.label_bio"))),
-                    )
-                    .when_some(profile.metadata().about, |this, bio| {
-                        this.child(
-                            div()
-                                .p_1p5()
-                                .rounded_md()
-                                .bg(cx.theme().elevated_surface_background)
-                                .child(bio),
-                        )
-                    }),
+                        h_flex()
+                            .gap_2()
+                            .text_sm()
+                            .child(
+                                Icon::new(IconName::CheckCircleFill)
+                                    .small()
+                                    .flex_shrink_0()
+                                    .text_color({
+                                        if self.connections > 0 {
+                                            cx.theme().icon_accent
+                                        } else {
+                                            cx.theme().icon_muted
+                                        }
+                                    }),
+                            )
+                            .map(|this| {
+                                if self.connections > 0 {
+                                    this.child(SharedString::new(t!(
+                                        "screening.total_connections",
+                                        u = self.connections
+                                    )))
+                                } else {
+                                    this.child(SharedString::new(t!("screening.no_connections")))
+                                }
+                            }),
+                    ),
             )
     }
 }

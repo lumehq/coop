@@ -13,6 +13,7 @@ use theme::ActiveTheme;
 use ui::actions::OpenProfile;
 use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
+use ui::modal::ModalButtonProps;
 use ui::{ContextModal, StyledExt};
 
 use crate::views::screening;
@@ -79,6 +80,7 @@ impl RenderOnce for RoomListItem {
         let kind = self.kind;
         let handler = self.handler.clone();
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
+        let screening = AppSettings::get_global(cx).settings.screening;
 
         self.base
             .id(self.ix)
@@ -143,16 +145,19 @@ impl RenderOnce for RoomListItem {
                 let handler = handler.clone();
 
                 if let Some(kind) = kind {
-                    if kind != RoomKind::Ongoing {
-                        let title = SharedString::new(t!("screening.title"));
+                    if kind != RoomKind::Ongoing && screening {
                         let screening = screening::init(public_key, window, cx);
 
                         window.open_modal(cx, move |this, _window, _cx| {
                             let handler_clone = handler.clone();
 
                             this.confirm()
-                                .title(title.clone())
                                 .child(screening.clone())
+                                .button_props(
+                                    ModalButtonProps::default()
+                                        .cancel_text(t!("screening.ignore"))
+                                        .ok_text(t!("screening.response")),
+                                )
                                 .on_ok(move |event, window, cx| {
                                     handler_clone(event, window, cx);
                                     // true to close the modal
@@ -162,6 +167,8 @@ impl RenderOnce for RoomListItem {
                     } else {
                         handler(event, window, cx)
                     }
+                } else {
+                    handler(event, window, cx)
                 }
             })
     }
