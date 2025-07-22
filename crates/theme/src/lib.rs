@@ -182,7 +182,7 @@ impl ThemeColor {
 
             drop_target_background: brand().light_alpha().step_2(),
             cursor: hsl(200., 100., 50.),
-            selection: hsl(200., 100., 50.).opacity(5.),
+            selection: hsl(200., 100., 50.).alpha(0.25),
         }
     }
 
@@ -263,7 +263,7 @@ impl ThemeColor {
 
             drop_target_background: brand().dark_alpha().step_2(),
             cursor: hsl(200., 100., 50.),
-            selection: hsl(200., 100., 50.).opacity(5.),
+            selection: hsl(200., 100., 50.).alpha(0.25),
         }
     }
 }
