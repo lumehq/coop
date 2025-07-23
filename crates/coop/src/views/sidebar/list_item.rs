@@ -122,7 +122,6 @@ impl RenderOnce for RoomListItem {
                                 .text_ellipsis()
                                 .truncate()
                                 .font_medium()
-                                .line_height(relative(1.))
                                 .child(name),
                         )
                     })
@@ -132,7 +131,6 @@ impl RenderOnce for RoomListItem {
                                 .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().text_placeholder)
-                                .line_height(relative(1.))
                                 .child(ago),
                         )
                     }),
