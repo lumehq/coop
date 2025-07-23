@@ -189,7 +189,7 @@ impl Render for UserProfile {
                         this.child(
                             div()
                                 .flex_none()
-                                .w_40()
+                                .w_32()
                                 .p_1()
                                 .rounded_full()
                                 .bg(cx.theme().elevated_surface_background)

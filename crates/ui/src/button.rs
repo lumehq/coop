@@ -41,6 +41,11 @@ pub trait ButtonVariants: Sized {
         self.with_variant(ButtonVariant::Danger)
     }
 
+    /// With the danger alternate style for the Button.
+    fn danger_alt(self) -> Self {
+        self.with_variant(ButtonVariant::DangerAlt)
+    }
+
     /// With the warning style for the Button.
     fn warning(self) -> Self {
         self.with_variant(ButtonVariant::Warning)
@@ -99,6 +104,7 @@ pub enum ButtonVariant {
     Primary,
     Secondary,
     Danger,
+    DangerAlt,
     Warning,
     Ghost,
     Transparent,
@@ -406,13 +412,19 @@ struct ButtonVariantStyle {
 }
 
 impl ButtonVariant {
+    fn normal(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
+        let bg = self.bg_color(window, cx);
+        let fg = self.text_color(window, cx);
+
+        ButtonVariantStyle { bg, fg }
+    }
+
     fn bg_color(&self, _window: &Window, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_background,
             ButtonVariant::Secondary => cx.theme().elevated_surface_background,
             ButtonVariant::Danger => cx.theme().danger_background,
             ButtonVariant::Warning => cx.theme().warning_background,
-            ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.color,
             _ => cx.theme().ghost_element_background,
         }
@@ -423,6 +435,7 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_foreground,
             ButtonVariant::Secondary => cx.theme().text_muted,
             ButtonVariant::Danger => cx.theme().danger_foreground,
+            ButtonVariant::DangerAlt => cx.theme().danger_background,
             ButtonVariant::Warning => cx.theme().warning_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
             ButtonVariant::Ghost => cx.theme().text_muted,
@@ -430,18 +443,12 @@ impl ButtonVariant {
         }
     }
 
-    fn normal(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
-        let bg = self.bg_color(window, cx);
-        let fg = self.text_color(window, cx);
-
-        ButtonVariantStyle { bg, fg }
-    }
-
     fn hovered(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_hover,
             ButtonVariant::Secondary => cx.theme().secondary_hover,
             ButtonVariant::Danger => cx.theme().danger_hover,
+            ButtonVariant::DangerAlt => gpui::transparent_black(),
             ButtonVariant::Warning => cx.theme().warning_hover,
             ButtonVariant::Ghost => cx.theme().ghost_element_hover,
             ButtonVariant::Transparent => gpui::transparent_black(),
@@ -463,6 +470,7 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_active,
             ButtonVariant::Secondary => cx.theme().secondary_active,
             ButtonVariant::Danger => cx.theme().danger_active,
+            ButtonVariant::DangerAlt => gpui::transparent_black(),
             ButtonVariant::Warning => cx.theme().warning_active,
             ButtonVariant::Ghost => cx.theme().ghost_element_active,
             ButtonVariant::Transparent => gpui::transparent_black(),
@@ -483,6 +491,7 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_selected,
             ButtonVariant::Secondary => cx.theme().secondary_selected,
             ButtonVariant::Danger => cx.theme().danger_selected,
+            ButtonVariant::DangerAlt => gpui::transparent_black(),
             ButtonVariant::Warning => cx.theme().warning_selected,
             ButtonVariant::Ghost => cx.theme().ghost_element_selected,
             ButtonVariant::Transparent => gpui::transparent_black(),

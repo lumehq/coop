@@ -628,6 +628,26 @@ screening:
     es: "No tienes contactos comunes con esta persona."
     pt: "Você não está vinculado a nenhum contato com esta pessoa."
     ko: "이 사람과 공통 연락처가 없습니다."
+  report:
+    en: "Report as a scam or impostor"
+    zh-CN: "举报为诈骗或冒充者"
+    zh-TW: "檢舉為詐騙或冒充者"
+    ru: "Сообщить о мошенничестве или подделке"
+    vi: "Báo cáo"
+    ja: "詐欺または冒充者として報告する"
+    es: "Informar como una estafa o impostor"
+    pt: "Relatar como uma estafa ou impostor"
+    ko: "신고를 해요"
+  report_msg:
+    en: "Report submitted successfully"
+    zh-CN: "举报成功"
+    zh-TW: "檢舉成功"
+    ru: "Жалоба отправлена успешно"
+    vi: "Báo cáo đã được gửi thành công"
+    ja: "報告が送信されました。"
+    es: "Informe enviado con éxito"
+    pt: "Relatório enviado com sucesso"
+    ko: "신고가 성공적으로 제출되었습니다."
 
 profile:
   title:

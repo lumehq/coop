@@ -1,4 +1,4 @@
-use common::display::DisplayProfile;
+use common::display::{shorten_pubkey, DisplayProfile};
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -14,7 +14,7 @@ use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
@@ -129,7 +129,7 @@ impl Screening {
             if task.await.is_ok() {
                 cx.update(|window, cx| {
                     window.close_modal(cx);
-                    window.push_notification("Report submitted successfully", cx);
+                    window.push_notification(t!("screening.report_msg"), cx);
                 })
                 .ok();
             }
@@ -142,9 +142,7 @@ impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
         let profile = self.profile(cx);
-
-        let Ok(bech32) = profile.public_key().to_bech32();
-        let shared_bech32 = SharedString::new(bech32);
+        let shorten_pubkey = shorten_pubkey(profile.public_key(), 8);
 
         v_flex()
             .w_full()
@@ -167,50 +165,45 @@ impl Render for Screening {
                     ),
             )
             .child(
-                v_flex()
+                h_flex()
                     .gap_1()
-                    .text_sm()
                     .child(
                         div()
-                            .block()
-                            .text_color(cx.theme().text_muted)
-                            .child("Public Key:"),
+                            .p_1()
+                            .flex_1()
+                            .h_7()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_full()
+                            .bg(cx.theme().elevated_surface_background)
+                            .text_sm()
+                            .truncate()
+                            .text_ellipsis()
+                            .text_center()
+                            .line_height(relative(1.))
+                            .child(shorten_pubkey),
                     )
                     .child(
-                        h_flex()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .p_1p5()
-                                    .h_9()
-                                    .rounded_md()
-                                    .bg(cx.theme().elevated_surface_background)
-                                    .truncate()
-                                    .text_ellipsis()
-                                    .text_sm()
-                                    .child(shared_bech32),
-                            )
-                            .child(
-                                h_flex()
-                                    .child(
-                                        Button::new("njump")
-                                            .tooltip(t!("profile.njump"))
-                                            .icon(IconName::OpenUrl)
-                                            .ghost()
-                                            .on_click(cx.listener(move |this, _e, window, cx| {
-                                                this.open_njump(window, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("report")
-                                            .tooltip("Report as a scam or impostor")
-                                            .icon(IconName::Info)
-                                            .ghost()
-                                            .on_click(cx.listener(move |this, _e, window, cx| {
-                                                this.report(window, cx);
-                                            })),
-                                    ),
-                            ),
+                        Button::new("njump")
+                            .label(t!("profile.njump"))
+                            .secondary()
+                            .small()
+                            .rounded(ButtonRounded::Full)
+                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                this.open_njump(window, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("report")
+                            .tooltip(t!("screening.report"))
+                            .icon(IconName::Info)
+                            .danger_alt()
+                            .small()
+                            .rounded(ButtonRounded::Full)
+                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                this.report(window, cx);
+                            })),
                     ),
             )
             .child(

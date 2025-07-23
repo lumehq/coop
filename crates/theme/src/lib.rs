@@ -150,7 +150,7 @@ impl ThemeColor {
             secondary_selected: brand().light().step_5(),
             secondary_disabled: brand().light_alpha().step_3(),
 
-            danger_foreground: danger().light().step_12(),
+            danger_foreground: danger().light().step_1(),
             danger_background: danger().light().step_9(),
             danger_hover: danger().light_alpha().step_10(),
             danger_active: danger().light().step_10(),
@@ -166,7 +166,7 @@ impl ThemeColor {
 
             ghost_element_background: gpui::transparent_black(),
             ghost_element_hover: neutral().light_alpha().step_3(),
-            ghost_element_active: neutral().light_alpha().step_4(),
+            ghost_element_active: neutral().light_alpha().step_5(),
             ghost_element_selected: neutral().light_alpha().step_5(),
             ghost_element_disabled: neutral().light_alpha().step_2(),
 
@@ -231,7 +231,7 @@ impl ThemeColor {
             secondary_selected: brand().dark().step_5(),
             secondary_disabled: brand().dark_alpha().step_3(),
 
-            danger_foreground: danger().dark().step_12(),
+            danger_foreground: danger().dark().step_1(),
             danger_background: danger().dark().step_9(),
             danger_hover: danger().dark_alpha().step_10(),
             danger_active: danger().dark().step_10(),

@@ -41,8 +41,17 @@ impl DisplayProfile for Profile {
             }
         }
 
-        let Ok(pubkey) = self.public_key().to_bech32();
-
-        format!("{}:{}", &pubkey[0..5], &pubkey[pubkey.len() - 4..]).into()
+        shorten_pubkey(self.public_key(), 4)
     }
+}
+
+pub fn shorten_pubkey(public_key: PublicKey, len: usize) -> SharedString {
+    let Ok(pubkey) = public_key.to_bech32();
+
+    format!(
+        "{}:{}",
+        &pubkey[0..(len + 1)],
+        &pubkey[pubkey.len() - len..]
+    )
+    .into()
 }

@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, relative, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
+    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
@@ -14,7 +14,7 @@ use ui::actions::OpenProfile;
 use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
 use ui::modal::ModalButtonProps;
-use ui::{ContextModal, StyledExt};
+use ui::{h_flex, ContextModal, StyledExt};
 
 use crate::views::screening;
 
@@ -36,7 +36,7 @@ impl RoomListItem {
         Self {
             ix,
             public_key,
-            base: div().h_9().w_full().px_1p5(),
+            base: h_flex().h_9().w_full().px_1p5(),
             name: None,
             avatar: None,
             created_at: None,
@@ -84,8 +84,6 @@ impl RenderOnce for RoomListItem {
 
         self.base
             .id(self.ix)
-            .flex()
-            .items_center()
             .gap_2()
             .text_sm()
             .rounded(cx.theme().radius)
@@ -122,7 +120,9 @@ impl RenderOnce for RoomListItem {
                                 .flex_1()
                                 .line_clamp(1)
                                 .text_ellipsis()
+                                .truncate()
                                 .font_medium()
+                                .line_height(relative(1.))
                                 .child(name),
                         )
                     })
@@ -132,6 +132,7 @@ impl RenderOnce for RoomListItem {
                                 .flex_shrink_0()
                                 .text_xs()
                                 .text_color(cx.theme().text_placeholder)
+                                .line_height(relative(1.))
                                 .child(ago),
                         )
                     }),
