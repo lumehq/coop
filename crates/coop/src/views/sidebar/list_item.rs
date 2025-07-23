@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, relative, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
+    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
     ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;

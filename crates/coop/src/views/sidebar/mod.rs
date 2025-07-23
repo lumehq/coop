@@ -874,7 +874,7 @@ impl Render for Sidebar {
             )
             .when(registry.loading, |this| {
                 this.child(
-                    div().absolute().bottom_4().px_4().child(
+                    div().absolute().bottom_4().px_4().w_full().child(
                         div()
                             .p_1()
                             .w_full()
