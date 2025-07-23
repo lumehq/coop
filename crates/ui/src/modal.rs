@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, div, point, px, relative, Animation, AnimationExt as _, AnyElement, App, Bounds,
-    ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding, MouseButton,
-    ParentElement, Pixels, Point, RenderOnce, SharedString, Styled, Window,
+    anchored, div, hsla, point, px, relative, Animation, AnimationExt as _, AnyElement, App,
+    Bounds, BoxShadow, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
+    MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString, Styled, Window,
 };
 use theme::ActiveTheme;
 
@@ -366,6 +366,9 @@ impl RenderOnce for Modal {
         let y = self.margin_top.unwrap_or(view_size.height / 10.) + offset_top;
         let x = bounds.center().x - self.width / 2.;
 
+        let animation = Animation::new(Duration::from_secs_f64(0.25))
+            .with_easing(cubic_bezier(0.32, 0.72, 0., 1.));
+
         anchored()
             .position(point(window_paddings.left, window_paddings.top))
             .snap_to_window()
@@ -487,16 +490,27 @@ impl RenderOnce for Modal {
                                     )),
                                 )
                             })
-                            .with_animation(
-                                "slide-down",
-                                Animation::new(Duration::from_secs_f64(0.25))
-                                    .with_easing(cubic_bezier(0.32, 0.72, 0., 1.)),
-                                move |this, delta| {
-                                    let y_offset = px(0.) + delta * px(30.);
-                                    this.top(y + y_offset)
-                                },
-                            ),
-                    ),
+                            .with_animation("slide-down", animation.clone(), move |this, delta| {
+                                let y_offset = px(0.) + delta * px(30.);
+                                // This is equivalent to `shadow_xl` with an extra opacity.
+                                let shadow = vec![
+                                    BoxShadow {
+                                        color: hsla(0., 0., 0., 0.1 * delta),
+                                        offset: point(px(0.), px(20.)),
+                                        blur_radius: px(25.),
+                                        spread_radius: px(-5.),
+                                    },
+                                    BoxShadow {
+                                        color: hsla(0., 0., 0., 0.1 * delta),
+                                        offset: point(px(0.), px(8.)),
+                                        blur_radius: px(10.),
+                                        spread_radius: px(-6.),
+                                    },
+                                ];
+                                this.top(y + y_offset).shadow(shadow)
+                            }),
+                    )
+                    .with_animation("fade-in", animation, move |this, delta| this.opacity(delta)),
             )
     }
 }

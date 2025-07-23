@@ -188,7 +188,13 @@ impl Root {
     ) -> Option<impl IntoElement> {
         let root = window.root::<Root>()??;
 
-        Some(div().child(root.read(cx).notification.clone()))
+        Some(
+            div()
+                .absolute()
+                .top_0()
+                .right_0()
+                .child(root.read(cx).notification.clone()),
+        )
     }
 
     /// Render the Modal layer.

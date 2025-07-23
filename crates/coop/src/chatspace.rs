@@ -423,7 +423,7 @@ impl Render for ChatSpace {
                     .child(self.dock.clone()),
             )
             // Notifications
-            .child(div().absolute().top_8().children(notification_layer))
+            .children(notification_layer)
             // Modals
             .children(modal_layer)
     }

@@ -568,13 +568,15 @@ impl Sidebar {
         let desc = SharedString::new(t!("sidebar.loading_modal_description"));
 
         window.open_modal(cx, move |this, _window, cx| {
-            this.title(title.clone()).child(
+            this.child(
                 div()
+                    .pt_8()
                     .px_4()
                     .pb_4()
                     .flex()
                     .flex_col()
                     .gap_2()
+                    .child(div().font_semibold().child(title.clone()))
                     .child(
                         div()
                             .flex()

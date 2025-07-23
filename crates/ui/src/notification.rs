@@ -364,26 +364,16 @@ impl Render for NotificationList {
         let size = window.viewport_size();
         let items = self.notifications.iter().rev().take(10).rev().cloned();
 
-        div()
-            .absolute()
-            .flex()
-            .top_4()
-            .bottom_4()
-            .right_4()
-            .justify_end()
-            .child(
-                v_flex()
-                    .id("notification-list")
-                    .gap_3()
-                    .absolute()
-                    .relative()
-                    .right_0()
-                    .h(size.height - px(8.))
-                    .children(items)
-                    .on_hover(cx.listener(|view, hovered, _window, cx| {
-                        view.expanded = *hovered;
-                        cx.notify();
-                    })),
-            )
+        div().absolute().top_4().right_4().child(
+            v_flex()
+                .id("notification-list")
+                .h(size.height - px(8.))
+                .on_hover(cx.listener(|view, hovered, _, cx| {
+                    view.expanded = *hovered;
+                    cx.notify()
+                }))
+                .gap_3()
+                .children(items),
+        )
     }
 }

@@ -177,6 +177,7 @@ impl Login {
 
     fn ask_for_password(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
         let current_view = cx.entity().downgrade();
+        let is_ncryptsec = content.starts_with("ncryptsec1");
 
         let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
         let weak_pwd_input = pwd_input.downgrade();
@@ -191,13 +192,13 @@ impl Login {
             let view_cancel = current_view.clone();
             let view_ok = current_view.clone();
 
-            let label: SharedString = if content.starts_with("nsec1") {
+            let label: SharedString = if !is_ncryptsec {
                 t!("login.set_password").into()
             } else {
                 t!("login.password_to_decrypt").into()
             };
 
-            let description: SharedString = if content.starts_with("ncryptsec1") {
+            let description: SharedString = if is_ncryptsec {
                 t!("login.password_description").into()
             } else {
                 t!("login.password_description_full").into()
@@ -226,7 +227,7 @@ impl Login {
 
                     view_ok
                         .update(cx, |this, cx| {
-                            this.verify_password(value, confirm, window, cx);
+                            this.verify_password(value, confirm, is_ncryptsec, window, cx);
                         })
                         .ok();
                     true
@@ -273,6 +274,7 @@ impl Login {
         &mut self,
         password: Option<SharedString>,
         confirm: Option<SharedString>,
+        is_ncryptsec: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -286,8 +288,8 @@ impl Login {
             return;
         }
 
-        // Skip verification if password starts with "ncryptsec1"
-        if password.starts_with("ncryptsec1") {
+        // Skip verification if key is ncryptsec
+        if is_ncryptsec {
             self.login_with_keys(password.to_string(), window, cx);
             return;
         }
