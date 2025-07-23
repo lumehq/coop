@@ -188,16 +188,10 @@ impl Registry {
     }
 
     /// Get all request rooms.
-    pub fn request_rooms(&self, trusted_only: bool, cx: &App) -> Vec<Entity<Room>> {
+    pub fn request_rooms(&self, cx: &App) -> Vec<Entity<Room>> {
         self.rooms
             .iter()
-            .filter(|room| {
-                if trusted_only {
-                    room.read(cx).kind == RoomKind::Trusted
-                } else {
-                    room.read(cx).kind != RoomKind::Ongoing
-                }
-            })
+            .filter(|room| room.read(cx).kind != RoomKind::Ongoing)
             .cloned()
             .collect()
     }
@@ -274,7 +268,6 @@ impl Registry {
             let events = send_events.merge(recv_events);
 
             let mut rooms: BTreeSet<Room> = BTreeSet::new();
-            let mut trusted_keys: BTreeSet<PublicKey> = BTreeSet::new();
 
             // Process each event and group by room hash
             for event in events
@@ -291,20 +284,7 @@ impl Registry {
                 let mut public_keys = event.tags.public_keys().copied().collect_vec();
                 public_keys.push(event.pubkey);
 
-                let mut is_trust = trusted_keys.contains(&event.pubkey);
-
-                if !is_trust {
-                    // Check if room's author is seen in any contact list
-                    let filter = Filter::new().kind(Kind::ContactList).pubkey(event.pubkey);
-                    // If room's author is seen at least once, mark as trusted
-                    is_trust = client.database().count(filter).await.unwrap_or(0) >= 1;
-
-                    if is_trust {
-                        trusted_keys.insert(event.pubkey);
-                    }
-                }
-
-                // Check if current_user has sent a message to this room at least once
+                // Check if the current user has sent at least one message to this room
                 let filter = Filter::new()
                     .kind(Kind::PrivateDirectMessage)
                     .author(public_key)
@@ -313,20 +293,13 @@ impl Registry {
                 // If current user has sent a message at least once, mark as ongoing
                 let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
 
+                // Create a new room
+                let room = Room::new(&event).rearrange_by(public_key);
+
                 if is_ongoing {
-                    rooms.insert(
-                        Room::new(&event)
-                            .kind(RoomKind::Ongoing)
-                            .rearrange_by(public_key),
-                    );
-                } else if is_trust {
-                    rooms.insert(
-                        Room::new(&event)
-                            .kind(RoomKind::Trusted)
-                            .rearrange_by(public_key),
-                    );
+                    rooms.insert(room.kind(RoomKind::Ongoing));
                 } else {
-                    rooms.insert(Room::new(&event).rearrange_by(public_key));
+                    rooms.insert(room);
                 }
             }
 
@@ -425,7 +398,7 @@ impl Registry {
             self.sort(cx);
         } else {
             let room = Room::new(&event)
-                .kind(RoomKind::Unknown)
+                .kind(RoomKind::default())
                 .rearrange_by(identity);
 
             // Push the new room to the front of the list
@@ -433,7 +406,7 @@ impl Registry {
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RoomEmitter::Request(RoomKind::Unknown));
+                cx.emit(RoomEmitter::Request(RoomKind::default()));
             });
         }
     }

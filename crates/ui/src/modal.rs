@@ -474,7 +474,7 @@ impl RenderOnce for Modal {
                                     ),
                                 )
                             })
-                            .child(div().w_full().flex_1().child(self.content))
+                            .child(div().relative().w_full().flex_1().child(self.content))
                             .when(self.footer.is_some(), |this| {
                                 let footer = self.footer.unwrap();
 

@@ -51,7 +51,7 @@ impl Preferences {
 
     fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
         let edit_profile = edit_profile::init(window, cx);
-        let title = SharedString::new(t!("preferences.modal_profile_title"));
+        let title = SharedString::new(t!("profile.title"));
 
         window.open_modal(cx, move |modal, _window, _cx| {
             modal

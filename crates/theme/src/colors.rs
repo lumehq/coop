@@ -12,6 +12,14 @@ pub(crate) fn brand() -> ColorScaleSet {
     yellow()
 }
 
+pub(crate) fn danger() -> ColorScaleSet {
+    tomato()
+}
+
+pub(crate) fn warning() -> ColorScaleSet {
+    orange()
+}
+
 /// Make a [gpui::Hsla] color.
 ///
 /// - h: 0..360.0

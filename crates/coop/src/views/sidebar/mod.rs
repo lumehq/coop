@@ -5,8 +5,6 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::DisplayProfile;
-use common::nip05::nip05_verify;
-use element::DisplayRoom;
 use global::constants::{BOOTSTRAP_RELAYS, DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -20,6 +18,7 @@ use gpui_tokio::Tokio;
 use i18n::t;
 use identity::Identity;
 use itertools::Itertools;
+use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use registry::room::{Room, RoomKind};
 use registry::{Registry, RoomEmitter};
@@ -37,7 +36,7 @@ use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
 
-mod element;
+mod list_item;
 
 const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
@@ -58,7 +57,6 @@ pub struct Sidebar {
     // Rooms
     indicator: Entity<Option<RoomKind>>,
     active_filter: Entity<RoomKind>,
-    trusted_only: bool,
     // GPUI
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
@@ -129,7 +127,6 @@ impl Sidebar {
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
             finding: false,
-            trusted_only: false,
             cancel_handle,
             indicator,
             active_filter,
@@ -153,10 +150,16 @@ impl Sidebar {
     }
 
     async fn create_temp_room(identity: PublicKey, public_key: PublicKey) -> Result<Room, Error> {
+        let client = nostr_client();
         let keys = Keys::generate();
         let builder = EventBuilder::private_msg_rumor(public_key, "");
         let event = builder.build(identity).sign(&keys).await?;
-        let room = Room::new(&event).kind(RoomKind::Ongoing);
+
+        // Request to get user's metadata
+        Self::request_metadata(client, public_key).await?;
+
+        // Create a temporary room
+        let room = Room::new(&event).rearrange_by(identity);
 
         Ok(room)
     }
@@ -165,7 +168,6 @@ impl Sidebar {
         let client = nostr_client();
         let timeout = Duration::from_secs(2);
         let mut rooms: BTreeSet<Room> = BTreeSet::new();
-        let mut processed: BTreeSet<PublicKey> = BTreeSet::new();
 
         let filter = Filter::new()
             .kind(Kind::Metadata)
@@ -177,24 +179,13 @@ impl Sidebar {
             .await
         {
             // Process to verify the search results
-            for event in events.into_iter() {
-                if processed.contains(&event.pubkey) {
+            for event in events.into_iter().unique_by(|event| event.pubkey) {
+                // Skip if author is match current user
+                if event.pubkey == identity {
                     continue;
                 }
-                processed.insert(event.pubkey);
 
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
-
-                // Skip if NIP-05 is not found
-                let Some(target) = metadata.nip05.as_ref() else {
-                    continue;
-                };
-
-                // Skip if NIP-05 is not valid or failed to verify
-                if !nip05_verify(event.pubkey, target).await.unwrap_or(false) {
-                    continue;
-                };
-
+                // Return a temporary room
                 if let Ok(room) = Self::create_temp_room(identity, event.pubkey).await {
                     rooms.insert(room);
                 }
@@ -299,14 +290,8 @@ impl Sidebar {
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
-            let client = nostr_client();
-
             if let Ok(profile) = common::nip05::nip05_profile(&address).await {
-                let public_key = profile.public_key;
-                // Request for user metadata
-                Self::request_metadata(client, public_key).await.ok();
-                // Return a temporary room
-                Self::create_temp_room(identity, public_key).await
+                Self::create_temp_room(identity, profile.public_key).await
             } else {
                 Err(anyhow!(t!("sidebar.addr_error")))
             }
@@ -362,11 +347,6 @@ impl Sidebar {
         };
 
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-
-            // Request metadata for this user
-            Self::request_metadata(client, public_key).await?;
-
             // Create a gift wrap event to represent as room
             Self::create_temp_room(identity, public_key).await
         });
@@ -544,11 +524,6 @@ impl Sidebar {
         });
     }
 
-    fn set_trusted_only(&mut self, cx: &mut Context<Self>) {
-        self.trusted_only = !self.trusted_only;
-        cx.notify();
-    }
-
     fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let room = if let Some(room) = Registry::read_global(cx).room(&id, cx) {
             room
@@ -695,20 +670,19 @@ impl Sidebar {
         for ix in range {
             if let Some(room) = rooms.get(ix) {
                 let this = room.read(cx);
-                let id = this.id;
-                let ago = this.ago();
-                let label = this.display_name(cx);
-                let img = this.display_image(proxy, cx);
-
-                let handler = cx.listener(move |this, _, window, cx| {
-                    this.open_room(id, window, cx);
+                let handler = cx.listener({
+                    let id = this.id;
+                    move |this, _, window, cx| {
+                        this.open_room(id, window, cx);
+                    }
                 });
 
                 items.push(
-                    DisplayRoom::new(ix)
-                        .img(img)
-                        .label(label)
-                        .description(ago)
+                    RoomListItem::new(ix, this.members[0])
+                        .avatar(this.display_image(proxy, cx))
+                        .name(this.display_name(cx))
+                        .created_at(this.ago())
+                        .kind(this.kind)
                         .on_click(handler),
                 )
             }
@@ -761,7 +735,7 @@ impl Render for Sidebar {
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
                 registry.ongoing_rooms(cx)
             } else {
-                registry.request_rooms(self.trusted_only, cx)
+                registry.request_rooms(cx)
             }
         };
 
@@ -872,28 +846,10 @@ impl Render for Sidebar {
                                             .rounded(ButtonRounded::Full)
                                             .selected(!self.filter(&RoomKind::Ongoing, cx))
                                             .on_click(cx.listener(|this, _, _, cx| {
-                                                this.set_filter(RoomKind::Unknown, cx);
+                                                this.set_filter(RoomKind::default(), cx);
                                             })),
                                     ),
-                            )
-                            .when(!self.filter(&RoomKind::Ongoing, cx), |this| {
-                                this.child(
-                                    Button::new("trusted")
-                                        .tooltip(t!("sidebar.trusted_contacts_tooltip"))
-                                        .map(|this| {
-                                            if self.trusted_only {
-                                                this.icon(IconName::FilterFill)
-                                            } else {
-                                                this.icon(IconName::Filter)
-                                            }
-                                        })
-                                        .small()
-                                        .transparent()
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.set_trusted_only(cx);
-                                        })),
-                                )
-                            }),
+                            ),
                     )
                     .when(registry.loading, |this| {
                         this.child(
@@ -918,7 +874,7 @@ impl Render for Sidebar {
             )
             .when(registry.loading, |this| {
                 this.child(
-                    div().absolute().bottom_4().px_4().child(
+                    div().absolute().bottom_4().px_4().w_full().child(
                         div()
                             .p_1()
                             .w_full()
