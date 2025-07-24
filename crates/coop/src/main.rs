@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use asset::Assets;
+use assets::Assets;
 use auto_update::AutoUpdater;
 #[cfg(not(target_os = "linux"))]
 use global::constants::APP_NAME;
@@ -27,7 +27,6 @@ use smol::channel::{self, Sender};
 use theme::Theme;
 use ui::Root;
 
-pub(crate) mod asset;
 pub(crate) mod chatspace;
 pub(crate) mod views;
 
@@ -183,6 +182,9 @@ fn main() {
 
     // Run application
     app.run(move |cx| {
+        // Load embedded fonts in assets/fonts
+        load_embedded_fonts(cx);
+
         // Register the `quit` function
         cx.on_action(quit);
 
@@ -316,6 +318,30 @@ fn main() {
         })
         .expect("Failed to open window. Please restart the application.");
     });
+}
+
+fn load_embedded_fonts(cx: &App) {
+    let asset_source = cx.asset_source();
+    let font_paths = asset_source.list("fonts").unwrap();
+    let embedded_fonts = Mutex::new(Vec::new());
+    let executor = cx.background_executor();
+
+    executor.block(executor.scoped(|scope| {
+        for font_path in &font_paths {
+            if !font_path.ends_with(".ttf") {
+                continue;
+            }
+
+            scope.spawn(async {
+                let font_bytes = asset_source.load(font_path).unwrap().unwrap();
+                embedded_fonts.lock().unwrap().push(font_bytes);
+            });
+        }
+    }));
+
+    cx.text_system()
+        .add_fonts(embedded_fonts.into_inner().unwrap())
+        .unwrap();
 }
 
 fn quit(_: &Quit, cx: &mut App) {

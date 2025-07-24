@@ -171,6 +171,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assets"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "log",
+ "rust-embed",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1167,6 +1177,7 @@ name = "coop"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "assets",
  "auto_update",
  "client_keys",
  "common",
@@ -1185,7 +1196,6 @@ dependencies = [
  "oneshot",
  "registry",
  "reqwest_client",
- "rust-embed",
  "rust-i18n",
  "serde",
  "serde_json",

@@ -390,13 +390,7 @@ impl From<ThemeColor> for Theme {
 
         Theme {
             font_size: px(15.),
-            font_family: if cfg!(target_os = "macos") {
-                ".SystemUIFont".into()
-            } else if cfg!(target_os = "windows") {
-                "Segoe UI".into()
-            } else {
-                "FreeMono".into()
-            },
+            font_family: ".SystemUIFont".into(),
             radius: px(5.),
             mode,
             colors,
