@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement,
-    ParentElement as _, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
@@ -80,7 +80,7 @@ impl RenderOnce for RoomListItem {
         let kind = self.kind;
         let handler = self.handler.clone();
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
-        let screening = AppSettings::get_global(cx).settings.screening;
+        let require_screening = AppSettings::get_global(cx).settings.screening;
 
         self.base
             .id(self.ix)
@@ -141,33 +141,25 @@ impl RenderOnce for RoomListItem {
             })
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |event, window, cx| {
-                let handler = handler.clone();
+                handler(event, window, cx);
 
-                if let Some(kind) = kind {
-                    if kind != RoomKind::Ongoing && screening {
-                        let screening = screening::init(public_key, window, cx);
+                if kind != Some(RoomKind::Ongoing) && require_screening {
+                    let screening = screening::init(public_key, window, cx);
 
-                        window.open_modal(cx, move |this, _window, _cx| {
-                            let handler_clone = handler.clone();
-
-                            this.confirm()
-                                .child(screening.clone())
-                                .button_props(
-                                    ModalButtonProps::default()
-                                        .cancel_text(t!("screening.ignore"))
-                                        .ok_text(t!("screening.response")),
-                                )
-                                .on_ok(move |event, window, cx| {
-                                    handler_clone(event, window, cx);
-                                    // true to close the modal
-                                    true
-                                })
-                        });
-                    } else {
-                        handler(event, window, cx)
-                    }
-                } else {
-                    handler(event, window, cx)
+                    window.open_modal(cx, move |this, _window, _cx| {
+                        this.confirm()
+                            .child(screening.clone())
+                            .button_props(
+                                ModalButtonProps::default()
+                                    .cancel_text(t!("screening.ignore"))
+                                    .ok_text(t!("screening.response")),
+                            )
+                            .on_cancel(move |_event, _window, _cx| {
+                                // handler_clone(event, window, cx);
+                                // true to close the modal
+                                true
+                            })
+                    });
                 }
             })
     }
