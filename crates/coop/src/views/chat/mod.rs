@@ -94,19 +94,23 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Self, input, event, window, cx| match event {
-                    InputEvent::PressEnter { .. } => {
-                        this.send_message(window, cx);
-                    }
-                    InputEvent::Change(text) => {
-                        this.mention_popup(text, input, cx);
-                    }
-                    _ => {}
+                move |this: &mut Self, input, event, window, cx| {
+                    match event {
+                        InputEvent::PressEnter { .. } => {
+                            this.send_message(window, cx);
+                        }
+                        InputEvent::Change(text) => {
+                            this.mention_popup(text, input, cx);
+                        }
+                        _ => {}
+                    };
                 },
             ));
 
-            subscriptions.push(
-                cx.subscribe_in(&room, window, move |this, _, incoming, _w, cx| {
+            subscriptions.push(cx.subscribe_in(
+                &room,
+                window,
+                move |this, _, incoming, _window, cx| {
                     // Check if the incoming message is the same as the new message created by optimistic update
                     if this.prevent_duplicate_message(&incoming.0, cx) {
                         return;
@@ -121,8 +125,8 @@ impl Chat {
                     });
 
                     this.list_state.splice(old_len..old_len, 1);
-                }),
-            );
+                },
+            ));
 
             // Initialize list state
             // [item_count] always equal to 1 at the beginning

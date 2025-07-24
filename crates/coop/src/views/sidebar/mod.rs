@@ -672,20 +672,24 @@ impl Sidebar {
         for ix in range {
             if let Some(room) = rooms.get(ix) {
                 let this = room.read(cx);
+                let room_id = this.id;
                 let handler = cx.listener({
-                    let id = this.id;
                     move |this, _, window, cx| {
-                        this.open_room(id, window, cx);
+                        this.open_room(room_id, window, cx);
                     }
                 });
 
                 items.push(
-                    RoomListItem::new(ix, this.members[0])
-                        .avatar(this.display_image(proxy, cx))
-                        .name(this.display_name(cx))
-                        .created_at(this.ago())
-                        .kind(this.kind)
-                        .on_click(handler),
+                    RoomListItem::new(
+                        ix,
+                        room_id,
+                        this.members[0],
+                        this.display_name(cx),
+                        this.display_image(proxy, cx),
+                        this.ago(),
+                        this.kind,
+                    )
+                    .on_click(handler),
                 )
             }
         }

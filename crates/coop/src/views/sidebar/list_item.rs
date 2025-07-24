@@ -2,12 +2,13 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
+    div, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
 use registry::room::RoomKind;
+use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::actions::OpenProfile;
@@ -22,47 +23,37 @@ use crate::views::screening;
 pub struct RoomListItem {
     ix: usize,
     base: Div,
+    room_id: u64,
     public_key: PublicKey,
-    name: Option<SharedString>,
-    avatar: Option<SharedString>,
-    created_at: Option<SharedString>,
-    kind: Option<RoomKind>,
+    name: SharedString,
+    avatar: SharedString,
+    created_at: SharedString,
+    kind: RoomKind,
     #[allow(clippy::type_complexity)]
     handler: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
 }
 
 impl RoomListItem {
-    pub fn new(ix: usize, public_key: PublicKey) -> Self {
+    pub fn new(
+        ix: usize,
+        room_id: u64,
+        public_key: PublicKey,
+        name: SharedString,
+        avatar: SharedString,
+        created_at: SharedString,
+        kind: RoomKind,
+    ) -> Self {
         Self {
             ix,
             public_key,
+            room_id,
+            name,
+            avatar,
+            created_at,
+            kind,
             base: h_flex().h_9().w_full().px_1p5(),
-            name: None,
-            avatar: None,
-            created_at: None,
-            kind: None,
             handler: Rc::new(|_, _, _| {}),
         }
-    }
-
-    pub fn name(mut self, name: impl Into<SharedString>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
-    pub fn created_at(mut self, created_at: impl Into<SharedString>) -> Self {
-        self.created_at = Some(created_at.into());
-        self
-    }
-
-    pub fn avatar(mut self, avatar: impl Into<SharedString>) -> Self {
-        self.avatar = Some(avatar.into());
-        self
-    }
-
-    pub fn kind(mut self, kind: RoomKind) -> Self {
-        self.kind = Some(kind);
-        self
     }
 
     pub fn on_click(
@@ -77,6 +68,7 @@ impl RoomListItem {
 impl RenderOnce for RoomListItem {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let public_key = self.public_key;
+        let room_id = self.room_id;
         let kind = self.kind;
         let handler = self.handler.clone();
         let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
@@ -94,18 +86,7 @@ impl RenderOnce for RoomListItem {
                         .size_6()
                         .rounded_full()
                         .overflow_hidden()
-                        .map(|this| {
-                            if let Some(img) = self.avatar {
-                                this.child(Avatar::new(img).size(rems(1.5)))
-                            } else {
-                                this.child(
-                                    img("brand/avatar.png")
-                                        .rounded_full()
-                                        .size_6()
-                                        .into_any_element(),
-                                )
-                            }
-                        }),
+                        .child(Avatar::new(self.avatar).size(rems(1.5))),
                 )
             })
             .child(
@@ -114,26 +95,22 @@ impl RenderOnce for RoomListItem {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .when_some(self.name, |this, name| {
-                        this.child(
-                            div()
-                                .flex_1()
-                                .line_clamp(1)
-                                .text_ellipsis()
-                                .truncate()
-                                .font_medium()
-                                .child(name),
-                        )
-                    })
-                    .when_some(self.created_at, |this, ago| {
-                        this.child(
-                            div()
-                                .flex_shrink_0()
-                                .text_xs()
-                                .text_color(cx.theme().text_placeholder)
-                                .child(ago),
-                        )
-                    }),
+                    .child(
+                        div()
+                            .flex_1()
+                            .line_clamp(1)
+                            .text_ellipsis()
+                            .truncate()
+                            .font_medium()
+                            .child(self.name),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_xs()
+                            .text_color(cx.theme().text_placeholder)
+                            .child(self.created_at),
+                    ),
             )
             .context_menu(move |this, _window, _cx| {
                 // TODO: add share chat room
@@ -143,7 +120,7 @@ impl RenderOnce for RoomListItem {
             .on_click(move |event, window, cx| {
                 handler(event, window, cx);
 
-                if kind != Some(RoomKind::Ongoing) && require_screening {
+                if kind != RoomKind::Ongoing && require_screening {
                     let screening = screening::init(public_key, window, cx);
 
                     window.open_modal(cx, move |this, _window, _cx| {
@@ -154,10 +131,13 @@ impl RenderOnce for RoomListItem {
                                     .cancel_text(t!("screening.ignore"))
                                     .ok_text(t!("screening.response")),
                             )
-                            .on_cancel(move |_event, _window, _cx| {
-                                // handler_clone(event, window, cx);
-                                // true to close the modal
-                                true
+                            .on_cancel(move |_event, _window, cx| {
+                                Registry::global(cx).update(cx, |this, cx| {
+                                    this.close_room(room_id, cx);
+                                });
+                                // false to prevent closing the modal
+                                // modal will be closed after closing panel
+                                false
                             })
                     });
                 }

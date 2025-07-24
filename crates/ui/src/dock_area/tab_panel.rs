@@ -13,7 +13,6 @@ use super::panel::PanelView;
 use super::stack_panel::StackPanel;
 use super::{ClosePanel, DockArea, PanelEvent, PanelStyle, ToggleZoom};
 use crate::button::{Button, ButtonVariants as _};
-use crate::dock_area::dock::DockPlacement;
 use crate::dock_area::panel::Panel;
 use crate::popup_menu::{PopupMenu, PopupMenuExt};
 use crate::tab::tab_bar::TabBar;
@@ -452,89 +451,6 @@ impl TabPanel {
                     })
                     .anchor(Corner::TopRight),
             )
-    }
-
-    fn _render_dock_toggle_button(
-        &self,
-        placement: DockPlacement,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement> {
-        if self.is_zoomed {
-            return None;
-        }
-
-        let dock_area = self.dock_area.upgrade()?.read(cx);
-
-        if !dock_area.is_dock_collapsible(placement, cx) {
-            return None;
-        }
-
-        let view_entity_id = cx.entity().entity_id();
-        let toggle_button_panels = dock_area.toggle_button_panels;
-
-        // Check if current TabPanel's entity_id matches the one stored in DockArea for this placement
-        if !match placement {
-            DockPlacement::Left => {
-                dock_area.left_dock.is_some() && toggle_button_panels.left == Some(view_entity_id)
-            }
-            DockPlacement::Right => {
-                dock_area.right_dock.is_some() && toggle_button_panels.right == Some(view_entity_id)
-            }
-            DockPlacement::Bottom => {
-                dock_area.bottom_dock.is_some()
-                    && toggle_button_panels.bottom == Some(view_entity_id)
-            }
-            DockPlacement::Center => unreachable!(),
-        } {
-            return None;
-        }
-
-        let is_open = dock_area.is_dock_open(placement, cx);
-
-        let icon = match placement {
-            DockPlacement::Left => {
-                if is_open {
-                    IconName::PanelLeft
-                } else {
-                    IconName::PanelLeftOpen
-                }
-            }
-            DockPlacement::Right => {
-                if is_open {
-                    IconName::PanelRight
-                } else {
-                    IconName::PanelRightOpen
-                }
-            }
-            DockPlacement::Bottom => {
-                if is_open {
-                    IconName::PanelBottom
-                } else {
-                    IconName::PanelBottomOpen
-                }
-            }
-            DockPlacement::Center => unreachable!(),
-        };
-
-        Some(
-            Button::new(SharedString::from(format!("toggle-dock:{placement:?}")))
-                .icon(icon)
-                .small()
-                .ghost()
-                .tooltip(match is_open {
-                    true => "Collapse",
-                    false => "Expand",
-                })
-                .on_click(cx.listener({
-                    let dock_area = self.dock_area.clone();
-                    move |_, _, window, cx| {
-                        _ = dock_area.update(cx, |dock_area, cx| {
-                            dock_area.toggle_dock(placement, window, cx);
-                        });
-                    }
-                })),
-        )
     }
 
     fn render_title_bar(
@@ -1038,6 +954,7 @@ impl Render for TabPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let focus_handle = self.focus_handle(cx);
         let active_panel = self.active_panel(cx);
+
         let mut state = TabState {
             closable: self.closable(cx),
             draggable: self.draggable(cx),

@@ -32,6 +32,7 @@ impl Global for GlobalRegistry {}
 #[derive(Debug)]
 pub enum RoomEmitter {
     Open(WeakEntity<Room>),
+    Close(u64),
     Request(RoomKind),
 }
 
@@ -200,6 +201,13 @@ impl Registry {
     pub fn add_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
         self.rooms.insert(0, room);
         cx.notify();
+    }
+
+    /// Close a room.
+    pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.rooms.iter().any(|r| r.read(cx).id == id) {
+            cx.emit(RoomEmitter::Close(id));
+        }
     }
 
     /// Sort rooms by their created at.
