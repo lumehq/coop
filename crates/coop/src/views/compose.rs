@@ -24,7 +24,7 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
-use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
@@ -420,22 +420,19 @@ impl Render for Compose {
             t!("compose.create_dm_button")
         };
 
-        div()
-            .flex()
-            .flex_col()
+        v_flex()
             .gap_1()
             .child(
                 div()
-                    .px_3()
                     .text_sm()
                     .text_color(cx.theme().text_muted)
                     .child(SharedString::new(t!("compose.description"))),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
-                this.child(div().px_3().text_xs().text_color(red()).child(msg.clone()))
+                this.child(div().text_xs().text_color(red()).child(msg.clone()))
             })
             .child(
-                div().px_3().flex().flex_col().child(
+                div().flex().flex_col().child(
                     div()
                         .h_10()
                         .border_b_1()
@@ -460,7 +457,6 @@ impl Render for Compose {
                     .mt_1()
                     .child(
                         div()
-                            .px_3()
                             .flex()
                             .flex_col()
                             .gap_2()
@@ -535,17 +531,15 @@ impl Render for Compose {
                     }),
             )
             .child(
-                div().p_3().child(
-                    Button::new("create_dm_btn")
-                        .label(label)
-                        .primary()
-                        .w_full()
-                        .loading(self.submitting)
-                        .disabled(self.submitting || self.adding)
-                        .on_click(cx.listener(move |this, _event, window, cx| {
-                            this.compose(window, cx);
-                        })),
-                ),
+                Button::new("create_dm_btn")
+                    .label(label)
+                    .primary()
+                    .w_full()
+                    .loading(self.submitting)
+                    .disabled(self.submitting || self.adding)
+                    .on_click(cx.listener(move |this, _event, window, cx| {
+                        this.compose(window, cx);
+                    })),
             )
     }
 }

@@ -32,7 +32,7 @@ use ui::indicator::Indicator;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::skeleton::Skeleton;
-use ui::{ContextModal, IconName, Selectable, Sizable, StyledExt};
+use ui::{v_flex, ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 use crate::views::compose;
 
@@ -568,31 +568,28 @@ impl Sidebar {
         let desc = SharedString::new(t!("sidebar.loading_modal_description"));
 
         window.open_modal(cx, move |this, _window, cx| {
-            this.child(
-                div()
-                    .pt_8()
-                    .px_4()
-                    .pb_4()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(div().font_semibold().child(title.clone()))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .text_sm()
-                            .child(text_1.clone())
-                            .child(text_2.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(desc.clone()),
-                    ),
-            )
+            this.show_close(true)
+                .keyboard(true)
+                .title(title.clone())
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .text_sm()
+                                .child(text_1.clone())
+                                .child(text_2.clone()),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child(desc.clone()),
+                        ),
+                )
         });
     }
 

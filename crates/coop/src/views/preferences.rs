@@ -3,8 +3,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
 use gpui::http_client::Url;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use identity::Identity;
@@ -15,7 +15,7 @@ use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::switch::Switch;
-use ui::{ContextModal, IconName, Sizable, Size, StyledExt};
+use ui::{v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
 
 use crate::views::{edit_profile, relays};
 
@@ -25,7 +25,6 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
 
 pub struct Preferences {
     media_input: Entity<InputState>,
-    focus_handle: FocusHandle,
 }
 
 impl Preferences {
@@ -38,10 +37,7 @@ impl Preferences {
                     .placeholder(NIP96_SERVER)
             });
 
-            Self {
-                media_input,
-                focus_handle: cx.focus_handle(),
-            }
+            Self { media_input }
         })
     }
 
@@ -82,13 +78,7 @@ impl Render for Preferences {
         let proxy_avatar = AppSettings::get_proxy_user_avatars(cx);
         let hide_avatar = AppSettings::get_hide_user_avatars(cx);
 
-        div()
-            .track_focus(&self.focus_handle)
-            .size_full()
-            .px_3()
-            .pb_3()
-            .flex()
-            .flex_col()
+        v_flex()
             .child(
                 div()
                     .py_2()

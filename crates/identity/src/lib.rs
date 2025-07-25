@@ -264,8 +264,6 @@ impl Identity {
                 })
                 .child(
                     div()
-                        .pt_4()
-                        .px_4()
                         .w_full()
                         .flex()
                         .flex_col()

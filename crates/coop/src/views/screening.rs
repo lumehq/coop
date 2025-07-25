@@ -145,11 +145,8 @@ impl Render for Screening {
         let shorten_pubkey = shorten_pubkey(profile.public_key(), 8);
 
         v_flex()
-            .w_full()
-            .px_4()
-            .pt_8()
-            .pb_4()
             .gap_4()
+            .w_full()
             .child(
                 v_flex()
                     .gap_3()
@@ -166,7 +163,7 @@ impl Render for Screening {
             )
             .child(
                 h_flex()
-                    .gap_1()
+                    .gap_3()
                     .child(
                         div()
                             .p_1()
@@ -185,25 +182,29 @@ impl Render for Screening {
                             .child(shorten_pubkey),
                     )
                     .child(
-                        Button::new("njump")
-                            .label(t!("profile.njump"))
-                            .secondary()
-                            .small()
-                            .rounded(ButtonRounded::Full)
-                            .on_click(cx.listener(move |this, _e, window, cx| {
-                                this.open_njump(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("report")
-                            .tooltip(t!("screening.report"))
-                            .icon(IconName::Report)
-                            .danger()
-                            .small()
-                            .rounded(ButtonRounded::Full)
-                            .on_click(cx.listener(move |this, _e, window, cx| {
-                                this.report(window, cx);
-                            })),
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                Button::new("njump")
+                                    .label(t!("profile.njump"))
+                                    .secondary()
+                                    .small()
+                                    .rounded(ButtonRounded::Full)
+                                    .on_click(cx.listener(move |this, _e, window, cx| {
+                                        this.open_njump(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("report")
+                                    .tooltip(t!("screening.report"))
+                                    .icon(IconName::Report)
+                                    .danger()
+                                    .small()
+                                    .rounded(ButtonRounded::Full)
+                                    .on_click(cx.listener(move |this, _e, window, cx| {
+                                        this.report(window, cx);
+                                    })),
+                            ),
                     ),
             )
             .child(

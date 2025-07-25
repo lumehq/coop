@@ -143,9 +143,6 @@ impl Render for UserProfile {
         let shared_bech32 = SharedString::new(bech32);
 
         v_flex()
-            .px_4()
-            .pt_8()
-            .pb_4()
             .gap_4()
             .child(
                 v_flex()

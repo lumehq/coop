@@ -719,8 +719,6 @@ impl Chat {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .px_3()
-                            .pb_3()
                             .children(errors.iter().map(|error| {
                                 div()
                                     .text_sm()

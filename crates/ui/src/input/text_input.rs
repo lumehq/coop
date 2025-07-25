@@ -276,8 +276,6 @@ impl RenderOnce for TextInput {
                     .children(suffix),
             )
             .when(state.is_multi_line(), |this| {
-                let entity_id = self.state.entity_id();
-
                 if state.last_layout.is_some() {
                     this.relative().child(
                         div()
@@ -287,13 +285,8 @@ impl RenderOnce for TextInput {
                             .right(px(1.))
                             .bottom_0()
                             .child(
-                                Scrollbar::vertical(
-                                    entity_id,
-                                    state.scrollbar_state.clone(),
-                                    state.scroll_handle.clone(),
-                                    state.scroll_size,
-                                )
-                                .axis(ScrollbarAxis::Vertical),
+                                Scrollbar::vertical(&state.scrollbar_state, &state.scroll_handle)
+                                    .axis(ScrollbarAxis::Vertical),
                             ),
                     )
                 } else {

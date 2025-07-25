@@ -1,6 +1,6 @@
 use gpui::{
-    div, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window,
+    div, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window,
 };
 use i18n::t;
 use registry::Registry;
@@ -21,7 +21,6 @@ pub fn init(
 pub struct Subject {
     id: u64,
     input: Entity<InputState>,
-    focus_handle: FocusHandle,
 }
 
 impl Subject {
@@ -39,11 +38,7 @@ impl Subject {
             this
         });
 
-        cx.new(|cx| Self {
-            id,
-            input,
-            focus_handle: cx.focus_handle(),
-        })
+        cx.new(|_| Self { id, input })
     }
 
     pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -65,13 +60,9 @@ impl Subject {
 impl Render for Subject {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .track_focus(&self.focus_handle)
-            .size_full()
             .flex()
             .flex_col()
             .gap_3()
-            .px_3()
-            .pb_3()
             .child(
                 div()
                     .flex()

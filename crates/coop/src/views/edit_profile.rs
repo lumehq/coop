@@ -233,7 +233,6 @@ impl EditProfile {
 impl Render for EditProfile {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .size_full()
             .flex()
             .flex_col()
             .gap_3()

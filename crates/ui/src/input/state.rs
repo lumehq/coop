@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::ops::{Deref, Range};
 use std::rc::Rc;
 use std::time::Duration;
@@ -358,7 +357,7 @@ pub struct InputState {
     #[allow(clippy::type_complexity)]
     pub(super) validate: Option<Box<dyn Fn(&str) -> bool + 'static>>,
     pub(crate) scroll_handle: ScrollHandle,
-    pub(super) scrollbar_state: Rc<Cell<ScrollbarState>>,
+    pub(super) scrollbar_state: ScrollbarState,
     /// The size of the scrollable content.
     pub(crate) scroll_size: gpui::Size<Pixels>,
     pub(crate) line_number_width: Pixels,
@@ -434,7 +433,7 @@ impl InputState {
             last_selected_range: None,
             last_cursor_offset: None,
             scroll_handle: ScrollHandle::new(),
-            scrollbar_state: Rc::new(Cell::new(ScrollbarState::default())),
+            scrollbar_state: ScrollbarState::default(),
             scroll_size: gpui::size(px(0.), px(0.)),
             line_number_width: px(0.),
             preferred_x_offset: None,

@@ -111,7 +111,6 @@ impl ChatSpace {
                                 )
                                 .child(
                                     div()
-                                        .px_10()
                                         .w_full()
                                         .h_40()
                                         .flex()
@@ -291,10 +290,11 @@ impl ChatSpace {
 
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let settings = preferences::init(window, cx);
+        let title = SharedString::new(t!("chatspace.preferences_title"));
 
         window.open_modal(cx, move |modal, _, _| {
             modal
-                .title(SharedString::new(t!("chatspace.preferences_title")))
+                .title(title.clone())
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(settings.clone())
         });
