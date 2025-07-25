@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::DisplayProfile;
+use common::display::{DisplayProfile, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -334,7 +334,7 @@ impl Sidebar {
     }
 
     fn search_by_pubkey(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(public_key) = common::parse_pubkey_from_str(query) else {
+        let Ok(public_key) = query.to_public_key() else {
             window.push_notification(t!("common.pubkey_invalid"), cx);
             self.set_finding(false, window, cx);
             return;

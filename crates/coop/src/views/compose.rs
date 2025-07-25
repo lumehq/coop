@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::display::DisplayProfile;
+use common::display::{DisplayProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
@@ -278,7 +278,7 @@ impl Compose {
                     Err(anyhow!(t!("common.not_found")))
                 }
             })
-        } else if let Ok(public_key) = common::parse_pubkey_from_str(&content) {
+        } else if let Ok(public_key) = content.to_public_key() {
             cx.background_spawn(async move {
                 let client = nostr_client();
                 let contact = Contact::new(public_key).select();
