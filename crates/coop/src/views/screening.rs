@@ -206,7 +206,6 @@ impl Render for Screening {
                                     .tooltip(t!("screening.report"))
                                     .icon(IconName::Report)
                                     .danger()
-                                    .small()
                                     .rounded(ButtonRounded::Full)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.report(window, cx);
