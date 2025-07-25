@@ -9,6 +9,7 @@ name = "coop"
 path = "src/main.rs"
 
 [dependencies]
+assets = { path = "../assets" }
 ui = { path = "../ui" }
 identity = { path = "../identity" }
 theme = { path = "../theme" }
@@ -34,7 +35,6 @@ serde.workspace = true
 serde_json.workspace = true
 itertools.workspace = true
 dirs.workspace = true
-rust-embed.workspace = true
 log.workspace = true
 smallvec.workspace = true
 smol.workspace = true
