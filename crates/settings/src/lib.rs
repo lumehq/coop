@@ -1,5 +1,6 @@
 use anyhow::anyhow;
-use global::{constants::SETTINGS_D, nostr_client};
+use global::constants::SETTINGS_D;
+use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,7 @@ pub struct Settings {
     pub hide_user_avatars: bool,
     pub backup_messages: bool,
     pub screening: bool,
+    pub contact_bypass: bool,
     pub auto_login: bool,
 }
 
@@ -68,6 +70,7 @@ impl AppSettings {
             hide_user_avatars: false,
             backup_messages: true,
             screening: true,
+            contact_bypass: true,
             auto_login: false,
         };
 

@@ -4863,6 +4863,7 @@ dependencies = [
  "nostr-sdk",
  "oneshot",
  "rust-i18n",
+ "settings",
  "smallvec",
  "smol",
 ]
