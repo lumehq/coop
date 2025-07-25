@@ -150,11 +150,11 @@ impl ThemeColor {
             secondary_selected: brand().light().step_5(),
             secondary_disabled: brand().light_alpha().step_3(),
 
-            danger_foreground: danger().light().step_1(),
-            danger_background: danger().light().step_9(),
-            danger_hover: danger().light_alpha().step_10(),
-            danger_active: danger().light().step_10(),
-            danger_selected: danger().light().step_11(),
+            danger_foreground: danger().light().step_12(),
+            danger_background: danger().light().step_3(),
+            danger_hover: danger().light_alpha().step_4(),
+            danger_active: danger().light().step_5(),
+            danger_selected: danger().light().step_5(),
             danger_disabled: danger().light_alpha().step_3(),
 
             warning_foreground: warning().light().step_12(),

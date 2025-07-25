@@ -134,8 +134,8 @@ impl Focusable for Onboarding {
 
 impl Render for Onboarding {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let auto_login = AppSettings::get_global(cx).settings.auto_login;
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let auto_login = AppSettings::get_auto_login(cx);
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
 
         div()
             .py_4()
@@ -239,11 +239,8 @@ impl Render for Onboarding {
                             Checkbox::new("auto_login")
                                 .label(SharedString::new(t!("onboarding.auto_login")))
                                 .checked(auto_login)
-                                .on_click(|_, _window, cx| {
-                                    AppSettings::global(cx).update(cx, |this, cx| {
-                                        this.settings.auto_login = !this.settings.auto_login;
-                                        cx.notify();
-                                    })
+                                .on_click(move |_, _window, cx| {
+                                    AppSettings::update_auto_login(!auto_login, cx);
                                 }),
                         )
                         .child(

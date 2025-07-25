@@ -24,8 +24,8 @@ pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<
 pub struct Screening {
     public_key: PublicKey,
     followed: bool,
-    connections: usize,
     verified: bool,
+    mutual_contacts: usize,
 }
 
 impl Screening {
@@ -33,12 +33,12 @@ impl Screening {
         cx.new(|_| Self {
             public_key,
             followed: false,
-            connections: 0,
+            mutual_contacts: 0,
             verified: false,
         })
     }
 
-    pub fn on_load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Skip if user isn't logged in
         let Some(identity) = Identity::read_global(cx).public_key() else {
             return;
@@ -61,9 +61,9 @@ impl Screening {
                 .limit(1);
 
             let is_follow = client.database().count(follow).await.unwrap_or(0) >= 1;
-            let connects = client.database().count(connection).await.unwrap_or(0);
+            let mutual_contacts = client.database().count(connection).await.unwrap_or(0);
 
-            (is_follow, connects)
+            (is_follow, mutual_contacts)
         });
 
         let verify_nip05 = if let Some(address) = self.address(cx) {
@@ -75,11 +75,11 @@ impl Screening {
         };
 
         cx.spawn_in(window, async move |this, cx| {
-            let (followed, connections) = check_trust_score.await;
+            let (followed, mutual_contacts) = check_trust_score.await;
 
             this.update(cx, |this, cx| {
                 this.followed = followed;
-                this.connections = connections;
+                this.mutual_contacts = mutual_contacts;
                 cx.notify();
             })
             .ok();
@@ -140,7 +140,7 @@ impl Screening {
 
 impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let profile = self.profile(cx);
         let shorten_pubkey = shorten_pubkey(profile.public_key(), 8);
 
@@ -197,8 +197,8 @@ impl Render for Screening {
                     .child(
                         Button::new("report")
                             .tooltip(t!("screening.report"))
-                            .icon(IconName::Info)
-                            .danger_alt()
+                            .icon(IconName::Report)
+                            .danger()
                             .small()
                             .rounded(ButtonRounded::Full)
                             .on_click(cx.listener(move |this, _e, window, cx| {
@@ -265,7 +265,7 @@ impl Render for Screening {
                                     .small()
                                     .flex_shrink_0()
                                     .text_color({
-                                        if self.connections > 0 {
+                                        if self.mutual_contacts > 0 {
                                             cx.theme().icon_accent
                                         } else {
                                             cx.theme().icon_muted
@@ -273,10 +273,10 @@ impl Render for Screening {
                                     }),
                             )
                             .map(|this| {
-                                if self.connections > 0 {
+                                if self.mutual_contacts > 0 {
                                     this.child(SharedString::new(t!(
                                         "screening.total_connections",
-                                        u = self.connections
+                                        u = self.mutual_contacts
                                     )))
                                 } else {
                                     this.child(SharedString::new(t!("screening.no_connections")))

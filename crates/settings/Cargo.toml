@@ -14,3 +14,5 @@ log.workspace = true
 smallvec.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+paste = "1.0.15"

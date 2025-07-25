@@ -136,7 +136,7 @@ impl UserProfile {
 
 impl Render for UserProfile {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let profile = self.profile(cx);
 
         let Ok(bech32) = profile.public_key().to_bech32();

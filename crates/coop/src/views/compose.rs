@@ -357,7 +357,7 @@ impl Compose {
     }
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let registry = Registry::read_global(cx);
         let mut items = Vec::with_capacity(self.contacts.len());
 

@@ -175,7 +175,7 @@ impl ChatSpace {
             // Automatically run on_load function when Screening is created
             subscriptions.push(cx.observe_new::<Screening>(|this, window, cx| {
                 if let Some(window) = window {
-                    this.on_load(window, cx);
+                    this.load(window, cx);
                 }
             }));
 

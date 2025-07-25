@@ -255,7 +255,7 @@ impl Chat {
         // Get the message which includes all attachments
         let content = self.input_content(cx);
         // Get the backup setting
-        let backup = AppSettings::get_global(cx).settings.backup_messages;
+        let backup = AppSettings::get_backup_messages(cx);
 
         // Return if message is empty
         if content.trim().is_empty() {
@@ -401,7 +401,7 @@ impl Chat {
         self.uploading(true, cx);
 
         // Get the user's configured NIP96 server
-        let nip96_server = AppSettings::get_global(cx).settings.media_server.clone();
+        let nip96_server = AppSettings::get_media_server(cx);
 
         // Open native file dialog
         let paths = cx.prompt_for_paths(PathPromptOptions {
@@ -579,8 +579,8 @@ impl Chat {
             return div().id(ix);
         };
 
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
-        let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
         let registry = Registry::read_global(cx);
         let author = registry.get_person(&message.author, cx);
 
@@ -796,7 +796,7 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room.read_with(cx, |this, cx| {
-            let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+            let proxy = AppSettings::get_proxy_user_avatars(cx);
             let label = this.display_name(cx);
             let url = this.display_image(proxy, cx);
 

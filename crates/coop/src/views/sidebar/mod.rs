@@ -597,7 +597,7 @@ impl Sidebar {
     }
 
     fn account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
 
         div()
             .px_3()
@@ -666,7 +666,7 @@ impl Sidebar {
         range: Range<usize>,
         cx: &Context<Self>,
     ) -> Vec<impl IntoElement> {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let mut items = Vec::with_capacity(range.end - range.start);
 
         for ix in range {

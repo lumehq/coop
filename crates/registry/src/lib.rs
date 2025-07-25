@@ -251,8 +251,8 @@ impl Registry {
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         log::info!("Starting to load chat rooms...");
 
-        let app_settings = AppSettings::get_global(cx);
-        let contact_bypass = app_settings.settings.contact_bypass;
+        // Get the contact bypass setting
+        let contact_bypass = AppSettings::get_contact_bypass(cx);
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();

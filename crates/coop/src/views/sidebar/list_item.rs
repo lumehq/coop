@@ -71,8 +71,8 @@ impl RenderOnce for RoomListItem {
         let room_id = self.room_id;
         let kind = self.kind;
         let handler = self.handler.clone();
-        let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
-        let require_screening = AppSettings::get_global(cx).settings.screening;
+        let hide_avatar = AppSettings::get_proxy_user_avatars(cx);
+        let require_screening = AppSettings::get_screening(cx);
 
         self.base
             .id(self.ix)
