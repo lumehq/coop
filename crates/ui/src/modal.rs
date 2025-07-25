@@ -484,7 +484,7 @@ impl RenderOnce for Modal {
                             })
                             .child(
                                 div()
-                                    .pt_4()
+                                    .pt_px()
                                     .w_full()
                                     .h_auto()
                                     .flex_1()

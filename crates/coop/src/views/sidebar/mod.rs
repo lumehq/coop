@@ -573,6 +573,7 @@ impl Sidebar {
                 .title(title.clone())
                 .child(
                     v_flex()
+                        .pb_4()
                         .gap_2()
                         .child(
                             div()

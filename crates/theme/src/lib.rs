@@ -309,6 +309,24 @@ impl From<WindowAppearance> for ThemeMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ScrollBarMode {
+    #[default]
+    Scrolling,
+    Hover,
+    Always,
+}
+
+impl ScrollBarMode {
+    pub fn is_hover(&self) -> bool {
+        matches!(self, Self::Hover)
+    }
+
+    pub fn is_always(&self) -> bool {
+        matches!(self, Self::Always)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub colors: ThemeColor,
@@ -316,6 +334,7 @@ pub struct Theme {
     pub font_family: SharedString,
     pub font_size: Pixels,
     pub radius: Pixels,
+    pub scrollbar_mode: ScrollBarMode,
 }
 
 impl Deref for Theme {
@@ -392,6 +411,7 @@ impl From<ThemeColor> for Theme {
             font_size: px(15.),
             font_family: ".SystemUIFont".into(),
             radius: px(5.),
+            scrollbar_mode: ScrollBarMode::default(),
             mode,
             colors,
         }

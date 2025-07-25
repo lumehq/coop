@@ -9,13 +9,16 @@ use gpui::{
     IntoElement, LayoutId, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
     Position, ScrollHandle, ScrollWheelEvent, Size, UniformListScrollHandle, Window,
 };
-use theme::ActiveTheme;
+use theme::{ActiveTheme, ScrollBarMode};
 
 use crate::AxisExt;
 
-/// The width of the scrollbar (THUMB_ACTIVE_INSET * 2 + THUMB_ACTIVE_WIDTH)
-pub(crate) const WIDTH: Pixels = px(2. * 2. + 8.);
+const WIDTH: Pixels = px(2. * 2. + 8.);
 const MIN_THUMB_SIZE: f32 = 48.;
+
+const THUMB_WIDTH: Pixels = px(6.);
+const THUMB_RADIUS: Pixels = Pixels(6. / 2.);
+const THUMB_INSET: Pixels = Pixels(2.);
 
 const THUMB_ACTIVE_WIDTH: Pixels = px(8.);
 const THUMB_ACTIVE_RADIUS: Pixels = Pixels(8. / 2.);
@@ -350,14 +353,19 @@ impl Scrollbar {
         )
     }
 
-    fn style_for_idle() -> (Hsla, Hsla, Hsla, Pixels, Pixels, Pixels) {
+    fn style_for_idle(cx: &App) -> (Hsla, Hsla, Hsla, Pixels, Pixels, Pixels) {
+        let (width, inset, radius) = match cx.theme().scrollbar_mode {
+            ScrollBarMode::Scrolling => (THUMB_WIDTH, THUMB_INSET, THUMB_RADIUS),
+            _ => (THUMB_ACTIVE_WIDTH, THUMB_ACTIVE_INSET, THUMB_ACTIVE_RADIUS),
+        };
+
         (
             gpui::transparent_black(),
             gpui::transparent_black(),
             gpui::transparent_black(),
-            THUMB_ACTIVE_WIDTH,
-            THUMB_ACTIVE_INSET,
-            THUMB_ACTIVE_RADIUS,
+            width,
+            inset,
+            radius,
         )
     }
 }
@@ -504,20 +512,29 @@ impl Element for Scrollbar {
             };
 
             let state = self.state.clone();
+            let is_always_to_show = cx.theme().scrollbar_mode.is_always();
+            let is_hover_to_show = cx.theme().scrollbar_mode.is_hover();
             let is_hovered_on_bar = state.get().hovered_axis == Some(axis);
             let is_hovered_on_thumb = state.get().hovered_on_thumb == Some(axis);
 
             let (thumb_bg, bar_bg, bar_border, thumb_width, inset, radius) =
                 if state.get().dragged_axis == Some(axis) {
                     Self::style_for_active(cx)
-                } else if is_hovered_on_bar || is_hovered_on_thumb {
+                } else if is_hover_to_show && (is_hovered_on_bar || is_hovered_on_thumb) {
+                    if is_hovered_on_thumb {
+                        Self::style_for_hovered_thumb(cx)
+                    } else {
+                        Self::style_for_hovered_bar(cx)
+                    }
+                } else if is_always_to_show {
+                    #[allow(clippy::if_same_then_else)]
                     if is_hovered_on_thumb {
                         Self::style_for_hovered_thumb(cx)
                     } else {
                         Self::style_for_hovered_bar(cx)
                     }
                 } else {
-                    let mut idle_state = Self::style_for_idle();
+                    let mut idle_state = Self::style_for_idle(cx);
                     // Delay 2s to fade out the scrollbar thumb (in 1s)
                     if let Some(last_time) = state.get().last_scroll_time {
                         let elapsed = Instant::now().duration_since(last_time).as_secs_f32();
@@ -610,11 +627,13 @@ impl Element for Scrollbar {
         _: &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
         window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) {
         let view_id = window.current_view();
         let hitbox_bounds = prepaint.hitbox.bounds;
-        let is_visible = self.state.get().is_scrollbar_visible();
+        let is_visible =
+            self.state.get().is_scrollbar_visible() || cx.theme().scrollbar_mode.is_always();
+        let is_hover_to_show = cx.theme().scrollbar_mode.is_hover();
 
         // Update last_scroll_time when offset is changed.
         if self.scroll_handle.offset() != self.state.get().last_scroll_offset {
@@ -685,7 +704,7 @@ impl Element for Scrollbar {
 
                     let safe_range = (-scroll_area_size + container_size)..px(0.);
 
-                    if is_visible {
+                    if is_hover_to_show || is_visible {
                         window.on_mouse_event({
                             let state = self.state.clone();
                             let scroll_handle = self.scroll_handle.clone();
@@ -742,7 +761,7 @@ impl Element for Scrollbar {
                             let mut notify = false;
                             // When is hover to show mode or it was visible,
                             // we need to update the hovered state and increase the last_scroll_time.
-                            let need_hover_to_update = is_visible;
+                            let need_hover_to_update = is_hover_to_show || is_visible;
                             // Update hovered state for scrollbar
                             if bounds.contains(&event.position) && need_hover_to_update {
                                 state.set(state.get().with_hovered(Some(axis)));
