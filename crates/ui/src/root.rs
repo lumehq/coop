@@ -256,6 +256,7 @@ impl Root {
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let base_font_size = cx.theme().font_size;
+        let font_family = cx.theme().font_family.clone();
         window.set_rem_size(base_font_size);
 
         window_border().child(
@@ -263,7 +264,7 @@ impl Render for Root {
                 .id("root")
                 .relative()
                 .size_full()
-                .font_family(".SystemUIFont")
+                .font_family(font_family)
                 .bg(cx.theme().background)
                 .text_color(cx.theme().text)
                 .child(self.view.clone()),
