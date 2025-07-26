@@ -146,6 +146,8 @@ impl Sidebar {
             .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await?;
 
+        log::info!("Subscribe to get metadata for: {public_key}");
+
         Ok(())
     }
 

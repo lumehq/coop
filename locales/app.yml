@@ -648,6 +648,10 @@ screening:
     es: "Informe enviado con éxito"
     pt: "Relatório enviado com sucesso"
     ko: "신고가 성공적으로 제출되었습니다."
+  has_relays:
+    en: "This person has configured their Messaging Relays. They will receive your messages normally."
+  not_has_relays:
+    en: "This person hasn't configured their Messaging Relays. They won't receive your messages."
 
 profile:
   title:

@@ -301,6 +301,7 @@ impl RenderOnce for Button {
                         Size::Size(px) => this.size(px),
                         Size::XSmall => this.size_5(),
                         Size::Small => this.size_6(),
+                        Size::Medium => this.size_7(),
                         _ => this.size_9(),
                     }
                 } else {
@@ -315,8 +316,8 @@ impl RenderOnce for Button {
                                 this.h_7().px_3()
                             }
                         }
+                        Size::Medium => this.h_8().px_3(),
                         Size::Large => this.h_10().px_4(),
-                        _ => this.h_9().px_2(),
                     }
                 }
             })

@@ -25,6 +25,7 @@ pub struct Screening {
     public_key: PublicKey,
     followed: bool,
     verified: bool,
+    dm_relays: bool,
     mutual_contacts: usize,
 }
 
@@ -33,8 +34,9 @@ impl Screening {
         cx.new(|_| Self {
             public_key,
             followed: false,
-            mutual_contacts: 0,
             verified: false,
+            dm_relays: false,
+            mutual_contacts: 0,
         })
     }
 
@@ -43,10 +45,9 @@ impl Screening {
         let Some(identity) = Identity::read_global(cx).public_key() else {
             return;
         };
-
         let public_key = self.public_key;
 
-        let check_trust_score: Task<(bool, usize)> = cx.background_spawn(async move {
+        let check_trust_score: Task<(bool, usize, bool)> = cx.background_spawn(async move {
             let client = nostr_client();
 
             let follow = Filter::new()
@@ -55,15 +56,21 @@ impl Screening {
                 .pubkey(public_key)
                 .limit(1);
 
-            let connection = Filter::new()
+            let contacts = Filter::new()
                 .kind(Kind::ContactList)
                 .pubkey(public_key)
                 .limit(1);
 
-            let is_follow = client.database().count(follow).await.unwrap_or(0) >= 1;
-            let mutual_contacts = client.database().count(connection).await.unwrap_or(0);
+            let relays = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
 
-            (is_follow, mutual_contacts)
+            let is_follow = client.database().count(follow).await.unwrap_or(0) >= 1;
+            let mutual_contacts = client.database().count(contacts).await.unwrap_or(0);
+            let dm_relays = client.database().count(relays).await.unwrap_or(0) >= 1;
+
+            (is_follow, mutual_contacts, dm_relays)
         });
 
         let verify_nip05 = if let Some(address) = self.address(cx) {
@@ -75,11 +82,12 @@ impl Screening {
         };
 
         cx.spawn_in(window, async move |this, cx| {
-            let (followed, mutual_contacts) = check_trust_score.await;
+            let (followed, mutual_contacts, dm_relays) = check_trust_score.await;
 
             this.update(cx, |this, cx| {
                 this.followed = followed;
                 this.mutual_contacts = mutual_contacts;
+                this.dm_relays = dm_relays;
                 cx.notify();
             })
             .ok();
@@ -146,7 +154,6 @@ impl Render for Screening {
 
         v_flex()
             .gap_4()
-            .w_full()
             .child(
                 v_flex()
                     .gap_3()
@@ -210,51 +217,87 @@ impl Render for Screening {
             .child(
                 v_flex()
                     .gap_2()
-                    .when_some(self.address(cx), |this, address| {
-                        this.child(h_flex().gap_2().map(|this| {
+                    .when_some(self.address(cx), |this, addr| {
+                        this.child(div().map(|this| {
                             if self.verified {
-                                this.text_sm()
+                                let label =
+                                    SharedString::new(t!("screening.verified", address = addr));
+
+                                this.h_flex()
+                                    .gap_2()
                                     .child(
                                         Icon::new(IconName::CheckCircleFill)
                                             .small()
                                             .flex_shrink_0()
                                             .text_color(cx.theme().icon_accent),
                                     )
-                                    .child(div().flex_1().child(SharedString::new(t!(
-                                        "screening.verified",
-                                        address = address
-                                    ))))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .truncate()
+                                            .text_ellipsis()
+                                            .text_sm()
+                                            .child(label),
+                                    )
                             } else {
-                                this.text_sm()
+                                let label =
+                                    SharedString::new(t!("screening.not_verified", address = addr));
+
+                                this.h_flex()
+                                    .gap_2()
                                     .child(
                                         Icon::new(IconName::CheckCircleFill)
                                             .small()
                                             .text_color(cx.theme().icon_muted),
                                     )
-                                    .child(div().flex_1().child(SharedString::new(t!(
-                                        "screening.not_verified",
-                                        address = address
-                                    ))))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .truncate()
+                                            .text_ellipsis()
+                                            .text_sm()
+                                            .child(label),
+                                    )
                             }
                         }))
                     })
-                    .child(h_flex().gap_2().map(|this| {
+                    .child(div().map(|this| {
                         if !self.followed {
-                            this.text_sm()
+                            let label = SharedString::new(t!("screening.not_contact"));
+
+                            this.h_flex()
+                                .gap_2()
                                 .child(
                                     Icon::new(IconName::CheckCircleFill)
                                         .small()
                                         .text_color(cx.theme().icon_muted),
                                 )
-                                .child(SharedString::new(t!("screening.not_contact")))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .truncate()
+                                        .text_ellipsis()
+                                        .text_sm()
+                                        .child(label),
+                                )
                         } else {
-                            this.text_sm()
+                            let label = SharedString::new(t!("screening.contact"));
+
+                            this.h_flex()
+                                .gap_2()
                                 .child(
                                     Icon::new(IconName::CheckCircleFill)
                                         .small()
                                         .text_color(cx.theme().icon_accent),
                                 )
-                                .child(SharedString::new(t!("screening.contact")))
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .truncate()
+                                        .text_ellipsis()
+                                        .text_sm()
+                                        .child(label),
+                                )
                         }
                     }))
                     .child(
@@ -273,16 +316,43 @@ impl Render for Screening {
                                         }
                                     }),
                             )
-                            .map(|this| {
+                            .child({
                                 if self.mutual_contacts > 0 {
-                                    this.child(SharedString::new(t!(
+                                    SharedString::new(t!(
                                         "screening.total_connections",
                                         u = self.mutual_contacts
-                                    )))
+                                    ))
                                 } else {
-                                    this.child(SharedString::new(t!("screening.no_connections")))
+                                    SharedString::new(t!("screening.no_connections"))
                                 }
                             }),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_start()
+                            .justify_start()
+                            .gap_2()
+                            .child(
+                                Icon::new(IconName::CheckCircleFill)
+                                    .small()
+                                    .flex_shrink_0()
+                                    .text_color({
+                                        if self.dm_relays {
+                                            cx.theme().icon_accent
+                                        } else {
+                                            cx.theme().icon_muted
+                                        }
+                                    }),
+                            )
+                            .child(div().flex_1().text_sm().child({
+                                if self.dm_relays {
+                                    SharedString::new(t!("screening.has_relays"))
+                                } else {
+                                    SharedString::new(t!("screening.not_has_relays"))
+                                }
+                            })),
                     ),
             )
     }
