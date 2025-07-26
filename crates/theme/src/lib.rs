@@ -143,7 +143,7 @@ impl ThemeColor {
             element_selected: brand().light().step_11(),
             element_disabled: brand().light_alpha().step_3(),
 
-            secondary_foreground: brand().light().step_12(),
+            secondary_foreground: brand().light().step_11(),
             secondary_background: brand().light().step_3(),
             secondary_hover: brand().light_alpha().step_4(),
             secondary_active: brand().light().step_5(),
@@ -231,11 +231,11 @@ impl ThemeColor {
             secondary_selected: brand().dark().step_5(),
             secondary_disabled: brand().dark_alpha().step_3(),
 
-            danger_foreground: danger().dark().step_1(),
-            danger_background: danger().dark().step_9(),
-            danger_hover: danger().dark_alpha().step_10(),
-            danger_active: danger().dark().step_10(),
-            danger_selected: danger().dark().step_11(),
+            danger_foreground: danger().dark().step_12(),
+            danger_background: danger().dark().step_3(),
+            danger_hover: danger().dark_alpha().step_4(),
+            danger_active: danger().dark().step_5(),
+            danger_selected: danger().dark().step_5(),
             danger_disabled: danger().dark_alpha().step_3(),
 
             warning_foreground: warning().dark().step_12(),

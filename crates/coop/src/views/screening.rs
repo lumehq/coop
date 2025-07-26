@@ -1,13 +1,12 @@
 use common::display::{shorten_pubkey, DisplayProfile};
 use common::nip05::nip05_verify;
 use global::nostr_client;
-use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, rems, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
+    div, relative, rems, App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::t;
+use i18n::{shared_t, t};
 use identity::Identity;
 use nostr_sdk::prelude::*;
 use registry::Registry;
@@ -23,8 +22,8 @@ pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<
 
 pub struct Screening {
     public_key: PublicKey,
-    followed: bool,
     verified: bool,
+    followed: bool,
     dm_relays: bool,
     mutual_contacts: usize,
 }
@@ -33,8 +32,8 @@ impl Screening {
     pub fn new(public_key: PublicKey, _window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             public_key,
-            followed: false,
             verified: false,
+            followed: false,
             dm_relays: false,
             mutual_contacts: 0,
         })
@@ -180,7 +179,7 @@ impl Render for Screening {
                             .items_center()
                             .justify_center()
                             .rounded_full()
-                            .bg(cx.theme().elevated_surface_background)
+                            .bg(cx.theme().surface_background)
                             .text_sm()
                             .truncate()
                             .text_ellipsis()
@@ -215,144 +214,112 @@ impl Render for Screening {
             )
             .child(
                 v_flex()
-                    .gap_2()
-                    .when_some(self.address(cx), |this, addr| {
-                        this.child(div().map(|this| {
-                            if self.verified {
-                                let label =
-                                    SharedString::new(t!("screening.verified", address = addr));
-
-                                this.h_flex()
-                                    .gap_2()
-                                    .child(
-                                        Icon::new(IconName::CheckCircleFill)
-                                            .small()
-                                            .flex_shrink_0()
-                                            .text_color(cx.theme().icon_accent),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .truncate()
-                                            .text_ellipsis()
-                                            .text_sm()
-                                            .child(label),
-                                    )
-                            } else {
-                                let label =
-                                    SharedString::new(t!("screening.not_verified", address = addr));
-
-                                this.h_flex()
-                                    .gap_2()
-                                    .child(
-                                        Icon::new(IconName::CheckCircleFill)
-                                            .small()
-                                            .text_color(cx.theme().icon_muted),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .truncate()
-                                            .text_ellipsis()
-                                            .text_sm()
-                                            .child(label),
-                                    )
-                            }
-                        }))
-                    })
-                    .child(div().map(|this| {
-                        if !self.followed {
-                            let label = SharedString::new(t!("screening.not_contact"));
-
-                            this.h_flex()
-                                .gap_2()
-                                .child(
-                                    Icon::new(IconName::CheckCircleFill)
-                                        .small()
-                                        .text_color(cx.theme().icon_muted),
-                                )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .truncate()
-                                        .text_ellipsis()
-                                        .text_sm()
-                                        .child(label),
-                                )
-                        } else {
-                            let label = SharedString::new(t!("screening.contact"));
-
-                            this.h_flex()
-                                .gap_2()
-                                .child(
-                                    Icon::new(IconName::CheckCircleFill)
-                                        .small()
-                                        .text_color(cx.theme().icon_accent),
-                                )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .truncate()
-                                        .text_ellipsis()
-                                        .text_sm()
-                                        .child(label),
-                                )
-                        }
-                    }))
+                    .gap_3()
                     .child(
                         h_flex()
+                            .items_start()
                             .gap_2()
                             .text_sm()
+                            .child(status_badge(self.followed, cx))
                             .child(
-                                Icon::new(IconName::CheckCircleFill)
-                                    .small()
-                                    .flex_shrink_0()
-                                    .text_color({
-                                        if self.mutual_contacts > 0 {
-                                            cx.theme().icon_accent
+                                v_flex()
+                                    .text_sm()
+                                    .child(shared_t!("screening.contact_label"))
+                                    .child(div().text_color(cx.theme().text_muted).child({
+                                        if self.followed {
+                                            shared_t!("screening.contact")
                                         } else {
-                                            cx.theme().icon_muted
+                                            shared_t!("screening.not_contact")
                                         }
-                                    }),
-                            )
-                            .child({
-                                if self.mutual_contacts > 0 {
-                                    SharedString::new(t!(
-                                        "screening.total_connections",
-                                        u = self.mutual_contacts
-                                    ))
-                                } else {
-                                    SharedString::new(t!("screening.no_connections"))
-                                }
-                            }),
+                                    })),
+                            ),
                     )
                     .child(
-                        div()
-                            .w_full()
-                            .flex()
+                        h_flex()
                             .items_start()
-                            .justify_start()
                             .gap_2()
+                            .child(status_badge(self.verified, cx))
                             .child(
-                                Icon::new(IconName::CheckCircleFill)
-                                    .small()
-                                    .flex_shrink_0()
-                                    .text_color({
-                                        if self.dm_relays {
-                                            cx.theme().icon_accent
+                                v_flex()
+                                    .text_sm()
+                                    .child({
+                                        if let Some(addr) = self.address(cx) {
+                                            shared_t!("screening.nip05_addr", addr = addr)
                                         } else {
-                                            cx.theme().icon_muted
+                                            shared_t!("screening.nip05_label")
                                         }
-                                    }),
-                            )
-                            .child(div().flex_1().text_sm().child({
-                                if self.dm_relays {
-                                    SharedString::new(t!("screening.has_relays"))
-                                } else {
-                                    SharedString::new(t!("screening.not_has_relays"))
-                                }
-                            })),
+                                    })
+                                    .child(div().text_color(cx.theme().text_muted).child({
+                                        if self.address(cx).is_some() {
+                                            if self.verified {
+                                                shared_t!("screening.nip05_ok")
+                                            } else {
+                                                shared_t!("screening.nip05_failed")
+                                            }
+                                        } else {
+                                            shared_t!("screening.nip05_empty")
+                                        }
+                                    })),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .items_start()
+                            .gap_2()
+                            .child(status_badge(self.mutual_contacts > 0, cx))
+                            .child(
+                                v_flex()
+                                    .text_sm()
+                                    .child(shared_t!("screening.mutual_label"))
+                                    .child(div().text_color(cx.theme().text_muted).child({
+                                        if self.mutual_contacts > 0 {
+                                            shared_t!("screening.mutual", u = self.mutual_contacts)
+                                        } else {
+                                            shared_t!("screening.no_mutual")
+                                        }
+                                    })),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .items_start()
+                            .gap_2()
+                            .child(status_badge(self.dm_relays, cx))
+                            .child(
+                                v_flex()
+                                    .w_full()
+                                    .text_sm()
+                                    .child({
+                                        if self.dm_relays {
+                                            shared_t!("screening.relay_found")
+                                        } else {
+                                            shared_t!("screening.relay_empty")
+                                        }
+                                    })
+                                    .child(div().w_full().text_color(cx.theme().text_muted).child(
+                                        {
+                                            if self.dm_relays {
+                                                shared_t!("screening.relay_found_desc")
+                                            } else {
+                                                shared_t!("screening.relay_empty_desc")
+                                            }
+                                        },
+                                    )),
+                            ),
                     ),
             )
     }
+}
+
+fn status_badge(status: bool, cx: &App) -> Div {
+    div()
+        .pt_1()
+        .flex_shrink_0()
+        .child(Icon::new(IconName::CheckCircleFill).small().text_color({
+            if status {
+                cx.theme().icon_accent
+            } else {
+                cx.theme().icon_muted
+            }
+        }))
 }

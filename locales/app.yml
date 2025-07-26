@@ -129,26 +129,40 @@ screening:
     en: "Ignore"
   response:
     en: "Response"
-  verified:
-    en: "%{address} matches the user's public key."
-  not_verified:
-    en: "%{address} does not match the user's public key."
+  nip05_label:
+    en: "Friendly Address (NIP-05) validation"
+  nip05_addr:
+    en: "%{addr} validation"
+  nip05_empty:
+    en: "This person has not set up their friendly address"
+  nip05_ok:
+    en: "The address matches the user's public key."
+  nip05_failed:
+    en: "The address does not match the user's public key."
+  contact_label:
+    en: "Contact"
   contact:
-    en: "This person is in your contact list."
+    en: "This person is one of your contacts."
   not_contact:
-    en: "This person is not in your contact list."
-  total_connections:
+    en: "This person is not one of your contacts."
+  mutual_label:
+    en: "Mutual contacts"
+  mutual:
     en: "You have %{u} mutual contacts with this person."
-  no_connections:
+  no_mutual:
     en: "You don't have any mutual contacts with this person."
+  relay_found:
+    en: "Messaging Relays found"
+  relay_found_desc:
+    en: "You can send a message to this person."
+  relay_empty:
+    en: "Messaging Relays not found"
+  relay_empty_desc:
+    en: "You cannot send a message to this person."
   report:
     en: "Report as a scam or impostor"
   report_msg:
     en: "Report submitted successfully"
-  has_relays:
-    en: "This person has configured their Messaging Relays. They will receive your messages normally."
-  not_has_relays:
-    en: "This person hasn't configured their Messaging Relays. They won't receive your messages."
 
 profile:
   title:

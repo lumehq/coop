@@ -280,6 +280,7 @@ impl RenderOnce for Button {
         let normal_style = style.normal(window, cx);
         let icon_size = match self.size {
             Size::Size(v) => Size::Size(v * 0.75),
+            Size::Medium => Size::Small,
             _ => self.size,
         };
 
@@ -337,21 +338,6 @@ impl RenderOnce for Button {
                         this.bg(active_style.bg).text_color(active_style.fg)
                     })
             })
-            .when_some(
-                self.on_click.filter(|_| !self.disabled && !self.loading),
-                |this, on_click| {
-                    let stop_propagation = self.stop_propagation;
-                    this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                        window.prevent_default();
-                        if stop_propagation {
-                            cx.stop_propagation();
-                        }
-                    })
-                    .on_click(move |event, window, cx| {
-                        (on_click)(event, window, cx);
-                    })
-                },
-            )
             .when(self.disabled, |this| {
                 let disabled_style = style.disabled(window, cx);
                 this.cursor_not_allowed()
@@ -398,6 +384,21 @@ impl RenderOnce for Button {
             .when_some(self.tooltip.clone(), |this, tooltip| {
                 this.tooltip(move |window, cx| Tooltip::new(tooltip.clone(), window, cx).into())
             })
+            .when_some(
+                self.on_click.filter(|_| !self.disabled && !self.loading),
+                |this, on_click| {
+                    let stop_propagation = self.stop_propagation;
+                    this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        window.prevent_default();
+                        if stop_propagation {
+                            cx.stop_propagation();
+                        }
+                    })
+                    .on_click(move |event, window, cx| {
+                        (on_click)(event, window, cx);
+                    })
+                },
+            )
     }
 }
 
