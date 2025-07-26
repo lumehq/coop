@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use client_keys::ClientKeys;
+use common::display::TextUtils;
 use common::handle_auth::CoopAuthUrlHandler;
-use common::string_to_qr;
 use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -99,7 +99,7 @@ impl Login {
 
                 // Update the QR Image with the new connection string
                 this.qr_image.update(cx, |this, cx| {
-                    *this = string_to_qr(&connection_string.to_string());
+                    *this = connection_string.to_string().to_qr();
                     cx.notify();
                 });
 
@@ -234,8 +234,6 @@ impl Login {
                 })
                 .child(
                     div()
-                        .pt_4()
-                        .px_4()
                         .w_full()
                         .flex()
                         .flex_col()

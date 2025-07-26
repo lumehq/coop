@@ -3,9 +3,10 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, div, hsla, point, px, relative, Animation, AnimationExt as _, AnyElement, App,
-    Bounds, BoxShadow, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
-    MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString, Styled, Window,
+    anchored, div, hsla, point, px, Animation, AnimationExt as _, AnyElement, App, Axis, Bounds,
+    BoxShadow, ClickEvent, Div, FocusHandle, InteractiveElement, IntoElement, KeyBinding,
+    MouseButton, ParentElement, Pixels, Point, RenderOnce, SharedString, StyleRefinement, Styled,
+    Window,
 };
 use theme::ActiveTheme;
 
@@ -77,7 +78,7 @@ impl ModalButtonProps {
 
 #[derive(IntoElement)]
 pub struct Modal {
-    base: Div,
+    style: StyleRefinement,
     title: Option<AnyElement>,
     footer: Option<FooterFn>,
     content: Div,
@@ -88,11 +89,12 @@ pub struct Modal {
     on_close: OnClose,
     on_ok: OnOk,
     on_cancel: OnCancel,
-    button_props: ModalButtonProps,
-    show_close: bool,
+
     overlay: bool,
     overlay_closable: bool,
     keyboard: bool,
+    show_close: bool,
+    button_props: ModalButtonProps,
 
     /// This will be change when open the modal, the focus handle is create when open the modal.
     pub(crate) focus_handle: FocusHandle,
@@ -102,18 +104,8 @@ pub struct Modal {
 
 impl Modal {
     pub fn new(_window: &mut Window, cx: &mut App) -> Self {
-        let radius = (cx.theme().radius * 2.).min(px(20.));
-
-        let base = v_flex()
-            .bg(cx.theme().background)
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded(radius)
-            .shadow_xl()
-            .min_h_24();
-
         Self {
-            base,
+            style: StyleRefinement::default(),
             focus_handle: cx.focus_handle(),
             title: None,
             footer: None,
@@ -276,7 +268,7 @@ impl ParentElement for Modal {
 
 impl Styled for Modal {
     fn style(&mut self) -> &mut gpui::StyleRefinement {
-        self.base.style()
+        &mut self.style
     }
 }
 
@@ -350,6 +342,7 @@ impl RenderOnce for Modal {
         });
 
         let window_paddings = crate::window_border::window_paddings(window, cx);
+        let radius = (cx.theme().radius * 2.).min(px(20.));
 
         let view_size = window.viewport_size()
             - gpui::size(
@@ -366,6 +359,17 @@ impl RenderOnce for Modal {
         let y = self.margin_top.unwrap_or(view_size.height / 10.) + offset_top;
         let x = bounds.center().x - self.width / 2.;
 
+        let mut padding_right = px(16.);
+        let mut padding_left = px(16.);
+
+        if let Some(pl) = self.style.padding.left {
+            padding_left = pl.to_pixels(self.width.into(), window.rem_size());
+        }
+
+        if let Some(pr) = self.style.padding.right {
+            padding_right = pr.to_pixels(self.width.into(), window.rem_size());
+        }
+
         let animation = Animation::new(Duration::from_secs_f64(0.25))
             .with_easing(cubic_bezier(0.32, 0.72, 0., 1.));
 
@@ -374,6 +378,7 @@ impl RenderOnce for Modal {
             .snap_to_window()
             .child(
                 div()
+                    .id("modal")
                     .w(view_size.width)
                     .h(view_size.height)
                     .when(self.overlay_visible, |this| {
@@ -396,10 +401,17 @@ impl RenderOnce for Modal {
                         })
                     })
                     .child(
-                        self.base
-                            .id(SharedString::from(format!("modal-{layer_ix}")))
+                        v_flex()
+                            .id(layer_ix)
+                            .bg(cx.theme().background)
+                            .border_1()
+                            .border_color(cx.theme().border.alpha(0.4))
+                            .rounded(radius)
+                            .shadow_xl()
+                            .min_h_24()
                             .key_context(CONTEXT)
                             .track_focus(&self.focus_handle)
+                            .refine_style(&self.style)
                             .when(self.keyboard, |this| {
                                 this.on_action({
                                     let on_cancel = on_cancel.clone();
@@ -430,6 +442,7 @@ impl RenderOnce for Modal {
                                     }
                                 })
                             })
+                            // There style is high priority, can't be overridden.
                             .absolute()
                             .occlude()
                             .relative()
@@ -437,57 +450,59 @@ impl RenderOnce for Modal {
                             .top(y)
                             .w(self.width)
                             .when_some(self.max_width, |this, w| this.max_w(w))
-                            .when_some(self.title, |this, title| {
-                                this.child(
-                                    div()
-                                        .h_12()
-                                        .px_3()
-                                        .mb_2()
-                                        .flex()
-                                        .items_center()
-                                        .font_semibold()
-                                        .border_b_1()
-                                        .border_color(cx.theme().border)
-                                        .line_height(relative(1.))
-                                        .child(title),
-                                )
-                            })
+                            .child(h_flex().h_4().px_3().justify_center().when_some(
+                                self.title,
+                                |this, title| {
+                                    this.h_12().font_semibold().text_center().child(title)
+                                },
+                            ))
                             .when(self.show_close, |this| {
                                 this.child(
-                                    Button::new(SharedString::from(format!(
-                                        "modal-close-{layer_ix}"
-                                    )))
-                                    .icon(IconName::CloseCircleFill)
-                                    .absolute()
-                                    .top_1p5()
-                                    .right_2()
-                                    .custom(
-                                        ButtonCustomVariant::new(window, cx)
-                                            .foreground(cx.theme().icon_muted)
-                                            .color(cx.theme().ghost_element_background)
-                                            .hover(cx.theme().ghost_element_background)
-                                            .active(cx.theme().ghost_element_background),
-                                    )
-                                    .on_click(
-                                        move |_, window, cx| {
+                                    Button::new("close")
+                                        .icon(IconName::CloseCircleFill)
+                                        .absolute()
+                                        .top_1p5()
+                                        .right_2()
+                                        .custom(
+                                            ButtonCustomVariant::new(window, cx)
+                                                .foreground(cx.theme().icon_muted)
+                                                .color(cx.theme().ghost_element_background)
+                                                .hover(cx.theme().ghost_element_background)
+                                                .active(cx.theme().ghost_element_background),
+                                        )
+                                        .on_click(move |_, window, cx| {
                                             on_cancel(&ClickEvent::default(), window, cx);
                                             on_close(&ClickEvent::default(), window, cx);
                                             window.close_modal(cx);
-                                        },
-                                    ),
+                                        }),
                                 )
                             })
-                            .child(div().relative().w_full().flex_1().child(self.content))
-                            .when(self.footer.is_some(), |this| {
-                                let footer = self.footer.unwrap();
-
+                            .child(
+                                div()
+                                    .pt_px()
+                                    .w_full()
+                                    .h_auto()
+                                    .flex_1()
+                                    .relative()
+                                    .overflow_hidden()
+                                    .child(
+                                        v_flex()
+                                            .pr(padding_right)
+                                            .pl(padding_left)
+                                            .scrollable(Axis::Vertical)
+                                            .child(self.content),
+                                    ),
+                            )
+                            .when_some(self.footer, |this, footer| {
                                 this.child(
-                                    h_flex().p_4().gap_1p5().justify_center().children(footer(
-                                        render_ok,
-                                        render_cancel,
-                                        window,
-                                        cx,
-                                    )),
+                                    h_flex()
+                                        .gap_2()
+                                        .pt(padding_left)
+                                        .pr(padding_right)
+                                        .pb(padding_left)
+                                        .pl(padding_right)
+                                        .justify_end()
+                                        .children(footer(render_ok, render_cancel, window, cx)),
                                 )
                             })
                             .with_animation("slide-down", animation.clone(), move |this, delta| {

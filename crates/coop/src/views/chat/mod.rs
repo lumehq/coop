@@ -94,19 +94,23 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &input,
                 window,
-                move |this: &mut Self, input, event, window, cx| match event {
-                    InputEvent::PressEnter { .. } => {
-                        this.send_message(window, cx);
-                    }
-                    InputEvent::Change(text) => {
-                        this.mention_popup(text, input, cx);
-                    }
-                    _ => {}
+                move |this: &mut Self, input, event, window, cx| {
+                    match event {
+                        InputEvent::PressEnter { .. } => {
+                            this.send_message(window, cx);
+                        }
+                        InputEvent::Change(text) => {
+                            this.mention_popup(text, input, cx);
+                        }
+                        _ => {}
+                    };
                 },
             ));
 
-            subscriptions.push(
-                cx.subscribe_in(&room, window, move |this, _, incoming, _w, cx| {
+            subscriptions.push(cx.subscribe_in(
+                &room,
+                window,
+                move |this, _, incoming, _window, cx| {
                     // Check if the incoming message is the same as the new message created by optimistic update
                     if this.prevent_duplicate_message(&incoming.0, cx) {
                         return;
@@ -121,8 +125,8 @@ impl Chat {
                     });
 
                     this.list_state.splice(old_len..old_len, 1);
-                }),
-            );
+                },
+            ));
 
             // Initialize list state
             // [item_count] always equal to 1 at the beginning
@@ -251,7 +255,7 @@ impl Chat {
         // Get the message which includes all attachments
         let content = self.input_content(cx);
         // Get the backup setting
-        let backup = AppSettings::get_global(cx).settings.backup_messages;
+        let backup = AppSettings::get_backup_messages(cx);
 
         // Return if message is empty
         if content.trim().is_empty() {
@@ -397,7 +401,7 @@ impl Chat {
         self.uploading(true, cx);
 
         // Get the user's configured NIP96 server
-        let nip96_server = AppSettings::get_global(cx).settings.media_server.clone();
+        let nip96_server = AppSettings::get_media_server(cx);
 
         // Open native file dialog
         let paths = cx.prompt_for_paths(PathPromptOptions {
@@ -575,8 +579,8 @@ impl Chat {
             return div().id(ix);
         };
 
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
-        let hide_avatar = AppSettings::get_global(cx).settings.hide_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
         let registry = Registry::read_global(cx);
         let author = registry.get_person(&message.author, cx);
 
@@ -715,8 +719,6 @@ impl Chat {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .px_3()
-                            .pb_3()
                             .children(errors.iter().map(|error| {
                                 div()
                                     .text_sm()
@@ -792,7 +794,7 @@ impl Panel for Chat {
 
     fn title(&self, cx: &App) -> AnyElement {
         self.room.read_with(cx, |this, cx| {
-            let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+            let proxy = AppSettings::get_proxy_user_avatars(cx);
             let label = this.display_name(cx);
             let url = this.display_image(proxy, cx);
 

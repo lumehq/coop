@@ -1,6 +1,4 @@
-use std::cell::Cell;
 use std::ops::Range;
-use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
@@ -154,7 +152,7 @@ pub struct List<D: ListDelegate> {
     querying: bool,
     scrollbar_visible: bool,
     vertical_scroll_handle: UniformListScrollHandle,
-    scrollbar_state: Rc<Cell<ScrollbarState>>,
+    scrollbar_state: ScrollbarState,
     pub(crate) size: Size,
     selected_index: Option<usize>,
     right_clicked_index: Option<usize>,
@@ -181,7 +179,7 @@ where
             selected_index: None,
             right_clicked_index: None,
             vertical_scroll_handle: UniformListScrollHandle::new(),
-            scrollbar_state: Rc::new(Cell::new(ScrollbarState::new())),
+            scrollbar_state: ScrollbarState::default(),
             max_height: None,
             scrollbar_visible: true,
             selectable: true,
@@ -265,15 +263,18 @@ where
         self.selected_index
     }
 
-    fn render_scrollbar(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+    fn render_scrollbar(
+        &self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement> {
         if !self.scrollbar_visible {
             return None;
         }
 
         Some(Scrollbar::uniform_scroll(
-            cx.entity().entity_id(),
-            self.scrollbar_state.clone(),
-            self.vertical_scroll_handle.clone(),
+            &self.scrollbar_state,
+            &self.vertical_scroll_handle,
         ))
     }
 

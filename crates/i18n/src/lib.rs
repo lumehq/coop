@@ -26,5 +26,14 @@ macro_rules! init {
     };
 }
 
-pub use rust_i18n::set_locale;
-pub use rust_i18n::t;
+#[macro_export]
+macro_rules! shared_t {
+    ($key:expr) => {
+        SharedString::new(t!($key))
+    };
+    ($key:expr, $($param:ident = $value:expr),+) => {
+        SharedString::new(t!($key, $($param = $value),+))
+    };
+}
+
+pub use rust_i18n::{set_locale, t};

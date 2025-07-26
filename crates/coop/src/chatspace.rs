@@ -20,15 +20,14 @@ use ui::actions::OpenProfile;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
-use ui::dock_area::{DockArea, DockItem};
+use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
 use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
 
-use crate::views::chat::{self, Chat};
 use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
-    login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
+    chat, login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -74,7 +73,7 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
     toolbar: bool,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 6]>,
+    subscriptions: SmallVec<[Subscription; 5]>,
 }
 
 impl ChatSpace {
@@ -112,7 +111,6 @@ impl ChatSpace {
                                 )
                                 .child(
                                     div()
-                                        .px_10()
                                         .w_full()
                                         .h_40()
                                         .flex()
@@ -166,13 +164,6 @@ impl ChatSpace {
                 },
             ));
 
-            // Automatically load messages when chat panel opens
-            subscriptions.push(cx.observe_new::<Chat>(|this, window, cx| {
-                if let Some(window) = window {
-                    this.load_messages(window, cx);
-                }
-            }));
-
             // Automatically run on_load function when UserProfile is created
             subscriptions.push(cx.observe_new::<UserProfile>(|this, window, cx| {
                 if let Some(window) = window {
@@ -183,7 +174,7 @@ impl ChatSpace {
             // Automatically run on_load function when Screening is created
             subscriptions.push(cx.observe_new::<Screening>(|this, window, cx| {
                 if let Some(window) = window {
-                    this.on_load(window, cx);
+                    this.load(window, cx);
                 }
             }));
 
@@ -192,17 +183,33 @@ impl ChatSpace {
                 &registry,
                 window,
                 |this: &mut Self, _state, event, window, cx| {
-                    if let RoomEmitter::Open(room) = event {
-                        if let Some(room) = room.upgrade() {
-                            this.dock.update(cx, |this, cx| {
-                                let panel = chat::init(room, window, cx);
-                                let placement = DockPlacement::Center;
+                    match event {
+                        RoomEmitter::Open(room) => {
+                            if let Some(room) = room.upgrade() {
+                                this.dock.update(cx, |this, cx| {
+                                    let panel = chat::init(room, window, cx);
+                                    // Load messages on panel creation
+                                    panel.update(cx, |this, cx| {
+                                        this.load_messages(window, cx);
+                                    });
 
-                                this.add_panel(panel, placement, window, cx);
-                            });
-                        } else {
-                            window.push_notification(t!("chatspace.failed_to_open_room"), cx);
+                                    this.add_panel(panel, DockPlacement::Center, window, cx);
+                                });
+                            } else {
+                                window.push_notification(t!("chatspace.failed_to_open_room"), cx);
+                            }
                         }
+                        RoomEmitter::Close(..) => {
+                            this.dock.update(cx, |this, cx| {
+                                this.focus_tab_panel(window, cx);
+
+                                cx.defer_in(window, |_, window, cx| {
+                                    window.dispatch_action(Box::new(ClosePanel), cx);
+                                    window.close_all_modals(cx);
+                                });
+                            });
+                        }
+                        _ => {}
                     }
                 },
             ));
@@ -283,10 +290,11 @@ impl ChatSpace {
 
     pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let settings = preferences::init(window, cx);
+        let title = SharedString::new(t!("chatspace.preferences_title"));
 
         window.open_modal(cx, move |modal, _, _| {
             modal
-                .title(SharedString::new(t!("chatspace.preferences_title")))
+                .title(title.clone())
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(settings.clone())
         });

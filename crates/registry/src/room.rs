@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use common::display::DisplayProfile;
+use common::event::EventUtils;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
 use itertools::Itertools;
@@ -72,16 +73,12 @@ impl EventEmitter<Incoming> for Room {}
 
 impl Room {
     pub fn new(event: &Event) -> Self {
-        let id = common::room_hash(event);
+        let id = event.uniq_id();
         let created_at = event.created_at;
-
-        // Get all pubkeys from the event's tags
-        let mut pubkeys: Vec<PublicKey> = event.tags.public_keys().cloned().collect();
-        // The author is always put at the end of the vector
-        pubkeys.push(event.pubkey);
+        let public_keys = event.all_pubkeys();
 
         // Convert pubkeys into members
-        let members = pubkeys.into_iter().unique().sorted().collect();
+        let members = public_keys.into_iter().unique().sorted().collect();
 
         // Get the subject from the event's tags
         let subject = if let Some(tag) = event.tags.find(TagKind::Subject) {
@@ -363,12 +360,7 @@ impl Room {
                 .await?
                 .into_iter()
                 .sorted_by_key(|ev| ev.created_at)
-                .filter(|ev| {
-                    let mut other_pubkeys = ev.tags.public_keys().copied().collect::<Vec<_>>();
-                    other_pubkeys.push(ev.pubkey);
-                    // Check if the event is belong to a member of the current room
-                    common::compare(&other_pubkeys, &pubkeys)
-                })
+                .filter(|ev| ev.compare_pubkeys(&pubkeys))
                 .collect::<Vec<_>>();
 
             for event in events.into_iter() {

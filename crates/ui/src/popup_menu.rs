@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -125,7 +124,7 @@ pub struct PopupMenu {
 
     scrollable: bool,
     scroll_handle: ScrollHandle,
-    scroll_state: Rc<Cell<ScrollbarState>>,
+    scroll_state: ScrollbarState,
 
     action_focus_handle: Option<FocusHandle>,
     #[allow(dead_code)]
@@ -159,7 +158,7 @@ impl PopupMenu {
                 bounds: Bounds::default(),
                 scrollable: false,
                 scroll_handle: ScrollHandle::default(),
-                scroll_state: Rc::new(Cell::new(ScrollbarState::default())),
+                scroll_state: ScrollbarState::default(),
                 subscriptions,
             };
 
@@ -714,12 +713,7 @@ impl Render for PopupMenu {
                         .left_0()
                         .right_0p5()
                         .bottom_0()
-                        .child(Scrollbar::vertical(
-                            cx.entity_id(),
-                            self.scroll_state.clone(),
-                            self.scroll_handle.clone(),
-                            self.bounds.size,
-                        )),
+                        .child(Scrollbar::vertical(&self.scroll_state, &self.scroll_handle)),
                 )
             })
     }

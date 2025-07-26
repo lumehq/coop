@@ -106,7 +106,7 @@ impl EditProfile {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nip96 = AppSettings::get_global(cx).settings.media_server.clone();
+        let nip96 = AppSettings::get_media_server(cx);
         let avatar_input = self.avatar_input.downgrade();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
@@ -233,7 +233,6 @@ impl EditProfile {
 impl Render for EditProfile {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .size_full()
             .flex()
             .flex_col()
             .gap_3()

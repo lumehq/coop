@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::display::DisplayProfile;
+use common::display::{DisplayProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
@@ -24,7 +24,7 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
-use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
     cx.new(|cx| Compose::new(window, cx))
@@ -278,7 +278,7 @@ impl Compose {
                     Err(anyhow!(t!("common.not_found")))
                 }
             })
-        } else if let Ok(public_key) = common::parse_pubkey_from_str(&content) {
+        } else if let Ok(public_key) = content.to_public_key() {
             cx.background_spawn(async move {
                 let client = nostr_client();
                 let contact = Contact::new(public_key).select();
@@ -357,7 +357,7 @@ impl Compose {
     }
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
-        let proxy = AppSettings::get_global(cx).settings.proxy_user_avatars;
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
         let registry = Registry::read_global(cx);
         let mut items = Vec::with_capacity(self.contacts.len());
 
@@ -420,22 +420,19 @@ impl Render for Compose {
             t!("compose.create_dm_button")
         };
 
-        div()
-            .flex()
-            .flex_col()
+        v_flex()
             .gap_1()
             .child(
                 div()
-                    .px_3()
                     .text_sm()
                     .text_color(cx.theme().text_muted)
                     .child(SharedString::new(t!("compose.description"))),
             )
             .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
-                this.child(div().px_3().text_xs().text_color(red()).child(msg.clone()))
+                this.child(div().text_xs().text_color(red()).child(msg.clone()))
             })
             .child(
-                div().px_3().flex().flex_col().child(
+                div().flex().flex_col().child(
                     div()
                         .h_10()
                         .border_b_1()
@@ -460,7 +457,6 @@ impl Render for Compose {
                     .mt_1()
                     .child(
                         div()
-                            .px_3()
                             .flex()
                             .flex_col()
                             .gap_2()
@@ -535,17 +531,15 @@ impl Render for Compose {
                     }),
             )
             .child(
-                div().p_3().child(
-                    Button::new("create_dm_btn")
-                        .label(label)
-                        .primary()
-                        .w_full()
-                        .loading(self.submitting)
-                        .disabled(self.submitting || self.adding)
-                        .on_click(cx.listener(move |this, _event, window, cx| {
-                            this.compose(window, cx);
-                        })),
-                ),
+                Button::new("create_dm_btn")
+                    .label(label)
+                    .primary()
+                    .w_full()
+                    .loading(self.submitting)
+                    .disabled(self.submitting || self.adding)
+                    .on_click(cx.listener(move |this, _event, window, cx| {
+                        this.compose(window, cx);
+                    })),
             )
     }
 }

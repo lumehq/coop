@@ -3,8 +3,8 @@ use std::sync::Arc;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     actions, canvas, div, px, AnyElement, AnyView, App, AppContext, Axis, Bounds, Context, Edges,
-    Entity, EntityId, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
-    Pixels, Render, Styled, Subscription, WeakEntity, Window,
+    Entity, EntityId, EventEmitter, Focusable, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Render, Styled, Subscription, WeakEntity, Window,
 };
 
 use crate::dock_area::dock::{Dock, DockPlacement};
@@ -39,7 +39,7 @@ pub enum DockEvent {
 pub struct DockArea {
     pub(crate) bounds: Bounds<Pixels>,
     /// The center view of the dockarea.
-    items: DockItem,
+    pub items: DockItem,
     /// The entity_id of the [`TabPanel`](TabPanel) where each toggle button should be displayed,
     toggle_button_panels: Edges<Option<EntityId>>,
     /// The left dock of the dock_area.
@@ -73,7 +73,7 @@ pub enum DockItem {
         active_ix: usize,
         view: Entity<TabPanel>,
     },
-    /// Panel layout
+    /// Single panel layout
     Panel { view: Arc<dyn PanelView> },
 }
 
@@ -284,6 +284,12 @@ impl DockItem {
             DockItem::Tabs { view, .. } => Some(view.clone()),
             DockItem::Split { view, .. } => view.read(cx).right_top_tab_panel(true, cx),
             DockItem::Panel { .. } => None,
+        }
+    }
+
+    pub(crate) fn focus_tab_panel(&self, window: &mut Window, cx: &mut App) {
+        if let DockItem::Tabs { view, .. } = self {
+            window.focus(&view.read(cx).focus_handle(cx));
         }
     }
 }
@@ -572,12 +578,8 @@ impl DockArea {
                 }
             }
             DockPlacement::Center => {
-                let focus_handle = panel.focus_handle(cx);
-                // Add panel
                 self.items
                     .add_panel(panel, &cx.entity().downgrade(), window, cx);
-                // Focus to the newly added panel
-                window.focus(&focus_handle);
             }
         }
     }
@@ -706,6 +708,10 @@ impl DockArea {
             .as_ref()
             .and_then(|dock| dock.read(cx).panel.left_top_tab_panel(cx))
             .map(|view| view.entity_id());
+    }
+
+    pub fn focus_tab_panel(&mut self, window: &mut Window, cx: &mut App) {
+        self.items.focus_tab_panel(window, cx);
     }
 }
 
