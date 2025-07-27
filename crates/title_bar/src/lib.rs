@@ -1,9 +1,11 @@
 use std::mem;
 
 use gpui::prelude::FluentBuilder;
+#[cfg(target_os = "linux")]
+use gpui::MouseButton;
 use gpui::{
     div, px, AnyElement, Context, Decorations, Hsla, InteractiveElement as _, IntoElement,
-    MouseButton, ParentElement, Pixels, Render, StatefulInteractiveElement as _, Styled, Window,
+    ParentElement, Pixels, Render, StatefulInteractiveElement as _, Styled, Window,
     WindowControlArea,
 };
 use smallvec::{smallvec, SmallVec};
@@ -74,6 +76,7 @@ impl ParentElement for TitleBar {
 
 impl Render for TitleBar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(target_os = "linux")]
         let supported_controls = window.window_controls();
         let decorations = window.window_decorations();
         let height = Self::height(window);
@@ -136,6 +139,7 @@ impl Render for TitleBar {
             .when(!window.is_fullscreen(), |this| {
                 match cx.theme().platform_kind {
                     PlatformKind::Linux => {
+                        #[cfg(target_os = "linux")]
                         if matches!(decorations, Decorations::Client { .. }) {
                             this.child(LinuxWindowControls::new(None))
                                 .when(supported_controls.window_menu, |this| {
@@ -167,6 +171,8 @@ impl Render for TitleBar {
                         } else {
                             this
                         }
+                        #[cfg(not(target_os = "linux"))]
+                        this
                     }
                     PlatformKind::Windows => this.child(WindowsWindowControls::new(height)),
                     PlatformKind::Mac => this,

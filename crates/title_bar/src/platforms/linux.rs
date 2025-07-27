@@ -28,8 +28,8 @@ impl RenderOnce for LinuxWindowControls {
     fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         h_flex()
             .id("linux-window-controls")
-            .px_3()
-            .gap_3()
+            .px_2()
+            .gap_2()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(WindowControl::new(
                 LinuxControl::Minimize,

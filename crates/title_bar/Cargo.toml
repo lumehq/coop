@@ -18,5 +18,8 @@ smallvec.workspace = true
 anyhow.workspace = true
 log.workspace = true
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Wdk_System_SystemServices"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 linicon = "2.3.0"
