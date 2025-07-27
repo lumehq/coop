@@ -5,21 +5,16 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use assets::Assets;
 use auto_update::AutoUpdater;
-#[cfg(not(target_os = "linux"))]
-use global::constants::APP_NAME;
 use global::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
 use global::{nostr_client, NostrSignal};
 use gpui::{
-    actions, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
-    WindowBounds, WindowKind, WindowOptions,
+    actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
+    SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
+    WindowKind, WindowOptions,
 };
-#[cfg(not(target_os = "linux"))]
-use gpui::{point, SharedString, TitlebarOptions};
-#[cfg(target_os = "linux")]
-use gpui::{WindowBackgroundAppearance, WindowDecorations};
 use identity::Identity;
 use nostr_sdk::prelude::*;
 use registry::Registry;
@@ -202,25 +197,22 @@ fn main() {
             items: vec![MenuItem::action("Quit", Quit)],
         }]);
 
+        // Set up the window bounds
+        let bounds = Bounds::centered(None, size(px(920.0), px(700.0)), cx);
+
         // Set up the window options
         let opts = WindowOptions {
-            #[cfg(not(target_os = "linux"))]
+            window_background: WindowBackgroundAppearance::Opaque,
+            window_decorations: Some(WindowDecorations::Client),
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_min_size: Some(size(px(800.0), px(600.0))),
+            kind: WindowKind::Normal,
+            app_id: Some(APP_ID.to_owned()),
             titlebar: Some(TitlebarOptions {
                 title: Some(SharedString::new_static(APP_NAME)),
                 traffic_light_position: Some(point(px(9.0), px(9.0))),
                 appears_transparent: true,
             }),
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(920.0), px(700.0)),
-                cx,
-            ))),
-            #[cfg(target_os = "linux")]
-            window_background: WindowBackgroundAppearance::Transparent,
-            #[cfg(target_os = "linux")]
-            window_decorations: Some(WindowDecorations::Client),
-            kind: WindowKind::Normal,
-            app_id: Some(APP_ID.to_owned()),
             ..Default::default()
         };
 
