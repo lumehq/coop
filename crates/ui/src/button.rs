@@ -41,11 +41,6 @@ pub trait ButtonVariants: Sized {
         self.with_variant(ButtonVariant::Danger)
     }
 
-    /// With the danger alternate style for the Button.
-    fn danger_alt(self) -> Self {
-        self.with_variant(ButtonVariant::DangerAlt)
-    }
-
     /// With the warning style for the Button.
     fn warning(self) -> Self {
         self.with_variant(ButtonVariant::Warning)
@@ -104,7 +99,6 @@ pub enum ButtonVariant {
     Primary,
     Secondary,
     Danger,
-    DangerAlt,
     Warning,
     Ghost,
     Transparent,
@@ -286,6 +280,7 @@ impl RenderOnce for Button {
         let normal_style = style.normal(window, cx);
         let icon_size = match self.size {
             Size::Size(v) => Size::Size(v * 0.75),
+            Size::Medium => Size::Small,
             _ => self.size,
         };
 
@@ -307,6 +302,7 @@ impl RenderOnce for Button {
                         Size::Size(px) => this.size(px),
                         Size::XSmall => this.size_5(),
                         Size::Small => this.size_6(),
+                        Size::Medium => this.size_7(),
                         _ => this.size_9(),
                     }
                 } else {
@@ -321,8 +317,8 @@ impl RenderOnce for Button {
                                 this.h_7().px_3()
                             }
                         }
+                        Size::Medium => this.h_8().px_3(),
                         Size::Large => this.h_10().px_4(),
-                        _ => this.h_9().px_2(),
                     }
                 }
             })
@@ -342,21 +338,6 @@ impl RenderOnce for Button {
                         this.bg(active_style.bg).text_color(active_style.fg)
                     })
             })
-            .when_some(
-                self.on_click.filter(|_| !self.disabled && !self.loading),
-                |this, on_click| {
-                    let stop_propagation = self.stop_propagation;
-                    this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                        window.prevent_default();
-                        if stop_propagation {
-                            cx.stop_propagation();
-                        }
-                    })
-                    .on_click(move |event, window, cx| {
-                        (on_click)(event, window, cx);
-                    })
-                },
-            )
             .when(self.disabled, |this| {
                 let disabled_style = style.disabled(window, cx);
                 this.cursor_not_allowed()
@@ -403,6 +384,21 @@ impl RenderOnce for Button {
             .when_some(self.tooltip.clone(), |this, tooltip| {
                 this.tooltip(move |window, cx| Tooltip::new(tooltip.clone(), window, cx).into())
             })
+            .when_some(
+                self.on_click.filter(|_| !self.disabled && !self.loading),
+                |this, on_click| {
+                    let stop_propagation = self.stop_propagation;
+                    this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        window.prevent_default();
+                        if stop_propagation {
+                            cx.stop_propagation();
+                        }
+                    })
+                    .on_click(move |event, window, cx| {
+                        (on_click)(event, window, cx);
+                    })
+                },
+            )
     }
 }
 
@@ -435,7 +431,6 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_foreground,
             ButtonVariant::Secondary => cx.theme().text_muted,
             ButtonVariant::Danger => cx.theme().danger_foreground,
-            ButtonVariant::DangerAlt => cx.theme().danger_background,
             ButtonVariant::Warning => cx.theme().warning_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
             ButtonVariant::Ghost => cx.theme().text_muted,
@@ -448,7 +443,6 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_hover,
             ButtonVariant::Secondary => cx.theme().secondary_hover,
             ButtonVariant::Danger => cx.theme().danger_hover,
-            ButtonVariant::DangerAlt => gpui::transparent_black(),
             ButtonVariant::Warning => cx.theme().warning_hover,
             ButtonVariant::Ghost => cx.theme().ghost_element_hover,
             ButtonVariant::Transparent => gpui::transparent_black(),
@@ -470,7 +464,6 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_active,
             ButtonVariant::Secondary => cx.theme().secondary_active,
             ButtonVariant::Danger => cx.theme().danger_active,
-            ButtonVariant::DangerAlt => gpui::transparent_black(),
             ButtonVariant::Warning => cx.theme().warning_active,
             ButtonVariant::Ghost => cx.theme().ghost_element_active,
             ButtonVariant::Transparent => gpui::transparent_black(),
@@ -491,7 +484,6 @@ impl ButtonVariant {
             ButtonVariant::Primary => cx.theme().element_selected,
             ButtonVariant::Secondary => cx.theme().secondary_selected,
             ButtonVariant::Danger => cx.theme().danger_selected,
-            ButtonVariant::DangerAlt => gpui::transparent_black(),
             ButtonVariant::Warning => cx.theme().warning_selected,
             ButtonVariant::Ghost => cx.theme().ghost_element_selected,
             ButtonVariant::Transparent => gpui::transparent_black(),

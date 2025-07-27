@@ -1,8 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 
 use gpui::{
-    div, px, App, Axis, Div, Element, ElementId, EntityId, Pixels, Refineable, StyleRefinement,
-    Styled, Window,
+    div, px, App, Axis, Div, Element, ElementId, Pixels, Refineable, StyleRefinement, Styled,
 };
 use serde::{Deserialize, Serialize};
 use theme::ActiveTheme;
@@ -48,19 +47,15 @@ pub trait StyledExt: Styled + Sized {
         self.flex().flex_col()
     }
 
-    /// Render a border with a width of 1px, color ring color
-    fn outline(self, _window: &Window, cx: &App) -> Self {
-        self.border_color(cx.theme().ring)
-    }
-
     /// Wraps the element in a ScrollView.
     ///
     /// Current this is only have a vertical scrollbar.
-    fn scrollable(self, view_id: EntityId, axis: ScrollbarAxis) -> Scrollable<Self>
+    #[inline]
+    fn scrollable(self, axis: impl Into<ScrollbarAxis>) -> Scrollable<Self>
     where
         Self: Element,
     {
-        Scrollable::new(view_id, self, axis)
+        Scrollable::new(axis, self)
     }
 
     font_weight!(font_thin, THIN);
@@ -74,6 +69,7 @@ pub trait StyledExt: Styled + Sized {
     font_weight!(font_black, BLACK);
 
     /// Set as Popover style
+    #[inline]
     fn popover_style(self, cx: &mut App) -> Self {
         self.bg(cx.theme().background)
             .border_1()

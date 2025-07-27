@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Error;
-use common::room_hash;
+use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use global::nostr_client;
@@ -12,6 +12,7 @@ use gpui::{
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 
 use crate::room::Room;
@@ -32,6 +33,7 @@ impl Global for GlobalRegistry {}
 #[derive(Debug)]
 pub enum RoomEmitter {
     Open(WeakEntity<Room>),
+    Close(u64),
     Request(RoomKind),
 }
 
@@ -202,6 +204,13 @@ impl Registry {
         cx.notify();
     }
 
+    /// Close a room.
+    pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.rooms.iter().any(|r| r.read(cx).id == id) {
+            cx.emit(RoomEmitter::Close(id));
+        }
+    }
+
     /// Sort rooms by their created at.
     pub fn sort(&mut self, cx: &mut Context<Self>) {
         self.rooms.sort_by_key(|ev| Reverse(ev.read(cx).created_at));
@@ -238,15 +247,12 @@ impl Registry {
         cx.notify();
     }
 
-    /// Load all rooms from the lmdb.
-    ///
-    /// This method:
-    /// 1. Fetches all private direct messages from the lmdb
-    /// 2. Groups them by ID
-    /// 3. Determines each room's type based on message frequency and trust status
-    /// 4. Creates Room entities for each unique room
+    /// Load all rooms from the database.
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        log::info!("Starting to load rooms from database...");
+        log::info!("Starting to load chat rooms...");
+
+        // Get the contact bypass setting
+        let contact_bypass = AppSettings::get_contact_bypass(cx);
 
         let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
@@ -275,14 +281,22 @@ impl Registry {
                 .sorted_by_key(|event| Reverse(event.created_at))
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
-                let hash = room_hash(&event);
-
-                if rooms.iter().any(|room| room.id == hash) {
+                if rooms.iter().any(|room| room.id == event.uniq_id()) {
                     continue;
                 }
 
-                let mut public_keys = event.tags.public_keys().copied().collect_vec();
-                public_keys.push(event.pubkey);
+                // Get all public keys from the event
+                let public_keys = event.all_pubkeys();
+
+                // Bypass screening flag
+                let mut bypass = false;
+
+                // If user enabled bypass screening for contacts
+                // Check if room's members are in contact with current user
+                if contact_bypass {
+                    let contacts = client.database().contacts_public_keys(public_key).await?;
+                    bypass = public_keys.iter().any(|k| contacts.contains(k));
+                }
 
                 // Check if the current user has sent at least one message to this room
                 let filter = Filter::new()
@@ -296,7 +310,7 @@ impl Registry {
                 // Create a new room
                 let room = Room::new(&event).rearrange_by(public_key);
 
-                if is_ongoing {
+                if is_ongoing || bypass {
                     rooms.insert(room.kind(RoomKind::Ongoing));
                 } else {
                     rooms.insert(room);
@@ -375,7 +389,7 @@ impl Registry {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let id = room_hash(&event);
+        let id = event.uniq_id();
         let author = event.pubkey;
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {

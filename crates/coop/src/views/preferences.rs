@@ -3,8 +3,8 @@ use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
 use gpui::http_client::Url;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use identity::Identity;
@@ -15,7 +15,7 @@ use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::switch::Switch;
-use ui::{ContextModal, IconName, Sizable, Size, StyledExt};
+use ui::{v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
 
 use crate::views::{edit_profile, relays};
 
@@ -25,27 +25,19 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
 
 pub struct Preferences {
     media_input: Entity<InputState>,
-    focus_handle: FocusHandle,
 }
 
 impl Preferences {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| {
-            let media_server = AppSettings::get_global(cx)
-                .settings
-                .media_server
-                .to_string();
-
+            let media_server = AppSettings::get_media_server(cx).to_string();
             let media_input = cx.new(|cx| {
                 InputState::new(window, cx)
                     .default_value(media_server)
                     .placeholder(NIP96_SERVER)
             });
 
-            Self {
-                media_input,
-                focus_handle: cx.focus_handle(),
-            }
+            Self { media_input }
         })
     }
 
@@ -75,22 +67,18 @@ impl Preferences {
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let registry = Registry::read_global(cx);
-        let settings = AppSettings::get_global(cx).settings.as_ref();
-
+        let input_state = self.media_input.downgrade();
         let profile = Identity::read_global(cx)
             .public_key()
-            .map(|pk| registry.get_person(&pk, cx));
+            .map(|pk| Registry::read_global(cx).get_person(&pk, cx));
 
-        let input_state = self.media_input.downgrade();
+        let backup_messages = AppSettings::get_backup_messages(cx);
+        let screening = AppSettings::get_screening(cx);
+        let contact_bypass = AppSettings::get_contact_bypass(cx);
+        let proxy_avatar = AppSettings::get_proxy_user_avatars(cx);
+        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
 
-        div()
-            .track_focus(&self.focus_handle)
-            .size_full()
-            .px_3()
-            .pb_3()
-            .flex()
-            .flex_col()
+        v_flex()
             .child(
                 div()
                     .py_2()
@@ -118,10 +106,8 @@ impl Render for Preferences {
                                         .items_center()
                                         .gap_2()
                                         .child(
-                                            Avatar::new(
-                                                profile.avatar_url(settings.proxy_user_avatars),
-                                            )
-                                            .size(rems(2.4)),
+                                            Avatar::new(profile.avatar_url(proxy_avatar))
+                                                .size(rems(2.4)),
                                         )
                                         .child(
                                             div()
@@ -187,19 +173,14 @@ impl Render for Preferences {
                                     .with_size(Size::Size(px(26.)))
                                     .on_click(move |_, window, cx| {
                                         if let Some(input) = input_state.upgrade() {
-                                            let value = input.read(cx).value();
-                                            let Ok(url) = Url::parse(value) else {
+                                            let Ok(url) = Url::parse(input.read(cx).value()) else {
                                                 window.push_notification(
                                                     t!("preferences.url_not_valid"),
                                                     cx,
                                                 );
                                                 return;
                                             };
-
-                                            AppSettings::global(cx).update(cx, |this, cx| {
-                                                this.settings.media_server = url;
-                                                cx.notify();
-                                            });
+                                            AppSettings::update_media_server(url, cx);
                                         }
                                     }),
                             ),
@@ -227,19 +208,37 @@ impl Render for Preferences {
                             .child(SharedString::new(t!("preferences.messages_header"))),
                     )
                     .child(
-                        div().flex().flex_col().gap_2().child(
-                            Switch::new("backup_messages")
-                                .label(t!("preferences.backup_messages_label"))
-                                .description(t!("preferences.backup_description"))
-                                .checked(settings.backup_messages)
-                                .on_click(|_, _window, cx| {
-                                    AppSettings::global(cx).update(cx, |this, cx| {
-                                        this.settings.backup_messages =
-                                            !this.settings.backup_messages;
-                                        cx.notify();
-                                    })
-                                }),
-                        ),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                Switch::new("screening")
+                                    .label(t!("preferences.screening_label"))
+                                    .description(t!("preferences.screening_description"))
+                                    .checked(screening)
+                                    .on_click(move |_, _window, cx| {
+                                        AppSettings::update_screening(!screening, cx);
+                                    }),
+                            )
+                            .child(
+                                Switch::new("bypass")
+                                    .label(t!("preferences.bypass_label"))
+                                    .description(t!("preferences.bypass_description"))
+                                    .checked(contact_bypass)
+                                    .on_click(move |_, _window, cx| {
+                                        AppSettings::update_contact_bypass(!contact_bypass, cx);
+                                    }),
+                            )
+                            .child(
+                                Switch::new("backup_messages")
+                                    .label(t!("preferences.backup_messages_label"))
+                                    .description(t!("preferences.backup_description"))
+                                    .checked(backup_messages)
+                                    .on_click(move |_, _window, cx| {
+                                        AppSettings::update_backup_messages(!backup_messages, cx);
+                                    }),
+                            ),
                     ),
             )
             .child(
@@ -266,26 +265,18 @@ impl Render for Preferences {
                                 Switch::new("hide_user_avatars")
                                     .label(t!("preferences.hide_avatars_label"))
                                     .description(t!("preferences.hide_avatar_description"))
-                                    .checked(settings.hide_user_avatars)
-                                    .on_click(|_, _window, cx| {
-                                        AppSettings::global(cx).update(cx, |this, cx| {
-                                            this.settings.hide_user_avatars =
-                                                !this.settings.hide_user_avatars;
-                                            cx.notify();
-                                        })
+                                    .checked(hide_avatar)
+                                    .on_click(move |_, _window, cx| {
+                                        AppSettings::update_hide_user_avatars(!hide_avatar, cx);
                                     }),
                             )
                             .child(
                                 Switch::new("proxy_user_avatars")
                                     .label(t!("preferences.proxy_avatars_label"))
                                     .description(t!("preferences.proxy_description"))
-                                    .checked(settings.proxy_user_avatars)
-                                    .on_click(|_, _window, cx| {
-                                        AppSettings::global(cx).update(cx, |this, cx| {
-                                            this.settings.proxy_user_avatars =
-                                                !this.settings.proxy_user_avatars;
-                                            cx.notify();
-                                        })
+                                    .checked(proxy_avatar)
+                                    .on_click(move |_, _window, cx| {
+                                        AppSettings::update_proxy_user_avatars(!proxy_avatar, cx);
                                     }),
                             ),
                     ),

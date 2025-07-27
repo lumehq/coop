@@ -1,5 +1,6 @@
 use anyhow::anyhow;
-use global::{constants::SETTINGS_D, nostr_client};
+use global::constants::SETTINGS_D;
+use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,37 @@ pub fn init(cx: &mut App) {
     AppSettings::set_global(state, cx);
 }
 
+macro_rules! setting_accessors {
+    ($(pub $field:ident: $type:ty),* $(,)?) => {
+        impl AppSettings {
+            $(
+                paste::paste! {
+                    pub fn [<get_ $field>](cx: &App) -> $type {
+                        Self::read_global(cx).setting_values.$field.clone()
+                    }
+
+                    pub fn [<update_ $field>](value: $type, cx: &mut App) {
+                        Self::global(cx).update(cx, |this, cx| {
+                            this.setting_values.$field = value;
+                            cx.notify();
+                        });
+                    }
+                }
+            )*
+        }
+    };
+}
+
+setting_accessors! {
+    pub media_server: Url,
+    pub proxy_user_avatars: bool,
+    pub hide_user_avatars: bool,
+    pub backup_messages: bool,
+    pub screening: bool,
+    pub contact_bypass: bool,
+    pub auto_login: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
     pub media_server: Url,
@@ -26,7 +58,22 @@ pub struct Settings {
     pub hide_user_avatars: bool,
     pub backup_messages: bool,
     pub screening: bool,
+    pub contact_bypass: bool,
     pub auto_login: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            media_server: Url::parse("https://nostrmedia.com").unwrap(),
+            proxy_user_avatars: true,
+            hide_user_avatars: false,
+            backup_messages: true,
+            screening: true,
+            contact_bypass: true,
+            auto_login: false,
+        }
+    }
 }
 
 impl AsRef<Settings> for Settings {
@@ -40,7 +87,7 @@ struct GlobalAppSettings(Entity<AppSettings>);
 impl Global for GlobalAppSettings {}
 
 pub struct AppSettings {
-    pub settings: Settings,
+    setting_values: Settings,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -52,7 +99,7 @@ impl AppSettings {
     }
 
     /// Retrieve the Settings instance
-    pub fn get_global(cx: &App) -> &Self {
+    pub fn read_global(cx: &App) -> &Self {
         cx.global::<GlobalAppSettings>().0.read(cx)
     }
 
@@ -62,23 +109,15 @@ impl AppSettings {
     }
 
     fn new(cx: &mut Context<Self>) -> Self {
-        let settings = Settings {
-            media_server: Url::parse("https://nostrmedia.com").unwrap(),
-            proxy_user_avatars: true,
-            hide_user_avatars: false,
-            backup_messages: true,
-            screening: true,
-            auto_login: false,
-        };
-
+        let setting_values = Settings::default();
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
+        subscriptions.push(cx.observe_new::<Self>(move |this, _window, cx| {
             this.get_settings_from_db(cx);
         }));
 
         Self {
-            settings,
+            setting_values,
             subscriptions,
         }
     }
@@ -92,7 +131,7 @@ impl AppSettings {
 
             if let Some(event) = nostr_client().database().query(filter).await?.first_owned() {
                 log::info!("Successfully loaded settings from database");
-                Ok(serde_json::from_str(&event.content)?)
+                Ok(serde_json::from_str(&event.content).unwrap_or(Settings::default()))
             } else {
                 Err(anyhow!("Not found"))
             }
@@ -101,7 +140,7 @@ impl AppSettings {
         cx.spawn(async move |this, cx| {
             if let Ok(settings) = task.await {
                 this.update(cx, |this, cx| {
-                    this.settings = settings;
+                    this.setting_values = settings;
                     cx.notify();
                 })
                 .ok();
@@ -111,13 +150,11 @@ impl AppSettings {
     }
 
     pub(crate) fn set_settings(&self, cx: &mut Context<Self>) {
-        if let Ok(content) = serde_json::to_string(&self.settings) {
+        if let Ok(content) = serde_json::to_string(&self.setting_values) {
             cx.background_spawn(async move {
-                let keys = Keys::generate();
-
                 if let Ok(event) = EventBuilder::new(Kind::ApplicationSpecificData, content)
                     .tags(vec![Tag::identifier(SETTINGS_D)])
-                    .sign(&keys)
+                    .sign(&Keys::generate())
                     .await
                 {
                     if let Err(e) = nostr_client().database().save_event(&event).await {
