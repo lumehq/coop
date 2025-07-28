@@ -3,7 +3,6 @@ pub use focusable::FocusableCycle;
 pub use icon::*;
 pub use root::{ContextModal, Root};
 pub use styled::*;
-pub use title_bar::*;
 pub use window_border::{window_border, WindowBorder};
 
 pub use crate::Disableable;
@@ -39,7 +38,6 @@ mod focusable;
 mod icon;
 mod root;
 mod styled;
-mod title_bar;
 mod window_border;
 
 i18n::init!();
