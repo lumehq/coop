@@ -4,9 +4,21 @@ use colors::{brand, hsl, neutral};
 use gpui::{px, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance};
 
 use crate::colors::{danger, warning};
+use crate::platform_kind::PlatformKind;
+use crate::scrollbar_mode::ScrollBarMode;
 
 mod colors;
 mod scale;
+
+pub mod platform_kind;
+pub mod scrollbar_mode;
+
+/// Defines window border radius for platforms that use client side decorations.
+///
+/// Default: Use GNOME default value. On KDE needs to be set to 5.0 (Plasma 6.5)
+pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(15.0);
+/// Defines window shadow size for platforms that use client side decorations.
+pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(10.0);
 
 pub fn init(cx: &mut App) {
     Theme::sync_system_appearance(None, cx);
@@ -21,7 +33,7 @@ pub struct ThemeColor {
     pub panel_background: Hsla,
     pub overlay: Hsla,
     pub title_bar: Hsla,
-    pub title_bar_border: Hsla,
+    pub title_bar_inactive: Hsla,
     pub window_border: Hsla,
 
     // Border colors
@@ -116,7 +128,7 @@ impl ThemeColor {
             panel_background: gpui::white(),
             overlay: neutral().light_alpha().step_3(),
             title_bar: gpui::transparent_black(),
-            title_bar_border: gpui::transparent_black(),
+            title_bar_inactive: neutral().light().step_1(),
             window_border: hsl(240.0, 5.9, 78.0),
 
             border: neutral().light().step_6(),
@@ -197,7 +209,7 @@ impl ThemeColor {
             panel_background: gpui::black(),
             overlay: neutral().dark_alpha().step_3(),
             title_bar: gpui::transparent_black(),
-            title_bar_border: gpui::transparent_black(),
+            title_bar_inactive: neutral().dark().step_1(),
             window_border: hsl(240.0, 3.7, 28.0),
 
             border: neutral().dark().step_6(),
@@ -309,24 +321,6 @@ impl From<WindowAppearance> for ThemeMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum ScrollBarMode {
-    #[default]
-    Scrolling,
-    Hover,
-    Always,
-}
-
-impl ScrollBarMode {
-    pub fn is_hover(&self) -> bool {
-        matches!(self, Self::Hover)
-    }
-
-    pub fn is_always(&self) -> bool {
-        matches!(self, Self::Always)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub colors: ThemeColor,
@@ -335,6 +329,7 @@ pub struct Theme {
     pub font_size: Pixels,
     pub radius: Pixels,
     pub scrollbar_mode: ScrollBarMode,
+    pub platform_kind: PlatformKind,
 }
 
 impl Deref for Theme {
@@ -412,6 +407,7 @@ impl From<ThemeColor> for Theme {
             font_family: ".SystemUIFont".into(),
             radius: px(5.),
             scrollbar_mode: ScrollBarMode::default(),
+            platform_kind: PlatformKind::platform(),
             mode,
             colors,
         }

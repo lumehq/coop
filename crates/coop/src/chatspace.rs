@@ -4,7 +4,6 @@ use anyhow::Error;
 use client_keys::ClientKeys;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
-use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
@@ -16,13 +15,13 @@ use registry::{Registry, RoomEmitter};
 use serde::Deserialize;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
+use title_bar::TitleBar;
 use ui::actions::OpenProfile;
-use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
-use ui::{ContextModal, IconName, Root, Sizable, StyledExt, TitleBar};
+use ui::{ContextModal, Root, StyledExt};
 
 use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
@@ -70,14 +69,15 @@ pub struct ToggleModal {
 }
 
 pub struct ChatSpace {
+    title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
-    toolbar: bool,
     #[allow(unused)]
     subscriptions: SmallVec<[Subscription; 5]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| {
             let panel = Arc::new(startup::init(window, cx));
             let center = DockItem::panel(panel);
@@ -216,15 +216,15 @@ impl ChatSpace {
 
             Self {
                 dock,
+                title_bar,
                 subscriptions,
-                toolbar: false,
             }
         })
     }
 
     pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // No active user, disable user's toolbar
-        self.toolbar(false, cx);
+        // self.toolbar(false, cx);
 
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
@@ -237,7 +237,7 @@ impl ChatSpace {
 
     pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Enable the toolbar for logged in users
-        self.toolbar(true, cx);
+        // self.toolbar(true, cx);
 
         // Load all chat rooms from database
         Registry::global(cx).update(cx, |this, cx| {
@@ -298,11 +298,6 @@ impl ChatSpace {
                 .width(px(DEFAULT_MODAL_WIDTH))
                 .child(settings.clone())
         });
-    }
-
-    fn toolbar(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.toolbar = status;
-        cx.notify();
     }
 
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
@@ -375,58 +370,7 @@ impl Render for ChatSpace {
                     .flex_col()
                     .size_full()
                     // Title Bar
-                    .child(
-                        TitleBar::new()
-                            // Left side
-                            .child(div())
-                            // Right side
-                            .when(self.toolbar, |this| {
-                                this.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .justify_end()
-                                        .gap_1p5()
-                                        .px_2()
-                                        .child(
-                                            Button::new("appearance")
-                                                .tooltip(t!("chatspace.appearance_tooltip"))
-                                                .small()
-                                                .ghost()
-                                                .map(|this| {
-                                                    if cx.theme().mode.is_dark() {
-                                                        this.icon(IconName::Sun)
-                                                    } else {
-                                                        this.icon(IconName::Moon)
-                                                    }
-                                                })
-                                                .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.toggle_appearance(window, cx);
-                                                })),
-                                        )
-                                        .child(
-                                            Button::new("preferences")
-                                                .tooltip(t!("chatspace.preferences_tooltip"))
-                                                .small()
-                                                .ghost()
-                                                .icon(IconName::Settings)
-                                                .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.open_settings(window, cx);
-                                                })),
-                                        )
-                                        .child(
-                                            Button::new("logout")
-                                                .tooltip(t!("common.logout"))
-                                                .small()
-                                                .ghost()
-                                                .icon(IconName::Logout)
-                                                .on_click(cx.listener(|this, _, window, cx| {
-                                                    this.logout(window, cx);
-                                                })),
-                                        ),
-                                )
-                            }),
-                    )
+                    .child(self.title_bar.clone())
                     // Dock
                     .child(self.dock.clone()),
             )

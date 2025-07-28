@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 assets = { path = "../assets" }
 ui = { path = "../ui" }
+title_bar = { path = "../title_bar" }
 identity = { path = "../identity" }
 theme = { path = "../theme" }
 common = { path = "../common" }

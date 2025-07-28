@@ -9,7 +9,8 @@ use gpui::{
     IntoElement, LayoutId, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
     Position, ScrollHandle, ScrollWheelEvent, Size, UniformListScrollHandle, Window,
 };
-use theme::{ActiveTheme, ScrollBarMode};
+use theme::scrollbar_mode::ScrollBarMode;
+use theme::ActiveTheme;
 
 use crate::AxisExt;
 
