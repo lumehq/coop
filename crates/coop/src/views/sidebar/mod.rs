@@ -4,15 +4,14 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::{DisplayProfile, TextUtils};
-use global::constants::{BOOTSTRAP_RELAYS, DEFAULT_MODAL_WIDTH, SEARCH_RELAYS};
+use common::display::TextUtils;
+use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, uniform_list, AnyElement, App, AppContext, ClipboardItem, Context,
-    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
-    Render, RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    Task, Window,
+    div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
+    Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::t;
@@ -25,7 +24,6 @@ use registry::{Registry, RoomEmitter};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
@@ -33,8 +31,6 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::skeleton::Skeleton;
 use ui::{v_flex, ContextModal, IconName, Selectable, Sizable, StyledExt};
-
-use crate::views::compose;
 
 mod list_item;
 
@@ -551,18 +547,6 @@ impl Sidebar {
         });
     }
 
-    fn open_compose(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let compose = compose::init(window, cx);
-        let title = SharedString::new(t!("sidebar.direct_messages"));
-
-        window.open_modal(cx, move |modal, _window, _cx| {
-            modal
-                .title(title.clone())
-                .width(px(DEFAULT_MODAL_WIDTH))
-                .child(compose.clone())
-        });
-    }
-
     fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
         let title = SharedString::new(t!("sidebar.loading_modal_title"));
         let text_1 = SharedString::new(t!("sidebar.loading_modal_body_1"));
@@ -594,49 +578,6 @@ impl Sidebar {
                         ),
                 )
         });
-    }
-
-    fn account(&self, profile: &Profile, cx: &Context<Self>) -> impl IntoElement {
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
-
-        div()
-            .px_3()
-            .h_8()
-            .flex_none()
-            .flex()
-            .justify_between()
-            .items_center()
-            .child(
-                div()
-                    .id("current-user")
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .text_sm()
-                    .font_semibold()
-                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
-                    .child(profile.display_name())
-                    .on_click(cx.listener({
-                        let Ok(public_key) = profile.public_key().to_bech32();
-                        let item = ClipboardItem::new_string(public_key);
-
-                        move |_, _, window, cx| {
-                            cx.write_to_clipboard(item.clone());
-                            window.push_notification(t!("common.copied"), cx);
-                        }
-                    })),
-            )
-            .child(
-                Button::new("compose")
-                    .icon(IconName::PlusFill)
-                    .tooltip(t!("sidebar.dm_tooltip"))
-                    .small()
-                    .primary()
-                    .rounded(ButtonRounded::Full)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_compose(window, cx);
-                    })),
-            )
     }
 
     fn skeletons(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
@@ -727,9 +668,6 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let profile = Identity::read_global(cx)
-            .public_key()
-            .map(|pk| registry.get_person(&pk, cx));
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
@@ -747,19 +685,17 @@ impl Render for Sidebar {
 
         div()
             .image_cache(self.image_cache.clone())
+            .mb_2()
             .size_full()
             .relative()
             .flex()
             .flex_col()
             .gap_3()
-            // Account
-            .when_some(profile, |this, profile| {
-                this.child(self.account(&profile, cx))
-            })
             // Search Input
             .child(
                 div()
                     .relative()
+                    .mt_3()
                     .px_3()
                     .w_full()
                     .h_7()

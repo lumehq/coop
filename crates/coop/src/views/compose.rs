@@ -8,9 +8,9 @@ use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, px, red, relative, uniform_list, App, AppContext, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, TextAlign, Window,
+    div, px, relative, rems, uniform_list, AppContext, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Task, TextAlign, Window,
 };
 use i18n::t;
 use itertools::Itertools;
@@ -21,13 +21,27 @@ use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
-use ui::{v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
-pub fn init(window: &mut Window, cx: &mut App) -> Entity<Compose> {
-    cx.new(|cx| Compose::new(window, cx))
+pub fn compose_button() -> impl IntoElement {
+    div().child(
+        Button::new("compose")
+            .icon(IconName::PlusFill)
+            .ghost()
+            .rounded(ButtonRounded::Full)
+            .on_click(move |_, window, cx| {
+                let compose = cx.new(|cx| Compose::new(window, cx));
+                let title = SharedString::new(t!("sidebar.direct_messages"));
+
+                window.open_modal(cx, move |modal, _window, _cx| {
+                    modal.title(title.clone()).child(compose.clone())
+                })
+            }),
+    )
 }
 
 #[derive(Debug)]
@@ -147,13 +161,13 @@ impl Compose {
         Ok(())
     }
 
-    pub fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let public_keys: Vec<PublicKey> = self.selected(cx);
 
         if public_keys.is_empty() {
             self.set_error(Some(t!("compose.receiver_required").into()), cx);
             return;
-        }
+        };
 
         // Show loading spinner
         self.set_submitting(true, cx);
@@ -169,7 +183,7 @@ impl Compose {
             ));
         }
 
-        let event: Task<Result<Room, anyhow::Error>> = cx.background_spawn(async move {
+        let event: Task<Result<Room, Error>> = cx.background_spawn(async move {
             let signer = nostr_client().signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -187,15 +201,17 @@ impl Compose {
             match event.await {
                 Ok(room) => {
                     cx.update(|window, cx| {
+                        let registry = Registry::global(cx);
+                        // Reset local state
                         this.update(cx, |this, cx| {
                             this.set_submitting(false, cx);
                         })
                         .ok();
-
-                        Registry::global(cx).update(cx, |this, cx| {
+                        // Create and insert the new room into the registry
+                        registry.update(cx, |this, cx| {
                             this.push_room(cx.new(|_| room), cx);
                         });
-
+                        // Close the current modal
                         window.close_modal(cx);
                     })
                     .ok();
@@ -371,22 +387,20 @@ impl Compose {
             let selected = entity.read(cx).select;
 
             items.push(
-                div()
+                h_flex()
                     .id(ix)
+                    .px_1()
+                    .h_9()
                     .w_full()
-                    .h_11()
-                    .py_1()
-                    .px_3()
-                    .flex()
-                    .items_center()
                     .justify_between()
+                    .rounded(cx.theme().radius)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap_3()
+                            .gap_1p5()
                             .text_sm()
-                            .child(img(profile.avatar_url(proxy)).size_7().flex_shrink_0())
+                            .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
                             .child(profile.display_name()),
                     )
                     .when(selected, |this| {
@@ -414,13 +428,16 @@ impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let label = if self.submitting {
             t!("compose.creating_dm_button")
-        } else if self.contacts.len() > 1 {
+        } else if self.selected(cx).len() > 1 {
             t!("compose.create_group_dm_button")
         } else {
             t!("compose.create_dm_button")
         };
 
+        let error = self.error_message.read(cx).as_ref();
+
         v_flex()
+            .mb_3()
             .gap_1()
             .child(
                 div()
@@ -428,37 +445,35 @@ impl Render for Compose {
                     .text_color(cx.theme().text_muted)
                     .child(SharedString::new(t!("compose.description"))),
             )
-            .when_some(self.error_message.read(cx).as_ref(), |this, msg| {
-                this.child(div().text_xs().text_color(red()).child(msg.clone()))
+            .when_some(error, |this, msg| {
+                this.child(
+                    div()
+                        .italic()
+                        .text_sm()
+                        .text_color(cx.theme().danger_foreground)
+                        .child(msg.clone()),
+                )
             })
             .child(
-                div().flex().flex_col().child(
-                    div()
-                        .h_10()
-                        .border_b_1()
-                        .border_color(cx.theme().border)
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .child(SharedString::new(t!("compose.subject_label"))),
-                        )
-                        .child(TextInput::new(&self.title_input).small().appearance(false)),
-                ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .mt_1()
+                h_flex()
+                    .gap_1()
+                    .h_10()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
                     .child(
                         div()
-                            .flex()
-                            .flex_col()
+                            .text_sm()
+                            .font_semibold()
+                            .child(SharedString::new(t!("compose.subject_label"))),
+                    )
+                    .child(TextInput::new(&self.title_input).small().appearance(false)),
+            )
+            .child(
+                v_flex()
+                    .mt_1()
+                    .gap_2()
+                    .child(
+                        v_flex()
                             .gap_2()
                             .child(
                                 div()
@@ -467,9 +482,8 @@ impl Render for Compose {
                                     .child(SharedString::new(t!("compose.to_label"))),
                             )
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
+                                h_flex()
+                                    .px_1()
                                     .gap_1()
                                     .child(
                                         TextInput::new(&self.user_input)
@@ -479,8 +493,8 @@ impl Render for Compose {
                                     .child(
                                         Button::new("add")
                                             .icon(IconName::PlusCircleFill)
-                                            .small()
                                             .ghost()
+                                            .loading(self.adding)
                                             .disabled(self.adding)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.add_and_select_contact(window, cx);
@@ -534,11 +548,12 @@ impl Render for Compose {
                 Button::new("create_dm_btn")
                     .label(label)
                     .primary()
+                    .small()
                     .w_full()
                     .loading(self.submitting)
                     .disabled(self.submitting || self.adding)
                     .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.compose(window, cx);
+                        this.submit(window, cx);
                     })),
             )
     }

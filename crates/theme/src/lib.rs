@@ -90,6 +90,7 @@ pub struct ThemeColor {
 
     // Ghost element colors
     pub ghost_element_background: Hsla,
+    pub ghost_element_background_alt: Hsla,
     pub ghost_element_hover: Hsla,
     pub ghost_element_active: Hsla,
     pub ghost_element_selected: Hsla,
@@ -177,9 +178,10 @@ impl ThemeColor {
             warning_disabled: warning().light_alpha().step_3(),
 
             ghost_element_background: gpui::transparent_black(),
-            ghost_element_hover: neutral().light_alpha().step_3(),
-            ghost_element_active: neutral().light_alpha().step_5(),
-            ghost_element_selected: neutral().light_alpha().step_5(),
+            ghost_element_background_alt: neutral().light().step_3(),
+            ghost_element_hover: neutral().light_alpha().step_4(),
+            ghost_element_active: neutral().light().step_5(),
+            ghost_element_selected: neutral().light().step_5(),
             ghost_element_disabled: neutral().light_alpha().step_2(),
 
             tab_inactive_background: neutral().light().step_3(),
@@ -258,9 +260,10 @@ impl ThemeColor {
             warning_disabled: warning().dark_alpha().step_3(),
 
             ghost_element_background: gpui::transparent_black(),
-            ghost_element_hover: neutral().dark_alpha().step_3(),
-            ghost_element_active: neutral().dark_alpha().step_4(),
-            ghost_element_selected: neutral().dark_alpha().step_5(),
+            ghost_element_background_alt: neutral().dark().step_3(),
+            ghost_element_hover: neutral().dark_alpha().step_4(),
+            ghost_element_active: neutral().dark().step_5(),
+            ghost_element_selected: neutral().dark().step_5(),
             ghost_element_disabled: neutral().dark_alpha().step_2(),
 
             tab_inactive_background: neutral().dark().step_3(),

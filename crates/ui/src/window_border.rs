@@ -8,8 +8,6 @@ use theme::{ActiveTheme, CLIENT_SIDE_DECORATION_SHADOW};
 
 pub(crate) const BORDER_SIZE: Pixels = Pixels(1.0);
 pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
-#[cfg(not(target_os = "linux"))]
-pub(crate) const SHADOW_SIZE: Pixels = Pixels(0.0);
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {

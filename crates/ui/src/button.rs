@@ -309,7 +309,13 @@ impl RenderOnce for Button {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
-                        Size::XSmall => this.h_6().px_2(),
+                        Size::XSmall => {
+                            if self.icon.is_some() {
+                                this.h_6().pl_1().pr_2()
+                            } else {
+                                this.h_6().px_2()
+                            }
+                        }
                         Size::Small => {
                             if self.icon.is_some() {
                                 this.h_7().pl_2().pr_3()
@@ -317,8 +323,20 @@ impl RenderOnce for Button {
                                 this.h_7().px_3()
                             }
                         }
-                        Size::Medium => this.h_8().px_3(),
-                        Size::Large => this.h_10().px_4(),
+                        Size::Medium => {
+                            if self.icon.is_some() {
+                                this.h_8().pl_2().pr_3()
+                            } else {
+                                this.h_8().px_3()
+                            }
+                        }
+                        Size::Large => {
+                            if self.icon.is_some() {
+                                this.h_10().px_3().pr_4()
+                            } else {
+                                this.h_10().px_4()
+                            }
+                        }
                     }
                 }
             })
@@ -354,9 +372,9 @@ impl RenderOnce for Button {
                     .justify_center()
                     .text_sm()
                     .map(|this| match self.size {
-                        Size::XSmall => this.gap_0p5(),
+                        Size::XSmall => this.gap_1(),
                         Size::Small => this.gap_1(),
-                        _ => this.gap_2().font_medium(),
+                        _ => this.gap_2(),
                     })
                     .when(!self.loading, |this| {
                         this.when_some(self.icon, |this, icon| {

@@ -2,27 +2,35 @@ use std::sync::Arc;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
+use common::display::DisplayProfile;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
 use gpui::{
-    div, px, relative, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
+    actions, div, px, relative, rems, Action, App, AppContext, Axis, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
+    Task, Window,
 };
 use i18n::t;
 use identity::Identity;
 use nostr_connect::prelude::*;
+use nostr_sdk::prelude::*;
 use registry::{Registry, RoomEmitter};
 use serde::Deserialize;
+use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::actions::OpenProfile;
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
-use ui::{ContextModal, Root, StyledExt};
+use ui::popup_menu::PopupMenuExt;
+use ui::{h_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
+use crate::views::compose::compose_button;
 use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
@@ -42,6 +50,8 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
     let panel = new_account::init(window, cx);
     ChatSpace::set_center_panel(panel, window, cx);
 }
+
+actions!(user, [DarkMode, Settings, Logout]);
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub enum PanelKind {
@@ -157,9 +167,9 @@ impl ChatSpace {
                 window,
                 |this: &mut Self, state, window, cx| {
                     if !state.read(cx).has_signer() {
-                        this.open_onboarding(window, cx);
+                        this.set_onboarding_panels(window, cx);
                     } else {
-                        this.open_chats(window, cx);
+                        this.set_chat_panels(window, cx);
                     }
                 },
             ));
@@ -222,10 +232,7 @@ impl ChatSpace {
         })
     }
 
-    pub fn open_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // No active user, disable user's toolbar
-        // self.toolbar(false, cx);
-
+    pub fn set_onboarding_panels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
 
@@ -235,17 +242,14 @@ impl ChatSpace {
         });
     }
 
-    pub fn open_chats(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Enable the toolbar for logged in users
-        // self.toolbar(true, cx);
-
-        // Load all chat rooms from database
-        Registry::global(cx).update(cx, |this, cx| {
-            this.load_rooms(window, cx);
-        });
-
+    pub fn set_chat_panels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = Registry::global(cx);
         let weak_dock = self.dock.downgrade();
+
+        // The left panel will render sidebar
         let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
+
+        // The center panel will render chat rooms (as tabs)
         let center = DockItem::split_with_sizes(
             Axis::Vertical,
             vec![DockItem::tabs(
@@ -261,11 +265,18 @@ impl ChatSpace {
             cx,
         );
 
+        // Update dock
         self.dock.update(cx, |this, cx| {
             this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
             this.set_center(center, window, cx);
         });
 
+        // Load all chat rooms from the database
+        registry.update(cx, |this, cx| {
+            this.load_rooms(window, cx);
+        });
+
+        // Verify messaging relays of the current user
         cx.defer_in(window, |this, window, cx| {
             let verify_messaging_relays = this.verify_messaging_relays(cx);
 
@@ -288,18 +299,6 @@ impl ChatSpace {
         });
     }
 
-    pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let settings = preferences::init(window, cx);
-        let title = SharedString::new(t!("chatspace.preferences_title"));
-
-        window.open_modal(cx, move |modal, _, _| {
-            modal
-                .title(title.clone())
-                .width(px(DEFAULT_MODAL_WIDTH))
-                .child(settings.clone())
-        });
-    }
-
     fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -315,7 +314,19 @@ impl ChatSpace {
         })
     }
 
-    fn toggle_appearance(&self, window: &mut Window, cx: &mut App) {
+    pub fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
+        let settings = preferences::init(window, cx);
+        let title = SharedString::new(t!("chatspace.preferences_title"));
+
+        window.open_modal(cx, move |modal, _, _| {
+            modal
+                .title(title.clone())
+                .width(px(DEFAULT_MODAL_WIDTH))
+                .child(settings.clone())
+        });
+    }
+
+    fn on_dark_mode(&mut self, _ev: &DarkMode, window: &mut Window, cx: &mut Context<Self>) {
         if cx.theme().mode.is_dark() {
             Theme::change(ThemeMode::Light, Some(window), cx);
         } else {
@@ -323,14 +334,16 @@ impl ChatSpace {
         }
     }
 
-    fn logout(&self, window: &mut Window, cx: &mut App) {
-        Identity::global(cx).update(cx, |this, cx| {
+    fn on_sign_out(&mut self, _ev: &Logout, window: &mut Window, cx: &mut Context<Self>) {
+        let identity = Identity::global(cx);
+        // TODO: save current session?
+        identity.update(cx, |this, cx| {
             this.unload(window, cx);
         });
     }
 
-    fn on_open_profile(&mut self, a: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
-        let public_key = a.0;
+    fn on_open_profile(&mut self, ev: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
+        let public_key = ev.0;
         let profile = user_profile::init(public_key, window, cx);
 
         window.open_modal(cx, move |this, _window, _cx| {
@@ -339,7 +352,38 @@ impl ChatSpace {
         });
     }
 
-    pub(crate) fn set_center_panel<P: PanelView>(panel: P, window: &mut Window, cx: &mut App) {
+    fn render_titlebar_left_side(
+        &mut self,
+        profile: &Profile,
+        _window: &mut Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let compose_button = compose_button().into_any_element();
+
+        h_flex()
+            .gap_2()
+            .child(
+                Button::new("user")
+                    .small()
+                    .reverse()
+                    .ghost()
+                    .icon(IconName::CaretDown)
+                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.5)))
+                    .popup_menu(|this, _window, _cx| {
+                        this.menu("Dark Mode", Box::new(DarkMode))
+                            .menu("Settings", Box::new(Settings))
+                            .separator()
+                            .menu("Sign out", Box::new(Logout))
+                    }),
+            )
+            .child(compose_button)
+    }
+
+    pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
+    where
+        P: PanelView,
+    {
         if let Some(Some(root)) = window.root::<Root>() {
             if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
                 let panel = Arc::new(panel);
@@ -360,7 +404,21 @@ impl Render for ChatSpace {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 
+        if let Some(identity) = Identity::read_global(cx).public_key() {
+            let profile = Registry::read_global(cx).get_person(&identity, cx);
+            let left_side = self
+                .render_titlebar_left_side(&profile, window, cx)
+                .into_any_element();
+
+            self.title_bar.update(cx, |this, _cx| {
+                this.set_children(vec![left_side]);
+            })
+        }
+
         div()
+            .on_action(cx.listener(Self::on_settings))
+            .on_action(cx.listener(Self::on_dark_mode))
+            .on_action(cx.listener(Self::on_sign_out))
             .on_action(cx.listener(Self::on_open_profile))
             .relative()
             .size_full()
