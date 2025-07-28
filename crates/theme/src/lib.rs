@@ -18,7 +18,9 @@ pub mod scrollbar_mode;
 /// Default: Use GNOME default value. On KDE needs to be set to 5.0 (Plasma 6.5)
 pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(15.0);
 /// Defines window shadow size for platforms that use client side decorations.
-pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(10.0);
+///
+/// Default: Use GNOME default value. On KDE needs to be set to 5.0 (Plasma 6.5)
+pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(15.0);
 
 pub fn init(cx: &mut App) {
     Theme::sync_system_appearance(None, cx);

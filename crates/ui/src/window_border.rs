@@ -4,10 +4,9 @@ use gpui::{
     HitboxBehavior, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels,
     Point, RenderOnce, ResizeEdge, Size, Styled as _, Window,
 };
-use theme::{ActiveTheme, CLIENT_SIDE_DECORATION_SHADOW};
+use theme::{CLIENT_SIDE_DECORATION_ROUNDING, CLIENT_SIDE_DECORATION_SHADOW};
 
-pub(crate) const BORDER_SIZE: Pixels = Pixels(1.0);
-pub(crate) const BORDER_RADIUS: Pixels = Pixels(0.0);
+const WINDOW_BORDER_WIDTH: Pixels = Pixels(1.0);
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {
@@ -58,7 +57,7 @@ impl ParentElement for WindowBorder {
 }
 
 impl RenderOnce for WindowBorder {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let decorations = window.window_decorations();
         window.set_client_inset(CLIENT_SIDE_DECORATION_SHADOW);
 
@@ -111,10 +110,16 @@ impl RenderOnce for WindowBorder {
                         .absolute(),
                     )
                     .when(!(tiling.top || tiling.right), |div| {
-                        div.rounded_tr(BORDER_RADIUS)
+                        div.rounded_tr(CLIENT_SIDE_DECORATION_ROUNDING)
                     })
                     .when(!(tiling.top || tiling.left), |div| {
-                        div.rounded_tl(BORDER_RADIUS)
+                        div.rounded_tl(CLIENT_SIDE_DECORATION_ROUNDING)
+                    })
+                    .when(!(tiling.bottom || tiling.right), |div| {
+                        div.rounded_br(CLIENT_SIDE_DECORATION_ROUNDING)
+                    })
+                    .when(!(tiling.bottom || tiling.left), |div| {
+                        div.rounded_bl(CLIENT_SIDE_DECORATION_ROUNDING)
                     })
                     .when(!tiling.top, |div| div.pt(CLIENT_SIDE_DECORATION_SHADOW))
                     .when(!tiling.bottom, |div| div.pb(CLIENT_SIDE_DECORATION_SHADOW))
@@ -135,17 +140,22 @@ impl RenderOnce for WindowBorder {
                     .map(|div| match decorations {
                         Decorations::Server => div,
                         Decorations::Client { tiling } => div
-                            .border_color(cx.theme().window_border)
                             .when(!(tiling.top || tiling.right), |div| {
-                                div.rounded_tr(BORDER_RADIUS)
+                                div.rounded_tr(CLIENT_SIDE_DECORATION_ROUNDING)
                             })
                             .when(!(tiling.top || tiling.left), |div| {
-                                div.rounded_tl(BORDER_RADIUS)
+                                div.rounded_tl(CLIENT_SIDE_DECORATION_ROUNDING)
                             })
-                            .when(!tiling.top, |div| div.border_t(BORDER_SIZE))
-                            .when(!tiling.bottom, |div| div.border_b(BORDER_SIZE))
-                            .when(!tiling.left, |div| div.border_l(BORDER_SIZE))
-                            .when(!tiling.right, |div| div.border_r(BORDER_SIZE))
+                            .when(!(tiling.bottom || tiling.right), |div| {
+                                div.rounded_br(CLIENT_SIDE_DECORATION_ROUNDING)
+                            })
+                            .when(!(tiling.bottom || tiling.left), |div| {
+                                div.rounded_bl(CLIENT_SIDE_DECORATION_ROUNDING)
+                            })
+                            .when(!tiling.top, |div| div.border_t(WINDOW_BORDER_WIDTH))
+                            .when(!tiling.bottom, |div| div.border_b(WINDOW_BORDER_WIDTH))
+                            .when(!tiling.left, |div| div.border_l(WINDOW_BORDER_WIDTH))
+                            .when(!tiling.right, |div| div.border_r(WINDOW_BORDER_WIDTH))
                             .when(!tiling.is_tiled(), |div| {
                                 div.shadow(vec![gpui::BoxShadow {
                                     color: Hsla {

@@ -104,11 +104,7 @@ impl Render for TitleBar {
                     })
                     .when(!(tiling.top || tiling.left), |el| {
                         el.rounded_tl(CLIENT_SIDE_DECORATION_ROUNDING)
-                    })
-                    // this border is to avoid a transparent gap in the rounded corners
-                    .mt(px(-1.))
-                    .border(px(1.))
-                    .border_color(color),
+                    }),
             })
             .bg(color)
             .content_stretch()
