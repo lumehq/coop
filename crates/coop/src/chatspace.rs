@@ -6,9 +6,8 @@ use common::display::DisplayProfile;
 use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
 use global::nostr_client;
 use gpui::{
-    actions, div, px, relative, rems, Action, App, AppContext, Axis, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
-    Task, Window,
+    actions, div, px, rems, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
 };
 use i18n::t;
 use identity::Identity;
@@ -109,14 +108,17 @@ impl ChatSpace {
                 window,
                 |_this: &mut Self, state, window, cx| {
                     if !state.read(cx).has_keys() {
-                        window.open_modal(cx, |this, _window, cx| {
+                        let title = SharedString::new(t!("startup.client_keys_warning"));
+                        let desc = SharedString::new(t!("startup.client_keys_desc"));
+
+                        window.open_modal(cx, move |this, _window, cx| {
                             this.overlay_closable(false)
                                 .show_close(false)
                                 .keyboard(false)
                                 .confirm()
                                 .button_props(
                                     ModalButtonProps::default()
-                                        .cancel_text(t!("chatspace.create_new_keys"))
+                                        .cancel_text(t!("startup.create_new_keys"))
                                         .ok_text(t!("common.allow")),
                                 )
                                 .child(
@@ -134,13 +136,9 @@ impl ChatSpace {
                                             div()
                                                 .font_semibold()
                                                 .text_color(cx.theme().text_muted)
-                                                .child(SharedString::new(t!("chatspace.warning"))),
+                                                .child(title.clone()),
                                         )
-                                        .child(div().line_height(relative(1.4)).child(
-                                            SharedString::new(t!(
-                                                "chatspace.allow_keychain_access"
-                                            )),
-                                        )),
+                                        .child(desc.clone()),
                                 )
                                 .on_cancel(|_, _window, cx| {
                                     ClientKeys::global(cx).update(cx, |this, cx| {

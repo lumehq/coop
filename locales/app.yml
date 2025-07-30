@@ -41,6 +41,12 @@ onboarding:
     en: "Already have an account? Log in."
 
 startup:
+  client_keys_warning:
+    en: "Warning"
+  client_keys_desc:
+    en: "Allow Coop to read the client keys stored in Keychain to continue"
+  create_new_keys:
+    en: "Create New Keys"
   auto_login_in_progress:
     en: "Auto login in progress"
   stuck:
@@ -93,8 +99,6 @@ login:
     en: "Logging in..."
 
 chatspace:
-  create_new_keys:
-    en: "Create New Keys"
   appearance_tooltip:
     en: "Change the app's appearance"
   preferences_title:
