@@ -1,34 +1,21 @@
-use std::rc::Rc;
+use std::sync::OnceLock;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, Action, App, AppContext, Corner, Element, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, WeakEntity,
-    Window,
+    div, px, App, AppContext, Corner, Element, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
-use serde::Deserialize;
 use theme::ActiveTheme;
 
 use crate::button::{Button, ButtonVariants};
 use crate::input::InputState;
 use crate::popover::{Popover, PopoverContent};
-use crate::Icon;
+use crate::{Icon, Sizable, Size};
 
-/// Emit a emoji to target input
-#[derive(Action, PartialEq, Clone, Debug, Deserialize)]
-#[action(namespace = emoji, no_json)]
-pub struct EmitEmoji(pub SharedString);
+static EMOJIS: OnceLock<Vec<SharedString>> = OnceLock::new();
 
-#[derive(IntoElement)]
-pub struct EmojiPicker {
-    icon: Option<Icon>,
-    anchor: Option<Corner>,
-    target_input: WeakEntity<InputState>,
-    emojis: Rc<Vec<SharedString>>,
-}
-
-impl EmojiPicker {
-    pub fn new(target_input: WeakEntity<InputState>) -> Self {
+fn get_emojis() -> &'static Vec<SharedString> {
+    EMOJIS.get_or_init(|| {
         let mut emojis: Vec<SharedString> = vec![];
 
         emojis.extend(
@@ -38,9 +25,23 @@ impl EmojiPicker {
                 .collect::<Vec<SharedString>>(),
         );
 
+        emojis
+    })
+}
+
+#[derive(IntoElement)]
+pub struct EmojiPicker {
+    icon: Option<Icon>,
+    size: Size,
+    anchor: Option<Corner>,
+    target_input: WeakEntity<InputState>,
+}
+
+impl EmojiPicker {
+    pub fn new(target_input: WeakEntity<InputState>) -> Self {
         Self {
             target_input,
-            emojis: emojis.into(),
+            size: Size::default(),
             anchor: None,
             icon: None,
         }
@@ -53,6 +54,13 @@ impl EmojiPicker {
 
     pub fn anchor(mut self, corner: Corner) -> Self {
         self.anchor = Some(corner);
+        self
+    }
+}
+
+impl Sizable for EmojiPicker {
+    fn with_size(mut self, size: impl Into<Size>) -> Self {
+        self.size = size.into();
         self
     }
 }
@@ -70,10 +78,10 @@ impl RenderOnce for EmojiPicker {
             .trigger(
                 Button::new("emoji-trigger")
                     .when_some(self.icon, |this, icon| this.icon(icon))
-                    .ghost(),
+                    .ghost()
+                    .with_size(self.size),
             )
             .content(move |window, cx| {
-                let emojis = self.emojis.clone();
                 let input = self.target_input.clone();
 
                 cx.new(|cx| {
@@ -83,7 +91,7 @@ impl RenderOnce for EmojiPicker {
                             .flex_wrap()
                             .items_center()
                             .gap_2()
-                            .children(emojis.iter().map(|e| {
+                            .children(get_emojis().iter().map(|e| {
                                 div()
                                     .id(e.clone())
                                     .flex_auto()

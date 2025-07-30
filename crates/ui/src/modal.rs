@@ -45,7 +45,7 @@ impl Default for ModalButtonProps {
             ok_text: None,
             ok_variant: ButtonVariant::Primary,
             cancel_text: None,
-            cancel_variant: ButtonVariant::Ghost,
+            cancel_variant: ButtonVariant::Ghost { alt: false },
         }
     }
 }
@@ -467,7 +467,7 @@ impl RenderOnce for Modal {
                                     Button::new("close")
                                         .icon(IconName::CloseCircleFill)
                                         .absolute()
-                                        .top_2()
+                                        .top_1p5()
                                         .right_2()
                                         .custom(
                                             ButtonCustomVariant::new(window, cx)

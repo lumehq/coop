@@ -891,8 +891,9 @@ impl Render for Chat {
                                             .text_color(cx.theme().text_muted)
                                             .child(
                                                 Button::new("upload")
-                                                    .icon(Icon::new(IconName::Upload))
+                                                    .icon(IconName::Upload)
                                                     .ghost()
+                                                    .large()
                                                     .disabled(self.uploading)
                                                     .loading(self.uploading)
                                                     .on_click(cx.listener(
@@ -903,7 +904,8 @@ impl Render for Chat {
                                             )
                                             .child(
                                                 EmojiPicker::new(self.input.downgrade())
-                                                    .icon(IconName::EmojiFill),
+                                                    .icon(IconName::EmojiFill)
+                                                    .large(),
                                             ),
                                     )
                                     .child(TextInput::new(&self.input)),

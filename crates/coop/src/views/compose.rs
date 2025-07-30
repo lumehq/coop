@@ -10,7 +10,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, AppContext, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Task, TextAlign, Window,
+    Subscription, Task, Window,
 };
 use i18n::t;
 use itertools::Itertools;
@@ -31,7 +31,7 @@ pub fn compose_button() -> impl IntoElement {
     div().child(
         Button::new("compose")
             .icon(IconName::Plus)
-            .primary()
+            .ghost_alt()
             .cta()
             .small()
             .rounded(ButtonRounded::Full)
@@ -439,8 +439,8 @@ impl Render for Compose {
         let error = self.error_message.read(cx).as_ref();
 
         v_flex()
-            .mb_3()
-            .gap_1()
+            .mb_4()
+            .gap_2()
             .child(
                 div()
                     .text_sm()
@@ -472,7 +472,7 @@ impl Render for Compose {
             )
             .child(
                 v_flex()
-                    .mt_1()
+                    .my_1()
                     .gap_2()
                     .child(
                         v_flex()
@@ -485,7 +485,6 @@ impl Render for Compose {
                             )
                             .child(
                                 h_flex()
-                                    .px_1()
                                     .gap_1()
                                     .child(
                                         TextInput::new(&self.user_input)
@@ -507,14 +506,12 @@ impl Render for Compose {
                     .map(|this| {
                         if self.contacts.is_empty() {
                             this.child(
-                                div()
-                                    .w_full()
+                                v_flex()
                                     .h_24()
-                                    .flex()
-                                    .flex_col()
+                                    .w_full()
                                     .items_center()
                                     .justify_center()
-                                    .text_align(TextAlign::Center)
+                                    .text_center()
                                     .child(
                                         div()
                                             .text_xs()
@@ -541,7 +538,7 @@ impl Render for Compose {
                                         this.list_items(range, cx)
                                     }),
                                 )
-                                .min_h(px(280.)),
+                                .min_h(px(300.)),
                             )
                         }
                     }),

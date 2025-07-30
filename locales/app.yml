@@ -304,7 +304,7 @@ sidebar:
   trusted_contacts_tooltip:
     en: "Only show rooms from trusted contacts"
   retrieving_messages:
-    en: "Retrieving messages..."
+    en: "Retrieving messages"
   retrieving_messages_description:
     en: "This may take some time"
   why_seeing_this_tooltip:

@@ -174,14 +174,14 @@ impl ChatSpace {
                 },
             ));
 
-            // Automatically run on_load function when UserProfile is created
+            // Automatically run load function when UserProfile is created
             subscriptions.push(cx.observe_new::<UserProfile>(|this, window, cx| {
                 if let Some(window) = window {
-                    this.on_load(window, cx);
+                    this.load(window, cx);
                 }
             }));
 
-            // Automatically run on_load function when Screening is created
+            // Automatically run load function when Screening is created
             subscriptions.push(cx.observe_new::<Screening>(|this, window, cx| {
                 if let Some(window) = window {
                     this.load(window, cx);
@@ -347,8 +347,16 @@ impl ChatSpace {
         let profile = user_profile::init(public_key, window, cx);
 
         window.open_modal(cx, move |this, _window, _cx| {
-            // user_profile::init(public_key, window, cx)
-            this.child(profile.clone())
+            this.alert()
+                .show_close(true)
+                .overlay_closable(true)
+                .child(profile.clone())
+                .button_props(ModalButtonProps::default().ok_text(t!("profile.njump")))
+                .on_ok(move |_, _window, cx| {
+                    let Ok(bech32) = public_key.to_bech32();
+                    cx.open_url(&format!("https://njump.me/{bech32}"));
+                    false
+                })
         });
     }
 

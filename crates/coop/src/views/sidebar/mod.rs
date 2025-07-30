@@ -683,20 +683,17 @@ impl Render for Sidebar {
             }
         };
 
-        div()
+        v_flex()
             .image_cache(self.image_cache.clone())
-            .mb_2()
             .size_full()
             .relative()
-            .flex()
-            .flex_col()
             .gap_3()
             // Search Input
             .child(
                 div()
                     .relative()
                     .mt_3()
-                    .px_3()
+                    .px_2p5()
                     .w_full()
                     .h_7()
                     .flex_none()
@@ -717,14 +714,12 @@ impl Render for Sidebar {
             )
             // Chat Rooms
             .child(
-                div()
-                    .px_2()
-                    .w_full()
-                    .flex_1()
-                    .overflow_y_hidden()
-                    .flex()
-                    .flex_col()
+                v_flex()
                     .gap_1()
+                    .flex_1()
+                    .px_1p5()
+                    .w_full()
+                    .overflow_y_hidden()
                     .child(
                         div()
                             .flex_none()
@@ -815,8 +810,11 @@ impl Render for Sidebar {
                     ),
             )
             .when(registry.loading, |this| {
+                let title = SharedString::new(t!("sidebar.retrieving_messages"));
+                let desc = SharedString::new(t!("sidebar.retrieving_messages_description"));
+
                 this.child(
-                    div().absolute().bottom_4().px_4().w_full().child(
+                    div().absolute().bottom_3().px_3().w_full().child(
                         div()
                             .p_1()
                             .w_full()
@@ -826,35 +824,28 @@ impl Render for Sidebar {
                             .justify_between()
                             .bg(cx.theme().panel_background)
                             .shadow_sm()
-                            // Empty div
-                            .child(div().size_6().flex_shrink_0())
-                            // Loading indicator
+                            // Loading
+                            .child(div().flex_shrink_0().pl_1().child(Indicator::new().small()))
+                            // Title
                             .child(
-                                div()
+                                v_flex()
                                     .flex_1()
-                                    .flex()
-                                    .flex_col()
                                     .items_center()
                                     .justify_center()
-                                    .text_xs()
                                     .text_center()
                                     .child(
                                         div()
+                                            .text_sm()
                                             .font_semibold()
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
                                             .line_height(relative(1.2))
-                                            .child(Indicator::new().xsmall())
-                                            .child(SharedString::new(t!(
-                                                "sidebar.retrieving_messages"
-                                            ))),
+                                            .child(title.clone()),
                                     )
-                                    .child(div().text_color(cx.theme().text_muted).child(
-                                        SharedString::new(t!(
-                                            "sidebar.retrieving_messages_description"
-                                        )),
-                                    )),
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(desc.clone()),
+                                    ),
                             )
                             // Info button
                             .child(
