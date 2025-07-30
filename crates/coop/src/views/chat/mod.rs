@@ -33,6 +33,7 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
+use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::text::RichText;
@@ -813,7 +814,7 @@ impl Panel for Chat {
     }
 
     fn toolbar_buttons(&self, _window: &Window, cx: &App) -> Vec<Button> {
-        let id = self.room.read(cx).id;
+        let room = self.room.downgrade();
         let subject = self
             .room
             .read(cx)
@@ -825,11 +826,31 @@ impl Panel for Chat {
             .icon(IconName::EditFill)
             .tooltip(t!("chat.change_subject_button"))
             .on_click(move |_, window, cx| {
-                let subject = subject::init(id, subject.clone(), window, cx);
+                let view = subject::init(subject.clone(), window, cx);
+                let room = room.clone();
+                let weak_view = view.downgrade();
 
                 window.open_modal(cx, move |this, _window, _cx| {
-                    this.title(SharedString::new(t!("chat.change_subject_modal_title")))
-                        .child(subject.clone())
+                    let room = room.clone();
+                    let weak_view = weak_view.clone();
+
+                    this.confirm()
+                        .title(SharedString::new(t!("chat.change_subject_modal_title")))
+                        .child(view.clone())
+                        .button_props(ModalButtonProps::default().ok_text(t!("common.change")))
+                        .on_ok(move |_, _window, cx| {
+                            if let Ok(subject) =
+                                weak_view.read_with(cx, |this, cx| this.new_subject(cx))
+                            {
+                                room.update(cx, |this, cx| {
+                                    this.subject = Some(subject);
+                                    cx.notify();
+                                })
+                                .ok();
+                            }
+                            // true to close the modal
+                            true
+                        })
                 });
             });
 
