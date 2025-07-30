@@ -118,19 +118,26 @@ type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>
 pub struct Button {
     pub base: Div,
     id: ElementId,
+
     icon: Option<Icon>,
     label: Option<SharedString>,
+    tooltip: Option<SharedString>,
     children: Vec<AnyElement>,
-    disabled: bool,
+
     variant: ButtonVariant,
     rounded: ButtonRounded,
     size: Size,
+
+    disabled: bool,
     reverse: bool,
     bold: bool,
-    tooltip: Option<SharedString>,
-    on_click: OnClick,
+    cta: bool,
+
     loading: bool,
     loading_icon: Option<Icon>,
+
+    on_click: OnClick,
+
     pub(crate) selected: bool,
     pub(crate) stop_propagation: bool,
 }
@@ -159,6 +166,7 @@ impl Button {
             loading: false,
             reverse: false,
             bold: false,
+            cta: false,
             children: Vec::new(),
             loading_icon: None,
         }
@@ -200,26 +208,36 @@ impl Button {
         self
     }
 
+    /// Set bold the button (label will be use the semi-bold font).
     pub fn bold(mut self) -> Self {
         self.bold = true;
         self
     }
 
-    pub fn on_click(
-        mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_click = Some(Box::new(handler));
+    /// Set the cta style of the button.
+    pub fn cta(mut self) -> Self {
+        self.cta = true;
         self
     }
 
+    /// Set the stop propagation of the button.
     pub fn stop_propagation(mut self, val: bool) -> Self {
         self.stop_propagation = val;
         self
     }
 
+    /// Set the loading icon of the button.
     pub fn loading_icon(mut self, icon: impl Into<Icon>) -> Self {
         self.loading_icon = Some(icon.into());
+        self
+    }
+
+    /// Set the click handler of the button.
+    pub fn on_click<C>(mut self, handler: C) -> Self
+    where
+        C: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    {
+        self.on_click = Some(Box::new(handler));
         self
     }
 }
@@ -300,10 +318,34 @@ impl RenderOnce for Button {
                     // Icon Button
                     match self.size {
                         Size::Size(px) => this.size(px),
-                        Size::XSmall => this.size_5(),
-                        Size::Small => this.size_6(),
-                        Size::Medium => this.size_7(),
-                        _ => this.size_9(),
+                        Size::XSmall => {
+                            if self.cta {
+                                this.w_10().h_5()
+                            } else {
+                                this.size_5()
+                            }
+                        }
+                        Size::Small => {
+                            if self.cta {
+                                this.w_12().h_6()
+                            } else {
+                                this.size_6()
+                            }
+                        }
+                        Size::Medium => {
+                            if self.cta {
+                                this.w_12().h_7()
+                            } else {
+                                this.size_7()
+                            }
+                        }
+                        _ => {
+                            if self.cta {
+                                this.w_16().h_9()
+                            } else {
+                                this.size_9()
+                            }
+                        }
                     }
                 } else {
                     // Normal Button
@@ -311,30 +353,30 @@ impl RenderOnce for Button {
                         Size::Size(size) => this.px(size * 0.2),
                         Size::XSmall => {
                             if self.icon.is_some() {
-                                this.h_6().pl_1().pr_2()
+                                this.h_7().pl_1().pr_1p5()
                             } else {
-                                this.h_6().px_2()
+                                this.h_7().px_1()
                             }
                         }
                         Size::Small => {
                             if self.icon.is_some() {
-                                this.h_7().pl_2().pr_3()
+                                this.h_7().pl_2().pr_2p5()
                             } else {
-                                this.h_7().px_3()
+                                this.h_7().px_2()
                             }
                         }
                         Size::Medium => {
                             if self.icon.is_some() {
-                                this.h_8().pl_2().pr_3()
+                                this.h_8().pl_3().pr_3p5()
                             } else {
                                 this.h_8().px_3()
                             }
                         }
                         Size::Large => {
                             if self.icon.is_some() {
-                                this.h_10().px_3().pr_4()
+                                this.h_10().px_3().pr_3p5()
                             } else {
-                                this.h_10().px_4()
+                                this.h_10().px_3()
                             }
                         }
                     }
@@ -373,7 +415,7 @@ impl RenderOnce for Button {
                     .text_sm()
                     .map(|this| match self.size {
                         Size::XSmall => this.gap_1(),
-                        Size::Small => this.gap_1(),
+                        Size::Small => this.gap_1p5(),
                         _ => this.gap_2(),
                     })
                     .when(!self.loading, |this| {

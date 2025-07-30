@@ -354,30 +354,36 @@ impl ChatSpace {
 
     fn render_titlebar_left_side(
         &mut self,
+        _window: &mut Window,
+        _cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let compose_button = compose_button().into_any_element();
+
+        h_flex().gap_1().child(compose_button)
+    }
+
+    fn render_titlebar_right_side(
+        &mut self,
         profile: &Profile,
         _window: &mut Window,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let compose_button = compose_button().into_any_element();
 
-        h_flex()
-            .gap_2()
-            .child(
-                Button::new("user")
-                    .small()
-                    .reverse()
-                    .ghost()
-                    .icon(IconName::CaretDown)
-                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.5)))
-                    .popup_menu(|this, _window, _cx| {
-                        this.menu("Dark Mode", Box::new(DarkMode))
-                            .menu("Settings", Box::new(Settings))
-                            .separator()
-                            .menu("Sign out", Box::new(Logout))
-                    }),
-            )
-            .child(compose_button)
+        h_flex().gap_1().child(
+            Button::new("user")
+                .small()
+                .reverse()
+                .transparent()
+                .icon(IconName::CaretDown)
+                .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.5)))
+                .popup_menu(|this, _window, _cx| {
+                    this.menu("Dark Mode", Box::new(DarkMode))
+                        .menu("Settings", Box::new(Settings))
+                        .separator()
+                        .menu("Sign out", Box::new(Logout))
+                }),
+        )
     }
 
     pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
@@ -404,14 +410,20 @@ impl Render for ChatSpace {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 
+        // Only render titlebar element if user is logged in
         if let Some(identity) = Identity::read_global(cx).public_key() {
             let profile = Registry::read_global(cx).get_person(&identity, cx);
+
             let left_side = self
-                .render_titlebar_left_side(&profile, window, cx)
+                .render_titlebar_left_side(window, cx)
+                .into_any_element();
+
+            let right_side = self
+                .render_titlebar_right_side(&profile, window, cx)
                 .into_any_element();
 
             self.title_bar.update(cx, |this, _cx| {
-                this.set_children(vec![left_side]);
+                this.set_children(vec![left_side, right_side]);
             })
         }
 

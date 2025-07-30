@@ -30,8 +30,10 @@ use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, Sty
 pub fn compose_button() -> impl IntoElement {
     div().child(
         Button::new("compose")
-            .icon(IconName::PlusFill)
-            .ghost()
+            .icon(IconName::Plus)
+            .primary()
+            .cta()
+            .small()
             .rounded(ButtonRounded::Full)
             .on_click(move |_, window, cx| {
                 let compose = cx.new(|cx| Compose::new(window, cx));
