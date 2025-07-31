@@ -72,7 +72,11 @@ pub async fn nip96_upload(
     let json: Value = res.json().await?;
 
     let config = nip96::ServerConfig::from_json(json.to_string())?;
-    let signer = client.signer().await?;
+    let signer = if client.has_signer().await {
+        client.signer().await?
+    } else {
+        Keys::generate().into_nostr_signer()
+    };
 
     let url = upload(&signer, &config, file, None).await?;
 

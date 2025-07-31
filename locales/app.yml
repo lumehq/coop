@@ -5,10 +5,14 @@ common:
     en: "Add"
   update:
     en: "Update"
+  upload:
+    en: "Upload"
   change:
     en: "Change"
   continue:
     en: "Continue"
+  pubkey:
+    en: "Public Key"
   pubkey_invalid:
     en: "Public Key is not valid"
   not_found:
@@ -56,11 +60,11 @@ startup:
 
 new_account:
   title:
-    en: "Create New Account"
-  password_invalid:
-    en: "Password is invalid"
-  set_password_prompt:
-    en: "Set password to encrypt your key *"
+    en: "Create a new identity"
+  name:
+    en: "What should people call you?"
+  avatar:
+    en: "Choose an avatar to help people recognize you"
 
 login:
   title:

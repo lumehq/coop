@@ -368,10 +368,9 @@ impl Identity {
         .detach();
     }
 
-    /// Creates a new identity with the given keys and metadata
+    /// Creates a new identity with the given metadata
     pub fn new_identity(
         &mut self,
-        password: String,
         metadata: Metadata,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -382,34 +381,32 @@ impl Identity {
         let task: Task<Result<PublicKey, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let public_key = async_keys.public_key();
+
             // Update signer
             client.set_signer(async_keys).await;
+
             // Set metadata
             client.set_metadata(&metadata).await?;
 
             // Create relay list
             let relay_list = EventBuilder::new(Kind::RelayList, "").tags(
-                NIP65_RELAYS.into_iter().filter_map(|url| {
-                    if let Ok(url) = RelayUrl::parse(url) {
-                        Some(Tag::relay_metadata(url, None))
-                    } else {
-                        None
-                    }
-                }),
+                NIP65_RELAYS
+                    .into_iter()
+                    .filter_map(|url| RelayUrl::parse(url).ok())
+                    .map(|url| Tag::relay_metadata(url, None)),
             );
 
             // Create messaging relay list
             let dm_relay = EventBuilder::new(Kind::InboxRelays, "").tags(
-                NIP17_RELAYS.into_iter().filter_map(|url| {
-                    if let Ok(url) = RelayUrl::parse(url) {
-                        Some(Tag::relay(url))
-                    } else {
-                        None
-                    }
-                }),
+                NIP17_RELAYS
+                    .into_iter()
+                    .filter_map(|url| RelayUrl::parse(url).ok())
+                    .map(Tag::relay),
             );
 
+            // Set user's NIP65 relays
             client.send_event_builder(relay_list).await?;
+            // Set user's NIP17 relays
             client.send_event_builder(dm_relay).await?;
 
             // Subscribe for user metadata
@@ -422,7 +419,6 @@ impl Identity {
             match task.await {
                 Ok(public_key) => {
                     this.update(cx, |this, cx| {
-                        this.write_keys(&keys, password, cx);
                         this.set_public_key(Some(public_key), cx);
                     })
                     .ok();
