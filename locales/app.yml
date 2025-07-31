@@ -198,13 +198,13 @@ preferences:
   modal_relays_title:
     en: "Edit your Messaging Relays"
   media_description:
-    en: "Coop currently only supports NIP-96 media servers. If you're unsure, please keep the default value."
+    en: "Coop currently only supports NIP-96 media servers."
   backup_description:
-    en: "When you send a message, Coop will also send it to your configured Messaging Relays. You can disable this if you want all sent messages to disappear when you log out."
+    en: "When you send a message, Coop will also forward it to your configured Messaging Relays. Disabling this will cause all messages sent during the current session to disappear when the app is closed."
   screening_description:
-    en: "When opening a chat request, Coop will show a popup to help users verify the sender."
+    en: "When opening a chat request, Coop will show a popup to help you verify the sender."
   bypass_description:
-    en: "Requests from user's contacts will automatically go to inbox."
+    en: "Requests from your contacts will automatically go to inbox."
   hide_avatar_description:
     en: "Unload all avatar pictures to improve performance and reduce memory usage."
   proxy_description:

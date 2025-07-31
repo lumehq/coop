@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use anyhow::Error;
 use client_keys::ClientKeys;
 use common::display::DisplayProfile;
-use global::constants::{DEFAULT_MODAL_WIDTH, DEFAULT_SIDEBAR_WIDTH};
-use global::nostr_client;
+use global::constants::DEFAULT_SIDEBAR_WIDTH;
 use gpui::{
     actions, div, px, rems, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, Window,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use i18n::t;
 use identity::Identity;
@@ -273,54 +271,17 @@ impl ChatSpace {
         registry.update(cx, |this, cx| {
             this.load_rooms(window, cx);
         });
-
-        // Verify messaging relays of the current user
-        cx.defer_in(window, |this, window, cx| {
-            let verify_messaging_relays = this.verify_messaging_relays(cx);
-
-            cx.spawn_in(window, async move |_, cx| {
-                if let Ok(status) = verify_messaging_relays.await {
-                    if !status {
-                        cx.update(|window, cx| {
-                            window.dispatch_action(
-                                Box::new(ToggleModal {
-                                    modal: ModalKind::SetupRelay,
-                                }),
-                                cx,
-                            );
-                        })
-                        .ok();
-                    }
-                }
-            })
-            .detach();
-        });
-    }
-
-    fn verify_messaging_relays(&self, cx: &App) -> Task<Result<bool, Error>> {
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
-            let is_exist = client.database().query(filter).await?.first().is_some();
-
-            Ok(is_exist)
-        })
     }
 
     pub fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
-        let settings = preferences::init(window, cx);
+        let view = preferences::init(window, cx);
         let title = SharedString::new(t!("chatspace.preferences_title"));
 
         window.open_modal(cx, move |modal, _, _| {
             modal
                 .title(title.clone())
-                .width(px(DEFAULT_MODAL_WIDTH))
-                .child(settings.clone())
+                .width(px(480.))
+                .child(view.clone())
         });
     }
 

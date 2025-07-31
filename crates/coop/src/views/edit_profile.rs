@@ -15,7 +15,7 @@ use smol::fs;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
-use ui::{ContextModal, Disableable, IconName, Sizable};
+use ui::{v_flex, Disableable, IconName, Sizable};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<EditProfile> {
     EditProfile::new(window, cx)
@@ -166,10 +166,7 @@ impl EditProfile {
         .detach();
     }
 
-    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Show loading spinner
-        self.set_submitting(true, cx);
-
+    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Option<Event>, Error>> {
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
@@ -191,52 +188,25 @@ impl EditProfile {
             new_metadata = new_metadata.website(url);
         }
 
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            nostr_client().set_metadata(&new_metadata).await?;
-            Ok(())
-        });
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let output = client.set_metadata(&new_metadata).await?;
+            let event = client.database().event_by_id(&output.val).await?;
 
-        cx.spawn_in(window, async move |this, cx| {
-            match task.await {
-                Ok(_) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(t!("profile.updated_successfully"), cx);
-                        this.update(cx, |this, cx| {
-                            this.set_submitting(false, cx);
-                        })
-                        .ok();
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(e.to_string(), cx);
-                    })
-                    .ok();
-                }
-            };
+            Ok(event)
         })
-        .detach();
     }
 
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.is_loading = status;
         cx.notify();
     }
-
-    fn set_submitting(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_submitting = status;
-        cx.notify();
-    }
 }
 
 impl Render for EditProfile {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
+        v_flex()
             .gap_3()
-            .px_3()
             .child(
                 div()
                     .w_full()
@@ -305,18 +275,6 @@ impl Render for EditProfile {
                     .text_sm()
                     .child(SharedString::new(t!("profile.label_bio")))
                     .child(TextInput::new(&self.bio_input).small()),
-            )
-            .child(
-                div().py_3().child(
-                    Button::new("submit")
-                        .label(SharedString::new(t!("common.update")))
-                        .primary()
-                        .disabled(self.is_loading || self.is_submitting)
-                        .loading(self.is_submitting)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.submit(window, cx);
-                        })),
-                ),
             )
     }
 }

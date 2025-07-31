@@ -1,5 +1,4 @@
 use common::display::DisplayProfile;
-use global::constants::{DEFAULT_MODAL_WIDTH, NIP96_SERVER};
 use gpui::http_client::Url;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -14,10 +13,11 @@ use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
+use ui::modal::ModalButtonProps;
 use ui::switch::Switch;
 use ui::{v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
 
-use crate::views::{edit_profile, relays};
+use crate::views::{edit_profile, edit_relays};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     Preferences::new(window, cx)
@@ -33,8 +33,8 @@ impl Preferences {
             let media_server = AppSettings::get_media_server(cx).to_string();
             let media_input = cx.new(|cx| {
                 InputState::new(window, cx)
-                    .default_value(media_server)
-                    .placeholder(NIP96_SERVER)
+                    .default_value(media_server.clone())
+                    .placeholder(media_server)
             });
 
             Self { media_input }
@@ -42,25 +42,83 @@ impl Preferences {
     }
 
     fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let edit_profile = edit_profile::init(window, cx);
+        let view = edit_profile::init(window, cx);
+        let weak_view = view.downgrade();
         let title = SharedString::new(t!("profile.title"));
 
         window.open_modal(cx, move |modal, _window, _cx| {
+            let weak_view = weak_view.clone();
+
             modal
+                .confirm()
                 .title(title.clone())
-                .width(px(DEFAULT_MODAL_WIDTH))
-                .child(edit_profile.clone())
+                .child(view.clone())
+                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .on_ok(move |_, window, cx| {
+                    weak_view
+                        .update(cx, |this, cx| {
+                            let set_metadata = this.set_metadata(cx);
+
+                            cx.spawn_in(window, async move |_, cx| {
+                                match set_metadata.await {
+                                    Ok(event) => {
+                                        if let Some(event) = event {
+                                            cx.update(|_, cx| {
+                                                Registry::global(cx).update(cx, |this, cx| {
+                                                    this.insert_or_update_person(event, cx);
+                                                });
+                                            })
+                                            .ok();
+                                        }
+                                    }
+                                    Err(e) => {
+                                        cx.update(|window, cx| {
+                                            window.push_notification(e.to_string(), cx);
+                                        })
+                                        .ok();
+                                    }
+                                };
+                            })
+                            .detach();
+                        })
+                        .ok();
+                    // true to close the modal
+                    true
+                })
         });
     }
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let relays = relays::init(window, cx);
+        let view = edit_relays::init(window, cx);
+        let weak_view = view.downgrade();
         let title = SharedString::new(t!("preferences.modal_relays_title"));
 
         window.open_modal(cx, move |this, _window, _cx| {
-            this.width(px(DEFAULT_MODAL_WIDTH))
+            let weak_view = weak_view.clone();
+
+            this.confirm()
                 .title(title.clone())
-                .child(relays.clone())
+                .child(view.clone())
+                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .on_ok(move |_, window, cx| {
+                    weak_view
+                        .update(cx, |this, cx| {
+                            let set_relays = this.set_relays(cx);
+
+                            cx.spawn_in(window, async move |_, cx| {
+                                if let Err(e) = set_relays.await {
+                                    cx.update(|window, cx| {
+                                        window.push_notification(e.to_string(), cx);
+                                    })
+                                    .ok();
+                                }
+                            })
+                            .detach();
+                        })
+                        .ok();
+                    // true to close the modal
+                    true
+                })
         });
     }
 }
@@ -80,10 +138,8 @@ impl Render for Preferences {
 
         v_flex()
             .child(
-                div()
+                v_flex()
                     .py_2()
-                    .flex()
-                    .flex_col()
                     .gap_2()
                     .child(
                         div()
@@ -135,7 +191,7 @@ impl Render for Preferences {
                                 )
                                 .child(
                                     Button::new("relays")
-                                        .label("DM Relays")
+                                        .label("Messaging Relays")
                                         .ghost()
                                         .small()
                                         .on_click(cx.listener(move |this, _e, window, cx| {
@@ -146,11 +202,8 @@ impl Render for Preferences {
                     }),
             )
             .child(
-                div()
+                v_flex()
                     .py_2()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
                     .border_t_1()
                     .border_color(cx.theme().border)
                     .child(
@@ -162,6 +215,7 @@ impl Render for Preferences {
                     )
                     .child(
                         div()
+                            .my_1()
                             .flex()
                             .items_start()
                             .gap_1()
@@ -193,10 +247,8 @@ impl Render for Preferences {
                     ),
             )
             .child(
-                div()
+                v_flex()
                     .py_2()
-                    .flex()
-                    .flex_col()
                     .gap_2()
                     .border_t_1()
                     .border_color(cx.theme().border)
@@ -208,9 +260,7 @@ impl Render for Preferences {
                             .child(SharedString::new(t!("preferences.messages_header"))),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
+                        v_flex()
                             .gap_2()
                             .child(
                                 Switch::new("screening")
@@ -242,10 +292,8 @@ impl Render for Preferences {
                     ),
             )
             .child(
-                div()
+                v_flex()
                     .py_2()
-                    .flex()
-                    .flex_col()
                     .gap_2()
                     .border_t_1()
                     .border_color(cx.theme().border)
@@ -257,9 +305,7 @@ impl Render for Preferences {
                             .child(SharedString::new(t!("preferences.display_header"))),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
+                        v_flex()
                             .gap_2()
                             .child(
                                 Switch::new("hide_user_avatars")

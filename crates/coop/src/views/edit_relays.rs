@@ -1,21 +1,20 @@
 use anyhow::Error;
-use global::constants::NEW_MESSAGE_SUB_ID;
+use global::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, AppContext, Context, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign,
-    UniformList, Window,
+    div, px, uniform_list, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign, UniformList,
+    Window,
 };
 use i18n::t;
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::{ContextModal, Disableable, IconName, Sizable};
-
-const MIN_HEIGHT: f32 = 200.0;
+use ui::{h_flex, v_flex, IconName, Sizable};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
     Relays::new(window, cx)
@@ -24,8 +23,6 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Relays> {
 pub struct Relays {
     relays: Entity<Vec<RelayUrl>>,
     input: Entity<InputState>,
-    focus_handle: FocusHandle,
-    is_loading: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -95,90 +92,8 @@ impl Relays {
                 relays,
                 input,
                 subscriptions,
-                is_loading: false,
-                focus_handle: cx.focus_handle(),
             }
         })
-    }
-
-    pub fn update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_loading(true, cx);
-
-        let relays = self.relays.read(cx).clone();
-        let task: Task<Result<EventId, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            // If user didn't have any NIP-65 relays, add default ones
-            if client.database().relay_list(public_key).await?.is_empty() {
-                let builder = EventBuilder::relay_list(vec![
-                    (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
-                    (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
-                ]);
-
-                if let Err(e) = client.send_event_builder(builder).await {
-                    log::error!("Failed to send relay list event: {e}");
-                }
-            }
-
-            let tags: Vec<Tag> = relays
-                .iter()
-                .map(|relay| Tag::custom(TagKind::Relay, vec![relay.to_string()]))
-                .collect();
-
-            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
-            let output = client.send_event_builder(builder).await?;
-
-            // Connect to messaging relays
-            for relay in relays.into_iter() {
-                _ = client.add_relay(&relay).await;
-                _ = client.connect_relay(&relay).await;
-            }
-
-            let sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-
-            // Close old subscription
-            client.unsubscribe(&sub_id).await;
-
-            // Subscribe to new messages
-            if let Err(e) = client
-                .subscribe_with_id(
-                    sub_id,
-                    Filter::new()
-                        .kind(Kind::GiftWrap)
-                        .pubkey(public_key)
-                        .limit(0),
-                    None,
-                )
-                .await
-            {
-                log::error!("Failed to subscribe to new messages: {e}");
-            }
-
-            Ok(output.val)
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            if task.await.is_ok() {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_loading(false, cx);
-                        cx.notify();
-                    })
-                    .ok();
-
-                    window.close_modal(cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
-    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_loading = status;
-        cx.notify();
     }
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -209,12 +124,71 @@ impl Relays {
         });
     }
 
-    fn render_list(
-        &mut self,
-        relays: Vec<RelayUrl>,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> UniformList {
+    pub fn set_relays(&mut self, cx: &mut Context<Self>) -> Task<Result<(), Error>> {
+        let relays = self.relays.read(cx).clone();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            // If user didn't have any NIP-65 relays, add default ones
+            if client.database().relay_list(public_key).await?.is_empty() {
+                let builder = EventBuilder::relay_list(vec![
+                    (RelayUrl::parse("wss://relay.damus.io/").unwrap(), None),
+                    (RelayUrl::parse("wss://relay.primal.net/").unwrap(), None),
+                    (RelayUrl::parse("wss://nos.lol/").unwrap(), None),
+                    (RelayUrl::parse("wss://relay.nostr.net/").unwrap(), None),
+                ]);
+
+                client.send_event_builder(builder).await?;
+            }
+
+            let tags = relays
+                .iter()
+                .map(|relay| Tag::relay(relay.clone()))
+                .collect_vec();
+
+            // Send event to update inbox relays
+            client
+                .send_event_builder(EventBuilder::new(Kind::InboxRelays, "").tags(tags))
+                .await?;
+
+            // Connect to messaging relays
+            for relay in relays.into_iter() {
+                _ = client.add_relay(&relay).await;
+                _ = client.connect_relay(&relay).await;
+            }
+
+            let all_msg_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
+            let new_msg_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+
+            let all_messages = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+            let new_messages = Filter::new()
+                .kind(Kind::GiftWrap)
+                .pubkey(public_key)
+                .limit(0);
+
+            // Close old subscriptions
+            client.unsubscribe(&all_msg_id).await;
+            client.unsubscribe(&new_msg_id).await;
+
+            // Subscribe to all messages
+            client
+                .subscribe_with_id(all_msg_id, all_messages, None)
+                .await?;
+
+            // Subscribe to new messages
+            client
+                .subscribe_with_id(new_msg_id, new_messages, None)
+                .await?;
+
+            Ok(())
+        })
+    }
+
+    fn render_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> UniformList {
+        let relays = self.relays.read(cx).clone();
         let total = relays.len();
 
         uniform_list(
@@ -258,15 +232,13 @@ impl Relays {
             }),
         )
         .w_full()
-        .min_h(px(MIN_HEIGHT))
+        .min_h(px(200.))
     }
 
     fn render_empty(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        h_flex()
             .h_20()
             .mb_2()
-            .flex()
-            .items_center()
             .justify_center()
             .text_sm()
             .text_align(TextAlign::Center)
@@ -276,72 +248,42 @@ impl Relays {
 
 impl Render for Relays {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .track_focus(&self.focus_handle)
-            .size_full()
-            .px_3()
-            .pb_3()
-            .flex()
-            .flex_col()
-            .justify_between()
+        v_flex()
+            .gap_3()
             .child(
                 div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::new(t!("relays.description"))),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .flex()
-                            .flex_col()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .w_full()
-                                    .gap_2()
-                                    .child(TextInput::new(&self.input).small())
-                                    .child(
-                                        Button::new("add_relay_btn")
-                                            .icon(IconName::Plus)
-                                            .label(t!("common.add"))
-                                            .small()
-                                            .ghost()
-                                            .rounded_md()
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.add(window, cx)
-                                            })),
-                                    ),
-                            )
-                            .map(|this| {
-                                let relays = self.relays.read(cx).clone();
-
-                                if !relays.is_empty() {
-                                    this.child(self.render_list(relays, window, cx))
-                                } else {
-                                    this.child(self.render_empty(window, cx))
-                                }
-                            }),
-                    ),
+                    .text_sm()
+                    .text_color(cx.theme().text_muted)
+                    .child(SharedString::new(t!("relays.description"))),
             )
             .child(
-                Button::new("submti")
-                    .label(t!("common.update"))
-                    .primary()
+                v_flex()
                     .w_full()
-                    .loading(self.is_loading)
-                    .disabled(self.is_loading)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.update(window, cx);
-                    })),
+                    .gap_2()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .w_full()
+                            .child(TextInput::new(&self.input).small())
+                            .child(
+                                Button::new("add_relay_btn")
+                                    .icon(IconName::Plus)
+                                    .label(t!("common.add"))
+                                    .small()
+                                    .ghost()
+                                    .rounded_md()
+                                    .on_click(
+                                        cx.listener(|this, _, window, cx| this.add(window, cx)),
+                                    ),
+                            ),
+                    )
+                    .map(|this| {
+                        if !self.relays.read(cx).is_empty() {
+                            this.child(self.render_list(window, cx))
+                        } else {
+                            this.child(self.render_empty(window, cx))
+                        }
+                    }),
             )
     }
 }
