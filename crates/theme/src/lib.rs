@@ -14,13 +14,9 @@ pub mod platform_kind;
 pub mod scrollbar_mode;
 
 /// Defines window border radius for platforms that use client side decorations.
-///
-/// Default: Use GNOME default value. On KDE needs to be set to 5.0 (Plasma 6.5)
-pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(15.0);
+pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(10.0);
 /// Defines window shadow size for platforms that use client side decorations.
-///
-/// Default: Use GNOME default value. On KDE needs to be set to 5.0 (Plasma 6.5)
-pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(15.0);
+pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(10.0);
 
 pub fn init(cx: &mut App) {
     Theme::sync_system_appearance(None, cx);
@@ -173,10 +169,10 @@ impl ThemeColor {
             danger_disabled: danger().light_alpha().step_3(),
 
             warning_foreground: warning().light().step_12(),
-            warning_background: warning().light().step_9(),
-            warning_hover: warning().light_alpha().step_10(),
-            warning_active: warning().light().step_10(),
-            warning_selected: warning().light().step_11(),
+            warning_background: warning().light().step_3(),
+            warning_hover: warning().light_alpha().step_4(),
+            warning_active: warning().light().step_5(),
+            warning_selected: warning().light().step_5(),
             warning_disabled: warning().light_alpha().step_3(),
 
             ghost_element_background: gpui::transparent_black(),
@@ -255,10 +251,10 @@ impl ThemeColor {
             danger_disabled: danger().dark_alpha().step_3(),
 
             warning_foreground: warning().dark().step_12(),
-            warning_background: warning().dark().step_9(),
-            warning_hover: warning().dark_alpha().step_10(),
-            warning_active: warning().dark().step_10(),
-            warning_selected: warning().dark().step_11(),
+            warning_background: warning().dark().step_3(),
+            warning_hover: warning().dark_alpha().step_4(),
+            warning_active: warning().dark().step_5(),
+            warning_selected: warning().dark().step_5(),
             warning_disabled: warning().dark_alpha().step_3(),
 
             ghost_element_background: gpui::transparent_black(),

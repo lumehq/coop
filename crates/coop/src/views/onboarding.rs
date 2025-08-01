@@ -247,7 +247,7 @@ impl Render for Onboarding {
                             div().w_24().absolute().bottom_2().right_2().child(
                                 Button::new("logout")
                                     .icon(IconName::Logout)
-                                    .label(SharedString::new(t!("common.logout")))
+                                    .label(SharedString::new(t!("user.sign_out")))
                                     .danger()
                                     .xsmall()
                                     .rounded(ButtonRounded::Full)

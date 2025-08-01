@@ -15,18 +15,30 @@ common:
     en: "Public Key"
   pubkey_invalid:
     en: "Public Key is not valid"
+  secret:
+    en: "Secret Key"
   not_found:
     en: "Not Found"
   room_error:
     en: "Failed to open room. Please try again later."
+  preferences:
+    en: "Preferences"
   allow:
     en: "Allow"
-  logout:
-    en: "Logout"
   copied:
     en: "Copied"
+  saved:
+    en: "Your Secret Key has been saved"
   clear:
     en: "Clear"
+
+user:
+  dark_mode:
+    en: "Dark Mode"
+  settings:
+    en: "Settings"
+  sign_out:
+    en: "Sign out"
 
 welcome:
   title:
@@ -65,6 +77,18 @@ new_account:
     en: "What should people call you?"
   avatar:
     en: "Choose an avatar to help people recognize you"
+  backup_label:
+    en: "Backup to avoid losing access to your account"
+  backup_description:
+    en: "In the Nostr Network, your account is defined by a Secret Key. This key is used to sign your messages and identify you."
+  backup_pubkey_note:
+    en: "Your Public Key is the address that others will use to find you on the Nostr Network."
+  backup_secret_note:
+    en: "Your Secret Key is required to access your account. If you lose it, you will lose access to your account."
+  backup_skip:
+    en: "Do it later"
+  backup_download:
+    en: "Download"
 
 login:
   title:
@@ -101,18 +125,6 @@ login:
     en: "Bunker URI is not valid"
   logging_in:
     en: "Logging in..."
-
-chatspace:
-  appearance_tooltip:
-    en: "Change the app's appearance"
-  preferences_title:
-    en: "Preferences"
-  preferences_tooltip:
-    en: "Open Preferences"
-  languages_tooltip:
-    en: "Change the app's language"
-  share_profile:
-    en: "Share Profile"
 
 relays:
   description:

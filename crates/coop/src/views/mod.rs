@@ -1,3 +1,4 @@
+pub mod backup_keys;
 pub mod chat;
 pub mod compose;
 pub mod edit_profile;

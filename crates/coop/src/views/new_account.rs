@@ -14,11 +14,11 @@ use settings::AppSettings;
 use smol::fs;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
 use ui::popup_menu::PopupMenu;
-use ui::{v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
+use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
@@ -237,18 +237,20 @@ impl Render for NewAccount {
                                     .justify_center()
                                     .gap_2()
                                     .rounded(cx.theme().radius)
-                                    .bg(cx.theme().surface_background)
+                                    .border_1()
+                                    .border_dashed()
+                                    .border_color(cx.theme().border)
                                     .child(
                                         Avatar::new(self.avatar_input.read(cx).value().to_string())
                                             .size(rems(2.25)),
                                     )
                                     .child(
                                         Button::new("upload")
-                                            .tooltip(t!("common.upload"))
-                                            .icon(IconName::PlusCircleFill)
+                                            .icon(IconName::Plus)
+                                            .label(t!("common.upload"))
                                             .ghost()
                                             .small()
-                                            .cta()
+                                            .rounded(ButtonRounded::Full)
                                             .disabled(self.is_submitting)
                                             .loading(self.is_uploading)
                                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -257,7 +259,7 @@ impl Render for NewAccount {
                                     ),
                             ),
                     )
-                    .child(div().my_2().w_full().h_px().bg(cx.theme().border))
+                    .child(divider(cx))
                     .child(
                         Button::new("submit")
                             .label(SharedString::new(t!("common.continue")))

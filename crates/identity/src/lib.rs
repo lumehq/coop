@@ -32,6 +32,8 @@ impl Global for GlobalIdentity {}
 pub struct Identity {
     public_key: Option<PublicKey>,
     auto_logging_in_progress: bool,
+    need_backup: Option<Keys>,
+    need_onboarding: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 1]>,
 }
@@ -74,6 +76,8 @@ impl Identity {
         Self {
             public_key: None,
             auto_logging_in_progress: false,
+            need_backup: None,
+            need_onboarding: false,
             subscriptions,
         }
     }
@@ -420,6 +424,8 @@ impl Identity {
                 Ok(public_key) => {
                     this.update(cx, |this, cx| {
                         this.set_public_key(Some(public_key), cx);
+                        this.set_need_backup(Some(keys), cx);
+                        this.set_need_onboarding(cx);
                     })
                     .ok();
                 }
@@ -432,6 +438,34 @@ impl Identity {
             };
         })
         .detach();
+    }
+
+    pub fn clear_need_backup(&mut self, password: String, cx: &mut Context<Self>) {
+        if let Some(keys) = self.need_backup.as_ref() {
+            // Encrypt the keys then writing them to keychain
+            self.write_keys(keys, password, cx);
+            // Clear the needed backup keys
+            self.need_backup = None;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn set_need_backup(&mut self, keys: Option<Keys>, cx: &mut Context<Self>) {
+        self.need_backup = keys;
+        cx.notify();
+    }
+
+    pub(crate) fn set_need_onboarding(&mut self, cx: &mut Context<Self>) {
+        self.need_onboarding = true;
+        cx.notify();
+    }
+
+    pub fn need_backup(&self) -> Option<&Keys> {
+        self.need_backup.as_ref()
+    }
+
+    pub fn need_onboarding(&self) -> bool {
+        self.need_onboarding
     }
 
     pub fn write_bunker(&self, uri: &NostrConnectURI, cx: &mut Context<Self>) {

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use client_keys::ClientKeys;
 use common::display::DisplayProfile;
 use global::constants::DEFAULT_SIDEBAR_WIDTH;
+use gpui::prelude::FluentBuilder;
 use gpui::{
     actions, div, px, rems, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
@@ -31,7 +32,8 @@ use crate::views::compose::compose_button;
 use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
-    chat, login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
+    backup_keys, chat, login, new_account, onboarding, preferences, sidebar, startup, user_profile,
+    welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -202,7 +204,7 @@ impl ChatSpace {
                                     this.add_panel(panel, DockPlacement::Center, window, cx);
                                 });
                             } else {
-                                window.push_notification(t!("chatspace.failed_to_open_room"), cx);
+                                window.push_notification(t!("common.room_error"), cx);
                             }
                         }
                         RoomEmitter::Close(..) => {
@@ -275,7 +277,7 @@ impl ChatSpace {
 
     pub fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
         let view = preferences::init(window, cx);
-        let title = SharedString::new(t!("chatspace.preferences_title"));
+        let title = SharedString::new(t!("common.preferences"));
 
         window.open_modal(cx, move |modal, _, _| {
             modal
@@ -336,21 +338,27 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let need_backup = Identity::read_global(cx).need_backup();
 
-        h_flex().gap_1().child(
-            Button::new("user")
-                .small()
-                .reverse()
-                .transparent()
-                .icon(IconName::CaretDown)
-                .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.5)))
-                .popup_menu(|this, _window, _cx| {
-                    this.menu("Dark Mode", Box::new(DarkMode))
-                        .menu("Settings", Box::new(Settings))
-                        .separator()
-                        .menu("Sign out", Box::new(Logout))
-                }),
-        )
+        h_flex()
+            .gap_1()
+            .when_some(need_backup, |this, keys| {
+                this.child(backup_keys::backup_button(keys.to_owned()))
+            })
+            .child(
+                Button::new("user")
+                    .small()
+                    .reverse()
+                    .transparent()
+                    .icon(IconName::CaretDown)
+                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.49)))
+                    .popup_menu(|this, _window, _cx| {
+                        this.menu(t!("user.dark_mode"), Box::new(DarkMode))
+                            .menu(t!("user.settings"), Box::new(Settings))
+                            .separator()
+                            .menu(t!("user.sign_out"), Box::new(Logout))
+                    }),
+            )
     }
 
     pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)

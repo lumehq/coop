@@ -8,7 +8,7 @@ use theme::ActiveTheme;
 
 use crate::indicator::Indicator;
 use crate::tooltip::Tooltip;
-use crate::{Disableable, Icon, Selectable, Sizable, Size, StyledExt};
+use crate::{h_flex, Disableable, Icon, Selectable, Sizable, Size, StyledExt};
 
 pub enum ButtonRounded {
     Normal,
@@ -358,9 +358,9 @@ impl RenderOnce for Button {
                         Size::Size(size) => this.px(size * 0.2),
                         Size::XSmall => {
                             if self.icon.is_some() {
-                                this.h_7().pl_1().pr_1p5()
+                                this.h_6().pl_2().pr_2p5()
                             } else {
-                                this.h_7().px_1()
+                                this.h_6().px_2()
                             }
                         }
                         Size::Small => {
@@ -411,17 +411,14 @@ impl RenderOnce for Button {
                     .shadow_none()
             })
             .child({
-                div()
-                    .flex()
-                    .when(self.reverse, |this| this.flex_row_reverse())
+                h_flex()
                     .id("label")
-                    .items_center()
+                    .when(self.reverse, |this| this.flex_row_reverse())
                     .justify_center()
-                    .text_sm()
                     .map(|this| match self.size {
-                        Size::XSmall => this.gap_1(),
-                        Size::Small => this.gap_1p5(),
-                        _ => this.gap_2(),
+                        Size::XSmall => this.text_xs().gap_1(),
+                        Size::Small => this.text_sm().gap_1p5(),
+                        _ => this.text_sm().gap_2(),
                     })
                     .when(!self.loading, |this| {
                         this.when_some(self.icon, |this, icon| {
