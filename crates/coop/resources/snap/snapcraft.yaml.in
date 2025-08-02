@@ -53,6 +53,6 @@ parts:
 apps:
   coop:
     command: usr/bin/coop
-    common-id: dev.coop.Coop
+    common-id: su.reya.coop
     environment:
       COOP_BUNDLE_TYPE: snap

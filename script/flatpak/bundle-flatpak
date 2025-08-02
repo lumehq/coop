@@ -9,7 +9,7 @@ archive_match="zed(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
 archive=$(ls "target/release" | grep -E ${archive_match})
 
 export ARCHIVE="$archive"
-export APP_ID="dev.coop.Coop"
+export APP_ID="su.reya.coop"
 export APP_NAME="Coop"
 export BRANDING_LIGHT="#99c1f1"
 export BRANDING_DARK="#1a5fb4"
