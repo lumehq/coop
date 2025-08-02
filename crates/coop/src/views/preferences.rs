@@ -17,7 +17,7 @@ use ui::modal::ModalButtonProps;
 use ui::switch::Switch;
 use ui::{v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
 
-use crate::views::{edit_profile, edit_relays};
+use crate::views::{edit_profile, messaging_relays};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     Preferences::new(window, cx)
@@ -89,9 +89,9 @@ impl Preferences {
     }
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = edit_relays::init(window, cx);
+        let title = SharedString::new(t!("relays.modal_title"));
+        let view = messaging_relays::init(window, cx);
         let weak_view = view.downgrade();
-        let title = SharedString::new(t!("preferences.modal_relays_title"));
 
         window.open_modal(cx, move |this, _window, _cx| {
             let weak_view = weak_view.clone();
@@ -103,21 +103,11 @@ impl Preferences {
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
-                            let set_relays = this.set_relays(cx);
-
-                            cx.spawn_in(window, async move |_, cx| {
-                                if let Err(e) = set_relays.await {
-                                    cx.update(|window, cx| {
-                                        window.push_notification(e.to_string(), cx);
-                                    })
-                                    .ok();
-                                }
-                            })
-                            .detach();
+                            this.set_relays(window, cx);
                         })
                         .ok();
                     // true to close the modal
-                    true
+                    false
                 })
         });
     }

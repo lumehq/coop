@@ -32,8 +32,8 @@ use crate::views::compose::compose_button;
 use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
-    backup_keys, chat, login, new_account, onboarding, preferences, sidebar, startup, user_profile,
-    welcome,
+    backup_keys, chat, login, messaging_relays, new_account, onboarding, preferences, sidebar,
+    startup, user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -339,9 +339,13 @@ impl ChatSpace {
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let need_backup = Identity::read_global(cx).need_backup();
+        let relay_ready = Identity::read_global(cx).relay_ready();
 
         h_flex()
             .gap_1()
+            .when_some(relay_ready, |this, status| {
+                this.when(!status, |this| this.child(messaging_relays::relay_button()))
+            })
             .when_some(need_backup, |this, keys| {
                 this.child(backup_keys::backup_button(keys.to_owned()))
             })

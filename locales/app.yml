@@ -127,12 +127,20 @@ login:
     en: "Logging in..."
 
 relays:
+  button_label:
+    en: "Configure your relays to receive messages"
+  modal_title:
+    en: "Set Up Messaging Relays"
   description:
-    en: "In order to receive messages from others, you need to setup at least one Messaging Relay. You can use the recommend relays or add more."
+    en: "In order to receive messages from others, you need to setup at least one Messaging Relay."
   add_some_relays:
     en: "Please add some relays."
   invalid:
     en: "Relay URL is not valid."
+  empty:
+    en: "You need to add at least 1 relay to receive messages"
+  recommended:
+    en: "Recommend:"
 
 subject:
   title:
@@ -211,8 +219,6 @@ profile:
     en: "No bio."
 
 preferences:
-  modal_relays_title:
-    en: "Edit your Messaging Relays"
   media_description:
     en: "Coop currently only supports NIP-96 media servers."
   backup_description:

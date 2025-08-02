@@ -31,7 +31,8 @@ impl Global for GlobalIdentity {}
 
 pub struct Identity {
     public_key: Option<PublicKey>,
-    auto_logging_in_progress: bool,
+    logging_in: bool,
+    relay_ready: Option<bool>,
     need_backup: Option<Keys>,
     need_onboarding: bool,
     #[allow(dead_code)]
@@ -68,16 +69,17 @@ impl Identity {
                     this.set_logging_in(true, cx);
                     this.load(window, cx);
                 } else {
-                    this.set_public_key(None, cx);
+                    this.set_public_key(None, window, cx);
                 }
             }),
         );
 
         Self {
             public_key: None,
-            auto_logging_in_progress: false,
+            relay_ready: None,
             need_backup: None,
             need_onboarding: false,
+            logging_in: false,
             subscriptions,
         }
     }
@@ -109,8 +111,11 @@ impl Identity {
                 })
                 .ok();
             } else {
-                this.update(cx, |this, cx| {
-                    this.set_public_key(None, cx);
+                cx.update(|window, cx| {
+                    this.update(cx, |this, cx| {
+                        this.set_public_key(None, window, cx);
+                    })
+                    .ok();
                 })
                 .ok();
             }
@@ -133,19 +138,24 @@ impl Identity {
             Ok(())
         });
 
-        cx.spawn_in(window, async move |this, cx| match task.await {
-            Ok(_) => {
-                this.update(cx, |this, cx| {
-                    this.set_public_key(None, cx);
-                })
-                .ok();
-            }
-            Err(e) => {
-                cx.update(|window, cx| {
-                    window.push_notification(Notification::error(e.to_string()), cx);
-                })
-                .ok();
-            }
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(_) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.set_public_key(None, window, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    })
+                    .ok();
+                }
+            };
         })
         .detach();
     }
@@ -162,13 +172,13 @@ impl Identity {
                 self.login_with_bunker(uri, window, cx);
             } else {
                 window.push_notification(Notification::error("Bunker URI is invalid"), cx);
-                self.set_public_key(None, cx);
+                self.set_public_key(None, window, cx);
             }
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(secret) {
             self.login_with_keys(enc, window, cx);
         } else {
             window.push_notification(Notification::error("Secret Key is invalid"), cx);
-            self.set_public_key(None, cx);
+            self.set_public_key(None, window, cx);
         }
     }
 
@@ -186,7 +196,7 @@ impl Identity {
                 Notification::error("Bunker URI is invalid").title("Nostr Connect"),
                 cx,
             );
-            self.set_public_key(None, cx);
+            self.set_public_key(None, window, cx);
             return;
         };
         // Automatically open auth url
@@ -208,7 +218,7 @@ impl Identity {
                     cx.update(|window, cx| {
                         window.push_notification(Notification::error(e.to_string()), cx);
                         this.update(cx, |this, cx| {
-                            this.set_public_key(None, cx);
+                            this.set_public_key(None, window, cx);
                         })
                         .ok();
                     })
@@ -243,10 +253,10 @@ impl Identity {
                 .show_close(false)
                 .keyboard(false)
                 .confirm()
-                .on_cancel(move |_, _window, cx| {
+                .on_cancel(move |_, window, cx| {
                     entity
                         .update(cx, |this, cx| {
-                            this.set_public_key(None, cx);
+                            this.set_public_key(None, window, cx);
                         })
                         .ok();
                     // Close modal
@@ -345,8 +355,10 @@ impl Identity {
         let task: Task<Result<PublicKey, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let public_key = signer.get_public_key().await?;
+
             // Update signer
             client.set_signer(signer).await;
+
             // Subscribe for user metadata
             Self::subscribe(client, public_key).await?;
 
@@ -356,8 +368,11 @@ impl Identity {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(public_key) => {
-                    this.update(cx, |this, cx| {
-                        this.set_public_key(Some(public_key), cx);
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.set_public_key(Some(public_key), window, cx);
+                        })
+                        .ok();
                     })
                     .ok();
                 }
@@ -422,10 +437,13 @@ impl Identity {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(public_key) => {
-                    this.update(cx, |this, cx| {
-                        this.set_public_key(Some(public_key), cx);
-                        this.set_need_backup(Some(keys), cx);
-                        this.set_need_onboarding(cx);
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.set_public_key(Some(public_key), window, cx);
+                            this.set_need_backup(Some(keys), cx);
+                            this.set_need_onboarding(cx);
+                        })
+                        .ok();
                     })
                     .ok();
                 }
@@ -440,6 +458,7 @@ impl Identity {
         .detach();
     }
 
+    /// Clear the user's need backup status
     pub fn clear_need_backup(&mut self, password: String, cx: &mut Context<Self>) {
         if let Some(keys) = self.need_backup.as_ref() {
             // Encrypt the keys then writing them to keychain
@@ -450,24 +469,29 @@ impl Identity {
         }
     }
 
+    /// Set the user's need backup status
     pub(crate) fn set_need_backup(&mut self, keys: Option<Keys>, cx: &mut Context<Self>) {
         self.need_backup = keys;
         cx.notify();
     }
 
+    /// Set the user's need onboarding status
     pub(crate) fn set_need_onboarding(&mut self, cx: &mut Context<Self>) {
         self.need_onboarding = true;
         cx.notify();
     }
 
+    /// Returns true if the user needs backup their keys
     pub fn need_backup(&self) -> Option<&Keys> {
         self.need_backup.as_ref()
     }
 
+    /// Returns true if the user needs onboarding
     pub fn need_onboarding(&self) -> bool {
         self.need_onboarding
     }
 
+    /// Writes the bunker uri to the database
     pub fn write_bunker(&self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
         let mut value = uri.to_string();
 
@@ -499,6 +523,7 @@ impl Identity {
         .detach();
     }
 
+    /// Writes the keys to the database
     pub fn write_keys(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {
         let keys = keys.to_owned();
         let public_key = keys.public_key();
@@ -525,9 +550,61 @@ impl Identity {
         .detach();
     }
 
-    pub(crate) fn set_public_key(&mut self, public_key: Option<PublicKey>, cx: &mut Context<Self>) {
+    fn verify_dm_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(public_key) = self.public_key() else {
+            return;
+        };
+
+        let task: Task<bool> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
+
+            let Ok(events) = client.database().query(filter).await else {
+                return false;
+            };
+
+            let Some(event) = events.first() else {
+                return false;
+            };
+
+            let relays: Vec<RelayUrl> = event
+                .tags
+                .filter(TagKind::Relay)
+                .filter_map(|tag| RelayUrl::parse(tag.content()?).ok())
+                .collect();
+
+            !relays.is_empty()
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            log::info!("result: {result}");
+
+            this.update(cx, |this, cx| {
+                this.relay_ready = Some(result);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Sets the public key of the identity
+    pub(crate) fn set_public_key(
+        &mut self,
+        public_key: Option<PublicKey>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.public_key = public_key;
         cx.notify();
+        // Run verify user's dm relays task
+        cx.defer_in(window, |this, window, cx| {
+            this.verify_dm_relays(window, cx);
+        });
     }
 
     /// Returns the current identity's public key
@@ -540,12 +617,18 @@ impl Identity {
         self.public_key.is_some()
     }
 
-    pub fn logging_in(&self) -> bool {
-        self.auto_logging_in_progress
+    pub fn relay_ready(&self) -> Option<bool> {
+        self.relay_ready
     }
 
+    /// Returns true if the identity is currently logging in
+    pub fn logging_in(&self) -> bool {
+        self.logging_in
+    }
+
+    /// Sets the logging in status of the identity
     pub(crate) fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.auto_logging_in_progress = status;
+        self.logging_in = status;
         cx.notify();
     }
 

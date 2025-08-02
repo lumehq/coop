@@ -21,7 +21,7 @@ pub fn backup_button(keys: Keys) -> impl IntoElement {
         Button::new("backup")
             .icon(IconName::Info)
             .label(t!("new_account.backup_label"))
-            .warning()
+            .danger()
             .xsmall()
             .rounded(ButtonRounded::Full)
             .on_click(move |_, window, cx| {
