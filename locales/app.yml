@@ -128,19 +128,19 @@ login:
 
 relays:
   button_label:
-    en: "Configure your relays to receive messages"
+    en: "Configure the Messaging Relays to receive messages"
   modal_title:
     en: "Set Up Messaging Relays"
   description:
-    en: "In order to receive messages from others, you need to setup at least one Messaging Relay."
+    en: "In order to receive messages from others, you need to set up at least one Messaging Relay."
   add_some_relays:
     en: "Please add some relays."
   invalid:
     en: "Relay URL is not valid."
   empty:
-    en: "You need to add at least 1 relay to receive messages"
+    en: "You need to add at least 1 relay to receive messages."
   recommended:
-    en: "Recommend:"
+    en: "Recommended:"
 
 subject:
   title:
