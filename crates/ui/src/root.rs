@@ -1,10 +1,11 @@
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, AnyView, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    ParentElement as _, Render, Styled, Window,
+    div, AnyView, App, AppContext, Context, Decorations, Entity, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement as _, Render, Styled, Window,
 };
-use theme::ActiveTheme;
+use theme::{ActiveTheme, CLIENT_SIDE_DECORATION_ROUNDING};
 
 use crate::input::InputState;
 use crate::modal::Modal;
@@ -257,11 +258,29 @@ impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let base_font_size = cx.theme().font_size;
         let font_family = cx.theme().font_family.clone();
+        let decorations = window.window_decorations();
+
         window.set_rem_size(base_font_size);
 
         window_border().child(
             div()
                 .id("root")
+                .map(|this| match decorations {
+                    Decorations::Server => this,
+                    Decorations::Client { tiling, .. } => this
+                        .when(!(tiling.top || tiling.right), |el| {
+                            el.rounded_tr(CLIENT_SIDE_DECORATION_ROUNDING)
+                        })
+                        .when(!(tiling.top || tiling.left), |el| {
+                            el.rounded_tl(CLIENT_SIDE_DECORATION_ROUNDING)
+                        })
+                        .when(!(tiling.bottom || tiling.right), |el| {
+                            el.rounded_br(CLIENT_SIDE_DECORATION_ROUNDING)
+                        })
+                        .when(!(tiling.bottom || tiling.left), |el| {
+                            el.rounded_bl(CLIENT_SIDE_DECORATION_ROUNDING)
+                        }),
+                })
                 .relative()
                 .size_full()
                 .font_family(font_family)

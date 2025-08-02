@@ -11,7 +11,7 @@ use gpui::{
     EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use identity::Identity;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -53,8 +53,11 @@ impl Login {
         let key_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
 
-        let relay_input =
-            cx.new(|cx| InputState::new(window, cx).default_value(NOSTR_CONNECT_RELAY));
+        let relay_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(NOSTR_CONNECT_RELAY)
+                .placeholder(NOSTR_CONNECT_RELAY)
+        });
 
         // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
         //
@@ -556,12 +559,12 @@ impl Render for Login {
                                             .text_xl()
                                             .font_semibold()
                                             .line_height(relative(1.3))
-                                            .child(SharedString::new(t!("login.title"))),
+                                            .child(shared_t!("login.title")),
                                     )
                                     .child(
                                         div()
                                             .text_color(cx.theme().text_muted)
-                                            .child(SharedString::new(t!("login.key_description"))),
+                                            .child(shared_t!("login.key_description")),
                                     ),
                             )
                             .child(
@@ -581,13 +584,12 @@ impl Render for Login {
                                             })),
                                     )
                                     .when_some(self.countdown.read(cx).as_ref(), |this, i| {
-                                        let msg = t!("login.approve_message", i = i);
                                         this.child(
                                             div()
                                                 .text_xs()
                                                 .text_center()
                                                 .text_color(cx.theme().text_muted)
-                                                .child(SharedString::new(msg)),
+                                                .child(shared_t!("login.approve_message", i = i)),
                                         )
                                     })
                                     .when_some(self.error.read(cx).clone(), |this, error| {
@@ -603,89 +605,90 @@ impl Render for Login {
                     ),
             )
             .child(
-                div()
-                    .h_full()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(cx.theme().surface_background)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .justify_center()
-                            .gap_3()
-                            .text_center()
-                            .child(
-                                div()
-                                    .text_center()
-                                    .child(
-                                        div()
-                                            .font_semibold()
-                                            .line_height(relative(1.2))
-                                            .text_color(cx.theme().text)
-                                            .child(SharedString::new(t!("login.nostr_connect"))),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(SharedString::new(t!("login.scan_qr"))),
-                                    ),
-                            )
-                            .when_some(self.qr_image.read(cx).clone(), |this, qr| {
-                                this.child(
+                div().flex_1().p_1().child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(cx.theme().surface_background)
+                        .rounded(cx.theme().radius)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .justify_center()
+                                .gap_3()
+                                .text_center()
+                                .child(
                                     div()
-                                        .id("")
-                                        .mb_2()
-                                        .p_2()
-                                        .size_72()
+                                        .text_center()
+                                        .child(
+                                            div()
+                                                .font_semibold()
+                                                .line_height(relative(1.2))
+                                                .text_color(cx.theme().text)
+                                                .child(shared_t!("login.nostr_connect")),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().text_muted)
+                                                .child(shared_t!("login.scan_qr")),
+                                        ),
+                                )
+                                .when_some(self.qr_image.read(cx).clone(), |this, qr| {
+                                    this.child(
+                                        div()
+                                            .id("")
+                                            .mb_2()
+                                            .p_2()
+                                            .size_72()
+                                            .flex()
+                                            .flex_col()
+                                            .items_center()
+                                            .justify_center()
+                                            .gap_2()
+                                            .rounded_2xl()
+                                            .shadow_md()
+                                            .when(cx.theme().mode.is_dark(), |this| {
+                                                this.shadow_none()
+                                                    .border_1()
+                                                    .border_color(cx.theme().border)
+                                            })
+                                            .bg(cx.theme().background)
+                                            .child(img(qr).h_64())
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                                    this.connection_string.read(cx).to_string(),
+                                                ));
+                                                window.push_notification(t!("common.copied"), cx);
+                                            })),
+                                    )
+                                })
+                                .child(
+                                    div()
+                                        .w_full()
                                         .flex()
-                                        .flex_col()
                                         .items_center()
                                         .justify_center()
-                                        .gap_2()
-                                        .rounded_2xl()
-                                        .shadow_md()
-                                        .when(cx.theme().mode.is_dark(), |this| {
-                                            this.shadow_none()
-                                                .border_1()
-                                                .border_color(cx.theme().border)
-                                        })
-                                        .bg(cx.theme().background)
-                                        .child(img(qr).h_64())
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            cx.write_to_clipboard(ClipboardItem::new_string(
-                                                this.connection_string.read(cx).to_string(),
-                                            ));
-                                            window.push_notification(
-                                                t!("common.copied").to_string(),
-                                                cx,
-                                            );
-                                        })),
-                                )
-                            })
-                            .child(
-                                div()
-                                    .w_full()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_1()
-                                    .child(TextInput::new(&self.relay_input).xsmall())
-                                    .child(
-                                        Button::new("change")
-                                            .label(t!("common.change"))
-                                            .ghost()
-                                            .xsmall()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.change_relay(window, cx);
-                                            })),
-                                    ),
-                            ),
-                    ),
+                                        .gap_1()
+                                        .child(TextInput::new(&self.relay_input).xsmall())
+                                        .child(
+                                            Button::new("change")
+                                                .label(t!("common.change"))
+                                                .ghost()
+                                                .xsmall()
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.change_relay(window, cx);
+                                                    },
+                                                )),
+                                        ),
+                                ),
+                        ),
+                ),
             )
     }
 }

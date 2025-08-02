@@ -5,24 +5,40 @@ common:
     en: "Add"
   update:
     en: "Update"
+  upload:
+    en: "Upload"
   change:
     en: "Change"
   continue:
     en: "Continue"
+  pubkey:
+    en: "Public Key"
   pubkey_invalid:
     en: "Public Key is not valid"
+  secret:
+    en: "Secret Key"
   not_found:
     en: "Not Found"
   room_error:
     en: "Failed to open room. Please try again later."
+  preferences:
+    en: "Preferences"
   allow:
     en: "Allow"
-  logout:
-    en: "Logout"
   copied:
     en: "Copied"
+  saved:
+    en: "Your Secret Key has been saved"
   clear:
     en: "Clear"
+
+user:
+  dark_mode:
+    en: "Dark Mode"
+  settings:
+    en: "Settings"
+  sign_out:
+    en: "Sign out"
 
 welcome:
   title:
@@ -41,6 +57,12 @@ onboarding:
     en: "Already have an account? Log in."
 
 startup:
+  client_keys_warning:
+    en: "Warning"
+  client_keys_desc:
+    en: "Allow Coop to read the client keys stored in Keychain to continue"
+  create_new_keys:
+    en: "Create New Keys"
   auto_login_in_progress:
     en: "Auto login in progress"
   stuck:
@@ -50,11 +72,23 @@ startup:
 
 new_account:
   title:
-    en: "Create New Account"
-  password_invalid:
-    en: "Password is invalid"
-  set_password_prompt:
-    en: "Set password to encrypt your key *"
+    en: "Create a new identity"
+  name:
+    en: "What should people call you?"
+  avatar:
+    en: "Choose an avatar to help people recognize you"
+  backup_label:
+    en: "Backup to avoid losing access to your account"
+  backup_description:
+    en: "In the Nostr Network, your account is defined by a Secret Key. This key is used to sign your messages and identify you."
+  backup_pubkey_note:
+    en: "Your Public Key is the address that others will use to find you on the Nostr Network."
+  backup_secret_note:
+    en: "Your Secret Key is required to access your account. If you lose it, you will lose access to your account."
+  backup_skip:
+    en: "Do it later"
+  backup_download:
+    en: "Download"
 
 login:
   title:
@@ -92,27 +126,21 @@ login:
   logging_in:
     en: "Logging in..."
 
-chatspace:
-  create_new_keys:
-    en: "Create New Keys"
-  appearance_tooltip:
-    en: "Change the app's appearance"
-  preferences_title:
-    en: "Preferences"
-  preferences_tooltip:
-    en: "Open Preferences"
-  languages_tooltip:
-    en: "Change the app's language"
-  share_profile:
-    en: "Share Profile"
-
 relays:
+  button_label:
+    en: "Configure the Messaging Relays to receive messages"
+  modal_title:
+    en: "Set Up Messaging Relays"
   description:
-    en: "In order to receive messages from others, you need to setup at least one Messaging Relay. You can use the recommend relays or add more."
+    en: "In order to receive messages from others, you need to set up at least one Messaging Relay."
   add_some_relays:
     en: "Please add some relays."
   invalid:
     en: "Relay URL is not valid."
+  empty:
+    en: "You need to add at least 1 relay to receive messages."
+  recommended:
+    en: "Recommended:"
 
 subject:
   title:
@@ -191,16 +219,14 @@ profile:
     en: "No bio."
 
 preferences:
-  modal_relays_title:
-    en: "Edit your Messaging Relays"
   media_description:
-    en: "Coop currently only supports NIP-96 media servers. If you're unsure, please keep the default value."
+    en: "Coop currently only supports NIP-96 media servers."
   backup_description:
-    en: "When you send a message, Coop will also send it to your configured Messaging Relays. You can disable this if you want all sent messages to disappear when you log out."
+    en: "When you send a message, Coop will also forward it to your configured Messaging Relays. Disabling this will cause all messages sent during the current session to disappear when the app is closed."
   screening_description:
-    en: "When opening a chat request, Coop will show a popup to help users verify the sender."
+    en: "When opening a chat request, Coop will show a popup to help you verify the sender."
   bypass_description:
-    en: "Requests from user's contacts will automatically go to inbox."
+    en: "Requests from your contacts will automatically go to inbox."
   hide_avatar_description:
     en: "Unload all avatar pictures to improve performance and reduce memory usage."
   proxy_description:
@@ -304,7 +330,7 @@ sidebar:
   trusted_contacts_tooltip:
     en: "Only show rooms from trusted contacts"
   retrieving_messages:
-    en: "Retrieving messages..."
+    en: "Retrieving messages"
   retrieving_messages_description:
     en: "This may take some time"
   why_seeing_this_tooltip:

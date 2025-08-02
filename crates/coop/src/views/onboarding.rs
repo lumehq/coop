@@ -15,7 +15,7 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::checkbox::Checkbox;
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
@@ -244,12 +244,13 @@ impl Render for Onboarding {
                                 }),
                         )
                         .child(
-                            div().w_24().absolute().bottom_4().right_4().child(
-                                Button::new("unload")
+                            div().w_24().absolute().bottom_2().right_2().child(
+                                Button::new("logout")
                                     .icon(IconName::Logout)
-                                    .label(SharedString::new(t!("common.logout")))
-                                    .ghost()
-                                    .small()
+                                    .label(SharedString::new(t!("user.sign_out")))
+                                    .danger()
+                                    .xsmall()
+                                    .rounded(ButtonRounded::Full)
                                     .disabled(self.loading)
                                     .on_click(|_, window, cx| {
                                         Identity::global(cx).update(cx, |this, cx| {

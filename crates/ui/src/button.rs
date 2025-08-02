@@ -8,7 +8,7 @@ use theme::ActiveTheme;
 
 use crate::indicator::Indicator;
 use crate::tooltip::Tooltip;
-use crate::{Disableable, Icon, Selectable, Sizable, Size, StyledExt};
+use crate::{h_flex, Disableable, Icon, Selectable, Sizable, Size, StyledExt};
 
 pub enum ButtonRounded {
     Normal,
@@ -48,7 +48,12 @@ pub trait ButtonVariants: Sized {
 
     /// With the ghost style for the Button.
     fn ghost(self) -> Self {
-        self.with_variant(ButtonVariant::Ghost)
+        self.with_variant(ButtonVariant::Ghost { alt: false })
+    }
+
+    /// With the ghost style for the Button.
+    fn ghost_alt(self) -> Self {
+        self.with_variant(ButtonVariant::Ghost { alt: true })
     }
 
     /// With the transparent style for the Button.
@@ -100,7 +105,7 @@ pub enum ButtonVariant {
     Secondary,
     Danger,
     Warning,
-    Ghost,
+    Ghost { alt: bool },
     Transparent,
     Custom(ButtonCustomVariant),
 }
@@ -118,19 +123,26 @@ type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>
 pub struct Button {
     pub base: Div,
     id: ElementId,
+
     icon: Option<Icon>,
     label: Option<SharedString>,
+    tooltip: Option<SharedString>,
     children: Vec<AnyElement>,
-    disabled: bool,
+
     variant: ButtonVariant,
     rounded: ButtonRounded,
     size: Size,
+
+    disabled: bool,
     reverse: bool,
     bold: bool,
-    tooltip: Option<SharedString>,
-    on_click: OnClick,
+    cta: bool,
+
     loading: bool,
     loading_icon: Option<Icon>,
+
+    on_click: OnClick,
+
     pub(crate) selected: bool,
     pub(crate) stop_propagation: bool,
 }
@@ -159,6 +171,7 @@ impl Button {
             loading: false,
             reverse: false,
             bold: false,
+            cta: false,
             children: Vec::new(),
             loading_icon: None,
         }
@@ -200,26 +213,36 @@ impl Button {
         self
     }
 
+    /// Set bold the button (label will be use the semi-bold font).
     pub fn bold(mut self) -> Self {
         self.bold = true;
         self
     }
 
-    pub fn on_click(
-        mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_click = Some(Box::new(handler));
+    /// Set the cta style of the button.
+    pub fn cta(mut self) -> Self {
+        self.cta = true;
         self
     }
 
+    /// Set the stop propagation of the button.
     pub fn stop_propagation(mut self, val: bool) -> Self {
         self.stop_propagation = val;
         self
     }
 
+    /// Set the loading icon of the button.
     pub fn loading_icon(mut self, icon: impl Into<Icon>) -> Self {
         self.loading_icon = Some(icon.into());
+        self
+    }
+
+    /// Set the click handler of the button.
+    pub fn on_click<C>(mut self, handler: C) -> Self
+    where
+        C: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    {
+        self.on_click = Some(Box::new(handler));
         self
     }
 }
@@ -280,7 +303,7 @@ impl RenderOnce for Button {
         let normal_style = style.normal(window, cx);
         let icon_size = match self.size {
             Size::Size(v) => Size::Size(v * 0.75),
-            Size::Medium => Size::Small,
+            Size::Large => Size::Medium,
             _ => self.size,
         };
 
@@ -300,25 +323,67 @@ impl RenderOnce for Button {
                     // Icon Button
                     match self.size {
                         Size::Size(px) => this.size(px),
-                        Size::XSmall => this.size_5(),
-                        Size::Small => this.size_6(),
-                        Size::Medium => this.size_7(),
-                        _ => this.size_9(),
+                        Size::XSmall => {
+                            if self.cta {
+                                this.w_10().h_5()
+                            } else {
+                                this.size_5()
+                            }
+                        }
+                        Size::Small => {
+                            if self.cta {
+                                this.w_12().h_6()
+                            } else {
+                                this.size_6()
+                            }
+                        }
+                        Size::Medium => {
+                            if self.cta {
+                                this.w_12().h_7()
+                            } else {
+                                this.size_7()
+                            }
+                        }
+                        _ => {
+                            if self.cta {
+                                this.w_16().h_9()
+                            } else {
+                                this.size_9()
+                            }
+                        }
                     }
                 } else {
                     // Normal Button
                     match self.size {
                         Size::Size(size) => this.px(size * 0.2),
-                        Size::XSmall => this.h_6().px_2(),
-                        Size::Small => {
+                        Size::XSmall => {
                             if self.icon.is_some() {
-                                this.h_7().pl_2().pr_3()
+                                this.h_6().pl_2().pr_2p5()
                             } else {
-                                this.h_7().px_3()
+                                this.h_6().px_2()
                             }
                         }
-                        Size::Medium => this.h_8().px_3(),
-                        Size::Large => this.h_10().px_4(),
+                        Size::Small => {
+                            if self.icon.is_some() {
+                                this.h_7().pl_2().pr_2p5()
+                            } else {
+                                this.h_7().px_2()
+                            }
+                        }
+                        Size::Medium => {
+                            if self.icon.is_some() {
+                                this.h_8().pl_3().pr_3p5()
+                            } else {
+                                this.h_8().px_3()
+                            }
+                        }
+                        Size::Large => {
+                            if self.icon.is_some() {
+                                this.h_10().px_3().pr_3p5()
+                            } else {
+                                this.h_10().px_3()
+                            }
+                        }
                     }
                 }
             })
@@ -346,17 +411,14 @@ impl RenderOnce for Button {
                     .shadow_none()
             })
             .child({
-                div()
-                    .flex()
-                    .when(self.reverse, |this| this.flex_row_reverse())
+                h_flex()
                     .id("label")
-                    .items_center()
+                    .when(self.reverse, |this| this.flex_row_reverse())
                     .justify_center()
-                    .text_sm()
                     .map(|this| match self.size {
-                        Size::XSmall => this.gap_0p5(),
-                        Size::Small => this.gap_1(),
-                        _ => this.gap_2().font_medium(),
+                        Size::XSmall => this.text_xs().gap_1(),
+                        Size::Small => this.text_sm().gap_1p5(),
+                        _ => this.text_sm().gap_2(),
                     })
                     .when(!self.loading, |this| {
                         this.when_some(self.icon, |this, icon| {
@@ -421,8 +483,15 @@ impl ButtonVariant {
             ButtonVariant::Secondary => cx.theme().elevated_surface_background,
             ButtonVariant::Danger => cx.theme().danger_background,
             ButtonVariant::Warning => cx.theme().warning_background,
+            ButtonVariant::Ghost { alt } => {
+                if *alt {
+                    cx.theme().ghost_element_background_alt
+                } else {
+                    cx.theme().ghost_element_background
+                }
+            }
             ButtonVariant::Custom(colors) => colors.color,
-            _ => cx.theme().ghost_element_background,
+            _ => gpui::transparent_black(),
         }
     }
 
@@ -433,7 +502,13 @@ impl ButtonVariant {
             ButtonVariant::Danger => cx.theme().danger_foreground,
             ButtonVariant::Warning => cx.theme().warning_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            ButtonVariant::Ghost => cx.theme().text_muted,
+            ButtonVariant::Ghost { alt } => {
+                if *alt {
+                    cx.theme().text
+                } else {
+                    cx.theme().text_muted
+                }
+            }
             ButtonVariant::Custom(colors) => colors.foreground,
         }
     }
@@ -444,14 +519,14 @@ impl ButtonVariant {
             ButtonVariant::Secondary => cx.theme().secondary_hover,
             ButtonVariant::Danger => cx.theme().danger_hover,
             ButtonVariant::Warning => cx.theme().warning_hover,
-            ButtonVariant::Ghost => cx.theme().ghost_element_hover,
+            ButtonVariant::Ghost { .. } => cx.theme().ghost_element_hover,
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.hover,
         };
 
         let fg = match self {
             ButtonVariant::Secondary => cx.theme().secondary_foreground,
-            ButtonVariant::Ghost => cx.theme().text,
+            ButtonVariant::Ghost { .. } => cx.theme().text,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
             _ => self.text_color(window, cx),
         };
@@ -465,7 +540,7 @@ impl ButtonVariant {
             ButtonVariant::Secondary => cx.theme().secondary_active,
             ButtonVariant::Danger => cx.theme().danger_active,
             ButtonVariant::Warning => cx.theme().warning_active,
-            ButtonVariant::Ghost => cx.theme().ghost_element_active,
+            ButtonVariant::Ghost { .. } => cx.theme().ghost_element_active,
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
         };
@@ -485,7 +560,7 @@ impl ButtonVariant {
             ButtonVariant::Secondary => cx.theme().secondary_selected,
             ButtonVariant::Danger => cx.theme().danger_selected,
             ButtonVariant::Warning => cx.theme().warning_selected,
-            ButtonVariant::Ghost => cx.theme().ghost_element_selected,
+            ButtonVariant::Ghost { .. } => cx.theme().ghost_element_selected,
             ButtonVariant::Transparent => gpui::transparent_black(),
             ButtonVariant::Custom(colors) => colors.active,
         };
@@ -501,7 +576,9 @@ impl ButtonVariant {
 
     fn disabled(&self, _window: &Window, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
-            ButtonVariant::Ghost => cx.theme().ghost_element_disabled,
+            ButtonVariant::Danger => cx.theme().danger_disabled,
+            ButtonVariant::Warning => cx.theme().warning_disabled,
+            ButtonVariant::Ghost { .. } => cx.theme().ghost_element_disabled,
             ButtonVariant::Secondary => cx.theme().secondary_disabled,
             _ => cx.theme().element_disabled,
         };

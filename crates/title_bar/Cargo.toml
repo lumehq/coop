@@ -1,0 +1,25 @@
+[package]
+name = "title_bar"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+common = { path = "../common" }
+theme = { path = "../theme" }
+ui = { path = "../ui" }
+
+rust-i18n.workspace = true
+i18n.workspace = true
+nostr-sdk.workspace = true
+gpui.workspace = true
+smol.workspace = true
+smallvec.workspace = true
+anyhow.workspace = true
+log.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Wdk_System_SystemServices"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linicon = "2.3.0"

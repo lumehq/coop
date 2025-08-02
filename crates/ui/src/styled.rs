@@ -18,6 +18,11 @@ pub fn v_flex() -> Div {
     div().v_flex()
 }
 
+/// Returns a `Div` as divider.
+pub fn divider(cx: &App) -> Div {
+    div().my_2().w_full().h_px().bg(cx.theme().border)
+}
+
 macro_rules! font_weight {
     ($fn:ident, $const:ident) => {
         /// [docs](https://tailwindcss.com/docs/font-weight)

@@ -27,7 +27,7 @@ pub const NIP65_RELAYS: [&str; 4] = [
 ];
 
 /// Messaging Relays. Used for new account
-pub const NIP17_RELAYS: [&str; 2] = ["wss://auth.nostr1.com", "wss://relay.0xchat.com"];
+pub const NIP17_RELAYS: [&str; 2] = ["wss://nip17.com", "wss://relay.0xchat.com"];
 
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";

@@ -45,7 +45,7 @@ impl Default for ModalButtonProps {
             ok_text: None,
             ok_variant: ButtonVariant::Primary,
             cancel_text: None,
-            cancel_variant: ButtonVariant::Ghost,
+            cancel_variant: ButtonVariant::Ghost { alt: false },
         }
     }
 }
@@ -450,12 +450,18 @@ impl RenderOnce for Modal {
                             .top(y)
                             .w(self.width)
                             .when_some(self.max_width, |this, w| this.max_w(w))
-                            .child(h_flex().h_4().px_3().justify_center().when_some(
-                                self.title,
-                                |this, title| {
-                                    this.h_12().font_semibold().text_center().child(title)
-                                },
-                            ))
+                            .child(
+                                div()
+                                    .px_2()
+                                    .h_4()
+                                    .w_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .when_some(self.title, |this, title| {
+                                        this.h_10().font_semibold().text_center().child(title)
+                                    }),
+                            )
                             .when(self.show_close, |this| {
                                 this.child(
                                     Button::new("close")

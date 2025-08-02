@@ -40,7 +40,7 @@ impl UserProfile {
         })
     }
 
-    pub fn on_load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Skip if user isn't logged in
         let Some(identity) = Identity::read_global(cx).public_key() else {
             return;
@@ -98,11 +98,6 @@ impl UserProfile {
 
     fn address(&self, cx: &Context<Self>) -> Option<String> {
         self.profile(cx).metadata().nip05
-    }
-
-    fn open_njump(&mut self, _window: &mut Window, cx: &mut App) {
-        let Ok(bech32) = self.public_key.to_bech32();
-        cx.open_url(&format!("https://njump.me/{bech32}"));
     }
 
     fn copy_pubkey(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -221,7 +216,7 @@ impl Render for UserProfile {
                                     .child(shared_bech32),
                             )
                             .child(
-                                Button::new("copy-pubkey")
+                                Button::new("copy")
                                     .icon({
                                         if self.copied {
                                             IconName::CheckCircleFill
@@ -258,15 +253,6 @@ impl Render for UserProfile {
                                     .unwrap_or(t!("profile.no_bio").to_string()),
                             ),
                     ),
-            )
-            .child(
-                Button::new("open-njump")
-                    .label(t!("profile.njump"))
-                    .primary()
-                    .small()
-                    .on_click(cx.listener(move |this, _e, window, cx| {
-                        this.open_njump(window, cx);
-                    })),
             )
     }
 }

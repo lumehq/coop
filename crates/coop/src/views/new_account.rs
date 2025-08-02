@@ -1,22 +1,24 @@
+use anyhow::anyhow;
 use common::nip96::nip96_upload;
 use global::nostr_client;
-use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten,
-    FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
-    Styled, Window,
+    div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
+    EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
+    Render, SharedString, Styled, WeakEntity, Window,
 };
+use gpui_tokio::Tokio;
 use i18n::t;
 use identity::Identity;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
 use ui::popup_menu::PopupMenu;
-use ui::{ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
@@ -25,7 +27,6 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
 pub struct NewAccount {
     name_input: Entity<InputState>,
     avatar_input: Entity<InputState>,
-    bio_input: Entity<InputState>,
     is_uploading: bool,
     is_submitting: bool,
     // Panel
@@ -46,19 +47,12 @@ impl NewAccount {
                 .placeholder(SharedString::new(t!("profile.placeholder_name")))
         });
 
-        let bio_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line()
-                .placeholder(SharedString::new(t!("profile.placeholder_bio")))
-        });
-
         let avatar_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.png"));
 
         Self {
             name_input,
             avatar_input,
-            bio_input,
             is_uploading: false,
             is_submitting: false,
             name: "New Account".into(),
@@ -69,140 +63,97 @@ impl NewAccount {
     }
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_submitting(true, cx);
+        self.submitting(true, cx);
 
+        let identity = Identity::global(cx);
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
-        let bio = self.bio_input.read(cx).value().to_string();
 
-        let mut metadata = Metadata::new().display_name(name).about(bio);
+        // Build metadata
+        let mut metadata = Metadata::new().display_name(name.clone()).name(name);
 
         if let Ok(url) = Url::parse(&avatar) {
             metadata = metadata.picture(url);
         };
 
-        let current_view = cx.entity().downgrade();
-        let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let weak_input = pwd_input.downgrade();
-
-        window.open_modal(cx, move |this, _window, _cx| {
-            let metadata = metadata.clone();
-            let weak_input = weak_input.clone();
-            let view_cancel = current_view.clone();
-
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .on_cancel(move |_, window, cx| {
-                    view_cancel
-                        .update(cx, |_this, cx| {
-                            window.push_notification(t!("new_account.password_invalid"), cx)
-                        })
-                        .ok();
-                    true
-                })
-                .on_ok(move |_, window, cx| {
-                    let metadata = metadata.clone();
-                    let value = weak_input
-                        .read_with(cx, |state, _cx| state.value().to_owned())
-                        .ok();
-
-                    if let Some(password) = value {
-                        Identity::global(cx).update(cx, |this, cx| {
-                            this.new_identity(password.to_string(), metadata, window, cx);
-                        });
-                    }
-
-                    true
-                })
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .text_sm()
-                        .child(SharedString::new(t!("new_account.set_password_prompt")))
-                        .child(TextInput::new(&pwd_input).small()),
-                )
+        identity.update(cx, |this, cx| {
+            this.new_identity(metadata, window, cx);
         });
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nip96 = AppSettings::get_media_server(cx);
-        let avatar_input = self.avatar_input.downgrade();
+        self.uploading(true, cx);
+
+        // Get the user's configured NIP96 server
+        let nip96_server = AppSettings::get_media_server(cx);
+
+        // Open native file dialog
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
         });
 
-        self.set_uploading(true, cx);
-
-        cx.spawn_in(window, async move |this, cx| {
+        let task = Tokio::spawn(cx, async move {
             match Flatten::flatten(paths.await.map_err(|e| e.into())) {
                 Ok(Some(mut paths)) => {
-                    let Some(path) = paths.pop() else {
-                        cx.update(|_, cx| {
-                            this.update(cx, |this, cx| {
-                                this.set_uploading(false, cx);
-                            })
-                            .ok();
-                        })
-                        .ok();
+                    if let Some(path) = paths.pop() {
+                        let file = fs::read(path).await?;
+                        let url = nip96_upload(nostr_client(), &nip96_server, file).await?;
 
-                        return;
-                    };
-
-                    if let Ok(file_data) = fs::read(path).await {
-                        let (tx, rx) = oneshot::channel::<Url>();
-
-                        nostr_sdk::async_utility::task::spawn(async move {
-                            if let Ok(url) = nip96_upload(nostr_client(), &nip96, file_data).await {
-                                _ = tx.send(url);
-                            }
-                        });
-
-                        if let Ok(url) = rx.await {
-                            cx.update(|window, cx| {
-                                // Stop loading spinner
-                                this.update(cx, |this, cx| {
-                                    this.set_uploading(false, cx);
-                                })
-                                .ok();
-
-                                // Set avatar input
-                                avatar_input
-                                    .update(cx, |this, cx| {
-                                        this.set_value(url.to_string(), window, cx);
-                                    })
-                                    .ok();
-                            })
-                            .ok();
-                        }
+                        Ok(url)
+                    } else {
+                        Err(anyhow!("Path not found"))
                     }
                 }
-                Ok(None) => {
-                    cx.update(|_, cx| {
+                Ok(None) => Err(anyhow!("User cancelled")),
+                Err(e) => Err(anyhow!("File dialog error: {e}")),
+            }
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match Flatten::flatten(task.await.map_err(|e| e.into())) {
+                Ok(Ok(url)) => {
+                    cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            this.set_uploading(false, cx);
+                            this.uploading(false, cx);
+                            this.avatar_input.update(cx, |this, cx| {
+                                this.set_value(url.to_string(), window, cx);
+                            });
                         })
+                        .ok();
                     })
                     .ok();
                 }
-                Err(_) => {}
+                Ok(Err(e)) => {
+                    Self::notify_error(cx, this, e.to_string());
+                }
+                Err(e) => {
+                    Self::notify_error(cx, this, e.to_string());
+                }
             }
         })
         .detach();
     }
 
-    fn set_submitting(&mut self, status: bool, cx: &mut Context<Self>) {
+    fn notify_error(cx: &mut AsyncWindowContext, entity: WeakEntity<NewAccount>, e: String) {
+        cx.update(|window, cx| {
+            entity
+                .update(cx, |this, cx| {
+                    window.push_notification(e, cx);
+                    this.uploading(false, cx);
+                })
+                .ok();
+        })
+        .ok();
+    }
+
+    fn submitting(&mut self, status: bool, cx: &mut Context<Self>) {
         self.is_submitting = status;
         cx.notify();
     }
 
-    fn set_uploading(&mut self, status: bool, cx: &mut Context<Self>) {
+    fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.is_uploading = status;
         cx.notify();
     }
@@ -243,93 +194,72 @@ impl Focusable for NewAccount {
 }
 
 impl Render for NewAccount {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
             .size_full()
             .relative()
-            .flex()
-            .flex_col()
             .items_center()
             .justify_center()
             .gap_10()
             .child(
                 div()
-                    .text_center()
                     .text_lg()
+                    .text_center()
                     .font_semibold()
                     .line_height(relative(1.3))
                     .child(SharedString::new(t!("new_account.title"))),
             )
             .child(
-                div()
-                    .w_72()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
+                v_flex()
+                    .w_96()
+                    .gap_4()
                     .child(
-                        div()
-                            .w_full()
-                            .h_32()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .justify_center()
-                            .gap_2()
-                            .map(|this| {
-                                if self.avatar_input.read(cx).value().is_empty() {
-                                    this.child(
-                                        img("brand/avatar.png")
-                                            .rounded_full()
-                                            .size_10()
-                                            .flex_shrink_0(),
-                                    )
-                                } else {
-                                    this.child(
-                                        img(self.avatar_input.read(cx).value().clone())
-                                            .rounded_full()
-                                            .size_10()
-                                            .flex_shrink_0(),
-                                    )
-                                }
-                            })
-                            .child(
-                                Button::new("upload")
-                                    .label(t!("profile.set_profile_picture"))
-                                    .icon(Icon::new(IconName::Plus))
-                                    .ghost()
-                                    .small()
-                                    .disabled(self.is_submitting)
-                                    .loading(self.is_uploading)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.upload(window, cx);
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
+                        v_flex()
                             .gap_1()
                             .text_sm()
-                            .child(SharedString::new(t!("profile.label_name")))
+                            .child(SharedString::new(t!("new_account.name")))
                             .child(TextInput::new(&self.name_input).small()),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
+                        v_flex()
                             .gap_1()
-                            .text_sm()
-                            .child(SharedString::new(t!("profile.label_bio")))
-                            .child(TextInput::new(&self.bio_input).small()),
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .child(SharedString::new(t!("new_account.avatar"))),
+                            )
+                            .child(
+                                v_flex()
+                                    .p_1()
+                                    .h_32()
+                                    .w_full()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_2()
+                                    .rounded(cx.theme().radius)
+                                    .border_1()
+                                    .border_dashed()
+                                    .border_color(cx.theme().border)
+                                    .child(
+                                        Avatar::new(self.avatar_input.read(cx).value().to_string())
+                                            .size(rems(2.25)),
+                                    )
+                                    .child(
+                                        Button::new("upload")
+                                            .icon(IconName::Plus)
+                                            .label(t!("common.upload"))
+                                            .ghost()
+                                            .small()
+                                            .rounded(ButtonRounded::Full)
+                                            .disabled(self.is_submitting)
+                                            .loading(self.is_uploading)
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.upload(window, cx);
+                                            })),
+                                    ),
+                            ),
                     )
-                    .child(
-                        div()
-                            .my_2()
-                            .w_full()
-                            .h_px()
-                            .bg(cx.theme().elevated_surface_background),
-                    )
+                    .child(divider(cx))
                     .child(
                         Button::new("submit")
                             .label(SharedString::new(t!("common.continue")))

@@ -4,9 +4,19 @@ use colors::{brand, hsl, neutral};
 use gpui::{px, App, Global, Hsla, Pixels, SharedString, Window, WindowAppearance};
 
 use crate::colors::{danger, warning};
+use crate::platform_kind::PlatformKind;
+use crate::scrollbar_mode::ScrollBarMode;
 
 mod colors;
 mod scale;
+
+pub mod platform_kind;
+pub mod scrollbar_mode;
+
+/// Defines window border radius for platforms that use client side decorations.
+pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(10.0);
+/// Defines window shadow size for platforms that use client side decorations.
+pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(10.0);
 
 pub fn init(cx: &mut App) {
     Theme::sync_system_appearance(None, cx);
@@ -21,7 +31,7 @@ pub struct ThemeColor {
     pub panel_background: Hsla,
     pub overlay: Hsla,
     pub title_bar: Hsla,
-    pub title_bar_border: Hsla,
+    pub title_bar_inactive: Hsla,
     pub window_border: Hsla,
 
     // Border colors
@@ -78,6 +88,7 @@ pub struct ThemeColor {
 
     // Ghost element colors
     pub ghost_element_background: Hsla,
+    pub ghost_element_background_alt: Hsla,
     pub ghost_element_hover: Hsla,
     pub ghost_element_active: Hsla,
     pub ghost_element_selected: Hsla,
@@ -116,7 +127,7 @@ impl ThemeColor {
             panel_background: gpui::white(),
             overlay: neutral().light_alpha().step_3(),
             title_bar: gpui::transparent_black(),
-            title_bar_border: gpui::transparent_black(),
+            title_bar_inactive: neutral().light().step_1(),
             window_border: hsl(240.0, 5.9, 78.0),
 
             border: neutral().light().step_6(),
@@ -158,16 +169,17 @@ impl ThemeColor {
             danger_disabled: danger().light_alpha().step_3(),
 
             warning_foreground: warning().light().step_12(),
-            warning_background: warning().light().step_9(),
-            warning_hover: warning().light_alpha().step_10(),
-            warning_active: warning().light().step_10(),
-            warning_selected: warning().light().step_11(),
+            warning_background: warning().light().step_3(),
+            warning_hover: warning().light_alpha().step_4(),
+            warning_active: warning().light().step_5(),
+            warning_selected: warning().light().step_5(),
             warning_disabled: warning().light_alpha().step_3(),
 
             ghost_element_background: gpui::transparent_black(),
-            ghost_element_hover: neutral().light_alpha().step_3(),
-            ghost_element_active: neutral().light_alpha().step_5(),
-            ghost_element_selected: neutral().light_alpha().step_5(),
+            ghost_element_background_alt: neutral().light().step_3(),
+            ghost_element_hover: neutral().light_alpha().step_4(),
+            ghost_element_active: neutral().light().step_5(),
+            ghost_element_selected: neutral().light().step_5(),
             ghost_element_disabled: neutral().light_alpha().step_2(),
 
             tab_inactive_background: neutral().light().step_3(),
@@ -197,7 +209,7 @@ impl ThemeColor {
             panel_background: gpui::black(),
             overlay: neutral().dark_alpha().step_3(),
             title_bar: gpui::transparent_black(),
-            title_bar_border: gpui::transparent_black(),
+            title_bar_inactive: neutral().dark().step_1(),
             window_border: hsl(240.0, 3.7, 28.0),
 
             border: neutral().dark().step_6(),
@@ -239,16 +251,17 @@ impl ThemeColor {
             danger_disabled: danger().dark_alpha().step_3(),
 
             warning_foreground: warning().dark().step_12(),
-            warning_background: warning().dark().step_9(),
-            warning_hover: warning().dark_alpha().step_10(),
-            warning_active: warning().dark().step_10(),
-            warning_selected: warning().dark().step_11(),
+            warning_background: warning().dark().step_3(),
+            warning_hover: warning().dark_alpha().step_4(),
+            warning_active: warning().dark().step_5(),
+            warning_selected: warning().dark().step_5(),
             warning_disabled: warning().dark_alpha().step_3(),
 
             ghost_element_background: gpui::transparent_black(),
-            ghost_element_hover: neutral().dark_alpha().step_3(),
-            ghost_element_active: neutral().dark_alpha().step_4(),
-            ghost_element_selected: neutral().dark_alpha().step_5(),
+            ghost_element_background_alt: neutral().dark().step_3(),
+            ghost_element_hover: neutral().dark_alpha().step_4(),
+            ghost_element_active: neutral().dark().step_5(),
+            ghost_element_selected: neutral().dark().step_5(),
             ghost_element_disabled: neutral().dark_alpha().step_2(),
 
             tab_inactive_background: neutral().dark().step_3(),
@@ -309,24 +322,6 @@ impl From<WindowAppearance> for ThemeMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum ScrollBarMode {
-    #[default]
-    Scrolling,
-    Hover,
-    Always,
-}
-
-impl ScrollBarMode {
-    pub fn is_hover(&self) -> bool {
-        matches!(self, Self::Hover)
-    }
-
-    pub fn is_always(&self) -> bool {
-        matches!(self, Self::Always)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub colors: ThemeColor,
@@ -335,6 +330,7 @@ pub struct Theme {
     pub font_size: Pixels,
     pub radius: Pixels,
     pub scrollbar_mode: ScrollBarMode,
+    pub platform_kind: PlatformKind,
 }
 
 impl Deref for Theme {
@@ -412,6 +408,7 @@ impl From<ThemeColor> for Theme {
             font_family: ".SystemUIFont".into(),
             radius: px(5.),
             scrollbar_mode: ScrollBarMode::default(),
+            platform_kind: PlatformKind::platform(),
             mode,
             colors,
         }

@@ -233,7 +233,7 @@ impl Element for Switch {
                         .when_some(self.description.clone(), |this, description| {
                             this.child(
                                 div()
-                                    .w_3_4()
+                                    .pr_2()
                                     .text_xs()
                                     .text_color(cx.theme().text_muted)
                                     .child(description),
