@@ -133,7 +133,7 @@ fn main() {
                     continue;
                 }
 
-                let duration = smol::Timer::after(Duration::from_secs(75));
+                let duration = smol::Timer::after(Duration::from_secs(30));
 
                 let recv = || async {
                     // prevent inline format
