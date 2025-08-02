@@ -32,6 +32,12 @@ common:
   clear:
     en: "Clear"
 
+auto_update:
+  updating:
+    en: "Installing the new update..."
+  updated:
+    en: "Restart to apply the new update"
+
 user:
   dark_mode:
     en: "Dark Mode"

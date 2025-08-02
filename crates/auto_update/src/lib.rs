@@ -1,182 +1,124 @@
-use std::env::consts::OS;
-use std::env::{self};
-use std::ffi::OsString;
-use std::path::PathBuf;
-
-use anyhow::{anyhow, Context as _, Error};
-use global::nostr_client;
-use gpui::{App, AppContext, Context, Entity, Global, SemanticVersion, Task};
-use nostr_sdk::prelude::*;
-use smol::fs::{self, File};
-use smol::io::AsyncWriteExt;
-use smol::process::Command;
-use tempfile::TempDir;
-
-i18n::init!();
-
-struct GlobalAutoUpdate(Entity<AutoUpdater>);
-
-impl Global for GlobalAutoUpdate {}
+use anyhow::Error;
+use cargo_packager_updater::semver::Version;
+use cargo_packager_updater::{check_update, Config, Update};
+use global::constants::{APP_PUBKEY, APP_UPDATER_ENDPOINT};
+use gpui::http_client::Url;
+use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
+use smallvec::{smallvec, SmallVec};
 
 pub fn init(cx: &mut App) {
-    let env = env!("CARGO_PKG_VERSION");
-    let current_version: SemanticVersion = env.parse().expect("Invalid version in Cargo.toml");
-
-    AutoUpdater::set_global(
-        cx.new(|_| AutoUpdater {
-            current_version,
-            status: AutoUpdateStatus::Idle,
-        }),
-        cx,
-    );
+    AutoUpdater::set_global(cx.new(AutoUpdater::new), cx);
 }
 
-struct MacOsUnmounter {
-    mount_path: PathBuf,
-}
+struct GlobalAutoUpdater(Entity<AutoUpdater>);
 
-impl Drop for MacOsUnmounter {
-    fn drop(&mut self) {
-        let unmount_output = std::process::Command::new("hdiutil")
-            .args(["detach", "-force"])
-            .arg(&self.mount_path)
-            .output();
+impl Global for GlobalAutoUpdater {}
 
-        match unmount_output {
-            Ok(output) if output.status.success() => {
-                log::info!("Successfully unmounted the disk image");
-            }
-            Ok(output) => {
-                log::error!(
-                    "Failed to unmount disk image: {:?}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            Err(error) => {
-                log::error!("Error while trying to unmount disk image: {error:?}");
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum AutoUpdateStatus {
     Idle,
     Checking,
-    Downloading,
+    Checked { update: Box<Update> },
     Installing,
-    Updated { binary_path: PathBuf },
-    Errored,
+    Updated,
+    Errored { msg: Box<String> },
 }
 
 impl AutoUpdateStatus {
+    pub fn is_updating(&self) -> bool {
+        matches!(self, Self::Checked { .. } | Self::Installing)
+    }
+
     pub fn is_updated(&self) -> bool {
-        matches!(self, Self::Updated { .. })
+        matches!(self, Self::Updated)
+    }
+
+    pub fn checked(update: Update) -> Self {
+        Self::Checked {
+            update: Box::new(update),
+        }
+    }
+
+    pub fn error(e: String) -> Self {
+        Self::Errored { msg: Box::new(e) }
     }
 }
 
-#[derive(Debug)]
 pub struct AutoUpdater {
-    status: AutoUpdateStatus,
-    current_version: SemanticVersion,
+    pub status: AutoUpdateStatus,
+    config: Config,
+    version: Version,
+    #[allow(dead_code)]
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl AutoUpdater {
+    /// Retrieve the Global Auto Updater instance
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalAutoUpdate>().0.clone()
+        cx.global::<GlobalAutoUpdater>().0.clone()
     }
 
-    pub fn set_global(auto_updater: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalAutoUpdate(auto_updater));
+    /// Retrieve the Auto Updater instance
+    pub fn read_global(cx: &App) -> &Self {
+        cx.global::<GlobalAutoUpdater>().0.read(cx)
     }
 
-    pub fn current_version(&self) -> SemanticVersion {
-        self.current_version
+    /// Set the Global Auto Updater instance
+    pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
+        cx.set_global(GlobalAutoUpdater(state));
     }
 
-    pub fn status(&self) -> AutoUpdateStatus {
-        self.status.clone()
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        let config = cargo_packager_updater::Config {
+            endpoints: vec![Url::parse(APP_UPDATER_ENDPOINT).expect("Endpoint is not valid")],
+            pubkey: String::from(APP_PUBKEY),
+            ..Default::default()
+        };
+        let version = Version::parse(env!("CARGO_PKG_VERSION")).expect("Failed to parse version");
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
+            if let Some(window) = window {
+                this.check_for_updates(window, cx);
+            }
+        }));
+
+        Self {
+            status: AutoUpdateStatus::Idle,
+            version,
+            config,
+            subscriptions,
+        }
     }
 
-    pub fn set_status(&mut self, status: AutoUpdateStatus, cx: &mut Context<Self>) {
-        self.status = status;
-        cx.notify();
-    }
+    pub fn check_for_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let config = self.config.clone();
+        let current_version = self.version.clone();
 
-    pub fn update(&mut self, event: Event, cx: &mut Context<Self>) {
+        log::info!("Checking for updates...");
         self.set_status(AutoUpdateStatus::Checking, cx);
 
-        // Extract the version from the identifier tag
-        let ident = match event.tags.identifier() {
-            Some(i) => match i.split('@').next_back() {
-                Some(i) => i,
-                None => return,
-            },
-            None => return,
-        };
-
-        // Convert the version string to a SemanticVersion
-        let new_version: SemanticVersion = ident.parse().expect("Invalid version");
-
-        // Check if the new version is the same as the current version
-        if self.current_version == new_version {
-            self.set_status(AutoUpdateStatus::Idle, cx);
-            return;
-        };
-
-        // Download the new version
-        self.set_status(AutoUpdateStatus::Downloading, cx);
-
-        let task: Task<Result<(TempDir, PathBuf), Error>> = cx.background_spawn(async move {
-            let ids = event.tags.event_ids().copied();
-            let filter = Filter::new().ids(ids).kind(Kind::FileMetadata);
-            let events = nostr_client().database().query(filter).await?;
-
-            if let Some(event) = events.into_iter().find(|event| event.content == OS) {
-                let tag = event.tags.find(TagKind::Url).context("url not found")?;
-                let url = Url::parse(tag.content().context("invalid")?)?;
-
-                let temp_dir = tempfile::Builder::new().prefix("coop-update").tempdir()?;
-                let filename = match OS {
-                    "macos" => Ok("Coop.dmg"),
-                    "linux" => Ok("Coop.tar.gz"),
-                    "windows" => Ok("CoopUpdateInstaller.exe"),
-                    _ => Err(anyhow!("not supported: {:?}", OS)),
-                }?;
-
-                let downloaded_asset = temp_dir.path().join(filename);
-                let mut target_file = File::create(&downloaded_asset).await?;
-
-                let response = reqwest::get(url).await?;
-                let mut stream = response.bytes_stream();
-
-                while let Some(item) = stream.next().await {
-                    let chunk = item?;
-                    target_file.write_all(&chunk).await?;
-                }
-
-                log::info!("downloaded update. path: {downloaded_asset:?}");
-
-                Ok((temp_dir, downloaded_asset))
+        let checking: Task<Result<Option<Update>, Error>> = cx.background_spawn(async move {
+            if let Some(update) = check_update(current_version, config)? {
+                Ok(Some(update))
             } else {
-                Err(anyhow!("Not found"))
+                Ok(None)
             }
         });
 
-        cx.spawn(async move |this, cx| {
-            if let Ok((temp_dir, downloaded_asset)) = task.await {
-                cx.update(|cx| {
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Some(update)) = checking.await {
+                cx.update(|window, cx| {
                     this.update(cx, |this, cx| {
-                        this.set_status(AutoUpdateStatus::Installing, cx);
-
-                        match OS {
-                            "macos" => this.install_release_macos(temp_dir, downloaded_asset, cx),
-                            "linux" => this.install_release_linux(temp_dir, downloaded_asset, cx),
-                            "windows" => this.install_release_windows(downloaded_asset, cx),
-                            _ => {}
-                        }
+                        this.set_status(AutoUpdateStatus::checked(update), cx);
+                        this.install_update(window, cx);
                     })
                     .ok();
+                })
+                .ok();
+            } else {
+                this.update(cx, |this, cx| {
+                    this.set_status(AutoUpdateStatus::Idle, cx);
                 })
                 .ok();
             }
@@ -184,165 +126,35 @@ impl AutoUpdater {
         .detach();
     }
 
-    fn install_release_macos(&mut self, temp_dir: TempDir, asset: PathBuf, cx: &mut Context<Self>) {
-        let running_app_path = cx.app_path().unwrap();
-        let running_app_filename = running_app_path.file_name().unwrap();
+    pub(crate) fn install_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_status(AutoUpdateStatus::Installing, cx);
 
-        let mount_path = temp_dir.path().join("Coop");
+        if let AutoUpdateStatus::Checked { update } = self.status.clone() {
+            let install: Task<Result<(), Error>> =
+                cx.background_spawn(async move { Ok(update.download_and_install()?) });
 
-        let mut mounted_app_path: OsString = mount_path.join(running_app_filename).into();
-        mounted_app_path.push("/");
-
-        let task: Task<Result<PathBuf, Error>> = cx.background_spawn(async move {
-            let output = Command::new("hdiutil")
-                .args(["attach", "-nobrowse"])
-                .arg(&asset)
-                .arg("-mountroot")
-                .arg(temp_dir.path())
-                .output()
-                .await?;
-
-            anyhow::ensure!(
-                output.status.success(),
-                "failed to mount: {:?}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-
-            // Create an MacOsUnmounter that will be dropped (and thus unmount the disk) when this function exits
-            let _unmounter = MacOsUnmounter {
-                mount_path: mount_path.clone(),
-            };
-
-            let output = Command::new("rsync")
-                .args(["-av", "--delete"])
-                .arg(&mounted_app_path)
-                .arg(&running_app_path)
-                .output()
-                .await?;
-
-            anyhow::ensure!(
-                output.status.success(),
-                "failed to copy app: {:?}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-
-            Ok(running_app_path)
-        });
-
-        cx.spawn(async move |this, cx| {
-            if let Ok(binary_path) = task.await {
-                cx.update(|cx| {
-                    this.update(cx, |this, cx| {
-                        this.status = AutoUpdateStatus::Updated { binary_path };
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .ok();
-            }
-        })
-        .detach();
+            cx.spawn_in(window, async move |this, cx| {
+                match install.await {
+                    Ok(_) => {
+                        this.update(cx, |this, cx| {
+                            this.set_status(AutoUpdateStatus::Updated, cx);
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        this.update(cx, |this, cx| {
+                            this.set_status(AutoUpdateStatus::error(e.to_string()), cx);
+                        })
+                        .ok();
+                    }
+                };
+            })
+            .detach();
+        }
     }
 
-    fn install_release_linux(&mut self, temp_dir: TempDir, asset: PathBuf, cx: &mut Context<Self>) {
-        let home_dir = PathBuf::from(env::var("HOME").unwrap());
-        let running_app_path = cx.app_path().unwrap();
-        let extracted = temp_dir.path().join("coop");
-
-        let task: Task<Result<PathBuf, Error>> = cx.background_spawn(async move {
-            fs::create_dir_all(&extracted).await?;
-
-            let output = Command::new("tar")
-                .arg("-xzf")
-                .arg(&asset)
-                .arg("-C")
-                .arg(&extracted)
-                .output()
-                .await?;
-
-            anyhow::ensure!(
-                output.status.success(),
-                "failed to extract {:?} to {:?}: {:?}",
-                asset,
-                extracted,
-                String::from_utf8_lossy(&output.stderr)
-            );
-
-            let app_folder_name: String = "coop.app".into();
-            let from = extracted.join(&app_folder_name);
-            let mut to = home_dir.join(".local");
-
-            let expected_suffix = format!("{app_folder_name}/libexec/coop");
-
-            if let Some(prefix) = running_app_path
-                .to_str()
-                .and_then(|str| str.strip_suffix(&expected_suffix))
-            {
-                to = PathBuf::from(prefix);
-            }
-
-            let output = Command::new("rsync")
-                .args(["-av", "--delete"])
-                .arg(&from)
-                .arg(&to)
-                .output()
-                .await?;
-
-            anyhow::ensure!(
-                output.status.success(),
-                "failed to copy Coop update from {:?} to {:?}: {:?}",
-                from,
-                to,
-                String::from_utf8_lossy(&output.stderr)
-            );
-
-            Ok(to.join(expected_suffix))
-        });
-
-        cx.spawn(async move |this, cx| {
-            if let Ok(binary_path) = task.await {
-                cx.update(|cx| {
-                    this.update(cx, |this, cx| {
-                        this.status = AutoUpdateStatus::Updated { binary_path };
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
-    fn install_release_windows(&mut self, asset: PathBuf, cx: &mut Context<Self>) {
-        let task: Task<Result<PathBuf, Error>> = cx.background_spawn(async move {
-            let output = Command::new(asset)
-                .arg("/verysilent")
-                .arg("/update=true")
-                .arg("!desktopicon")
-                .arg("!quicklaunchicon")
-                .output()
-                .await?;
-            anyhow::ensure!(
-                output.status.success(),
-                "failed to start installer: {:?}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            Ok(std::env::current_exe()?)
-        });
-
-        cx.spawn(async move |this, cx| {
-            if let Ok(binary_path) = task.await {
-                cx.update(|cx| {
-                    this.update(cx, |this, cx| {
-                        this.status = AutoUpdateStatus::Updated { binary_path };
-                        cx.notify();
-                    })
-                    .ok();
-                })
-                .ok();
-            }
-        })
-        .detach();
+    fn set_status(&mut self, status: AutoUpdateStatus, cx: &mut Context<Self>) {
+        self.status = status;
+        cx.notify();
     }
 }

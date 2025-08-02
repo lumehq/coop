@@ -31,9 +31,6 @@ pub enum NostrSignal {
 
     /// Notice from Relay Pool
     Notice(String),
-
-    /// Application update event received
-    AppUpdate(Event),
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();

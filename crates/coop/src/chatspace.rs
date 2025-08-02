@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
+use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
 use common::display::DisplayProfile;
 use global::constants::DEFAULT_SIDEBAR_WIDTH;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     actions, div, px, rems, Action, App, AppContext, Axis, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use identity::Identity;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
@@ -275,7 +277,7 @@ impl ChatSpace {
         });
     }
 
-    pub fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
         let view = preferences::init(window, cx);
         let title = SharedString::new(t!("common.preferences"));
 
@@ -341,8 +343,39 @@ impl ChatSpace {
         let need_backup = Identity::read_global(cx).need_backup();
         let relay_ready = Identity::read_global(cx).relay_ready();
 
+        let updating = AutoUpdater::read_global(cx).status.is_updating();
+        let updated = AutoUpdater::read_global(cx).status.is_updated();
+
         h_flex()
             .gap_1()
+            .when(updating, |this| {
+                this.child(
+                    h_flex()
+                        .h_6()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .bg(cx.theme().ghost_element_background_alt)
+                        .child(shared_t!("auto_update.updating")),
+                )
+            })
+            .when(updated, |this| {
+                this.child(
+                    h_flex()
+                        .id("updated")
+                        .h_6()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .bg(cx.theme().ghost_element_background_alt)
+                        .hover(|this| this.bg(cx.theme().ghost_element_hover))
+                        .active(|this| this.bg(cx.theme().ghost_element_active))
+                        .child(shared_t!("auto_update.updated"))
+                        .on_click(|_, _window, cx| {
+                            cx.restart(None);
+                        }),
+                )
+            })
             .when_some(relay_ready, |this, status| {
                 this.when(!status, |this| this.child(messaging_relays::relay_button()))
             })

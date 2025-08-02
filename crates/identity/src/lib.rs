@@ -581,7 +581,6 @@ impl Identity {
 
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
-            log::info!("result: {result}");
 
             this.update(cx, |this, cx| {
                 this.relay_ready = Some(result);

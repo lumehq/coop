@@ -8,13 +8,11 @@ publish.workspace = true
 common = { path = "../common" }
 global = { path = "../global" }
 
-rust-i18n.workspace = true
-i18n.workspace = true
 gpui.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 smol.workspace = true
-reqwest.workspace = true
 log.workspace = true
+smallvec.workspace = true
 
-tempfile = "3.19.1"
+cargo-packager-updater = "0.2.3"

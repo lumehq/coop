@@ -4,9 +4,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use assets::Assets;
-use auto_update::AutoUpdater;
 use global::constants::{
-    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, APP_PUBKEY, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
+    ALL_MESSAGES_SUB_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_SUB_ID, SEARCH_RELAYS,
 };
 use global::{nostr_client, NostrSignal};
@@ -53,11 +52,6 @@ fn main() {
             // Subscribe for app updates from the bootstrap relays.
             if let Err(e) = connect(client).await {
                 log::error!("Failed to connect to bootstrap relays: {e}");
-            }
-
-            // Connect to bootstrap relays.
-            if let Err(e) = subscribe_for_app_updates(client).await {
-                log::error!("Failed to subscribe for app updates: {e}");
             }
 
             // Handle Nostr notifications.
@@ -250,7 +244,6 @@ fn main() {
                     while let Ok(signal) = signal_rx.recv().await {
                         cx.update(|window, cx| {
                             let registry = Registry::global(cx);
-                            let auto_updater = AutoUpdater::global(cx);
                             let identity = Identity::read_global(cx);
 
                             match signal {
@@ -292,11 +285,6 @@ fn main() {
                                 }
                                 NostrSignal::Notice(_msg) => {
                                     // window.push_notification(msg, cx);
-                                }
-                                NostrSignal::AppUpdate(event) => {
-                                    auto_updater.update(cx, |this, cx| {
-                                        this.update(event, cx);
-                                    });
                                 }
                             };
                         })
@@ -431,20 +419,6 @@ async fn handle_nostr_notifications(
                             )
                         }
                     }
-                    Kind::ReleaseArtifactSet => {
-                        let ids = event.tags.event_ids().copied();
-                        let filter = Filter::new().ids(ids).kind(Kind::FileMetadata);
-
-                        client
-                            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-                            .await
-                            .ok();
-
-                        signal_tx
-                            .send(NostrSignal::AppUpdate(event.into_owned()))
-                            .await
-                            .ok();
-                    }
                     _ => {}
                 }
             }
@@ -456,27 +430,6 @@ async fn handle_nostr_notifications(
             _ => {}
         }
     }
-
-    Ok(())
-}
-
-async fn subscribe_for_app_updates(client: &Client) -> Result<(), Error> {
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
-    let coordinate = Coordinate {
-        kind: Kind::Custom(32267),
-        public_key: PublicKey::from_hex(APP_PUBKEY).expect("App Pubkey is invalid"),
-        identifier: APP_ID.into(),
-    };
-
-    let filter = Filter::new()
-        .kind(Kind::ReleaseArtifactSet)
-        .coordinate(&coordinate)
-        .limit(1);
-
-    client
-        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-        .await?;
 
     Ok(())
 }
