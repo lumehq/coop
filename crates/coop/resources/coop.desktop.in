@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=$APP_NAME
+GenericName=Chat Application
+Comment=Chat Freely, Stay Private on Nostr.
+TryExec=$APP_CLI
+StartupNotify=$DO_STARTUP_NOTIFY
+Exec=$APP_CLI $APP_ARGS
+Icon=$APP_ICON
+Categories=Network;InstantMessaging;
+Keywords=chat;messaging;nostr;privacy;
+MimeType=x-scheme-handler/nostr;x-scheme-handler/coop;
+Actions=NewChat;

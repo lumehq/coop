@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+# Function for displaying help info
+help_info() {
+  echo "
+Usage: ${0##*/} [options]
+Build a release .tar.gz for Linux.
+
+Options:
+  -h, --help     Display this help and exit.
+  --flatpak      Set COOP_BUNDLE_TYPE=flatpak so that this can be included in system info
+  "
+}
+
+# Parse all arguments manually
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            help_info
+            exit 0
+            ;;
+        --flatpak)
+            export COOP_BUNDLE_TYPE=flatpak
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            help_info
+            exit 1
+            ;;
+        *)
+            echo "Error: Unexpected argument: $1" >&2
+            help_info
+            exit 1
+            ;;
+    esac
+done
+
+export COOP_BUNDLE=true
+
+target_dir="${CARGO_TARGET_DIR:-target}"
+
+version="$(script/get-crate-version coop)"
+# Set RELEASE_VERSION so it's compiled into GPUI and it knows about the version.
+export RELEASE_VERSION="${version}"
+
+commit=$(git rev-parse HEAD | cut -c 1-7)
+
+version_info=$(rustc --version --verbose)
+host_line=$(echo "$version_info" | grep host)
+target_triple=${host_line#*: }
+musl_triple=${target_triple%-gnu}-musl
+remote_server_triple=${REMOTE_SERVER_TARGET:-"${musl_triple}"}
+rustup_installed=false
+
+if command -v rustup >/dev/null 2>&1; then
+    rustup_installed=true
+fi
+
+export CC=$(which clang)
+
+# Build binary in release mode
+export RUSTFLAGS="${RUSTFLAGS:-} -C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/../lib"
+cargo build --release --target "${target_triple}" --package coop
+
+# Strip debug symbols and save them for upload to DigitalOcean
+objcopy --only-keep-debug "${target_dir}/${target_triple}/release/coop" "${target_dir}/${target_triple}/release/coop.dbg"
+objcopy --strip-debug "${target_dir}/${target_triple}/release/coop"
+
+gzip -f "${target_dir}/${target_triple}/release/coop.dbg"
+
+# Move everything that should end up in the final package
+# into a temp directory.
+temp_dir=$(mktemp -d)
+coop_dir="${temp_dir}/coop.app"
+
+# Binary
+mkdir -p "${coop_dir}/bin" "${coop_dir}/libexec"
+cp "${target_dir}/${target_triple}/release/coop" "${coop_dir}/libexec/coop"
+cp "${target_dir}/${target_triple}/release/cli" "${coop_dir}/bin/coop"
+
+# Libs
+find_libs() {
+    ldd ${target_dir}/${target_triple}/release/coop |\
+        cut -d' ' -f3 |\
+        grep -v '\<\(libstdc++.so\|libc.so\|libgcc_s.so\|libm.so\|libpthread.so\|libdl.so\|libasound.so\)'
+}
+
+mkdir -p "${coop_dir}/lib"
+rm -rf "${coop_dir}/lib/*"
+cp $(find_libs) "${coop_dir}/lib"
+
+# Icons
+mkdir -p "${coop_dir}/share/icons/hicolor/512x512/apps"
+cp "crates/coop/resources/icon.png" "${coop_dir}/share/icons/hicolor/512x512/apps/coop.png"
+mkdir -p "${coop_dir}/share/icons/hicolor/1024x1024/apps"
+cp "crates/coop/resources/icon@2x.png" "${coop_dir}/share/icons/hicolor/1024x1024/apps/coop.png"
+
+# .desktop
+export DO_STARTUP_NOTIFY="true"
+export APP_CLI="coop"
+export APP_ICON="coop"
+export APP_ARGS="%U"
+export APP_NAME="Coop"
+
+mkdir -p "${coop_dir}/share/applications"
+envsubst < "crates/coop/resources/coop.desktop.in" > "${coop_dir}/share/applications/coop.desktop"
+
+# Create archive out of everything that's in the temp directory
+arch=$(uname -m)
+target="linux-${arch}"
+archive="coop-${target}.tar.gz"
+
+rm -rf "${archive}"
+remove_match="coop(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
+ls "${target_dir}/release" | grep -E ${remove_match} | xargs -d "\n" -I {} rm -f "${target_dir}/release/{}" || true
+tar -czvf "${target_dir}/release/$archive" -C ${temp_dir} "coop.app"

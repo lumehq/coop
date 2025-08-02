@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+shopt -s extglob
+
+script/bundle-linux --flatpak
+archive_match="zed(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
+archive=$(ls "target/release" | grep -E ${archive_match})
+
+export ARCHIVE="$archive"
+export APP_ID="dev.coop.Coop"
+export APP_NAME="Coop"
+export BRANDING_LIGHT="#99c1f1"
+export BRANDING_DARK="#1a5fb4"
+export ICON_FILE="icon"
+
+envsubst < "crates/coop/resources/flatpak/manifest-template.json" > "$APP_ID.json"
+flatpak-builder --user --install --force-clean build "$APP_ID.json"
+flatpak build-bundle ~/.local/share/flatpak/repo "target/release/$APP_ID.flatpak" "$APP_ID"
+echo "Created 'target/release/$APP_ID.flatpak'"

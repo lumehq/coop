@@ -1,0 +1,58 @@
+name: coop
+title: Coop
+base: core24
+version: "$RELEASE_VERSION"
+summary: The editor for what's next
+description: |
+  Chat Freely, Stay Private on Nostr.
+grade: stable
+confinement: classic
+compression: lzo
+website: https://coopchat.com/
+source-code: https://github.com/lumehq/coop
+issues: https://github.com/lumehq/coop/issues
+contact: https://reya.su
+
+parts:
+  coop:
+    plugin: dump
+    source: "https://github.com/lumehq/coop/releases/download/v$RELEASE_VERSION/coop-linux-x86_64.tar.gz"
+
+    organize:
+      # These renames seem to not be necessary, but it's tidier.
+      bin: usr/bin
+      libexec: usr/libexec
+
+    stage-packages:
+      - libasound2t64
+      # snapcraft has a lint that this is unused, but without it Coop exits with
+      # "Missing Vulkan entry points: LibraryLoadFailure" in blade_graphics.
+      - libvulkan1
+      # snapcraft has a lint that this is unused, but without it Coop exits with
+      # "NoWaylandLib" when run with Wayland.
+      - libwayland-client0
+      - libxcb1
+      - libxkbcommon-x11-0
+      - libxkbcommon0
+
+    build-attributes:
+      - enable-patchelf
+
+    prime:
+      # Omit unneeded files from the tarball
+      - -lib
+      - -licenses.md
+      - -share
+
+      # Omit unneeded files from stage-packages
+      - -etc
+      - -usr/share/doc
+      - -usr/share/lintian
+      - -usr/share/man
+
+apps:
+  coop:
+    command: usr/bin/coop
+    common-id: dev.coop.Coop
+    environment:
+      COOP_BUNDLE_TYPE: snap
