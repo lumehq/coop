@@ -4,10 +4,10 @@ use anyhow::{anyhow, Error};
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{
-    ACCOUNT_D, ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID, NIP17_RELAYS, NIP65_RELAYS,
+    ACCOUNT_D, ALL_MESSAGES_ID, ALL_NEWEST_MESSAGES_ID, NEW_MESSAGE_ID, NIP17_RELAYS, NIP65_RELAYS,
     NOSTR_CONNECT_TIMEOUT,
 };
-use global::nostr_client;
+use global::{is_gift_wraps_fetch_complete, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, red, App, AppContext, Context, Entity, Global, ParentElement, SharedString, Styled,
@@ -550,7 +550,7 @@ impl Identity {
         .detach();
     }
 
-    fn verify_dm_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn verify_dm_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(public_key) = self.public_key() else {
             return;
         };
@@ -632,22 +632,19 @@ impl Identity {
     }
 
     pub(crate) async fn subscribe(client: &Client, public_key: PublicKey) -> Result<(), Error> {
-        let all_messages_sub_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-        let new_messages_sub_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
+        let all_messages = SubscriptionId::new(ALL_MESSAGES_ID);
+        let all_newest_messages = SubscriptionId::new(ALL_NEWEST_MESSAGES_ID);
+        let new_messages = SubscriptionId::new(NEW_MESSAGE_ID);
+        // Subscription options
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        // Get the gift wraps fetch status
+        let is_completed = is_gift_wraps_fetch_complete();
 
         client
             .subscribe(
                 Filter::new()
                     .author(public_key)
-                    .kinds(vec![
-                        Kind::Metadata,
-                        Kind::ContactList,
-                        Kind::MuteList,
-                        Kind::SimpleGroups,
-                        Kind::InboxRelays,
-                        Kind::RelayList,
-                    ])
+                    .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::RelayList])
                     .since(Timestamp::now()),
                 None,
             )
@@ -665,15 +662,7 @@ impl Identity {
 
         client
             .subscribe_with_id(
-                all_messages_sub_id,
-                Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
-                Some(opts),
-            )
-            .await?;
-
-        client
-            .subscribe_with_id(
-                new_messages_sub_id,
+                new_messages,
                 Filter::new()
                     .kind(Kind::GiftWrap)
                     .pubkey(public_key)
@@ -681,6 +670,26 @@ impl Identity {
                 None,
             )
             .await?;
+
+        if is_completed {
+            let week_ago: u64 = 7 * 24 * 60 * 60;
+            let since = Timestamp::from_secs(Timestamp::now().as_u64() - week_ago);
+
+            let filter = Filter::new()
+                .pubkey(public_key)
+                .kind(Kind::GiftWrap)
+                .since(since);
+
+            client
+                .subscribe_with_id(all_newest_messages, filter, Some(opts))
+                .await?;
+        } else {
+            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+            client
+                .subscribe_with_id(all_messages, filter, Some(opts))
+                .await?;
+        };
 
         log::info!("Getting all user's metadata and messages...");
 

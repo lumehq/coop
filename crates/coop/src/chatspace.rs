@@ -12,9 +12,10 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use identity::Identity;
+use itertools::Itertools;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
-use registry::{Registry, RoomEmitter};
+use registry::{Registry, RegistrySignal};
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -194,7 +195,7 @@ impl ChatSpace {
                 window,
                 |this: &mut Self, _state, event, window, cx| {
                     match event {
-                        RoomEmitter::Open(room) => {
+                        RegistrySignal::Open(room) => {
                             if let Some(room) = room.upgrade() {
                                 this.dock.update(cx, |this, cx| {
                                     let panel = chat::init(room, window, cx);
@@ -209,7 +210,7 @@ impl ChatSpace {
                                 window.push_notification(t!("common.room_error"), cx);
                             }
                         }
-                        RoomEmitter::Close(..) => {
+                        RegistrySignal::Close(..) => {
                             this.dock.update(cx, |this, cx| {
                                 this.focus_tab_panel(window, cx);
 
@@ -414,6 +415,28 @@ impl ChatSpace {
                 });
             }
         }
+    }
+
+    pub(crate) fn all_panels(window: &mut Window, cx: &mut App) -> Option<Vec<u64>> {
+        let Some(Some(root)) = window.root::<Root>() else {
+            return None;
+        };
+
+        let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() else {
+            return None;
+        };
+
+        let ids = chatspace
+            .read(cx)
+            .dock
+            .read(cx)
+            .items
+            .panel_ids(cx)
+            .into_iter()
+            .filter_map(|panel| panel.parse::<u64>().ok())
+            .collect_vec();
+
+        Some(ids)
     }
 }
 

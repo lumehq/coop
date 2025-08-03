@@ -20,7 +20,7 @@ use itertools::Itertools;
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use registry::room::{Room, RoomKind};
-use registry::{Registry, RoomEmitter};
+use registry::{Registry, RegistrySignal};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -83,7 +83,7 @@ impl Sidebar {
             &chats,
             window,
             move |this, _chats, event, _window, cx| {
-                if let RoomEmitter::Request(kind) = event {
+                if let RegistrySignal::NewRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();

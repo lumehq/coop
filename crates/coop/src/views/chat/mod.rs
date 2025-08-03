@@ -21,7 +21,7 @@ use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::Message;
-use registry::room::{Room, RoomKind, SendError};
+use registry::room::{Room, RoomKind, RoomSignal, SendError};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
@@ -111,21 +111,28 @@ impl Chat {
             subscriptions.push(cx.subscribe_in(
                 &room,
                 window,
-                move |this, _, incoming, _window, cx| {
-                    // Check if the incoming message is the same as the new message created by optimistic update
-                    if this.prevent_duplicate_message(&incoming.0, cx) {
-                        return;
+                move |this, _, signal, window, cx| {
+                    match signal {
+                        RoomSignal::NewMessage(event) => {
+                            // Check if the incoming message is the same as the new message created by optimistic update
+                            if this.prevent_duplicate_message(event, cx) {
+                                return;
+                            }
+
+                            let old_len = this.messages.read(cx).len();
+                            let message = event.clone().into_rc();
+
+                            cx.update_entity(&this.messages, |this, cx| {
+                                this.extend(vec![message]);
+                                cx.notify();
+                            });
+
+                            this.list_state.splice(old_len..old_len, 1);
+                        }
+                        RoomSignal::Refresh => {
+                            this.load_messages(window, cx);
+                        }
                     }
-
-                    let old_len = this.messages.read(cx).len();
-                    let message = incoming.0.clone().into_rc();
-
-                    cx.update_entity(&this.messages, |this, cx| {
-                        this.extend(vec![message]);
-                        cx.notify();
-                    });
-
-                    this.list_state.splice(old_len..old_len, 1);
                 },
             ));
 
@@ -142,10 +149,10 @@ impl Chat {
             });
 
             Self {
+                id: room.read(cx).id.to_string().into(),
                 image_cache: RetainAllImageCache::new(cx),
                 focus_handle: cx.focus_handle(),
                 uploading: false,
-                id: room.read(cx).id.to_string().into(),
                 text_data: HashMap::new(),
                 room,
                 messages,

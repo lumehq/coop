@@ -37,9 +37,11 @@ pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 
 /// Unique ID for new message subscription.
-pub const NEW_MESSAGE_SUB_ID: &str = "listen_new_giftwraps";
+pub const NEW_MESSAGE_ID: &str = "listen_new_giftwraps";
 /// Unique ID for all messages subscription.
-pub const ALL_MESSAGES_SUB_ID: &str = "listen_all_giftwraps";
+pub const ALL_MESSAGES_ID: &str = "listen_all_giftwraps";
+/// Unique ID for all newest messages subscription.
+pub const ALL_NEWEST_MESSAGES_ID: &str = "listen_all_newest_giftwraps";
 
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 100;

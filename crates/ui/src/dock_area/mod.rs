@@ -4,7 +4,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     actions, canvas, div, px, AnyElement, AnyView, App, AppContext, Axis, Bounds, Context, Edges,
     Entity, EntityId, EventEmitter, Focusable, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, Styled, Subscription, WeakEntity, Window,
+    ParentElement as _, Pixels, Render, SharedString, Styled, Subscription, WeakEntity, Window,
 };
 
 use crate::dock_area::dock::{Dock, DockPlacement};
@@ -195,6 +195,25 @@ impl DockItem {
         }
     }
 
+    /// Returns all panel ids
+    pub fn panel_ids(&self, cx: &App) -> Vec<SharedString> {
+        match self {
+            Self::Tabs { view, .. } => view.read(cx).panel_ids(cx),
+            Self::Split { items, .. } => {
+                let mut total = vec![];
+
+                for item in items.iter() {
+                    if let DockItem::Tabs { view, .. } = item {
+                        total.extend(view.read(cx).panel_ids(cx));
+                    }
+                }
+
+                total
+            }
+            Self::Panel { .. } => vec![],
+        }
+    }
+
     /// Returns the views of the dock item.
     pub fn view(&self) -> Arc<dyn PanelView> {
         match self {
@@ -252,6 +271,7 @@ impl DockItem {
         }
     }
 
+    /// Set the collapsed state of the dock area
     pub fn set_collapsed(&self, collapsed: bool, window: &mut Window, cx: &mut App) {
         match self {
             DockItem::Tabs { view, .. } => {

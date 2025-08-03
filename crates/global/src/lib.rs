@@ -1,4 +1,3 @@
-use std::fs;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -67,7 +66,7 @@ pub fn first_run() -> &'static bool {
         let flag = support_dir().join(format!(".{}-first_run", env!("CARGO_PKG_VERSION")));
 
         if !flag.exists() {
-            if fs::write(&flag, "").is_err() {
+            if std::fs::write(&flag, "").is_err() {
                 return false;
             }
             true // First run
@@ -75,4 +74,17 @@ pub fn first_run() -> &'static bool {
             false // Not first run
         }
     })
+}
+
+pub async fn set_all_gift_wraps_fetched() {
+    let flag = support_dir().join(".fetched");
+
+    if !flag.exists() && smol::fs::write(&flag, "").await.is_err() {
+        log::error!("Failed to create full run flag");
+    }
+}
+
+pub fn is_gift_wraps_fetch_complete() -> bool {
+    let flag = support_dir().join(".fetched");
+    flag.exists()
 }

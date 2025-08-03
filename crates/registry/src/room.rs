@@ -20,7 +20,10 @@ pub(crate) const HOURS_IN_DAY: i64 = 24;
 pub(crate) const DAYS_IN_MONTH: i64 = 30;
 
 #[derive(Debug, Clone)]
-pub struct Incoming(pub Message);
+pub enum RoomSignal {
+    NewMessage(Message),
+    Refresh,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendError {
@@ -69,7 +72,7 @@ impl PartialEq for Room {
 
 impl Eq for Room {}
 
-impl EventEmitter<Incoming> for Room {}
+impl EventEmitter<RoomSignal> for Room {}
 
 impl Room {
     pub fn new(event: &Event) -> Self {
@@ -451,8 +454,14 @@ impl Room {
             .mentions(mentions)
             .build()
         {
-            cx.emit(Incoming(message));
+            cx.emit(RoomSignal::NewMessage(message));
         }
+    }
+
+    /// Emits a signal to refresh the current room's messages.
+    pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::Refresh);
+        log::info!("refresh room: {}", self.id);
     }
 
     /// Creates a temporary message for optimistic updates

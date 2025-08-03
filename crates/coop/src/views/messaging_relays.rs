@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use global::constants::{ALL_MESSAGES_SUB_ID, NEW_MESSAGE_SUB_ID, NIP17_RELAYS};
+use global::constants::{NEW_MESSAGE_ID, NIP17_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -10,6 +10,7 @@ use gpui::{
     TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
+use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -207,28 +208,17 @@ impl MessagingRelays {
                 _ = client.connect_relay(&relay).await;
             }
 
-            let all_msg_id = SubscriptionId::new(ALL_MESSAGES_SUB_ID);
-            let new_msg_id = SubscriptionId::new(NEW_MESSAGE_SUB_ID);
-
-            let all_messages = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+            let id = SubscriptionId::new(NEW_MESSAGE_ID);
             let new_messages = Filter::new()
                 .kind(Kind::GiftWrap)
                 .pubkey(public_key)
                 .limit(0);
 
             // Close old subscriptions
-            client.unsubscribe(&all_msg_id).await;
-            client.unsubscribe(&new_msg_id).await;
-
-            // Subscribe to all messages
-            client
-                .subscribe_with_id(all_msg_id, all_messages, None)
-                .await?;
+            client.unsubscribe(&id).await;
 
             // Subscribe to new messages
-            client
-                .subscribe_with_id(new_msg_id, new_messages, None)
-                .await?;
+            client.subscribe_with_id(id, new_messages, None).await?;
 
             Ok(())
         });
@@ -237,6 +227,10 @@ impl MessagingRelays {
             match task.await {
                 Ok(_) => {
                     cx.update(|window, cx| {
+                        Identity::global(cx).update(cx, |this, cx| {
+                            this.verify_dm_relays(window, cx);
+                        });
+                        // Close the current modal
                         window.close_modal(cx);
                     })
                     .ok();

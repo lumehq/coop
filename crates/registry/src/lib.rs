@@ -31,10 +31,10 @@ struct GlobalRegistry(Entity<Registry>);
 impl Global for GlobalRegistry {}
 
 #[derive(Debug)]
-pub enum RoomEmitter {
+pub enum RegistrySignal {
     Open(WeakEntity<Room>),
     Close(u64),
-    Request(RoomKind),
+    NewRequest(RoomKind),
 }
 
 /// Main registry for managing chat rooms and user profiles
@@ -55,7 +55,7 @@ pub struct Registry {
     subscriptions: SmallVec<[Subscription; 2]>,
 }
 
-impl EventEmitter<RoomEmitter> for Registry {}
+impl EventEmitter<RegistrySignal> for Registry {}
 
 impl Registry {
     /// Retrieve the Global Registry state
@@ -85,8 +85,10 @@ impl Registry {
 
         // When any Room is created, load members metadata
         subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
+            let state = Self::global(cx);
             let task = this.load_metadata(cx);
-            Self::global(cx).update(cx, |this, cx| {
+
+            state.update(cx, |this, cx| {
                 this.set_persons_from_task(task, cx);
             });
         }));
@@ -207,7 +209,7 @@ impl Registry {
     /// Close a room.
     pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
         if self.rooms.iter().any(|r| r.read(cx).id == id) {
-            cx.emit(RoomEmitter::Close(id));
+            cx.emit(RegistrySignal::Close(id));
         }
     }
 
@@ -330,7 +332,6 @@ impl Registry {
                     .ok();
                 }
                 Err(e) => {
-                    // TODO: push notification
                     log::error!("Failed to load rooms: {e}")
                 }
             };
@@ -375,7 +376,18 @@ impl Registry {
             weak_room
         };
 
-        cx.emit(RoomEmitter::Open(weak_room));
+        cx.emit(RegistrySignal::Open(weak_room));
+    }
+
+    /// Refresh messages for a room in the global registry
+    pub fn refresh_rooms(&mut self, ids: Vec<u64>, cx: &mut Context<Self>) {
+        for room in self.rooms.iter() {
+            if ids.contains(&room.read(cx).id) {
+                room.update(cx, |this, cx| {
+                    this.emit_refresh(cx);
+                });
+            }
+        }
     }
 
     /// Parse a Nostr event into a Coop Message and push it to the belonging room
@@ -420,7 +432,7 @@ impl Registry {
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RoomEmitter::Request(RoomKind::default()));
+                cx.emit(RegistrySignal::NewRequest(RoomKind::default()));
             });
         }
     }

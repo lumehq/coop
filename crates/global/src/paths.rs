@@ -60,5 +60,5 @@ pub fn support_dir() -> &'static PathBuf {
 /// Returns the path to the `nostr` file.
 pub fn nostr_file() -> &'static PathBuf {
     static NOSTR_FILE: OnceLock<PathBuf> = OnceLock::new();
-    NOSTR_FILE.get_or_init(|| support_dir().join("nostr"))
+    NOSTR_FILE.get_or_init(|| support_dir().join("nostr-db"))
 }

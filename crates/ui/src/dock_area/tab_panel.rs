@@ -384,6 +384,11 @@ impl TabPanel {
         })
     }
 
+    /// Return all panel ids
+    pub fn panel_ids<'a>(&'a self, cx: &'a App) -> Vec<SharedString> {
+        self.panels.iter().map(|panel| panel.panel_id(cx)).collect()
+    }
+
     /// Return true if the tab panel is draggable.
     ///
     /// E.g. if the parent and self only have one panel, it is not draggable.
