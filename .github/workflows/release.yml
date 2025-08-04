@@ -72,7 +72,10 @@ jobs:
       - name: Install ARM64 cross-compilation tools
         if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross libssl-dev:arm64 pkg-config
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross pkg-config
+          sudo apt-get install -y libssl-dev:arm64 libasound2-dev:arm64 libfontconfig-dev:arm64 libwayland-dev:arm64 libx11-xcb-dev:arm64 libxkbcommon-x11-dev:arm64 libzstd-dev:arm64 libvulkan1:arm64
 
       - name: Install Snapcraft
         if: runner.os == 'Linux'
@@ -126,10 +129,12 @@ jobs:
         if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           mkdir -p linux-artifacts
-          # Find and copy flatpak files
-          find . -name "*.flatpak" -exec cp {} linux-artifacts/ \;
-          # Find and copy snap files
-          find . -name "*.snap" -exec cp {} linux-artifacts/ \;
+          # Copy the tarball created by bundle-linux
+          find target/release -name "*.tar.gz" -exec cp {} linux-artifacts/ \;
+          # Find and copy flatpak files (if they exist)
+          find . -name "*.flatpak" -exec cp {} linux-artifacts/ \; || true
+          # Find and copy snap files (if they exist)
+          find . -name "*.snap" -exec cp {} linux-artifacts/ \; || true
           ls -la linux-artifacts/
 
       - name: Upload Linux artifacts
