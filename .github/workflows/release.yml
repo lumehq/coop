@@ -49,7 +49,7 @@ jobs:
       - name: Build with cargo-packager (Windows/macOS)
         if: runner.os != 'Linux'
         working-directory: crates/coop
-        run: cargo packager --release --target ${{ matrix.target }}
+        run: cargo packager --release --target ${{ matrix.target }} --config before-packaging-command="cargo build --release --target ${{ matrix.target }}"
 
       - name: Upload Windows/macOS artifacts
         if: runner.os != 'Linux'
@@ -64,8 +64,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder snapd squashfs-tools jq
-          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo apt-get install -y flatpak flatpak-builder snapd squashfs-tools jq gettext-base
           sudo snap install snapcraft --classic
 
       - name: Make scripts executable
@@ -73,6 +72,7 @@ jobs:
         run: |
           chmod +x script/get-crate-version
           chmod +x script/snap-build
+          chmod +x script/bundle-linux
           chmod +x script/flatpak/deps
           chmod +x script/flatpak/bundle-flatpak
 
