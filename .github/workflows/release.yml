@@ -94,6 +94,7 @@ jobs:
 
       - name: Build Snap
         if: runner.os == 'Linux'
+        working-directory: ${{ github.workspace }}
         run: |
           VERSION=$(script/get-crate-version coop)
           snapcraft --destructive-mode
@@ -101,6 +102,7 @@ jobs:
 
       - name: Collect Linux artifacts
         if: runner.os == 'Linux'
+        working-directory: ${{ github.workspace }}
         run: |
           mkdir -p linux-artifacts
           # Copy the tarball created by bundle-linux
