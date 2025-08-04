@@ -97,7 +97,6 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           VERSION=$(script/get-crate-version coop)
-          snapcraft --destructive-mode
           script/snap-build $VERSION
 
       - name: Collect Linux artifacts
