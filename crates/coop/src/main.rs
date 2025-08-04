@@ -207,7 +207,6 @@ fn main() {
             window_background: WindowBackgroundAppearance::Opaque,
             window_decorations: Some(WindowDecorations::Client),
             window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_min_size: Some(size(px(800.0), px(600.0))),
             kind: WindowKind::Normal,
             app_id: Some(APP_ID.to_owned()),
             titlebar: Some(TitlebarOptions {

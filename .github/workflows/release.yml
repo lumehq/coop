@@ -5,8 +5,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - master
 
 jobs:
   build:
@@ -31,6 +29,9 @@ jobs:
           - platform: linux-x64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - platform: linux-arm64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
 
     steps:
       - name: Checkout repository
@@ -42,21 +43,22 @@ jobs:
           targets: ${{ matrix.target }}
 
       # Windows and macOS builds using cargo-packager
-      - name: Install cargo-packager
-        if: runner.os != 'Linux'
-        run: cargo install cargo-packager --locked
-
       - name: Build with cargo-packager (Windows/macOS)
         if: runner.os != 'Linux'
         working-directory: crates/coop
-        run: cargo packager --release --target ${{ matrix.target }} --config before-packaging-command="cargo build --release --target ${{ matrix.target }}"
+        run: |
+          cargo install cargo-packager --locked
+          cargo packager --release --target ${{ matrix.target }} --config before-packaging-command="cargo build --release --target ${{ matrix.target }}"
 
       - name: Upload Windows/macOS artifacts
         if: runner.os != 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-artifacts
-          path: crates/coop/dist/**/*
+          path: |
+            crates/coop/dist/*.dmg
+            crates/coop/dist/*.msi
+            crates/coop/dist/*.exe
           if-no-files-found: error
 
       # Linux builds using custom scripts
@@ -65,32 +67,71 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder snapd squashfs-tools jq gettext-base
-          sudo snap install snapcraft --classic
+
+      # Install cross-compilation tools for ARM64
+      - name: Install ARM64 cross-compilation tools
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure cross-compilation environment
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Install Snapcraft
+        if: runner.os == 'Linux'
+        run: sudo snap install snapcraft --classic
 
       - name: Make scripts executable
         if: runner.os == 'Linux'
         run: |
           chmod +x script/get-crate-version
+          chmod +x script/linux
           chmod +x script/snap-build
           chmod +x script/bundle-linux
           chmod +x script/flatpak/deps
           chmod +x script/flatpak/bundle-flatpak
 
-      - name: Build Flatpak
+      - name: Install required dependencies
         if: runner.os == 'Linux'
+        working-directory: script
+        run: ./linux
+
+      # Only build Flatpak and Snap for x86_64 (most common use case)
+      - name: Build Flatpak (x86_64 only)
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         working-directory: script/flatpak
         run: |
           ./deps
           ./bundle-flatpak
 
-      - name: Build Snap
-        if: runner.os == 'Linux'
+      - name: Build Snap (x86_64 only)
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           VERSION=$(script/get-crate-version coop)
           script/snap-build $VERSION
 
-      - name: Collect Linux artifacts
-        if: runner.os == 'Linux'
+      # For ARM64, build a simple binary package
+      - name: Build ARM64 binary
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Create ARM64 tarball
+        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          VERSION=$(script/get-crate-version coop)
+          mkdir -p linux-artifacts
+          cd target/aarch64-unknown-linux-gnu/release
+          tar -czf ../../../linux-artifacts/coop-${VERSION}-linux-aarch64.tar.gz coop
+          ls -la ../../../linux-artifacts/
+
+      - name: Collect Linux x86_64 artifacts
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           mkdir -p linux-artifacts
           # Find and copy flatpak files
