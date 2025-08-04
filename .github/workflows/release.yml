@@ -96,6 +96,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           VERSION=$(script/get-crate-version coop)
+          snapcraft --destructive-mode
           script/snap-build $VERSION
 
       - name: Collect Linux artifacts
