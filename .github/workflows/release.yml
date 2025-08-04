@@ -48,7 +48,7 @@ jobs:
         working-directory: crates/coop
         run: |
           cargo install cargo-packager --locked
-          cargo packager --release --target ${{ matrix.target }} --config before-packaging-command="cargo build --release --target ${{ matrix.target }}"
+          cargo packager --release
 
       - name: Upload Windows/macOS artifacts
         if: runner.os != 'Linux'
