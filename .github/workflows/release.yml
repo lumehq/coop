@@ -1,0 +1,124 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc # ARM Windows
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu # ARM Linux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Make get-crate-version executable
+        run: chmod +x script/get-crate-version
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Install cargo-packager (Windows/macOS)
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo install cargo-packager --locked
+
+      - name: Build and package (Windows/macOS)
+        if: matrix.os != 'ubuntu-latest'
+        run: |
+          cd crates/coop
+          cargo packager --release --target ${{ matrix.target }}
+
+      - name: Install dependencies for Linux (Flatpak/Snap)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder snapd squashfs-tools
+          flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo snap install snapcraft --classic
+
+      - name: Build Flatpak (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cd coop/script/flatpak
+          ./deps
+          ./bundle-flatpak
+
+      - name: Build Snap (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cd coop/script
+          ./snap-build $(script/get-crate-version coop)
+
+      - name: Build for ARM Linux (if needed)
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          # Add custom ARM build steps here, e.g., cross-compilation or native build
+          echo "ARM Linux build placeholder (adjust as needed)"
+
+      - name: Upload artifacts (Windows/macOS)
+        if: matrix.os != 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.os }}-${{ matrix.target }}-artifacts
+          path: crates/coop/dist/
+
+      - name: Upload artifacts (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-${{ matrix.target }}-artifacts
+          path: |
+            target/release/*.flatpak
+            target/release/*.snap
+            # Add ARM-specific artifacts if applicable
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Get version
+        id: get_version
+        run: |
+          echo "version=$(script/get-crate-version coop)" >> $GITHUB_OUTPUT
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+          files: |
+            artifacts/windows-latest-*/**/*
+            artifacts/macos-latest-*/**/*
+            artifacts/linux-*/**/*
