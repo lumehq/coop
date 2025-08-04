@@ -2,7 +2,7 @@ name: coop
 title: Coop
 base: core24
 version: "$RELEASE_VERSION"
-summary: The editor for what's next
+summary: Chat Freely, Stay Private on Nostr
 description: |
   Chat Freely, Stay Private on Nostr.
 grade: stable
@@ -24,6 +24,8 @@ parts:
       libexec: usr/libexec
 
     stage-packages:
+      - libssl3
+      - libcrypto3
       - libasound2t64
       # snapcraft has a lint that this is unused, but without it Coop exits with
       # "Missing Vulkan entry points: LibraryLoadFailure" in blade_graphics.
