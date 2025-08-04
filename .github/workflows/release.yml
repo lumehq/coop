@@ -96,6 +96,14 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: ${{ github.workspace }}
         run: |
+          # Build the binary
+          cargo build --release
+
+          # Create the tarball
+          mkdir -p dist
+          tar -czvf dist/coop-linux-x86_64.tar.gz -C target/release coop
+
+          # Run snap-build
           VERSION=$(script/get-crate-version coop)
           script/snap-build $VERSION
 
