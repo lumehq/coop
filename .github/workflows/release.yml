@@ -56,9 +56,9 @@ jobs:
         with:
           name: ${{ matrix.platform }}-artifacts
           path: |
-            crates/coop/dist/*.dmg
-            crates/coop/dist/*.msi
-            crates/coop/dist/*.exe
+            dist/*.dmg
+            dist/*.msi
+            dist/*.exe
           if-no-files-found: error
 
       # Linux builds using custom scripts
