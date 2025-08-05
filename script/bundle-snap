@@ -7,11 +7,12 @@ if [ "$#" -ne 1 ]; then
   exit 1
 fi
 
-# Detect architecture
-case "$(uname -m)" in
-  x86_64) ARCH_SUFFIX="amd64" ;;  # Snap convention uses 'amd64' instead of 'x86_64'
-  aarch64) ARCH_SUFFIX="arm64" ;;  # Snap convention uses 'arm64' instead of 'aarch64'
-  *) echo "Unsupported architecture"; exit 1 ;;
+# Get system architecture
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64) ARCH_SUFFIX="x86_64" ;;
+  aarch64) ARCH_SUFFIX="aarch64" ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
 esac
 
 # Setup GUI files
