@@ -4,11 +4,13 @@ base: core24
 version: "$RELEASE_VERSION"
 summary: Chat Freely, Stay Private on Nostr
 description: |
-  Chat Freely, Stay Private on Nostr.
+  Chat freely without sharing phone numbers or emails.
+  Your messages are encrypted, and your privacy stays protected.
+  Just privacy, made simple - with Nostr.
 grade: stable
 confinement: classic
 compression: lzo
-website: https://coopchat.com/
+website: https://reya.su/coop
 source-code: https://github.com/lumehq/coop
 issues: https://github.com/lumehq/coop/issues
 contact: https://reya.su

@@ -2,16 +2,24 @@
 <component type="desktop-application">
     <id>$APP_ID</id>
     <metadata_license>MIT</metadata_license>
-    <project_license>AGPL-3.0-or-later and Apache-2.0 and GPL-3.0-or-later</project_license>
+    <project_license>GPL-3.0-or-later</project_license>
 
     <name>$APP_NAME</name>
     <summary>Chat Freely, Stay Private on Nostr</summary>
-    <developer id="dev.Coop">
+
+    <developer id="su.reya">
         <name translate="no">Ren Amamiya</name>
     </developer>
+
     <description>
         <p>
-            Chat Freely, Stay Private on Nostr
+            Chat freely without sharing phone numbers or emails.
+        </p>
+        <p>
+            Your messages are encrypted, and your privacy stays protected.
+        </p>
+        <p>
+            Just privacy, made simple - with Nostr.
         </p>
     </description>
 
@@ -27,17 +35,18 @@
         <content_attribute id="social-audio">intense</content_attribute>
     </content_rating>
 
-    <url type="homepage">https://coopchat.com</url>
+    <url type="homepage">https://reya.su/coop</url>
     <url type="bugtracker">https://github.com/lumehq/coop/issues</url>
-    <url type="faq">https://coopchat.com/faq</url>
-    <url type="help">https://coopchat.com/docs/getting-started</url>
-    <url type="contact">https://coopchat.com/community-links</url>
+    <url type="faq">https://github.com/lumehq/coop</url>
+    <url type="help">https://github.com/lumehq/coop/issues</url>
+    <url type="contact">https://reya.su/</url>
     <url type="vcs-browser">https://github.com/lumehq/coop</url>
     <url type="contribute">https://github.com/lumehq/coop/blob/main/CONTRIBUTING.md</url>
 
     <supports>
-        <internet>offline-only</internet>
+        <internet>yes</internet>
     </supports>
+
     <recommends>
         <control>pointing</control>
         <control>keyboard</control>
@@ -46,8 +55,24 @@
 
     <screenshots>
         <screenshot type="default">
-            <caption>Coop</caption>
-            <image>https://coopchat.com/img/flatpak/flatpak-1.png</image>
+            <caption>Coop with the default screen, showing current user's chat rooms</caption>
+            <image>https://npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445.blossom.band/07b03b8c269b67eedcd265d11ebe7384ba797364056a60105cd02cf34de4eff2.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Example of chat room's message list</caption>
+            <image>https://npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445.blossom.band/4125cd78696274e92c53c09ac2fed0c8c7a74912dca6ab80bef21badd6ae4232.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Coop in Dark Mode with split panels feature</caption>
+            <image>https://npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445.blossom.band/9cea2a2d5d18ec6472d357f7288f283dc43c672580956cef3242f0d07e214691.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Example of screening chat request</caption>
+            <image>https://npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445.blossom.band/6f1c32b150788b706dd29a311bd7e342c63387013c0b084392b2e5a05c7908d5.png</image>
+        </screenshot>
+        <screenshot>
+            <caption>Example of composing a new message</caption>
+            <image>https://npub1zfss807aer0j26mwp2la0ume0jqde3823rmu97ra6sgyyg956e0s6xw445.blossom.band/9be26d1132de3feff0a518cb17afd8319e421ed2cfb0035cb47aceba928bf96d.png</image>
         </screenshot>
     </screenshots>
 

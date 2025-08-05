@@ -1,4 +1,4 @@
-![CoopDemo](/docs/coop.jpg)
+![Coop](/docs/coop.png)
 
 <p>
     <a href="https://github.com/lumehq/coop/actions/workflows/rust.yml">
@@ -9,9 +9,26 @@
     <img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/lumehq/coop">
 </p>
 
-Coop is a simple, fast, customizable nostr client for secure messaging across all platforms.
+Coop is a simple, fast, and reliable nostr client for secure messaging across all platforms.
 
-> Note: Coop is currently in **beta**. While functional, it may have bugs or missing features. We welcome your feedback via the [GitHub Issue Tracker](https://github.com/lumehq/coop/issues) to help improve it.
+### Screenshots
+
+<p float="left">
+  <img src="/docs/mac_01.png" width="250" />
+  <img src="/docs/mac_02.png" width="250" />
+  <img src="/docs/mac_03.png" width="250" />
+  <img src="/docs/mac_04.png" width="250" />
+  <img src="/docs/mac_05.png" width="250" />
+  <img src="/docs/mac_06.png" width="250" />
+  <img src="/docs/mac_07.png" width="250" />
+  <img src="/docs/mac_08.png" width="250" />
+  <img src="/docs/mac_09.png" width="250" />
+  <img src="/docs/linux_01.png" width="250" />
+  <img src="/docs/linux_02.png" width="250" />
+  <img src="/docs/linux_03.png" width="250" />
+  <img src="/docs/linux_04.png" width="250" />
+  <img src="/docs/linux_05.png" width="250" />
+</p>
 
 ### Installation
 
