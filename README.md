@@ -1,19 +1,17 @@
 ![CoopDemo](/docs/coop.jpg)
 
 <p>
-    <a href="https://github.com/lumehq/coop/actions/workflows/main.yml">
-      <img alt="Actions" src="https://github.com/lumehq/coop/actions/workflows/main.yml/badge.svg">
+    <a href="https://github.com/lumehq/coop/actions/workflows/rust.yml">
+      <img alt="Actions" src="https://github.com/lumehq/coop/actions/workflows/rust.yml/badge.svg">
     </a>
     <img alt="GitHub repo size" src="https://img.shields.io/github/repo-size/lumehq/coop">
     <img alt="GitHub issues" src="https://img.shields.io/github/issues-raw/lumehq/coop">
     <img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/lumehq/coop">
 </p>
 
-Coop is a cross-platform Nostr client designed for secure communication focus on simplicity and customizability.
+Coop is a simple, fast, customizable nostr client for secure messaging across all platforms.
 
-**New**✨: A blog post introducing Coop in details has been posted [here](#).
-
-> Coop is currently in the **alpha stage** of development. This means the app may contain bugs, incomplete features, or unexpected behavior. We recommend using it for testing purposes only and not for critical or sensitive communications. Your feedback is invaluable in helping us improve Coop, so please report any issues or suggestions via the [GitHub Issue Tracker](https://github.com/lumehq/coop/issues). Thank you for your understanding and support!
+> Note: Coop is currently in **beta**. While functional, it may have bugs or missing features. We welcome your feedback via the [GitHub Issue Tracker](https://github.com/lumehq/coop/issues) to help improve it.
 
 ### Installation
 
@@ -28,9 +26,7 @@ To install Coop, follow these steps:
 
    - **Windows**: Run the downloaded `.exe` installer and follow the on-screen instructions.
    - **macOS**: Open the downloaded `.dmg` file and drag Coop to your Applications folder.
-   - **Ubuntu**: Run the downloaded `.deb` or `.AppImage` installer and follow the on-screen instructions.
-   - **Arch Linux**: For `.tar.gz` packages, extract and install manually. For PKGBUILD, use `makepkg -si` to build and install.
-   - **Flatpak**: Coming soon.
+   - **Linux**: Run the downloaded `.flatpak` or `.snap` installer and follow the on-screen instructions.
 
 3. **Run Coop**:
    - Launch Coop from your Applications folder (macOS) or by double-clicking the executable (Windows/Linux).
@@ -47,13 +43,6 @@ Coop is built using Rust and GPUI. All Nostr related stuffs handled by [Rust Nos
 - **Cargo**: Rust's package manager, which comes bundled with the Rust installation.
 - **Git**: To clone the repository and manage version control.
 
-#### Linux Ubuntu Prerequisites
-- **x11**:Provides the X11 client-side library development headers and tools needed for compiling applications that use the X Window System. `sudo apt install libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev` `sudo apt install libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev`
-- **build-essential**: Required to build debian files in Ubuntu. `sudo apt install build-essential pkg-config`
--**openSSL**: OpenSSL is a comprehensive open-source cryptography library and command-line tool used for secure communications and certificate management. `sudo apt install openssl` `sudo apt install libssl-dev`
-
-
-
 #### Setting Up the Development Environment
 
 1. Clone the repository:
@@ -63,13 +52,25 @@ Coop is built using Rust and GPUI. All Nostr related stuffs handled by [Rust Nos
    cd coop
    ```
 
-2. Install dependencies:
+2.1 Install Linux dependencies:
+
+   ```bash
+   ./script/linux
+   ```
+
+2.2 Install FreeBSD dependencies:
+
+   ```bash
+   ./script/freebsd
+   ```
+
+3. Install Rust dependencies:
 
    ```bash
    cargo build
    ```
 
-3. Run the app:
+4. Run the app:
    ```bash
    cargo run
    ```
@@ -94,14 +95,6 @@ If you'd like to contribute to Coop, please follow these steps:
 4. Submit a pull request with a detailed description of your changes.
 
 For more information, see the [Contributing](#contributing) section.
-
-#### Debugging
-
-To debug Coop, you can use `cargo`'s built-in debugging tools or attach a debugger like `gdb` or `lldb`. For example:
-
-```bash
-cargo run -- --debug
-```
 
 #### Additional Resources
 
