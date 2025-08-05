@@ -19,8 +19,9 @@ parts:
     source: dist/coop-linux-x86_64.tar.gz
 
     organize:
-      coop.app/bin/coop: usr/bin/coop
-      coop.app/libexec/coop: usr/libexec/coop
+      # These renames seem to not be necessary, but it's tidier.
+      bin: usr/bin
+      libexec: usr/libexec
 
     stage-packages:
       - libasound2t64
