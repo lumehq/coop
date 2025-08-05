@@ -174,19 +174,27 @@ impl Chat {
             match load_messages.await {
                 Ok(messages) => {
                     this.update(cx, |this, cx| {
-                        let old_len = this.messages.read(cx).len();
-                        let new_len = messages.len();
+                        let old_messages = this.messages.read(cx).clone();
+                        let new_messages: Vec<_> = messages
+                            .into_iter()
+                            .filter(|msg| !old_messages.iter().any(|m| m.borrow().id == msg.id))
+                            .collect();
 
-                        // Extend the messages list with the new events
-                        this.messages.update(cx, |this, cx| {
-                            this.extend(messages.into_iter().map(|e| e.into_rc()));
+                        if !new_messages.is_empty() {
+                            let old_len = this.messages.read(cx).len();
+                            let new_len = new_messages.len();
+
+                            // Extend the messages list with the new events
+                            this.messages.update(cx, |this, cx| {
+                                this.extend(new_messages.into_iter().map(|e| e.into_rc()));
+                                cx.notify();
+                            });
+
+                            // Update list state with the new messages
+                            this.list_state.splice(old_len..old_len, new_len);
+
                             cx.notify();
-                        });
-
-                        // Update list state with the new messages
-                        this.list_state.splice(old_len..old_len, new_len);
-
-                        cx.notify();
+                        }
                     })
                     .ok();
                 }
