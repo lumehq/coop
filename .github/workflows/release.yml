@@ -98,8 +98,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           VERSION=$(script/get-crate-version coop)
+          ARCH_SUFFIX=$(uname -m)
           ./script/bundle-linux
-          ./script/bundle-snap $VERSION
+          ./script/bundle-snap $VERSION $ARCH_SUFFIX
 
       - name: Collect Linux artifacts
         if: runner.os == 'Linux'

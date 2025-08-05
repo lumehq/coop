@@ -16,7 +16,7 @@ contact: https://reya.su
 parts:
   coop:
     plugin: dump
-    source: target/release/coop-linux-x86_64.tar.gz
+    source: target/release/coop-linux-$ARCH_SUFFIX.tar.gz
 
     organize:
       # These renames seem to not be necessary, but it's tidier.

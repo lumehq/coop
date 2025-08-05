@@ -7,6 +7,12 @@ if [ "$#" -ne 1 ]; then
   exit 1
 fi
 
+case "$(uname -m)" in
+  x86_64) ARCH_SUFFIX="x86_64" ;;
+  aarch64) ARCH_SUFFIX="aarch64" ;;
+  *) echo "Unsupported architecture"; exit 1 ;;
+esac
+
 mkdir -p snap/gui
 
 export DO_STARTUP_NOTIFY="true"
@@ -16,7 +22,7 @@ export APP_ARGS="%U"
 envsubst < "crates/coop/resources/coop.desktop.in" > "snap/gui/coop.desktop"
 cp "crates/coop/resources/icon.png" "snap/gui/coop.png"
 
-RELEASE_VERSION="$1" envsubst < crates/coop/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
+RELEASE_VERSION="$1" ARCH_SUFFIX="$ARCH_SUFFIX" envsubst < crates/coop/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
 
 # Clean seems to be needed to actually check that the snapcraft.yaml
 # works.  For example, when a `stage-package` is removed, it will
