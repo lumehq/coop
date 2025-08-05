@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+if [ "$#" -ne 1 ]; then
+  echo "Usage: $0 <release_version>"
+  exit 1
+fi
+
+# Get system architecture
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64) ARCH_SUFFIX="x86_64" ;;
+  aarch64) ARCH_SUFFIX="aarch64" ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+# Setup GUI files
+mkdir -p snap/gui
+export DO_STARTUP_NOTIFY="true"
+export APP_NAME="Coop"
+export APP_ICON="\${SNAP}/meta/gui/coop.png"
+export APP_ARGS="%U"
+envsubst < "crates/coop/resources/coop.desktop.in" > "snap/gui/coop.desktop"
+cp "crates/coop/resources/icon.png" "snap/gui/coop.png"
+
+# Generate snapcraft.yaml with version and architecture
+RELEASE_VERSION="$1" ARCH_SUFFIX="$ARCH_SUFFIX" envsubst < crates/coop/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
+
+# Clean previous builds
+snapcraft clean
+
+# Build snap with architecture in filename
+SNAP_NAME="coop_${1}_${ARCH_SUFFIX}.snap"
+snapcraft --destructive-mode --output "$SNAP_NAME"
+
+echo "Created snap package: $SNAP_NAME"

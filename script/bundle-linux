@@ -83,7 +83,7 @@ coop_dir="${temp_dir}/coop.app"
 # Binary
 mkdir -p "${coop_dir}/bin" "${coop_dir}/libexec"
 cp "${target_dir}/${target_triple}/release/coop" "${coop_dir}/libexec/coop"
-cp "${target_dir}/${target_triple}/release/cli" "${coop_dir}/bin/coop"
+cp "${target_dir}/${target_triple}/release/coop" "${coop_dir}/bin/coop"
 
 # Libs
 find_libs() {

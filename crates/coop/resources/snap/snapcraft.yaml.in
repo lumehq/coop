@@ -2,7 +2,7 @@ name: coop
 title: Coop
 base: core24
 version: "$RELEASE_VERSION"
-summary: The editor for what's next
+summary: Chat Freely, Stay Private on Nostr
 description: |
   Chat Freely, Stay Private on Nostr.
 grade: stable
@@ -16,7 +16,7 @@ contact: https://reya.su
 parts:
   coop:
     plugin: dump
-    source: "https://github.com/lumehq/coop/releases/download/v$RELEASE_VERSION/coop-linux-x86_64.tar.gz"
+    source: target/release/coop-linux-$ARCH_SUFFIX.tar.gz
 
     organize:
       # These renames seem to not be necessary, but it's tidier.
