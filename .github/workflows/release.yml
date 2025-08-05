@@ -159,7 +159,12 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            artifacts/**/*
+            artifacts/*.dmg
+            artifacts/*.exe
+            artifacts/*.snap
+            artifacts/*.flatpak
+            artifacts/*.tar.gz
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
