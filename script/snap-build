@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 set -euxo pipefail
 
 if [ "$#" -ne 1 ]; then
@@ -6,22 +7,20 @@ if [ "$#" -ne 1 ]; then
   exit 1
 fi
 
-# Debug: Print current directory and input file
-echo "Current directory: $(pwd)"
-ls -la crates/coop/resources/snap/snapcraft.yaml.in || { echo "Input file missing!"; exit 1; }
+mkdir -p snap/gui
 
-# Ensure output directory exists
-mkdir -p snap
+export DO_STARTUP_NOTIFY="true"
+export APP_NAME="Coop"
+export APP_ICON="\${SNAP}/meta/gui/coop.png"
+export APP_ARGS="%U"
+envsubst < "crates/coop/resources/coop.desktop.in" > "snap/gui/coop.desktop"
+cp "crates/coop/resources/icon.png" "snap/gui/coop.png"
 
-# Debug: Print substituted content
-echo "Substituted snapcraft.yaml:"
-RELEASE_VERSION="$1" envsubst < crates/coop/resources/snap/snapcraft.yaml.in
+RELEASE_VERSION="$1" envsubst < crates/coop/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
 
-# Generate snapcraft.yaml
-RELEASE_VERSION="$1" envsubst < crates/coop/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml || { echo "Failed to generate snapcraft.yaml"; exit 1; }
+# Clean seems to be needed to actually check that the snapcraft.yaml
+# works.  For example, when a `stage-package` is removed, it will
+# still remain on rebuild.
+snapcraft clean
 
-# Debug: Verify the file was created
-ls -la snap/snapcraft.yaml || { echo "Output file missing!"; exit 1; }
-
-# Build the snap
 snapcraft --destructive-mode

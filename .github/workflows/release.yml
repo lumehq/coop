@@ -100,12 +100,16 @@ jobs:
           cargo build --release
 
           # Create the tarball
-          mkdir -p dist
-          tar -czvf dist/coop-linux-x86_64.tar.gz -C target/release coop
+          mkdir -p coop.app/bin
+          cp target/release/coop coop.app/bin/
+          tar -czvf dist/coop-linux-x86_64.tar.gz coop.app
 
           # Run snap-build
           VERSION=$(script/get-crate-version coop)
           script/snap-build $VERSION
+
+          # Debug: List files in prime
+          find prime -type f -exec ls -la {} \;
 
       - name: Collect Linux artifacts
         if: runner.os == 'Linux'
