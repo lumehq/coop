@@ -394,9 +394,11 @@ async fn handle_nostr_notifications(
 
                 match event.kind {
                     Kind::GiftWrap => {
+                        // Process to unwrap directly if event come from new messages subscription
+                        // Otherwise, send the event to the event_tx channel
                         if *subscription_id == new_messages {
-                            let event = event.as_ref();
-                            _ = try_unwrap_event(signal_tx, mta_tx, event, false).await;
+                            log::info!("receive a new message: {:?}", event.id);
+                            try_unwrap_event(signal_tx, mta_tx, &event, true).await;
                         } else {
                             event_tx.send(event.into_owned()).await.ok();
                         }
