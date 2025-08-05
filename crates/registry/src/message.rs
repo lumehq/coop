@@ -1,6 +1,5 @@
-use std::cell::RefCell;
+use std::hash::Hash;
 use std::iter::IntoIterator;
-use std::rc::Rc;
 
 use chrono::{Local, TimeZone};
 use gpui::SharedString;
@@ -12,7 +11,7 @@ use crate::room::SendError;
 ///
 /// Contains information about the message content, author, creation time,
 /// mentions, replies, and any errors that occurred during sending.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Message {
     /// Unique identifier of the message (EventId from nostr_sdk)
     pub id: EventId,
@@ -28,6 +27,32 @@ pub struct Message {
     pub replies_to: Option<Vec<EventId>>,
     /// Any errors that occurred while sending this message
     pub errors: Option<Vec<SendError>>,
+}
+
+impl Eq for Message {}
+
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Ord for Message {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.created_at.cmp(&other.created_at)
+    }
+}
+
+impl PartialOrd for Message {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Hash for Message {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 /// Builder pattern implementation for constructing Message objects.
@@ -110,11 +135,6 @@ impl MessageBuilder {
         self
     }
 
-    /// Builds the message wrapped in an Rc<RefCell<Message>>
-    pub fn build_rc(self) -> Result<Rc<RefCell<Message>>, String> {
-        self.build().map(|m| Rc::new(RefCell::new(m)))
-    }
-
     /// Builds the message
     pub fn build(self) -> Result<Message, String> {
         Ok(Message {
@@ -133,16 +153,6 @@ impl Message {
     /// Creates a new MessageBuilder
     pub fn builder(id: EventId, author: PublicKey) -> MessageBuilder {
         MessageBuilder::new(id, author)
-    }
-
-    /// Converts the message into an Rc<RefCell<Message>>
-    pub fn into_rc(self) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(self))
-    }
-
-    /// Builds a message from a builder and wraps it in Rc<RefCell>
-    pub fn build_rc(builder: MessageBuilder) -> Result<Rc<RefCell<Self>>, String> {
-        builder.build().map(|m| Rc::new(RefCell::new(m)))
     }
 
     /// Returns a human-readable string representing how long ago the message was created

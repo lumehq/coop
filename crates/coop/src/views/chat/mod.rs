@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -57,7 +56,7 @@ pub struct Chat {
     focus_handle: FocusHandle,
     // Chat Room
     room: Entity<Room>,
-    messages: Entity<Vec<Rc<RefCell<Message>>>>,
+    messages: Entity<BTreeSet<Message>>,
     text_data: HashMap<EventId, RichText>,
     list_state: ListState,
     // New Message
@@ -76,7 +75,7 @@ impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let attaches = cx.new(|_| None);
         let replies_to = cx.new(|_| None);
-        let messages = cx.new(|_| vec![]);
+        let messages = cx.new(|_| BTreeSet::new());
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -120,10 +119,10 @@ impl Chat {
                             }
 
                             let old_len = this.messages.read(cx).len();
-                            let message = event.clone().into_rc();
+                            let message = event.to_owned();
 
                             cx.update_entity(&this.messages, |this, cx| {
-                                this.extend(vec![message]);
+                                this.insert(message);
                                 cx.notify();
                             });
 
@@ -179,7 +178,7 @@ impl Chat {
 
                         // Extend the messages list with the new events
                         this.messages.update(cx, |this, cx| {
-                            this.extend(messages.into_iter().map(|e| e.into_rc()));
+                            this.extend(messages);
                             cx.notify();
                         });
 
@@ -242,9 +241,8 @@ impl Chat {
         self.messages
             .read(cx)
             .iter()
-            .filter(|m| m.borrow().author == identity)
+            .filter(|m| m.author == identity)
             .any(|existing| {
-                let existing = existing.borrow();
                 // Check if messages are within the time window
                 (existing.created_at.as_u64() >= min_timestamp) &&
 		        // Compare content and author
@@ -316,10 +314,9 @@ impl Chat {
                             });
 
                             this.messages.update(cx, |this, cx| {
-                                if let Some(msg) =
-                                    this.iter().find(|msg| msg.borrow().id == id).cloned()
+                                if let Some(mut msg) = this.iter().find(|msg| msg.id == id).cloned()
                                 {
-                                    msg.borrow_mut().errors = Some(reports);
+                                    msg.errors = Some(reports);
                                     cx.notify();
                                 }
                             });
@@ -334,10 +331,9 @@ impl Chat {
 
     fn insert_message(&self, message: Message, cx: &mut Context<Self>) {
         let old_len = self.messages.read(cx).len();
-        let message = message.into_rc();
 
         cx.update_entity(&self.messages, |this, cx| {
-            this.extend(vec![message]);
+            this.insert(message);
             cx.notify();
         });
 
@@ -345,12 +341,7 @@ impl Chat {
     }
 
     fn scroll_to(&self, id: EventId, cx: &Context<Self>) {
-        if let Some(ix) = self
-            .messages
-            .read(cx)
-            .iter()
-            .position(|m| m.borrow().id == id)
-        {
+        if let Some(ix) = self.messages.read(cx).iter().position(|m| m.id == id) {
             self.list_state.scroll_to_reveal_item(ix);
         }
     }
@@ -359,8 +350,9 @@ impl Chat {
         let Some(item) = self
             .messages
             .read(cx)
-            .get(ix)
-            .map(|m| ClipboardItem::new_string(m.borrow().content.to_string()))
+            .iter()
+            .nth(ix)
+            .map(|m| ClipboardItem::new_string(m.content.to_string()))
         else {
             return;
         };
@@ -369,7 +361,7 @@ impl Chat {
     }
 
     fn reply_to(&mut self, ix: usize, cx: &mut Context<Self>) {
-        let Some(message) = self.messages.read(cx).get(ix).map(|m| m.borrow().clone()) else {
+        let Some(message) = self.messages.read(cx).iter().nth(ix).map(|m| m.to_owned()) else {
             return;
         };
 
@@ -583,7 +575,7 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let Some(message) = self.messages.read(cx).get(ix).map(|m| m.borrow()) else {
+        let Some(message) = self.messages.read(cx).iter().nth(ix) else {
             return div().id(ix);
         };
 
@@ -642,10 +634,7 @@ impl Chat {
                                     let messages = self.messages.read(cx);
 
                                     for (ix, id) in replies.iter().cloned().enumerate() {
-                                        let Some(message) = messages
-                                            .iter()
-                                            .map(|m| m.borrow())
-                                            .find(|m| m.id == id)
+                                        let Some(message) = messages.iter().find(|m| m.id == id)
                                         else {
                                             continue;
                                         };
