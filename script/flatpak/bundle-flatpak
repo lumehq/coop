@@ -4,7 +4,15 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 shopt -s extglob
 
-archive_match="coop(-[a-zA-Z0-9]+)?-linux-$(uname -m)\.tar\.gz"
+# Get system architecture
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64) ARCH_SUFFIX="x86_64" ;;
+  aarch64) ARCH_SUFFIX="aarch64" ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+archive_match="coop(-[a-zA-Z0-9]+)?-linux-${ARCH_SUFFIX}\.tar\.gz"
 archive=$(ls "target/release" | grep -E ${archive_match})
 
 export ARCHIVE="$archive"
@@ -15,7 +23,13 @@ export BRANDING_DARK="#FFE629"
 export ICON_FILE="icon"
 export CHANNEL="stable"
 
+# Generate manifest
 envsubst < "crates/coop/resources/flatpak/manifest-template.json" > "$APP_ID.json"
+
+# Build Flatpak
 flatpak-builder --user --install --force-clean build "$APP_ID.json"
-flatpak build-bundle ~/.local/share/flatpak/repo "target/release/$APP_ID.flatpak" "$APP_ID"
-echo "Created 'target/release/$APP_ID.flatpak'"
+
+# Create bundle with architecture suffix
+OUTPUT_FILE="target/release/${APP_ID}_${ARCH_SUFFIX}.flatpak"
+flatpak build-bundle ~/.local/share/flatpak/repo "$OUTPUT_FILE" "$APP_ID"
+echo "Created '$OUTPUT_FILE'"

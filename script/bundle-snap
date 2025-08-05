@@ -7,14 +7,15 @@ if [ "$#" -ne 1 ]; then
   exit 1
 fi
 
+# Detect architecture
 case "$(uname -m)" in
-  x86_64) ARCH_SUFFIX="x86_64" ;;
-  aarch64) ARCH_SUFFIX="aarch64" ;;
+  x86_64) ARCH_SUFFIX="amd64" ;;  # Snap convention uses 'amd64' instead of 'x86_64'
+  aarch64) ARCH_SUFFIX="arm64" ;;  # Snap convention uses 'arm64' instead of 'aarch64'
   *) echo "Unsupported architecture"; exit 1 ;;
 esac
 
+# Setup GUI files
 mkdir -p snap/gui
-
 export DO_STARTUP_NOTIFY="true"
 export APP_NAME="Coop"
 export APP_ICON="\${SNAP}/meta/gui/coop.png"
@@ -22,11 +23,14 @@ export APP_ARGS="%U"
 envsubst < "crates/coop/resources/coop.desktop.in" > "snap/gui/coop.desktop"
 cp "crates/coop/resources/icon.png" "snap/gui/coop.png"
 
+# Generate snapcraft.yaml with version and architecture
 RELEASE_VERSION="$1" ARCH_SUFFIX="$ARCH_SUFFIX" envsubst < crates/coop/resources/snap/snapcraft.yaml.in > snap/snapcraft.yaml
 
-# Clean seems to be needed to actually check that the snapcraft.yaml
-# works.  For example, when a `stage-package` is removed, it will
-# still remain on rebuild.
+# Clean previous builds
 snapcraft clean
 
-snapcraft --destructive-mode
+# Build snap with architecture in filename
+SNAP_NAME="coop_${1}_${ARCH_SUFFIX}.snap"
+snapcraft --destructive-mode --output "$SNAP_NAME"
+
+echo "Created snap package: $SNAP_NAME"
