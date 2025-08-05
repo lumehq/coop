@@ -87,11 +87,11 @@ jobs:
       # Only build Flatpak and Snap for x86_64 (most common use case)
       - name: Build Flatpak
         if: runner.os == 'Linux'
-        working-directory: script/flatpak
+        working-directory: script
         run: |
-          ./deps
           ./bundle-linux --flatpak
-          ./bundle-flatpak
+          ./flatpak/deps
+          ./flatpak/bundle-flatpak
 
       - name: Build Snap
         if: runner.os == 'Linux'
