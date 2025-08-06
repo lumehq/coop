@@ -7,7 +7,7 @@ use assets::Assets;
 use common::event::EventUtils;
 use global::constants::{
     ALL_MESSAGES_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, NEW_MESSAGE_ID, SEARCH_RELAYS,
+    METADATA_BATCH_TIMEOUT, NEW_MESSAGE_ID, SEARCH_RELAYS, WAIT_FOR_FINISH,
 };
 use global::{nostr_client, NostrSignal};
 use gpui::{
@@ -131,7 +131,7 @@ fn main() {
                     continue;
                 }
 
-                let duration = smol::Timer::after(Duration::from_secs(30));
+                let duration = smol::Timer::after(Duration::from_secs(WAIT_FOR_FINISH));
 
                 let recv = || async {
                     // no inline

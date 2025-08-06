@@ -47,6 +47,8 @@ pub const ALL_NEWEST_MESSAGES_ID: &str = "listen_all_newest_giftwraps";
 pub const METADATA_BATCH_LIMIT: usize = 100;
 /// Maximum timeout for grouping metadata requests.
 pub const METADATA_BATCH_TIMEOUT: u64 = 400;
+/// Maximum timeout for waiting for finish.
+pub const WAIT_FOR_FINISH: u64 = 75;
 
 /// Default width for all modals.
 pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
