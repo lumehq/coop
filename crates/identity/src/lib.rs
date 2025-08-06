@@ -345,10 +345,15 @@ impl Identity {
     }
 
     /// Sets a new signer for the client and updates user identity
-    pub fn set_signer<S>(&self, signer: S, window: &mut Window, cx: &mut Context<Self>)
+    pub fn set_signer<S>(&mut self, signer: S, window: &mut Window, cx: &mut Context<Self>)
     where
         S: NostrSigner + 'static,
     {
+        if self.logging_in {
+            return;
+        };
+        self.set_logging_in(true, cx);
+
         let task: Task<Result<PublicKey, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let public_key = signer.get_public_key().await?;
@@ -357,7 +362,7 @@ impl Identity {
             client.set_signer(signer).await;
 
             // Subscribe for user metadata
-            Self::subscribe(client, public_key).await?;
+            Self::init(public_key).await?;
 
             Ok(public_key)
         });
@@ -426,7 +431,7 @@ impl Identity {
             client.send_event_builder(dm_relay).await?;
 
             // Subscribe for user metadata
-            Self::subscribe(client, public_key).await?;
+            Self::init(public_key).await?;
 
             Ok(public_key)
         });
@@ -628,7 +633,8 @@ impl Identity {
         cx.notify();
     }
 
-    pub(crate) async fn subscribe(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+    async fn init(public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         client
