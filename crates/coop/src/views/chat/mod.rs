@@ -42,6 +42,9 @@ use ui::{
 
 mod subject;
 
+const DUPLICATE_TIME_WINDOW: u64 = 10;
+const MAX_RECENT_MESSAGES_TO_CHECK: usize = 5;
+
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
 pub struct ChangeSubject(pub String);
@@ -131,7 +134,7 @@ impl Chat {
                         RoomSignal::Refresh => {
                             this.load_messages(window, cx);
                         }
-                    }
+                    };
                 },
             ));
 
@@ -236,11 +239,16 @@ impl Chat {
             return false;
         }
 
-        let min_timestamp = new_msg.created_at.as_u64().saturating_sub(10);
+        let messages = self.messages.read(cx);
+        let min_timestamp = new_msg
+            .created_at
+            .as_u64()
+            .saturating_sub(DUPLICATE_TIME_WINDOW);
 
-        self.messages
-            .read(cx)
+        messages
             .iter()
+            .rev()
+            .take(MAX_RECENT_MESSAGES_TO_CHECK)
             .filter(|m| m.author == identity)
             .any(|existing| {
                 // Check if messages are within the time window

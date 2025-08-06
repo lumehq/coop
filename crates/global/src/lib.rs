@@ -5,6 +5,7 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 
+use crate::constants::GIFT_WRAP_SUB_ID;
 use crate::paths::support_dir;
 
 pub mod constants;
@@ -33,6 +34,8 @@ pub enum NostrSignal {
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
+static GIFT_WRAP_ID: OnceLock<SubscriptionId> = OnceLock::new();
+static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
@@ -59,6 +62,14 @@ pub fn nostr_client() -> &'static Client {
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
     })
+}
+
+pub fn gift_wrap_sub_id() -> &'static SubscriptionId {
+    GIFT_WRAP_ID.get_or_init(|| SubscriptionId::new(GIFT_WRAP_SUB_ID))
+}
+
+pub fn starting_time() -> &'static Timestamp {
+    CURRENT_TIMESTAMP.get_or_init(Timestamp::now)
 }
 
 pub fn first_run() -> &'static bool {

@@ -3,10 +3,8 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
-use global::constants::{
-    ACCOUNT_D, ALL_MESSAGES_ID, NEW_MESSAGE_ID, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT,
-};
-use global::nostr_client;
+use global::constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT};
+use global::{gift_wrap_sub_id, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, red, App, AppContext, Context, Entity, Global, ParentElement, SharedString, Styled,
@@ -631,25 +629,12 @@ impl Identity {
     }
 
     pub(crate) async fn subscribe(client: &Client, public_key: PublicKey) -> Result<(), Error> {
-        let all_messages = SubscriptionId::new(ALL_MESSAGES_ID);
-        let new_messages = SubscriptionId::new(NEW_MESSAGE_ID);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         client
             .subscribe_with_id(
-                all_messages,
+                gift_wrap_sub_id().to_owned(),
                 Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
-                Some(opts),
-            )
-            .await?;
-
-        client
-            .subscribe_with_id(
-                new_messages,
-                Filter::new()
-                    .kind(Kind::GiftWrap)
-                    .pubkey(public_key)
-                    .limit(0),
                 None,
             )
             .await?;
