@@ -5,6 +5,7 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 
+use crate::constants::GIFT_WRAP_SUB_ID;
 use crate::paths::support_dir;
 
 pub mod constants;
@@ -33,6 +34,8 @@ pub enum NostrSignal {
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
+static GIFT_WRAP_ID: OnceLock<SubscriptionId> = OnceLock::new();
+static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
@@ -61,6 +64,14 @@ pub fn nostr_client() -> &'static Client {
     })
 }
 
+pub fn gift_wrap_sub_id() -> &'static SubscriptionId {
+    GIFT_WRAP_ID.get_or_init(|| SubscriptionId::new(GIFT_WRAP_SUB_ID))
+}
+
+pub fn starting_time() -> &'static Timestamp {
+    CURRENT_TIMESTAMP.get_or_init(Timestamp::now)
+}
+
 pub fn first_run() -> &'static bool {
     FIRST_RUN.get_or_init(|| {
         let flag = support_dir().join(format!(".{}-first_run", env!("CARGO_PKG_VERSION")));
@@ -74,17 +85,4 @@ pub fn first_run() -> &'static bool {
             false // Not first run
         }
     })
-}
-
-pub async fn set_all_gift_wraps_fetched() {
-    let flag = support_dir().join(".fetched");
-
-    if !flag.exists() && smol::fs::write(&flag, "").await.is_err() {
-        log::error!("Failed to create full run flag");
-    }
-}
-
-pub fn is_gift_wraps_fetch_complete() -> bool {
-    let flag = support_dir().join(".fetched");
-    flag.exists()
 }

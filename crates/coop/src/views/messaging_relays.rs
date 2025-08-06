@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use global::constants::{NEW_MESSAGE_ID, NIP17_RELAYS};
+use global::constants::{GIFT_WRAP_SUB_ID, NIP17_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -208,11 +208,8 @@ impl MessagingRelays {
                 _ = client.connect_relay(&relay).await;
             }
 
-            let id = SubscriptionId::new(NEW_MESSAGE_ID);
-            let new_messages = Filter::new()
-                .kind(Kind::GiftWrap)
-                .pubkey(public_key)
-                .limit(0);
+            let id = SubscriptionId::new(GIFT_WRAP_SUB_ID);
+            let new_messages = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
             // Close old subscriptions
             client.unsubscribe(&id).await;

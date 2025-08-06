@@ -6,10 +6,10 @@ use anyhow::{anyhow, Error};
 use assets::Assets;
 use common::event::EventUtils;
 use global::constants::{
-    ALL_MESSAGES_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, NEW_MESSAGE_ID, SEARCH_RELAYS,
+    APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
+    SEARCH_RELAYS, WAIT_FOR_FINISH,
 };
-use global::{nostr_client, set_all_gift_wraps_fetched, NostrSignal};
+use global::{gift_wrap_sub_id, nostr_client, starting_time, NostrSignal};
 use gpui::{
     actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
@@ -39,6 +39,9 @@ fn main() {
     // Initialize the Nostr Client
     let client = nostr_client();
 
+    // Initialize the starting time
+    let _ = starting_time();
+
     // Initialize the Application
     let app = Application::new()
         .with_assets(Assets)
@@ -46,7 +49,7 @@ fn main() {
 
     let (signal_tx, signal_rx) = channel::bounded::<NostrSignal>(2048);
     let (mta_tx, mta_rx) = channel::bounded::<PublicKey>(1024);
-    let (event_tx, event_rx) = channel::unbounded::<Event>();
+    let (event_tx, event_rx) = channel::bounded::<Event>(2048);
 
     let signal_tx_clone = signal_tx.clone();
     let mta_tx_clone = mta_tx.clone();
@@ -131,7 +134,7 @@ fn main() {
                     continue;
                 }
 
-                let duration = smol::Timer::after(Duration::from_secs(30));
+                let duration = smol::Timer::after(Duration::from_secs(WAIT_FOR_FINISH));
 
                 let recv = || async {
                     // no inline
@@ -145,8 +148,7 @@ fn main() {
 
                 match smol::future::or(recv(), timeout()).await {
                     Some(event) => {
-                        // Process the gift wrap event unwrapping
-                        let cached = try_unwrap_event(&signal_tx, &mta_tx, &event, false).await;
+                        let cached = try_unwrap_event(&event, &signal_tx, &mta_tx).await;
 
                         // Increment the total messages counter if message is not from cache
                         if !cached {
@@ -163,17 +165,9 @@ fn main() {
                     None => {
                         // Notify the UI that the processing is finished
                         signal_tx.send(NostrSignal::Finish).await.ok();
-                        // Mark all gift wraps as fetched
-                        // For the next time Coop only needs to process new gift wraps
-                        set_all_gift_wraps_fetched().await;
-
-                        break;
                     }
                 }
             }
-
-            // Event channel is no longer needed when all gift wrap events have been processed
-            event_rx.close();
         })
         .detach();
 
@@ -246,8 +240,6 @@ fn main() {
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_, cx| {
-                    let all_messages = SubscriptionId::new(ALL_MESSAGES_ID);
-
                     while let Ok(signal) = signal_rx.recv().await {
                         cx.update(|window, cx| {
                             let registry = Registry::global(cx);
@@ -277,8 +269,8 @@ fn main() {
                                 }
                                 // Load chat rooms without setting as finished
                                 NostrSignal::Eose(subscription_id) => {
-                                    // Only load chat rooms if the subscription ID matches the all_messages_sub_id
-                                    if subscription_id == all_messages {
+                                    // Only load chat rooms if the subscription matches the gift wrap subscription
+                                    if gift_wrap_sub_id() == &subscription_id {
                                         registry.update(cx, |this, cx| {
                                             this.load_rooms(window, cx);
                                         });
@@ -369,9 +361,7 @@ async fn handle_nostr_notifications(
     mta_tx: &Sender<PublicKey>,
     event_tx: &Sender<Event>,
 ) -> Result<(), Error> {
-    let new_messages = SubscriptionId::new(NEW_MESSAGE_ID);
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
     let mut notifications = client.notifications();
     let mut processed_events: BTreeSet<EventId> = BTreeSet::new();
     let mut processed_dm_relays: BTreeSet<PublicKey> = BTreeSet::new();
@@ -382,10 +372,7 @@ async fn handle_nostr_notifications(
         };
 
         match message {
-            RelayMessage::Event {
-                event,
-                subscription_id,
-            } => {
+            RelayMessage::Event { event, .. } => {
                 if processed_events.contains(&event.id) {
                     continue;
                 }
@@ -394,14 +381,7 @@ async fn handle_nostr_notifications(
 
                 match event.kind {
                     Kind::GiftWrap => {
-                        // Process to unwrap directly if event come from new messages subscription
-                        // Otherwise, send the event to the event_tx channel
-                        if *subscription_id == new_messages {
-                            log::info!("receive a new message: {:?}", event.id);
-                            try_unwrap_event(signal_tx, mta_tx, &event, true).await;
-                        } else {
-                            event_tx.send(event.into_owned()).await.ok();
-                        }
+                        event_tx.send(event.into_owned()).await.ok();
                     }
                     Kind::Metadata => {
                         signal_tx
@@ -428,13 +408,7 @@ async fn handle_nostr_notifications(
                             .kind(Kind::InboxRelays)
                             .limit(1);
 
-                        if let Ok(output) = client.subscribe(filter, Some(opts)).await {
-                            log::info!(
-                                "Subscribed to get DM relays: {} - Relays: {:?}",
-                                event.pubkey.to_bech32().unwrap(),
-                                output.success
-                            )
-                        }
+                        client.subscribe(filter, Some(opts)).await.ok();
                     }
                     _ => {}
                 }
@@ -517,10 +491,9 @@ async fn get_unwrapped(root: EventId) -> Result<Event, Error> {
 
 /// Unwraps a gift-wrapped event and processes its contents.
 async fn try_unwrap_event(
+    event: &Event,
     signal_tx: &Sender<NostrSignal>,
     mta_tx: &Sender<PublicKey>,
-    event: &Event,
-    incoming: bool,
 ) -> bool {
     let client = nostr_client();
     let mut is_cached = false;
@@ -554,16 +527,13 @@ async fn try_unwrap_event(
         }
     };
 
-    // Get all pubkeys from the event
-    let all_pubkeys = event.all_pubkeys();
-
     // Send all pubkeys to the metadata batch to sync data
-    for public_key in all_pubkeys {
+    for public_key in event.all_pubkeys() {
         mta_tx.send(public_key).await.ok();
     }
 
     // Send a notify to GPUI if this is a new message
-    if incoming {
+    if starting_time() <= &event.created_at {
         signal_tx.send(NostrSignal::GiftWrap(event)).await.ok();
     }
 

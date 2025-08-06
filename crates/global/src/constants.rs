@@ -36,20 +36,21 @@ pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 /// Default timeout (in seconds) for Nostr Connect
 pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 
-/// Unique ID for new message subscription.
-pub const NEW_MESSAGE_ID: &str = "listen_new_giftwraps";
-/// Unique ID for all messages subscription.
-pub const ALL_MESSAGES_ID: &str = "listen_all_giftwraps";
-/// Unique ID for all newest messages subscription.
-pub const ALL_NEWEST_MESSAGES_ID: &str = "listen_all_newest_giftwraps";
+/// Unique ID for all gift wraps subscription.
+pub const GIFT_WRAP_SUB_ID: &str = "listen_for_giftwraps";
 
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 100;
+
 /// Maximum timeout for grouping metadata requests.
 pub const METADATA_BATCH_TIMEOUT: u64 = 400;
 
+/// Maximum timeout for waiting for finish (seconds)
+pub const WAIT_FOR_FINISH: u64 = 60;
+
 /// Default width for all modals.
 pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
+
 /// Default width of the sidebar.
 pub const DEFAULT_SIDEBAR_WIDTH: f32 = 280.;
 
