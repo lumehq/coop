@@ -9,7 +9,7 @@ use global::constants::{
     ALL_MESSAGES_ID, APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, NEW_MESSAGE_ID, SEARCH_RELAYS,
 };
-use global::{nostr_client, set_all_gift_wraps_fetched, NostrSignal};
+use global::{nostr_client, NostrSignal};
 use gpui::{
     actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
@@ -165,7 +165,7 @@ fn main() {
                         signal_tx.send(NostrSignal::Finish).await.ok();
                         // Mark all gift wraps as fetched
                         // For the next time Coop only needs to process new gift wraps
-                        set_all_gift_wraps_fetched().await;
+                        // set_all_gift_wraps_fetched().await;
 
                         break;
                     }

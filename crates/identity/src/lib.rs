@@ -4,10 +4,9 @@ use anyhow::{anyhow, Error};
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{
-    ACCOUNT_D, ALL_MESSAGES_ID, ALL_NEWEST_MESSAGES_ID, NEW_MESSAGE_ID, NIP17_RELAYS, NIP65_RELAYS,
-    NOSTR_CONNECT_TIMEOUT,
+    ACCOUNT_D, ALL_MESSAGES_ID, NEW_MESSAGE_ID, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT,
 };
-use global::{is_gift_wraps_fetch_complete, nostr_client};
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, red, App, AppContext, Context, Entity, Global, ParentElement, SharedString, Styled,
@@ -633,12 +632,27 @@ impl Identity {
 
     pub(crate) async fn subscribe(client: &Client, public_key: PublicKey) -> Result<(), Error> {
         let all_messages = SubscriptionId::new(ALL_MESSAGES_ID);
-        let all_newest_messages = SubscriptionId::new(ALL_NEWEST_MESSAGES_ID);
         let new_messages = SubscriptionId::new(NEW_MESSAGE_ID);
-        // Subscription options
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        // Get the gift wraps fetch status
-        let is_completed = is_gift_wraps_fetch_complete();
+
+        client
+            .subscribe_with_id(
+                all_messages,
+                Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
+                Some(opts),
+            )
+            .await?;
+
+        client
+            .subscribe_with_id(
+                new_messages,
+                Filter::new()
+                    .kind(Kind::GiftWrap)
+                    .pubkey(public_key)
+                    .limit(0),
+                None,
+            )
+            .await?;
 
         client
             .subscribe(
@@ -659,37 +673,6 @@ impl Identity {
                 Some(opts),
             )
             .await?;
-
-        client
-            .subscribe_with_id(
-                new_messages,
-                Filter::new()
-                    .kind(Kind::GiftWrap)
-                    .pubkey(public_key)
-                    .limit(0),
-                None,
-            )
-            .await?;
-
-        if is_completed {
-            let week_ago: u64 = 7 * 24 * 60 * 60;
-            let since = Timestamp::from_secs(Timestamp::now().as_u64() - week_ago);
-
-            let filter = Filter::new()
-                .pubkey(public_key)
-                .kind(Kind::GiftWrap)
-                .since(since);
-
-            client
-                .subscribe_with_id(all_newest_messages, filter, Some(opts))
-                .await?;
-        } else {
-            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-            client
-                .subscribe_with_id(all_messages, filter, Some(opts))
-                .await?;
-        };
 
         log::info!("Getting all user's metadata and messages...");
 

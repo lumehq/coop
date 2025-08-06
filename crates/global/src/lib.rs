@@ -75,16 +75,3 @@ pub fn first_run() -> &'static bool {
         }
     })
 }
-
-pub async fn set_all_gift_wraps_fetched() {
-    let flag = support_dir().join(".fetched");
-
-    if !flag.exists() && smol::fs::write(&flag, "").await.is_err() {
-        log::error!("Failed to create full run flag");
-    }
-}
-
-pub fn is_gift_wraps_fetch_complete() -> bool {
-    let flag = support_dir().join(".fetched");
-    flag.exists()
-}
