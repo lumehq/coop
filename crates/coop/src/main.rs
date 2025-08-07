@@ -71,6 +71,7 @@ fn main() {
     app.background_executor()
         .spawn(async move {
             let duration = Duration::from_millis(METADATA_BATCH_TIMEOUT);
+            let mut processed_pubkeys: BTreeSet<PublicKey> = BTreeSet::new();
             let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
 
             /// Internal events for the metadata batching system
@@ -98,8 +99,11 @@ fn main() {
 
                 match smol::future::or(recv(), timeout()).await {
                     BatchEvent::NewKeys(public_key) => {
-                        batch.insert(public_key);
-                        // Process immediately if batch limit reached
+                        // Prevent duplicate keys from being processed
+                        if processed_pubkeys.insert(public_key) {
+                            batch.insert(public_key);
+                        }
+                        // Process the batch if it's full
                         if batch.len() >= METADATA_BATCH_LIMIT {
                             sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
                         }
@@ -352,7 +356,7 @@ async fn handle_nostr_notifications(
     event_tx: &Sender<Event>,
 ) -> Result<(), Error> {
     let client = nostr_client();
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+    let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
     let mut notifications = client.notifications();
     let mut processed_relay_list = false;
     let mut processed_inbox_relay = false;
@@ -376,10 +380,7 @@ async fn handle_nostr_notifications(
                 // Get metadata for event's pubkey that matches the current user's pubkey
                 if let Ok(true) = is_from_current_user(&event).await {
                     match processed_relay_list {
-                        true => {
-                            log::info!("ssssssssss");
-                            continue;
-                        }
+                        true => continue,
                         false => processed_relay_list = true,
                     }
 
@@ -390,7 +391,7 @@ async fn handle_nostr_notifications(
                         .limit(10);
 
                     client
-                        .subscribe_with_id(sub_id, filter, Some(opts))
+                        .subscribe_with_id(sub_id, filter, Some(auto_close))
                         .await
                         .ok();
                 }
@@ -398,10 +399,7 @@ async fn handle_nostr_notifications(
             Kind::InboxRelays => {
                 if let Ok(true) = is_from_current_user(&event).await {
                     match processed_inbox_relay {
-                        true => {
-                            log::info!("sssss2sssss");
-                            continue;
-                        }
+                        true => continue,
                         false => processed_inbox_relay = true,
                     }
 
@@ -443,34 +441,24 @@ async fn handle_nostr_notifications(
                     }
                 }
             }
+            Kind::ContactList => {
+                if let Ok(true) = is_from_current_user(&event).await {
+                    let public_keys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
+                    let kinds = vec![Kind::Metadata, Kind::ContactList];
+                    let lens = public_keys.len() * kinds.len();
+                    let filter = Filter::new().limit(lens).authors(public_keys).kinds(kinds);
+
+                    client
+                        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
+                        .await
+                        .ok();
+                }
+            }
             Kind::Metadata => {
                 signal_tx
                     .send(NostrSignal::Metadata(event.into_owned()))
                     .await
                     .ok();
-            }
-            Kind::ContactList => {
-                if let Ok(true) = is_from_current_user(&event).await {
-                    let opts =
-                        SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
-                    let public_keys = event
-                        .tags
-                        .public_keys()
-                        .copied()
-                        .filter(|p| p != &event.pubkey)
-                        .collect_vec();
-
-                    let filter = Filter::new()
-                        .limit(public_keys.len())
-                        .authors(public_keys)
-                        .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::RelayList]);
-
-                    client
-                        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-                        .await
-                        .ok();
-                }
             }
             Kind::GiftWrap => {
                 event_tx.send(event.into_owned()).await.ok();

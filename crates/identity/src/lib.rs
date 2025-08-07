@@ -129,6 +129,7 @@ impl Identity {
 
             // Unset signer
             client.unset_signer().await;
+
             // Delete account
             client.database().delete(filter).await?;
 
@@ -349,11 +350,6 @@ impl Identity {
     where
         S: NostrSigner + 'static,
     {
-        if self.logging_in {
-            return;
-        };
-        self.set_logging_in(true, cx);
-
         let task: Task<Result<PublicKey, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let public_key = signer.get_public_key().await?;
@@ -600,13 +596,16 @@ impl Identity {
 async fn get_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
     let client = nostr_client();
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let id = SubscriptionId::new("user-nip65-relays");
+    let sub_id = SubscriptionId::new("nip65-relays");
+
     let filter = Filter::new()
         .kind(Kind::RelayList)
         .author(public_key)
         .limit(1);
 
-    client.subscribe_with_id(id, filter, Some(opts)).await?;
+    if client.subscription(&sub_id).await.is_empty() {
+        client.subscribe_with_id(sub_id, filter, Some(opts)).await?;
+    }
 
     Ok(())
 }

@@ -580,6 +580,7 @@ impl Sidebar {
         });
     }
 
+    #[allow(dead_code)]
     fn skeletons(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
         (0..total).map(|_| {
             div()
@@ -788,16 +789,6 @@ impl Render for Sidebar {
                                     ),
                             ),
                     )
-                    .when(registry.loading, |this| {
-                        this.child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .children(self.skeletons(1)),
-                        )
-                    })
                     .child(
                         uniform_list(
                             "rooms",

@@ -38,8 +38,8 @@ pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 100;
 
-/// Maximum timeout for grouping metadata requests.
-pub const METADATA_BATCH_TIMEOUT: u64 = 400;
+/// Maximum timeout for grouping metadata requests. (milliseconds)
+pub const METADATA_BATCH_TIMEOUT: u64 = 300;
 
 /// Maximum timeout for waiting for finish (seconds)
 pub const WAIT_FOR_FINISH: u64 = 60;
