@@ -1,11 +1,12 @@
+use std::collections::BTreeSet;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
+use smol::lock::RwLock;
 
-use crate::constants::GIFT_WRAP_SUB_ID;
 use crate::paths::support_dir;
 
 pub mod constants;
@@ -26,15 +27,15 @@ pub enum NostrSignal {
     /// Partially finished processing all gift wrap events
     PartialFinish,
 
-    /// Receives EOSE response from relay pool
-    Eose(SubscriptionId),
+    /// DM relays have been found
+    DmRelaysFound,
 
     /// Notice from Relay Pool
     Notice(String),
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-static GIFT_WRAP_ID: OnceLock<SubscriptionId> = OnceLock::new();
+static PROCESSED_EVENTS: OnceLock<RwLock<BTreeSet<EventId>>> = OnceLock::new();
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
@@ -50,22 +51,20 @@ pub fn nostr_client() -> &'static Client {
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
         let opts = ClientOptions::new()
-            // Coop isn't social client,
-            // but it needs this option because it needs user's NIP65 Relays to fetch NIP17 Relays.
             .gossip(true)
-            // TODO: Coop should handle authentication by itself
             .automatic_authentication(true)
-            // Sleep after idle for 5 seconds
+            .verify_subscriptions(false)
+            // Sleep after idle for 20 seconds
             .sleep_when_idle(SleepWhenIdle::Enabled {
-                timeout: Duration::from_secs(10),
+                timeout: Duration::from_secs(20),
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
     })
 }
 
-pub fn gift_wrap_sub_id() -> &'static SubscriptionId {
-    GIFT_WRAP_ID.get_or_init(|| SubscriptionId::new(GIFT_WRAP_SUB_ID))
+pub fn processed_events() -> &'static RwLock<BTreeSet<EventId>> {
+    PROCESSED_EVENTS.get_or_init(|| RwLock::new(BTreeSet::new()))
 }
 
 pub fn starting_time() -> &'static Timestamp {

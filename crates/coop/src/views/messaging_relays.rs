@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use global::constants::{GIFT_WRAP_SUB_ID, NIP17_RELAYS};
+use global::constants::NIP17_RELAYS;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -10,8 +10,6 @@ use gpui::{
     TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -189,15 +187,12 @@ impl MessagingRelays {
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+            let tags: Vec<Tag> = relays
+                .iter()
+                .map(|relay| Tag::relay(relay.clone()))
+                .collect();
 
-            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
-                relays
-                    .iter()
-                    .map(|relay| Tag::relay(relay.clone()))
-                    .collect_vec(),
-            );
+            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
 
             // Set messaging relays
             client.send_event_builder(builder).await?;
@@ -208,15 +203,6 @@ impl MessagingRelays {
                 _ = client.connect_relay(&relay).await;
             }
 
-            let id = SubscriptionId::new(GIFT_WRAP_SUB_ID);
-            let new_messages = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-            // Close old subscriptions
-            client.unsubscribe(&id).await;
-
-            // Subscribe to new messages
-            client.subscribe_with_id(id, new_messages, None).await?;
-
             Ok(())
         });
 
@@ -224,10 +210,6 @@ impl MessagingRelays {
             match task.await {
                 Ok(_) => {
                     cx.update(|window, cx| {
-                        Identity::global(cx).update(cx, |this, cx| {
-                            this.verify_dm_relays(window, cx);
-                        });
-                        // Close the current modal
                         window.close_modal(cx);
                     })
                     .ok();

@@ -342,7 +342,7 @@ impl ChatSpace {
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let need_backup = Identity::read_global(cx).need_backup();
-        let relay_ready = Identity::read_global(cx).relay_ready();
+        let has_dm_relays = Identity::read_global(cx).has_dm_relays();
 
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
@@ -377,7 +377,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when_some(relay_ready, |this, status| {
+            .when_some(has_dm_relays, |this, status| {
                 this.when(!status, |this| this.child(messaging_relays::relay_button()))
             })
             .when_some(need_backup, |this, keys| {
