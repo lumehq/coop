@@ -4,7 +4,7 @@ use anyhow::{anyhow, Error};
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_D, NIP17_RELAYS, NIP65_RELAYS, NOSTR_CONNECT_TIMEOUT};
-use global::{gift_wrap_sub_id, nostr_client};
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, red, App, AppContext, Context, Entity, Global, ParentElement, SharedString, Styled,
@@ -29,7 +29,7 @@ impl Global for GlobalIdentity {}
 pub struct Identity {
     public_key: Option<PublicKey>,
     logging_in: bool,
-    relay_ready: Option<bool>,
+    has_dm_relays: Option<bool>,
     need_backup: Option<Keys>,
     need_onboarding: bool,
     #[allow(dead_code)]
@@ -73,8 +73,8 @@ impl Identity {
 
         Self {
             public_key: None,
-            relay_ready: None,
             need_backup: None,
+            has_dm_relays: None,
             need_onboarding: false,
             logging_in: false,
             subscriptions,
@@ -362,7 +362,7 @@ impl Identity {
             client.set_signer(signer).await;
 
             // Subscribe for user metadata
-            Self::init(public_key).await?;
+            get_nip65_relays(public_key).await?;
 
             Ok(public_key)
         });
@@ -427,11 +427,12 @@ impl Identity {
 
             // Set user's NIP65 relays
             client.send_event_builder(relay_list).await?;
+
             // Set user's NIP17 relays
             client.send_event_builder(dm_relay).await?;
 
-            // Subscribe for user metadata
-            Self::init(public_key).await?;
+            // Get user's NIP65 relays
+            get_nip65_relays(public_key).await?;
 
             Ok(public_key)
         });
@@ -552,60 +553,15 @@ impl Identity {
         .detach();
     }
 
-    pub fn verify_dm_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(public_key) = self.public_key() else {
-            return;
-        };
-
-        let task: Task<bool> = cx.background_spawn(async move {
-            let client = nostr_client();
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
-
-            let Ok(events) = client.database().query(filter).await else {
-                return false;
-            };
-
-            let Some(event) = events.first() else {
-                return false;
-            };
-
-            let relays: Vec<RelayUrl> = event
-                .tags
-                .filter(TagKind::Relay)
-                .filter_map(|tag| RelayUrl::parse(tag.content()?).ok())
-                .collect();
-
-            !relays.is_empty()
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-
-            this.update(cx, |this, cx| {
-                this.relay_ready = Some(result);
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
-    }
-
     /// Sets the public key of the identity
     pub(crate) fn set_public_key(
         &mut self,
         public_key: Option<PublicKey>,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.public_key = public_key;
         cx.notify();
-        // Run verify user's dm relays task
-        cx.defer_in(window, |this, window, cx| {
-            this.verify_dm_relays(window, cx);
-        });
     }
 
     /// Returns the current identity's public key
@@ -618,8 +574,9 @@ impl Identity {
         self.public_key.is_some()
     }
 
-    pub fn relay_ready(&self) -> Option<bool> {
-        self.relay_ready
+    /// Returns true if the identity has DM Relays
+    pub fn has_dm_relays(&self) -> Option<bool> {
+        self.has_dm_relays
     }
 
     /// Returns true if the identity is currently logging in
@@ -627,46 +584,29 @@ impl Identity {
         self.logging_in
     }
 
+    /// Sets the DM Relays status of the identity
+    pub fn set_has_dm_relays(&mut self, cx: &mut Context<Self>) {
+        self.has_dm_relays = Some(true);
+        cx.notify();
+    }
+
     /// Sets the logging in status of the identity
     pub(crate) fn set_logging_in(&mut self, status: bool, cx: &mut Context<Self>) {
         self.logging_in = status;
         cx.notify();
     }
+}
 
-    async fn init(public_key: PublicKey) -> Result<(), Error> {
-        let client = nostr_client();
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+async fn get_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
+    let client = nostr_client();
+    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+    let id = SubscriptionId::new("user-nip65-relays");
+    let filter = Filter::new()
+        .kind(Kind::RelayList)
+        .author(public_key)
+        .limit(1);
 
-        client
-            .subscribe_with_id(
-                gift_wrap_sub_id().to_owned(),
-                Filter::new().kind(Kind::GiftWrap).pubkey(public_key),
-                None,
-            )
-            .await?;
+    client.subscribe_with_id(id, filter, Some(opts)).await?;
 
-        client
-            .subscribe(
-                Filter::new()
-                    .author(public_key)
-                    .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::RelayList])
-                    .since(Timestamp::now()),
-                None,
-            )
-            .await?;
-
-        client
-            .subscribe(
-                Filter::new()
-                    .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::RelayList])
-                    .author(public_key)
-                    .limit(10),
-                Some(opts),
-            )
-            .await?;
-
-        log::info!("Getting all user's metadata and messages...");
-
-        Ok(())
-    }
+    Ok(())
 }

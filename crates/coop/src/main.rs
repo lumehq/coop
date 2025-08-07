@@ -9,7 +9,7 @@ use global::constants::{
     APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
     SEARCH_RELAYS, WAIT_FOR_FINISH,
 };
-use global::{gift_wrap_sub_id, nostr_client, starting_time, NostrSignal};
+use global::{nostr_client, processed_events, starting_time, NostrSignal};
 use gpui::{
     actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
@@ -50,9 +50,7 @@ fn main() {
     let (signal_tx, signal_rx) = channel::bounded::<NostrSignal>(2048);
     let (mta_tx, mta_rx) = channel::bounded::<PublicKey>(1024);
     let (event_tx, event_rx) = channel::bounded::<Event>(2048);
-
     let signal_tx_clone = signal_tx.clone();
-    let mta_tx_clone = mta_tx.clone();
 
     app.background_executor()
         .spawn(async move {
@@ -64,9 +62,7 @@ fn main() {
             // Handle Nostr notifications.
             //
             // Send the redefined signal back to GPUI via channel.
-            if let Err(e) =
-                handle_nostr_notifications(client, &signal_tx_clone, &mta_tx_clone, &event_tx).await
-            {
+            if let Err(e) = handle_nostr_notifications(&signal_tx_clone, &event_tx).await {
                 log::error!("Failed to handle Nostr notifications: {e}");
             }
         })
@@ -105,17 +101,17 @@ fn main() {
                         batch.insert(public_key);
                         // Process immediately if batch limit reached
                         if batch.len() >= METADATA_BATCH_LIMIT {
-                            sync_data_for_pubkeys(client, std::mem::take(&mut batch)).await;
+                            sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
                         }
                     }
                     BatchEvent::Timeout => {
                         if !batch.is_empty() {
-                            sync_data_for_pubkeys(client, std::mem::take(&mut batch)).await;
+                            sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
                         }
                     }
                     BatchEvent::Closed => {
                         if !batch.is_empty() {
-                            sync_data_for_pubkeys(client, std::mem::take(&mut batch)).await;
+                            sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
                         }
                         break;
                     }
@@ -243,7 +239,7 @@ fn main() {
                     while let Ok(signal) = signal_rx.recv().await {
                         cx.update(|window, cx| {
                             let registry = Registry::global(cx);
-                            let identity = Identity::read_global(cx);
+                            let identity = Identity::global(cx);
 
                             match signal {
                                 // Load chat rooms and stop the loading status
@@ -267,15 +263,6 @@ fn main() {
                                         }
                                     });
                                 }
-                                // Load chat rooms without setting as finished
-                                NostrSignal::Eose(subscription_id) => {
-                                    // Only load chat rooms if the subscription matches the gift wrap subscription
-                                    if gift_wrap_sub_id() == &subscription_id {
-                                        registry.update(cx, |this, cx| {
-                                            this.load_rooms(window, cx);
-                                        });
-                                    }
-                                }
                                 // Add the new metadata to the registry or update the existing one
                                 NostrSignal::Metadata(event) => {
                                     registry.update(cx, |this, cx| {
@@ -284,11 +271,16 @@ fn main() {
                                 }
                                 // Convert the gift wrapped message to a message
                                 NostrSignal::GiftWrap(event) => {
-                                    if let Some(public_key) = identity.public_key() {
+                                    if let Some(public_key) = identity.read(cx).public_key() {
                                         registry.update(cx, |this, cx| {
                                             this.event_to_message(public_key, event, window, cx);
                                         });
                                     }
+                                }
+                                NostrSignal::DmRelaysFound => {
+                                    identity.update(cx, |this, cx| {
+                                        this.set_has_dm_relays(cx);
+                                    });
                                 }
                                 NostrSignal::Notice(_msg) => {
                                     // window.push_notification(msg, cx);
@@ -356,67 +348,132 @@ async fn connect(client: &Client) -> Result<(), Error> {
 }
 
 async fn handle_nostr_notifications(
-    client: &Client,
     signal_tx: &Sender<NostrSignal>,
-    mta_tx: &Sender<PublicKey>,
     event_tx: &Sender<Event>,
 ) -> Result<(), Error> {
+    let client = nostr_client();
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
     let mut notifications = client.notifications();
-    let mut processed_events: BTreeSet<EventId> = BTreeSet::new();
-    let mut processed_dm_relays: BTreeSet<PublicKey> = BTreeSet::new();
+    let mut processed_relay_list = false;
+    let mut processed_inbox_relay = false;
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Message { message, .. } = notification else {
             continue;
         };
 
-        match message {
-            RelayMessage::Event { event, .. } => {
-                if processed_events.contains(&event.id) {
-                    continue;
-                }
-                // Skip events that have already been processed
-                processed_events.insert(event.id);
+        let RelayMessage::Event { event, .. } = message else {
+            continue;
+        };
 
-                match event.kind {
-                    Kind::GiftWrap => {
-                        event_tx.send(event.into_owned()).await.ok();
-                    }
-                    Kind::Metadata => {
-                        signal_tx
-                            .send(NostrSignal::Metadata(event.into_owned()))
-                            .await
-                            .ok();
-                    }
-                    Kind::ContactList => {
-                        if let Ok(true) = check_author(client, &event).await {
-                            for public_key in event.tags.public_keys().copied() {
-                                mta_tx.send(public_key).await.ok();
-                            }
-                        }
-                    }
-                    Kind::RelayList => {
-                        if processed_dm_relays.contains(&event.pubkey) {
+        // Skip events that have already been processed
+        if !processed_events().write().await.insert(event.id) {
+            continue;
+        }
+
+        match event.kind {
+            Kind::RelayList => {
+                // Get metadata for event's pubkey that matches the current user's pubkey
+                if let Ok(true) = is_from_current_user(&event).await {
+                    match processed_relay_list {
+                        true => {
+                            log::info!("ssssssssss");
                             continue;
                         }
-                        // Skip public keys that have already been processed
-                        processed_dm_relays.insert(event.pubkey);
-
-                        let filter = Filter::new()
-                            .author(event.pubkey)
-                            .kind(Kind::InboxRelays)
-                            .limit(1);
-
-                        client.subscribe(filter, Some(opts)).await.ok();
+                        false => processed_relay_list = true,
                     }
-                    _ => {}
+
+                    let sub_id = SubscriptionId::new("metadata");
+                    let filter = Filter::new()
+                        .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays])
+                        .author(event.pubkey)
+                        .limit(10);
+
+                    client
+                        .subscribe_with_id(sub_id, filter, Some(opts))
+                        .await
+                        .ok();
                 }
             }
-            RelayMessage::EndOfStoredEvents(subscription_id) => {
+            Kind::InboxRelays => {
+                if let Ok(true) = is_from_current_user(&event).await {
+                    match processed_inbox_relay {
+                        true => {
+                            log::info!("sssss2sssss");
+                            continue;
+                        }
+                        false => processed_inbox_relay = true,
+                    }
+
+                    // Get all inbox relays
+                    let relays = event
+                        .tags
+                        .filter_standardized(TagKind::Relay)
+                        .filter_map(|t| {
+                            if let TagStandard::Relay(url) = t {
+                                Some(url.to_owned())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect_vec();
+
+                    if !relays.is_empty() {
+                        // Add relays to nostr client
+                        for relay in relays.iter() {
+                            _ = client.add_relay(relay).await;
+                            _ = client.connect_relay(relay).await;
+                        }
+
+                        log::info!("Connected to messaging relays");
+
+                        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
+                        let sub_id = SubscriptionId::new("gift-wrap");
+
+                        // Notify the UI that the current user has set up the DM relays
+                        signal_tx.send(NostrSignal::DmRelaysFound).await.ok();
+
+                        if client
+                            .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
+                            .await
+                            .is_ok()
+                        {
+                            log::info!("Subscribing to gift wrap events in: {relays:?}");
+                        }
+                    }
+                }
+            }
+            Kind::Metadata => {
                 signal_tx
-                    .send(NostrSignal::Eose(subscription_id.into_owned()))
-                    .await?;
+                    .send(NostrSignal::Metadata(event.into_owned()))
+                    .await
+                    .ok();
+            }
+            Kind::ContactList => {
+                if let Ok(true) = is_from_current_user(&event).await {
+                    let opts =
+                        SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+                    let public_keys = event
+                        .tags
+                        .public_keys()
+                        .copied()
+                        .filter(|p| p != &event.pubkey)
+                        .collect_vec();
+
+                    let filter = Filter::new()
+                        .limit(public_keys.len())
+                        .authors(public_keys)
+                        .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::RelayList]);
+
+                    client
+                        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                        .await
+                        .ok();
+                }
+            }
+            Kind::GiftWrap => {
+                event_tx.send(event.into_owned()).await.ok();
             }
             _ => {}
         }
@@ -425,28 +482,28 @@ async fn handle_nostr_notifications(
     Ok(())
 }
 
-async fn check_author(client: &Client, event: &Event) -> Result<bool, Error> {
+async fn is_from_current_user(event: &Event) -> Result<bool, Error> {
+    let client = nostr_client();
     let signer = client.signer().await?;
     let public_key = signer.get_public_key().await?;
 
     Ok(public_key == event.pubkey)
 }
 
-async fn sync_data_for_pubkeys(client: &Client, public_keys: BTreeSet<PublicKey>) {
+async fn sync_data_for_pubkeys(public_keys: BTreeSet<PublicKey>) {
+    let client = nostr_client();
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+    let kinds = vec![Kind::Metadata, Kind::ContactList];
 
     let filter = Filter::new()
         .limit(public_keys.len() * kinds.len())
         .authors(public_keys)
         .kinds(kinds);
 
-    if let Err(e) = client
+    client
         .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
         .await
-    {
-        log::error!("Failed to sync metadata: {e}");
-    }
+        .ok();
 }
 
 /// Stores an unwrapped event in local database with reference to original

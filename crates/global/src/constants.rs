@@ -8,10 +8,9 @@ pub const ACCOUNT_D: &str = "coop:account";
 pub const SETTINGS_D: &str = "coop:settings";
 
 /// Bootstrap Relays.
-pub const BOOTSTRAP_RELAYS: [&str; 5] = [
+pub const BOOTSTRAP_RELAYS: [&str; 4] = [
     "wss://relay.damus.io",
     "wss://relay.primal.net",
-    "wss://nostr.Wine",
     "wss://user.kindpag.es",
     "wss://purplepag.es",
 ];
@@ -35,9 +34,6 @@ pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 
 /// Default timeout (in seconds) for Nostr Connect
 pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
-
-/// Unique ID for all gift wraps subscription.
-pub const GIFT_WRAP_SUB_ID: &str = "listen_for_giftwraps";
 
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 100;
