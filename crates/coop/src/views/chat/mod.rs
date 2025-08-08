@@ -140,15 +140,7 @@ impl Chat {
 
             // Initialize list state
             // [item_count] always equal to 1 at the beginning
-            let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.), {
-                let this = cx.entity().downgrade();
-                move |ix, window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.render_message(ix, window, cx).into_any_element()
-                    })
-                    .unwrap_or(Empty.into_any())
-                }
-            });
+            let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
 
             Self {
                 id: room.read(cx).id.to_string().into(),
@@ -872,10 +864,19 @@ impl Focusable for Chat {
 
 impl Render for Chat {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let entity = cx.entity();
+
         v_flex()
             .image_cache(self.image_cache.clone())
             .size_full()
-            .child(list(self.list_state.clone()).flex_1())
+            .child(
+                list(self.list_state.clone(), move |ix, window, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.render_message(ix, window, cx).into_any_element()
+                    })
+                })
+                .flex_1(),
+            )
             .child(
                 div()
                     .flex_shrink_0()

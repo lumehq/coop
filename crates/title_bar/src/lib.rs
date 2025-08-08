@@ -118,14 +118,14 @@ impl Render for TitleBar {
                     .w_full()
                     .when(cx.theme().platform_kind.is_mac(), |this| {
                         this.on_click(|event, window, _| {
-                            if event.up.click_count == 2 {
+                            if event.click_count() == 2 {
                                 window.titlebar_double_click();
                             }
                         })
                     })
                     .when(cx.theme().platform_kind.is_linux(), |this| {
                         this.on_click(|event, window, _| {
-                            if event.up.click_count == 2 {
+                            if event.click_count() == 2 {
                                 window.zoom_window();
                             }
                         })
