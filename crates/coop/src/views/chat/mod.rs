@@ -712,7 +712,7 @@ impl Chat {
                 window.open_modal(cx, move |this, _window, cx| {
                     this.title(SharedString::new(t!("chat.logs_title"))).child(
                         div()
-                            .w_full()
+                            .pb_4()
                             .flex()
                             .flex_col()
                             .gap_2()
