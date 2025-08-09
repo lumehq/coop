@@ -27,8 +27,10 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
+use ui::indicator::Indicator;
 use ui::modal::ModalButtonProps;
 use ui::popup_menu::PopupMenuExt;
+use ui::tooltip::Tooltip;
 use ui::{h_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::views::compose::compose_button;
@@ -327,11 +329,31 @@ impl ChatSpace {
     fn render_titlebar_left_side(
         &mut self,
         _window: &mut Window,
-        _cx: &Context<Self>,
+        cx: &Context<Self>,
     ) -> impl IntoElement {
-        let compose_button = compose_button().into_any_element();
+        let registry = Registry::read_global(cx);
+        let loading = registry.loading;
 
-        h_flex().gap_1().child(compose_button)
+        h_flex()
+            .gap_2()
+            .child(compose_button())
+            .when(loading, |this| {
+                this.child(
+                    h_flex()
+                        .id("downloading")
+                        .px_4()
+                        .h_6()
+                        .gap_1()
+                        .text_xs()
+                        .rounded_full()
+                        .bg(cx.theme().elevated_surface_background)
+                        .child(shared_t!("loading.label"))
+                        .child(Indicator::new().xsmall())
+                        .tooltip(|window, cx| {
+                            Tooltip::new(t!("loading.tooltip"), window, cx).into()
+                        }),
+                )
+            })
     }
 
     fn render_titlebar_right_side(

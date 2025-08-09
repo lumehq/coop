@@ -9,10 +9,10 @@ use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, rems, white, Action, AnyElement, App, AppContext, ClipboardItem,
-    Context, Element, Empty, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ListAlignment, ListState, MouseButton, ObjectFit, ParentElement,
+    PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, Subscription, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::t;
@@ -712,7 +712,7 @@ impl Chat {
                 window.open_modal(cx, move |this, _window, cx| {
                     this.title(SharedString::new(t!("chat.logs_title"))).child(
                         div()
-                            .w_full()
+                            .pb_4()
                             .flex()
                             .flex_col()
                             .gap_2()

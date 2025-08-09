@@ -48,7 +48,7 @@ pub const WAIT_FOR_FINISH: u64 = 60;
 pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
 
 /// Default width of the sidebar.
-pub const DEFAULT_SIDEBAR_WIDTH: f32 = 280.;
+pub const DEFAULT_SIDEBAR_WIDTH: f32 = 240.;
 
 /// Image Resize Service
 pub const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
