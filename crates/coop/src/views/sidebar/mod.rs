@@ -9,9 +9,9 @@ use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
-    Styled, Subscription, Task, Window,
+    div, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString, Styled,
+    Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::t;
@@ -26,16 +26,15 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::indicator::Indicator;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
-use ui::skeleton::Skeleton;
 use ui::{v_flex, ContextModal, IconName, Selectable, Sizable, StyledExt};
 
 mod list_item;
 
 const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
+const TOTAL_SKELETONS: usize = 3;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
@@ -547,61 +546,6 @@ impl Sidebar {
         });
     }
 
-    fn open_loading_modal(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let title = SharedString::new(t!("sidebar.loading_modal_title"));
-        let text_1 = SharedString::new(t!("sidebar.loading_modal_body_1"));
-        let text_2 = SharedString::new(t!("sidebar.loading_modal_body_2"));
-        let desc = SharedString::new(t!("sidebar.loading_modal_description"));
-
-        window.open_modal(cx, move |this, _window, cx| {
-            this.show_close(true)
-                .keyboard(true)
-                .title(title.clone())
-                .child(
-                    v_flex()
-                        .pb_4()
-                        .gap_2()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .text_sm()
-                                .child(text_1.clone())
-                                .child(text_2.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().text_muted)
-                                .child(desc.clone()),
-                        ),
-                )
-        });
-    }
-
-    #[allow(dead_code)]
-    fn skeletons(&self, total: i32) -> impl IntoIterator<Item = impl IntoElement> {
-        (0..total).map(|_| {
-            div()
-                .h_9()
-                .w_full()
-                .px_1p5()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .justify_between()
-                        .child(Skeleton::new().w_32().h_2p5().rounded_sm())
-                        .child(Skeleton::new().w_6().h_2p5().rounded_sm()),
-                )
-        })
-    }
-
     fn list_items(
         &self,
         rooms: &[Entity<Room>],
@@ -622,17 +566,17 @@ impl Sidebar {
                 });
 
                 items.push(
-                    RoomListItem::new(
-                        ix,
-                        room_id,
-                        this.members[0],
-                        this.display_name(cx),
-                        this.display_image(proxy, cx),
-                        this.ago(),
-                        this.kind,
-                    )
-                    .on_click(handler),
+                    RoomListItem::new(ix)
+                        .room_id(room_id)
+                        .name(this.display_name(cx))
+                        .avatar(this.display_image(proxy, cx))
+                        .created_at(this.ago())
+                        .public_key(this.members[0])
+                        .kind(this.kind)
+                        .on_click(handler),
                 )
+            } else {
+                items.push(RoomListItem::new(ix));
             }
         }
 
@@ -669,6 +613,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
+        let loading = registry.loading;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
@@ -683,6 +628,15 @@ impl Render for Sidebar {
                 registry.request_rooms(cx)
             }
         };
+
+        // Get total rooms count
+        let mut total_rooms = rooms.len();
+
+        // If loading in progress
+        // Add 3 skeletons to the room list
+        if loading {
+            total_rooms += TOTAL_SKELETONS;
+        }
 
         v_flex()
             .image_cache(self.image_cache.clone())
@@ -723,76 +677,55 @@ impl Render for Sidebar {
                     .overflow_y_hidden()
                     .child(
                         div()
-                            .flex_none()
                             .px_1()
-                            .w_full()
-                            .h_9()
-                            .flex()
-                            .items_center()
-                            .justify_between()
+                            .h_flex()
+                            .gap_2()
+                            .flex_none()
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        Button::new("all")
-                                            .label(t!("sidebar.all_button"))
-                                            .tooltip(t!("sidebar.all_conversations_tooltip"))
-                                            .when_some(
-                                                self.indicator.read(cx).as_ref(),
-                                                |this, kind| {
-                                                    this.when(kind == &RoomKind::Ongoing, |this| {
-                                                        this.child(
-                                                            div()
-                                                                .size_1()
-                                                                .rounded_full()
-                                                                .bg(cx.theme().cursor),
-                                                        )
-                                                    })
-                                                },
+                                Button::new("all")
+                                    .label(t!("sidebar.all_button"))
+                                    .tooltip(t!("sidebar.all_conversations_tooltip"))
+                                    .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
+                                        this.when(kind == &RoomKind::Ongoing, |this| {
+                                            this.child(
+                                                div().size_1().rounded_full().bg(cx.theme().cursor),
                                             )
-                                            .small()
-                                            .bold()
-                                            .secondary()
-                                            .rounded(ButtonRounded::Full)
-                                            .selected(self.filter(&RoomKind::Ongoing, cx))
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.set_filter(RoomKind::Ongoing, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("requests")
-                                            .label(t!("sidebar.requests_button"))
-                                            .tooltip(t!("sidebar.requests_tooltip"))
-                                            .when_some(
-                                                self.indicator.read(cx).as_ref(),
-                                                |this, kind| {
-                                                    this.when(kind != &RoomKind::Ongoing, |this| {
-                                                        this.child(
-                                                            div()
-                                                                .size_1()
-                                                                .rounded_full()
-                                                                .bg(cx.theme().cursor),
-                                                        )
-                                                    })
-                                                },
+                                        })
+                                    })
+                                    .small()
+                                    .bold()
+                                    .secondary()
+                                    .rounded(ButtonRounded::Full)
+                                    .selected(self.filter(&RoomKind::Ongoing, cx))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.set_filter(RoomKind::Ongoing, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("requests")
+                                    .label(t!("sidebar.requests_button"))
+                                    .tooltip(t!("sidebar.requests_tooltip"))
+                                    .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
+                                        this.when(kind != &RoomKind::Ongoing, |this| {
+                                            this.child(
+                                                div().size_1().rounded_full().bg(cx.theme().cursor),
                                             )
-                                            .small()
-                                            .bold()
-                                            .secondary()
-                                            .rounded(ButtonRounded::Full)
-                                            .selected(!self.filter(&RoomKind::Ongoing, cx))
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.set_filter(RoomKind::default(), cx);
-                                            })),
-                                    ),
+                                        })
+                                    })
+                                    .small()
+                                    .bold()
+                                    .secondary()
+                                    .rounded(ButtonRounded::Full)
+                                    .selected(!self.filter(&RoomKind::Ongoing, cx))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.set_filter(RoomKind::default(), cx);
+                                    })),
                             ),
                     )
                     .child(
                         uniform_list(
                             "rooms",
-                            rooms.len(),
+                            total_rooms,
                             cx.processor(move |this, range, _window, cx| {
                                 this.list_items(&rooms, range, cx)
                             }),
@@ -800,59 +733,5 @@ impl Render for Sidebar {
                         .h_full(),
                     ),
             )
-            .when(registry.loading, |this| {
-                let title = SharedString::new(t!("sidebar.retrieving_messages"));
-                let desc = SharedString::new(t!("sidebar.retrieving_messages_description"));
-
-                this.child(
-                    div().absolute().bottom_3().px_3().w_full().child(
-                        div()
-                            .p_1()
-                            .w_full()
-                            .rounded_full()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .bg(cx.theme().panel_background)
-                            .shadow_sm()
-                            // Loading
-                            .child(div().flex_shrink_0().pl_1().child(Indicator::new().small()))
-                            // Title
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_center()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_semibold()
-                                            .line_height(relative(1.2))
-                                            .child(title.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(desc.clone()),
-                                    ),
-                            )
-                            // Info button
-                            .child(
-                                Button::new("help")
-                                    .icon(IconName::Info)
-                                    .tooltip(t!("sidebar.why_seeing_this_tooltip"))
-                                    .small()
-                                    .ghost()
-                                    .rounded(ButtonRounded::Full)
-                                    .flex_shrink_0()
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.open_loading_modal(window, cx)
-                                    })),
-                            ),
-                    ),
-                )
-            })
     }
 }
