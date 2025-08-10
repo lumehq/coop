@@ -111,55 +111,9 @@ impl ChatSpace {
             subscriptions.push(cx.observe_in(
                 &client_keys,
                 window,
-                |_this: &mut Self, state, window, cx| {
+                |this: &mut Self, state, window, cx| {
                     if !state.read(cx).has_keys() {
-                        let title = SharedString::new(t!("startup.client_keys_warning"));
-                        let desc = SharedString::new(t!("startup.client_keys_desc"));
-
-                        window.open_modal(cx, move |this, _window, cx| {
-                            this.overlay_closable(false)
-                                .show_close(false)
-                                .keyboard(false)
-                                .confirm()
-                                .button_props(
-                                    ModalButtonProps::default()
-                                        .cancel_text(t!("startup.create_new_keys"))
-                                        .ok_text(t!("common.allow")),
-                                )
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .h_40()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_center()
-                                        .text_sm()
-                                        .child(
-                                            div()
-                                                .font_semibold()
-                                                .text_color(cx.theme().text_muted)
-                                                .child(title.clone()),
-                                        )
-                                        .child(desc.clone()),
-                                )
-                                .on_cancel(|_, _window, cx| {
-                                    ClientKeys::global(cx).update(cx, |this, cx| {
-                                        this.new_keys(cx);
-                                    });
-                                    // true: Close modal
-                                    true
-                                })
-                                .on_ok(|_, window, cx| {
-                                    ClientKeys::global(cx).update(cx, |this, cx| {
-                                        this.load(window, cx);
-                                    });
-                                    // true: Close modal
-                                    true
-                                })
-                        });
+                        this.render_client_keys_modal(window, cx);
                     }
                 },
             ));
@@ -301,8 +255,13 @@ impl ChatSpace {
     }
 
     fn on_sign_out(&mut self, _ev: &Logout, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = Registry::global(cx);
         let identity = Identity::global(cx);
-        // TODO: save current session?
+
+        registry.update(cx, |this, cx| {
+            this.reset(cx);
+        });
+
         identity.update(cx, |this, cx| {
             this.unload(window, cx);
         });
@@ -322,6 +281,56 @@ impl ChatSpace {
                     let Ok(bech32) = public_key.to_bech32();
                     cx.open_url(&format!("https://njump.me/{bech32}"));
                     false
+                })
+        });
+    }
+
+    fn render_client_keys_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let title = SharedString::new(t!("startup.client_keys_warning"));
+        let desc = SharedString::new(t!("startup.client_keys_desc"));
+
+        window.open_modal(cx, move |this, _window, cx| {
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .confirm()
+                .button_props(
+                    ModalButtonProps::default()
+                        .cancel_text(t!("startup.create_new_keys"))
+                        .ok_text(t!("common.allow")),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .h_40()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .items_center()
+                        .justify_center()
+                        .text_center()
+                        .text_sm()
+                        .child(
+                            div()
+                                .font_semibold()
+                                .text_color(cx.theme().text_muted)
+                                .child(title.clone()),
+                        )
+                        .child(desc.clone()),
+                )
+                .on_cancel(|_, _window, cx| {
+                    ClientKeys::global(cx).update(cx, |this, cx| {
+                        this.new_keys(cx);
+                    });
+                    // true: Close modal
+                    true
+                })
+                .on_ok(|_, window, cx| {
+                    ClientKeys::global(cx).update(cx, |this, cx| {
+                        this.load(window, cx);
+                    });
+                    // true: Close modal
+                    true
                 })
         });
     }

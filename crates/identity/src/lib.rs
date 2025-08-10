@@ -257,7 +257,7 @@ impl Identity {
                             this.set_public_key(None, window, cx);
                         })
                         .ok();
-                    // Close modal
+                    // true to close the modal
                     true
                 })
                 .on_ok(move |_, window, cx| {
@@ -271,7 +271,7 @@ impl Identity {
                             this.verify_keys(enc, password, weak_error, window, cx);
                         })
                         .ok();
-
+                    // false to keep the modal open
                     false
                 })
                 .child(
@@ -321,25 +321,33 @@ impl Identity {
         }
 
         // Decrypt the password in the background to prevent blocking the main thread
-        let task: Task<Option<SecretKey>> =
-            cx.background_spawn(async move { enc.decrypt(&password).ok() });
+        let task: Task<Result<SecretKey, Error>> = cx.background_spawn(async move {
+            let secret = enc.decrypt(&password)?;
+            Ok(secret)
+        });
 
         cx.spawn_in(window, async move |this, cx| {
-            if let Some(secret) = task.await {
-                cx.update(|window, cx| {
-                    window.close_modal(cx);
-                    // Update user's signer with decrypted secret key
-                    this.update(cx, |this, cx| {
-                        this.set_signer(Keys::new(secret), window, cx);
+            match task.await {
+                Ok(secret) => {
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            // Update user's signer with decrypted secret key
+                            this.set_signer(Keys::new(secret), window, cx);
+                            // Close the current modal
+                            window.close_modal(cx);
+                        })
+                        .ok();
                     })
                     .ok();
-                })
-                .ok();
-            } else {
-                _ = error.update(cx, |this, cx| {
-                    *this = Some("Invalid password".into());
-                    cx.notify();
-                });
+                }
+                Err(e) => {
+                    error
+                        .update(cx, |this, cx| {
+                            *this = Some(e.to_string().into());
+                            cx.notify();
+                        })
+                        .ok();
+                }
             }
         })
         .detach();
@@ -597,15 +605,12 @@ async fn get_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
     let client = nostr_client();
     let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
     let sub_id = SubscriptionId::new("nip65-relays");
-
     let filter = Filter::new()
         .kind(Kind::RelayList)
         .author(public_key)
         .limit(1);
 
-    if client.subscription(&sub_id).await.is_empty() {
-        client.subscribe_with_id(sub_id, filter, Some(opts)).await?;
-    }
+    client.subscribe_with_id(sub_id, filter, Some(opts)).await?;
 
     Ok(())
 }

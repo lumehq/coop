@@ -101,6 +101,12 @@ impl Registry {
         }
     }
 
+    pub fn reset(&mut self, cx: &mut Context<Self>) {
+        self.rooms = vec![];
+        self.loading = true;
+        cx.notify();
+    }
+
     pub(crate) fn set_persons_from_task(
         &mut self,
         task: Task<Result<Vec<Profile>, Error>>,
