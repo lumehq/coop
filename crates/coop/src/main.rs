@@ -411,8 +411,6 @@ async fn handle_nostr_notifications(
                             _ = client.connect_relay(relay).await;
                         }
 
-                        log::info!("Connected to messaging relays");
-
                         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
                         let sub_id = SubscriptionId::new("gift-wrap");
 
@@ -424,7 +422,7 @@ async fn handle_nostr_notifications(
                             .await
                             .is_ok()
                         {
-                            log::info!("Subscribing to gift wrap events in: {relays:?}");
+                            log::info!("Subscribing to messages in: {relays:?}");
                         }
                     }
                 }
