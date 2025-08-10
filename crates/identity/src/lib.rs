@@ -127,8 +127,9 @@ impl Identity {
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_D);
 
-            // Unset signer
+            // Reset the nostr client
             client.unset_signer().await;
+            client.unsubscribe_all().await;
 
             // Delete account
             client.database().delete(filter).await?;
