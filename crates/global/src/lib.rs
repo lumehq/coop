@@ -54,9 +54,9 @@ pub fn nostr_client() -> &'static Client {
             .gossip(true)
             .automatic_authentication(true)
             .verify_subscriptions(false)
-            // Sleep after idle for 20 seconds
+            // Sleep after idle for 30 seconds
             .sleep_when_idle(SleepWhenIdle::Enabled {
-                timeout: Duration::from_secs(20),
+                timeout: Duration::from_secs(30),
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()

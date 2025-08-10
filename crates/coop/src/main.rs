@@ -358,8 +358,6 @@ async fn handle_nostr_notifications(
     let client = nostr_client();
     let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
     let mut notifications = client.notifications();
-    let mut processed_relay_list = false;
-    let mut processed_inbox_relay = false;
 
     while let Ok(notification) = notifications.recv().await {
         let RelayPoolNotification::Message { message, .. } = notification else {
@@ -379,11 +377,6 @@ async fn handle_nostr_notifications(
             Kind::RelayList => {
                 // Get metadata for event's pubkey that matches the current user's pubkey
                 if let Ok(true) = is_from_current_user(&event).await {
-                    match processed_relay_list {
-                        true => continue,
-                        false => processed_relay_list = true,
-                    }
-
                     let sub_id = SubscriptionId::new("metadata");
                     let filter = Filter::new()
                         .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays])
@@ -398,11 +391,6 @@ async fn handle_nostr_notifications(
             }
             Kind::InboxRelays => {
                 if let Ok(true) = is_from_current_user(&event).await {
-                    match processed_inbox_relay {
-                        true => continue,
-                        false => processed_inbox_relay = true,
-                    }
-
                     // Get all inbox relays
                     let relays = event
                         .tags
@@ -423,8 +411,6 @@ async fn handle_nostr_notifications(
                             _ = client.connect_relay(relay).await;
                         }
 
-                        log::info!("Connected to messaging relays");
-
                         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
                         let sub_id = SubscriptionId::new("gift-wrap");
 
@@ -436,7 +422,7 @@ async fn handle_nostr_notifications(
                             .await
                             .is_ok()
                         {
-                            log::info!("Subscribing to gift wrap events in: {relays:?}");
+                            log::info!("Subscribing to messages in: {relays:?}");
                         }
                     }
                 }
