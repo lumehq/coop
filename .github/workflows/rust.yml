@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rustup: [stable, nightly]
+        rustup: [stable]
 
     runs-on: ${{ matrix.os }}
 
