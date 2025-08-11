@@ -1,6 +1,5 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
-use std::sync::Arc;
 
 use anyhow::anyhow;
 use common::display::DisplayProfile;
@@ -8,14 +7,14 @@ use common::nip96::nip96_upload;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, list, px, red, rems, white, Action, AnyElement, App, AppContext, ClipboardItem,
-    Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ListAlignment, ListState, MouseButton, ObjectFit, ParentElement,
-    PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
-    Styled, StyledImage, Subscription, Window,
+    div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
+    ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ListAlignment, ListScrollEvent, ListState, MouseButton,
+    ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::t;
+use i18n::{shared_t, t};
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -35,7 +34,7 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
-use ui::text::RichText;
+use ui::text::RenderedText;
 use ui::{
     v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable, StyledExt,
 };
@@ -44,13 +43,14 @@ mod subject;
 
 const DUPLICATE_TIME_WINDOW: u64 = 10;
 const MAX_RECENT_MESSAGES_TO_CHECK: usize = 5;
+const MESSAGE_LOADING_THRESHOLD: usize = 50;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
 pub struct ChangeSubject(pub String);
 
-pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Arc<Entity<Chat>> {
-    Arc::new(Chat::new(room, window, cx))
+pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
+    cx.new(|cx| Chat::new(room, window, cx))
 }
 
 pub struct Chat {
@@ -60,8 +60,8 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     messages: Entity<BTreeSet<Message>>,
-    text_data: HashMap<EventId, RichText>,
     list_state: ListState,
+    text_data: BTreeMap<EventId, RenderedText>,
     // New Message
     input: Entity<InputState>,
     replies_to: Entity<Option<Vec<Message>>>,
@@ -70,12 +70,13 @@ pub struct Chat {
     uploading: bool,
     // System
     image_cache: Entity<RetainAllImageCache>,
+    is_scrolled_to_bottom: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl Chat {
-    pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Self> {
+    pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let attaches = cx.new(|_| None);
         let replies_to = cx.new(|_| None);
         let messages = cx.new(|_| BTreeSet::new());
@@ -91,72 +92,76 @@ impl Chat {
                 .clean_on_escape()
         });
 
-        cx.new(|cx| {
-            let mut subscriptions = smallvec![];
+        let list_state = ListState::new(0, ListAlignment::Bottom, px(1024.));
 
-            subscriptions.push(cx.subscribe_in(
-                &input,
-                window,
-                move |this: &mut Self, input, event, window, cx| {
-                    match event {
-                        InputEvent::PressEnter { .. } => {
-                            this.send_message(window, cx);
+        list_state.set_scroll_handler(cx.listener(
+            |this: &mut Self, event: &ListScrollEvent, _window, _cx| {
+                if event.visible_range.start < MESSAGE_LOADING_THRESHOLD {
+                    // TODO: add load more messages
+                }
+                this.is_scrolled_to_bottom = !event.is_scrolled;
+            },
+        ));
+
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(cx.subscribe_in(
+            &input,
+            window,
+            move |this: &mut Self, _input, event, window, cx| {
+                match event {
+                    InputEvent::PressEnter { .. } => {
+                        this.send_message(window, cx);
+                    }
+                    InputEvent::Change(_) => {
+                        // this.mention_popup(text, input, cx);
+                    }
+                    _ => {}
+                };
+            },
+        ));
+
+        subscriptions.push(
+            cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
+                match signal {
+                    RoomSignal::NewMessage(event) => {
+                        // Check if the incoming message is the same as the new message created by optimistic update
+                        if this.prevent_duplicate_message(event, cx) {
+                            return;
                         }
-                        InputEvent::Change(text) => {
-                            this.mention_popup(text, input, cx);
-                        }
-                        _ => {}
-                    };
-                },
-            ));
 
-            subscriptions.push(cx.subscribe_in(
-                &room,
-                window,
-                move |this, _, signal, window, cx| {
-                    match signal {
-                        RoomSignal::NewMessage(event) => {
-                            // Check if the incoming message is the same as the new message created by optimistic update
-                            if this.prevent_duplicate_message(event, cx) {
-                                return;
-                            }
+                        let old_len = this.messages.read(cx).len();
+                        let message = event.to_owned();
 
-                            let old_len = this.messages.read(cx).len();
-                            let message = event.to_owned();
+                        cx.update_entity(&this.messages, |this, cx| {
+                            this.insert(message);
+                            cx.notify();
+                        });
 
-                            cx.update_entity(&this.messages, |this, cx| {
-                                this.insert(message);
-                                cx.notify();
-                            });
+                        this.list_state.splice(old_len..old_len, 1);
+                    }
+                    RoomSignal::Refresh => {
+                        this.load_messages(window, cx);
+                    }
+                };
+            }),
+        );
 
-                            this.list_state.splice(old_len..old_len, 1);
-                        }
-                        RoomSignal::Refresh => {
-                            this.load_messages(window, cx);
-                        }
-                    };
-                },
-            ));
-
-            // Initialize list state
-            // [item_count] always equal to 1 at the beginning
-            let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
-
-            Self {
-                id: room.read(cx).id.to_string().into(),
-                image_cache: RetainAllImageCache::new(cx),
-                focus_handle: cx.focus_handle(),
-                uploading: false,
-                text_data: HashMap::new(),
-                room,
-                messages,
-                list_state,
-                input,
-                replies_to,
-                attaches,
-                subscriptions,
-            }
-        })
+        Self {
+            id: room.read(cx).id.to_string().into(),
+            image_cache: RetainAllImageCache::new(cx),
+            focus_handle: cx.focus_handle(),
+            uploading: false,
+            text_data: BTreeMap::new(),
+            is_scrolled_to_bottom: true,
+            room,
+            messages,
+            list_state,
+            input,
+            replies_to,
+            attaches,
+            subscriptions,
+        }
     }
 
     /// Load all messages belonging to this room
@@ -195,6 +200,7 @@ impl Chat {
         .detach();
     }
 
+    #[allow(dead_code)]
     fn mention_popup(&mut self, _text: &str, _input: &Entity<InputState>, _cx: &mut Context<Self>) {
         // TODO: open mention popup at current cursor position
     }
@@ -587,7 +593,7 @@ impl Chat {
         let texts = self
             .text_data
             .entry(message.id)
-            .or_insert_with(|| RichText::new(&message.content, cx));
+            .or_insert_with(|| RenderedText::new(&message.content, cx));
 
         div()
             .id(ix)
@@ -864,17 +870,16 @@ impl Focusable for Chat {
 
 impl Render for Chat {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let entity = cx.entity();
-
         v_flex()
             .image_cache(self.image_cache.clone())
             .size_full()
             .child(
-                list(self.list_state.clone(), move |ix, window, cx| {
-                    entity.update(cx, |this, cx| {
+                list(
+                    self.list_state.clone(),
+                    cx.processor(move |this, ix, window, cx| {
                         this.render_message(ix, window, cx).into_any_element()
-                    })
-                })
+                    }),
+                )
                 .flex_1(),
             )
             .child(

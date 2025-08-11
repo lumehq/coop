@@ -54,7 +54,7 @@ type CustomRangeTooltipFn =
     Option<Arc<dyn Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView>>>;
 
 #[derive(Default)]
-pub struct RichText {
+pub struct RenderedText {
     pub text: SharedString,
     pub highlights: Vec<(Range<usize>, Highlight)>,
     pub link_ranges: Vec<Range<usize>>,
@@ -63,7 +63,7 @@ pub struct RichText {
     custom_ranges_tooltip_fn: CustomRangeTooltipFn,
 }
 
-impl RichText {
+impl RenderedText {
     pub fn new(content: &str, cx: &App) -> Self {
         let mut text = String::new();
         let mut highlights = Vec::new();
@@ -81,7 +81,7 @@ impl RichText {
 
         text.truncate(text.trim_end().len());
 
-        RichText {
+        RenderedText {
             text: SharedString::from(text),
             link_urls: link_urls.into(),
             link_ranges,

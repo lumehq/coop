@@ -287,7 +287,7 @@ compose:
     en: "Subject:"
 
 chat:
-  private_conversation_notice:
+  notice:
     en: "This conversation is private. Only members can see each other's messages."
   placeholder:
     en: "Message..."
