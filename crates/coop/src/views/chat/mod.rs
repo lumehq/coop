@@ -1,5 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::rc::Rc;
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::anyhow;
 use common::display::DisplayProfile;
@@ -8,18 +7,18 @@ use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
-    ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    ClipboardItem, Context, Div, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListScrollEvent, ListState, MouseButton,
     ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    Stateful, StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use registry::message::Message;
-use registry::room::{Room, RoomKind, RoomSignal, SendError};
+use registry::message::{RenderedMessage, SendReport};
+use registry::room::{Room, RoomKind, RoomSignal};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
@@ -41,8 +40,6 @@ use ui::{
 
 mod subject;
 
-const DUPLICATE_TIME_WINDOW: u64 = 10;
-const MAX_RECENT_MESSAGES_TO_CHECK: usize = 5;
 const MESSAGE_LOADING_THRESHOLD: usize = 50;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -59,14 +56,15 @@ pub struct Chat {
     focus_handle: FocusHandle,
     // Chat Room
     room: Entity<Room>,
-    messages: Entity<BTreeSet<Message>>,
     list_state: ListState,
-    text_data: BTreeMap<EventId, RenderedText>,
+    messages: BTreeSet<RenderedMessage>,
+    rendered_texts_by_id: HashMap<EventId, RenderedText>,
+    reports_by_id: HashMap<EventId, Vec<SendReport>>,
     // New Message
     input: Entity<InputState>,
-    replies_to: Entity<Option<Vec<Message>>>,
+    replies_to: Entity<Vec<EventId>>,
     // Media Attachment
-    attaches: Entity<Option<Vec<Url>>>,
+    attachments: Entity<Vec<Url>>,
     uploading: bool,
     // System
     image_cache: Entity<RetainAllImageCache>,
@@ -77,9 +75,8 @@ pub struct Chat {
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let attaches = cx.new(|_| None);
-        let replies_to = cx.new(|_| None);
-        let messages = cx.new(|_| BTreeSet::new());
+        let attachments = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| vec![]);
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -92,7 +89,7 @@ impl Chat {
                 .clean_on_escape()
         });
 
-        let list_state = ListState::new(0, ListAlignment::Bottom, px(1024.));
+        let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
 
         list_state.set_scroll_handler(cx.listener(
             |this: &mut Self, event: &ListScrollEvent, _window, _cx| {
@@ -126,19 +123,10 @@ impl Chat {
                 match signal {
                     RoomSignal::NewMessage(event) => {
                         // Check if the incoming message is the same as the new message created by optimistic update
-                        if this.prevent_duplicate_message(event, cx) {
+                        if this.prevent_duplicate_message(&event.id) {
                             return;
                         }
-
-                        let old_len = this.messages.read(cx).len();
-                        let message = event.to_owned();
-
-                        cx.update_entity(&this.messages, |this, cx| {
-                            this.insert(message);
-                            cx.notify();
-                        });
-
-                        this.list_state.splice(old_len..old_len, 1);
+                        this.insert_message(event, cx);
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
@@ -152,14 +140,15 @@ impl Chat {
             image_cache: RetainAllImageCache::new(cx),
             focus_handle: cx.focus_handle(),
             uploading: false,
-            text_data: BTreeMap::new(),
+            messages: BTreeSet::new(),
+            rendered_texts_by_id: HashMap::new(),
+            reports_by_id: HashMap::new(),
             is_scrolled_to_bottom: true,
             room,
-            messages,
             list_state,
             input,
             replies_to,
-            attaches,
+            attachments,
             subscriptions,
         }
     }
@@ -171,21 +160,9 @@ impl Chat {
 
         cx.spawn_in(window, async move |this, cx| {
             match load_messages.await {
-                Ok(messages) => {
+                Ok(events) => {
                     this.update(cx, |this, cx| {
-                        let old_len = this.messages.read(cx).len();
-                        let new_len = messages.len();
-
-                        // Extend the messages list with the new events
-                        this.messages.update(cx, |this, cx| {
-                            this.extend(messages);
-                            cx.notify();
-                        });
-
-                        // Update list state with the new messages
-                        this.list_state.splice(old_len..old_len, new_len);
-
-                        cx.notify();
+                        this.insert_messages(events, cx);
                     })
                     .ok();
                 }
@@ -195,7 +172,7 @@ impl Chat {
                     })
                     .ok();
                 }
-            }
+            };
         })
         .detach();
     }
@@ -210,62 +187,48 @@ impl Chat {
         let mut content = self.input.read(cx).value().trim().to_string();
 
         // Get all attaches and merge its with message
-        if let Some(attaches) = self.attaches.read(cx).as_ref() {
-            if !attaches.is_empty() {
-                content = format!(
-                    "{}\n{}",
-                    content,
-                    attaches
-                        .iter()
-                        .map(|url| url.to_string())
-                        .collect_vec()
-                        .join("\n")
-                )
-            }
+        let attachments = self.attachments.read(cx);
+
+        if !attachments.is_empty() {
+            content = format!(
+                "{}\n{}",
+                content,
+                attachments
+                    .iter()
+                    .map(|url| url.to_string())
+                    .collect_vec()
+                    .join("\n")
+            )
         }
 
         content
     }
 
-    // TODO: find a better way to prevent duplicate messages during optimistic updates
-    fn prevent_duplicate_message(&self, new_msg: &Message, cx: &Context<Self>) -> bool {
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            return false;
-        };
-
-        if new_msg.author != identity {
-            return false;
-        }
-
-        let messages = self.messages.read(cx);
-        let min_timestamp = new_msg
-            .created_at
-            .as_u64()
-            .saturating_sub(DUPLICATE_TIME_WINDOW);
-
-        messages
-            .iter()
-            .rev()
-            .take(MAX_RECENT_MESSAGES_TO_CHECK)
-            .filter(|m| m.author == identity)
-            .any(|existing| {
-                // Check if messages are within the time window
-                (existing.created_at.as_u64() >= min_timestamp) &&
-		        // Compare content and author
-		        (existing.content == new_msg.content) &&
-		        (existing.author == new_msg.author)
+    fn prevent_duplicate_message(&self, id: &EventId) -> bool {
+        let send_ids = self
+            .reports_by_id
+            .values()
+            .flatten()
+            .filter_map(|report| {
+                report
+                    .success
+                    .as_ref()
+                    .map(|success| success.id().to_owned())
             })
+            .collect_vec();
+
+        send_ids.contains(id)
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Return if user is not logged in
         let Some(identity) = Identity::read_global(cx).public_key() else {
-            // window.push_notification("Login is required", cx);
             return;
         };
 
         // Get the message which includes all attachments
         let content = self.input_content(cx);
+
         // Get the backup setting
         let backup = AppSettings::get_backup_messages(cx);
 
@@ -282,119 +245,125 @@ impl Chat {
         });
 
         // Get replies_to if it's present
-        let replies = self.replies_to.read(cx).as_ref();
+        let replies = self.replies_to.read(cx).clone();
 
         // Get the current room entity
         let room = self.room.read(cx);
 
         // Create a temporary message for optimistic update
-        let temp_message = room.create_temp_message(identity, &content, replies);
+        let temp_message = room.create_temp_message(identity, &content, replies.as_ref());
+        let temp_id = temp_message.id.unwrap();
 
         // Create a task for sending the message in the background
         let send_message = room.send_in_background(&content, replies, backup, cx);
 
-        if let Some(message) = temp_message {
-            let id = message.id;
-            // Optimistically update message list
-            self.insert_message(message, cx);
-            // Remove all replies
-            self.remove_all_replies(cx);
+        // Optimistically update message list
+        self.insert_message(temp_message, cx);
 
-            // Reset the input state
-            self.input.update(cx, |this, cx| {
-                this.set_loading(false, cx);
-                this.set_disabled(false, cx);
-                this.set_value("", window, cx);
-            });
+        // Remove all replies
+        self.remove_all_replies(cx);
 
-            // Continue sending the message in the background
-            cx.spawn_in(window, async move |this, cx| {
-                if let Ok(reports) = send_message.await {
-                    if !reports.is_empty() {
-                        this.update(cx, |this, cx| {
-                            this.room.update(cx, |this, cx| {
-                                if this.kind != RoomKind::Ongoing {
-                                    this.kind = RoomKind::Ongoing;
-                                    cx.notify();
-                                }
-                            });
-
-                            this.messages.update(cx, |this, cx| {
-                                if let Some(mut msg) = this.iter().find(|msg| msg.id == id).cloned()
-                                {
-                                    msg.errors = Some(reports);
-                                    cx.notify();
-                                }
-                            });
-                        })
-                        .ok();
-                    }
-                }
-            })
-            .detach();
-        }
-    }
-
-    fn insert_message(&self, message: Message, cx: &mut Context<Self>) {
-        let old_len = self.messages.read(cx).len();
-
-        cx.update_entity(&self.messages, |this, cx| {
-            this.insert(message);
-            cx.notify();
+        // Reset the input state
+        self.input.update(cx, |this, cx| {
+            this.set_loading(false, cx);
+            this.set_disabled(false, cx);
+            this.set_value("", window, cx);
         });
 
-        self.list_state.splice(old_len..old_len, 1);
+        // Continue sending the message in the background
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(reports) = send_message.await {
+                this.update(cx, |this, cx| {
+                    // Update the report list
+                    this.reports_by_id.insert(temp_id, reports);
+
+                    // Don't change the room kind if send failed
+                    this.room.update(cx, |this, cx| {
+                        if this.kind != RoomKind::Ongoing {
+                            this.kind = RoomKind::Ongoing;
+                            cx.notify();
+                        }
+                    });
+
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
-    fn scroll_to(&self, id: EventId, cx: &Context<Self>) {
-        if let Some(ix) = self.messages.read(cx).iter().position(|m| m.id == id) {
+    fn get_message(&self, id: &EventId) -> Option<&RenderedMessage> {
+        self.messages.iter().find(|m| m.id == *id)
+    }
+
+    fn insert_message<E>(&mut self, event: E, cx: &mut Context<Self>)
+    where
+        E: Into<RenderedMessage>,
+    {
+        let old_len = self.messages.len();
+        let new_len = 1;
+
+        // Extend the messages list with the new events
+        self.messages.insert(event.into());
+
+        // Update list state with the new messages
+        self.list_state.splice(old_len..old_len, new_len);
+
+        cx.notify();
+    }
+
+    fn insert_messages<E>(&mut self, events: E, cx: &mut Context<Self>)
+    where
+        E: IntoIterator,
+        E::Item: Into<RenderedMessage>,
+    {
+        let old_len = self.messages.len();
+        let events: Vec<_> = events.into_iter().map(Into::into).collect();
+        let new_len = events.len();
+
+        // Extend the messages list with the new events
+        self.messages.extend(events);
+
+        // Update list state with the new messages
+        self.list_state.splice(old_len..old_len, new_len);
+
+        cx.notify();
+    }
+
+    fn scroll_to(&self, id: EventId) {
+        if let Some(ix) = self.messages.iter().position(|m| m.id == id) {
             self.list_state.scroll_to_reveal_item(ix);
         }
     }
 
     fn copy_message(&self, ix: usize, cx: &Context<Self>) {
-        let Some(item) = self
-            .messages
-            .read(cx)
-            .iter()
-            .nth(ix)
-            .map(|m| ClipboardItem::new_string(m.content.to_string()))
-        else {
-            return;
-        };
-
-        cx.write_to_clipboard(item);
+        if let Some(message) = self.messages.iter().nth(ix) {
+            cx.write_to_clipboard(ClipboardItem::new_string(message.content.to_string()));
+        }
     }
 
-    fn reply_to(&mut self, ix: usize, cx: &mut Context<Self>) {
-        let Some(message) = self.messages.read(cx).iter().nth(ix).map(|m| m.to_owned()) else {
-            return;
-        };
-
-        self.replies_to.update(cx, |this, cx| {
-            if let Some(replies) = this {
-                replies.push(message);
-            } else {
-                *this = Some(vec![message])
-            }
-            cx.notify();
-        });
+    fn reply_to(&mut self, id: &EventId, cx: &mut Context<Self>) {
+        if let Some(text) = self.get_message(id) {
+            self.replies_to.update(cx, |this, cx| {
+                this.push(text.id);
+                cx.notify();
+            });
+        }
     }
 
-    fn remove_reply(&mut self, id: EventId, cx: &mut Context<Self>) {
+    fn remove_reply(&mut self, id: &EventId, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
-            if let Some(replies) = this {
-                if let Some(ix) = replies.iter().position(|m| m.id == id) {
-                    replies.remove(ix);
-                    cx.notify();
-                }
+            if let Some(ix) = this.iter().position(|this| this == id) {
+                this.remove(ix);
+                cx.notify();
             }
         });
     }
 
     fn remove_all_replies(&mut self, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
-            *this = None;
+            *this = vec![];
             cx.notify();
         });
     }
@@ -464,24 +433,18 @@ impl Chat {
     }
 
     fn add_attachment(&mut self, url: Url, cx: &mut Context<Self>) {
-        self.attaches.update(cx, |this, cx| {
-            if let Some(model) = this.as_mut() {
-                model.push(url);
-            } else {
-                *this = Some(vec![url]);
-            }
+        self.attachments.update(cx, |this, cx| {
+            this.push(url);
             cx.notify();
         });
         self.uploading(false, cx);
     }
 
     fn remove_attachment(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
-        self.attaches.update(cx, |model, cx| {
-            if let Some(urls) = model.as_mut() {
-                if let Some(ix) = urls.iter().position(|x| x == url) {
-                    urls.remove(ix);
-                    cx.notify();
-                }
+        self.attachments.update(cx, |this, cx| {
+            if let Some(ix) = this.iter().position(|this| this == url) {
+                this.remove(ix);
+                cx.notify();
             }
         });
     }
@@ -491,107 +454,25 @@ impl Chat {
         cx.notify();
     }
 
-    fn render_attach(&mut self, url: &Url, cx: &Context<Self>) -> impl IntoElement {
-        let url = url.clone();
-        let path: SharedString = url.to_string().into();
-
-        div()
-            .id("")
-            .relative()
-            .w_16()
-            .child(
-                img(path.clone())
-                    .size_16()
-                    .shadow_lg()
-                    .rounded(cx.theme().radius)
-                    .object_fit(ObjectFit::ScaleDown),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .top_neg_2()
-                    .right_neg_2()
-                    .size_4()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(red())
-                    .child(Icon::new(IconName::Close).size_2().text_color(white())),
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.remove_attachment(&url, window, cx);
-            }))
-    }
-
-    fn render_reply_to(&mut self, message: &Message, cx: &Context<Self>) -> impl IntoElement {
-        let registry = Registry::read_global(cx);
-        let profile = registry.get_person(&message.author, cx);
-
-        div()
-            .w_full()
-            .pl_2()
-            .border_l_2()
-            .border_color(cx.theme().element_active)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .items_baseline()
-                            .gap_1()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::new(t!("chat.replying_to_label")))
-                            .child(
-                                div()
-                                    .text_color(cx.theme().text_accent)
-                                    .child(profile.display_name()),
-                            ),
-                    )
-                    .child(
-                        Button::new("remove-reply")
-                            .icon(IconName::Close)
-                            .xsmall()
-                            .ghost()
-                            .on_click({
-                                let id = message.id;
-                                cx.listener(move |this, _, _, cx| {
-                                    this.remove_reply(id, cx);
-                                })
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .text_sm()
-                    .text_ellipsis()
-                    .line_clamp(1)
-                    .child(message.content.clone()),
-            )
-    }
-
     fn render_message(
         &mut self,
         ix: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let Some(message) = self.messages.read(cx).iter().nth(ix) else {
+    ) -> Stateful<Div> {
+        let Some(message) = self.messages.iter().nth(ix) else {
             return div().id(ix);
         };
 
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide_avatar = AppSettings::get_hide_user_avatars(cx);
+
         let registry = Registry::read_global(cx);
         let author = registry.get_person(&message.author, cx);
 
+        let id = message.id;
         let texts = self
-            .text_data
+            .rendered_texts_by_id
             .entry(message.id)
             .or_insert_with(|| RenderedText::new(&message.content, cx));
 
@@ -634,53 +515,7 @@ impl Chat {
                                             .child(message.ago()),
                                     ),
                             )
-                            .when_some(message.replies_to.as_ref(), |this, replies| {
-                                this.w_full().children({
-                                    let mut items = Vec::with_capacity(replies.len());
-                                    let messages = self.messages.read(cx);
-
-                                    for (ix, id) in replies.iter().cloned().enumerate() {
-                                        let Some(message) = messages.iter().find(|m| m.id == id)
-                                        else {
-                                            continue;
-                                        };
-
-                                        items.push(
-                                            div()
-                                                .id(ix)
-                                                .w_full()
-                                                .px_2()
-                                                .border_l_2()
-                                                .border_color(cx.theme().element_selected)
-                                                .text_sm()
-                                                .child(
-                                                    div()
-                                                        .text_color(cx.theme().text_accent)
-                                                        .child(author.display_name()),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .w_full()
-                                                        .text_ellipsis()
-                                                        .line_clamp(1)
-                                                        .child(message.content.clone()),
-                                                )
-                                                .hover(|this| {
-                                                    this.bg(cx.theme().elevated_surface_background)
-                                                })
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    this.scroll_to(id, cx)
-                                                })),
-                                        );
-                                    }
-
-                                    items
-                                })
-                            })
-                            .child(texts.element(ix.into(), window, cx))
-                            .when_some(message.errors.as_ref(), |this, errors| {
-                                this.child(self.render_message_errors(errors, cx))
-                            }),
+                            .child(texts.element(ix.into(), window, cx)),
                     ),
             )
             .child(self.render_border(cx))
@@ -693,15 +528,38 @@ impl Chat {
             )
             .on_double_click(cx.listener({
                 move |this, _event, _window, cx| {
-                    this.reply_to(ix, cx);
+                    this.reply_to(&id, cx);
                 }
             }))
             .hover(|this| this.bg(cx.theme().surface_background))
     }
 
-    fn render_message_errors(&self, errors: &[SendError], _cx: &Context<Self>) -> impl IntoElement {
-        let errors = Rc::new(errors.to_owned());
+    fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+        v_flex()
+            .id(ix)
+            .group("")
+            .h_32()
+            .w_full()
+            .relative()
+            .gap_3()
+            .px_3()
+            .py_2()
+            .items_center()
+            .justify_center()
+            .text_center()
+            .text_xs()
+            .text_color(cx.theme().text_placeholder)
+            .line_height(relative(1.3))
+            .child(
+                svg()
+                    .path("brand/coop.svg")
+                    .size_10()
+                    .text_color(cx.theme().elevated_surface_background),
+            )
+            .child(shared_t!("chat.notice"))
+    }
 
+    fn render_message_errors(&self, reports: Vec<SendReport>) -> impl IntoElement {
         div()
             .id("")
             .flex()
@@ -713,7 +571,7 @@ impl Chat {
             .child(Icon::new(IconName::Info).small())
             .child(SharedString::new(t!("chat.send_fail")))
             .on_click(move |_, window, cx| {
-                let errors = Rc::clone(&errors);
+                let reports = reports.clone();
 
                 window.open_modal(cx, move |this, _window, cx| {
                     this.title(SharedString::new(t!("chat.logs_title"))).child(
@@ -722,19 +580,16 @@ impl Chat {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .children(errors.iter().map(|error| {
-                                div()
-                                    .text_sm()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_baseline()
-                                            .gap_1()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(SharedString::new(t!("chat.send_to_label")))
-                                            .child(error.profile.display_name()),
-                                    )
-                                    .child(error.message.clone())
+                            .children(reports.iter().map(|error| {
+                                div().text_sm().child(
+                                    div()
+                                        .flex()
+                                        .items_baseline()
+                                        .gap_1()
+                                        .text_color(cx.theme().text_muted)
+                                        .child(SharedString::new(t!("chat.send_to_label"))), //.child(error.profile.display_name()),
+                                )
+                                //.child(error.message.clone())
                             })),
                     )
                 });
@@ -775,7 +630,7 @@ impl Chat {
                         .small()
                         .ghost()
                         .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.reply_to(ix, cx);
+                            //this.reply_to(id, cx);
                         })),
                     Button::new("copy")
                         .icon(IconName::Copy)
@@ -787,6 +642,122 @@ impl Chat {
                         })),
                 ]
             })
+    }
+
+    fn render_attachment(&self, url: &Url, cx: &Context<Self>) -> impl IntoElement {
+        let url = url.clone();
+        let path: SharedString = url.to_string().into();
+
+        div()
+            .id("")
+            .relative()
+            .w_16()
+            .child(
+                img(path.clone())
+                    .size_16()
+                    .shadow_lg()
+                    .rounded(cx.theme().radius)
+                    .object_fit(ObjectFit::ScaleDown),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top_neg_2()
+                    .right_neg_2()
+                    .size_4()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(red())
+                    .child(Icon::new(IconName::Close).size_2().text_color(white())),
+            )
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.remove_attachment(&url, window, cx);
+            }))
+    }
+
+    fn render_attachment_list(
+        &self,
+        _window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoIterator<Item = impl IntoElement> {
+        let mut items = vec![];
+
+        for url in self.attachments.read(cx).iter() {
+            items.push(self.render_attachment(url, cx));
+        }
+
+        items
+    }
+
+    fn render_reply(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
+        if let Some(text) = self.get_message(id) {
+            let registry = Registry::read_global(cx);
+            let profile = registry.get_person(&text.author, cx);
+
+            div()
+                .w_full()
+                .pl_2()
+                .border_l_2()
+                .border_color(cx.theme().element_active)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .items_baseline()
+                                .gap_1()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child(SharedString::new(t!("chat.replying_to_label")))
+                                .child(
+                                    div()
+                                        .text_color(cx.theme().text_accent)
+                                        .child(profile.display_name()),
+                                ),
+                        )
+                        .child(
+                            Button::new("remove-reply")
+                                .icon(IconName::Close)
+                                .xsmall()
+                                .ghost()
+                                .on_click({
+                                    let id = text.id;
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.remove_reply(&id, cx);
+                                    })
+                                }),
+                        ),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .text_sm()
+                        .text_ellipsis()
+                        .line_clamp(1)
+                        .child(text.content.clone()),
+                )
+        } else {
+            div()
+        }
+    }
+
+    fn render_reply_list(
+        &self,
+        _window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoIterator<Item = impl IntoElement> {
+        let mut items = vec![];
+
+        for id in self.replies_to.read(cx).iter() {
+            items.push(self.render_reply(id, cx));
+        }
+
+        items
     }
 }
 
@@ -869,7 +840,7 @@ impl Focusable for Chat {
 }
 
 impl Render for Chat {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .image_cache(self.image_cache.clone())
             .size_full()
@@ -877,7 +848,11 @@ impl Render for Chat {
                 list(
                     self.list_state.clone(),
                     cx.processor(move |this, ix, window, cx| {
-                        this.render_message(ix, window, cx).into_any_element()
+                        if ix == 0 {
+                            this.render_announcement(ix, cx).into_any_element()
+                        } else {
+                            this.render_message(ix, window, cx).into_any_element()
+                        }
                     }),
                 )
                 .flex_1(),
@@ -893,21 +868,9 @@ impl Render for Chat {
                         div()
                             .flex()
                             .flex_col()
-                            .when_some(self.attaches.read(cx).as_ref(), |this, urls| {
-                                this.gap_1p5()
-                                    .children(urls.iter().map(|url| self.render_attach(url, cx)))
-                            })
-                            .when_some(self.replies_to.read(cx).as_ref(), |this, messages| {
-                                this.gap_1p5().children({
-                                    let mut items = vec![];
-
-                                    for message in messages.iter() {
-                                        items.push(self.render_reply_to(message, cx));
-                                    }
-
-                                    items
-                                })
-                            })
+                            .gap_1p5()
+                            .children(self.render_attachment_list(window, cx))
+                            .children(self.render_reply_list(window, cx))
                             .child(
                                 div()
                                     .w_full()

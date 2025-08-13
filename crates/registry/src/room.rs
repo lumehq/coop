@@ -10,7 +10,7 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::SmallVec;
 
-use crate::message::Message;
+use crate::message::SendReport;
 use crate::Registry;
 
 pub(crate) const NOW: &str = "now";
@@ -21,14 +21,8 @@ pub(crate) const DAYS_IN_MONTH: i64 = 30;
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
-    NewMessage(Message),
+    NewMessage(Box<Event>),
     Refresh,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SendError {
-    pub profile: Profile,
-    pub message: SharedString,
 }
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -343,201 +337,80 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// A Task that resolves to Result<Vec<RoomMessage>, Error> containing all messages for this room
-    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Message>, Error>> {
-        let pubkeys = self.members.clone();
-
-        let filter = Filter::new()
-            .kind(Kind::PrivateDirectMessage)
-            .authors(self.members.clone())
-            .pubkeys(self.members.clone());
+    /// A Task that resolves to Result<Vec<Event>, Error> containing all messages for this room
+    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
+        let members = self.members.clone();
+        let members_clone = members.clone();
 
         cx.background_spawn(async move {
-            let mut messages = vec![];
-            let parser = NostrParser::new();
-            let database = nostr_client().database();
+            let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
-            // Get all events from database
-            let events = database
-                .query(filter)
-                .await?
+            let send = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .author(public_key)
+                .pubkeys(members.clone());
+
+            let recv = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .authors(members)
+                .pubkey(public_key);
+
+            let send_events = client.database().query(send).await?;
+            let recv_events = client.database().query(recv).await?;
+
+            let events = send_events
+                .merge(recv_events)
                 .into_iter()
                 .sorted_by_key(|ev| ev.created_at)
-                .filter(|ev| ev.compare_pubkeys(&pubkeys))
+                .filter(|ev| ev.compare_pubkeys(&members_clone))
                 .collect::<Vec<_>>();
 
-            for event in events.into_iter() {
-                let content = event.content.clone();
-                let tokens = parser.parse(&content);
-                let mut replies_to = vec![];
-
-                for tag in event.tags.filter(TagKind::e()) {
-                    if let Some(content) = tag.content() {
-                        if let Ok(id) = EventId::from_hex(content) {
-                            replies_to.push(id);
-                        }
-                    }
-                }
-
-                for tag in event.tags.filter(TagKind::q()) {
-                    if let Some(content) = tag.content() {
-                        if let Ok(id) = EventId::from_hex(content) {
-                            replies_to.push(id);
-                        }
-                    }
-                }
-
-                let mentions = tokens
-                    .filter_map(|token| match token {
-                        Token::Nostr(nip21) => match nip21 {
-                            Nip21::Pubkey(pubkey) => Some(pubkey),
-                            Nip21::Profile(profile) => Some(profile.public_key),
-                            _ => None,
-                        },
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
-
-                if let Ok(message) = Message::builder(event.id, event.pubkey)
-                    .content(content)
-                    .created_at(event.created_at)
-                    .replies_to(replies_to)
-                    .mentions(mentions)
-                    .build()
-                {
-                    messages.push(message);
-                }
-            }
-
-            Ok(messages)
+            Ok(events)
         })
     }
 
-    /// Emits a message event to the GPUI
-    ///
-    /// # Arguments
-    ///
-    /// * `event` - The Nostr event to emit
-    /// * `window` - The Window to emit the event to
-    /// * `cx` - The context for the room
-    ///
-    /// # Effects
-    ///
-    /// Processes the event and emits an Incoming to the UI when complete
+    /// Emits a new message signal to the current room
     pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
-        // Extract all mentions from content
-        let mentions = extract_mentions(&event.content);
-
-        // Extract reply_to if present
-        let mut replies_to = vec![];
-
-        for tag in event.tags.filter(TagKind::e()) {
-            if let Some(content) = tag.content() {
-                if let Ok(id) = EventId::from_hex(content) {
-                    replies_to.push(id);
-                }
-            }
-        }
-
-        for tag in event.tags.filter(TagKind::q()) {
-            if let Some(content) = tag.content() {
-                if let Ok(id) = EventId::from_hex(content) {
-                    replies_to.push(id);
-                }
-            }
-        }
-
-        if let Ok(message) = Message::builder(event.id, event.pubkey)
-            .content(event.content)
-            .created_at(event.created_at)
-            .replies_to(replies_to)
-            .mentions(mentions)
-            .build()
-        {
-            cx.emit(RoomSignal::NewMessage(message));
-        }
+        cx.emit(RoomSignal::NewMessage(Box::new(event)));
     }
 
     /// Emits a signal to refresh the current room's messages.
     pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
         cx.emit(RoomSignal::Refresh);
-        log::info!("refresh room: {}", self.id);
     }
 
     /// Creates a temporary message for optimistic updates
     ///
-    /// This constructs an unsigned message with the current user as the author,
-    /// extracts any mentions from the content, and packages it as a Message struct.
-    /// The message will have a generated ID but hasn't been published to relays.
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The message content text
-    /// * `cx` - The application context containing user profile information
-    ///
-    /// # Returns
-    ///
-    /// Returns `Some(Message)` containing the temporary message if the current user's profile is available,
-    /// or `None` if no account is found.
+    /// The event must not been published to relays.
     pub fn create_temp_message(
         &self,
-        public_key: PublicKey,
+        receiver: PublicKey,
         content: &str,
-        replies: Option<&Vec<Message>>,
-    ) -> Option<Message> {
-        let builder = EventBuilder::private_msg_rumor(public_key, content);
+        replies: &[EventId],
+    ) -> UnsignedEvent {
+        let builder = EventBuilder::private_msg_rumor(receiver, content);
+        let mut tags = vec![];
 
         // Add event reference if it's present (replying to another event)
-        let mut refs = vec![];
-
-        if let Some(replies) = replies {
-            if replies.len() == 1 {
-                refs.push(Tag::event(replies[0].id))
-            } else {
-                for message in replies.iter() {
-                    refs.push(Tag::custom(TagKind::q(), vec![message.id]))
-                }
+        if replies.len() == 1 {
+            tags.push(Tag::event(replies[0]))
+        } else {
+            for id in replies.iter() {
+                tags.push(Tag::from_standardized(TagStandard::Quote {
+                    event_id: id.to_owned(),
+                    relay_url: None,
+                    public_key: None,
+                }))
             }
         }
 
-        let mut event = if !refs.is_empty() {
-            builder.tags(refs).build(public_key)
-        } else {
-            builder.build(public_key)
-        };
-
-        // Create a unsigned event to convert to Coop Message
+        let mut event = builder.tags(tags).build(receiver);
+        // Ensure event ID is set
         event.ensure_id();
 
-        // Extract all mentions from content
-        let mentions = extract_mentions(&event.content);
-
-        // Extract reply_to if present
-        let mut replies_to = vec![];
-
-        for tag in event.tags.filter(TagKind::e()) {
-            if let Some(content) = tag.content() {
-                if let Ok(id) = EventId::from_hex(content) {
-                    replies_to.push(id);
-                }
-            }
-        }
-
-        for tag in event.tags.filter(TagKind::q()) {
-            if let Some(content) = tag.content() {
-                if let Ok(id) = EventId::from_hex(content) {
-                    replies_to.push(id);
-                }
-            }
-        }
-
-        Message::builder(event.id.unwrap(), public_key)
-            .content(event.content)
-            .created_at(event.created_at)
-            .replies_to(replies_to)
-            .mentions(mentions)
-            .build()
-            .ok()
+        event
     }
 
     /// Sends a message to all members in the background task
@@ -554,12 +427,11 @@ impl Room {
     pub fn send_in_background(
         &self,
         content: &str,
-        replies: Option<&Vec<Message>>,
+        replies: Vec<EventId>,
         backup: bool,
         cx: &App,
-    ) -> Task<Result<Vec<SendError>, Error>> {
+    ) -> Task<Result<Vec<SendReport>, Error>> {
         let content = content.to_owned();
-        let replies = replies.cloned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
         let public_keys = self.members.clone();
@@ -569,8 +441,7 @@ impl Room {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
-            let mut reports = vec![];
-            let mut tags: Vec<Tag> = public_keys
+            let mut tags = public_keys
                 .iter()
                 .filter_map(|pubkey| {
                     if pubkey != &public_key {
@@ -579,16 +450,18 @@ impl Room {
                         None
                     }
                 })
-                .collect();
+                .collect_vec();
 
             // Add event reference if it's present (replying to another event)
-            if let Some(replies) = replies {
-                if replies.len() == 1 {
-                    tags.push(Tag::event(replies[0].id))
-                } else {
-                    for message in replies.iter() {
-                        tags.push(Tag::custom(TagKind::q(), vec![message.id]))
-                    }
+            if replies.len() == 1 {
+                tags.push(Tag::event(replies[0]))
+            } else {
+                for id in replies.iter() {
+                    tags.push(Tag::from_standardized(TagStandard::Quote {
+                        event_id: id.to_owned(),
+                        relay_url: None,
+                        public_key: None,
+                    }))
                 }
             }
 
@@ -608,63 +481,39 @@ impl Room {
                 return Err(anyhow!("Something is wrong. Cannot get receivers list."));
             };
 
+            // Stored all send errors
+            let mut reports = vec![];
+
             for receiver in receivers.iter() {
-                if let Err(e) = client
+                match client
                     .send_private_msg(*receiver, &content, tags.clone())
                     .await
                 {
-                    let metadata = client
-                        .database()
-                        .metadata(*receiver)
-                        .await?
-                        .unwrap_or_default();
-                    let profile = Profile::new(*receiver, metadata);
-                    let report = SendError {
-                        profile,
-                        message: e.to_string().into(),
-                    };
-
-                    reports.push(report);
+                    Ok(output) => {
+                        reports.push(SendReport::new(*receiver, Some(output), None));
+                    }
+                    Err(e) => {
+                        reports.push(SendReport::new(*receiver, None, Some(e.to_string())));
+                    }
                 }
             }
 
             // Only send a backup message to current user if there are no issues when sending to others
             if backup && reports.is_empty() {
-                if let Err(e) = client
+                match client
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await
                 {
-                    let metadata = client
-                        .database()
-                        .metadata(*current_user)
-                        .await?
-                        .unwrap_or_default();
-                    let profile = Profile::new(*current_user, metadata);
-                    let report = SendError {
-                        profile,
-                        message: e.to_string().into(),
-                    };
-                    reports.push(report);
+                    Ok(output) => {
+                        reports.push(SendReport::new(*current_user, Some(output), None));
+                    }
+                    Err(e) => {
+                        reports.push(SendReport::new(*current_user, None, Some(e.to_string())));
+                    }
                 }
             }
 
             Ok(reports)
         })
     }
-}
-
-pub(crate) fn extract_mentions(content: &str) -> Vec<PublicKey> {
-    let parser = NostrParser::new();
-    let tokens = parser.parse(content);
-
-    tokens
-        .filter_map(|token| match token {
-            Token::Nostr(nip21) => match nip21 {
-                Nip21::Pubkey(pubkey) => Some(pubkey),
-                Nip21::Profile(profile) => Some(profile.public_key),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect::<Vec<_>>()
 }

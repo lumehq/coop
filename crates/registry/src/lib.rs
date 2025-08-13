@@ -20,8 +20,6 @@ use crate::room::Room;
 pub mod message;
 pub mod room;
 
-i18n::init!();
-
 pub fn init(cx: &mut App) {
     Registry::set_global(cx.new(Registry::new), cx);
 }

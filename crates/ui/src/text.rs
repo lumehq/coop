@@ -98,7 +98,7 @@ impl RenderedText {
         self.custom_ranges_tooltip_fn = Some(Arc::new(f));
     }
 
-    pub fn element(&self, id: ElementId, window: &mut Window, cx: &App) -> AnyElement {
+    pub fn element(&self, id: ElementId, window: &Window, cx: &App) -> AnyElement {
         let link_color = cx.theme().text_accent;
 
         InteractiveText::new(
