@@ -10,7 +10,6 @@ use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::SmallVec;
 
-use crate::message::SendReport;
 use crate::Registry;
 
 pub(crate) const NOW: &str = "now";
@@ -18,6 +17,25 @@ pub(crate) const SECONDS_IN_MINUTE: i64 = 60;
 pub(crate) const MINUTES_IN_HOUR: i64 = 60;
 pub(crate) const HOURS_IN_DAY: i64 = 24;
 pub(crate) const DAYS_IN_MONTH: i64 = 30;
+
+#[derive(Debug, Clone)]
+pub struct SendReport {
+    pub receiver: PublicKey,
+    pub success: Option<Output<EventId>>,
+    pub nip17_relays_not_found: bool,
+}
+
+impl SendReport {
+    pub fn new(receiver: PublicKey, success: Option<Output<EventId>>) -> Self {
+        let nip17_relays_not_found = success.is_none();
+
+        Self {
+            receiver,
+            success,
+            nip17_relays_not_found,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
@@ -490,10 +508,11 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::new(*receiver, Some(output), None));
+                        reports.push(SendReport::new(*receiver, Some(output)));
                     }
                     Err(e) => {
-                        reports.push(SendReport::new(*receiver, None, Some(e.to_string())));
+                        log::error!("Send private message to user {receiver} failed: {e}");
+                        reports.push(SendReport::new(*receiver, None));
                     }
                 }
             }
@@ -505,10 +524,11 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::new(*current_user, Some(output), None));
+                        reports.push(SendReport::new(*current_user, Some(output)));
                     }
                     Err(e) => {
-                        reports.push(SendReport::new(*current_user, None, Some(e.to_string())));
+                        log::error!("Send private message to user {current_user} failed: {e}");
+                        reports.push(SendReport::new(*current_user, None));
                     }
                 }
             }

@@ -17,8 +17,8 @@ use i18n::{shared_t, t};
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use registry::message::{RenderedMessage, SendReport};
-use registry::room::{Room, RoomKind, RoomSignal};
+use registry::message::RenderedMessage;
+use registry::room::{Room, RoomKind, RoomSignal, SendReport};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
@@ -70,7 +70,7 @@ pub struct Chat {
     image_cache: Entity<RetainAllImageCache>,
     is_scrolled_to_bottom: bool,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl Chat {
@@ -101,6 +101,18 @@ impl Chat {
         ));
 
         let mut subscriptions = smallvec![];
+
+        subscriptions.push(cx.on_release_in(window, move |this, _window, cx| {
+            this.messages.clear();
+            this.rendered_texts_by_id.clear();
+            this.reports_by_id.clear();
+            this.attachments.update(cx, |this, _cx| {
+                this.clear();
+            });
+            this.replies_to.update(cx, |this, _cx| {
+                this.clear();
+            })
+        }));
 
         subscriptions.push(cx.subscribe_in(
             &input,
@@ -297,6 +309,12 @@ impl Chat {
         self.messages.iter().find(|m| m.id == *id)
     }
 
+    fn get_message_errors(&self, id: &EventId) -> Option<&Vec<SendReport>> {
+        self.reports_by_id
+            .get(id)
+            .filter(|r| r.iter().any(|report| report.nip17_relays_not_found))
+    }
+
     fn insert_message<E>(&mut self, event: E, cx: &mut Context<Self>)
     where
         E: Into<RenderedMessage>,
@@ -337,8 +355,8 @@ impl Chat {
         }
     }
 
-    fn copy_message(&self, ix: usize, cx: &Context<Self>) {
-        if let Some(message) = self.messages.iter().nth(ix) {
+    fn copy_message(&self, id: &EventId, cx: &Context<Self>) {
+        if let Some(message) = self.get_message(id) {
             cx.write_to_clipboard(ClipboardItem::new_string(message.content.to_string()));
         }
     }
@@ -454,86 +472,6 @@ impl Chat {
         cx.notify();
     }
 
-    fn render_message(
-        &mut self,
-        ix: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let Some(message) = self.messages.iter().nth(ix) else {
-            return div().id(ix);
-        };
-
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
-
-        let registry = Registry::read_global(cx);
-        let author = registry.get_person(&message.author, cx);
-
-        let id = message.id;
-        let texts = self
-            .rendered_texts_by_id
-            .entry(message.id)
-            .or_insert_with(|| RenderedText::new(&message.content, cx));
-
-        div()
-            .id(ix)
-            .group("")
-            .relative()
-            .w_full()
-            .py_1()
-            .px_3()
-            .child(
-                div()
-                    .flex()
-                    .gap_3()
-                    .when(!hide_avatar, |this| {
-                        this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
-                    })
-                    .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .flex_col()
-                            .flex_initial()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_baseline()
-                                    .gap_2()
-                                    .text_sm()
-                                    .child(
-                                        div()
-                                            .font_semibold()
-                                            .text_color(cx.theme().text)
-                                            .child(author.display_name()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().text_placeholder)
-                                            .child(message.ago()),
-                                    ),
-                            )
-                            .child(texts.element(ix.into(), window, cx)),
-                    ),
-            )
-            .child(self.render_border(cx))
-            .child(self.render_actions(ix, cx))
-            .on_mouse_down(
-                MouseButton::Middle,
-                cx.listener(move |this, _event, _window, cx| {
-                    this.copy_message(ix, cx);
-                }),
-            )
-            .on_double_click(cx.listener({
-                move |this, _event, _window, cx| {
-                    this.reply_to(&id, cx);
-                }
-            }))
-            .hover(|this| this.bg(cx.theme().surface_background))
-    }
-
     fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
         v_flex()
             .id(ix)
@@ -559,41 +497,167 @@ impl Chat {
             .child(shared_t!("chat.notice"))
     }
 
-    fn render_message_errors(&self, reports: Vec<SendReport>) -> impl IntoElement {
-        div()
-            .id("")
-            .flex()
-            .items_center()
-            .gap_1()
-            .text_color(gpui::red())
-            .text_xs()
-            .italic()
-            .child(Icon::new(IconName::Info).small())
-            .child(SharedString::new(t!("chat.send_fail")))
-            .on_click(move |_, window, cx| {
-                let reports = reports.clone();
+    fn render_message(
+        &mut self,
+        ix: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let Some(message) = self.messages.iter().nth(ix) else {
+            return div().id(ix);
+        };
 
-                window.open_modal(cx, move |this, _window, cx| {
-                    this.title(SharedString::new(t!("chat.logs_title"))).child(
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
+
+        let registry = Registry::read_global(cx);
+        let author = registry.get_person(&message.author, cx);
+
+        let id = message.id;
+        let replies = message.replies_to.as_slice();
+
+        // Get or insert rendered text
+        let rendered_text = self
+            .rendered_texts_by_id
+            .entry(id)
+            .or_insert_with(|| RenderedText::new(&message.content, cx))
+            .element(ix.into(), window, cx);
+
+        // Get all errors for the message (only for message that send by Coop)
+        let errors = self.get_message_errors(&id);
+
+        div()
+            .id(ix)
+            .group("")
+            .relative()
+            .w_full()
+            .py_1()
+            .px_3()
+            .child(
+                div()
+                    .flex()
+                    .gap_3()
+                    .when(!hide_avatar, |this| {
+                        this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
+                    })
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .w_full()
+                            .flex_initial()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_baseline()
+                                    .gap_2()
+                                    .text_sm()
+                                    .child(
+                                        div()
+                                            .font_semibold()
+                                            .text_color(cx.theme().text)
+                                            .child(author.display_name()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_placeholder)
+                                            .child(message.ago()),
+                                    ),
+                            )
+                            .when(!replies.is_empty(), |this| {
+                                this.children(self.render_message_replies(replies, cx))
+                            })
+                            .child(rendered_text)
+                            .when_some(errors, |this, errors| {
+                                this.children(self.render_message_errors(errors.as_slice(), cx))
+                            }),
+                    ),
+            )
+            .child(self.render_border(cx))
+            .child(self.render_actions(&id, cx))
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(move |this, _event, _window, cx| {
+                    this.copy_message(&id, cx);
+                }),
+            )
+            .on_double_click(cx.listener({
+                move |this, _event, _window, cx| {
+                    this.reply_to(&id, cx);
+                }
+            }))
+            .hover(|this| this.bg(cx.theme().surface_background))
+    }
+
+    fn render_message_replies(
+        &self,
+        replies: &[EventId],
+        cx: &Context<Self>,
+    ) -> impl IntoIterator<Item = impl IntoElement> {
+        let registry = Registry::read_global(cx);
+        let mut items = Vec::with_capacity(replies.len());
+
+        for (ix, id) in replies.iter().enumerate() {
+            let Some(message) = self.get_message(id) else {
+                continue;
+            };
+            let author = registry.get_person(&message.author, cx);
+
+            items.push(
+                div()
+                    .id(ix)
+                    .w_full()
+                    .px_2()
+                    .border_l_2()
+                    .border_color(cx.theme().element_selected)
+                    .text_sm()
+                    .child(
                         div()
-                            .pb_4()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .children(reports.iter().map(|error| {
-                                div().text_sm().child(
-                                    div()
-                                        .flex()
-                                        .items_baseline()
-                                        .gap_1()
-                                        .text_color(cx.theme().text_muted)
-                                        .child(SharedString::new(t!("chat.send_to_label"))), //.child(error.profile.display_name()),
-                                )
-                                //.child(error.message.clone())
-                            })),
+                            .text_color(cx.theme().text_accent)
+                            .child(author.display_name()),
                     )
-                });
-            })
+                    .child(
+                        div()
+                            .w_full()
+                            .text_ellipsis()
+                            .line_clamp(1)
+                            .child(message.content.clone()),
+                    )
+                    .hover(|this| this.bg(cx.theme().elevated_surface_background))
+                    .on_click({
+                        let id = *id;
+                        cx.listener(move |this, _event, _window, _cx| {
+                            this.scroll_to(id);
+                        })
+                    }),
+            );
+        }
+
+        items
+    }
+
+    fn render_message_errors(
+        &self,
+        errors: &[SendReport],
+        cx: &Context<Self>,
+    ) -> impl IntoIterator<Item = impl IntoElement> {
+        let registry = Registry::read_global(cx);
+        let mut items = Vec::with_capacity(errors.len());
+
+        for (ix, report) in errors.iter().enumerate() {
+            let author = registry.get_person(&report.receiver, cx);
+
+            items.push(
+                div()
+                    .id(ix)
+                    .italic()
+                    .text_xs()
+                    .text_color(cx.theme().danger_foreground)
+                    .child(shared_t!("chat.nip17_not_found", u = author.display_name())),
+            );
+        }
+
+        items
     }
 
     fn render_border(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -607,7 +671,9 @@ impl Chat {
             .bg(cx.theme().border_transparent)
     }
 
-    fn render_actions(&self, ix: usize, cx: &Context<Self>) -> impl IntoElement {
+    fn render_actions(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
+        let id = id.to_owned();
+
         div()
             .group_hover("", |this| this.visible())
             .invisible()
@@ -630,7 +696,7 @@ impl Chat {
                         .small()
                         .ghost()
                         .on_click(cx.listener(move |this, _event, _window, cx| {
-                            //this.reply_to(id, cx);
+                            this.reply_to(&id, cx);
                         })),
                     Button::new("copy")
                         .icon(IconName::Copy)
@@ -638,7 +704,7 @@ impl Chat {
                         .small()
                         .ghost()
                         .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.copy_message(ix, cx);
+                            this.copy_message(&id, cx);
                         })),
                 ]
             })

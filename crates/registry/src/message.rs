@@ -5,27 +5,6 @@ use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone)]
-pub struct SendReport {
-    pub receiver: PublicKey,
-    pub success: Option<Output<EventId>>,
-    pub error: Option<String>,
-}
-
-impl SendReport {
-    pub fn new(
-        receiver: PublicKey,
-        success: Option<Output<EventId>>,
-        error: Option<String>,
-    ) -> Self {
-        Self {
-            receiver,
-            success,
-            error,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct RenderedMessage {
     pub id: EventId,
     /// Author's public key
