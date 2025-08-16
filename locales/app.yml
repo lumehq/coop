@@ -309,6 +309,8 @@ chat:
     en: "Error Logs"
   send_to_label:
     en: "Send to:"
+  sent_to:
+    en: "Sent to %{r}"
   nip17_not_found:
     en: "%{u} has not set up Messaging Relays, so they won't receive your message."
 

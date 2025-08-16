@@ -5,7 +5,7 @@ use chrono::{Local, TimeZone};
 use common::display::DisplayProfile;
 use common::event::EventUtils;
 use global::nostr_client;
-use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task, Window};
+use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::SmallVec;
@@ -22,24 +22,46 @@ pub(crate) const DAYS_IN_MONTH: i64 = 30;
 pub struct SendReport {
     pub receiver: PublicKey,
     pub success: Option<Output<EventId>>,
+    pub error: Option<SharedString>,
     pub nip17_relays_not_found: bool,
 }
 
 impl SendReport {
-    pub fn new(receiver: PublicKey, success: Option<Output<EventId>>) -> Self {
-        let nip17_relays_not_found = success.is_none();
-
+    pub fn success(receiver: PublicKey, output: Output<EventId>) -> Self {
         Self {
             receiver,
-            success,
-            nip17_relays_not_found,
+            success: Some(output),
+            error: None,
+            nip17_relays_not_found: false,
         }
+    }
+
+    pub fn error(receiver: PublicKey, error: impl Into<SharedString>) -> Self {
+        Self {
+            receiver,
+            success: None,
+            error: Some(error.into()),
+            nip17_relays_not_found: false,
+        }
+    }
+
+    pub fn nip17_relays_not_found(receiver: PublicKey) -> Self {
+        Self {
+            receiver,
+            success: None,
+            error: None,
+            nip17_relays_not_found: true,
+        }
+    }
+
+    pub fn has_error(&self) -> bool {
+        self.error.is_some() || self.nip17_relays_not_found
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
-    NewMessage(Box<Event>),
+    NewMessage((EventId, Box<Event>)),
     Refresh,
 }
 
@@ -390,8 +412,8 @@ impl Room {
     }
 
     /// Emits a new message signal to the current room
-    pub fn emit_message(&self, event: Event, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage(Box::new(event)));
+    pub fn emit_message(&self, gift_id: EventId, event: Event, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage((gift_id, Box::new(event))));
     }
 
     /// Emits a signal to refresh the current room's messages.
@@ -508,27 +530,33 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::new(*receiver, Some(output)));
+                        reports.push(SendReport::success(*receiver, output));
                     }
                     Err(e) => {
-                        log::error!("Send private message to user {receiver} failed: {e}");
-                        reports.push(SendReport::new(*receiver, None));
+                        if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
+                            reports.push(SendReport::nip17_relays_not_found(*receiver));
+                        } else {
+                            reports.push(SendReport::error(*receiver, e.to_string()));
+                        }
                     }
                 }
             }
 
             // Only send a backup message to current user if there are no issues when sending to others
-            if backup && reports.is_empty() {
+            if !reports.iter().any(|r| r.nip17_relays_not_found) && backup {
                 match client
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::new(*current_user, Some(output)));
+                        reports.push(SendReport::success(*current_user, output));
                     }
                     Err(e) => {
-                        log::error!("Send private message to user {current_user} failed: {e}");
-                        reports.push(SendReport::new(*current_user, None));
+                        if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
+                            reports.push(SendReport::nip17_relays_not_found(*current_user));
+                        } else {
+                            reports.push(SendReport::error(*current_user, e.to_string()));
+                        }
                     }
                 }
             }

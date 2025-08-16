@@ -148,7 +148,7 @@ fn main() {
 
                 match smol::future::or(recv(), timeout()).await {
                     Some(event) => {
-                        let cached = try_unwrap_event(&event, &signal_tx, &mta_tx).await;
+                        let cached = unwrap_gift(&event, &signal_tx, &mta_tx).await;
 
                         // Increment the total messages counter if message is not from cache
                         if !cached {
@@ -274,10 +274,12 @@ fn main() {
                                     });
                                 }
                                 // Convert the gift wrapped message to a message
-                                NostrSignal::GiftWrap(event) => {
+                                NostrSignal::GiftWrap((gift_id, event)) => {
                                     if let Some(public_key) = identity.read(cx).public_key() {
                                         registry.update(cx, |this, cx| {
-                                            this.event_to_message(public_key, event, window, cx);
+                                            this.event_to_message(
+                                                public_key, gift_id, event, window, cx,
+                                            );
                                         });
                                     }
                                 }
@@ -521,21 +523,21 @@ async fn get_unwrapped(root: EventId) -> Result<Event, Error> {
 }
 
 /// Unwraps a gift-wrapped event and processes its contents.
-async fn try_unwrap_event(
-    event: &Event,
+async fn unwrap_gift(
+    gift: &Event,
     signal_tx: &Sender<NostrSignal>,
     mta_tx: &Sender<PublicKey>,
 ) -> bool {
     let client = nostr_client();
     let mut is_cached = false;
 
-    let event = match get_unwrapped(event.id).await {
+    let event = match get_unwrapped(gift.id).await {
         Ok(event) => {
             is_cached = true;
             event
         }
         Err(_) => {
-            match client.unwrap_gift_wrap(event).await {
+            match client.unwrap_gift_wrap(gift).await {
                 Ok(unwrap) => {
                     // Sign the unwrapped event with a RANDOM KEYS
                     let Ok(unwrapped) = unwrap.rumor.sign_with_keys(&Keys::generate()) else {
@@ -544,7 +546,7 @@ async fn try_unwrap_event(
                     };
 
                     // Save this event to the database for future use.
-                    if let Err(e) = set_unwrapped(event.id, &unwrapped).await {
+                    if let Err(e) = set_unwrapped(gift.id, &unwrapped).await {
                         log::warn!("Failed to cache unwrapped event: {e}")
                     }
 
@@ -565,7 +567,10 @@ async fn try_unwrap_event(
 
     // Send a notify to GPUI if this is a new message
     if starting_time() <= &event.created_at {
-        signal_tx.send(NostrSignal::GiftWrap(event)).await.ok();
+        signal_tx
+            .send(NostrSignal::GiftWrap((gift.id, event)))
+            .await
+            .ok();
     }
 
     is_cached

@@ -19,7 +19,7 @@ pub enum NostrSignal {
     Metadata(Event),
 
     /// Received a new gift wrap event from Relay Pool
-    GiftWrap(Event),
+    GiftWrap((EventId, Event)),
 
     /// Finished processing all gift wrap events
     Finish,

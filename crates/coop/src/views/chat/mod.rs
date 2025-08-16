@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
+use std::time::Duration;
 
 use anyhow::anyhow;
 use common::display::DisplayProfile;
@@ -8,9 +9,9 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
     ClipboardItem, Context, Div, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ListAlignment, ListScrollEvent, ListState, MouseButton,
-    ObjectFit, ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, ObjectFit,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -40,8 +41,6 @@ use ui::{
 
 mod subject;
 
-const MESSAGE_LOADING_THRESHOLD: usize = 50;
-
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
 pub struct ChangeSubject(pub String);
@@ -63,12 +62,12 @@ pub struct Chat {
     // New Message
     input: Entity<InputState>,
     replies_to: Entity<Vec<EventId>>,
+    sending: bool,
     // Media Attachment
     attachments: Entity<Vec<Url>>,
     uploading: bool,
     // System
     image_cache: Entity<RetainAllImageCache>,
-    is_scrolled_to_bottom: bool,
     #[allow(dead_code)]
     subscriptions: SmallVec<[Subscription; 3]>,
 }
@@ -77,6 +76,7 @@ impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| vec![]);
+        let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -89,26 +89,17 @@ impl Chat {
                 .clean_on_escape()
         });
 
-        let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
-
-        list_state.set_scroll_handler(cx.listener(
-            |this: &mut Self, event: &ListScrollEvent, _window, _cx| {
-                if event.visible_range.start < MESSAGE_LOADING_THRESHOLD {
-                    // TODO: add load more messages
-                }
-                this.is_scrolled_to_bottom = !event.is_scrolled;
-            },
-        ));
-
         let mut subscriptions = smallvec![];
 
         subscriptions.push(cx.on_release_in(window, move |this, _window, cx| {
             this.messages.clear();
             this.rendered_texts_by_id.clear();
             this.reports_by_id.clear();
+
             this.attachments.update(cx, |this, _cx| {
                 this.clear();
             });
+
             this.replies_to.update(cx, |this, _cx| {
                 this.clear();
             })
@@ -133,12 +124,41 @@ impl Chat {
         subscriptions.push(
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
-                    RoomSignal::NewMessage(event) => {
-                        // Check if the incoming message is the same as the new message created by optimistic update
-                        if this.prevent_duplicate_message(&event.id) {
-                            return;
+                    RoomSignal::NewMessage((gift_id, event)) => {
+                        match this.sending {
+                            false => {
+                                if !this.is_sent_message(gift_id) {
+                                    this.insert_message(event, cx);
+                                };
+                            }
+                            true => {
+                                let gift_id = gift_id.to_owned();
+                                let event = event.clone();
+
+                                cx.spawn_in(window, async move |this, cx| {
+                                    // Check if Coop is still sending messages
+                                    loop {
+                                        cx.background_executor()
+                                            .timer(Duration::from_secs(2))
+                                            .await;
+
+                                        if let Ok(false) =
+                                            this.read_with(cx, |this, _cx| this.sending)
+                                        {
+                                            this.update(cx, |this, cx| {
+                                                if !this.is_sent_message(&gift_id) {
+                                                    this.insert_message(event, cx);
+                                                }
+                                            })
+                                            .ok();
+
+                                            break;
+                                        }
+                                    }
+                                })
+                                .detach();
+                            }
                         }
-                        this.insert_message(event, cx);
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
@@ -152,10 +172,10 @@ impl Chat {
             image_cache: RetainAllImageCache::new(cx),
             focus_handle: cx.focus_handle(),
             uploading: false,
+            sending: false,
             messages: BTreeSet::new(),
             rendered_texts_by_id: HashMap::new(),
             reports_by_id: HashMap::new(),
-            is_scrolled_to_bottom: true,
             room,
             list_state,
             input,
@@ -216,20 +236,15 @@ impl Chat {
         content
     }
 
-    fn prevent_duplicate_message(&self, id: &EventId) -> bool {
-        let send_ids = self
+    fn is_sent_message(&self, gift_id: &EventId) -> bool {
+        let sent_ids = self
             .reports_by_id
             .values()
             .flatten()
-            .filter_map(|report| {
-                report
-                    .success
-                    .as_ref()
-                    .map(|success| success.id().to_owned())
-            })
+            .filter_map(|report| report.success.as_ref().map(|success| success.id()))
             .collect_vec();
 
-        send_ids.contains(id)
+        sent_ids.contains(&gift_id)
     }
 
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -249,6 +264,9 @@ impl Chat {
             window.push_notification(t!("chat.empty_message_error"), cx);
             return;
         }
+
+        // Mark sending in progress
+        self.set_sending(true, cx);
 
         // Temporary disable input
         self.input.update(cx, |this, cx| {
@@ -284,35 +302,50 @@ impl Chat {
 
         // Continue sending the message in the background
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(reports) = send_message.await {
-                this.update(cx, |this, cx| {
-                    // Update the report list
-                    this.reports_by_id.insert(temp_id, reports);
-
-                    // Don't change the room kind if send failed
-                    this.room.update(cx, |this, cx| {
-                        if this.kind != RoomKind::Ongoing {
-                            this.kind = RoomKind::Ongoing;
-                            cx.notify();
-                        }
-                    });
-
-                    cx.notify();
-                })
-                .ok();
+            match send_message.await {
+                Ok(reports) => {
+                    this.update(cx, |this, cx| {
+                        // Don't change the room kind if send failed
+                        this.room.update(cx, |this, cx| {
+                            if this.kind != RoomKind::Ongoing {
+                                this.kind = RoomKind::Ongoing;
+                                cx.notify();
+                            }
+                        });
+                        this.reports_by_id.insert(temp_id, reports);
+                        this.sending = false;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                    })
+                    .ok();
+                }
             }
         })
         .detach();
     }
 
-    fn get_message(&self, id: &EventId) -> Option<&RenderedMessage> {
+    fn set_sending(&mut self, sending: bool, cx: &mut Context<Self>) {
+        self.sending = sending;
+        cx.notify();
+    }
+
+    fn message(&self, id: &EventId) -> Option<&RenderedMessage> {
         self.messages.iter().find(|m| m.id == *id)
     }
 
-    fn get_message_errors(&self, id: &EventId) -> Option<&Vec<SendReport>> {
+    fn success_reports(&self, id: &EventId) -> Option<&Vec<SendReport>> {
+        self.reports_by_id.get(id)
+    }
+
+    fn error_reports(&self, id: &EventId) -> Option<&Vec<SendReport>> {
         self.reports_by_id
             .get(id)
-            .filter(|r| r.iter().any(|report| report.nip17_relays_not_found))
+            .filter(|r| r.iter().any(|report| report.has_error()))
     }
 
     fn insert_message<E>(&mut self, event: E, cx: &mut Context<Self>)
@@ -349,6 +382,11 @@ impl Chat {
         cx.notify();
     }
 
+    fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
+        let registry = Registry::read_global(cx);
+        registry.get_person(public_key, cx)
+    }
+
     fn scroll_to(&self, id: EventId) {
         if let Some(ix) = self.messages.iter().position(|m| m.id == id) {
             self.list_state.scroll_to_reveal_item(ix);
@@ -356,13 +394,13 @@ impl Chat {
     }
 
     fn copy_message(&self, id: &EventId, cx: &Context<Self>) {
-        if let Some(message) = self.get_message(id) {
+        if let Some(message) = self.message(id) {
             cx.write_to_clipboard(ClipboardItem::new_string(message.content.to_string()));
         }
     }
 
     fn reply_to(&mut self, id: &EventId, cx: &mut Context<Self>) {
-        if let Some(text) = self.get_message(id) {
+        if let Some(text) = self.message(id) {
             self.replies_to.update(cx, |this, cx| {
                 this.push(text.id);
                 cx.notify();
@@ -510,11 +548,9 @@ impl Chat {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide_avatar = AppSettings::get_hide_user_avatars(cx);
 
-        let registry = Registry::read_global(cx);
-        let author = registry.get_person(&message.author, cx);
-
         let id = message.id;
         let replies = message.replies_to.as_slice();
+        let author = self.profile(&message.author, cx);
 
         // Get or insert rendered text
         let rendered_text = self
@@ -523,8 +559,9 @@ impl Chat {
             .or_insert_with(|| RenderedText::new(&message.content, cx))
             .element(ix.into(), window, cx);
 
-        // Get all errors for the message (only for message that send by Coop)
-        let errors = self.get_message_errors(&id);
+        // Get all sent reports (only for messages sent by Coop)
+        let success_reports = self.success_reports(&id);
+        let error_reports = self.error_reports(&id);
 
         div()
             .id(ix)
@@ -549,7 +586,7 @@ impl Chat {
                             .child(
                                 div()
                                     .flex()
-                                    .items_baseline()
+                                    .items_center()
                                     .gap_2()
                                     .text_sm()
                                     .child(
@@ -562,14 +599,23 @@ impl Chat {
                                         div()
                                             .text_color(cx.theme().text_placeholder)
                                             .child(message.ago()),
-                                    ),
+                                    )
+                                    .when_some(success_reports, |this, reports| {
+                                        this.child(
+                                            Button::new("report")
+                                                .icon(IconName::Check)
+                                                .cta()
+                                                .xsmall()
+                                                .ghost_alt(),
+                                        )
+                                    }),
                             )
                             .when(!replies.is_empty(), |this| {
                                 this.children(self.render_message_replies(replies, cx))
                             })
                             .child(rendered_text)
-                            .when_some(errors, |this, errors| {
-                                this.children(self.render_message_errors(errors.as_slice(), cx))
+                            .when_some(error_reports, |this, reports| {
+                                this.children(self.render_sent_error(reports, cx))
                             }),
                     ),
             )
@@ -594,14 +640,13 @@ impl Chat {
         replies: &[EventId],
         cx: &Context<Self>,
     ) -> impl IntoIterator<Item = impl IntoElement> {
-        let registry = Registry::read_global(cx);
         let mut items = Vec::with_capacity(replies.len());
 
         for (ix, id) in replies.iter().enumerate() {
-            let Some(message) = self.get_message(id) else {
+            let Some(message) = self.message(id) else {
                 continue;
             };
-            let author = registry.get_person(&message.author, cx);
+            let author = self.profile(&message.author, cx);
 
             items.push(
                 div()
@@ -636,16 +681,34 @@ impl Chat {
         items
     }
 
-    fn render_message_errors(
+    fn render_message_reports(
         &self,
-        errors: &[SendReport],
+        reports: &[SendReport],
         cx: &Context<Self>,
     ) -> impl IntoIterator<Item = impl IntoElement> {
-        let registry = Registry::read_global(cx);
-        let mut items = Vec::with_capacity(errors.len());
+        let mut items = Vec::with_capacity(reports.len());
 
-        for (ix, report) in errors.iter().enumerate() {
-            let author = registry.get_person(&report.receiver, cx);
+        for (ix, report) in reports.iter().enumerate() {
+            items.push(
+                div()
+                    .id(ix)
+                    .text_color(cx.theme().icon_accent)
+                    .child(Icon::new(IconName::Check).xsmall()),
+            );
+        }
+
+        items
+    }
+
+    fn render_sent_error(
+        &self,
+        reports: &[SendReport],
+        cx: &Context<Self>,
+    ) -> impl IntoIterator<Item = impl IntoElement> {
+        let mut items = Vec::with_capacity(reports.len());
+
+        for (ix, report) in reports.iter().enumerate() {
+            let author = self.profile(&report.receiver, cx);
 
             items.push(
                 div()
@@ -653,7 +716,13 @@ impl Chat {
                     .italic()
                     .text_xs()
                     .text_color(cx.theme().danger_foreground)
-                    .child(shared_t!("chat.nip17_not_found", u = author.display_name())),
+                    .map(|this| {
+                        if report.nip17_relays_not_found {
+                            this.child(shared_t!("chat.nip17_not_found", u = author.display_name()))
+                        } else {
+                            this.when_some(report.error.clone(), |this, error| this.child(error))
+                        }
+                    }),
             );
         }
 
@@ -758,7 +827,7 @@ impl Chat {
     }
 
     fn render_reply(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
-        if let Some(text) = self.get_message(id) {
+        if let Some(text) = self.message(id) {
             let registry = Registry::read_global(cx);
             let profile = registry.get_person(&text.author, cx);
 
