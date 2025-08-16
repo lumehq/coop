@@ -155,12 +155,19 @@ impl ChatSpace {
                             if let Some(room) = room.upgrade() {
                                 this.dock.update(cx, |this, cx| {
                                     let panel = chat::init(room, window, cx);
-                                    // Load messages on panel creation
+
+                                    // Load messages when the panel is created
                                     panel.update(cx, |this, cx| {
                                         this.load_messages(window, cx);
                                     });
 
-                                    this.add_panel(panel, DockPlacement::Center, window, cx);
+                                    // Add the panel to the center dock (tabs)
+                                    this.add_panel(
+                                        Arc::new(panel),
+                                        DockPlacement::Center,
+                                        window,
+                                        cx,
+                                    );
                                 });
                             } else {
                                 window.push_notification(t!("common.room_error"), cx);

@@ -20,8 +20,6 @@ use crate::room::Room;
 pub mod message;
 pub mod room;
 
-i18n::init!();
-
 pub fn init(cx: &mut App) {
     Registry::set_global(cx.new(Registry::new), cx);
 }
@@ -403,6 +401,7 @@ impl Registry {
     pub fn event_to_message(
         &mut self,
         identity: PublicKey,
+        gift_id: EventId,
         event: Event,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -421,8 +420,8 @@ impl Registry {
                 }
 
                 // Emit the new message to the room
-                cx.defer_in(window, |this, window, cx| {
-                    this.emit_message(event, window, cx);
+                cx.defer_in(window, move |this, _window, cx| {
+                    this.emit_message(gift_id, event, cx);
                 });
             });
 
