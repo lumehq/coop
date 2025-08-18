@@ -8,7 +8,7 @@ use gpui::{
     FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -165,12 +165,12 @@ impl Render for Onboarding {
                                     .text_xl()
                                     .font_semibold()
                                     .line_height(relative(1.3))
-                                    .child(SharedString::new(t!("welcome.title"))),
+                                    .child(shared_t!("welcome.title")),
                             )
                             .child(
                                 div()
                                     .text_color(cx.theme().text_muted)
-                                    .child(SharedString::new(t!("welcome.subtitle"))),
+                                    .child(shared_t!("welcome.subtitle")),
                             ),
                     ),
             )
@@ -182,7 +182,7 @@ impl Render for Onboarding {
                                 .id("account")
                                 .mb_3()
                                 .h_10()
-                                .w_72()
+                                .w_96()
                                 .bg(cx.theme().element_background)
                                 .text_color(cx.theme().element_foreground)
                                 .rounded_lg()
@@ -205,9 +205,7 @@ impl Render for Onboarding {
                                                 .items_center()
                                                 .justify_center()
                                                 .gap_2()
-                                                .child(SharedString::new(t!(
-                                                    "onboarding.choose_account"
-                                                )))
+                                                .child(shared_t!("onboarding.choose_account"))
                                                 .child(
                                                     div()
                                                         .flex()
@@ -237,7 +235,7 @@ impl Render for Onboarding {
                         )
                         .child(
                             Checkbox::new("auto_login")
-                                .label(SharedString::new(t!("onboarding.auto_login")))
+                                .label(t!("onboarding.auto_login"))
                                 .checked(auto_login)
                                 .on_click(move |_, _window, cx| {
                                     AppSettings::update_auto_login(!auto_login, cx);
@@ -247,7 +245,7 @@ impl Render for Onboarding {
                             div().w_24().absolute().bottom_2().right_2().child(
                                 Button::new("logout")
                                     .icon(IconName::Logout)
-                                    .label(SharedString::new(t!("user.sign_out")))
+                                    .label(t!("user.sign_out"))
                                     .danger()
                                     .xsmall()
                                     .rounded(ButtonRounded::Full)
@@ -262,26 +260,27 @@ impl Render for Onboarding {
                 } else {
                     this.child(
                         div()
-                            .w_72()
+                            .w_96()
                             .flex()
                             .flex_col()
                             .gap_2()
                             .child(
                                 Button::new("continue_btn")
                                     .icon(Icon::new(IconName::ArrowRight))
-                                    .label(SharedString::new(t!("onboarding.start_messaging")))
+                                    .label(t!("onboarding.start_messaging"))
                                     .primary()
+                                    .large()
                                     .reverse()
-                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                    .on_click(cx.listener(move |_this, _e, window, cx| {
                                         chatspace::new_account(window, cx);
                                     })),
                             )
                             .child(
                                 Button::new("login_btn")
-                                    .label(SharedString::new(t!("onboarding.already_have_account")))
+                                    .label(t!("onboarding.already_have_account"))
                                     .ghost()
                                     .underline()
-                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                    .on_click(cx.listener(move |_this, _e, window, cx| {
                                         chatspace::login(window, cx);
                                     })),
                             ),
