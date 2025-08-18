@@ -9,8 +9,6 @@ common = { path = "../common" }
 global = { path = "../global" }
 settings = { path = "../settings" }
 
-rust-i18n.workspace = true
-i18n.workspace = true
 gpui.workspace = true
 nostr.workspace = true
 nostr-sdk.workspace = true

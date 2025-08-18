@@ -287,7 +287,7 @@ compose:
     en: "Subject:"
 
 chat:
-  private_conversation_notice:
+  notice:
     en: "This conversation is private. Only members can see each other's messages."
   placeholder:
     en: "Message..."
@@ -303,12 +303,18 @@ chat:
     en: "Change the subject of the conversation"
   replying_to_label:
     en: "Replying to:"
-  send_fail:
+  sent_to:
+    en: "Sent to:"
+  sent:
+    en: "• Sent"
+  sent_failed:
     en: "Failed to send message. Click to see details."
-  logs_title:
-    en: "Error Logs"
-  send_to_label:
-    en: "Send to:"
+  sent_success:
+    en: "Successfully"
+  reports:
+    en: "Sent Reports"
+  nip17_not_found:
+    en: "%{u} has not set up Messaging Relays, so they won't receive your message."
 
 sidebar:
   find_or_start_conversation:

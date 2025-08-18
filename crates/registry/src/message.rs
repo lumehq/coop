@@ -1,19 +1,11 @@
 use std::hash::Hash;
-use std::iter::IntoIterator;
 
 use chrono::{Local, TimeZone};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
-use crate::room::SendError;
-
-/// Represents a message in the chat system.
-///
-/// Contains information about the message content, author, creation time,
-/// mentions, replies, and any errors that occurred during sending.
 #[derive(Debug, Clone)]
-pub struct Message {
-    /// Unique identifier of the message (EventId from nostr_sdk)
+pub struct RenderedMessage {
     pub id: EventId,
     /// Author's public key
     pub author: PublicKey,
@@ -23,138 +15,82 @@ pub struct Message {
     pub created_at: Timestamp,
     /// List of mentioned public keys in the message
     pub mentions: Vec<PublicKey>,
-    /// List of EventIds this message is replying to
-    pub replies_to: Option<Vec<EventId>>,
-    /// Any errors that occurred while sending this message
-    pub errors: Option<Vec<SendError>>,
+    /// List of event of the message this message is a reply to
+    pub replies_to: Vec<EventId>,
 }
 
-impl Eq for Message {}
+impl From<Event> for RenderedMessage {
+    fn from(inner: Event) -> Self {
+        let mentions = extract_mentions(&inner.content);
+        let replies_to = extract_reply_ids(&inner.tags);
 
-impl PartialEq for Message {
+        Self {
+            id: inner.id,
+            author: inner.pubkey,
+            content: inner.content.into(),
+            created_at: inner.created_at,
+            mentions,
+            replies_to,
+        }
+    }
+}
+
+impl From<UnsignedEvent> for RenderedMessage {
+    fn from(inner: UnsignedEvent) -> Self {
+        let mentions = extract_mentions(&inner.content);
+        let replies_to = extract_reply_ids(&inner.tags);
+
+        Self {
+            // Event ID must be known
+            id: inner.id.unwrap(),
+            author: inner.pubkey,
+            content: inner.content.into(),
+            created_at: inner.created_at,
+            mentions,
+            replies_to,
+        }
+    }
+}
+
+impl From<Box<Event>> for RenderedMessage {
+    fn from(inner: Box<Event>) -> Self {
+        (*inner).into()
+    }
+}
+
+impl From<&Box<Event>> for RenderedMessage {
+    fn from(inner: &Box<Event>) -> Self {
+        inner.to_owned().into()
+    }
+}
+
+impl Eq for RenderedMessage {}
+
+impl PartialEq for RenderedMessage {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Ord for Message {
+impl Ord for RenderedMessage {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.created_at.cmp(&other.created_at)
     }
 }
 
-impl PartialOrd for Message {
+impl PartialOrd for RenderedMessage {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Hash for Message {
+impl Hash for RenderedMessage {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-/// Builder pattern implementation for constructing Message objects.
-#[derive(Debug)]
-pub struct MessageBuilder {
-    id: EventId,
-    author: PublicKey,
-    content: Option<SharedString>,
-    created_at: Option<Timestamp>,
-    mentions: Vec<PublicKey>,
-    replies_to: Option<Vec<EventId>>,
-    errors: Option<Vec<SendError>>,
-}
-
-impl MessageBuilder {
-    /// Creates a new MessageBuilder with default values
-    pub fn new(id: EventId, author: PublicKey) -> Self {
-        Self {
-            id,
-            author,
-            content: None,
-            created_at: None,
-            mentions: vec![],
-            replies_to: None,
-            errors: None,
-        }
-    }
-
-    /// Sets the message content
-    pub fn content(mut self, content: impl Into<SharedString>) -> Self {
-        self.content = Some(content.into());
-        self
-    }
-
-    /// Sets the creation timestamp
-    pub fn created_at(mut self, created_at: Timestamp) -> Self {
-        self.created_at = Some(created_at);
-        self
-    }
-
-    /// Adds a single mention to the message
-    pub fn mention(mut self, mention: PublicKey) -> Self {
-        self.mentions.push(mention);
-        self
-    }
-
-    /// Adds multiple mentions to the message
-    pub fn mentions<I>(mut self, mentions: I) -> Self
-    where
-        I: IntoIterator<Item = PublicKey>,
-    {
-        self.mentions.extend(mentions);
-        self
-    }
-
-    /// Sets a single message this is replying to
-    pub fn reply_to(mut self, reply_to: EventId) -> Self {
-        self.replies_to = Some(vec![reply_to]);
-        self
-    }
-
-    /// Sets multiple messages this is replying to
-    pub fn replies_to<I>(mut self, replies_to: I) -> Self
-    where
-        I: IntoIterator<Item = EventId>,
-    {
-        let replies: Vec<EventId> = replies_to.into_iter().collect();
-        if !replies.is_empty() {
-            self.replies_to = Some(replies);
-        }
-        self
-    }
-
-    /// Adds errors that occurred during sending
-    pub fn errors<I>(mut self, errors: I) -> Self
-    where
-        I: IntoIterator<Item = SendError>,
-    {
-        self.errors = Some(errors.into_iter().collect());
-        self
-    }
-
-    /// Builds the message
-    pub fn build(self) -> Result<Message, String> {
-        Ok(Message {
-            id: self.id,
-            author: self.author,
-            content: self.content.ok_or("Content is required")?,
-            created_at: self.created_at.unwrap_or_else(Timestamp::now),
-            mentions: self.mentions,
-            replies_to: self.replies_to,
-            errors: self.errors,
-        })
-    }
-}
-
-impl Message {
-    /// Creates a new MessageBuilder
-    pub fn builder(id: EventId, author: PublicKey) -> MessageBuilder {
-        MessageBuilder::new(id, author)
-    }
-
+impl RenderedMessage {
     /// Returns a human-readable string representing how long ago the message was created
     pub fn ago(&self) -> SharedString {
         let input_time = match Local.timestamp_opt(self.created_at.as_u64() as i64, 0) {
@@ -176,4 +112,42 @@ impl Message {
         }
         .into()
     }
+}
+
+fn extract_mentions(content: &str) -> Vec<PublicKey> {
+    let parser = NostrParser::new();
+    let tokens = parser.parse(content);
+
+    tokens
+        .filter_map(|token| match token {
+            Token::Nostr(nip21) => match nip21 {
+                Nip21::Pubkey(pubkey) => Some(pubkey),
+                Nip21::Profile(profile) => Some(profile.public_key),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+}
+
+fn extract_reply_ids(inner: &Tags) -> Vec<EventId> {
+    let mut replies_to = vec![];
+
+    for tag in inner.filter(TagKind::e()) {
+        if let Some(content) = tag.content() {
+            if let Ok(id) = EventId::from_hex(content) {
+                replies_to.push(id);
+            }
+        }
+    }
+
+    for tag in inner.filter(TagKind::q()) {
+        if let Some(content) = tag.content() {
+            if let Ok(id) = EventId::from_hex(content) {
+                replies_to.push(id);
+            }
+        }
+    }
+
+    replies_to
 }
