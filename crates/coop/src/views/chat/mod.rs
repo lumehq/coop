@@ -667,11 +667,11 @@ impl Chat {
 
                     window.open_modal(cx, move |this, _window, cx| {
                         this.title(shared_t!("chat.reports")).child(
-                            v_flex().pb_4().gap_2().children({
+                            v_flex().pb_4().gap_4().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
-                                for (ix, report) in reports.iter().enumerate() {
-                                    items.push(Self::render_report(ix, report, cx))
+                                for report in reports.iter() {
+                                    items.push(Self::render_report(report, cx))
                                 }
 
                                 items
@@ -698,11 +698,11 @@ impl Chat {
 
                     window.open_modal(cx, move |this, _window, cx| {
                         this.title(shared_t!("chat.reports")).child(
-                            v_flex().pb_4().gap_2().children({
+                            v_flex().pb_4().gap_4().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
-                                for (ix, report) in reports.iter().enumerate() {
-                                    items.push(Self::render_report(ix, report, cx))
+                                for report in reports.iter() {
+                                    items.push(Self::render_report(report, cx))
                                 }
 
                                 items
@@ -713,7 +713,7 @@ impl Chat {
             })
     }
 
-    fn render_report(ix: usize, report: &SendReport, cx: &App) -> impl IntoElement {
+    fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
         let registry = Registry::read_global(cx);
         let profile = registry.get_person(&report.receiver, cx);
         let name = profile.display_name();
@@ -723,9 +723,6 @@ impl Chat {
             .gap_2()
             .child(
                 h_flex()
-                    .when(ix >= 1, |this| {
-                        this.pt_1().border_t_1().border_color(cx.theme().border)
-                    })
                     .gap_2()
                     .text_sm()
                     .child(shared_t!("chat.sent_to"))
