@@ -724,7 +724,7 @@ impl Chat {
             .child(
                 h_flex()
                     .when(ix >= 1, |this| {
-                        this.pt_2().border_t_1().border_color(cx.theme().border)
+                        this.pt_1().border_t_1().border_color(cx.theme().border)
                     })
                     .gap_2()
                     .text_sm()
@@ -834,8 +834,8 @@ impl Chat {
                                                 .flex_1()
                                                 .py_0p5()
                                                 .px_2()
-                                                .bg(cx.theme().element_background)
-                                                .text_color(cx.theme().element_foreground)
+                                                .bg(cx.theme().secondary_background)
+                                                .text_color(cx.theme().secondary_foreground)
                                                 .rounded_sm()
                                                 .child(shared_t!("chat.sent_success")),
                                         ),
