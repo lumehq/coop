@@ -274,12 +274,10 @@ fn main() {
                                     });
                                 }
                                 // Convert the gift wrapped message to a message
-                                NostrSignal::GiftWrap((gift_id, event)) => {
+                                NostrSignal::GiftWrap(event) => {
                                     if let Some(public_key) = identity.read(cx).public_key() {
                                         registry.update(cx, |this, cx| {
-                                            this.event_to_message(
-                                                public_key, gift_id, event, window, cx,
-                                            );
+                                            this.event_to_message(public_key, event, window, cx);
                                         });
                                     }
                                 }
@@ -567,10 +565,7 @@ async fn unwrap_gift(
 
     // Send a notify to GPUI if this is a new message
     if starting_time() <= &event.created_at {
-        signal_tx
-            .send(NostrSignal::GiftWrap((gift.id, event)))
-            .await
-            .ok();
+        signal_tx.send(NostrSignal::GiftWrap(event)).await.ok();
     }
 
     is_cached

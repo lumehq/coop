@@ -21,17 +21,17 @@ pub(crate) const DAYS_IN_MONTH: i64 = 30;
 #[derive(Debug, Clone)]
 pub struct SendReport {
     pub receiver: PublicKey,
-    pub success: Option<Output<EventId>>,
-    pub error: Option<SharedString>,
+    pub output: Option<Output<EventId>>,
+    pub local_error: Option<SharedString>,
     pub nip17_relays_not_found: bool,
 }
 
 impl SendReport {
-    pub fn success(receiver: PublicKey, output: Output<EventId>) -> Self {
+    pub fn output(receiver: PublicKey, output: Output<EventId>) -> Self {
         Self {
             receiver,
-            success: Some(output),
-            error: None,
+            output: Some(output),
+            local_error: None,
             nip17_relays_not_found: false,
         }
     }
@@ -39,8 +39,8 @@ impl SendReport {
     pub fn error(receiver: PublicKey, error: impl Into<SharedString>) -> Self {
         Self {
             receiver,
-            success: None,
-            error: Some(error.into()),
+            output: None,
+            local_error: Some(error.into()),
             nip17_relays_not_found: false,
         }
     }
@@ -48,20 +48,28 @@ impl SendReport {
     pub fn nip17_relays_not_found(receiver: PublicKey) -> Self {
         Self {
             receiver,
-            success: None,
-            error: None,
+            output: None,
+            local_error: None,
             nip17_relays_not_found: true,
         }
     }
 
-    pub fn has_error(&self) -> bool {
-        self.error.is_some() || self.nip17_relays_not_found
+    pub fn is_relay_error(&self) -> bool {
+        self.local_error.is_some() || self.nip17_relays_not_found
+    }
+
+    pub fn is_sent_success(&self) -> bool {
+        if let Some(output) = self.output.as_ref() {
+            !output.success.is_empty()
+        } else {
+            false
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
-    NewMessage((EventId, Box<Event>)),
+    NewMessage(Box<Event>),
     Refresh,
 }
 
@@ -412,8 +420,8 @@ impl Room {
     }
 
     /// Emits a new message signal to the current room
-    pub fn emit_message(&self, gift_id: EventId, event: Event, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage((gift_id, Box::new(event))));
+    pub fn emit_message(&self, event: Event, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage(Box::new(event)));
     }
 
     /// Emits a signal to refresh the current room's messages.
@@ -530,7 +538,7 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::success(*receiver, output));
+                        reports.push(SendReport::output(*receiver, output));
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
@@ -542,14 +550,15 @@ impl Room {
                 }
             }
 
-            // Only send a backup message to current user if there are no issues when sending to others
-            if !reports.iter().any(|r| r.nip17_relays_not_found) && backup {
+            // Only send a backup message to current user if sent successfully to others
+            if reports.iter().all(|r| r.is_sent_success()) && backup {
+                log::info!("send success: {reports:?}");
                 match client
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::success(*current_user, output));
+                        reports.push(SendReport::output(*current_user, output));
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {

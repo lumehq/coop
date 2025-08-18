@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, HashMap};
-use std::time::Duration;
 
 use anyhow::anyhow;
 use common::display::DisplayProfile;
@@ -36,7 +35,8 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::text::RenderedText;
 use ui::{
-    v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable, StyledExt,
+    h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
+    StyledExt,
 };
 
 mod subject;
@@ -124,41 +124,10 @@ impl Chat {
         subscriptions.push(
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
-                    RoomSignal::NewMessage((gift_id, event)) => {
-                        match this.sending {
-                            false => {
-                                if !this.is_sent_message(gift_id) {
-                                    this.insert_message(event, cx);
-                                };
-                            }
-                            true => {
-                                let gift_id = gift_id.to_owned();
-                                let event = event.clone();
-
-                                cx.spawn_in(window, async move |this, cx| {
-                                    // Check if Coop is still sending messages
-                                    loop {
-                                        cx.background_executor()
-                                            .timer(Duration::from_secs(2))
-                                            .await;
-
-                                        if let Ok(false) =
-                                            this.read_with(cx, |this, _cx| this.sending)
-                                        {
-                                            this.update(cx, |this, cx| {
-                                                if !this.is_sent_message(&gift_id) {
-                                                    this.insert_message(event, cx);
-                                                }
-                                            })
-                                            .ok();
-
-                                            break;
-                                        }
-                                    }
-                                })
-                                .detach();
-                            }
-                        }
+                    RoomSignal::NewMessage(event) => {
+                        if !this.is_seen_message(event) {
+                            this.insert_message(event, cx);
+                        };
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
@@ -236,17 +205,23 @@ impl Chat {
         content
     }
 
-    fn is_sent_message(&self, gift_id: &EventId) -> bool {
-        let sent_ids = self
-            .reports_by_id
-            .values()
-            .flatten()
-            .filter_map(|report| report.success.as_ref().map(|success| success.id()))
-            .collect_vec();
-
-        sent_ids.contains(&gift_id)
+    /// Check if the event is a seen message
+    fn is_seen_message(&self, event: &Event) -> bool {
+        if let Some(message) = self.messages.last() {
+            let duration = event.created_at.as_u64() - message.created_at.as_u64();
+            message.content == event.content && message.author == event.pubkey && duration <= 20
+        } else {
+            false
+        }
     }
 
+    /// Set the sending state of the chat panel
+    fn set_sending(&mut self, sending: bool, cx: &mut Context<Self>) {
+        self.sending = sending;
+        cx.notify();
+    }
+
+    /// Send a message to all members of the chat
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Return if user is not logged in
         let Some(identity) = Identity::read_global(cx).public_key() else {
@@ -329,23 +304,28 @@ impl Chat {
         .detach();
     }
 
-    fn set_sending(&mut self, sending: bool, cx: &mut Context<Self>) {
-        self.sending = sending;
-        cx.notify();
+    /// Check if a message failed to send by its ID
+    fn is_sent_failed(&self, id: &EventId) -> bool {
+        self.reports_by_id
+            .get(id)
+            .is_some_and(|reports| reports.iter().all(|r| !r.is_sent_success()))
     }
 
-    fn message(&self, id: &EventId) -> Option<&RenderedMessage> {
-        self.messages.iter().find(|m| m.id == *id)
+    /// Check if a message was sent successfully by its ID
+    fn is_sent_success(&self, id: &EventId) -> Option<bool> {
+        self.reports_by_id
+            .get(id)
+            .map(|reports| reports.iter().all(|r| r.is_sent_success()))
     }
 
-    fn success_reports(&self, id: &EventId) -> Option<&Vec<SendReport>> {
+    /// Get the sent reports for a message by its ID
+    fn sent_reports(&self, id: &EventId) -> Option<&Vec<SendReport>> {
         self.reports_by_id.get(id)
     }
 
-    fn error_reports(&self, id: &EventId) -> Option<&Vec<SendReport>> {
-        self.reports_by_id
-            .get(id)
-            .filter(|r| r.iter().any(|report| report.has_error()))
+    /// Get a message by its ID
+    fn message(&self, id: &EventId) -> Option<&RenderedMessage> {
+        self.messages.iter().find(|m| m.id == *id)
     }
 
     fn insert_message<E>(&mut self, event: E, cx: &mut Context<Self>)
@@ -549,8 +529,10 @@ impl Chat {
         let hide_avatar = AppSettings::get_hide_user_avatars(cx);
 
         let id = message.id;
-        let replies = message.replies_to.as_slice();
         let author = self.profile(&message.author, cx);
+
+        let replies = message.replies_to.as_slice();
+        let has_replies = !replies.is_empty();
 
         // Get or insert rendered text
         let rendered_text = self
@@ -559,9 +541,11 @@ impl Chat {
             .or_insert_with(|| RenderedText::new(&message.content, cx))
             .element(ix.into(), window, cx);
 
-        // Get all sent reports (only for messages sent by Coop)
-        let success_reports = self.success_reports(&id);
-        let error_reports = self.error_reports(&id);
+        // Check if message is sent failed
+        let is_sent_failed = self.is_sent_failed(&id);
+
+        // Check if message is sent successfully
+        let is_sent_success = self.is_sent_success(&id);
 
         div()
             .id(ix)
@@ -589,33 +573,26 @@ impl Chat {
                                     .items_center()
                                     .gap_2()
                                     .text_sm()
+                                    .text_color(cx.theme().text_placeholder)
                                     .child(
                                         div()
                                             .font_semibold()
                                             .text_color(cx.theme().text)
                                             .child(author.display_name()),
                                     )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().text_placeholder)
-                                            .child(message.ago()),
-                                    )
-                                    .when_some(success_reports, |this, reports| {
-                                        this.child(
-                                            Button::new("report")
-                                                .icon(IconName::Check)
-                                                .cta()
-                                                .xsmall()
-                                                .ghost_alt(),
-                                        )
+                                    .child(div().child(message.ago()))
+                                    .when_some(is_sent_success, |this, status| {
+                                        this.when(status, |this| {
+                                            this.child(div().child(shared_t!("chat.sent")))
+                                        })
                                     }),
                             )
-                            .when(!replies.is_empty(), |this| {
+                            .when(has_replies, |this| {
                                 this.children(self.render_message_replies(replies, cx))
                             })
                             .child(rendered_text)
-                            .when_some(error_reports, |this, reports| {
-                                this.children(self.render_sent_error(reports, cx))
+                            .when(is_sent_failed, |this| {
+                                this.child(self.render_message_reports(&id, cx))
                             }),
                     ),
             )
@@ -681,52 +658,126 @@ impl Chat {
         items
     }
 
-    fn render_message_reports(
-        &self,
-        reports: &[SendReport],
-        cx: &Context<Self>,
-    ) -> impl IntoIterator<Item = impl IntoElement> {
-        let mut items = Vec::with_capacity(reports.len());
+    fn render_message_reports(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
+        h_flex()
+            .id("")
+            .gap_1()
+            .text_color(cx.theme().danger_foreground)
+            .text_xs()
+            .italic()
+            .child(Icon::new(IconName::Info).small())
+            .child(shared_t!("chat.sent_failed"))
+            .when_some(self.sent_reports(id).cloned(), |this, reports| {
+                this.on_click(move |_e, window, cx| {
+                    let reports = reports.clone();
 
-        for (ix, report) in reports.iter().enumerate() {
-            items.push(
-                div()
-                    .id(ix)
-                    .text_color(cx.theme().icon_accent)
-                    .child(Icon::new(IconName::Check).xsmall()),
-            );
-        }
+                    window.open_modal(cx, move |this, _window, cx| {
+                        this.title(shared_t!("chat.reports")).child(
+                            v_flex().pb_4().gap_2().children({
+                                let mut items = Vec::with_capacity(reports.len());
 
-        items
+                                for report in reports.iter() {
+                                    items.push(Self::render_report(report, cx))
+                                }
+
+                                items
+                            }),
+                        )
+                    });
+                })
+            })
     }
 
-    fn render_sent_error(
-        &self,
-        reports: &[SendReport],
-        cx: &Context<Self>,
-    ) -> impl IntoIterator<Item = impl IntoElement> {
-        let mut items = Vec::with_capacity(reports.len());
+    fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
+        let registry = Registry::read_global(cx);
+        let profile = registry.get_person(&report.receiver, cx);
+        let name = profile.display_name();
+        let avatar = profile.avatar_url(true);
 
-        for (ix, report) in reports.iter().enumerate() {
-            let author = self.profile(&report.receiver, cx);
+        v_flex()
+            .gap_3()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .text_sm()
+                    .child(shared_t!("chat.sent_to"))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .font_semibold()
+                            .child(Avatar::new(avatar).size(rems(1.25)))
+                            .child(name.clone()),
+                    ),
+            )
+            .when(report.nip17_relays_not_found, |this| {
+                this.child(
+                    h_flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .p_2()
+                        .h_20()
+                        .w_full()
+                        .text_sm()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().danger_background)
+                        .text_color(cx.theme().danger_foreground)
+                        .child(
+                            div()
+                                .flex_1()
+                                .w_full()
+                                .text_center()
+                                .child(shared_t!("chat.nip17_not_found", u = name)),
+                        ),
+                )
+            })
+            .when_some(report.local_error.clone(), |this, error| {
+                this.child(
+                    h_flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .p_2()
+                        .h_20()
+                        .w_full()
+                        .text_sm()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().danger_background)
+                        .text_color(cx.theme().danger_foreground)
+                        .child(div().flex_1().w_full().text_center().child(error)),
+                )
+            })
+            .when_some(report.output.clone(), |this, output| {
+                this.child(div().child(output.val.to_string()).children({
+                    let mut items = Vec::with_capacity(output.failed.len());
 
-            items.push(
-                div()
-                    .id(ix)
-                    .italic()
-                    .text_xs()
-                    .text_color(cx.theme().danger_foreground)
-                    .map(|this| {
-                        if report.nip17_relays_not_found {
-                            this.child(shared_t!("chat.nip17_not_found", u = author.display_name()))
-                        } else {
-                            this.when_some(report.error.clone(), |this, error| this.child(error))
-                        }
-                    }),
-            );
-        }
+                    for (url, msg) in output.failed.into_iter() {
+                        items.push(
+                            h_flex()
+                                .gap_1()
+                                .justify_between()
+                                .text_sm()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .p_1()
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .rounded_sm()
+                                        .child(url.to_string()),
+                                )
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .p_1()
+                                        .bg(cx.theme().danger_background)
+                                        .text_color(cx.theme().danger_foreground)
+                                        .rounded_sm()
+                                        .child(msg.to_string()),
+                                ),
+                        )
+                    }
 
-        items
+                    items
+                }))
+            })
     }
 
     fn render_border(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -741,10 +792,34 @@ impl Chat {
     }
 
     fn render_actions(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
-        let id = id.to_owned();
+        let groups = vec![
+            Button::new("reply")
+                .icon(IconName::Reply)
+                .tooltip(t!("chat.reply_button"))
+                .small()
+                .ghost()
+                .on_click({
+                    let id = id.to_owned();
+                    cx.listener(move |this, _event, _window, cx| {
+                        this.reply_to(&id, cx);
+                    })
+                }),
+            Button::new("copy")
+                .icon(IconName::Copy)
+                .tooltip(t!("chat.copy_message_button"))
+                .small()
+                .ghost()
+                .on_click({
+                    let id = id.to_owned();
+                    cx.listener(move |this, _event, _window, cx| {
+                        this.copy_message(&id, cx);
+                    })
+                }),
+        ];
 
-        div()
-            .group_hover("", |this| this.visible())
+        h_flex()
+            .p_0p5()
+            .gap_1()
             .invisible()
             .absolute()
             .right_4()
@@ -754,29 +829,8 @@ impl Chat {
             .border_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
-            .p_0p5()
-            .flex()
-            .gap_1()
-            .children({
-                vec![
-                    Button::new("reply")
-                        .icon(IconName::Reply)
-                        .tooltip(t!("chat.reply_button"))
-                        .small()
-                        .ghost()
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.reply_to(&id, cx);
-                        })),
-                    Button::new("copy")
-                        .icon(IconName::Copy)
-                        .tooltip(t!("chat.copy_message_button"))
-                        .small()
-                        .ghost()
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.copy_message(&id, cx);
-                        })),
-                ]
-            })
+            .children(groups)
+            .group_hover("", |this| this.visible())
     }
 
     fn render_attachment(&self, url: &Url, cx: &Context<Self>) -> impl IntoElement {
