@@ -411,7 +411,7 @@ impl ChatSpace {
                         .active(|this| this.bg(cx.theme().ghost_element_active))
                         .child(shared_t!("auto_update.updated"))
                         .on_click(|_, _window, cx| {
-                            cx.restart(None);
+                            cx.restart();
                         }),
                 )
             })

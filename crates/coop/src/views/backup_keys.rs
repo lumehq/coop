@@ -150,7 +150,7 @@ impl BackupKeys {
             return;
         };
 
-        let path = cx.prompt_for_new_path(&document_dir);
+        let path = cx.prompt_for_new_path(&document_dir, None);
         let nsec = self.secret_input.read(cx).value().to_string();
 
         cx.spawn_in(window, async move |this, cx| {

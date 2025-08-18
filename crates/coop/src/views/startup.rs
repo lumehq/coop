@@ -121,7 +121,7 @@ impl Render for Startup {
                                     Identity::global(cx).update(cx, |this, cx| {
                                         this.unload(window, cx);
                                         // Restart application
-                                        cx.restart(None);
+                                        cx.restart();
                                     });
                                 }),
                         ),
