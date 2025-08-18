@@ -552,7 +552,6 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && backup {
-                log::info!("send success: {reports:?}");
                 match client
                     .send_private_msg(*current_user, &content, tags.clone())
                     .await

@@ -534,18 +534,18 @@ impl Chat {
         let replies = message.replies_to.as_slice();
         let has_replies = !replies.is_empty();
 
+        // Check if message is sent failed
+        let is_sent_failed = self.is_sent_failed(&id);
+
+        // Check if message is sent successfully
+        let is_sent_success = self.is_sent_success(&id);
+
         // Get or insert rendered text
         let rendered_text = self
             .rendered_texts_by_id
             .entry(id)
             .or_insert_with(|| RenderedText::new(&message.content, cx))
             .element(ix.into(), window, cx);
-
-        // Check if message is sent failed
-        let is_sent_failed = self.is_sent_failed(&id);
-
-        // Check if message is sent successfully
-        let is_sent_success = self.is_sent_success(&id);
 
         div()
             .id(ix)
@@ -583,7 +583,7 @@ impl Chat {
                                     .child(div().child(message.ago()))
                                     .when_some(is_sent_success, |this, status| {
                                         this.when(status, |this| {
-                                            this.child(div().child(shared_t!("chat.sent")))
+                                            this.child(self.render_message_sent(&id, cx))
                                         })
                                     }),
                             )
@@ -658,6 +658,31 @@ impl Chat {
         items
     }
 
+    fn render_message_sent(&self, id: &EventId, _cx: &Context<Self>) -> impl IntoElement {
+        div().id("").child(shared_t!("chat.sent")).when_some(
+            self.sent_reports(id).cloned(),
+            |this, reports| {
+                this.on_click(move |_e, window, cx| {
+                    let reports = reports.clone();
+
+                    window.open_modal(cx, move |this, _window, cx| {
+                        this.title(shared_t!("chat.reports")).child(
+                            v_flex().pb_4().gap_2().children({
+                                let mut items = Vec::with_capacity(reports.len());
+
+                                for (ix, report) in reports.iter().enumerate() {
+                                    items.push(Self::render_report(ix, report, cx))
+                                }
+
+                                items
+                            }),
+                        )
+                    });
+                })
+            },
+        )
+    }
+
     fn render_message_reports(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         h_flex()
             .id("")
@@ -676,8 +701,8 @@ impl Chat {
                             v_flex().pb_4().gap_2().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
-                                for report in reports.iter() {
-                                    items.push(Self::render_report(report, cx))
+                                for (ix, report) in reports.iter().enumerate() {
+                                    items.push(Self::render_report(ix, report, cx))
                                 }
 
                                 items
@@ -688,16 +713,19 @@ impl Chat {
             })
     }
 
-    fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
+    fn render_report(ix: usize, report: &SendReport, cx: &App) -> impl IntoElement {
         let registry = Registry::read_global(cx);
         let profile = registry.get_person(&report.receiver, cx);
         let name = profile.display_name();
         let avatar = profile.avatar_url(true);
 
         v_flex()
-            .gap_3()
+            .gap_2()
             .child(
                 h_flex()
+                    .when(ix >= 1, |this| {
+                        this.pt_2().border_t_1().border_color(cx.theme().border)
+                    })
                     .gap_2()
                     .text_sm()
                     .child(shared_t!("chat.sent_to"))
@@ -746,37 +774,77 @@ impl Chat {
                 )
             })
             .when_some(report.output.clone(), |this, output| {
-                this.child(div().child(output.val.to_string()).children({
-                    let mut items = Vec::with_capacity(output.failed.len());
+                this.child(
+                    v_flex()
+                        .gap_2()
+                        .text_xs()
+                        .children({
+                            let mut items = Vec::with_capacity(output.failed.len());
 
-                    for (url, msg) in output.failed.into_iter() {
-                        items.push(
-                            h_flex()
-                                .gap_1()
-                                .justify_between()
-                                .text_sm()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .p_1()
-                                        .bg(cx.theme().elevated_surface_background)
-                                        .rounded_sm()
-                                        .child(url.to_string()),
+                            for (url, msg) in output.failed.into_iter() {
+                                items.push(
+                                    h_flex()
+                                        .gap_1()
+                                        .justify_between()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .py_0p5()
+                                                .px_2()
+                                                .bg(cx.theme().elevated_surface_background)
+                                                .rounded_sm()
+                                                .child(url.to_string()),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .py_0p5()
+                                                .px_2()
+                                                .bg(cx.theme().danger_background)
+                                                .text_color(cx.theme().danger_foreground)
+                                                .rounded_sm()
+                                                .child(msg.to_string()),
+                                        ),
                                 )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .p_1()
-                                        .bg(cx.theme().danger_background)
-                                        .text_color(cx.theme().danger_foreground)
-                                        .rounded_sm()
-                                        .child(msg.to_string()),
-                                ),
-                        )
-                    }
+                            }
 
-                    items
-                }))
+                            items
+                        })
+                        .children({
+                            let mut items = Vec::with_capacity(output.success.len());
+
+                            for url in output.success.into_iter() {
+                                items.push(
+                                    h_flex()
+                                        .gap_1()
+                                        .justify_between()
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .py_0p5()
+                                                .px_2()
+                                                .bg(cx.theme().elevated_surface_background)
+                                                .rounded_sm()
+                                                .child(url.to_string()),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .py_0p5()
+                                                .px_2()
+                                                .bg(cx.theme().element_background)
+                                                .text_color(cx.theme().element_foreground)
+                                                .rounded_sm()
+                                                .child(shared_t!("chat.sent_success")),
+                                        ),
+                                )
+                            }
+
+                            items
+                        }),
+                )
             })
     }
 

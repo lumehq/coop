@@ -309,6 +309,8 @@ chat:
     en: "• Sent"
   sent_failed:
     en: "Failed to send message. Click to see details."
+  sent_success:
+    en: "Successfully"
   reports:
     en: "Sent Reports"
   nip17_not_found:
