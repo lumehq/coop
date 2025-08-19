@@ -31,6 +31,8 @@ common:
     en: "Your Secret Key has been saved"
   clear:
     en: "Clear"
+  cancel:
+    en: "Cancel"
 
 auto_update:
   updating:
@@ -97,16 +99,18 @@ new_account:
     en: "Download"
 
 login:
-  title:
+  label:
     en: "Welcome Back!"
-  key_description:
-    en: "Continue with Private Key or Bunker URI"
+  description:
+    en: "Continue with Private Key or Bunker"
+  show_qr:
+    en: "Show QR Code for Nostr Connect"
+  qr_recommend:
+    en: "Use one of the following apps to connect:"
   approve_message:
     en: "Approve connection request from your signer in %{i} seconds"
-  nostr_connect:
-    en: "Continue with Nostr Connect"
   scan_qr:
-    en: "Use Nostr Connect apps to scan the code"
+    en: "Scan QR Code to continue"
   invalid_key:
     en: "Please enter a valid private key or Bunker URI to login."
   set_password:

@@ -5,6 +5,7 @@ use std::time::Duration;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
+use smol::channel::{Receiver, Sender};
 use smol::lock::RwLock;
 
 use crate::paths::support_dir;
@@ -34,9 +35,18 @@ pub enum NostrSignal {
     Notice(String),
 }
 
+/// Initialize the nostr client
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
+
+static GLOBAL_CHANNEL: OnceLock<(Sender<NostrSignal>, Receiver<NostrSignal>)> = OnceLock::new();
+
+/// Initialize the processed events set, used for preventing duplicate processing events
 static PROCESSED_EVENTS: OnceLock<RwLock<BTreeSet<EventId>>> = OnceLock::new();
+
+/// Initialize the current timestamp when user launches the application
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
+
+/// Initialize the first run flag when user launches the application
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
@@ -60,6 +70,13 @@ pub fn nostr_client() -> &'static Client {
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
+    })
+}
+
+pub fn global_channel() -> &'static (Sender<NostrSignal>, Receiver<NostrSignal>) {
+    GLOBAL_CHANNEL.get_or_init(|| {
+        let (sender, receiver) = smol::channel::bounded(2048);
+        (sender, receiver)
     })
 }
 

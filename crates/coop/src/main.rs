@@ -9,7 +9,7 @@ use global::constants::{
     APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
     SEARCH_RELAYS, WAIT_FOR_FINISH,
 };
-use global::{nostr_client, processed_events, starting_time, NostrSignal};
+use global::{global_channel, nostr_client, processed_events, starting_time, NostrSignal};
 use gpui::{
     actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
     SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
@@ -47,10 +47,9 @@ fn main() {
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
-    let (signal_tx, signal_rx) = channel::bounded::<NostrSignal>(2048);
-    let (mta_tx, mta_rx) = channel::bounded::<PublicKey>(1024);
+    let (signal_tx, signal_rx) = global_channel();
     let (event_tx, event_rx) = channel::bounded::<Event>(2048);
-    let signal_tx_clone = signal_tx.clone();
+    let (pubkey_tx, pubkey_rx) = channel::bounded::<PublicKey>(1024);
 
     app.background_executor()
         .spawn(async move {
@@ -62,7 +61,7 @@ fn main() {
             // Handle Nostr notifications.
             //
             // Send the redefined signal back to GPUI via channel.
-            if let Err(e) = handle_nostr_notifications(&signal_tx_clone, &event_tx).await {
+            if let Err(e) = handle_nostr_notifications(signal_tx, &event_tx).await {
                 log::error!("Failed to handle Nostr notifications: {e}");
             }
         })
@@ -85,7 +84,7 @@ fn main() {
                 let duration = smol::Timer::after(duration);
 
                 let recv = || async {
-                    if let Ok(public_key) = mta_rx.recv().await {
+                    if let Ok(public_key) = pubkey_rx.recv().await {
                         BatchEvent::NewKeys(public_key)
                     } else {
                         BatchEvent::Closed
@@ -148,7 +147,7 @@ fn main() {
 
                 match smol::future::or(recv(), timeout()).await {
                     Some(event) => {
-                        let cached = unwrap_gift(&event, &signal_tx, &mta_tx).await;
+                        let cached = unwrap_gift(&event, signal_tx, &pubkey_tx).await;
 
                         // Increment the total messages counter if message is not from cache
                         if !cached {
@@ -524,7 +523,7 @@ async fn get_unwrapped(root: EventId) -> Result<Event, Error> {
 async fn unwrap_gift(
     gift: &Event,
     signal_tx: &Sender<NostrSignal>,
-    mta_tx: &Sender<PublicKey>,
+    pubkey_tx: &Sender<PublicKey>,
 ) -> bool {
     let client = nostr_client();
     let mut is_cached = false;
@@ -560,7 +559,7 @@ async fn unwrap_gift(
 
     // Send all pubkeys to the metadata batch to sync data
     for public_key in event.all_pubkeys() {
-        mta_tx.send(public_key).await.ok();
+        pubkey_tx.send(public_key).await.ok();
     }
 
     // Send a notify to GPUI if this is a new message

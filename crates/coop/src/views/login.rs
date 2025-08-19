@@ -1,12 +1,14 @@
 use std::time::Duration;
 
 use client_keys::ClientKeys;
+use common::display::TextUtils;
 use common::handle_auth::CoopAuthUrlHandler;
-use global::constants::NOSTR_CONNECT_TIMEOUT;
+use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
+    div, img, px, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
+    Window,
 };
 use i18n::{shared_t, t};
 use identity::Identity;
@@ -17,7 +19,7 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
-use ui::{v_flex, ContextModal, Disableable, Sizable, StyledExt};
+use ui::{divider, h_flex, v_flex, ContextModal, Disableable, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
@@ -255,16 +257,19 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys();
-        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 8);
-        // .unwrap() is fine here because there's no error handling for bunker uri
-        let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
+        let client_keys = ClientKeys::global(cx);
+        let keys = client_keys.read(cx).keys();
+
+        let secs = NOSTR_CONNECT_TIMEOUT / 5;
+        let timeout = Duration::from_secs(secs);
+        let mut signer = NostrConnect::new(uri, keys, timeout, None).unwrap();
+
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
 
         // Start countdown
         cx.spawn_in(window, async move |this, cx| {
-            for i in (0..=NOSTR_CONNECT_TIMEOUT / 8).rev() {
+            for i in (0..=secs).rev() {
                 if i == 0 {
                     this.update(cx, |this, cx| {
                         this.set_countdown(None, cx);
@@ -281,13 +286,111 @@ impl Login {
         })
         .detach();
 
+        // Verify the NIP-46 connection
+        self.handle_nip46_connection(signer, window, cx);
+    }
+
+    fn login_with_qr(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let client_keys = ClientKeys::get_global(cx).keys();
+        let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
+        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+        let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME);
+
+        if let Some(qr) = uri.to_string().to_qr() {
+            let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
+
+            // Handle auth url with the default browser
+            signer.auth_url_handler(CoopAuthUrlHandler);
+
+            // Verify the NIP-46 connection
+            self.handle_nip46_connection(signer, window, cx);
+
+            window.open_modal(cx, move |this, _window, cx| {
+                this.show_close(true)
+                    .title(shared_t!("login.scan_qr"))
+                    .child(
+                        v_flex()
+                            .pb_4()
+                            .gap_3()
+                            .child(
+                                v_flex()
+                                    .p_2()
+                                    .size_full()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        img(qr.clone())
+                                            .w(px(256.))
+                                            .h(px(256.))
+                                            .border_1()
+                                            .border_color(cx.theme().border_selected)
+                                            .rounded_xl(),
+                                    ),
+                            )
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .justify_center()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .text_center()
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(shared_t!("login.qr_recommend")),
+                                    )
+                                    .child(
+                                        h_flex()
+                                            .gap_1()
+                                            .text_sm()
+                                            .child(
+                                                div()
+                                                    .px_2()
+                                                    .py_0p5()
+                                                    .bg(cx.theme().elevated_surface_background)
+                                                    .rounded_sm()
+                                                    .child("nsec.app (Web)"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .px_2()
+                                                    .py_0p5()
+                                                    .bg(cx.theme().elevated_surface_background)
+                                                    .rounded_sm()
+                                                    .child("Amber (Android)"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .px_2()
+                                                    .py_0p5()
+                                                    .bg(cx.theme().elevated_surface_background)
+                                                    .rounded_sm()
+                                                    .child("Aegis (iOS)"),
+                                            ),
+                                    ),
+                            ),
+                    )
+            });
+        }
+    }
+
+    fn handle_nip46_connection(
+        &mut self,
+        signer: NostrConnect,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let client_keys = ClientKeys::global(cx);
+        let identity = Identity::global(cx);
+
         // Handle connection
         cx.spawn_in(window, async move |this, cx| {
             match signer.bunker_uri().await {
                 Ok(bunker_uri) => {
                     cx.update(|window, cx| {
-                        window.push_notification(t!("login.logging_in"), cx);
-                        Identity::global(cx).update(cx, |this, cx| {
+                        window.close_all_modals(cx);
+                        identity.update(cx, |this, cx| {
                             this.write_bunker(&bunker_uri, cx);
                             this.set_signer(signer, window, cx);
                         });
@@ -295,14 +398,20 @@ impl Login {
                     .ok();
                 }
                 Err(error) => {
+                    // Shutdown the nostr connect instance
+                    signer.shutdown().await;
+
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            // Force reset the client keys without notify UI
-                            ClientKeys::global(cx).update(cx, |this, cx| {
-                                log::info!("Timeout occurred. Reset client keys");
+                            // Set the error message
+                            this.set_error(error.to_string(), window, cx);
+
+                            // Force regeneration of the client keys
+                            // This is a necessary step to ensure the user can reconnect and log in again
+                            client_keys.update(cx, |this, cx| {
+                                log::info!("Timeout occurred. Resetting client keys");
                                 this.force_new_keys(cx);
                             });
-                            this.set_error(error.to_string(), window, cx);
                         })
                         .ok();
                     })
@@ -406,12 +515,12 @@ impl Render for Login {
                             .text_lg()
                             .font_semibold()
                             .line_height(relative(1.3))
-                            .child(shared_t!("login.title")),
+                            .child(shared_t!("login.label")),
                     )
                     .child(
                         div()
                             .text_color(cx.theme().text_muted)
-                            .child(shared_t!("login.key_description")),
+                            .child(shared_t!("login.description")),
                     ),
             )
             .child(
@@ -448,8 +557,18 @@ impl Render for Login {
                             .primary()
                             .loading(self.logging_in)
                             .disabled(self.logging_in)
-                            .on_click(cx.listener(move |this, _, window, cx| {
+                            .on_click(cx.listener(move |this, _e, window, cx| {
                                 this.login(window, cx);
+                            })),
+                    )
+                    .child(divider(cx))
+                    .child(
+                        Button::new("qr")
+                            .label(t!("login.show_qr"))
+                            .ghost()
+                            .disabled(self.logging_in)
+                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                this.login_with_qr(window, cx);
                             })),
                     ),
             )

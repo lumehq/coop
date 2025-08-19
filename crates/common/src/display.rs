@@ -66,12 +66,15 @@ impl TextUtils for String {
     }
 
     fn to_qr(&self) -> Option<Arc<Image>> {
-        let Ok(bytes) = qrcode_generator::to_png_to_vec_from_str(self, QrCodeEcc::Medium, 256)
-        else {
+        let ecc = QrCodeEcc::Low;
+        let format = ImageFormat::Png;
+        let size = 256;
+
+        let Ok(bytes) = qrcode_generator::to_png_to_vec_from_str(self, ecc, size) else {
             return None;
         };
 
-        Some(Arc::new(Image::from_bytes(ImageFormat::Png, bytes)))
+        Some(Arc::new(Image::from_bytes(format, bytes)))
     }
 }
 
