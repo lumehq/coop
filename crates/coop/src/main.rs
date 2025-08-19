@@ -131,6 +131,7 @@ fn main() {
             loop {
                 // Signer is unset, probably user is not ready to retrieve gift wrap events
                 if client.signer().await.is_err() {
+                    smol::Timer::after(Duration::from_secs(1)).await;
                     continue;
                 }
 
