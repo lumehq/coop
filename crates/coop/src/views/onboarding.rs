@@ -1,26 +1,20 @@
-use anyhow::anyhow;
-use common::display::DisplayProfile;
-use global::constants::ACCOUNT_D;
-use global::nostr_client;
-use gpui::prelude::FluentBuilder;
+use std::sync::Arc;
+use std::time::Duration;
+
+use client_keys::ClientKeys;
+use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use gpui::{
-    div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Window,
 };
 use i18n::t;
-use identity::Identity;
-use itertools::Itertools;
+use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
-use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
-use ui::checkbox::Checkbox;
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::indicator::Indicator;
 use ui::popup_menu::PopupMenu;
-use ui::{Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{Icon, IconName, StyledExt};
 
 use crate::chatspace;
 
@@ -30,10 +24,6 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
 
 pub struct Onboarding {
     name: SharedString,
-    local_account: Entity<Option<Profile>>,
-    loading: bool,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
 }
 
@@ -42,63 +32,22 @@ impl Onboarding {
         cx.new(|cx| Self::view(window, cx))
     }
 
-    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let local_account = cx.new(|_| None);
+    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
+        let app_keys = ClientKeys::read_global(cx).keys();
+        let uri = NostrConnectURI::client(app_keys.public_key(), vec![relay], APP_NAME);
 
-        let task = cx.background_spawn(async move {
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_D)
-                .limit(1);
+        let signer = cx.new(|_| {
+            let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+            let signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
 
-            if let Some(event) = nostr_client().database().query(filter).await?.first_owned() {
-                let public_key = event
-                    .tags
-                    .public_keys()
-                    .copied()
-                    .collect_vec()
-                    .first()
-                    .cloned()
-                    .unwrap();
-
-                let metadata = nostr_client()
-                    .database()
-                    .metadata(public_key)
-                    .await?
-                    .unwrap_or_default();
-
-                Ok(Profile::new(public_key, metadata))
-            } else {
-                Err(anyhow!("Not found"))
-            }
+            Arc::new(signer)
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(profile) = task.await {
-                this.update(cx, |this, cx| {
-                    this.local_account.update(cx, |this, cx| {
-                        *this = Some(profile);
-                        cx.notify();
-                    });
-                })
-                .ok();
-            }
-        })
-        .detach();
-
         Self {
-            local_account,
             name: "Onboarding".into(),
-            loading: false,
-            closable: true,
-            zoomable: true,
             focus_handle: cx.focus_handle(),
         }
-    }
-
-    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.loading = status;
-        cx.notify();
     }
 }
 
@@ -109,14 +58,6 @@ impl Panel for Onboarding {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -134,9 +75,6 @@ impl Focusable for Onboarding {
 
 impl Render for Onboarding {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let auto_login = AppSettings::get_auto_login(cx);
-        let proxy = AppSettings::get_proxy_user_avatars(cx);
-
         div()
             .py_4()
             .size_full()
@@ -174,119 +112,31 @@ impl Render for Onboarding {
                             ),
                     ),
             )
-            .map(|this| {
-                if let Some(profile) = self.local_account.read(cx).as_ref() {
-                    this.relative()
-                        .child(
-                            div()
-                                .id("account")
-                                .mb_3()
-                                .h_10()
-                                .w_72()
-                                .bg(cx.theme().element_background)
-                                .text_color(cx.theme().element_foreground)
-                                .rounded_lg()
-                                .text_sm()
-                                .map(|this| {
-                                    if self.loading {
-                                        this.child(
-                                            div()
-                                                .size_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .child(Indicator::new().small()),
-                                        )
-                                    } else {
-                                        this.child(
-                                            div()
-                                                .h_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .gap_2()
-                                                .child(SharedString::new(t!(
-                                                    "onboarding.choose_account"
-                                                )))
-                                                .child(
-                                                    div()
-                                                        .flex()
-                                                        .items_center()
-                                                        .gap_1()
-                                                        .font_semibold()
-                                                        .child(
-                                                            Avatar::new(profile.avatar_url(proxy))
-                                                                .size(rems(1.5)),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .pb_px()
-                                                                .child(profile.display_name()),
-                                                        ),
-                                                ),
-                                        )
-                                    }
-                                })
-                                .hover(|this| this.bg(cx.theme().element_hover))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.set_loading(true, cx);
-                                    Identity::global(cx).update(cx, |this, cx| {
-                                        this.load(window, cx);
-                                    });
-                                })),
-                        )
-                        .child(
-                            Checkbox::new("auto_login")
-                                .label(SharedString::new(t!("onboarding.auto_login")))
-                                .checked(auto_login)
-                                .on_click(move |_, _window, cx| {
-                                    AppSettings::update_auto_login(!auto_login, cx);
-                                }),
-                        )
-                        .child(
-                            div().w_24().absolute().bottom_2().right_2().child(
-                                Button::new("logout")
-                                    .icon(IconName::Logout)
-                                    .label(SharedString::new(t!("user.sign_out")))
-                                    .danger()
-                                    .xsmall()
-                                    .rounded(ButtonRounded::Full)
-                                    .disabled(self.loading)
-                                    .on_click(|_, window, cx| {
-                                        Identity::global(cx).update(cx, |this, cx| {
-                                            this.unload(window, cx);
-                                        });
-                                    }),
-                            ),
-                        )
-                } else {
-                    this.child(
-                        div()
-                            .w_72()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(
-                                Button::new("continue_btn")
-                                    .icon(Icon::new(IconName::ArrowRight))
-                                    .label(SharedString::new(t!("onboarding.start_messaging")))
-                                    .primary()
-                                    .reverse()
-                                    .on_click(cx.listener(move |_, _, window, cx| {
-                                        chatspace::new_account(window, cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("login_btn")
-                                    .label(SharedString::new(t!("onboarding.already_have_account")))
-                                    .ghost()
-                                    .underline()
-                                    .on_click(cx.listener(move |_, _, window, cx| {
-                                        chatspace::login(window, cx);
-                                    })),
-                            ),
+            .child(
+                div()
+                    .w_72()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        Button::new("continue_btn")
+                            .icon(Icon::new(IconName::ArrowRight))
+                            .label(SharedString::new(t!("onboarding.start_messaging")))
+                            .primary()
+                            .reverse()
+                            .on_click(cx.listener(move |_, _, window, cx| {
+                                chatspace::new_account(window, cx);
+                            })),
                     )
-                }
-            })
+                    .child(
+                        Button::new("login_btn")
+                            .label(SharedString::new(t!("onboarding.already_have_account")))
+                            .ghost()
+                            .underline()
+                            .on_click(cx.listener(move |_, _, window, cx| {
+                                chatspace::login(window, cx);
+                            })),
+                    ),
+            )
     }
 }

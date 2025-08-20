@@ -1,4 +1,5 @@
-use global::{constants::KEYRING_URL, first_run};
+use global::constants::KEYRING_URL;
+use global::first_run;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -24,7 +25,7 @@ impl ClientKeys {
     }
 
     /// Retrieve the Client Keys instance
-    pub fn get_global(cx: &App) -> &Self {
+    pub fn read_global(cx: &App) -> &Self {
         cx.global::<GlobalClientKeys>().0.read(cx)
     }
 

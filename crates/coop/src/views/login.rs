@@ -64,7 +64,7 @@ impl Login {
         // Direct connection initiated by the client
         let connection_string = cx.new(|cx| {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let client_keys = ClientKeys::get_global(cx).keys();
+            let client_keys = ClientKeys::read_global(cx).keys();
 
             NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
         });
@@ -98,7 +98,7 @@ impl Login {
             window,
             |this, entity, window, cx| {
                 let connection_string = entity.read(cx).clone();
-                let client_keys = ClientKeys::get_global(cx).keys();
+                let client_keys = ClientKeys::read_global(cx).keys();
 
                 // Update the QR Image with the new connection string
                 this.qr_image.update(cx, |this, cx| {
@@ -343,7 +343,7 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys();
+        let client_keys = ClientKeys::read_global(cx).keys();
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 8);
         // .unwrap() is fine here because there's no error handling for bunker uri
         let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
@@ -443,7 +443,7 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::get_global(cx).keys();
+        let client_keys = ClientKeys::read_global(cx).keys();
         let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
 
         self.connection_string.update(cx, |this, cx| {

@@ -188,7 +188,7 @@ impl Identity {
         cx: &mut Context<Self>,
     ) {
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 10);
-        let client_keys = ClientKeys::get_global(cx).keys();
+        let client_keys = ClientKeys::read_global(cx).keys();
 
         let Ok(mut signer) = NostrConnect::new(uri, client_keys, timeout, None) else {
             window.push_notification(
