@@ -92,6 +92,7 @@ impl NewAccount {
             files: true,
             directories: false,
             multiple: false,
+            prompt: None,
         });
 
         let task = Tokio::spawn(cx, async move {

@@ -112,6 +112,7 @@ impl EditProfile {
             files: true,
             directories: false,
             multiple: false,
+            prompt: None,
         });
 
         // Show loading spinner

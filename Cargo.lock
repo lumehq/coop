@@ -940,9 +940,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.1"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
 
 [[package]]
 name = "cfg_aliases"
@@ -1123,7 +1123,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1153,7 +1153,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f849b92c694fe237ecd8fafd1ba0df7ae0d45c1df6daeb7f68ed4220d51640bd"
 dependencies = [
  "nix 0.30.1",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -1544,7 +1544,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2436,7 +2436,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2502,10 +2502,11 @@ dependencies = [
  "slotmap",
  "smallvec",
  "smol",
+ "stacksafe",
  "strum 0.27.2",
  "sum_tree",
  "taffy",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "usvg",
  "util",
  "uuid",
@@ -2529,7 +2530,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2541,7 +2542,7 @@ dependencies = [
 [[package]]
 name = "gpui_tokio"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "gpui",
  "tokio",
@@ -2772,7 +2773,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2792,7 +2793,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -2807,19 +2808,21 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "hyper"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc2b571658e38e0c01b1fdca3bbbe93c00d3d71693ff2770043f8c29bc7d6f80"
+checksum = "eb3aa54a13a0dfe7fbe3a59e0c76093041720fdc77b110cc0fc260fafb4dc51e"
 dependencies = [
+ "atomic-waker",
  "bytes",
  "futures-channel",
- "futures-util",
+ "futures-core",
  "h2",
  "http",
  "http-body",
  "httparse",
  "itoa",
  "pin-project-lite",
+ "pin-utils",
  "smallvec",
  "tokio",
  "want",
@@ -3594,7 +3597,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3731,7 +3734,7 @@ dependencies = [
  "rustc-hash 1.1.0",
  "spirv",
  "strum 0.26.3",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "unicode-ident",
 ]
 
@@ -3832,7 +3835,7 @@ dependencies = [
 [[package]]
 name = "nostr"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#e476f2951bbb52354e396f232e2d3bfe22ec75eb"
+source = "git+https://github.com/rust-nostr/nostr#36cc4bbf921044527b03b7e63bf7113d60ac935b"
 dependencies = [
  "aes",
  "base64",
@@ -3855,7 +3858,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#e476f2951bbb52354e396f232e2d3bfe22ec75eb"
+source = "git+https://github.com/rust-nostr/nostr#36cc4bbf921044527b03b7e63bf7113d60ac935b"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3867,7 +3870,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#e476f2951bbb52354e396f232e2d3bfe22ec75eb"
+source = "git+https://github.com/rust-nostr/nostr#36cc4bbf921044527b03b7e63bf7113d60ac935b"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3878,7 +3881,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#e476f2951bbb52354e396f232e2d3bfe22ec75eb"
+source = "git+https://github.com/rust-nostr/nostr#36cc4bbf921044527b03b7e63bf7113d60ac935b"
 dependencies = [
  "async-utility",
  "flume",
@@ -3892,7 +3895,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#e476f2951bbb52354e396f232e2d3bfe22ec75eb"
+source = "git+https://github.com/rust-nostr/nostr#36cc4bbf921044527b03b7e63bf7113d60ac935b"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3908,7 +3911,7 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#e476f2951bbb52354e396f232e2d3bfe22ec75eb"
+source = "git+https://github.com/rust-nostr/nostr#36cc4bbf921044527b03b7e63bf7113d60ac935b"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4613,9 +4616,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.36"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.106",
@@ -4628,6 +4631,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edce586971a4dfaa28950c6f18ed55e0406c1ab88bbce2c6f6293a7aaba73d35"
 dependencies = [
  "toml_edit",
+]
+
+[[package]]
+name = "proc-macro-error-attr2"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "proc-macro-error2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
+dependencies = [
+ "proc-macro-error-attr2",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -4656,6 +4681,15 @@ checksum = "52717f9a02b6965224f95ca2a81e2e0c5c43baacd28ca057577988930b6c3d5b"
 dependencies = [
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "psm"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e944464ec8536cd1beb0bbfd96987eb5e3b72f2ecdafdc5c769a37f1fa2ae1f"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -4722,7 +4756,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "rustls",
  "socket2 0.5.10",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "tokio",
  "tracing",
  "web-time",
@@ -4743,7 +4777,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "tinyvec",
  "tracing",
  "web-time",
@@ -4984,7 +5018,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "derive_refineable",
  "workspace-hack",
@@ -5140,7 +5174,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5676,7 +5710,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "anyhow",
  "serde",
@@ -5731,9 +5765,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.142"
+version = "1.0.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
+checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
 dependencies = [
  "indexmap",
  "itoa",
@@ -6005,6 +6039,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
+name = "stacker"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cddb07e32ddb770749da91081d8d0ac3a16f1a569a18b20348cd371f5dead06b"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "libc",
+ "psm",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "stacksafe"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d9c1172965d317e87ddb6d364a040d958b40a1db82b6ef97da26253a8b3d090"
+dependencies = [
+ "stacker",
+ "stacksafe-macro",
+]
+
+[[package]]
+name = "stacksafe-macro"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "172175341049678163e979d9107ca3508046d4d2a7c6682bee46ac541b17db69"
+dependencies = [
+ "proc-macro-error2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6071,7 +6139,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "arrayvec",
  "log",
@@ -6341,15 +6409,15 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tempfile"
-version = "3.20.0"
+version = "3.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8a64e3985349f2441a1a9ef0b853f869006c3855f2cda6862a94d26ebb9d6a1"
+checksum = "15b61f8f20e3a6f7e0649d825294eaf317edce30f82cf6026e7e4cb9222a7d1e"
 dependencies = [
  "fastrand 2.3.0",
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.8",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6392,11 +6460,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.15"
+version = "2.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80d76d3f064b981389ecb4b6b7f45a0bf9fdac1d5b9204c7bd6714fecc302850"
+checksum = "3467d614147380f2e4e374161426ff399c91084acd2363eaf549172b3d5e60c0"
 dependencies = [
- "thiserror-impl 2.0.15",
+ "thiserror-impl 2.0.16",
 ]
 
 [[package]]
@@ -6412,9 +6480,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.15"
+version = "2.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44d29feb33e986b6ea906bd9c3559a856983f92371b3eaa5e83782a351623de0"
+checksum = "6c5e1be1c48b9172ee610da68fd9cd2770e7a4056cb3fc98710ee6906f0c7960"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6519,9 +6587,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09b3661f17e86524eccd4371ab0429194e0d7c008abb45f7a7495b1719463c71"
+checksum = "bfa5fdc3bce6191a1dbc8c02d5c8bffcf557bafa17c124c5264a458f1b0613fa"
 dependencies = [
  "tinyvec_macros",
 ]
@@ -6876,7 +6944,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "sha1",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "utf-8",
 ]
 
@@ -7105,7 +7173,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#b3969ed427d44077595a329032969f35dc28c0fb"
+source = "git+https://github.com/zed-industries/zed#fbba6addfd1f1539408af582e65b356a308ba2f7"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7575,11 +7643,11 @@ checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
 
 [[package]]
 name = "winapi-util"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
+checksum = "0978bf7171b3d90bac376700cb56d606feb40f251a475a5d6634613564460b22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7619,7 +7687,7 @@ checksum = "3a4df73e95feddb9ec1a7e9c2ca6323b8c97d5eeeff78d28f1eccdf19c882b24"
 dependencies = [
  "parking_lot",
  "rayon",
- "thiserror 2.0.15",
+ "thiserror 2.0.16",
  "windows 0.61.3",
  "windows-future",
 ]
