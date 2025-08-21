@@ -18,7 +18,7 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::popup_menu::PopupMenu;
-use ui::{h_flex, v_flex, ContextModal, Icon, IconName, StyledExt};
+use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 use crate::chatspace;
 
@@ -274,12 +274,13 @@ impl Render for Onboarding {
                     .child(
                         v_flex()
                             .w_80()
-                            .gap_2()
+                            .gap_3()
                             .child(
                                 Button::new("continue_btn")
                                     .icon(Icon::new(IconName::ArrowRight))
                                     .label(shared_t!("onboarding.start_messaging"))
                                     .primary()
+                                    .large()
                                     .bold()
                                     .reverse()
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -287,13 +288,44 @@ impl Render for Onboarding {
                                     })),
                             )
                             .child(
-                                Button::new("login_btn")
-                                    .label(shared_t!("onboarding.already_have_account"))
-                                    .ghost()
-                                    .underline()
+                                h_flex()
+                                    .gap_1()
+                                    .child(divider(cx))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(shared_t!("onboarding.divider")),
+                                    )
+                                    .child(divider(cx)),
+                            )
+                            .child(
+                                Button::new("key")
+                                    .label(t!("onboarding.key_login"))
+                                    .ghost_alt()
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         chatspace::login(window, cx);
                                     })),
+                            )
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(
+                                        Button::new("ext")
+                                            .label(t!("onboarding.ext_login"))
+                                            .ghost_alt()
+                                            .on_click(cx.listener(move |_, _, window, cx| {
+                                                chatspace::login(window, cx);
+                                            })),
+                                    )
+                                    .child(
+                                        div()
+                                            .italic()
+                                            .text_xs()
+                                            .text_center()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(shared_t!("onboarding.ext_login_note")),
+                                    ),
                             ),
                     ),
             )
@@ -343,13 +375,13 @@ impl Render for Onboarding {
                                                 div()
                                                     .font_semibold()
                                                     .line_height(relative(1.3))
-                                                    .child(shared_t!("login.nostr_connect")),
+                                                    .child(shared_t!("onboarding.nostr_connect")),
                                             )
                                             .child(
                                                 div()
                                                     .text_sm()
                                                     .text_color(cx.theme().text_muted)
-                                                    .child(shared_t!("login.scan_qr")),
+                                                    .child(shared_t!("onboarding.scan_qr")),
                                             )
                                             .child(
                                                 h_flex()

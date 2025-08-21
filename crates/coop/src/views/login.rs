@@ -1,15 +1,11 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use client_keys::ClientKeys;
-use common::display::TextUtils;
 use common::handle_auth::CoopAuthUrlHandler;
-use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, red, relative, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
 use identity::Identity;
@@ -19,20 +15,15 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
-use ui::{ContextModal, Disableable, Sizable, StyledExt};
+use ui::{v_flex, ContextModal, Disableable, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)
 }
 
 pub struct Login {
-    key_input: Entity<InputState>,
-    relay_input: Entity<InputState>,
-    connection_string: Entity<NostrConnectURI>,
-    qr_image: Entity<Option<Arc<Image>>>,
-    // Error for the key input
+    input: Entity<InputState>,
     error: Entity<Option<SharedString>>,
     countdown: Entity<Option<u64>>,
     logging_in: bool,
@@ -40,7 +31,7 @@ pub struct Login {
     name: SharedString,
     focus_handle: FocusHandle,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 3]>,
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Login {
@@ -49,110 +40,29 @@ impl Login {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // nsec or bunker_uri (NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md)
-        let key_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
-
-        let relay_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(NOSTR_CONNECT_RELAY)
-                .placeholder(NOSTR_CONNECT_RELAY)
-        });
-
-        // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
-        //
-        // Direct connection initiated by the client
-        let connection_string = cx.new(|cx| {
-            let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let client_keys = ClientKeys::read_global(cx).keys();
-
-            NostrConnectURI::client(client_keys.public_key(), vec![relay], APP_NAME)
-        });
-
-        let qr_image = cx.new(|_| None);
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
         let error = cx.new(|_| None);
         let countdown = cx.new(|_| None);
+
         let mut subscriptions = smallvec![];
 
         // Subscribe to key input events and process login when the user presses enter
         subscriptions.push(
-            cx.subscribe_in(&key_input, window, |this, _, event, window, cx| {
+            cx.subscribe_in(&input, window, |this, _e, event, window, cx| {
                 if let InputEvent::PressEnter { .. } = event {
                     this.login(window, cx);
                 }
             }),
         );
 
-        // Subscribe to relay input events and change relay when the user presses enter
-        subscriptions.push(
-            cx.subscribe_in(&relay_input, window, |this, _, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.change_relay(window, cx);
-                }
-            }),
-        );
-
-        // Observe changes to the Nostr Connect URI and wait for a connection
-        subscriptions.push(cx.observe_in(
-            &connection_string,
-            window,
-            |this, entity, window, cx| {
-                let connection_string = entity.read(cx).clone();
-                let client_keys = ClientKeys::read_global(cx).keys();
-
-                // Update the QR Image with the new connection string
-                this.qr_image.update(cx, |this, cx| {
-                    *this = connection_string.to_string().to_qr();
-                    cx.notify();
-                });
-
-                match NostrConnect::new(
-                    connection_string,
-                    client_keys,
-                    Duration::from_secs(NOSTR_CONNECT_TIMEOUT),
-                    None,
-                ) {
-                    Ok(mut signer) => {
-                        // Automatically open auth url
-                        signer.auth_url_handler(CoopAuthUrlHandler);
-                        // Wait for connection in the background
-                        this.wait_for_connection(signer, window, cx);
-                    }
-                    Err(e) => {
-                        window.push_notification(
-                            Notification::error(e.to_string()).title("Nostr Connect"),
-                            cx,
-                        );
-                    }
-                }
-            },
-        ));
-
-        // Create a Nostr Connect URI and QR Code 800ms after opening the login screen
-        cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(800))
-                .await;
-            this.update(cx, |this, cx| {
-                this.connection_string.update(cx, |_, cx| {
-                    cx.notify();
-                })
-            })
-            .ok();
-        })
-        .detach();
-
         Self {
+            input,
+            error,
+            countdown,
+            subscriptions,
             name: "Login".into(),
             focus_handle: cx.focus_handle(),
             logging_in: false,
-            countdown,
-            key_input,
-            relay_input,
-            connection_string,
-            qr_image,
-            error,
-            subscriptions,
         }
     }
 
@@ -160,17 +70,18 @@ impl Login {
         if self.logging_in {
             return;
         };
+
         // Prevent duplicate login requests
         self.set_logging_in(true, cx);
 
         // Disable the input
-        self.key_input.update(cx, |this, cx| {
+        self.input.update(cx, |this, cx| {
             this.set_loading(true, cx);
             this.set_disabled(true, cx);
         });
 
         // Content can be secret key or bunker://
-        match self.key_input.read(cx).value().to_string() {
+        match self.input.read(cx).value().to_string() {
             s if s.starts_with("nsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("ncryptsec1") => self.ask_for_password(s, window, cx),
             s if s.starts_with("bunker://") => self.login_with_bunker(s, window, cx),
@@ -314,7 +225,7 @@ impl Login {
     }
 
     fn login_with_keys(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self.key_input.read(cx).value().to_string();
+        let value = self.input.read(cx).value().to_string();
         let secret_key = if value.starts_with("nsec1") {
             SecretKey::parse(&value).ok()
         } else if value.starts_with("ncryptsec1") {
@@ -343,16 +254,20 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::read_global(cx).keys();
-        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT / 8);
-        // .unwrap() is fine here because there's no error handling for bunker uri
-        let mut signer = NostrConnect::new(uri, client_keys, timeout, None).unwrap();
+        let client_keys = ClientKeys::global(cx);
+        let app_keys = client_keys.read(cx).keys();
+        let identity = Identity::global(cx);
+
+        let secs = 30;
+        let timeout = Duration::from_secs(secs);
+        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
 
         // Start countdown
         cx.spawn_in(window, async move |this, cx| {
-            for i in (0..=NOSTR_CONNECT_TIMEOUT / 8).rev() {
+            for i in (0..=secs).rev() {
                 if i == 0 {
                     this.update(cx, |this, cx| {
                         this.set_countdown(None, cx);
@@ -374,8 +289,7 @@ impl Login {
             match signer.bunker_uri().await {
                 Ok(bunker_uri) => {
                     cx.update(|window, cx| {
-                        window.push_notification(t!("login.logging_in"), cx);
-                        Identity::global(cx).update(cx, |this, cx| {
+                        identity.update(cx, |this, cx| {
                             this.write_bunker(&bunker_uri, cx);
                             this.set_signer(signer, window, cx);
                         });
@@ -385,12 +299,13 @@ impl Login {
                 Err(error) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            // Force reset the client keys without notify UI
-                            ClientKeys::global(cx).update(cx, |this, cx| {
-                                log::info!("Timeout occurred. Reset client keys");
+                            this.set_error(error.to_string(), window, cx);
+                            // Force reset the client keys
+                            //
+                            // This step is necessary to ensure that user can retry the connection
+                            client_keys.update(cx, |this, cx| {
                                 this.force_new_keys(cx);
                             });
-                            this.set_error(error.to_string(), window, cx);
                         })
                         .ok();
                     })
@@ -399,57 +314,6 @@ impl Login {
             }
         })
         .detach();
-    }
-
-    fn wait_for_connection(
-        &mut self,
-        signer: NostrConnect,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn_in(window, async move |this, cx| {
-            match signer.bunker_uri().await {
-                Ok(uri) => {
-                    cx.update(|window, cx| {
-                        Identity::global(cx).update(cx, |this, cx| {
-                            this.write_bunker(&uri, cx);
-                            this.set_signer(signer, window, cx);
-                        });
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
-                        // Only send notifications on the login screen
-                        this.update(cx, |_, cx| {
-                            window.push_notification(
-                                Notification::error(e.to_string()).title("Nostr Connect"),
-                                cx,
-                            );
-                        })
-                        .ok();
-                    })
-                    .ok();
-                }
-            }
-        })
-        .detach();
-    }
-
-    fn change_relay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(relay_url) = RelayUrl::parse(self.relay_input.read(cx).value().to_string().as_str())
-        else {
-            window.push_notification(Notification::error(t!("relays.invalid")), cx);
-            return;
-        };
-
-        let client_keys = ClientKeys::read_global(cx).keys();
-        let uri = NostrConnectURI::client(client_keys.public_key(), vec![relay_url], "Coop");
-
-        self.connection_string.update(cx, |this, cx| {
-            *this = uri;
-            cx.notify();
-        });
     }
 
     fn set_error(
@@ -471,7 +335,7 @@ impl Login {
         });
 
         // Re enable the input
-        self.key_input.update(cx, |this, cx| {
+        self.input.update(cx, |this, cx| {
             this.set_value("", window, cx);
             this.set_loading(false, cx);
             this.set_disabled(false, cx);
@@ -533,162 +397,64 @@ impl Focusable for Login {
 
 impl Render for Login {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
+        v_flex()
             .relative()
-            .flex()
+            .size_full()
+            .items_center()
+            .justify_center()
             .child(
-                div()
-                    .h_full()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
+                v_flex()
+                    .w_96()
+                    .gap_10()
                     .child(
                         div()
-                            .w_80()
-                            .flex()
-                            .flex_col()
-                            .gap_8()
+                            .text_center()
                             .child(
                                 div()
-                                    .text_center()
-                                    .child(
-                                        div()
-                                            .text_center()
-                                            .text_xl()
-                                            .font_semibold()
-                                            .line_height(relative(1.3))
-                                            .child(shared_t!("login.title")),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("login.key_description")),
-                                    ),
+                                    .text_xl()
+                                    .font_semibold()
+                                    .line_height(relative(1.3))
+                                    .child(shared_t!("login.title")),
                             )
                             .child(
                                 div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_3()
-                                    .child(TextInput::new(&self.key_input))
-                                    .child(
-                                        Button::new("login")
-                                            .label(t!("common.continue"))
-                                            .primary()
-                                            .loading(self.logging_in)
-                                            .disabled(self.logging_in)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.login(window, cx);
-                                            })),
-                                    )
-                                    .when_some(self.countdown.read(cx).as_ref(), |this, i| {
-                                        this.child(
-                                            div()
-                                                .text_xs()
-                                                .text_center()
-                                                .text_color(cx.theme().text_muted)
-                                                .child(shared_t!("login.approve_message", i = i)),
-                                        )
-                                    })
-                                    .when_some(self.error.read(cx).clone(), |this, error| {
-                                        this.child(
-                                            div()
-                                                .text_xs()
-                                                .text_center()
-                                                .text_color(red())
-                                                .child(error),
-                                        )
-                                    }),
+                                    .text_color(cx.theme().text_muted)
+                                    .child(shared_t!("login.key_description")),
                             ),
-                    ),
-            )
-            .child(
-                div().flex_1().p_1().child(
-                    div()
-                        .size_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .bg(cx.theme().surface_background)
-                        .rounded(cx.theme().radius)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .justify_center()
-                                .gap_3()
-                                .text_center()
-                                .child(
+                    )
+                    .child(
+                        v_flex()
+                            .gap_3()
+                            .child(TextInput::new(&self.input))
+                            .child(
+                                Button::new("login")
+                                    .label(t!("common.continue"))
+                                    .primary()
+                                    .loading(self.logging_in)
+                                    .disabled(self.logging_in)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.login(window, cx);
+                                    })),
+                            )
+                            .when_some(self.countdown.read(cx).as_ref(), |this, i| {
+                                this.child(
                                     div()
+                                        .text_xs()
                                         .text_center()
-                                        .child(
-                                            div()
-                                                .font_semibold()
-                                                .line_height(relative(1.2))
-                                                .text_color(cx.theme().text)
-                                                .child(shared_t!("login.nostr_connect")),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(cx.theme().text_muted)
-                                                .child(shared_t!("login.scan_qr")),
-                                        ),
+                                        .text_color(cx.theme().text_muted)
+                                        .child(shared_t!("login.approve_message", i = i)),
                                 )
-                                .when_some(self.qr_image.read(cx).clone(), |this, qr| {
-                                    this.child(
-                                        div()
-                                            .id("")
-                                            .mb_2()
-                                            .p_2()
-                                            .size_72()
-                                            .flex()
-                                            .flex_col()
-                                            .items_center()
-                                            .justify_center()
-                                            .gap_2()
-                                            .rounded_2xl()
-                                            .shadow_md()
-                                            .when(cx.theme().mode.is_dark(), |this| {
-                                                this.shadow_none()
-                                                    .border_1()
-                                                    .border_color(cx.theme().border)
-                                            })
-                                            .bg(cx.theme().background)
-                                            .child(img(qr).h_64())
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                cx.write_to_clipboard(ClipboardItem::new_string(
-                                                    this.connection_string.read(cx).to_string(),
-                                                ));
-                                                window.push_notification(t!("common.copied"), cx);
-                                            })),
-                                    )
-                                })
-                                .child(
+                            })
+                            .when_some(self.error.read(cx).clone(), |this, error| {
+                                this.child(
                                     div()
-                                        .w_full()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .gap_1()
-                                        .child(TextInput::new(&self.relay_input).xsmall())
-                                        .child(
-                                            Button::new("change")
-                                                .label(t!("common.change"))
-                                                .ghost()
-                                                .xsmall()
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.change_relay(window, cx);
-                                                    },
-                                                )),
-                                        ),
-                                ),
-                        ),
-                ),
+                                        .text_xs()
+                                        .text_center()
+                                        .text_color(cx.theme().danger_foreground)
+                                        .child(error),
+                                )
+                            }),
+                    ),
             )
     }
 }

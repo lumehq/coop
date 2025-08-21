@@ -58,9 +58,19 @@ onboarding:
   auto_login:
     en: "Automatically login in the next time"
   start_messaging:
-    en: "Start Messaging"
-  already_have_account:
-    en: "Already have an account? Log in."
+    en: "Start Messaging on Nostr"
+  nostr_connect:
+    en: "Continue with Nostr Connect"
+  scan_qr:
+    en: "Use Nostr Connect apps to scan the code"
+  divider:
+    en: "Already have an account? Continue with"
+  key_login:
+    en: "Secret Key or Bunker"
+  ext_login:
+    en: "Browser Extension"
+  ext_login_note:
+    en: "You will need to keep your default browser open."
 
 startup:
   client_keys_warning:
@@ -100,15 +110,11 @@ login:
   title:
     en: "Welcome Back!"
   key_description:
-    en: "Continue with Private Key or Bunker URI"
+    en: "Continue with Private Key or Bunker"
   approve_message:
     en: "Approve connection request from your signer in %{i} seconds"
-  nostr_connect:
-    en: "Continue with Nostr Connect"
-  scan_qr:
-    en: "Use Nostr Connect apps to scan the code"
   invalid_key:
-    en: "Please enter a valid private key or Bunker URI to login."
+    en: "Please enter a valid secret key or bunker to login."
   set_password:
     en: "Set password to encrypt your key *"
   password_to_decrypt:
@@ -128,7 +134,7 @@ login:
   key_invalid:
     en: "Secret key is invalid"
   bunker_invalid:
-    en: "Bunker URI is not valid"
+    en: "Bunker is not valid"
   logging_in:
     en: "Logging in..."
 
