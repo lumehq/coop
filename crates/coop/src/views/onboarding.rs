@@ -2,19 +2,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use client_keys::ClientKeys;
+use common::display::TextUtils;
 use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, img, px, relative, svg, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
+use identity::Identity;
 use nostr_connect::prelude::*;
-use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::popup_menu::PopupMenu;
-use ui::{Icon, IconName, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, Icon, IconName, StyledExt};
 
 use crate::chatspace;
 
@@ -22,9 +26,47 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
 }
 
+#[derive(Debug, Clone)]
+pub enum NostrConnectApp {
+    Nsec(String),
+    Amber(String),
+    Aegis(String),
+}
+
+impl NostrConnectApp {
+    pub fn all() -> Vec<Self> {
+        vec![
+            NostrConnectApp::Nsec("https://nsec.app".to_string()),
+            NostrConnectApp::Amber("https://github.com/greenart7c3/Amber".to_string()),
+            NostrConnectApp::Aegis("https://github.com/ZharlieW/Aegis".to_string()),
+        ]
+    }
+
+    pub fn url(&self) -> &str {
+        match self {
+            Self::Nsec(url) | Self::Amber(url) | Self::Aegis(url) => url,
+        }
+    }
+
+    pub fn as_str(&self) -> String {
+        match self {
+            NostrConnectApp::Nsec(_) => "nsec.app (Desktop)".into(),
+            NostrConnectApp::Amber(_) => "Amber (Android)".into(),
+            NostrConnectApp::Aegis(_) => "Aegis (iOS)".into(),
+        }
+    }
+}
+
 pub struct Onboarding {
+    nostr_connect_uri: Entity<NostrConnectURI>,
+    nostr_connect: Entity<Option<NostrConnect>>,
+    qr_code: Entity<Option<Arc<Image>>>,
+    connecting: bool,
+    // Panel
     name: SharedString,
     focus_handle: FocusHandle,
+    #[allow(dead_code)]
+    subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Onboarding {
@@ -32,22 +74,139 @@ impl Onboarding {
         cx.new(|cx| Self::view(window, cx))
     }
 
-    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-        let app_keys = ClientKeys::read_global(cx).keys();
-        let uri = NostrConnectURI::client(app_keys.public_key(), vec![relay], APP_NAME);
+    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nostr_connect = cx.new(|_| None);
+        let qr_code = cx.new(|_| None);
 
-        let signer = cx.new(|_| {
-            let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
-            let signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+        // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
+        //
+        // Direct connection initiated by the client
+        let nostr_connect_uri = cx.new(|cx| {
+            let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
+            let app_keys = ClientKeys::read_global(cx).keys();
+            NostrConnectURI::client(app_keys.public_key(), vec![relay], APP_NAME)
+        });
 
-            Arc::new(signer)
+        let mut subscriptions = smallvec![];
+
+        // Clean up when the current view is released
+        subscriptions.push(cx.on_release_in(window, |this, window, cx| {
+            this.shutdown_nostr_connect(window, cx);
+        }));
+
+        // Set Nostr Connect after the view is initialized
+        cx.defer_in(window, |this, window, cx| {
+            this.set_connect(window, cx);
         });
 
         Self {
+            nostr_connect,
+            nostr_connect_uri,
+            qr_code,
+            subscriptions,
+            connecting: false,
             name: "Onboarding".into(),
             focus_handle: cx.focus_handle(),
         }
+    }
+
+    fn set_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let identity = Identity::global(cx);
+        let uri = self.nostr_connect_uri.read(cx).clone();
+        let app_keys = ClientKeys::read_global(cx).keys();
+        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+
+        self.qr_code.update(cx, |this, cx| {
+            *this = uri.to_string().to_qr();
+            cx.notify();
+        });
+
+        self.nostr_connect.update(cx, |this, cx| {
+            *this = NostrConnect::new(uri, app_keys, timeout, None).ok();
+            cx.notify();
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Some(signer)) =
+                this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone())
+            {
+                match signer.bunker_uri().await {
+                    Ok(uri) => {
+                        cx.update(|window, cx| {
+                            this.update(cx, |this, cx| {
+                                this.set_connecting(cx);
+                                // Set identity with the current signer
+                                identity.update(cx, |this, cx| {
+                                    this.write_bunker(&uri, cx);
+                                    this.set_signer(signer, window, cx);
+                                });
+                            })
+                            .ok();
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        log::error!("Failed: {e}")
+                    }
+                };
+            }
+        })
+        .detach();
+    }
+
+    fn set_connecting(&mut self, cx: &mut Context<Self>) {
+        self.connecting = true;
+        cx.notify();
+    }
+
+    fn copy_uri(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            self.nostr_connect_uri.read(cx).to_string(),
+        ));
+        window.push_notification(t!("common.copied"), cx);
+    }
+
+    fn shutdown_nostr_connect(&mut self, _window: &mut Window, cx: &mut App) {
+        if !self.connecting {
+            if let Some(signer) = self.nostr_connect.read(cx).clone() {
+                cx.background_spawn(async move {
+                    log::info!("Shutting down Nostr Connect");
+                    signer.shutdown().await;
+                })
+                .detach();
+            }
+        }
+    }
+
+    fn render_apps(&self, cx: &Context<Self>) -> impl IntoIterator<Item = impl IntoElement> {
+        let all_apps = NostrConnectApp::all();
+        let mut items = Vec::with_capacity(all_apps.len());
+
+        for (ix, item) in all_apps.into_iter().enumerate() {
+            items.push(self.render_app(ix, item.as_str(), item.url(), cx));
+        }
+
+        items
+    }
+
+    fn render_app<T>(&self, ix: usize, label: T, url: &str, cx: &Context<Self>) -> impl IntoElement
+    where
+        T: Into<SharedString>,
+    {
+        div()
+            .id(ix)
+            .flex_1()
+            .rounded_md()
+            .py_0p5()
+            .px_2()
+            .bg(cx.theme().ghost_element_background_alt)
+            .child(label.into())
+            .on_click({
+                let url = url.to_owned();
+                move |_e, _window, cx| {
+                    cx.open_url(&url);
+                }
+            })
     }
 }
 
@@ -75,67 +234,133 @@ impl Focusable for Onboarding {
 
 impl Render for Onboarding {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .py_4()
+        h_flex()
             .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
             .child(
-                div()
-                    .mb_10()
-                    .flex()
-                    .flex_col()
+                v_flex()
+                    .flex_1()
+                    .h_full()
+                    .gap_10()
                     .items_center()
-                    .gap_4()
+                    .justify_center()
                     .child(
-                        svg()
-                            .path("brand/coop.svg")
-                            .size_16()
-                            .text_color(cx.theme().elevated_surface_background),
-                    )
-                    .child(
-                        div()
-                            .text_center()
+                        v_flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_4()
                             .child(
-                                div()
-                                    .text_xl()
-                                    .font_semibold()
-                                    .line_height(relative(1.3))
-                                    .child(SharedString::new(t!("welcome.title"))),
+                                svg()
+                                    .path("brand/coop.svg")
+                                    .size_16()
+                                    .text_color(cx.theme().elevated_surface_background),
                             )
                             .child(
                                 div()
-                                    .text_color(cx.theme().text_muted)
-                                    .child(SharedString::new(t!("welcome.subtitle"))),
+                                    .text_center()
+                                    .child(
+                                        div()
+                                            .text_xl()
+                                            .font_semibold()
+                                            .line_height(relative(1.3))
+                                            .child(SharedString::new(t!("welcome.title"))),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(SharedString::new(t!("welcome.subtitle"))),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        v_flex()
+                            .w_80()
+                            .gap_2()
+                            .child(
+                                Button::new("continue_btn")
+                                    .icon(Icon::new(IconName::ArrowRight))
+                                    .label(shared_t!("onboarding.start_messaging"))
+                                    .primary()
+                                    .bold()
+                                    .reverse()
+                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                        chatspace::new_account(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("login_btn")
+                                    .label(shared_t!("onboarding.already_have_account"))
+                                    .ghost()
+                                    .underline()
+                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                        chatspace::login(window, cx);
+                                    })),
                             ),
                     ),
             )
             .child(
                 div()
-                    .w_72()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
+                    .relative()
+                    .p_2()
+                    .flex_1()
+                    .h_full()
+                    .rounded_2xl()
                     .child(
-                        Button::new("continue_btn")
-                            .icon(Icon::new(IconName::ArrowRight))
-                            .label(SharedString::new(t!("onboarding.start_messaging")))
-                            .primary()
-                            .reverse()
-                            .on_click(cx.listener(move |_, _, window, cx| {
-                                chatspace::new_account(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("login_btn")
-                            .label(SharedString::new(t!("onboarding.already_have_account")))
-                            .ghost()
-                            .underline()
-                            .on_click(cx.listener(move |_, _, window, cx| {
-                                chatspace::login(window, cx);
-                            })),
+                        v_flex()
+                            .size_full()
+                            .justify_center()
+                            .bg(cx.theme().surface_background)
+                            .rounded_2xl()
+                            .child(
+                                v_flex()
+                                    .gap_5()
+                                    .items_center()
+                                    .justify_center()
+                                    .when_some(self.qr_code.read(cx).as_ref(), |this, qr| {
+                                        this.child(
+                                            div()
+                                                .id("")
+                                                .child(
+                                                    img(qr.clone())
+                                                        .size(px(256.))
+                                                        .rounded_xl()
+                                                        .shadow_lg()
+                                                        .border_1()
+                                                        .border_color(cx.theme().element_active),
+                                                )
+                                                .on_click(cx.listener(
+                                                    move |this, _e, window, cx| {
+                                                        this.copy_uri(window, cx)
+                                                    },
+                                                )),
+                                        )
+                                    })
+                                    .child(
+                                        v_flex()
+                                            .justify_center()
+                                            .items_center()
+                                            .text_center()
+                                            .child(
+                                                div()
+                                                    .font_semibold()
+                                                    .line_height(relative(1.3))
+                                                    .child(shared_t!("login.nostr_connect")),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(cx.theme().text_muted)
+                                                    .child(shared_t!("login.scan_qr")),
+                                            )
+                                            .child(
+                                                h_flex()
+                                                    .mt_2()
+                                                    .gap_1()
+                                                    .text_xs()
+                                                    .justify_center()
+                                                    .children(self.render_apps(cx)),
+                                            ),
+                                    ),
+                            ),
                     ),
             )
     }
