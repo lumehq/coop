@@ -4,6 +4,7 @@ use std::time::Duration;
 use client_keys::ClientKeys;
 use common::display::TextUtils;
 use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use global::{global_channel, nostr_client, NostrSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
@@ -13,6 +14,7 @@ use gpui::{
 use i18n::{shared_t, t};
 use identity::Identity;
 use nostr_connect::prelude::*;
+use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -178,6 +180,42 @@ impl Onboarding {
         }
     }
 
+    fn open_proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
+        let url = proxy.url();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let chanel = global_channel();
+            let mut is_up = false;
+
+            if proxy.start().await.is_ok() {
+                webbrowser::open(&url).ok();
+
+                loop {
+                    if !proxy.is_session_active() {
+                        if !is_up {
+                            if let Ok(public_key) = proxy.get_public_key().await {
+                                client.set_signer(proxy.clone()).await;
+                                chanel
+                                    .0
+                                    .send(NostrSignal::SignerProxyUp(public_key))
+                                    .await
+                                    .ok();
+                            }
+
+                            is_up = true;
+                        }
+                    } else {
+                        chanel.0.send(NostrSignal::SignerProxyDown).await.ok();
+                    }
+                    smol::Timer::after(Duration::from_secs(1)).await;
+                }
+            }
+        })
+        .detach();
+    }
+
     fn render_apps(&self, cx: &Context<Self>) -> impl IntoIterator<Item = impl IntoElement> {
         let all_apps = NostrConnectApp::all();
         let mut items = Vec::with_capacity(all_apps.len());
@@ -314,8 +352,8 @@ impl Render for Onboarding {
                                         Button::new("ext")
                                             .label(t!("onboarding.ext_login"))
                                             .ghost_alt()
-                                            .on_click(cx.listener(move |_, _, window, cx| {
-                                                chatspace::login(window, cx);
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.open_proxy(window, cx);
                                             })),
                                     )
                                     .child(

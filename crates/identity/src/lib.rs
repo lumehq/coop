@@ -559,7 +559,7 @@ impl Identity {
     }
 
     /// Sets the public key of the identity
-    pub(crate) fn set_public_key(
+    pub fn set_public_key(
         &mut self,
         public_key: Option<PublicKey>,
         _window: &mut Window,
