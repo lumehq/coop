@@ -192,6 +192,8 @@ impl ChatSpace {
 
                 match signal {
                     NostrSignal::SignerSet(public_key) => {
+                        window.close_modal(cx);
+
                         // Setup the default layout for current workspace
                         e.update(cx, |this, cx| {
                             this.set_default_layout(window, cx);
@@ -205,8 +207,6 @@ impl ChatSpace {
                         registry.update(cx, |this, cx| {
                             this.load_rooms(window, cx);
                         });
-
-                        window.close_all_modals(cx);
                     }
                     NostrSignal::SignerUnset => {
                         e.update(cx, |this, cx| {
@@ -423,29 +423,28 @@ impl ChatSpace {
     }
 
     fn render_proxy_modal(&mut self, window: &mut Window, cx: &mut App) {
-        window.open_modal(cx, |this, _window, cx| {
+        window.open_modal(cx, |this, _window, _cx| {
             this.overlay_closable(false)
                 .show_close(false)
                 .keyboard(false)
                 .alert()
-                .button_props(ModalButtonProps::default().cancel_text(t!("common.open_browser")))
+                .button_props(ModalButtonProps::default().ok_text(t!("common.open_browser")))
+                .title(shared_t!("proxy.label"))
                 .child(
                     v_flex()
+                        .p_3()
                         .gap_1()
-                        .h_40()
                         .w_full()
                         .items_center()
                         .justify_center()
                         .text_center()
                         .text_sm()
-                        .child(
-                            div()
-                                .font_semibold()
-                                .text_color(cx.theme().text_muted)
-                                .child(shared_t!("proxy.label")),
-                        )
                         .child(shared_t!("proxy.description")),
                 )
+                .on_ok(move |_e, _window, cx| {
+                    cx.open_url("http://localhost:7400");
+                    false
+                })
         });
     }
 

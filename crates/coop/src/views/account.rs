@@ -115,41 +115,38 @@ impl Account {
 
         cx.background_spawn(async move {
             let client = nostr_client();
-            let chanel = global_channel();
-            let mut is_up = false;
+            let channel = global_channel();
 
             if proxy.start().await.is_ok() {
                 webbrowser::open(&url).ok();
 
                 loop {
-                    if !proxy.is_session_active() {
-                        if !is_up {
-                            // Save the signer to disk for further logins
-                            if let Ok(public_key) = proxy.get_public_key().await {
-                                let keys = Keys::generate();
-                                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                                let kind = Kind::ApplicationSpecificData;
+                    if proxy.is_session_active() {
+                        // Save the signer to disk for further logins
+                        if let Ok(public_key) = proxy.get_public_key().await {
+                            let keys = Keys::generate();
+                            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                            let kind = Kind::ApplicationSpecificData;
 
-                                let builder = EventBuilder::new(kind, "extension")
-                                    .tags(tags)
-                                    .build(public_key)
-                                    .sign(&keys)
-                                    .await;
+                            let builder = EventBuilder::new(kind, "extension")
+                                .tags(tags)
+                                .build(public_key)
+                                .sign(&keys)
+                                .await;
 
-                                if let Ok(event) = builder {
-                                    if let Err(e) = client.database().save_event(&event).await {
-                                        log::error!("Failed to save event: {e}");
-                                    };
-                                }
+                            if let Ok(event) = builder {
+                                if let Err(e) = client.database().save_event(&event).await {
+                                    log::error!("Failed to save event: {e}");
+                                };
                             }
-
-                            // Set the client's signer with current proxy signer
-                            client.set_signer(proxy.clone()).await;
-
-                            is_up = true;
                         }
+
+                        // Set the client's signer with current proxy signer
+                        client.set_signer(proxy.clone()).await;
+
+                        break;
                     } else {
-                        chanel.0.send(NostrSignal::ProxyDown).await.ok();
+                        channel.0.send(NostrSignal::ProxyDown).await.ok();
                     }
                     smol::Timer::after(Duration::from_secs(1)).await;
                 }

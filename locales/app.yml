@@ -78,7 +78,7 @@ proxy:
   label:
     en: "Waiting for approval"
   description:
-    en: "Open your default browser and approve the connection request"
+    en: "Open your default browser and approve the connection request in your Nostr Signer extension"
 
 startup:
   client_keys_warning:

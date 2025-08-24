@@ -632,7 +632,6 @@ async fn handle_request(
             match pending.remove(&id) {
                 Some(sender) => {
                     let _ = sender.send(message.into_result());
-                    log::info!("Forwarded response for request {id}");
                 }
                 None => log::warn!("No pending request found for {id}"),
             }
