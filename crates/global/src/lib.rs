@@ -19,6 +19,9 @@ pub enum NostrSignal {
     /// Signer has been set
     SignerSet(PublicKey),
 
+    /// Signer has been unset
+    SignerUnset,
+
     /// Browser Signer Proxy service is not running
     ProxyDown,
 

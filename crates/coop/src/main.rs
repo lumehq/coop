@@ -11,21 +11,15 @@ use global::constants::{
 };
 use global::{global_channel, nostr_client, processed_events, starting_time, NostrSignal};
 use gpui::{
-    actions, div, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu,
-    MenuItem, ParentElement, SharedString, Styled, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
+    actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
+    SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
+    WindowKind, WindowOptions,
 };
-use i18n::{shared_t, t};
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use registry::Registry;
 use smol::channel::{self, Sender};
-use theme::{ActiveTheme, Theme};
-use ui::modal::ModalButtonProps;
-use ui::{v_flex, ContextModal, Root, StyledExt};
-
-use crate::chatspace::ChatSpace;
+use theme::Theme;
+use ui::Root;
 
 pub(crate) mod chatspace;
 pub(crate) mod views;
@@ -49,7 +43,6 @@ fn main() {
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
-    let (signal_tx, signal_rx) = global_channel();
     let (pubkey_tx, pubkey_rx) = channel::bounded::<PublicKey>(1024);
     let (event_tx, event_rx) = channel::bounded::<Event>(2048);
 
@@ -63,7 +56,7 @@ fn main() {
             // Handle Nostr notifications.
             //
             // Send the redefined signal back to GPUI via channel.
-            if let Err(e) = handle_nostr_notifications(signal_tx, &event_tx).await {
+            if let Err(e) = handle_nostr_notifications(&event_tx).await {
                 log::error!("Failed to handle Nostr notifications: {e}");
             }
         })
@@ -71,11 +64,13 @@ fn main() {
 
     app.background_executor()
         .spawn(async move {
+            let channel = global_channel();
+
             loop {
                 if let Ok(signer) = client.signer().await {
                     if let Ok(public_key) = signer.get_public_key().await {
                         // Notify the app that the signer has been set.
-                        _ = signal_tx.send(NostrSignal::SignerSet(public_key)).await;
+                        _ = channel.0.send(NostrSignal::SignerSet(public_key)).await;
 
                         // Get the NIP-65 relays for the public key.
                         get_nip65_relays(public_key).await.ok();
@@ -146,6 +141,7 @@ fn main() {
 
     app.background_executor()
         .spawn(async move {
+            let channel = global_channel();
             let mut counter = 0;
 
             loop {
@@ -169,7 +165,7 @@ fn main() {
 
                 match smol::future::or(recv(), timeout()).await {
                     Some(event) => {
-                        let cached = unwrap_gift(&event, &pubkey_tx, signal_tx).await;
+                        let cached = unwrap_gift(&event, &pubkey_tx).await;
 
                         // Increment the total messages counter if message is not from cache
                         if !cached {
@@ -178,14 +174,14 @@ fn main() {
 
                         // Send partial finish signal to GPUI
                         if counter >= 20 {
-                            signal_tx.send(NostrSignal::PartialFinish).await.ok();
+                            channel.0.send(NostrSignal::PartialFinish).await.ok();
                             // Reset counter
                             counter = 0;
                         }
                     }
                     None => {
                         // Notify the UI that the processing is finished
-                        signal_tx.send(NostrSignal::Finish).await.ok();
+                        channel.0.send(NostrSignal::Finish).await.ok();
                     }
                 }
             }
@@ -262,110 +258,10 @@ fn main() {
                 // Initialize auto update
                 auto_update::init(cx);
 
-                // Spawn a task to handle events from nostr channel
-                cx.spawn_in(window, async move |_root, cx| {
-                    let mut is_open_proxy_modal = false;
-
-                    while let Ok(signal) = signal_rx.recv().await {
-                        cx.update(|window, cx| {
-                            let registry = Registry::global(cx);
-
-                            match signal {
-                                NostrSignal::SignerSet(public_key) => {
-                                    // Setup the default layout for current workspace
-                                    chatspace::default_layout(window, cx);
-                                    // Initialize identity
-                                    identity::init(public_key, window, cx);
-                                    // Load all chat rooms
-                                    registry.update(cx, |this, cx| {
-                                        this.load_rooms(window, cx);
-                                    });
-                                    window.close_all_modals(cx);
-                                }
-                                NostrSignal::ProxyDown => {
-                                    if !is_open_proxy_modal {
-                                        open_proxy_modal(window, cx);
-                                        is_open_proxy_modal = true;
-                                    }
-                                }
-                                // Load chat rooms and stop the loading status
-                                NostrSignal::Finish => {
-                                    registry.update(cx, |this, cx| {
-                                        this.load_rooms(window, cx);
-                                        this.set_loading(false, cx);
-                                        // Send a signal to refresh all opened rooms' messages
-                                        if let Some(ids) = ChatSpace::all_panels(window, cx) {
-                                            this.refresh_rooms(ids, cx);
-                                        }
-                                    });
-                                }
-                                // Load chat rooms without setting as finished
-                                NostrSignal::PartialFinish => {
-                                    registry.update(cx, |this, cx| {
-                                        this.load_rooms(window, cx);
-                                        // Send a signal to refresh all opened rooms' messages
-                                        if let Some(ids) = ChatSpace::all_panels(window, cx) {
-                                            this.refresh_rooms(ids, cx);
-                                        }
-                                    });
-                                }
-                                // Add the new metadata to the registry or update the existing one
-                                NostrSignal::Metadata(event) => {
-                                    registry.update(cx, |this, cx| {
-                                        this.insert_or_update_person(event, cx);
-                                    });
-                                }
-                                // Convert the gift wrapped message to a message
-                                NostrSignal::GiftWrap(event) => {
-                                    let identity = Identity::read_global(cx).public_key();
-                                    registry.update(cx, |this, cx| {
-                                        this.event_to_message(identity, event, window, cx);
-                                    });
-                                }
-                                NostrSignal::DmRelaysFound => {
-                                    //
-                                }
-                                NostrSignal::Notice(_msg) => {
-                                    // window.push_notification(msg, cx);
-                                }
-                            };
-                        })
-                        .ok();
-                    }
-                })
-                .detach();
-
                 Root::new(chatspace::init(window, cx).into(), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");
-    });
-}
-
-fn open_proxy_modal(window: &mut Window, cx: &mut App) {
-    window.open_modal(cx, |this, _window, cx| {
-        this.overlay_closable(false)
-            .show_close(false)
-            .keyboard(false)
-            .alert()
-            .button_props(ModalButtonProps::default().cancel_text("Open Browser"))
-            .child(
-                v_flex()
-                    .gap_1()
-                    .h_40()
-                    .w_full()
-                    .items_center()
-                    .justify_center()
-                    .text_center()
-                    .text_sm()
-                    .child(
-                        div()
-                            .font_semibold()
-                            .text_color(cx.theme().text_muted)
-                            .child(shared_t!("proxy.label")),
-                    )
-                    .child(shared_t!("proxy.description")),
-            )
     });
 }
 
@@ -417,11 +313,9 @@ async fn connect(client: &Client) -> Result<(), Error> {
     Ok(())
 }
 
-async fn handle_nostr_notifications(
-    signal_tx: &Sender<NostrSignal>,
-    event_tx: &Sender<Event>,
-) -> Result<(), Error> {
+async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Error> {
     let client = nostr_client();
+    let channel = global_channel();
     let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
     let mut notifications = client.notifications();
 
@@ -479,7 +373,7 @@ async fn handle_nostr_notifications(
                         let sub_id = SubscriptionId::new("gift-wrap");
 
                         // Notify the UI that the current user has set up the DM relays
-                        signal_tx.send(NostrSignal::DmRelaysFound).await.ok();
+                        channel.0.send(NostrSignal::DmRelaysFound).await.ok();
 
                         if client
                             .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
@@ -505,7 +399,8 @@ async fn handle_nostr_notifications(
                 }
             }
             Kind::Metadata => {
-                signal_tx
+                channel
+                    .0
                     .send(NostrSignal::Metadata(event.into_owned()))
                     .await
                     .ok();
@@ -600,12 +495,9 @@ async fn get_unwrapped(root: EventId) -> Result<Event, Error> {
 }
 
 /// Unwraps a gift-wrapped event and processes its contents.
-async fn unwrap_gift(
-    gift: &Event,
-    pubkey_tx: &Sender<PublicKey>,
-    signal_tx: &Sender<NostrSignal>,
-) -> bool {
+async fn unwrap_gift(gift: &Event, pubkey_tx: &Sender<PublicKey>) -> bool {
     let client = nostr_client();
+    let channel = global_channel();
     let mut is_cached = false;
 
     let event = match get_unwrapped(gift.id).await {
@@ -644,7 +536,7 @@ async fn unwrap_gift(
 
     // Send a notify to GPUI if this is a new message
     if starting_time() <= &event.created_at {
-        signal_tx.send(NostrSignal::GiftWrap(event)).await.ok();
+        channel.0.send(NostrSignal::GiftWrap(event)).await.ok();
     }
 
     is_cached

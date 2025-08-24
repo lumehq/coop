@@ -31,6 +31,8 @@ common:
     en: "Your Secret Key has been saved"
   clear:
     en: "Clear"
+  open_browser:
+    en: "Open Browser"
 
 auto_update:
   updating:
