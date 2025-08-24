@@ -17,7 +17,7 @@ pub mod paths;
 #[derive(Debug)]
 pub enum NostrSignal {
     /// Signer has been set
-    SignerSet,
+    SignerSet(PublicKey),
 
     /// Browser Signer Proxy service is not running
     ProxyDown,

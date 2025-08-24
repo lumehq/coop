@@ -227,8 +227,8 @@ impl Onboarding {
                 loop {
                     if !proxy.is_session_active() {
                         if !is_up {
-                            is_up = true;
                             client.set_signer(proxy.clone()).await;
+                            is_up = true;
                         }
                     } else {
                         chanel.0.send(NostrSignal::ProxyDown).await.ok();
@@ -324,12 +324,12 @@ impl Render for Onboarding {
                                             .text_xl()
                                             .font_semibold()
                                             .line_height(relative(1.3))
-                                            .child(SharedString::new(t!("welcome.title"))),
+                                            .child(shared_t!("welcome.title")),
                                     )
                                     .child(
                                         div()
                                             .text_color(cx.theme().text_muted)
-                                            .child(SharedString::new(t!("welcome.subtitle"))),
+                                            .child(shared_t!("welcome.subtitle")),
                                     ),
                             ),
                     )

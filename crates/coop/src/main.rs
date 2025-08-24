@@ -42,7 +42,7 @@ fn main() {
     let client = nostr_client();
 
     // Initialize the starting time
-    let _ = starting_time();
+    let _starting_time = starting_time();
 
     // Initialize the Application
     let app = Application::new()
@@ -73,13 +73,15 @@ fn main() {
         .spawn(async move {
             loop {
                 if let Ok(signer) = client.signer().await {
-                    signal_tx.send(NostrSignal::SignerSet).await.ok();
-
                     if let Ok(public_key) = signer.get_public_key().await {
-                        get_nip65_relays(public_key).await.ok();
-                    }
+                        // Notify the app that the signer has been set.
+                        _ = signal_tx.send(NostrSignal::SignerSet(public_key)).await;
 
-                    break;
+                        // Get the NIP-65 relays for the public key.
+                        get_nip65_relays(public_key).await.ok();
+
+                        break;
+                    }
                 }
                 smol::Timer::after(Duration::from_secs(1)).await;
             }
@@ -262,23 +264,29 @@ fn main() {
 
                 // Spawn a task to handle events from nostr channel
                 cx.spawn_in(window, async move |_root, cx| {
+                    let mut is_open_proxy_modal = false;
+
                     while let Ok(signal) = signal_rx.recv().await {
                         cx.update(|window, cx| {
                             let registry = Registry::global(cx);
-                            let identity = Identity::read_global(cx).public_key();
 
                             match signal {
-                                NostrSignal::SignerSet => {
+                                NostrSignal::SignerSet(public_key) => {
                                     // Setup the default layout for current workspace
                                     chatspace::default_layout(window, cx);
-
+                                    // Initialize identity
+                                    identity::init(public_key, window, cx);
                                     // Load all chat rooms
                                     registry.update(cx, |this, cx| {
                                         this.load_rooms(window, cx);
-                                    })
+                                    });
+                                    window.close_all_modals(cx);
                                 }
                                 NostrSignal::ProxyDown => {
-                                    open_proxy_modal(window, cx);
+                                    if !is_open_proxy_modal {
+                                        open_proxy_modal(window, cx);
+                                        is_open_proxy_modal = true;
+                                    }
                                 }
                                 // Load chat rooms and stop the loading status
                                 NostrSignal::Finish => {
@@ -309,6 +317,7 @@ fn main() {
                                 }
                                 // Convert the gift wrapped message to a message
                                 NostrSignal::GiftWrap(event) => {
+                                    let identity = Identity::read_global(cx).public_key();
                                     registry.update(cx, |this, cx| {
                                         this.event_to_message(identity, event, window, cx);
                                     });
