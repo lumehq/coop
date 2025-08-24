@@ -142,6 +142,7 @@ impl BackupKeys {
     }
 
     fn download(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let identity = Identity::global(cx);
         let document_dir = document_dir().expect("Failed to get document directory");
         let password = self.password.read(cx).value().to_string();
 
@@ -159,8 +160,8 @@ impl BackupKeys {
                     cx.update(|window, cx| {
                         match fs::write(&path, nsec) {
                             Ok(_) => {
-                                Identity::global(cx).update(cx, |this, cx| {
-                                    this.clear_need_backup(password, cx);
+                                identity.update(cx, |this, cx| {
+                                    this.set_temp_keys(None, cx);
                                 });
                                 // Close the current modal
                                 window.close_modal(cx);

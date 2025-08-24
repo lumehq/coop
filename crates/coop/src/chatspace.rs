@@ -38,7 +38,7 @@ use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
     backup_keys, chat, login, messaging_relays, new_account, onboarding, preferences, sidebar,
-    startup, user_profile, welcome,
+    user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -53,6 +53,10 @@ pub fn login(window: &mut Window, cx: &mut App) {
 pub fn new_account(window: &mut Window, cx: &mut App) {
     let panel = new_account::init(window, cx);
     ChatSpace::set_center_panel(panel, window, cx);
+}
+
+pub fn default_layout(window: &mut Window, cx: &mut App) {
+    ChatSpace::default_layout(window, cx);
 }
 
 actions!(user, [DarkMode, Settings, Logout]);
@@ -86,25 +90,17 @@ pub struct ChatSpace {
     title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
     #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 5]>,
+    subscriptions: SmallVec<[Subscription; 4]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
         let title_bar = cx.new(|_| TitleBar::new());
-        let dock = cx.new(|cx| {
-            let panel = Arc::new(startup::init(window, cx));
-            let center = DockItem::panel(panel);
-            let mut dock = DockArea::new(window, cx);
-            // Initialize the dock area with the center panel
-            dock.set_center(center, window, cx);
-            dock
-        });
+        let dock = cx.new(|cx| DockArea::new(window, cx));
 
         cx.new(|cx| {
             let registry = Registry::global(cx);
             let client_keys = ClientKeys::global(cx);
-            let identity = Identity::global(cx);
             let mut subscriptions = smallvec![];
 
             // Observe the client keys and show an alert modal if they fail to initialize
@@ -114,19 +110,8 @@ impl ChatSpace {
                 |this: &mut Self, state, window, cx| {
                     if !state.read(cx).has_keys() {
                         this.render_client_keys_modal(window, cx);
-                    }
-                },
-            ));
-
-            // Observe the identity and show onboarding if it fails to initialize
-            subscriptions.push(cx.observe_in(
-                &identity,
-                window,
-                |this: &mut Self, state, window, cx| {
-                    if !state.read(cx).has_signer() {
-                        this.set_onboarding_panels(window, cx);
                     } else {
-                        this.set_chat_panels(window, cx);
+                        this.onboarding_panel(window, cx);
                     }
                 },
             ));
@@ -149,7 +134,7 @@ impl ChatSpace {
             subscriptions.push(cx.subscribe_in(
                 &registry,
                 window,
-                |this: &mut Self, _state, event, window, cx| {
+                |this: &mut Self, _e, event, window, cx| {
                     match event {
                         RegistrySignal::Open(room) => {
                             if let Some(room) = room.upgrade() {
@@ -196,48 +181,13 @@ impl ChatSpace {
         })
     }
 
-    pub fn set_onboarding_panels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn onboarding_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let panel = Arc::new(onboarding::init(window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
             this.reset(window, cx);
             this.set_center(center, window, cx);
-        });
-    }
-
-    pub fn set_chat_panels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx);
-        let weak_dock = self.dock.downgrade();
-
-        // The left panel will render sidebar
-        let left = DockItem::panel(Arc::new(sidebar::init(window, cx)));
-
-        // The center panel will render chat rooms (as tabs)
-        let center = DockItem::split_with_sizes(
-            Axis::Vertical,
-            vec![DockItem::tabs(
-                vec![Arc::new(welcome::init(window, cx))],
-                None,
-                &weak_dock,
-                window,
-                cx,
-            )],
-            vec![None],
-            &weak_dock,
-            window,
-            cx,
-        );
-
-        // Update dock
-        self.dock.update(cx, |this, cx| {
-            this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
-            this.set_center(center, window, cx);
-        });
-
-        // Load all chat rooms from the database
-        registry.update(cx, |this, cx| {
-            this.load_rooms(window, cx);
         });
     }
 
@@ -261,17 +211,12 @@ impl ChatSpace {
         }
     }
 
-    fn on_sign_out(&mut self, _ev: &Logout, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx);
-        let identity = Identity::global(cx);
-
-        registry.update(cx, |this, cx| {
+    fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
+        Registry::global(cx).update(cx, |this, cx| {
             this.reset(cx);
         });
 
-        identity.update(cx, |this, cx| {
-            this.unload(window, cx);
-        });
+        // TODO: unset signer
     }
 
     fn on_open_profile(&mut self, ev: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
@@ -379,8 +324,8 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let need_backup = Identity::read_global(cx).need_backup();
-        let has_dm_relays = Identity::read_global(cx).has_dm_relays();
+        let temp_keys = Identity::read_global(cx).temp_keys();
+        let nip17_relays = Identity::read_global(cx).nip17_relays();
 
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
@@ -415,10 +360,10 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when_some(has_dm_relays, |this, status| {
+            .when_some(nip17_relays, |this, status| {
                 this.when(!status, |this| this.child(messaging_relays::relay_button()))
             })
-            .when_some(need_backup, |this, keys| {
+            .when_some(temp_keys, |this, keys| {
                 this.child(backup_keys::backup_button(keys.to_owned()))
             })
             .child(
@@ -435,24 +380,6 @@ impl ChatSpace {
                             .menu(t!("user.sign_out"), Box::new(Logout))
                     }),
             )
-    }
-
-    pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
-    where
-        P: PanelView,
-    {
-        if let Some(Some(root)) = window.root::<Root>() {
-            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
-                let panel = Arc::new(panel);
-                let center = DockItem::panel(panel);
-
-                chatspace.update(cx, |this, cx| {
-                    this.dock.update(cx, |this, cx| {
-                        this.set_center(center, window, cx);
-                    });
-                });
-            }
-        }
     }
 
     pub(crate) fn all_panels(window: &mut Window, cx: &mut App) -> Option<Vec<u64>> {
@@ -476,15 +403,62 @@ impl ChatSpace {
 
         Some(ids)
     }
+
+    pub(crate) fn default_layout(window: &mut Window, cx: &mut App) {
+        let sidebar = Arc::new(sidebar::init(window, cx));
+        let center = Arc::new(welcome::init(window, cx));
+
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                chatspace.update(cx, |this, cx| {
+                    let weak_dock = this.dock.downgrade();
+                    let left = DockItem::panel(sidebar);
+                    let center = DockItem::split_with_sizes(
+                        Axis::Vertical,
+                        vec![DockItem::tabs(vec![center], None, &weak_dock, window, cx)],
+                        vec![None],
+                        &weak_dock,
+                        window,
+                        cx,
+                    );
+
+                    this.dock.update(cx, |this, cx| {
+                        this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
+    }
+
+    pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
+    where
+        P: PanelView,
+    {
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                let panel = Arc::new(panel);
+                let center = DockItem::panel(panel);
+
+                chatspace.update(cx, |this, cx| {
+                    this.dock.update(cx, |this, cx| {
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
+    }
 }
 
 impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+        let logged_in = Identity::has_global(cx);
 
-        // Only render titlebar element if user is logged in
-        if let Some(identity) = Identity::read_global(cx).public_key() {
+        // Only render titlebar child elements if user is logged in
+        if logged_in {
+            let identity = Identity::read_global(cx).public_key();
             let profile = Registry::read_global(cx).get_person(&identity, cx);
 
             let left_side = self

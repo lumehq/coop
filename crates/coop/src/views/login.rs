@@ -2,13 +2,14 @@ use std::time::Duration;
 
 use client_keys::ClientKeys;
 use common::handle_auth::CoopAuthUrlHandler;
+use global::constants::ACCOUNT_IDENTIFIER;
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
     Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -226,6 +227,7 @@ impl Login {
 
     fn login_with_keys(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
         let value = self.input.read(cx).value().to_string();
+
         let secret_key = if value.starts_with("nsec1") {
             SecretKey::parse(&value).ok()
         } else if value.starts_with("ncryptsec1") {
@@ -239,10 +241,15 @@ impl Login {
         if let Some(secret_key) = secret_key {
             let keys = Keys::new(secret_key);
 
-            Identity::global(cx).update(cx, |this, cx| {
-                this.write_keys(&keys, password, cx);
-                this.set_signer(keys, window, cx);
-            });
+            // Encrypt and save user secret key to disk
+            self.write_keys_to_disk(&keys, password, cx);
+
+            // Set the client's signer with the current keys
+            cx.background_spawn(async move {
+                let client = nostr_client();
+                client.set_signer(keys).await;
+            })
+            .detach();
         } else {
             self.set_error(t!("login.key_invalid"), window, cx);
         }
@@ -256,7 +263,6 @@ impl Login {
 
         let client_keys = ClientKeys::global(cx);
         let app_keys = client_keys.read(cx).keys();
-        let identity = Identity::global(cx);
 
         let secs = 30;
         let timeout = Duration::from_secs(secs);
@@ -286,15 +292,17 @@ impl Login {
 
         // Handle connection
         cx.spawn_in(window, async move |this, cx| {
+            let client = nostr_client();
+
             match signer.bunker_uri().await {
-                Ok(bunker_uri) => {
-                    cx.update(|window, cx| {
-                        identity.update(cx, |this, cx| {
-                            this.write_bunker(&bunker_uri, cx);
-                            this.set_signer(signer, window, cx);
-                        });
+                Ok(uri) => {
+                    this.update(cx, |this, cx| {
+                        this.write_uri_to_disk(&uri, cx);
                     })
                     .ok();
+
+                    // Set the client's signer with the current nostr connect instance
+                    client.set_signer(signer).await;
                 }
                 Err(error) => {
                     cx.update(|window, cx| {
@@ -310,6 +318,70 @@ impl Login {
                         .ok();
                     })
                     .ok();
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn write_uri_to_disk(&mut self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
+        let Some(public_key) = uri.remote_signer_public_key().cloned() else {
+            log::error!("Remote Signer's public key not found");
+            return;
+        };
+
+        let mut value = uri.to_string();
+
+        // Clear the secret param if it exists
+        if let Some(secret) = uri.secret() {
+            value = value.replace(secret, "");
+        }
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let keys = Keys::generate();
+            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+            let kind = Kind::ApplicationSpecificData;
+
+            let builder = EventBuilder::new(kind, value)
+                .tags(tags)
+                .build(public_key)
+                .sign(&keys)
+                .await;
+
+            if let Ok(event) = builder {
+                if let Err(e) = client.database().save_event(&event).await {
+                    log::error!("Failed to save event: {e}");
+                };
+            }
+        })
+        .detach();
+    }
+
+    pub fn write_keys_to_disk(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {
+        let keys = keys.to_owned();
+        let public_key = keys.public_key();
+
+        cx.background_spawn(async move {
+            if let Ok(enc_key) =
+                EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
+            {
+                let client = nostr_client();
+                let value = enc_key.to_bech32().unwrap();
+                let keys = Keys::generate();
+                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                let kind = Kind::ApplicationSpecificData;
+
+                let builder = EventBuilder::new(kind, value)
+                    .tags(tags)
+                    .build(public_key)
+                    .sign(&keys)
+                    .await;
+
+                if let Ok(event) = builder {
+                    if let Err(e) = client.database().save_event(&event).await {
+                        log::error!("Failed to save event: {e}");
+                    };
                 }
             }
         })

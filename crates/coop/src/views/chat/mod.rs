@@ -223,11 +223,6 @@ impl Chat {
 
     /// Send a message to all members of the chat
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Return if user is not logged in
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            return;
-        };
-
         // Get the message which includes all attachments
         let content = self.input_content(cx);
 
@@ -254,6 +249,7 @@ impl Chat {
 
         // Get the current room entity
         let room = self.room.read(cx);
+        let identity = Identity::read_global(cx).public_key();
 
         // Create a temporary message for optimistic update
         let temp_message = room.create_temp_message(identity, &content, replies.as_ref());

@@ -40,10 +40,7 @@ impl Screening {
     }
 
     pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Skip if user isn't logged in
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            return;
-        };
+        let identity = Identity::read_global(cx).public_key();
         let public_key = self.public_key;
 
         let check_trust_score: Task<(bool, usize, bool)> = cx.background_spawn(async move {

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use client_keys::ClientKeys;
 use common::display::TextUtils;
-use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use global::constants::{ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use global::{global_channel, nostr_client, NostrSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -12,7 +12,6 @@ use gpui::{
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_connect::prelude::*;
 use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
@@ -113,7 +112,6 @@ impl Onboarding {
     }
 
     fn set_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let identity = Identity::global(cx);
         let uri = self.nostr_connect_uri.read(cx).clone();
         let app_keys = ClientKeys::read_global(cx).keys();
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
@@ -129,26 +127,26 @@ impl Onboarding {
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some(signer)) =
-                this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone())
-            {
+            let client = nostr_client();
+            let connect = this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone());
+
+            if let Ok(Some(signer)) = connect {
                 match signer.bunker_uri().await {
                     Ok(uri) => {
-                        cx.update(|window, cx| {
-                            this.update(cx, |this, cx| {
-                                this.set_connecting(cx);
-                                // Set identity with the current signer
-                                identity.update(cx, |this, cx| {
-                                    this.write_bunker(&uri, cx);
-                                    this.set_signer(signer, window, cx);
-                                });
-                            })
-                            .ok();
+                        this.update(cx, |this, cx| {
+                            this.set_connecting(cx);
+                            this.write_uri_to_disk(&uri, cx);
                         })
                         .ok();
+
+                        // Set the client's signer with the current nostr connect instance
+                        client.set_signer(signer).await;
                     }
                     Err(e) => {
-                        log::error!("Failed: {e}")
+                        cx.update(|window, cx| {
+                            window.push_notification(e.to_string(), cx);
+                        })
+                        .ok();
                     }
                 };
             }
@@ -159,6 +157,40 @@ impl Onboarding {
     fn set_connecting(&mut self, cx: &mut Context<Self>) {
         self.connecting = true;
         cx.notify();
+    }
+
+    fn write_uri_to_disk(&mut self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
+        let Some(public_key) = uri.remote_signer_public_key().cloned() else {
+            log::error!("Remote Signer's public key not found");
+            return;
+        };
+
+        let mut value = uri.to_string();
+
+        // Clear the secret param if it exists
+        if let Some(secret) = uri.secret() {
+            value = value.replace(secret, "");
+        }
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let keys = Keys::generate();
+            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+            let kind = Kind::ApplicationSpecificData;
+
+            let builder = EventBuilder::new(kind, value)
+                .tags(tags)
+                .build(public_key)
+                .sign(&keys)
+                .await;
+
+            if let Ok(event) = builder {
+                if let Err(e) = client.database().save_event(&event).await {
+                    log::error!("Failed to save event: {e}");
+                };
+            }
+        })
+        .detach();
     }
 
     fn copy_uri(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -195,19 +227,11 @@ impl Onboarding {
                 loop {
                     if !proxy.is_session_active() {
                         if !is_up {
-                            if let Ok(public_key) = proxy.get_public_key().await {
-                                client.set_signer(proxy.clone()).await;
-                                chanel
-                                    .0
-                                    .send(NostrSignal::SignerProxyUp(public_key))
-                                    .await
-                                    .ok();
-                            }
-
                             is_up = true;
+                            client.set_signer(proxy.clone()).await;
                         }
                     } else {
-                        chanel.0.send(NostrSignal::SignerProxyDown).await.ok();
+                        chanel.0.send(NostrSignal::ProxyDown).await.ok();
                     }
                     smol::Timer::after(Duration::from_secs(1)).await;
                 }
@@ -327,6 +351,7 @@ impl Render for Onboarding {
                             )
                             .child(
                                 h_flex()
+                                    .my_1()
                                     .gap_1()
                                     .child(divider(cx))
                                     .child(

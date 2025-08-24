@@ -4,7 +4,7 @@ pub const APP_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZX
 pub const APP_UPDATER_ENDPOINT: &str = "https://coop-updater.reya.su/";
 pub const KEYRING_URL: &str = "Coop Safe Storage";
 
-pub const ACCOUNT_D: &str = "coop:account";
+pub const ACCOUNT_IDENTIFIER: &str = "coop:account";
 pub const SETTINGS_D: &str = "coop:settings";
 
 /// Bootstrap Relays.

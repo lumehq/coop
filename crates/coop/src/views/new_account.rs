@@ -27,12 +27,10 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
 pub struct NewAccount {
     name_input: Entity<InputState>,
     avatar_input: Entity<InputState>,
-    is_uploading: bool,
-    is_submitting: bool,
+    uploading: bool,
+    submitting: bool,
     // Panel
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
 }
 
@@ -53,32 +51,45 @@ impl NewAccount {
         Self {
             name_input,
             avatar_input,
-            is_uploading: false,
-            is_submitting: false,
+            uploading: false,
+            submitting: false,
             name: "New Account".into(),
-            closable: true,
-            zoomable: true,
             focus_handle: cx.focus_handle(),
         }
     }
 
-    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn submit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.submitting {
+            return;
+        }
+
         self.submitting(true, cx);
 
-        let identity = Identity::global(cx);
+        let keys = Keys::generate();
+        let async_keys = keys.clone();
+
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
-
-        // Build metadata
         let mut metadata = Metadata::new().display_name(name.clone()).name(name);
 
         if let Ok(url) = Url::parse(&avatar) {
             metadata = metadata.picture(url);
         };
 
-        identity.update(cx, |this, cx| {
-            this.new_identity(metadata, window, cx);
+        Identity::global(cx).update(cx, |this, cx| {
+            this.set_temp_keys(Some(keys), cx);
         });
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+
+            // Update signer
+            client.set_signer(async_keys).await;
+
+            // Set metadata
+            client.set_metadata(&metadata).await.ok();
+        })
+        .detach();
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -150,12 +161,12 @@ impl NewAccount {
     }
 
     fn submitting(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_submitting = status;
+        self.submitting = status;
         cx.notify();
     }
 
     fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_uploading = status;
+        self.uploading = status;
         cx.notify();
     }
 }
@@ -167,14 +178,6 @@ impl Panel for NewAccount {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -252,8 +255,8 @@ impl Render for NewAccount {
                                             .ghost()
                                             .small()
                                             .rounded(ButtonRounded::Full)
-                                            .disabled(self.is_submitting)
-                                            .loading(self.is_uploading)
+                                            .disabled(self.submitting || self.uploading)
+                                            .loading(self.uploading)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.upload(window, cx);
                                             })),
@@ -265,8 +268,8 @@ impl Render for NewAccount {
                         Button::new("submit")
                             .label(SharedString::new(t!("common.continue")))
                             .primary()
-                            .loading(self.is_submitting)
-                            .disabled(self.is_submitting || self.is_uploading)
+                            .loading(self.submitting)
+                            .disabled(self.submitting || self.uploading)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.submit(window, cx);
                             })),

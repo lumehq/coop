@@ -16,6 +16,12 @@ pub mod paths;
 /// Signals sent through the global event channel to notify UI components
 #[derive(Debug)]
 pub enum NostrSignal {
+    /// Signer has been set
+    SignerSet,
+
+    /// Browser Signer Proxy service is not running
+    ProxyDown,
+
     /// Received a new metadata event from Relay Pool
     Metadata(Event),
 
@@ -30,12 +36,6 @@ pub enum NostrSignal {
 
     /// DM relays have been found
     DmRelaysFound,
-
-    /// The signer proxy is up
-    SignerProxyUp(PublicKey),
-
-    /// The signer proxy is down
-    SignerProxyDown,
 
     /// Notice from Relay Pool
     Notice(String),

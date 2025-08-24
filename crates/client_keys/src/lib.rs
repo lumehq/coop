@@ -119,8 +119,7 @@ impl ClientKeys {
 
     pub fn keys(&self) -> Keys {
         self.keys
-            .as_ref()
-            .cloned()
+            .clone()
             .expect("Keys should always be initialized")
     }
 

@@ -11,17 +11,19 @@ use global::constants::{
 };
 use global::{global_channel, nostr_client, processed_events, starting_time, NostrSignal};
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
-    SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
-    WindowKind, WindowOptions,
+    actions, div, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu,
+    MenuItem, ParentElement, SharedString, Styled, TitlebarOptions, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
 };
+use i18n::{shared_t, t};
 use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use smol::channel::{self, Sender};
-use theme::Theme;
-use ui::Root;
+use theme::{ActiveTheme, Theme};
+use ui::modal::ModalButtonProps;
+use ui::{v_flex, ContextModal, Root, StyledExt};
 
 use crate::chatspace::ChatSpace;
 
@@ -63,6 +65,23 @@ fn main() {
             // Send the redefined signal back to GPUI via channel.
             if let Err(e) = handle_nostr_notifications(signal_tx, &event_tx).await {
                 log::error!("Failed to handle Nostr notifications: {e}");
+            }
+        })
+        .detach();
+
+    app.background_executor()
+        .spawn(async move {
+            loop {
+                if let Ok(signer) = client.signer().await {
+                    signal_tx.send(NostrSignal::SignerSet).await.ok();
+
+                    if let Ok(public_key) = signer.get_public_key().await {
+                        get_nip65_relays(public_key).await.ok();
+                    }
+
+                    break;
+                }
+                smol::Timer::after(Duration::from_secs(1)).await;
             }
         })
         .detach();
@@ -225,16 +244,19 @@ fn main() {
                 cx.activate(true);
                 // Initialize the tokio runtime
                 gpui_tokio::init(cx);
+
                 // Initialize components
                 ui::init(cx);
-                // Initialize app registry
-                registry::init(cx);
-                // Initialize settings
-                settings::init(cx);
+
                 // Initialize client keys
                 client_keys::init(cx);
-                // Initialize identity
-                identity::init(window, cx);
+
+                // Initialize app registry
+                registry::init(cx);
+
+                // Initialize settings
+                settings::init(cx);
+
                 // Initialize auto update
                 auto_update::init(cx);
 
@@ -243,9 +265,21 @@ fn main() {
                     while let Ok(signal) = signal_rx.recv().await {
                         cx.update(|window, cx| {
                             let registry = Registry::global(cx);
-                            let identity = Identity::global(cx);
+                            let identity = Identity::read_global(cx).public_key();
 
                             match signal {
+                                NostrSignal::SignerSet => {
+                                    // Setup the default layout for current workspace
+                                    chatspace::default_layout(window, cx);
+
+                                    // Load all chat rooms
+                                    registry.update(cx, |this, cx| {
+                                        this.load_rooms(window, cx);
+                                    })
+                                }
+                                NostrSignal::ProxyDown => {
+                                    open_proxy_modal(window, cx);
+                                }
                                 // Load chat rooms and stop the loading status
                                 NostrSignal::Finish => {
                                     registry.update(cx, |this, cx| {
@@ -275,23 +309,13 @@ fn main() {
                                 }
                                 // Convert the gift wrapped message to a message
                                 NostrSignal::GiftWrap(event) => {
-                                    if let Some(public_key) = identity.read(cx).public_key() {
-                                        registry.update(cx, |this, cx| {
-                                            this.event_to_message(public_key, event, window, cx);
-                                        });
-                                    }
+                                    registry.update(cx, |this, cx| {
+                                        this.event_to_message(identity, event, window, cx);
+                                    });
                                 }
                                 NostrSignal::DmRelaysFound => {
-                                    identity.update(cx, |this, cx| {
-                                        this.set_has_dm_relays(cx);
-                                    });
+                                    //
                                 }
-                                NostrSignal::SignerProxyUp(public_key) => {
-                                    identity.update(cx, |this, cx| {
-                                        this.set_public_key(Some(public_key), window, cx);
-                                    });
-                                }
-                                NostrSignal::SignerProxyDown => {}
                                 NostrSignal::Notice(_msg) => {
                                     // window.push_notification(msg, cx);
                                 }
@@ -306,6 +330,33 @@ fn main() {
             })
         })
         .expect("Failed to open window. Please restart the application.");
+    });
+}
+
+fn open_proxy_modal(window: &mut Window, cx: &mut App) {
+    window.open_modal(cx, |this, _window, cx| {
+        this.overlay_closable(false)
+            .show_close(false)
+            .keyboard(false)
+            .alert()
+            .button_props(ModalButtonProps::default().cancel_text("Open Browser"))
+            .child(
+                v_flex()
+                    .gap_1()
+                    .h_40()
+                    .w_full()
+                    .items_center()
+                    .justify_center()
+                    .text_center()
+                    .text_sm()
+                    .child(
+                        div()
+                            .font_semibold()
+                            .text_color(cx.theme().text_muted)
+                            .child(shared_t!("proxy.label")),
+                    )
+                    .child(shared_t!("proxy.description")),
+            )
     });
 }
 
@@ -384,10 +435,8 @@ async fn handle_nostr_notifications(
                 // Get metadata for event's pubkey that matches the current user's pubkey
                 if let Ok(true) = is_from_current_user(&event).await {
                     let sub_id = SubscriptionId::new("metadata");
-                    let filter = Filter::new()
-                        .kinds(vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays])
-                        .author(event.pubkey)
-                        .limit(10);
+                    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays];
+                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(10);
 
                     client
                         .subscribe_with_id(sub_id, filter, Some(auto_close))
@@ -458,6 +507,21 @@ async fn handle_nostr_notifications(
             _ => {}
         }
     }
+
+    Ok(())
+}
+
+async fn get_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
+    let client = nostr_client();
+    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+    let sub_id = SubscriptionId::new("nip65-relays");
+
+    let filter = Filter::new()
+        .kind(Kind::RelayList)
+        .author(public_key)
+        .limit(1);
+
+    client.subscribe_with_id(sub_id, filter, Some(opts)).await?;
 
     Ok(())
 }

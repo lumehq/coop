@@ -1,6 +1,5 @@
 use common::display::DisplayProfile;
 use gpui::http_client::Url;
-use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
@@ -116,9 +115,8 @@ impl Preferences {
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let input_state = self.media_input.downgrade();
-        let profile = Identity::read_global(cx)
-            .public_key()
-            .map(|pk| Registry::read_global(cx).get_person(&pk, cx));
+        let identity = Identity::read_global(cx).public_key();
+        let profile = Registry::read_global(cx).get_person(&identity, cx);
 
         let backup_messages = AppSettings::get_backup_messages(cx);
         let screening = AppSettings::get_screening(cx);
@@ -138,58 +136,56 @@ impl Render for Preferences {
                             .font_semibold()
                             .child(SharedString::new(t!("preferences.account_header"))),
                     )
-                    .when_some(profile, |this, profile| {
-                        this.child(
-                            div()
-                                .w_full()
-                                .flex()
-                                .justify_between()
-                                .items_center()
-                                .child(
-                                    div()
-                                        .id("current-user")
-                                        .flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .child(
-                                            Avatar::new(profile.avatar_url(proxy_avatar))
-                                                .size(rems(2.4)),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .text_sm()
-                                                .child(
-                                                    div()
-                                                        .line_height(relative(1.3))
-                                                        .font_semibold()
-                                                        .child(profile.display_name()),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .line_height(relative(1.3))
-                                                        .text_xs()
-                                                        .text_color(cx.theme().text_muted)
-                                                        .child(SharedString::new(t!(
-                                                            "preferences.see_your_profile"
-                                                        ))),
-                                                ),
-                                        )
-                                        .on_click(cx.listener(move |this, _e, window, cx| {
-                                            this.open_edit_profile(window, cx);
-                                        })),
-                                )
-                                .child(
-                                    Button::new("relays")
-                                        .label("Messaging Relays")
-                                        .ghost()
-                                        .small()
-                                        .on_click(cx.listener(move |this, _e, window, cx| {
-                                            this.open_relays(window, cx);
-                                        })),
-                                ),
-                        )
-                    }),
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .justify_between()
+                            .items_center()
+                            .child(
+                                div()
+                                    .id("current-user")
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        Avatar::new(profile.avatar_url(proxy_avatar))
+                                            .size(rems(2.4)),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .text_sm()
+                                            .child(
+                                                div()
+                                                    .line_height(relative(1.3))
+                                                    .font_semibold()
+                                                    .child(profile.display_name()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .line_height(relative(1.3))
+                                                    .text_xs()
+                                                    .text_color(cx.theme().text_muted)
+                                                    .child(SharedString::new(t!(
+                                                        "preferences.see_your_profile"
+                                                    ))),
+                                            ),
+                                    )
+                                    .on_click(cx.listener(move |this, _e, window, cx| {
+                                        this.open_edit_profile(window, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("relays")
+                                    .label("Messaging Relays")
+                                    .ghost()
+                                    .small()
+                                    .on_click(cx.listener(move |this, _e, window, cx| {
+                                        this.open_relays(window, cx);
+                                    })),
+                            ),
+                    ),
             )
             .child(
                 v_flex()

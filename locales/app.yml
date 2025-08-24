@@ -72,6 +72,12 @@ onboarding:
   ext_login_note:
     en: "You will need to keep your default browser open."
 
+proxy:
+  label:
+    en: "Waiting for approval"
+  description:
+    en: "Open your default browser and approve the connection request"
+
 startup:
   client_keys_warning:
     en: "Warning"
