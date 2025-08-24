@@ -67,7 +67,7 @@ pub struct Onboarding {
     name: SharedString,
     focus_handle: FocusHandle,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+    subscriptions: SmallVec<[Subscription; 2]>,
 }
 
 impl Onboarding {
@@ -109,6 +109,11 @@ impl Onboarding {
             name: "Onboarding".into(),
             focus_handle: cx.focus_handle(),
         }
+    }
+
+    fn set_connecting(&mut self, cx: &mut Context<Self>) {
+        self.connecting = true;
+        cx.notify();
     }
 
     fn set_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -154,9 +159,53 @@ impl Onboarding {
         .detach();
     }
 
-    fn set_connecting(&mut self, cx: &mut Context<Self>) {
-        self.connecting = true;
-        cx.notify();
+    fn set_proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
+        let url = proxy.url();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let chanel = global_channel();
+            let mut is_up = false;
+
+            if proxy.start().await.is_ok() {
+                webbrowser::open(&url).ok();
+
+                loop {
+                    if !proxy.is_session_active() {
+                        if !is_up {
+                            // Save the signer to disk for further logins
+                            if let Ok(public_key) = proxy.get_public_key().await {
+                                let keys = Keys::generate();
+                                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                                let kind = Kind::ApplicationSpecificData;
+
+                                let builder = EventBuilder::new(kind, "extension")
+                                    .tags(tags)
+                                    .build(public_key)
+                                    .sign(&keys)
+                                    .await;
+
+                                if let Ok(event) = builder {
+                                    if let Err(e) = client.database().save_event(&event).await {
+                                        log::error!("Failed to save event: {e}");
+                                    };
+                                }
+                            }
+
+                            // Set the client's signer with current proxy signer
+                            client.set_signer(proxy.clone()).await;
+
+                            is_up = true;
+                        }
+                    } else {
+                        chanel.0.send(NostrSignal::ProxyDown).await.ok();
+                    }
+                    smol::Timer::after(Duration::from_secs(1)).await;
+                }
+            }
+        })
+        .detach();
     }
 
     fn write_uri_to_disk(&mut self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
@@ -210,34 +259,6 @@ impl Onboarding {
                 .detach();
             }
         }
-    }
-
-    fn open_proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
-        let url = proxy.url();
-
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let chanel = global_channel();
-            let mut is_up = false;
-
-            if proxy.start().await.is_ok() {
-                webbrowser::open(&url).ok();
-
-                loop {
-                    if !proxy.is_session_active() {
-                        if !is_up {
-                            client.set_signer(proxy.clone()).await;
-                            is_up = true;
-                        }
-                    } else {
-                        chanel.0.send(NostrSignal::ProxyDown).await.ok();
-                    }
-                    smol::Timer::after(Duration::from_secs(1)).await;
-                }
-            }
-        })
-        .detach();
     }
 
     fn render_apps(&self, cx: &Context<Self>) -> impl IntoIterator<Item = impl IntoElement> {
@@ -378,7 +399,7 @@ impl Render for Onboarding {
                                             .label(t!("onboarding.ext_login"))
                                             .ghost_alt()
                                             .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.open_proxy(window, cx);
+                                                this.set_proxy(window, cx);
                                             })),
                                     )
                                     .child(

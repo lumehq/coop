@@ -50,11 +50,20 @@ impl ClientKeys {
     }
 
     pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Prevent macOS from asking for password every time
+        // Only for debug builds
+        if cfg!(debug_assertions) && cfg!(target_os = "macos") {
+            log::warn!("Running debug build on macOS");
+            log::warn!("Skipping keychain access, generating new client keys");
+            self.new_keys(cx);
+            return;
+        }
+
         let read_client_keys = cx.read_credentials(KEYRING_URL);
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Some((_, secret))) = read_client_keys.await {
-                // Update keys
+                // Update the client keys with the stored secret key from the keychain
                 this.update(cx, |this, cx| {
                     let Ok(secret_key) = SecretKey::from_slice(&secret) else {
                         this.set_keys(None, false, true, cx);
@@ -65,7 +74,7 @@ impl ClientKeys {
                 })
                 .ok();
             } else if *first_run() {
-                // Generate a new keys and update
+                // If this is the first run, generate new keys and use them for the client keys
                 this.update(cx, |this, cx| {
                     this.new_keys(cx);
                 })
@@ -103,6 +112,7 @@ impl ClientKeys {
         }
 
         self.keys = keys;
+
         // Notify GPUI to reload UI
         if notify {
             cx.notify();
