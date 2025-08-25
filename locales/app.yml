@@ -33,6 +33,8 @@ common:
     en: "Clear"
   open_browser:
     en: "Open Browser"
+  refreshed:
+    en: "Refreshed"
 
 auto_update:
   updating:

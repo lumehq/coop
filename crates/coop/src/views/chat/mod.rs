@@ -176,12 +176,8 @@ impl Chat {
         cx.spawn_in(window, async move |this, cx| {
             match load_messages.await {
                 Ok(events) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(t!("chat.reload_tooltip"), cx);
-                        this.update(cx, |this, cx| {
-                            this.insert_messages(events, cx);
-                        })
-                        .ok();
+                    this.update(cx, |this, cx| {
+                        this.insert_messages(events, cx);
                     })
                     .ok();
                 }
@@ -1077,7 +1073,8 @@ impl Chat {
         Button::new("reload")
             .icon(IconName::Refresh)
             .tooltip(t!("chat.reload_tooltip"))
-            .on_click(move |_, _window, cx| {
+            .on_click(move |_, window, cx| {
+                window.push_notification(t!("common.refreshed"), cx);
                 room.update(cx, |this, cx| {
                     this.emit_refresh(cx);
                 })

@@ -388,31 +388,22 @@ impl Room {
     /// A Task that resolves to Result<Vec<Event>, Error> containing all messages for this room
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
         let members = self.members.clone();
-        let members_clone = members.clone();
 
         cx.background_spawn(async move {
             let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
 
-            let send = Filter::new()
+            let filter = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
-                .author(public_key)
+                .authors(members.clone())
                 .pubkeys(members.clone());
 
-            let recv = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .authors(members)
-                .pubkey(public_key);
-
-            let send_events = client.database().query(send).await?;
-            let recv_events = client.database().query(recv).await?;
-
-            let events = send_events
-                .merge(recv_events)
+            let events = client
+                .database()
+                .query(filter)
+                .await?
                 .into_iter()
                 .sorted_by_key(|ev| ev.created_at)
-                .filter(|ev| ev.compare_pubkeys(&members_clone))
+                .filter(|ev| ev.compare_pubkeys(&members))
                 .collect::<Vec<_>>();
 
             Ok(events)
