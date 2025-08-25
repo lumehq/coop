@@ -6,8 +6,8 @@ use gpui::{App, AppContext, Context, Entity, Global, Window};
 use nostr_connect::prelude::*;
 use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 
-pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) {
-    Identity::set_global(cx.new(|cx| Identity::new(public_key, window, cx)), cx);
+pub fn init(public_key: PublicKey, _window: &mut Window, cx: &mut App) {
+    Identity::set_global(cx.new(|_| Identity::new(public_key)), cx);
 }
 
 struct GlobalIdentity(Entity<Identity>);
@@ -46,11 +46,7 @@ impl Identity {
         cx.set_global(GlobalIdentity(state));
     }
 
-    pub(crate) fn new(
-        public_key: PublicKey,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) -> Self {
+    pub(crate) fn new(public_key: PublicKey) -> Self {
         Self {
             public_key,
             nip17_relays: None,
@@ -68,9 +64,21 @@ impl Identity {
         self.nip17_relays
     }
 
+    /// Sets the current identity's NIP-17 relays status
+    pub fn set_nip17_relays(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.nip17_relays = Some(status);
+        cx.notify();
+    }
+
     /// Returns the current identity's NIP-65 relays status
     pub fn nip65_relays(&self) -> Option<bool> {
         self.nip65_relays
+    }
+
+    /// Sets the current identity's NIP-65 relays status
+    pub fn set_nip65_relays(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.nip65_relays = Some(status);
+        cx.notify();
     }
 
     /// Starts the browser proxy for nostr signer

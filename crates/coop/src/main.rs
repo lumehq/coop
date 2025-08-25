@@ -73,7 +73,15 @@ fn main() {
                         _ = channel.0.send(NostrSignal::SignerSet(public_key)).await;
 
                         // Get the NIP-65 relays for the public key.
-                        get_nip65_relays(public_key).await.ok();
+                        if fetch_relays(Kind::RelayList, public_key).await.is_ok() {
+                            if fetch_relays(Kind::InboxRelays, public_key).await.is_err() {
+                                // Notify the app that user don't have NIP-17 relays.
+                                _ = channel.0.send(NostrSignal::DmRelayNotFound).await;
+                            }
+                        } else {
+                            // Notify the app that user don't have NIP-65 relays.
+                            _ = channel.0.send(NostrSignal::RelayNotFound).await;
+                        }
 
                         break;
                     }
@@ -337,19 +345,21 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
             Kind::RelayList => {
                 // Get metadata for event's pubkey that matches the current user's pubkey
                 if let Ok(true) = is_from_current_user(&event).await {
-                    let sub_id = SubscriptionId::new("metadata");
-                    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays];
-                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(10);
+                    let id = SubscriptionId::new("metadata");
+                    let kinds = vec![Kind::Metadata, Kind::ContactList];
+                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(5);
 
-                    client
-                        .subscribe_with_id(sub_id, filter, Some(auto_close))
+                    if client
+                        .subscribe_with_id(id, filter, Some(auto_close))
                         .await
-                        .ok();
+                        .is_ok()
+                    {
+                        log::info!("Subscribed to user metadata and contact list");
+                    }
                 }
             }
             Kind::InboxRelays => {
                 if let Ok(true) = is_from_current_user(&event).await {
-                    // Get all inbox relays
                     let relays = event
                         .tags
                         .filter_standardized(TagKind::Relay)
@@ -363,24 +373,20 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
                         .collect_vec();
 
                     if !relays.is_empty() {
-                        // Add relays to nostr client
                         for relay in relays.iter() {
                             _ = client.add_relay(relay).await;
                             _ = client.connect_relay(relay).await;
                         }
 
+                        let id = SubscriptionId::new("gift-wrap");
                         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
-                        let sub_id = SubscriptionId::new("gift-wrap");
-
-                        // Notify the UI that the current user has set up the DM relays
-                        channel.0.send(NostrSignal::DmRelaysFound).await.ok();
 
                         if client
-                            .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
+                            .subscribe_with_id_to(relays.clone(), id, filter, None)
                             .await
                             .is_ok()
                         {
-                            log::info!("Subscribing to messages in: {relays:?}");
+                            log::info!("Subscribed to messages in: {relays:?}");
                         }
                     }
                 }
@@ -415,19 +421,30 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
     Ok(())
 }
 
-async fn get_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
+async fn fetch_relays(kind: Kind, public_key: PublicKey) -> Result<Events, Error> {
     let client = nostr_client();
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let sub_id = SubscriptionId::new("nip65-relays");
+    let timeout = Duration::from_secs(3);
+    let filter = Filter::new().kind(kind).author(public_key).limit(1);
 
-    let filter = Filter::new()
-        .kind(Kind::RelayList)
-        .author(public_key)
-        .limit(1);
+    let mut events = Events::new(&filter);
+    let mut stream = client.stream_events(filter, timeout).await?;
 
-    client.subscribe_with_id(sub_id, filter, Some(opts)).await?;
+    while let Some(event) = stream.next().await {
+        let has_relay_tags = event
+            .tags
+            .filter_standardized(TagKind::Relay)
+            .any(|tag| matches!(tag, TagStandard::Relay(_)));
 
-    Ok(())
+        if has_relay_tags {
+            events.insert(event);
+        }
+    }
+
+    if events.is_empty() {
+        Err(anyhow!("No relays found."))
+    } else {
+        Ok(events)
+    }
 }
 
 async fn is_from_current_user(event: &Event) -> Result<bool, Error> {

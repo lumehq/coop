@@ -252,8 +252,17 @@ impl ChatSpace {
                             this.event_to_message(identity, event, window, cx);
                         });
                     }
-                    NostrSignal::DmRelaysFound => {
-                        //
+                    NostrSignal::RelayNotFound => {
+                        let identity = Identity::global(cx);
+                        identity.update(cx, |this, cx| {
+                            this.set_nip65_relays(false, cx);
+                        });
+                    }
+                    NostrSignal::DmRelayNotFound => {
+                        let identity = Identity::global(cx);
+                        identity.update(cx, |this, cx| {
+                            this.set_nip17_relays(false, cx);
+                        });
                     }
                     NostrSignal::Notice(_msg) => {
                         // window.push_notification(msg, cx);
