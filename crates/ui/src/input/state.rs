@@ -1077,6 +1077,7 @@ impl InputState {
         }
 
         let offset = self.next_boundary(self.cursor_offset());
+
         // ignore if offset is "\n"
         if self
             .text_for_range(
@@ -1251,11 +1252,18 @@ impl InputState {
         }
 
         self.selecting = true;
+
         let offset = self.index_for_mouse_position(event.position, window, cx);
 
         // Double click to select word
         if event.button == MouseButton::Left && event.click_count == 2 {
             self.select_word(offset, window, cx);
+            return;
+        }
+
+        // Triple click to select line
+        if event.button == MouseButton::Left && event.click_count == 3 {
+            self.select_line(window, cx);
             return;
         }
 
@@ -1414,7 +1422,7 @@ impl InputState {
     /// The offset is the UTF-8 offset.
     ///
     /// Ensure the offset use self.next_boundary or self.previous_boundary to get the correct offset.
-    fn move_to(&mut self, offset: usize, _: &mut Window, cx: &mut Context<Self>) {
+    fn move_to(&mut self, offset: usize, _window: &mut Window, cx: &mut Context<Self>) {
         let offset = offset.clamp(0, self.text.len());
         self.selected_range = offset..offset;
         self.pause_blink_cursor(cx);
@@ -1541,8 +1549,9 @@ impl InputState {
     /// The offset is the UTF-8 offset.
     ///
     /// Ensure the offset use self.next_boundary or self.previous_boundary to get the correct offset.
-    fn select_to(&mut self, offset: usize, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_to(&mut self, offset: usize, _window: &mut Window, cx: &mut Context<Self>) {
         let offset = offset.clamp(0, self.text.len());
+
         if self.selection_reversed {
             self.selected_range.start = offset
         } else {
@@ -1563,9 +1572,11 @@ impl InputState {
                 self.selected_range.end = word_range.end;
             }
         }
+
         if self.selected_range.is_empty() {
             self.update_preferred_x_offset(cx);
         }
+
         cx.notify()
     }
 
@@ -1579,9 +1590,11 @@ impl InputState {
 
         let mut start = self.offset_to_utf16(offset);
         let mut end = start;
+
         let prev_text = self
             .text_for_range(self.range_to_utf16(&(0..start)), &mut None, window, cx)
             .unwrap_or_default();
+
         let next_text = self
             .text_for_range(
                 self.range_to_utf16(&(end..self.text.len())),
@@ -1619,7 +1632,16 @@ impl InputState {
 
         self.selected_range = start..end;
         self.selected_word_range = Some(self.selected_range.clone());
+
         cx.notify()
+    }
+
+    /// Selects the entire line containing the cursor.
+    fn select_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let offset = self.start_of_line(window, cx);
+        let end = self.end_of_line(window, cx);
+        self.move_to(end, window, cx);
+        self.select_to(offset, window, cx);
     }
 
     fn unselect(&mut self, _: &mut Window, cx: &mut Context<Self>) {
