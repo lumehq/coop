@@ -133,19 +133,14 @@ impl ChatSpace {
 
         subscriptions.push(
             // Subscribe to open chat room requests
-            cx.subscribe_in(&registry, window, |this, _e, event, window, cx| {
-                match event {
+            cx.subscribe_in(
+                &registry,
+                window,
+                |this, _e, event, window, cx| match event {
                     RegistrySignal::Open(room) => {
                         if let Some(room) = room.upgrade() {
                             this.dock.update(cx, |this, cx| {
                                 let panel = chat::init(room, window, cx);
-
-                                // Load messages when the panel is created
-                                panel.update(cx, |this, cx| {
-                                    this.load_messages(window, cx);
-                                });
-
-                                // Add the panel to the center dock (tabs)
                                 this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
                             });
                         } else {
@@ -163,8 +158,8 @@ impl ChatSpace {
                         });
                     }
                     _ => {}
-                }
-            }),
+                },
+            ),
         );
 
         tasks.push(

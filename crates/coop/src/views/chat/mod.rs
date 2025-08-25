@@ -10,7 +10,7 @@ use gpui::{
     ClipboardItem, Context, Div, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, ObjectFit,
     ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Window,
+    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -68,8 +68,9 @@ pub struct Chat {
     uploading: bool,
     // System
     image_cache: Entity<RetainAllImageCache>,
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 3]>,
+
+    _subscriptions: SmallVec<[Subscription; 2]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Chat {
@@ -89,39 +90,52 @@ impl Chat {
                 .clean_on_escape()
         });
 
+        let load_messages = room.read(cx).load_messages(cx);
+
         let mut subscriptions = smallvec![];
+        let mut tasks = smallvec![];
 
-        subscriptions.push(cx.on_release_in(window, move |this, _window, cx| {
-            this.messages.clear();
-            this.rendered_texts_by_id.clear();
-            this.reports_by_id.clear();
-
-            this.attachments.update(cx, |this, _cx| {
-                this.clear();
-            });
-
-            this.replies_to.update(cx, |this, _cx| {
-                this.clear();
-            })
-        }));
-
-        subscriptions.push(cx.subscribe_in(
-            &input,
-            window,
-            move |this: &mut Self, _input, event, window, cx| {
-                match event {
-                    InputEvent::PressEnter { .. } => {
-                        this.send_message(window, cx);
+        tasks.push(
+            // Load all messages belonging to this room
+            cx.spawn_in(window, async move |this, cx| {
+                match load_messages.await {
+                    Ok(events) => {
+                        this.update(cx, |this, cx| {
+                            this.insert_messages(events, cx);
+                        })
+                        .ok();
                     }
-                    InputEvent::Change(_) => {
-                        // this.mention_popup(text, input, cx);
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        })
+                        .ok();
                     }
-                    _ => {}
                 };
-            },
-        ));
+            }),
+        );
 
         subscriptions.push(
+            // Subscribe to input events
+            cx.subscribe_in(
+                &input,
+                window,
+                move |this: &mut Self, _input, event, window, cx| {
+                    match event {
+                        InputEvent::PressEnter { .. } => {
+                            this.send_message(window, cx);
+                        }
+                        InputEvent::Change(_) => {
+                            // this.mention_popup(text, input, cx);
+                        }
+                        _ => {}
+                    };
+                },
+            ),
+        );
+
+        subscriptions.push(
+            // Subscribe to room events
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
                     RoomSignal::NewMessage(event) => {
@@ -150,26 +164,30 @@ impl Chat {
             input,
             replies_to,
             attachments,
-            subscriptions,
+            _subscriptions: subscriptions,
+            _tasks: tasks,
         }
     }
 
     /// Load all messages belonging to this room
-    pub(crate) fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let room = self.room.read(cx);
-        let load_messages = room.load_messages(cx);
+    fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let load_messages = self.room.read(cx).load_messages(cx);
 
         cx.spawn_in(window, async move |this, cx| {
             match load_messages.await {
                 Ok(events) => {
-                    this.update(cx, |this, cx| {
-                        this.insert_messages(events, cx);
+                    cx.update(|window, cx| {
+                        window.push_notification(t!("chat.reload_tooltip"), cx);
+                        this.update(cx, |this, cx| {
+                            this.insert_messages(events, cx);
+                        })
+                        .ok();
                     })
                     .ok();
                 }
                 Err(e) => {
                     cx.update(|window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx);
+                        window.push_notification(e.to_string(), cx);
                     })
                     .ok();
                 }
@@ -1010,6 +1028,62 @@ impl Chat {
 
         items
     }
+
+    fn subject_button(&self, cx: &App) -> Button {
+        let room = self.room.downgrade();
+        let subject = self
+            .room
+            .read(cx)
+            .subject
+            .as_ref()
+            .map(|subject| subject.to_string());
+
+        Button::new("subject")
+            .icon(IconName::Edit)
+            .tooltip(t!("chat.subject_tooltip"))
+            .on_click(move |_, window, cx| {
+                let view = subject::init(subject.clone(), window, cx);
+                let room = room.clone();
+                let weak_view = view.downgrade();
+
+                window.open_modal(cx, move |this, _window, _cx| {
+                    let room = room.clone();
+                    let weak_view = weak_view.clone();
+
+                    this.confirm()
+                        .title(shared_t!("chat.subject_tooltip"))
+                        .child(view.clone())
+                        .button_props(ModalButtonProps::default().ok_text(t!("common.change")))
+                        .on_ok(move |_, _window, cx| {
+                            if let Ok(subject) =
+                                weak_view.read_with(cx, |this, cx| this.new_subject(cx))
+                            {
+                                room.update(cx, |this, cx| {
+                                    this.subject = Some(subject);
+                                    cx.notify();
+                                })
+                                .ok();
+                            }
+                            // true to close the modal
+                            true
+                        })
+                });
+            })
+    }
+
+    fn reload_button(&self, _cx: &App) -> Button {
+        let room = self.room.downgrade();
+
+        Button::new("reload")
+            .icon(IconName::Refresh)
+            .tooltip(t!("chat.reload_tooltip"))
+            .on_click(move |_, _window, cx| {
+                room.update(cx, |this, cx| {
+                    this.emit_refresh(cx);
+                })
+                .ok();
+            })
+    }
 }
 
 impl Panel for Chat {
@@ -1038,47 +1112,10 @@ impl Panel for Chat {
     }
 
     fn toolbar_buttons(&self, _window: &Window, cx: &App) -> Vec<Button> {
-        let room = self.room.downgrade();
-        let subject = self
-            .room
-            .read(cx)
-            .subject
-            .as_ref()
-            .map(|subject| subject.to_string());
+        let subject_button = self.subject_button(cx);
+        let reload_button = self.reload_button(cx);
 
-        let button = Button::new("subject")
-            .icon(IconName::EditFill)
-            .tooltip(t!("chat.change_subject_button"))
-            .on_click(move |_, window, cx| {
-                let view = subject::init(subject.clone(), window, cx);
-                let room = room.clone();
-                let weak_view = view.downgrade();
-
-                window.open_modal(cx, move |this, _window, _cx| {
-                    let room = room.clone();
-                    let weak_view = weak_view.clone();
-
-                    this.confirm()
-                        .title(SharedString::new(t!("chat.change_subject_modal_title")))
-                        .child(view.clone())
-                        .button_props(ModalButtonProps::default().ok_text(t!("common.change")))
-                        .on_ok(move |_, _window, cx| {
-                            if let Ok(subject) =
-                                weak_view.read_with(cx, |this, cx| this.new_subject(cx))
-                            {
-                                room.update(cx, |this, cx| {
-                                    this.subject = Some(subject);
-                                    cx.notify();
-                                })
-                                .ok();
-                            }
-                            // true to close the modal
-                            true
-                        })
-                });
-            });
-
-        vec![button]
+        vec![subject_button, reload_button]
     }
 }
 

@@ -309,9 +309,9 @@ chat:
     en: "Copy Message"
   reply_button:
     en: "Reply"
-  change_subject_button:
-    en: "Change Subject"
-  change_subject_modal_title:
+  reload_tooltip:
+    en: "Refresh messages"
+  subject_tooltip:
     en: "Change the subject of the conversation"
   replying_to_label:
     en: "Replying to:"

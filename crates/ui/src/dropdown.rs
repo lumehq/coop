@@ -223,7 +223,7 @@ where
                 .justify_center()
                 .py_6()
                 .text_color(cx.theme().text_muted)
-                .child(Icon::new(IconName::Inbox).size(px(28.)))
+                .child(Icon::new(IconName::Loader).size(px(28.)))
                 .into_any_element()
         }
     }
