@@ -5,6 +5,7 @@ use std::time::Duration;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
+use smol::channel::{Receiver, Sender};
 use smol::lock::RwLock;
 
 use crate::paths::support_dir;
@@ -13,8 +14,17 @@ pub mod constants;
 pub mod paths;
 
 /// Signals sent through the global event channel to notify UI components
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum NostrSignal {
+    /// Signer has been set
+    SignerSet(PublicKey),
+
+    /// Signer has been unset
+    SignerUnset,
+
+    /// Browser Signer Proxy service is not running
+    ProxyDown,
+
     /// Received a new metadata event from Relay Pool
     Metadata(Event),
 
@@ -35,6 +45,7 @@ pub enum NostrSignal {
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
+static GLOBAL_CHANNEL: OnceLock<(Sender<NostrSignal>, Receiver<NostrSignal>)> = OnceLock::new();
 static PROCESSED_EVENTS: OnceLock<RwLock<BTreeSet<EventId>>> = OnceLock::new();
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
@@ -60,6 +71,13 @@ pub fn nostr_client() -> &'static Client {
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
+    })
+}
+
+pub fn global_channel() -> &'static (Sender<NostrSignal>, Receiver<NostrSignal>) {
+    GLOBAL_CHANNEL.get_or_init(|| {
+        let (sender, receiver) = smol::channel::bounded::<NostrSignal>(2048);
+        (sender, receiver)
     })
 }
 

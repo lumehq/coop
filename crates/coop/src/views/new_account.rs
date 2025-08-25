@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use common::nip96::nip96_upload;
+use global::constants::ACCOUNT_IDENTIFIER;
 use global::nostr_client;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -7,8 +8,7 @@ use gpui::{
     Render, SharedString, Styled, WeakEntity, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::t;
-use identity::Identity;
+use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
@@ -17,8 +17,11 @@ use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
+use ui::modal::ModalButtonProps;
 use ui::popup_menu::PopupMenu;
 use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
+
+use crate::views::backup_keys::BackupKeys;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
     NewAccount::new(window, cx)
@@ -27,12 +30,11 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
 pub struct NewAccount {
     name_input: Entity<InputState>,
     avatar_input: Entity<InputState>,
-    is_uploading: bool,
-    is_submitting: bool,
+    temp_keys: Entity<Keys>,
+    uploading: bool,
+    submitting: bool,
     // Panel
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
     focus_handle: FocusHandle,
 }
 
@@ -42,43 +44,120 @@ impl NewAccount {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let name_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(SharedString::new(t!("profile.placeholder_name")))
-        });
-
-        let avatar_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.png"));
+        let temp_keys = cx.new(|_| Keys::generate());
+        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
+        let avatar_input = cx.new(|cx| InputState::new(window, cx));
 
         Self {
             name_input,
             avatar_input,
-            is_uploading: false,
-            is_submitting: false,
+            temp_keys,
+            uploading: false,
+            submitting: false,
             name: "New Account".into(),
-            closable: true,
-            zoomable: true,
             focus_handle: cx.focus_handle(),
         }
     }
 
-    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.submitting(true, cx);
 
-        let identity = Identity::global(cx);
+        let keys = self.temp_keys.read(cx).clone();
+        let view = cx.new(|cx| BackupKeys::new(&keys, window, cx));
+        let weak_view = view.downgrade();
+        let current_view = cx.entity().downgrade();
+
+        window.open_modal(cx, move |modal, _window, _cx| {
+            let weak_view = weak_view.clone();
+            let current_view = current_view.clone();
+            modal
+                .alert()
+                .title(shared_t!("new_account.backup_label"))
+                .child(view.clone())
+                .button_props(
+                    ModalButtonProps::default().ok_text(t!("new_account.backup_download")),
+                )
+                .on_ok(move |_, window, cx| {
+                    weak_view
+                        .update(cx, |this, cx| {
+                            let password = this.password(cx);
+                            let current_view = current_view.clone();
+
+                            if let Some(task) = this.backup(window, cx) {
+                                cx.spawn_in(window, async move |_, cx| {
+                                    task.await;
+
+                                    cx.update(|window, cx| {
+                                        current_view
+                                            .update(cx, |this, cx| {
+                                                this.set_signer(password, window, cx);
+                                            })
+                                            .ok();
+                                    })
+                                    .ok()
+                                })
+                                .detach();
+                            }
+                        })
+                        .ok();
+                    // true to close the modal
+                    false
+                })
+        })
+    }
+
+    fn set_signer(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
+        window.close_modal(cx);
+
+        let keys = self.temp_keys.read(cx).clone();
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
-
-        // Build metadata
         let mut metadata = Metadata::new().display_name(name.clone()).name(name);
 
         if let Ok(url) = Url::parse(&avatar) {
             metadata = metadata.picture(url);
         };
 
-        identity.update(cx, |this, cx| {
-            this.new_identity(metadata, window, cx);
-        });
+        // Encrypt and save user secret key to disk
+        self.write_keys_to_disk(&keys, password, cx);
+
+        // Set the client's signer with the current keys
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            client.set_signer(keys).await;
+            client.set_metadata(&metadata).await.ok();
+        })
+        .detach();
+    }
+
+    fn write_keys_to_disk(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {
+        let keys = keys.to_owned();
+        let public_key = keys.public_key();
+
+        cx.background_spawn(async move {
+            if let Ok(enc_key) =
+                EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
+            {
+                let client = nostr_client();
+                let value = enc_key.to_bech32().unwrap();
+                let keys = Keys::generate();
+                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                let kind = Kind::ApplicationSpecificData;
+
+                let builder = EventBuilder::new(kind, value)
+                    .tags(tags)
+                    .build(public_key)
+                    .sign(&keys)
+                    .await;
+
+                if let Ok(event) = builder {
+                    if let Err(e) = client.database().save_event(&event).await {
+                        log::error!("Failed to save event: {e}");
+                    };
+                }
+            }
+        })
+        .detach();
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -150,12 +229,12 @@ impl NewAccount {
     }
 
     fn submitting(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_submitting = status;
+        self.submitting = status;
         cx.notify();
     }
 
     fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.is_uploading = status;
+        self.uploading = status;
         cx.notify();
     }
 }
@@ -167,14 +246,6 @@ impl Panel for NewAccount {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -208,7 +279,7 @@ impl Render for NewAccount {
                     .text_center()
                     .font_semibold()
                     .line_height(relative(1.3))
-                    .child(SharedString::new(t!("new_account.title"))),
+                    .child(shared_t!("new_account.title")),
             )
             .child(
                 v_flex()
@@ -218,17 +289,13 @@ impl Render for NewAccount {
                         v_flex()
                             .gap_1()
                             .text_sm()
-                            .child(SharedString::new(t!("new_account.name")))
+                            .child(shared_t!("new_account.name"))
                             .child(TextInput::new(&self.name_input).small()),
                     )
                     .child(
                         v_flex()
                             .gap_1()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .child(SharedString::new(t!("new_account.avatar"))),
-                            )
+                            .child(div().text_sm().child(shared_t!("new_account.avatar")))
                             .child(
                                 v_flex()
                                     .p_1()
@@ -252,8 +319,8 @@ impl Render for NewAccount {
                                             .ghost()
                                             .small()
                                             .rounded(ButtonRounded::Full)
-                                            .disabled(self.is_submitting)
-                                            .loading(self.is_uploading)
+                                            .disabled(self.submitting || self.uploading)
+                                            .loading(self.uploading)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.upload(window, cx);
                                             })),
@@ -263,12 +330,12 @@ impl Render for NewAccount {
                     .child(divider(cx))
                     .child(
                         Button::new("submit")
-                            .label(SharedString::new(t!("common.continue")))
+                            .label(t!("common.continue"))
                             .primary()
-                            .loading(self.is_submitting)
-                            .disabled(self.is_submitting || self.is_uploading)
+                            .loading(self.submitting)
+                            .disabled(self.submitting || self.uploading)
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.submit(window, cx);
+                                this.create(window, cx);
                             })),
                     ),
             )

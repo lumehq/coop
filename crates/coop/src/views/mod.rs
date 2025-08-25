@@ -1,3 +1,4 @@
+pub mod account;
 pub mod backup_keys;
 pub mod chat;
 pub mod compose;
@@ -9,6 +10,5 @@ pub mod onboarding;
 pub mod preferences;
 pub mod screening;
 pub mod sidebar;
-pub mod startup;
 pub mod user_profile;
 pub mod welcome;

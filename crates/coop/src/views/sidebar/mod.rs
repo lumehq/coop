@@ -211,13 +211,7 @@ impl Sidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            // User is not logged in. Stop searching
-            self.set_finding(false, window, cx);
-            self.set_cancel_handle(None, cx);
-            return;
-        };
-
+        let identity = Identity::read_global(cx).public_key();
         let query = query.to_owned();
         let query_cloned = query.clone();
 
@@ -277,13 +271,7 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            // User is not logged in. Stop searching
-            self.set_finding(false, window, cx);
-            self.set_cancel_handle(None, cx);
-            return;
-        };
-
+        let identity = Identity::read_global(cx).public_key();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
@@ -337,12 +325,7 @@ impl Sidebar {
             return;
         };
 
-        let Some(identity) = Identity::read_global(cx).public_key() else {
-            // User is not logged in. Stop searching
-            self.set_finding(false, window, cx);
-            return;
-        };
-
+        let identity = Identity::read_global(cx).public_key();
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
             // Create a gift wrap event to represent as room
             Self::create_temp_room(identity, public_key).await

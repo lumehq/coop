@@ -1,0 +1,398 @@
+use std::time::Duration;
+
+use anyhow::Error;
+use client_keys::ClientKeys;
+use common::display::DisplayProfile;
+use common::handle_auth::CoopAuthUrlHandler;
+use global::constants::ACCOUNT_IDENTIFIER;
+use global::nostr_client;
+use gpui::prelude::FluentBuilder;
+use gpui::{
+    div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
+};
+use i18n::{shared_t, t};
+use identity::Identity;
+use nostr_connect::prelude::*;
+use nostr_sdk::prelude::*;
+use theme::ActiveTheme;
+use ui::avatar::Avatar;
+use ui::button::{Button, ButtonVariants};
+use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::indicator::Indicator;
+use ui::input::{InputState, TextInput};
+use ui::popup_menu::PopupMenu;
+use ui::{h_flex, v_flex, ContextModal, Disableable, Sizable, StyledExt};
+
+pub fn init(
+    secret: String,
+    profile: Profile,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<Account> {
+    Account::new(secret, profile, window, cx)
+}
+
+pub struct Account {
+    profile: Profile,
+    stored_secret: String,
+    is_bunker: bool,
+    is_extension: bool,
+    loading: bool,
+    // Panel
+    name: SharedString,
+    focus_handle: FocusHandle,
+}
+
+impl Account {
+    fn new(secret: String, profile: Profile, _window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let is_bunker = secret.starts_with("bunker://");
+        let is_extension = secret.starts_with("extension");
+
+        cx.new(|cx| Self {
+            profile,
+            is_bunker,
+            is_extension,
+            stored_secret: secret,
+            loading: false,
+            name: "Account".into(),
+            focus_handle: cx.focus_handle(),
+        })
+    }
+
+    fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_loading(true, cx);
+
+        if self.is_bunker {
+            if let Ok(uri) = NostrConnectURI::parse(&self.stored_secret) {
+                self.nostr_connect(uri, window, cx);
+            }
+        } else if self.is_extension {
+            self.proxy(window, cx);
+        } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
+            self.keys(enc, window, cx);
+        } else {
+            window.push_notification("Cannot continue with current account", cx);
+            self.set_loading(false, cx);
+        }
+    }
+
+    fn nostr_connect(&mut self, uri: NostrConnectURI, window: &mut Window, cx: &mut Context<Self>) {
+        let client_keys = ClientKeys::global(cx);
+        let app_keys = client_keys.read(cx).keys();
+
+        let secs = 30;
+        let timeout = Duration::from_secs(secs);
+        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+
+        // Handle auth url with the default browser
+        signer.auth_url_handler(CoopAuthUrlHandler);
+
+        // Handle connection
+        cx.spawn_in(window, async move |_this, cx| {
+            let client = nostr_client();
+
+            match signer.bunker_uri().await {
+                Ok(_) => {
+                    // Set the client's signer with the current nostr connect instance
+                    client.set_signer(signer).await;
+                }
+                Err(e) => {
+                    cx.update(|window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                    })
+                    .ok();
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        Identity::start_browser_proxy(cx);
+    }
+
+    fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
+        let pwd_input: Entity<InputState> = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let weak_input = pwd_input.downgrade();
+
+        let error: Entity<Option<SharedString>> = cx.new(|_| None);
+        let weak_error = error.downgrade();
+
+        let entity = cx.weak_entity();
+
+        window.open_modal(cx, move |this, _window, cx| {
+            let entity = entity.clone();
+            let entity_clone = entity.clone();
+            let weak_input = weak_input.clone();
+            let weak_error = weak_error.clone();
+
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .confirm()
+                .on_cancel(move |_, _window, cx| {
+                    entity
+                        .update(cx, |this, cx| {
+                            this.set_loading(false, cx);
+                        })
+                        .ok();
+
+                    // true to close the modal
+                    true
+                })
+                .on_ok(move |_, window, cx| {
+                    let weak_error = weak_error.clone();
+                    let password = weak_input
+                        .read_with(cx, |state, _cx| state.value().to_owned())
+                        .ok();
+
+                    entity_clone
+                        .update(cx, |this, cx| {
+                            this.verify_keys(enc, password, weak_error, window, cx);
+                        })
+                        .ok();
+
+                    // false to keep the modal open
+                    false
+                })
+                .child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .text_sm()
+                        .child(shared_t!("login.password_to_decrypt"))
+                        .child(TextInput::new(&pwd_input).small())
+                        .when_some(error.read(cx).as_ref(), |this, error| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .italic()
+                                    .text_color(cx.theme().danger_foreground)
+                                    .child(error.clone()),
+                            )
+                        }),
+                )
+        });
+    }
+
+    fn verify_keys(
+        &mut self,
+        enc: EncryptedSecretKey,
+        password: Option<SharedString>,
+        error: WeakEntity<Option<SharedString>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(password) = password else {
+            error
+                .update(cx, |this, cx| {
+                    *this = Some("Password is required".into());
+                    cx.notify();
+                })
+                .ok();
+            return;
+        };
+
+        if password.is_empty() {
+            error
+                .update(cx, |this, cx| {
+                    *this = Some("Password cannot be empty".into());
+                    cx.notify();
+                })
+                .ok();
+            return;
+        }
+
+        let task: Task<Result<SecretKey, Error>> = cx.background_spawn(async move {
+            let secret = enc.decrypt(&password)?;
+            Ok(secret)
+        });
+
+        cx.spawn_in(window, async move |_this, cx| {
+            match task.await {
+                Ok(secret) => {
+                    cx.update(|window, cx| {
+                        window.close_all_modals(cx);
+                    })
+                    .ok();
+
+                    let client = nostr_client();
+                    let keys = Keys::new(secret);
+
+                    // Set the client's signer with the current keys
+                    client.set_signer(keys).await
+                }
+                Err(e) => {
+                    error
+                        .update(cx, |this, cx| {
+                            *this = Some(e.to_string().into());
+                            cx.notify();
+                        })
+                        .ok();
+                }
+            };
+        })
+        .detach();
+    }
+
+    fn logout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifier(ACCOUNT_IDENTIFIER);
+
+            // Delete account
+            client.database().delete(filter).await?;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |_this, cx| {
+            if task.await.is_ok() {
+                cx.update(|_window, cx| {
+                    cx.restart();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.loading = status;
+        cx.notify();
+    }
+}
+
+impl Panel for Account {
+    fn panel_id(&self) -> SharedString {
+        self.name.clone()
+    }
+
+    fn title(&self, _cx: &App) -> AnyElement {
+        self.name.clone().into_any_element()
+    }
+
+    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
+        menu.track_focus(&self.focus_handle)
+    }
+
+    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
+        vec![]
+    }
+}
+
+impl EventEmitter<PanelEvent> for Account {}
+
+impl Focusable for Account {
+    fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for Account {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .relative()
+            .size_full()
+            .gap_10()
+            .items_center()
+            .justify_center()
+            .child(
+                v_flex()
+                    .items_center()
+                    .justify_center()
+                    .gap_4()
+                    .child(
+                        svg()
+                            .path("brand/coop.svg")
+                            .size_16()
+                            .text_color(cx.theme().elevated_surface_background),
+                    )
+                    .child(
+                        div()
+                            .text_center()
+                            .child(
+                                div()
+                                    .text_xl()
+                                    .font_semibold()
+                                    .line_height(relative(1.3))
+                                    .child(shared_t!("welcome.title")),
+                            )
+                            .child(
+                                div()
+                                    .text_color(cx.theme().text_muted)
+                                    .child(shared_t!("welcome.subtitle")),
+                            ),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .id("account")
+                            .h_10()
+                            .w_72()
+                            .bg(cx.theme().element_background)
+                            .text_color(cx.theme().element_foreground)
+                            .rounded_lg()
+                            .text_sm()
+                            .map(|this| {
+                                if self.loading {
+                                    this.child(
+                                        div()
+                                            .size_full()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(Indicator::new().small()),
+                                    )
+                                } else {
+                                    this.child(
+                                        div()
+                                            .h_full()
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .gap_2()
+                                            .child(shared_t!("onboarding.choose_account"))
+                                            .child(
+                                                h_flex()
+                                                    .gap_1()
+                                                    .child(
+                                                        Avatar::new(self.profile.avatar_url(true))
+                                                            .size(rems(1.5)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .pb_px()
+                                                            .font_semibold()
+                                                            .child(self.profile.display_name()),
+                                                    ),
+                                            ),
+                                    )
+                                }
+                            })
+                            .hover(|this| this.bg(cx.theme().element_hover))
+                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                this.login(window, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("logout")
+                            .label(t!("user.sign_out"))
+                            .ghost()
+                            .disabled(self.loading)
+                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                this.logout(window, cx);
+                            })),
+                    ),
+            )
+    }
+}

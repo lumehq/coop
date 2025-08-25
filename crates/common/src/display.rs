@@ -4,7 +4,8 @@ use anyhow::{anyhow, Error};
 use global::constants::IMAGE_RESIZE_SERVICE;
 use gpui::{Image, ImageFormat, SharedString};
 use nostr_sdk::prelude::*;
-use qrcode_generator::QrCodeEcc;
+use qrcode::render::svg;
+use qrcode::QrCode;
 
 const FALLBACK_IMG: &str = "https://image.nostr.build/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png";
 
@@ -54,45 +55,32 @@ pub trait TextUtils {
     fn to_qr(&self) -> Option<Arc<Image>>;
 }
 
-impl TextUtils for String {
+impl<T: AsRef<str>> TextUtils for T {
     fn to_public_key(&self) -> Result<PublicKey, Error> {
-        if self.starts_with("nprofile1") {
-            Ok(Nip19Profile::from_bech32(self)?.public_key)
-        } else if self.starts_with("npub1") {
-            Ok(PublicKey::parse(self)?)
+        let s = self.as_ref();
+        if s.starts_with("nprofile1") {
+            Ok(Nip19Profile::from_bech32(s)?.public_key)
+        } else if s.starts_with("npub1") {
+            Ok(PublicKey::parse(s)?)
         } else {
             Err(anyhow!("Invalid public key"))
         }
     }
 
     fn to_qr(&self) -> Option<Arc<Image>> {
-        let Ok(bytes) = qrcode_generator::to_png_to_vec_from_str(self, QrCodeEcc::Medium, 256)
-        else {
-            return None;
-        };
+        let s = self.as_ref();
+        let code = QrCode::new(s).unwrap();
+        let svg = code
+            .render()
+            .min_dimensions(256, 256)
+            .dark_color(svg::Color("#000000"))
+            .light_color(svg::Color("#FFFFFF"))
+            .build();
 
-        Some(Arc::new(Image::from_bytes(ImageFormat::Png, bytes)))
-    }
-}
-
-impl TextUtils for &str {
-    fn to_public_key(&self) -> Result<PublicKey, Error> {
-        if self.starts_with("nprofile1") {
-            Ok(Nip19Profile::from_bech32(self)?.public_key)
-        } else if self.starts_with("npub1") {
-            Ok(PublicKey::parse(self)?)
-        } else {
-            Err(anyhow!("Invalid public key"))
-        }
-    }
-
-    fn to_qr(&self) -> Option<Arc<Image>> {
-        let Ok(bytes) = qrcode_generator::to_png_to_vec_from_str(self, QrCodeEcc::Medium, 256)
-        else {
-            return None;
-        };
-
-        Some(Arc::new(Image::from_bytes(ImageFormat::Png, bytes)))
+        Some(Arc::new(Image::from_bytes(
+            ImageFormat::Svg,
+            svg.into_bytes(),
+        )))
     }
 }
 

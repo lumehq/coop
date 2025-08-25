@@ -31,6 +31,8 @@ common:
     en: "Your Secret Key has been saved"
   clear:
     en: "Clear"
+  open_browser:
+    en: "Open Browser"
 
 auto_update:
   updating:
@@ -58,9 +60,25 @@ onboarding:
   auto_login:
     en: "Automatically login in the next time"
   start_messaging:
-    en: "Start Messaging"
-  already_have_account:
-    en: "Already have an account? Log in."
+    en: "Start Messaging on Nostr"
+  nostr_connect:
+    en: "Continue with Nostr Connect"
+  scan_qr:
+    en: "Use Nostr Connect apps to scan the code"
+  divider:
+    en: "Already have an account? Continue with"
+  key_login:
+    en: "Secret Key or Bunker"
+  ext_login:
+    en: "Browser Extension"
+  ext_login_note:
+    en: "You will need to keep your default browser open."
+
+proxy:
+  label:
+    en: "Waiting for approval"
+  description:
+    en: "Open your default browser and approve the connection request in your Nostr Signer extension"
 
 startup:
   client_keys_warning:
@@ -100,15 +118,11 @@ login:
   title:
     en: "Welcome Back!"
   key_description:
-    en: "Continue with Private Key or Bunker URI"
+    en: "Continue with Private Key or Bunker"
   approve_message:
     en: "Approve connection request from your signer in %{i} seconds"
-  nostr_connect:
-    en: "Continue with Nostr Connect"
-  scan_qr:
-    en: "Use Nostr Connect apps to scan the code"
   invalid_key:
-    en: "Please enter a valid private key or Bunker URI to login."
+    en: "Please enter a valid secret key or bunker to login."
   set_password:
     en: "Set password to encrypt your key *"
   password_to_decrypt:
@@ -128,7 +142,7 @@ login:
   key_invalid:
     en: "Secret key is invalid"
   bunker_invalid:
-    en: "Bunker URI is not valid"
+    en: "Bunker is not valid"
   logging_in:
     en: "Logging in..."
 
@@ -205,8 +219,6 @@ profile:
     en: "View Profile"
   set_profile_picture:
     en: "Set Profile Picture"
-  placeholder_name:
-    en: "Alice"
   placeholder_bio:
     en: "A short introduce about you."
   updated_successfully:

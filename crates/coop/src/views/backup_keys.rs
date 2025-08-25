@@ -5,56 +5,14 @@ use dirs::document_dir;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window,
+    SharedString, Styled, Task, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_sdk::prelude::*;
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
-use ui::modal::ModalButtonProps;
-use ui::{divider, h_flex, v_flex, ContextModal, Disableable, IconName, Sizable};
-
-pub fn backup_button(keys: Keys) -> impl IntoElement {
-    div().child(
-        Button::new("backup")
-            .icon(IconName::Info)
-            .label(t!("new_account.backup_label"))
-            .danger()
-            .xsmall()
-            .rounded(ButtonRounded::Full)
-            .on_click(move |_, window, cx| {
-                let title = SharedString::new(t!("new_account.backup_label"));
-                let keys = keys.clone();
-                let view = cx.new(|cx| BackupKeys::new(&keys, window, cx));
-                let weak_view = view.downgrade();
-
-                window.open_modal(cx, move |modal, _window, _cx| {
-                    let weak_view = weak_view.clone();
-
-                    modal
-                        .confirm()
-                        .title(title.clone())
-                        .child(view.clone())
-                        .button_props(
-                            ModalButtonProps::default()
-                                .cancel_text(t!("new_account.backup_skip"))
-                                .ok_text(t!("new_account.backup_download")),
-                        )
-                        .on_ok(move |_, window, cx| {
-                            weak_view
-                                .update(cx, |this, cx| {
-                                    this.download(window, cx);
-                                })
-                                .ok();
-                            // true to close the modal
-                            false
-                        })
-                })
-            }),
-    )
-}
+use ui::{divider, h_flex, v_flex, Disableable, IconName, Sizable};
 
 pub struct BackupKeys {
     password: Entity<InputState>,
@@ -90,6 +48,42 @@ impl BackupKeys {
             error: None,
             copied: false,
         }
+    }
+
+    pub fn password(&self, cx: &Context<Self>) -> String {
+        self.password.read(cx).value().to_string()
+    }
+
+    pub fn backup(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Task<()>> {
+        let document_dir = document_dir().expect("Failed to get document directory");
+        let password = self.password.read(cx).value().to_string();
+
+        if password.is_empty() {
+            self.set_error(t!("login.password_is_required"), window, cx);
+            return None;
+        };
+
+        let path = cx.prompt_for_new_path(&document_dir, Some("My Nostr Account"));
+        let nsec = self.secret_input.read(cx).value().to_string();
+
+        Some(cx.spawn_in(window, async move |this, cx| {
+            match Flatten::flatten(path.await.map_err(|e| e.into())) {
+                Ok(Ok(Some(path))) => {
+                    cx.update(|window, cx| {
+                        if let Err(e) = fs::write(&path, nsec) {
+                            this.update(cx, |this, cx| {
+                                this.set_error(e.to_string(), window, cx);
+                            })
+                            .ok();
+                        }
+                    })
+                    .ok();
+                }
+                _ => {
+                    log::error!("Failed to save backup keys");
+                }
+            };
+        }))
     }
 
     fn copy_secret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -137,48 +131,6 @@ impl BackupKeys {
                 .ok();
             })
             .ok();
-        })
-        .detach();
-    }
-
-    fn download(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let document_dir = document_dir().expect("Failed to get document directory");
-        let password = self.password.read(cx).value().to_string();
-
-        if password.is_empty() {
-            self.set_error(t!("login.password_is_required"), window, cx);
-            return;
-        };
-
-        let path = cx.prompt_for_new_path(&document_dir, None);
-        let nsec = self.secret_input.read(cx).value().to_string();
-
-        cx.spawn_in(window, async move |this, cx| {
-            match Flatten::flatten(path.await.map_err(|e| e.into())) {
-                Ok(Ok(Some(path))) => {
-                    cx.update(|window, cx| {
-                        match fs::write(&path, nsec) {
-                            Ok(_) => {
-                                Identity::global(cx).update(cx, |this, cx| {
-                                    this.clear_need_backup(password, cx);
-                                });
-                                // Close the current modal
-                                window.close_modal(cx);
-                            }
-                            Err(e) => {
-                                this.update(cx, |this, cx| {
-                                    this.set_error(e.to_string(), window, cx);
-                                })
-                                .ok();
-                            }
-                        };
-                    })
-                    .ok();
-                }
-                _ => {
-                    log::error!("Failed to save backup keys");
-                }
-            };
         })
         .detach();
     }

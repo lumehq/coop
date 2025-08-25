@@ -49,6 +49,7 @@ serde_json = "1.0"
 smallvec = "1.14.0"
 smol = "2"
 tracing = "0.1.40"
+webbrowser = "1.0.4"
 
 [profile.release]
 strip = true
