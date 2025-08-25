@@ -219,8 +219,6 @@ profile:
     en: "View Profile"
   set_profile_picture:
     en: "Set Profile Picture"
-  placeholder_name:
-    en: "Alice"
   placeholder_bio:
     en: "A short introduce about you."
   updated_successfully:

@@ -18,7 +18,6 @@ pub struct Identity {
     public_key: PublicKey,
     nip17_relays: Option<bool>,
     nip65_relays: Option<bool>,
-    temp_keys: Option<Keys>,
 }
 
 impl Identity {
@@ -56,23 +55,12 @@ impl Identity {
             public_key,
             nip17_relays: None,
             nip65_relays: None,
-            temp_keys: None,
         }
     }
 
     /// Returns the current identity's public key
     pub fn public_key(&self) -> PublicKey {
         self.public_key
-    }
-
-    /// Returns the current identity's temporary keys
-    pub fn temp_keys(&self) -> Option<&Keys> {
-        self.temp_keys.as_ref()
-    }
-
-    pub fn set_temp_keys(&mut self, keys: Option<Keys>, cx: &mut Context<Self>) {
-        self.temp_keys = keys;
-        cx.notify();
     }
 
     /// Returns the current identity's NIP-17 relays status

@@ -39,8 +39,8 @@ use crate::views::compose::compose_button;
 use crate::views::screening::Screening;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
-    account, backup_keys, chat, login, messaging_relays, new_account, onboarding, preferences,
-    sidebar, user_profile, welcome,
+    account, chat, login, messaging_relays, new_account, onboarding, preferences, sidebar,
+    user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -533,7 +533,6 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let temp_keys = Identity::read_global(cx).temp_keys();
         let nip17_relays = Identity::read_global(cx).nip17_relays();
 
         let updating = AutoUpdater::read_global(cx).status.is_updating();
@@ -571,9 +570,6 @@ impl ChatSpace {
             })
             .when_some(nip17_relays, |this, status| {
                 this.when(!status, |this| this.child(messaging_relays::relay_button()))
-            })
-            .when_some(temp_keys, |this, keys| {
-                this.child(backup_keys::backup_button(keys.to_owned()))
             })
             .child(
                 Button::new("user")
