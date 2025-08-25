@@ -380,6 +380,7 @@ impl ChatSpace {
     }
 
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
+        Identity::remove_global(cx);
         Registry::global(cx).update(cx, |this, cx| {
             this.reset(cx);
         });

@@ -4,7 +4,7 @@ use std::time::Duration;
 use client_keys::ClientKeys;
 use common::display::TextUtils;
 use global::constants::{ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
-use global::{global_channel, nostr_client, NostrSignal};
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
@@ -12,8 +12,8 @@ use gpui::{
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
+use identity::Identity;
 use nostr_connect::prelude::*;
-use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -160,49 +160,7 @@ impl Onboarding {
     }
 
     fn set_proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
-        let url = proxy.url();
-
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let channel = global_channel();
-
-            if proxy.start().await.is_ok() {
-                webbrowser::open(&url).ok();
-
-                loop {
-                    if proxy.is_session_active() {
-                        // Save the signer to disk for further logins
-                        if let Ok(public_key) = proxy.get_public_key().await {
-                            let keys = Keys::generate();
-                            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                            let kind = Kind::ApplicationSpecificData;
-
-                            let builder = EventBuilder::new(kind, "extension")
-                                .tags(tags)
-                                .build(public_key)
-                                .sign(&keys)
-                                .await;
-
-                            if let Ok(event) = builder {
-                                if let Err(e) = client.database().save_event(&event).await {
-                                    log::error!("Failed to save event: {e}");
-                                };
-                            }
-                        }
-
-                        // Set the client's signer with current proxy signer
-                        client.set_signer(proxy.clone()).await;
-
-                        break;
-                    } else {
-                        channel.0.send(NostrSignal::ProxyDown).await.ok();
-                    }
-                    smol::Timer::after(Duration::from_secs(1)).await;
-                }
-            }
-        })
-        .detach();
+        Identity::start_browser_proxy(cx);
     }
 
     fn write_uri_to_disk(&mut self, uri: &NostrConnectURI, cx: &mut Context<Self>) {

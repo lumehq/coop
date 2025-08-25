@@ -1,5 +1,10 @@
+use std::time::Duration;
+
+use global::constants::ACCOUNT_IDENTIFIER;
+use global::{global_channel, nostr_client, NostrSignal};
 use gpui::{App, AppContext, Context, Entity, Global, Window};
 use nostr_connect::prelude::*;
+use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) {
     Identity::set_global(cx.new(|cx| Identity::new(public_key, window, cx)), cx);
@@ -30,6 +35,11 @@ impl Identity {
     /// Check if the Global Identity instance has been set
     pub fn has_global(cx: &App) -> bool {
         cx.has_global::<GlobalIdentity>()
+    }
+
+    /// Remove the Global Identity instance
+    pub fn remove_global(cx: &mut App) {
+        cx.remove_global::<GlobalIdentity>();
     }
 
     /// Set the Global Identity instance
@@ -73,5 +83,52 @@ impl Identity {
     /// Returns the current identity's NIP-65 relays status
     pub fn nip65_relays(&self) -> Option<bool> {
         self.nip65_relays
+    }
+
+    /// Starts the browser proxy for nostr signer
+    pub fn start_browser_proxy(cx: &App) {
+        let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
+        let url = proxy.url();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let channel = global_channel();
+
+            if proxy.start().await.is_ok() {
+                webbrowser::open(&url).ok();
+
+                loop {
+                    if proxy.is_session_active() {
+                        // Save the signer to disk for further logins
+                        if let Ok(public_key) = proxy.get_public_key().await {
+                            let keys = Keys::generate();
+                            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                            let kind = Kind::ApplicationSpecificData;
+
+                            let builder = EventBuilder::new(kind, "extension")
+                                .tags(tags)
+                                .build(public_key)
+                                .sign(&keys)
+                                .await;
+
+                            if let Ok(event) = builder {
+                                if let Err(e) = client.database().save_event(&event).await {
+                                    log::error!("Failed to save event: {e}");
+                                };
+                            }
+                        }
+
+                        // Set the client's signer with current proxy signer
+                        client.set_signer(proxy.clone()).await;
+
+                        break;
+                    } else {
+                        channel.0.send(NostrSignal::ProxyDown).await.ok();
+                    }
+                    smol::Timer::after(Duration::from_secs(1)).await;
+                }
+            }
+        })
+        .detach();
     }
 }

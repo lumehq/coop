@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::display::DisplayProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::ACCOUNT_IDENTIFIER;
-use global::{global_channel, nostr_client, NostrSignal};
+use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -13,9 +13,9 @@ use gpui::{
     StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
+use identity::Identity;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
-use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -110,49 +110,7 @@ impl Account {
     }
 
     fn proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
-        let url = proxy.url();
-
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let channel = global_channel();
-
-            if proxy.start().await.is_ok() {
-                webbrowser::open(&url).ok();
-
-                loop {
-                    if proxy.is_session_active() {
-                        // Save the signer to disk for further logins
-                        if let Ok(public_key) = proxy.get_public_key().await {
-                            let keys = Keys::generate();
-                            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                            let kind = Kind::ApplicationSpecificData;
-
-                            let builder = EventBuilder::new(kind, "extension")
-                                .tags(tags)
-                                .build(public_key)
-                                .sign(&keys)
-                                .await;
-
-                            if let Ok(event) = builder {
-                                if let Err(e) = client.database().save_event(&event).await {
-                                    log::error!("Failed to save event: {e}");
-                                };
-                            }
-                        }
-
-                        // Set the client's signer with current proxy signer
-                        client.set_signer(proxy.clone()).await;
-
-                        break;
-                    } else {
-                        channel.0.send(NostrSignal::ProxyDown).await.ok();
-                    }
-                    smol::Timer::after(Duration::from_secs(1)).await;
-                }
-            }
-        })
-        .detach();
+        Identity::start_browser_proxy(cx);
     }
 
     fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
@@ -284,20 +242,12 @@ impl Account {
     fn logout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let channel = global_channel();
-
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_IDENTIFIER);
 
             // Delete account
             client.database().delete(filter).await?;
-
-            // Reset the nostr client
-            client.reset().await;
-
-            // Notify the channel about the signer being unset
-            channel.0.send(NostrSignal::SignerUnset).await?;
 
             Ok(())
         });
