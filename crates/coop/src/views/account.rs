@@ -4,7 +4,7 @@ use anyhow::Error;
 use client_keys::ClientKeys;
 use common::display::DisplayProfile;
 use common::handle_auth::CoopAuthUrlHandler;
-use global::constants::ACCOUNT_IDENTIFIER;
+use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -82,8 +82,7 @@ impl Account {
         let client_keys = ClientKeys::global(cx);
         let app_keys = client_keys.read(cx).keys();
 
-        let secs = 30;
-        let timeout = Duration::from_secs(secs);
+        let timeout = Duration::from_secs(BUNKER_TIMEOUT);
         let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
 
         // Handle auth url with the default browser

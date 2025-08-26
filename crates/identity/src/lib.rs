@@ -16,8 +16,8 @@ impl Global for GlobalIdentity {}
 
 pub struct Identity {
     public_key: PublicKey,
-    nip17_relays: Option<bool>,
-    nip65_relays: Option<bool>,
+    nip17_relays: bool,
+    nip65_relays: bool,
 }
 
 impl Identity {
@@ -49,8 +49,8 @@ impl Identity {
     pub(crate) fn new(public_key: PublicKey) -> Self {
         Self {
             public_key,
-            nip17_relays: None,
-            nip65_relays: None,
+            nip17_relays: true,
+            nip65_relays: true,
         }
     }
 
@@ -60,24 +60,24 @@ impl Identity {
     }
 
     /// Returns the current identity's NIP-17 relays status
-    pub fn nip17_relays(&self) -> Option<bool> {
+    pub fn nip17_relays(&self) -> bool {
         self.nip17_relays
     }
 
     /// Sets the current identity's NIP-17 relays status
     pub fn set_nip17_relays(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.nip17_relays = Some(status);
+        self.nip17_relays = status;
         cx.notify();
     }
 
     /// Returns the current identity's NIP-65 relays status
-    pub fn nip65_relays(&self) -> Option<bool> {
+    pub fn nip65_relays(&self) -> bool {
         self.nip65_relays
     }
 
     /// Sets the current identity's NIP-65 relays status
     pub fn set_nip65_relays(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.nip65_relays = Some(status);
+        self.nip65_relays = status;
         cx.notify();
     }
 

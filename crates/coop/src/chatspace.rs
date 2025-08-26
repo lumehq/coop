@@ -506,10 +506,13 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let loading = registry.loading;
+        let nip17_relays = Identity::read_global(cx).nip17_relays();
+        let nip65_relays = Identity::read_global(cx).nip65_relays();
+        let loading = nip65_relays && nip17_relays && registry.loading;
 
         h_flex()
             .gap_2()
+            .w_full()
             .child(compose_button())
             .when(loading, |this| {
                 this.child(
@@ -520,7 +523,7 @@ impl ChatSpace {
                         .gap_1()
                         .text_xs()
                         .rounded_full()
-                        .bg(cx.theme().elevated_surface_background)
+                        .bg(cx.theme().surface_background)
                         .child(shared_t!("loading.label"))
                         .child(Indicator::new().xsmall())
                         .tooltip(|window, cx| {
@@ -572,8 +575,8 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when_some(nip17_relays, |this, status| {
-                this.when(!status, |this| this.child(messaging_relays::relay_button()))
+            .when(!nip17_relays, |this| {
+                this.child(messaging_relays::relay_button())
             })
             .child(
                 Button::new("user")

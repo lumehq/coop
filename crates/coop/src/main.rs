@@ -7,7 +7,7 @@ use assets::Assets;
 use common::event::EventUtils;
 use global::constants::{
     APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
-    SEARCH_RELAYS, WAIT_FOR_FINISH,
+    SEARCH_RELAYS, TOTAL_RETRY, WAIT_FOR_FINISH,
 };
 use global::{global_channel, nostr_client, processed_events, starting_time, NostrSignal};
 use gpui::{
@@ -17,7 +17,8 @@ use gpui::{
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use smol::channel::{self, Sender};
+use smol::channel::Sender;
+use smol::lock::Mutex as AsyncMutex;
 use theme::Theme;
 use ui::Root;
 
@@ -27,6 +28,20 @@ pub(crate) mod views;
 i18n::init!();
 
 actions!(coop, [Quit]);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+enum LocalRelayStatus {
+    #[default]
+    Waiting,
+    NotFound,
+    Found,
+}
+
+#[derive(Debug, Clone, Default)]
+struct LocalRelayState {
+    nip17: LocalRelayStatus,
+    nip65: LocalRelayStatus,
+}
 
 fn main() {
     // Initialize logging
@@ -43,20 +58,24 @@ fn main() {
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
-    let (pubkey_tx, pubkey_rx) = channel::bounded::<PublicKey>(1024);
-    let (event_tx, event_rx) = channel::bounded::<Event>(2048);
+    // Used for tracking NIP-65 and NIP-17 relay status
+    let state = Arc::new(AsyncMutex::new(LocalRelayState::default()));
+    let state_clone = state.clone();
+
+    let (pubkey_tx, pubkey_rx) = smol::channel::bounded::<PublicKey>(1024);
+    let (event_tx, event_rx) = smol::channel::bounded::<Event>(2048);
 
     app.background_executor()
         .spawn(async move {
-            // Subscribe for app updates from the bootstrap relays.
+            // Connect to bootstrap relays.
             if let Err(e) = connect(client).await {
                 log::error!("Failed to connect to bootstrap relays: {e}");
             }
 
             // Handle Nostr notifications.
             //
-            // Send the redefined signal back to GPUI via channel.
-            if let Err(e) = handle_nostr_notifications(&event_tx).await {
+            // Send the re-defined signal back to GPUI via the NostrSignal global channel.
+            if let Err(e) = handle_nostr_notifications(&state, &event_tx).await {
                 log::error!("Failed to handle Nostr notifications: {e}");
             }
         })
@@ -65,27 +84,57 @@ fn main() {
     app.background_executor()
         .spawn(async move {
             let channel = global_channel();
+            let mut signer_set = false;
+            let mut retry_count = 0;
 
             loop {
-                if let Ok(signer) = client.signer().await {
-                    if let Ok(public_key) = signer.get_public_key().await {
-                        // Notify the app that the signer has been set.
-                        _ = channel.0.send(NostrSignal::SignerSet(public_key)).await;
+                if signer_set {
+                    let state = state_clone.lock().await;
 
-                        // Get the NIP-65 relays for the public key.
-                        if fetch_relays(Kind::RelayList, public_key).await.is_ok() {
-                            if fetch_relays(Kind::InboxRelays, public_key).await.is_err() {
-                                // Notify the app that user don't have NIP-17 relays.
-                                _ = channel.0.send(NostrSignal::DmRelayNotFound).await;
-                            }
+                    if state.nip65 == LocalRelayStatus::Found {
+                        if state.nip17 == LocalRelayStatus::Found {
+                            break;
+                        } else if state.nip17 == LocalRelayStatus::NotFound {
+                            channel.0.send(NostrSignal::DmRelayNotFound).await.ok();
+                            break;
                         } else {
-                            // Notify the app that user don't have NIP-65 relays.
-                            _ = channel.0.send(NostrSignal::RelayNotFound).await;
+                            retry_count += 1;
+                            if retry_count == TOTAL_RETRY {
+                                channel.0.send(NostrSignal::DmRelayNotFound).await.ok();
+                                break;
+                            }
                         }
-
+                    } else if state.nip65 == LocalRelayStatus::NotFound {
+                        channel.0.send(NostrSignal::RelayNotFound).await.ok();
                         break;
                     }
                 }
+
+                if !signer_set {
+                    if let Ok(signer) = client.signer().await {
+                        if let Ok(public_key) = signer.get_public_key().await {
+                            signer_set = true;
+
+                            // Notify the app that the signer has been set.
+                            channel
+                                .0
+                                .send(NostrSignal::SignerSet(public_key))
+                                .await
+                                .ok();
+
+                            let mut state = state_clone.lock().await;
+
+                            // Subscribe to the NIP-65 relays for the public key.
+                            if let Err(e) = fetch_nip65_relays(public_key).await {
+                                log::error!("Failed to fetch NIP-65 relays: {e}");
+                                state.nip65 = LocalRelayStatus::NotFound;
+                            } else {
+                                state.nip65 = LocalRelayStatus::Found;
+                            }
+                        }
+                    }
+                }
+
                 smol::Timer::after(Duration::from_secs(1)).await;
             }
         })
@@ -321,10 +370,14 @@ async fn connect(client: &Client) -> Result<(), Error> {
     Ok(())
 }
 
-async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Error> {
+async fn handle_nostr_notifications(
+    state: &Arc<AsyncMutex<LocalRelayState>>,
+    event_tx: &Sender<Event>,
+) -> Result<(), Error> {
     let client = nostr_client();
     let channel = global_channel();
     let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
     let mut notifications = client.notifications();
 
     while let Ok(notification) = notifications.recv().await {
@@ -345,9 +398,11 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
             Kind::RelayList => {
                 // Get metadata for event's pubkey that matches the current user's pubkey
                 if let Ok(true) = is_from_current_user(&event).await {
+                    log::info!("Received relay list for the current user");
+
                     let id = SubscriptionId::new("metadata");
-                    let kinds = vec![Kind::Metadata, Kind::ContactList];
-                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(5);
+                    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays];
+                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(10);
 
                     if client
                         .subscribe_with_id(id, filter, Some(auto_close))
@@ -360,6 +415,8 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
             }
             Kind::InboxRelays => {
                 if let Ok(true) = is_from_current_user(&event).await {
+                    log::info!("Received dm relay list for the current user");
+
                     let relays = event
                         .tags
                         .filter_standardized(TagKind::Relay)
@@ -373,6 +430,9 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
                         .collect_vec();
 
                     if !relays.is_empty() {
+                        let mut state = state.lock().await;
+                        state.nip17 = LocalRelayStatus::Found;
+
                         for relay in relays.iter() {
                             _ = client.add_relay(relay).await;
                             _ = client.connect_relay(relay).await;
@@ -421,38 +481,20 @@ async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Erro
     Ok(())
 }
 
-async fn fetch_relays(kind: Kind, public_key: PublicKey) -> Result<Events, Error> {
+async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
     let client = nostr_client();
-    let timeout = Duration::from_secs(3);
-    let filter = Filter::new().kind(kind).author(public_key).limit(1);
+    let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-    let mut events = Events::new(&filter);
-    let mut stream = client.stream_events(filter, timeout).await?;
+    let filter = Filter::new()
+        .kind(Kind::RelayList)
+        .author(public_key)
+        .limit(1);
 
-    while let Some(event) = stream.next().await {
-        let has_relay_tags = event
-            .tags
-            .filter_standardized(TagKind::Relay)
-            .any(|tag| matches!(tag, TagStandard::Relay(_)));
+    client
+        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
+        .await?;
 
-        if has_relay_tags {
-            events.insert(event);
-        }
-    }
-
-    if events.is_empty() {
-        Err(anyhow!("No relays found."))
-    } else {
-        Ok(events)
-    }
-}
-
-async fn is_from_current_user(event: &Event) -> Result<bool, Error> {
-    let client = nostr_client();
-    let signer = client.signer().await?;
-    let public_key = signer.get_public_key().await?;
-
-    Ok(public_key == event.pubkey)
+    Ok(())
 }
 
 async fn sync_data_for_pubkeys(public_keys: BTreeSet<PublicKey>) {
@@ -469,6 +511,15 @@ async fn sync_data_for_pubkeys(public_keys: BTreeSet<PublicKey>) {
         .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
         .await
         .ok();
+}
+
+/// Checks if an event is belong to the current user
+async fn is_from_current_user(event: &Event) -> Result<bool, Error> {
+    let client = nostr_client();
+    let signer = client.signer().await?;
+    let public_key = signer.get_public_key().await?;
+
+    Ok(public_key == event.pubkey)
 }
 
 /// Stores an unwrapped event in local database with reference to original
