@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use global::constants::ACCOUNT_IDENTIFIER;
 use global::{global_channel, nostr_client, NostrSignal};
-use gpui::{App, AppContext, Context, Entity, Global, Window};
+use gpui::{App, AppContext, Entity, Global, Window};
 use nostr_connect::prelude::*;
 use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 
@@ -16,8 +16,6 @@ impl Global for GlobalIdentity {}
 
 pub struct Identity {
     public_key: PublicKey,
-    nip17_relays: bool,
-    nip65_relays: bool,
 }
 
 impl Identity {
@@ -38,7 +36,9 @@ impl Identity {
 
     /// Remove the Global Identity instance
     pub fn remove_global(cx: &mut App) {
-        cx.remove_global::<GlobalIdentity>();
+        if Self::has_global(cx) {
+            cx.remove_global::<GlobalIdentity>();
+        }
     }
 
     /// Set the Global Identity instance
@@ -47,38 +47,12 @@ impl Identity {
     }
 
     pub(crate) fn new(public_key: PublicKey) -> Self {
-        Self {
-            public_key,
-            nip17_relays: true,
-            nip65_relays: true,
-        }
+        Self { public_key }
     }
 
     /// Returns the current identity's public key
     pub fn public_key(&self) -> PublicKey {
         self.public_key
-    }
-
-    /// Returns the current identity's NIP-17 relays status
-    pub fn nip17_relays(&self) -> bool {
-        self.nip17_relays
-    }
-
-    /// Sets the current identity's NIP-17 relays status
-    pub fn set_nip17_relays(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.nip17_relays = status;
-        cx.notify();
-    }
-
-    /// Returns the current identity's NIP-65 relays status
-    pub fn nip65_relays(&self) -> bool {
-        self.nip65_relays
-    }
-
-    /// Sets the current identity's NIP-65 relays status
-    pub fn set_nip65_relays(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.nip65_relays = status;
-        cx.notify();
     }
 
     /// Starts the browser proxy for nostr signer

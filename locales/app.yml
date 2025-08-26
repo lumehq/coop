@@ -35,6 +35,10 @@ common:
     en: "Open Browser"
   refreshed:
     en: "Refreshed"
+  quit:
+    en: "Quit"
+  restart:
+    en: "Restart"
 
 auto_update:
   updating:

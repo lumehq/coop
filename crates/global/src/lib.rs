@@ -37,10 +37,7 @@ pub enum NostrSignal {
     /// Partially finished processing all gift wrap events
     PartialFinish,
 
-    /// No NIP-65 relays found
-    RelayNotFound,
-
-    /// No DM relays found
+    /// No DM Relays found
     DmRelayNotFound,
 
     /// Notice from Relay Pool

@@ -10,6 +10,8 @@ use gpui::{
     TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
+use identity::Identity;
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -18,21 +20,23 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, StyledExt};
 
-pub fn init(window: &mut Window, cx: &mut App) -> Entity<MessagingRelays> {
-    cx.new(|cx| MessagingRelays::new(window, cx))
+pub fn init(kind: Kind, window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
+    cx.new(|cx| SetupRelay::new(kind, window, cx))
 }
 
-pub fn relay_button() -> impl IntoElement {
+pub fn setup_nip17_relay<T>(label: T) -> impl IntoElement
+where
+    T: Into<SharedString>,
+{
     div().child(
-        Button::new("dm-relays")
+        Button::new("setup-relays")
             .icon(IconName::Info)
-            .label(t!("relays.button_label"))
+            .label(label)
             .warning()
             .xsmall()
             .rounded(ButtonRounded::Full)
             .on_click(move |_, window, cx| {
-                let title = SharedString::new(t!("relays.modal_title"));
-                let view = cx.new(|cx| MessagingRelays::new(window, cx));
+                let view = cx.new(|cx| SetupRelay::new(Kind::InboxRelays, window, cx));
                 let weak_view = view.downgrade();
 
                 window.open_modal(cx, move |modal, _window, _cx| {
@@ -40,7 +44,7 @@ pub fn relay_button() -> impl IntoElement {
 
                     modal
                         .confirm()
-                        .title(title.clone())
+                        .title(shared_t!("relays.modal_title"))
                         .child(view.clone())
                         .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
                         .on_ok(move |_, window, cx| {
@@ -57,60 +61,41 @@ pub fn relay_button() -> impl IntoElement {
     )
 }
 
-pub struct MessagingRelays {
+pub struct SetupRelay {
     input: Entity<InputState>,
     relays: Vec<RelayUrl>,
     error: Option<SharedString>,
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    _subscriptions: SmallVec<[Subscription; 1]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
-impl MessagingRelays {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+impl SetupRelay {
+    pub fn new(kind: Kind, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let identity = Identity::read_global(cx).public_key();
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
+
         let mut subscriptions = smallvec![];
+        let mut tasks = smallvec![];
 
-        subscriptions.push(cx.observe_new::<Self>(move |this, window, cx| {
-            if let Some(window) = window {
-                this.load(window, cx);
-            }
-        }));
-
-        subscriptions.push(cx.subscribe_in(
-            &input,
-            window,
-            move |this: &mut Self, _, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.add(window, cx);
-                }
-            },
-        ));
-
-        Self {
-            input,
-            subscriptions,
-            relays: vec![],
-            error: None,
-        }
-    }
-
-    fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
+        let load_relay = cx.background_spawn(async move {
             let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
+            let filter = Filter::new().kind(kind).author(identity).limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first() {
                 let relays = event
                     .tags
-                    .filter(TagKind::Relay)
-                    .filter_map(|tag| RelayUrl::parse(tag.content()?).ok())
-                    .collect::<Vec<_>>();
+                    .iter()
+                    .filter_map(|tag| tag.as_standardized())
+                    .filter_map(|tag| {
+                        if let TagStandard::RelayMetadata { relay_url, .. } = tag {
+                            Some(relay_url.to_owned())
+                        } else if let TagStandard::Relay(url) = tag {
+                            Some(url.to_owned())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect_vec();
 
                 Ok(relays)
             } else {
@@ -118,16 +103,39 @@ impl MessagingRelays {
             }
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(relays) = task.await {
-                this.update(cx, |this, cx| {
-                    this.relays = relays;
-                    cx.notify();
-                })
-                .ok();
-            }
-        })
-        .detach();
+        tasks.push(
+            // Load user's relays in the local database
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok(relays) = load_relay.await {
+                    this.update(cx, |this, cx| {
+                        this.relays = relays;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            }),
+        );
+
+        subscriptions.push(
+            // Subscribe to user's input events
+            cx.subscribe_in(
+                &input,
+                window,
+                move |this: &mut Self, _, event, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
+                        this.add(window, cx);
+                    }
+                },
+            ),
+        );
+
+        Self {
+            input,
+            relays: vec![],
+            error: None,
+            _subscriptions: subscriptions,
+            _tasks: tasks,
+        }
     }
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -283,11 +291,11 @@ impl MessagingRelays {
             .justify_center()
             .text_sm()
             .text_align(TextAlign::Center)
-            .child(SharedString::new(t!("relays.add_some_relays")))
+            .child(shared_t!("relays.add_some_relays"))
     }
 }
 
-impl Render for MessagingRelays {
+impl Render for SetupRelay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .gap_3()

@@ -85,7 +85,8 @@ fn main() {
         .spawn(async move {
             let channel = global_channel();
             let mut signer_set = false;
-            let mut retry_count = 0;
+            let mut retry = 0;
+            let mut nip65_retry = 0;
 
             loop {
                 if signer_set {
@@ -98,15 +99,18 @@ fn main() {
                             channel.0.send(NostrSignal::DmRelayNotFound).await.ok();
                             break;
                         } else {
-                            retry_count += 1;
-                            if retry_count == TOTAL_RETRY {
+                            retry += 1;
+                            if retry == TOTAL_RETRY {
                                 channel.0.send(NostrSignal::DmRelayNotFound).await.ok();
                                 break;
                             }
                         }
-                    } else if state.nip65 == LocalRelayStatus::NotFound {
-                        channel.0.send(NostrSignal::RelayNotFound).await.ok();
-                        break;
+                    } else {
+                        nip65_retry += 1;
+                        if nip65_retry == TOTAL_RETRY {
+                            channel.0.send(NostrSignal::DmRelayNotFound).await.ok();
+                            break;
+                        }
                     }
                 }
 
@@ -122,14 +126,9 @@ fn main() {
                                 .await
                                 .ok();
 
-                            let mut state = state_clone.lock().await;
-
                             // Subscribe to the NIP-65 relays for the public key.
                             if let Err(e) = fetch_nip65_relays(public_key).await {
                                 log::error!("Failed to fetch NIP-65 relays: {e}");
-                                state.nip65 = LocalRelayStatus::NotFound;
-                            } else {
-                                state.nip65 = LocalRelayStatus::Found;
                             }
                         }
                     }
@@ -400,22 +399,17 @@ async fn handle_nostr_notifications(
                 if let Ok(true) = is_from_current_user(&event).await {
                     log::info!("Received relay list for the current user");
 
-                    let id = SubscriptionId::new("metadata");
-                    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays];
-                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(10);
+                    let mut state = state.lock().await;
+                    state.nip65 = LocalRelayStatus::Found;
 
-                    if client
-                        .subscribe_with_id(id, filter, Some(auto_close))
-                        .await
-                        .is_ok()
-                    {
-                        log::info!("Subscribed to user metadata and contact list");
-                    }
+                    fetch_event(Kind::Metadata, event.pubkey).await;
+                    fetch_event(Kind::ContactList, event.pubkey).await;
+                    fetch_event(Kind::InboxRelays, event.pubkey).await;
                 }
             }
             Kind::InboxRelays => {
                 if let Ok(true) = is_from_current_user(&event).await {
-                    log::info!("Received dm relay list for the current user");
+                    log::info!("Received DM relays for the current user");
 
                     let relays = event
                         .tags
@@ -438,11 +432,10 @@ async fn handle_nostr_notifications(
                             _ = client.connect_relay(relay).await;
                         }
 
-                        let id = SubscriptionId::new("gift-wrap");
                         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
 
                         if client
-                            .subscribe_with_id_to(relays.clone(), id, filter, None)
+                            .subscribe_to(relays.clone(), filter, None)
                             .await
                             .is_ok()
                         {
@@ -479,6 +472,16 @@ async fn handle_nostr_notifications(
     }
 
     Ok(())
+}
+
+async fn fetch_event(kind: Kind, public_key: PublicKey) {
+    let client = nostr_client();
+    let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+    let filter = Filter::new().kind(kind).author(public_key).limit(1);
+
+    if let Err(e) = client.subscribe(filter, Some(auto_close)).await {
+        log::info!("Failed to subscribe: {e}");
+    }
 }
 
 async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {

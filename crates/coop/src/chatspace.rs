@@ -37,10 +37,10 @@ use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::views::compose::compose_button;
 use crate::views::screening::Screening;
+use crate::views::setup_relay::setup_nip17_relay;
 use crate::views::user_profile::UserProfile;
 use crate::views::{
-    account, chat, login, messaging_relays, new_account, onboarding, preferences, sidebar,
-    user_profile, welcome,
+    account, chat, login, new_account, onboarding, preferences, sidebar, user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -87,6 +87,7 @@ pub struct ToggleModal {
 pub struct ChatSpace {
     title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
+    has_nip17_relays: bool,
     _subscriptions: SmallVec<[Subscription; 4]>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
@@ -172,6 +173,7 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
+            has_nip17_relays: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -204,10 +206,19 @@ impl ChatSpace {
                         });
                     }
                     NostrSignal::SignerUnset => {
+                        // Setup the onboarding layout for current workspace
                         e.update(cx, |this, cx| {
                             this.set_onboarding_layout(window, cx);
                         })
                         .ok();
+
+                        // Clear all current chat rooms
+                        registry.update(cx, |this, cx| {
+                            this.reset(cx);
+                        });
+
+                        // Remove global identity
+                        Identity::remove_global(cx);
                     }
                     NostrSignal::ProxyDown => {
                         if !is_open_proxy_modal {
@@ -252,17 +263,11 @@ impl ChatSpace {
                             this.event_to_message(identity, event, window, cx);
                         });
                     }
-                    NostrSignal::RelayNotFound => {
-                        let identity = Identity::global(cx);
-                        identity.update(cx, |this, cx| {
-                            this.set_nip65_relays(false, cx);
-                        });
-                    }
                     NostrSignal::DmRelayNotFound => {
-                        let identity = Identity::global(cx);
-                        identity.update(cx, |this, cx| {
-                            this.set_nip17_relays(false, cx);
-                        });
+                        e.update(cx, |this, cx| {
+                            this.set_no_nip17_relays(cx);
+                        })
+                        .ok();
                     }
                     NostrSignal::Notice(_msg) => {
                         // window.push_notification(msg, cx);
@@ -364,6 +369,11 @@ impl ChatSpace {
         .detach();
     }
 
+    fn set_no_nip17_relays(&mut self, cx: &mut Context<Self>) {
+        self.has_nip17_relays = false;
+        cx.notify();
+    }
+
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
         let view = preferences::init(window, cx);
 
@@ -384,11 +394,6 @@ impl ChatSpace {
     }
 
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
-        Identity::remove_global(cx);
-        Registry::global(cx).update(cx, |this, cx| {
-            this.reset(cx);
-        });
-
         cx.background_spawn(async move {
             let client = nostr_client();
             let channel = global_channel();
@@ -506,9 +511,7 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let nip17_relays = Identity::read_global(cx).nip17_relays();
-        let nip65_relays = Identity::read_global(cx).nip65_relays();
-        let loading = nip65_relays && nip17_relays && registry.loading;
+        let loading = self.has_nip17_relays && registry.loading;
 
         h_flex()
             .gap_2()
@@ -540,8 +543,6 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let nip17_relays = Identity::read_global(cx).nip17_relays();
-
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
 
@@ -575,8 +576,8 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(!nip17_relays, |this| {
-                this.child(messaging_relays::relay_button())
+            .when(!self.has_nip17_relays, |this| {
+                this.child(setup_nip17_relay(t!("relays.button_label")))
             })
             .child(
                 Button::new("user")

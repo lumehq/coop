@@ -596,9 +596,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let nip17_relays = Identity::read_global(cx).nip17_relays();
-        let nip65_relays = Identity::read_global(cx).nip65_relays();
-        let loading = nip17_relays && nip65_relays && registry.loading;
+        let loading = registry.loading;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {

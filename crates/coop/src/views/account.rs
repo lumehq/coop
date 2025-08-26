@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::display::DisplayProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use global::nostr_client;
+use global::{global_channel, nostr_client, NostrSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -238,26 +238,23 @@ impl Account {
         .detach();
     }
 
-    fn logout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+    fn logout(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.background_spawn(async move {
             let client = nostr_client();
+            let channel = global_channel();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_IDENTIFIER);
 
             // Delete account
-            client.database().delete(filter).await?;
+            client.database().delete(filter).await.ok();
 
-            Ok(())
-        });
+            // Unset the client's signer
+            client.unset_signer().await;
 
-        cx.spawn_in(window, async move |_this, cx| {
-            if task.await.is_ok() {
-                cx.update(|_window, cx| {
-                    cx.restart();
-                })
-                .ok();
-            }
+            // Notify the channel about the signer being unset
+            channel.0.send(NostrSignal::SignerUnset).await.ok();
         })
         .detach();
     }
