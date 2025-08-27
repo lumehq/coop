@@ -30,7 +30,7 @@ i18n::init!();
 actions!(coop, [Quit]);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-enum LocalRelayStatus {
+enum RelayTrackStatus {
     #[default]
     Waiting,
     NotFound,
@@ -38,9 +38,9 @@ enum LocalRelayStatus {
 }
 
 #[derive(Debug, Clone, Default)]
-struct LocalRelayState {
-    nip17: LocalRelayStatus,
-    nip65: LocalRelayStatus,
+struct RelayTracking {
+    nip17: RelayTrackStatus,
+    nip65: RelayTrackStatus,
 }
 
 fn main() {
@@ -59,7 +59,7 @@ fn main() {
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
 
     // Used for tracking NIP-65 and NIP-17 relay status
-    let state = Arc::new(AsyncMutex::new(LocalRelayState::default()));
+    let state = Arc::new(AsyncMutex::new(RelayTracking::default()));
     let state_clone = state.clone();
 
     let (pubkey_tx, pubkey_rx) = smol::channel::bounded::<PublicKey>(1024);
@@ -92,10 +92,10 @@ fn main() {
                 if signer_set {
                     let state = state_clone.lock().await;
 
-                    if state.nip65 == LocalRelayStatus::Found {
-                        if state.nip17 == LocalRelayStatus::Found {
+                    if state.nip65 == RelayTrackStatus::Found {
+                        if state.nip17 == RelayTrackStatus::Found {
                             break;
-                        } else if state.nip17 == LocalRelayStatus::NotFound {
+                        } else if state.nip17 == RelayTrackStatus::NotFound {
                             channel.0.send(NostrSignal::DmRelayNotFound).await.ok();
                             break;
                         } else {
@@ -370,7 +370,7 @@ async fn connect(client: &Client) -> Result<(), Error> {
 }
 
 async fn handle_nostr_notifications(
-    state: &Arc<AsyncMutex<LocalRelayState>>,
+    state: &Arc<AsyncMutex<RelayTracking>>,
     event_tx: &Sender<Event>,
 ) -> Result<(), Error> {
     let client = nostr_client();
@@ -396,21 +396,22 @@ async fn handle_nostr_notifications(
         match event.kind {
             Kind::RelayList => {
                 // Get metadata for event's pubkey that matches the current user's pubkey
-                if let Ok(true) = is_from_current_user(&event).await {
-                    log::info!("Received relay list for the current user");
-
+                if let Ok(true) = is_self_event(&event).await {
                     let mut state = state.lock().await;
-                    state.nip65 = LocalRelayStatus::Found;
+                    state.nip65 = RelayTrackStatus::Found;
 
-                    fetch_event(Kind::Metadata, event.pubkey).await;
-                    fetch_event(Kind::ContactList, event.pubkey).await;
-                    fetch_event(Kind::InboxRelays, event.pubkey).await;
+                    // Fetch user's metadata event
+                    fetch_single_event(Kind::Metadata, event.pubkey).await;
+
+                    // Fetch user's contact list event
+                    fetch_single_event(Kind::ContactList, event.pubkey).await;
+
+                    // Fetch user's inbox relays event
+                    fetch_single_event(Kind::InboxRelays, event.pubkey).await;
                 }
             }
             Kind::InboxRelays => {
-                if let Ok(true) = is_from_current_user(&event).await {
-                    log::info!("Received DM relays for the current user");
-
+                if let Ok(true) = is_self_event(&event).await {
                     let relays = event
                         .tags
                         .filter_standardized(TagKind::Relay)
@@ -425,17 +426,18 @@ async fn handle_nostr_notifications(
 
                     if !relays.is_empty() {
                         let mut state = state.lock().await;
-                        state.nip17 = LocalRelayStatus::Found;
+                        state.nip17 = RelayTrackStatus::Found;
 
                         for relay in relays.iter() {
                             _ = client.add_relay(relay).await;
                             _ = client.connect_relay(relay).await;
                         }
 
+                        let id = SubscriptionId::new("inbox");
                         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
 
                         if client
-                            .subscribe_to(relays.clone(), filter, None)
+                            .subscribe_with_id_to(relays.clone(), id, filter, None)
                             .await
                             .is_ok()
                         {
@@ -445,11 +447,11 @@ async fn handle_nostr_notifications(
                 }
             }
             Kind::ContactList => {
-                if let Ok(true) = is_from_current_user(&event).await {
+                if let Ok(true) = is_self_event(&event).await {
                     let public_keys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
                     let kinds = vec![Kind::Metadata, Kind::ContactList];
-                    let lens = public_keys.len() * kinds.len();
-                    let filter = Filter::new().limit(lens).authors(public_keys).kinds(kinds);
+                    let limit = public_keys.len() * kinds.len();
+                    let filter = Filter::new().limit(limit).authors(public_keys).kinds(kinds);
 
                     client
                         .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
@@ -474,7 +476,7 @@ async fn handle_nostr_notifications(
     Ok(())
 }
 
-async fn fetch_event(kind: Kind, public_key: PublicKey) {
+async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
     let client = nostr_client();
     let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
     let filter = Filter::new().kind(kind).author(public_key).limit(1);
@@ -517,7 +519,7 @@ async fn sync_data_for_pubkeys(public_keys: BTreeSet<PublicKey>) {
 }
 
 /// Checks if an event is belong to the current user
-async fn is_from_current_user(event: &Event) -> Result<bool, Error> {
+async fn is_self_event(event: &Event) -> Result<bool, Error> {
     let client = nostr_client();
     let signer = client.signer().await?;
     let public_key = signer.get_public_key().await?;

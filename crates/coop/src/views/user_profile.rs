@@ -9,40 +9,36 @@ use gpui::{
     ParentElement, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::t;
+use i18n::{shared_t, t};
 use identity::Identity;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
+use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::{h_flex, v_flex, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<UserProfile> {
-    UserProfile::new(public_key, window, cx)
+    cx.new(|cx| UserProfile::new(public_key, window, cx))
 }
 
 pub struct UserProfile {
-    public_key: PublicKey,
+    profile: Profile,
     followed: bool,
     verified: bool,
     copied: bool,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl UserProfile {
-    pub fn new(public_key: PublicKey, _window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|_| Self {
-            public_key,
-            followed: false,
-            verified: false,
-            copied: false,
-        })
-    }
-
-    pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn new(public_key: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let registry = Registry::read_global(cx);
         let identity = Identity::read_global(cx).public_key();
-        let public_key = self.public_key;
+        let profile = registry.get_person(&public_key, cx);
+
+        let mut tasks = smallvec![];
 
         let check_follow: Task<bool> = cx.background_spawn(async move {
             let client = nostr_client();
@@ -55,7 +51,7 @@ impl UserProfile {
             client.database().count(filter).await.unwrap_or(0) >= 1
         });
 
-        let verify_nip05 = if let Some(address) = self.address(cx) {
+        let verify_nip05 = if let Some(address) = profile.metadata().nip05 {
             Some(Tokio::spawn(cx, async move {
                 nip05_verify(public_key, &address).await.unwrap_or(false)
             }))
@@ -63,41 +59,46 @@ impl UserProfile {
             None
         };
 
-        cx.spawn_in(window, async move |this, cx| {
-            let followed = check_follow.await;
+        tasks.push(
+            // Load user profile data
+            cx.spawn_in(window, async move |this, cx| {
+                let followed = check_follow.await;
 
-            // Update the followed status
-            this.update(cx, |this, cx| {
-                this.followed = followed;
-                cx.notify();
-            })
-            .ok();
+                // Update the followed status
+                this.update(cx, |this, cx| {
+                    this.followed = followed;
+                    cx.notify();
+                })
+                .ok();
 
-            // Update the NIP05 verification status if user has NIP05 address
-            if let Some(task) = verify_nip05 {
-                if let Ok(verified) = task.await {
-                    this.update(cx, |this, cx| {
-                        this.verified = verified;
-                        cx.notify();
-                    })
-                    .ok();
+                // Update the NIP05 verification status if user has NIP05 address
+                if let Some(task) = verify_nip05 {
+                    if let Ok(verified) = task.await {
+                        this.update(cx, |this, cx| {
+                            this.verified = verified;
+                            cx.notify();
+                        })
+                        .ok();
+                    }
                 }
-            }
-        })
-        .detach();
+            }),
+        );
+
+        Self {
+            profile,
+            followed: false,
+            verified: false,
+            copied: false,
+            _tasks: tasks,
+        }
     }
 
-    fn profile(&self, cx: &Context<Self>) -> Profile {
-        let registry = Registry::read_global(cx);
-        registry.get_person(&self.public_key, cx)
-    }
-
-    fn address(&self, cx: &Context<Self>) -> Option<String> {
-        self.profile(cx).metadata().nip05
+    fn address(&self, _cx: &Context<Self>) -> Option<String> {
+        self.profile.metadata().nip05
     }
 
     fn copy_pubkey(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(bech32) = self.public_key.to_bech32();
+        let Ok(bech32) = self.profile.public_key().to_bech32();
         let item = ClipboardItem::new_string(bech32);
         cx.write_to_clipboard(item);
 
@@ -128,9 +129,8 @@ impl UserProfile {
 impl Render for UserProfile {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let profile = self.profile(cx);
 
-        let Ok(bech32) = profile.public_key().to_bech32();
+        let Ok(bech32) = self.profile.public_key().to_bech32();
         let shared_bech32 = SharedString::new(bech32);
 
         v_flex()
@@ -141,14 +141,14 @@ impl Render for UserProfile {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar_url(proxy)).size(rems(4.)))
                     .child(
                         v_flex()
                             .child(
                                 div()
                                     .font_semibold()
                                     .line_height(relative(1.25))
-                                    .child(profile.display_name()),
+                                    .child(self.profile.display_name()),
                             )
                             .when_some(self.address(cx), |this, address| {
                                 this.child(
@@ -183,7 +183,7 @@ impl Render for UserProfile {
                                 .bg(cx.theme().elevated_surface_background)
                                 .text_xs()
                                 .font_semibold()
-                                .child(SharedString::new(t!("profile.unknown"))),
+                                .child(shared_t!("profile.unknown")),
                         )
                     }),
             )
@@ -235,7 +235,7 @@ impl Render for UserProfile {
                     .child(
                         div()
                             .text_color(cx.theme().text_muted)
-                            .child(SharedString::new(t!("profile.label_bio"))),
+                            .child(shared_t!("profile.label_bio")),
                     )
                     .child(
                         div()
@@ -243,7 +243,7 @@ impl Render for UserProfile {
                             .rounded_md()
                             .bg(cx.theme().elevated_surface_background)
                             .child(
-                                profile
+                                self.profile
                                     .metadata()
                                     .about
                                     .unwrap_or(t!("profile.no_bio").to_string()),

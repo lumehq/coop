@@ -36,9 +36,7 @@ use ui::tooltip::Tooltip;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::views::compose::compose_button;
-use crate::views::screening::Screening;
 use crate::views::setup_relay::setup_nip17_relay;
-use crate::views::user_profile::UserProfile;
 use crate::views::{
     account, chat, login, new_account, onboarding, preferences, sidebar, user_profile, welcome,
 };
@@ -88,7 +86,7 @@ pub struct ChatSpace {
     title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
     has_nip17_relays: bool,
-    _subscriptions: SmallVec<[Subscription; 4]>,
+    _subscriptions: SmallVec<[Subscription; 2]>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
@@ -110,24 +108,6 @@ impl ChatSpace {
                     this.render_client_keys_modal(window, cx);
                 } else {
                     this.load_local_account(window, cx);
-                }
-            }),
-        );
-
-        subscriptions.push(
-            // Automatically run load function when UserProfile is created
-            cx.observe_new::<UserProfile>(|this, window, cx| {
-                if let Some(window) = window {
-                    this.load(window, cx);
-                }
-            }),
-        );
-
-        subscriptions.push(
-            // Automatically run load function when Screening is created
-            cx.observe_new::<Screening>(|this, window, cx| {
-                if let Some(window) = window {
-                    this.load(window, cx);
                 }
             }),
         );

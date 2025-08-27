@@ -11,37 +11,32 @@ use identity::Identity;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
+use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
-    Screening::new(public_key, window, cx)
+    cx.new(|cx| Screening::new(public_key, window, cx))
 }
 
 pub struct Screening {
-    public_key: PublicKey,
+    profile: Profile,
     verified: bool,
     followed: bool,
     dm_relays: bool,
     mutual_contacts: usize,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Screening {
-    pub fn new(public_key: PublicKey, _window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|_| Self {
-            public_key,
-            verified: false,
-            followed: false,
-            dm_relays: false,
-            mutual_contacts: 0,
-        })
-    }
-
-    pub fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn new(public_key: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let registry = Registry::read_global(cx);
         let identity = Identity::read_global(cx).public_key();
-        let public_key = self.public_key;
+        let profile = registry.get_person(&public_key, cx);
+
+        let mut tasks = smallvec![];
 
         let check_trust_score: Task<(bool, usize, bool)> = cx.background_spawn(async move {
             let client = nostr_client();
@@ -69,7 +64,7 @@ impl Screening {
             (is_follow, mutual_contacts, dm_relays)
         });
 
-        let verify_nip05 = if let Some(address) = self.address(cx) {
+        let verify_nip05 = if let Some(address) = profile.metadata().nip05 {
             Some(Tokio::spawn(cx, async move {
                 nip05_verify(public_key, &address).await.unwrap_or(false)
             }))
@@ -77,47 +72,54 @@ impl Screening {
             None
         };
 
-        cx.spawn_in(window, async move |this, cx| {
-            let (followed, mutual_contacts, dm_relays) = check_trust_score.await;
+        tasks.push(
+            // Load all necessary data
+            cx.spawn_in(window, async move |this, cx| {
+                let (followed, mutual_contacts, dm_relays) = check_trust_score.await;
 
-            this.update(cx, |this, cx| {
-                this.followed = followed;
-                this.mutual_contacts = mutual_contacts;
-                this.dm_relays = dm_relays;
-                cx.notify();
-            })
-            .ok();
+                this.update(cx, |this, cx| {
+                    this.followed = followed;
+                    this.mutual_contacts = mutual_contacts;
+                    this.dm_relays = dm_relays;
+                    cx.notify();
+                })
+                .ok();
 
-            // Update the NIP05 verification status if user has NIP05 address
-            if let Some(task) = verify_nip05 {
-                if let Ok(verified) = task.await {
-                    this.update(cx, |this, cx| {
-                        this.verified = verified;
-                        cx.notify();
-                    })
-                    .ok();
+                // Update the NIP05 verification status if user has NIP05 address
+                if let Some(task) = verify_nip05 {
+                    if let Ok(verified) = task.await {
+                        this.update(cx, |this, cx| {
+                            this.verified = verified;
+                            cx.notify();
+                        })
+                        .ok();
+                    }
                 }
-            }
-        })
-        .detach();
+            }),
+        );
+
+        Self {
+            profile,
+            verified: false,
+            followed: false,
+            dm_relays: false,
+            mutual_contacts: 0,
+            _tasks: tasks,
+        }
     }
 
-    fn profile(&self, cx: &Context<Self>) -> Profile {
-        let registry = Registry::read_global(cx);
-        registry.get_person(&self.public_key, cx)
-    }
-
-    fn address(&self, cx: &Context<Self>) -> Option<String> {
-        self.profile(cx).metadata().nip05
+    fn address(&self, _cx: &Context<Self>) -> Option<String> {
+        self.profile.metadata().nip05
     }
 
     fn open_njump(&mut self, _window: &mut Window, cx: &mut App) {
-        let Ok(bech32) = self.public_key.to_bech32();
+        let Ok(bech32) = self.profile.public_key().to_bech32();
         cx.open_url(&format!("https://njump.me/{bech32}"));
     }
 
     fn report(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let public_key = self.public_key;
+        let public_key = self.profile.public_key();
+
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let builder = EventBuilder::report(
@@ -145,8 +147,7 @@ impl Screening {
 impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let profile = self.profile(cx);
-        let shorten_pubkey = shorten_pubkey(profile.public_key(), 8);
+        let shorten_pubkey = shorten_pubkey(self.profile.public_key(), 8);
 
         v_flex()
             .gap_4()
@@ -156,12 +157,12 @@ impl Render for Screening {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar_url(proxy)).size(rems(4.)))
                     .child(
                         div()
                             .font_semibold()
                             .line_height(relative(1.25))
-                            .child(profile.display_name()),
+                            .child(self.profile.display_name()),
                     ),
             )
             .child(

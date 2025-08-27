@@ -13,34 +13,34 @@ use crate::paths::support_dir;
 pub mod constants;
 pub mod paths;
 
-/// Signals sent through the global event channel to notify UI components
+/// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum NostrSignal {
-    /// Signer has been set
+    /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
-    /// Signer has been unset
+    /// A signal to notify UI that the client's signer has been unset
     SignerUnset,
 
-    /// Browser Signer Proxy service is not running
+    /// A signal to notify UI that the browser proxy service is down
     ProxyDown,
 
-    /// Received a new metadata event from Relay Pool
+    /// A signal to notify UI that a new metadata event has been received
     Metadata(Event),
 
-    /// Received a new gift wrap event from Relay Pool
+    /// A signal to notify UI that a new gift wrap event has been received
     GiftWrap(Event),
 
-    /// Finished processing all gift wrap events
+    /// A signal to notify UI that all gift wrap events have been processed
     Finish,
 
-    /// Partially finished processing all gift wrap events
+    /// A signal to notify UI that partial processing of gift wrap events has been completed
     PartialFinish,
 
-    /// No DM Relays found
+    /// A signal to notify UI that no DM relay for current user was found
     DmRelayNotFound,
 
-    /// Notice from Relay Pool
+    /// A signal to notify UI that there are errors or notices occurred
     Notice(String),
 }
 
