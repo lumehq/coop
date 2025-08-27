@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -6,7 +5,6 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::channel::{Receiver, Sender};
-use smol::lock::RwLock;
 
 use crate::paths::support_dir;
 
@@ -46,7 +44,6 @@ pub enum NostrSignal {
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
 static GLOBAL_CHANNEL: OnceLock<(Sender<NostrSignal>, Receiver<NostrSignal>)> = OnceLock::new();
-static PROCESSED_EVENTS: OnceLock<RwLock<BTreeSet<EventId>>> = OnceLock::new();
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
@@ -79,10 +76,6 @@ pub fn global_channel() -> &'static (Sender<NostrSignal>, Receiver<NostrSignal>)
         let (sender, receiver) = smol::channel::bounded::<NostrSignal>(2048);
         (sender, receiver)
     })
-}
-
-pub fn processed_events() -> &'static RwLock<BTreeSet<EventId>> {
-    PROCESSED_EVENTS.get_or_init(|| RwLock::new(BTreeSet::new()))
 }
 
 pub fn starting_time() -> &'static Timestamp {

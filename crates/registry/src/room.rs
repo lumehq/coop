@@ -352,31 +352,6 @@ impl Room {
         }
     }
 
-    /// Loads all profiles for this room members from the database
-    ///
-    /// # Arguments
-    ///
-    /// * `cx` - The App context
-    ///
-    /// # Returns
-    ///
-    /// A Task that resolves to Result<Vec<Profile>, Error> containing all profiles for this room
-    pub fn load_metadata(&self, cx: &mut Context<Self>) -> Task<Result<Vec<Profile>, Error>> {
-        let public_keys = self.members.clone();
-
-        cx.background_spawn(async move {
-            let database = nostr_client().database();
-            let mut profiles = vec![];
-
-            for public_key in public_keys.into_iter() {
-                let metadata = database.metadata(public_key).await?.unwrap_or_default();
-                profiles.push(Profile::new(public_key, metadata));
-            }
-
-            Ok(profiles)
-        })
-    }
-
     /// Loads all messages for this room from the database
     ///
     /// # Arguments

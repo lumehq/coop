@@ -6,9 +6,7 @@ use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use global::nostr_client;
-use gpui::{
-    App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
-};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -29,7 +27,7 @@ struct GlobalRegistry(Entity<Registry>);
 impl Global for GlobalRegistry {}
 
 #[derive(Debug)]
-pub enum RegistrySignal {
+pub enum RegistryEvent {
     Open(WeakEntity<Room>),
     Close(u64),
     NewRequest(RoomKind),
@@ -48,12 +46,11 @@ pub struct Registry {
     /// Always equal to `true` when the app starts
     pub loading: bool,
 
-    /// Subscriptions for observing changes
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    /// Tasks for asynchronous operations
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
-impl EventEmitter<RegistrySignal> for Registry {}
+impl EventEmitter<RegistryEvent> for Registry {}
 
 impl Registry {
     /// Retrieve the Global Registry state
@@ -73,72 +70,49 @@ impl Registry {
 
     /// Create a new Registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let mut subscriptions = smallvec![];
+        let mut tasks = smallvec![];
 
-        // Load all user profiles from the database when the Registry is created
-        subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
-            let task = this.load_local_person(cx);
-            this.set_persons_from_task(task, cx);
-        }));
+        let load_local_persons: Task<Result<Vec<Profile>, Error>> =
+            cx.background_spawn(async move {
+                let filter = Filter::new().kind(Kind::Metadata).limit(200);
+                let events = nostr_client().database().query(filter).await?;
+                let mut profiles = vec![];
 
-        // When any Room is created, load members metadata
-        subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
-            let state = Self::global(cx);
-            let task = this.load_metadata(cx);
+                for event in events.into_iter() {
+                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                    let profile = Profile::new(event.pubkey, metadata);
+                    profiles.push(profile);
+                }
 
-            state.update(cx, |this, cx| {
-                this.set_persons_from_task(task, cx);
+                Ok(profiles)
             });
-        }));
+
+        tasks.push(
+            // Load all user profiles from the database when the Registry is created
+            cx.spawn(async move |this, cx| {
+                if let Ok(profiles) = load_local_persons.await {
+                    this.update(cx, |this, cx| {
+                        this.set_persons(profiles, cx);
+                    })
+                    .ok();
+                }
+            }),
+        );
 
         Self {
             rooms: vec![],
             persons: BTreeMap::new(),
             loading: true,
-            subscriptions,
+            _tasks: tasks,
         }
     }
 
-    pub fn reset(&mut self, cx: &mut Context<Self>) {
-        self.rooms = vec![];
-        self.loading = true;
+    pub fn set_persons(&mut self, profiles: Vec<Profile>, cx: &mut Context<Self>) {
+        for profile in profiles {
+            self.persons
+                .insert(profile.public_key(), cx.new(|_| profile));
+        }
         cx.notify();
-    }
-
-    pub(crate) fn set_persons_from_task(
-        &mut self,
-        task: Task<Result<Vec<Profile>, Error>>,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn(async move |this, cx| {
-            if let Ok(profiles) = task.await {
-                this.update(cx, |this, cx| {
-                    for profile in profiles {
-                        this.persons
-                            .insert(profile.public_key(), cx.new(|_| profile));
-                    }
-                    cx.notify();
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
-    pub(crate) fn load_local_person(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
-        cx.background_spawn(async move {
-            let filter = Filter::new().kind(Kind::Metadata).limit(100);
-            let events = nostr_client().database().query(filter).await?;
-            let mut profiles = vec![];
-
-            for event in events.into_iter() {
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                let profile = Profile::new(event.pubkey, metadata);
-                profiles.push(profile);
-            }
-
-            Ok(profiles)
-        })
     }
 
     pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
@@ -213,7 +187,7 @@ impl Registry {
     /// Close a room.
     pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
         if self.rooms.iter().any(|r| r.read(cx).id == id) {
-            cx.emit(RegistrySignal::Close(id));
+            cx.emit(RegistryEvent::Close(id));
         }
     }
 
@@ -250,6 +224,13 @@ impl Registry {
     /// Set the loading status of the registry.
     pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.loading = status;
+        cx.notify();
+    }
+
+    /// Reset the registry.
+    pub fn reset(&mut self, cx: &mut Context<Self>) {
+        self.rooms = vec![];
+        self.loading = true;
         cx.notify();
     }
 
@@ -380,7 +361,7 @@ impl Registry {
             weak_room
         };
 
-        cx.emit(RegistrySignal::Open(weak_room));
+        cx.emit(RegistryEvent::Open(weak_room));
     }
 
     /// Refresh messages for a room in the global registry
@@ -436,7 +417,7 @@ impl Registry {
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RegistrySignal::NewRequest(RoomKind::default()));
+                cx.emit(RegistryEvent::NewRequest(RoomKind::default()));
             });
         }
     }
