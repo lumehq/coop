@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use global::{global_channel, nostr_client, NostrSignal};

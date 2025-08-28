@@ -1,21 +1,23 @@
 use std::time::Duration;
 
 use gpui::{
-    bounce, div, ease_in_out, Animation, AnimationExt, Div, IntoElement, ParentElement as _,
-    RenderOnce, Styled,
+    bounce, div, ease_in_out, Animation, AnimationExt, IntoElement, RenderOnce, StyleRefinement,
+    Styled,
 };
 use theme::ActiveTheme;
 
+use crate::StyledExt;
+
 #[derive(IntoElement)]
 pub struct Skeleton {
-    base: Div,
+    style: StyleRefinement,
     secondary: bool,
 }
 
 impl Skeleton {
     pub fn new() -> Self {
         Self {
-            base: div().w_full().h_4().rounded_md(),
+            style: StyleRefinement::default(),
             secondary: false,
         }
     }
@@ -34,7 +36,7 @@ impl Default for Skeleton {
 
 impl Styled for Skeleton {
     fn style(&mut self) -> &mut gpui::StyleRefinement {
-        self.base.style()
+        &mut self.style
     }
 }
 
@@ -46,8 +48,13 @@ impl RenderOnce for Skeleton {
             cx.theme().ghost_element_active
         };
 
-        div().child(
-            self.base.bg(color).with_animation(
+        div()
+            .w_full()
+            .h_4()
+            .rounded_md()
+            .refine_style(&self.style)
+            .bg(color)
+            .with_animation(
                 "skeleton",
                 Animation::new(Duration::from_secs(2))
                     .repeat()
@@ -56,7 +63,6 @@ impl RenderOnce for Skeleton {
                     let v = 1.0 - delta * 0.5;
                     this.opacity(v)
                 },
-            ),
-        )
+            )
     }
 }

@@ -1,4 +1,4 @@
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use gpui::http_client::Url;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,

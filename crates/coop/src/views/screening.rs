@@ -1,4 +1,4 @@
-use common::display::{shorten_pubkey, DisplayProfile};
+use common::display::{shorten_pubkey, ReadableProfile};
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::{

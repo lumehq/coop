@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Error;
 use common::event::EventUtils;
@@ -7,6 +6,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
+use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -39,7 +39,7 @@ pub struct Registry {
     pub rooms: Vec<Entity<Room>>,
 
     /// Collection of all persons (user profiles)
-    pub persons: BTreeMap<PublicKey, Entity<Profile>>,
+    pub persons: HashMap<PublicKey, Entity<Profile>>,
 
     /// Indicates if rooms are currently being loaded
     ///
@@ -74,8 +74,9 @@ impl Registry {
 
         let load_local_persons: Task<Result<Vec<Profile>, Error>> =
             cx.background_spawn(async move {
+                let client = nostr_client();
                 let filter = Filter::new().kind(Kind::Metadata).limit(200);
-                let events = nostr_client().database().query(filter).await?;
+                let events = client.database().query(filter).await?;
                 let mut profiles = vec![];
 
                 for event in events.into_iter() {
@@ -101,7 +102,7 @@ impl Registry {
 
         Self {
             rooms: vec![],
-            persons: BTreeMap::new(),
+            persons: HashMap::new(),
             loading: true,
             _tasks: tasks,
         }
@@ -241,7 +242,7 @@ impl Registry {
         // Get the contact bypass setting
         let contact_bypass = AppSettings::get_contact_bypass(cx);
 
-        let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<HashSet<Room>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
@@ -260,7 +261,7 @@ impl Registry {
             let recv_events = client.database().query(recv).await?;
             let events = send_events.merge(recv_events);
 
-            let mut rooms: BTreeSet<Room> = BTreeSet::new();
+            let mut rooms: HashSet<Room> = HashSet::new();
 
             // Process each event and group by room hash
             for event in events
@@ -324,7 +325,7 @@ impl Registry {
         .detach();
     }
 
-    pub(crate) fn extend_rooms(&mut self, rooms: BTreeSet<Room>, cx: &mut Context<Self>) {
+    pub(crate) fn extend_rooms(&mut self, rooms: HashSet<Room>, cx: &mut Context<Self>) {
         let mut room_map: HashMap<u64, usize> = HashMap::with_capacity(self.rooms.len());
 
         for (index, room) in self.rooms.iter().enumerate() {

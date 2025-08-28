@@ -1,7 +1,7 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use anyhow::anyhow;
-use common::display::DisplayProfile;
+use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -31,7 +31,6 @@ use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
-use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::text::RenderedText;
 use ui::{
@@ -56,7 +55,7 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     list_state: ListState,
-    messages: BTreeSet<RenderedMessage>,
+    messages: Vec<RenderedMessage>,
     rendered_texts_by_id: HashMap<EventId, RenderedText>,
     reports_by_id: HashMap<EventId, Vec<SendReport>>,
     // New Message
@@ -107,7 +106,7 @@ impl Chat {
                     }
                     Err(e) => {
                         cx.update(|window, cx| {
-                            window.push_notification(Notification::error(e.to_string()), cx);
+                            window.push_notification(e.to_string(), cx);
                         })
                         .ok();
                     }
@@ -156,7 +155,7 @@ impl Chat {
             focus_handle: cx.focus_handle(),
             uploading: false,
             sending: false,
-            messages: BTreeSet::new(),
+            messages: Vec::new(),
             rendered_texts_by_id: HashMap::new(),
             reports_by_id: HashMap::new(),
             room,
@@ -346,7 +345,7 @@ impl Chat {
         let new_len = 1;
 
         // Extend the messages list with the new events
-        self.messages.insert(event.into());
+        self.messages.push(event.into());
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -365,6 +364,7 @@ impl Chat {
 
         // Extend the messages list with the new events
         self.messages.extend(events);
+        self.messages.sort_by_key(|ev| ev.created_at);
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -532,7 +532,7 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let Some(message) = self.messages.iter().nth(ix) else {
+        let Some(message) = self.messages.get(ix) else {
             return div().id(ix);
         };
 
@@ -591,7 +591,7 @@ impl Chat {
                                             .text_color(cx.theme().text)
                                             .child(author.display_name()),
                                     )
-                                    .child(div().child(message.ago()))
+                                    .child(div().child(message.created_at.to_human_time()))
                                     .when_some(is_sent_success, |this, status| {
                                         this.when(status, |this| {
                                             this.child(self.render_message_sent(&id, cx))

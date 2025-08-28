@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;

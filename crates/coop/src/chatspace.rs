@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
@@ -36,7 +36,6 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
-use ui::indicator::Indicator;
 use ui::modal::ModalButtonProps;
 use ui::popup_menu::PopupMenuExt;
 use ui::tooltip::Tooltip;
@@ -981,7 +980,6 @@ impl ChatSpace {
                         .rounded_full()
                         .bg(cx.theme().surface_background)
                         .child(shared_t!("loading.label"))
-                        .child(Indicator::new().xsmall())
                         .tooltip(|window, cx| {
                             Tooltip::new(t!("loading.tooltip"), window, cx).into()
                         }),

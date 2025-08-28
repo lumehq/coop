@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::display::{DisplayProfile, TextUtils};
+use common::display::{ReadableProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;

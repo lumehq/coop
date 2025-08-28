@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::TextUtils;
+use common::display::{ReadableTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -553,7 +553,7 @@ impl Sidebar {
                         .room_id(room_id)
                         .name(this.display_name(cx))
                         .avatar(this.display_image(proxy, cx))
-                        .created_at(this.ago())
+                        .created_at(this.created_at.to_ago())
                         .public_key(this.members[0])
                         .kind(this.kind)
                         .on_click(handler),

@@ -1,22 +1,15 @@
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 use anyhow::{anyhow, Error};
-use chrono::{Local, TimeZone};
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use smallvec::SmallVec;
 
 use crate::Registry;
-
-pub(crate) const NOW: &str = "now";
-pub(crate) const SECONDS_IN_MINUTE: i64 = 60;
-pub(crate) const MINUTES_IN_HOUR: i64 = 60;
-pub(crate) const HOURS_IN_DAY: i64 = 24;
-pub(crate) const DAYS_IN_MONTH: i64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct SendReport {
@@ -85,11 +78,11 @@ pub struct Room {
     pub id: u64,
     pub created_at: Timestamp,
     /// Subject of the room
-    pub subject: Option<SharedString>,
+    pub subject: Option<String>,
     /// Picture of the room
-    pub picture: Option<SharedString>,
+    pub picture: Option<String>,
     /// All members of the room
-    pub members: SmallVec<[PublicKey; 2]>,
+    pub members: Vec<PublicKey>,
     /// Kind
     pub kind: RoomKind,
 }
@@ -112,6 +105,12 @@ impl PartialEq for Room {
     }
 }
 
+impl Hash for Room {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl Eq for Room {}
 
 impl EventEmitter<RoomSignal> for Room {}
@@ -120,21 +119,25 @@ impl Room {
     pub fn new(event: &Event) -> Self {
         let id = event.uniq_id();
         let created_at = event.created_at;
-        let public_keys = event.all_pubkeys();
 
-        // Convert pubkeys into members
-        let members = public_keys.into_iter().unique().sorted().collect();
+        // Get the members from the event's tags and event's pubkey
+        let members = event
+            .all_pubkeys()
+            .into_iter()
+            .unique()
+            .sorted()
+            .collect_vec();
 
         // Get the subject from the event's tags
         let subject = if let Some(tag) = event.tags.find(TagKind::Subject) {
-            tag.content().map(|s| s.to_owned().into())
+            tag.content().map(|s| s.to_owned())
         } else {
             None
         };
 
         // Get the picture from the event's tags
         let picture = if let Some(tag) = event.tags.find(TagKind::custom("picture")) {
-            tag.content().map(|s| s.to_owned().into())
+            tag.content().map(|s| s.to_owned())
         } else {
             None
         };
@@ -177,11 +180,9 @@ impl Room {
     ///
     /// The modified Room instance with the new member list after rearrangement
     pub fn rearrange_by(mut self, rearrange_by: PublicKey) -> Self {
-        let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) = self
-            .members
-            .into_iter()
-            .partition(|key| key != &rearrange_by);
-        self.members = not_match.into();
+        let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) =
+            self.members.iter().partition(|&key| key != &rearrange_by);
+        self.members = not_match;
         self.members.extend(matches);
         self
     }
@@ -224,8 +225,8 @@ impl Room {
     ///
     /// * `subject` - The new subject to set
     /// * `cx` - The context to notify about the update
-    pub fn subject(&mut self, subject: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.subject = Some(subject.into());
+    pub fn subject(&mut self, subject: String, cx: &mut Context<Self>) {
+        self.subject = Some(subject);
         cx.notify();
     }
 
@@ -235,40 +236,9 @@ impl Room {
     ///
     /// * `picture` - The new subject to set
     /// * `cx` - The context to notify about the update
-    pub fn picture(&mut self, picture: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.picture = Some(picture.into());
+    pub fn picture(&mut self, picture: String, cx: &mut Context<Self>) {
+        self.picture = Some(picture);
         cx.notify();
-    }
-
-    /// Returns a human-readable string representing how long ago the room was created
-    ///
-    /// The string will be formatted differently based on the time elapsed:
-    /// - Less than a minute: "now"
-    /// - Less than an hour: "Xm" (minutes)
-    /// - Less than a day: "Xh" (hours)
-    /// - Less than a month: "Xd" (days)
-    /// - More than a month: "MMM DD" (month abbreviation and day)
-    ///
-    /// # Returns
-    ///
-    /// A SharedString containing the formatted time representation
-    pub fn ago(&self) -> SharedString {
-        let input_time = match Local.timestamp_opt(self.created_at.as_u64() as i64, 0) {
-            chrono::LocalResult::Single(time) => time,
-            _ => return "1m".into(),
-        };
-
-        let now = Local::now();
-        let duration = now.signed_duration_since(input_time);
-
-        match duration {
-            d if d.num_seconds() < SECONDS_IN_MINUTE => NOW.into(),
-            d if d.num_minutes() < MINUTES_IN_HOUR => format!("{}m", d.num_minutes()),
-            d if d.num_hours() < HOURS_IN_DAY => format!("{}h", d.num_hours()),
-            d if d.num_days() < DAYS_IN_MONTH => format!("{}d", d.num_days()),
-            _ => input_time.format("%b %d").to_string(),
-        }
-        .into()
     }
 
     /// Gets the display name for the room
@@ -282,8 +252,8 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// A SharedString containing the display name
-    pub fn display_name(&self, cx: &App) -> SharedString {
+    /// A string containing the display name
+    pub fn display_name(&self, cx: &App) -> String {
         if let Some(subject) = self.subject.clone() {
             subject
         } else {
@@ -305,8 +275,8 @@ impl Room {
     ///
     /// # Returns
     ///
-    /// A SharedString containing the image path or URL
-    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
+    /// A string containing the image path or URL
+    pub fn display_image(&self, proxy: bool, cx: &App) -> String {
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()
         } else if !self.is_group() {
@@ -325,7 +295,7 @@ impl Room {
     }
 
     /// Merge the names of the first two members of the room.
-    pub(crate) fn merge_name(&self, cx: &App) -> SharedString {
+    pub(crate) fn merge_name(&self, cx: &App) -> String {
         let registry = Registry::read_global(cx);
 
         if self.is_group() {
@@ -346,7 +316,7 @@ impl Room {
                 name = format!("{}, +{}", name, profiles.len() - 2);
             }
 
-            name.into()
+            name
         } else {
             self.first_member(cx).display_name()
         }
@@ -372,14 +342,13 @@ impl Room {
                 .authors(members.clone())
                 .pubkeys(members.clone());
 
-            let events = client
+            let events: Vec<Event> = client
                 .database()
                 .query(filter)
                 .await?
                 .into_iter()
-                .sorted_by_key(|ev| ev.created_at)
                 .filter(|ev| ev.compare_pubkeys(&members))
-                .collect::<Vec<_>>();
+                .collect();
 
             Ok(events)
         })
