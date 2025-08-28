@@ -10,9 +10,9 @@ use gpui::{
     TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
@@ -71,7 +71,7 @@ pub struct SetupRelay {
 
 impl SetupRelay {
     pub fn new(kind: Kind, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
 
         let mut subscriptions = smallvec![];

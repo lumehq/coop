@@ -19,12 +19,12 @@ use gpui::{
     Subscription, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use itertools::Itertools;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
+use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use smol::channel::{Receiver, Sender};
 use smol::lock::Mutex;
@@ -425,11 +425,9 @@ impl ChatSpace {
                         })
                         .ok();
 
-                        // Initialize identity
-                        identity::init(public_key, window, cx);
-
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
+                            this.set_identity(public_key, cx);
                             this.load_rooms(window, cx);
                         });
                     }
@@ -444,9 +442,6 @@ impl ChatSpace {
                         registry.update(cx, |this, cx| {
                             this.reset(cx);
                         });
-
-                        // Remove global identity
-                        Identity::remove_global(cx);
                     }
                     NostrSignal::ProxyDown => {
                         if !is_open_proxy_modal {
@@ -486,9 +481,8 @@ impl ChatSpace {
                     }
                     // Convert the gift wrapped message to a message
                     NostrSignal::GiftWrap(event) => {
-                        let identity = Identity::read_global(cx).public_key();
                         registry.update(cx, |this, cx| {
-                            this.event_to_message(identity, event, window, cx);
+                            this.event_to_message(event, window, cx);
                         });
                     }
                     NostrSignal::DmRelayNotFound => {
@@ -1046,6 +1040,61 @@ impl ChatSpace {
             )
     }
 
+    pub(crate) fn proxy_signer(window: &mut Window, cx: &mut App) {
+        let Some(Some(root)) = window.root::<Root>() else {
+            return;
+        };
+
+        let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() else {
+            return;
+        };
+
+        chatspace.update(cx, |this, cx| {
+            let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
+            let url = proxy.url();
+
+            this._tasks.push(cx.background_spawn(async move {
+                let client = nostr_client();
+                let channel = global_channel();
+
+                if proxy.start().await.is_ok() {
+                    webbrowser::open(&url).ok();
+
+                    loop {
+                        if proxy.is_session_active() {
+                            // Save the signer to disk for further logins
+                            if let Ok(public_key) = proxy.get_public_key().await {
+                                let keys = Keys::generate();
+                                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                                let kind = Kind::ApplicationSpecificData;
+
+                                let builder = EventBuilder::new(kind, "extension")
+                                    .tags(tags)
+                                    .build(public_key)
+                                    .sign(&keys)
+                                    .await;
+
+                                if let Ok(event) = builder {
+                                    if let Err(e) = client.database().save_event(&event).await {
+                                        log::error!("Failed to save event: {e}");
+                                    };
+                                }
+                            }
+
+                            // Set the client's signer with current proxy signer
+                            client.set_signer(proxy.clone()).await;
+
+                            break;
+                        } else {
+                            channel.0.send(NostrSignal::ProxyDown).await.ok();
+                        }
+                        smol::Timer::after(Duration::from_secs(1)).await;
+                    }
+                }
+            }));
+        });
+    }
+
     pub(crate) fn all_panels(window: &mut Window, cx: &mut App) -> Option<Vec<u64>> {
         let Some(Some(root)) = window.root::<Root>() else {
             return None;
@@ -1055,7 +1104,7 @@ impl ChatSpace {
             return None;
         };
 
-        let ids = chatspace
+        let ids: Vec<u64> = chatspace
             .read(cx)
             .dock
             .read(cx)
@@ -1063,7 +1112,7 @@ impl ChatSpace {
             .panel_ids(cx)
             .into_iter()
             .filter_map(|panel| panel.parse::<u64>().ok())
-            .collect_vec();
+            .collect();
 
         Some(ids)
     }
@@ -1091,12 +1140,11 @@ impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
-        let logged_in = Identity::has_global(cx);
+        let registry = Registry::read_global(cx);
 
         // Only render titlebar child elements if user is logged in
-        if logged_in {
-            let identity = Identity::read_global(cx).public_key();
-            let profile = Registry::read_global(cx).get_person(&identity, cx);
+        if registry.identity.is_some() {
+            let profile = Registry::read_global(cx).identity(cx);
 
             let left_side = self
                 .render_titlebar_left_side(window, cx)

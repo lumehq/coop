@@ -1255,7 +1255,6 @@ dependencies = [
  "gpui",
  "gpui_tokio",
  "i18n",
- "identity",
  "itertools 0.13.0",
  "log",
  "nostr",
@@ -1268,12 +1267,14 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
+ "signer_proxy",
  "smallvec",
  "smol",
  "theme",
  "title_bar",
  "tracing-subscriber",
  "ui",
+ "webbrowser",
 ]
 
 [[package]]
@@ -3031,26 +3032,6 @@ dependencies = [
  "zerofrom",
  "zerotrie",
  "zerovec",
-]
-
-[[package]]
-name = "identity"
-version = "0.2.2"
-dependencies = [
- "anyhow",
- "client_keys",
- "common",
- "global",
- "gpui",
- "log",
- "nostr-connect",
- "nostr-sdk",
- "settings",
- "signer_proxy",
- "smallvec",
- "smol",
- "ui",
- "webbrowser",
 ]
 
 [[package]]

@@ -15,7 +15,6 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::t;
-use identity::Identity;
 use itertools::Itertools;
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
@@ -211,7 +210,7 @@ impl Sidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let query = query.to_owned();
         let query_cloned = query.clone();
 
@@ -271,7 +270,7 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
@@ -325,7 +324,7 @@ impl Sidebar {
             return;
         };
 
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
             // Create a gift wrap event to represent as room
             Self::create_temp_room(identity, public_key).await

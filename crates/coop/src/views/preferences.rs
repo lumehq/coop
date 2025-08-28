@@ -5,7 +5,6 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
-use identity::Identity;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
@@ -116,8 +115,7 @@ impl Preferences {
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let input_state = self.media_input.downgrade();
-        let identity = Identity::read_global(cx).public_key();
-        let profile = Registry::read_global(cx).get_person(&identity, cx);
+        let profile = Registry::read_global(cx).identity(cx);
 
         let backup_messages = AppSettings::get_backup_messages(cx);
         let screening = AppSettings::get_screening(cx);

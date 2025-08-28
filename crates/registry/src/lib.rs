@@ -46,6 +46,9 @@ pub struct Registry {
     /// Always equal to `true` when the app starts
     pub loading: bool,
 
+    /// Public Key of the current user
+    pub identity: Option<PublicKey>,
+
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
 }
@@ -103,13 +106,27 @@ impl Registry {
         Self {
             rooms: vec![],
             persons: HashMap::new(),
+            identity: None,
             loading: true,
             _tasks: tasks,
         }
     }
 
+    /// Returns the identity of the user.
+    ///
+    /// WARNING: This method will panic if user is not logged in.
+    pub fn identity(&self, cx: &App) -> Profile {
+        self.get_person(&self.identity.unwrap(), cx)
+    }
+
+    /// Sets the identity of the user.
+    pub fn set_identity(&mut self, identity: PublicKey, cx: &mut Context<Self>) {
+        self.identity = Some(identity);
+        cx.notify();
+    }
+
     pub fn set_persons(&mut self, profiles: Vec<Profile>, cx: &mut Context<Self>) {
-        for profile in profiles {
+        for profile in profiles.into_iter() {
             self.persons
                 .insert(profile.public_key(), cx.new(|_| profile));
         }
@@ -232,6 +249,7 @@ impl Registry {
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         self.rooms = vec![];
         self.loading = true;
+        self.identity = None;
         cx.notify();
     }
 
@@ -380,15 +398,13 @@ impl Registry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn event_to_message(
-        &mut self,
-        identity: PublicKey,
-        event: Event,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
         let id = event.uniq_id();
         let author = event.pubkey;
+
+        let Some(identity) = self.identity else {
+            return;
+        };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             // Update room

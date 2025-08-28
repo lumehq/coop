@@ -13,7 +13,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use theme::ActiveTheme;
@@ -24,6 +23,8 @@ use ui::indicator::Indicator;
 use ui::input::{InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Disableable, Sizable, StyledExt};
+
+use crate::chatspace::ChatSpace;
 
 pub fn init(
     secret: String,
@@ -69,7 +70,7 @@ impl Account {
                 self.nostr_connect(uri, window, cx);
             }
         } else if self.is_extension {
-            self.proxy(window, cx);
+            self.set_proxy(window, cx);
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
             self.keys(enc, window, cx);
         } else {
@@ -108,8 +109,8 @@ impl Account {
         .detach();
     }
 
-    fn proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        Identity::start_browser_proxy(cx);
+    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ChatSpace::proxy_signer(window, cx);
     }
 
     fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {

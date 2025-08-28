@@ -14,7 +14,6 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::RenderedMessage;
@@ -262,7 +261,7 @@ impl Chat {
 
         // Get the current room entity
         let room = self.room.read(cx);
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
 
         // Create a temporary message for optimistic update
         let temp_message = room.create_temp_message(identity, &content, replies.as_ref());
@@ -359,7 +358,7 @@ impl Chat {
         E::Item: Into<RenderedMessage>,
     {
         let old_len = self.messages.len();
-        let events: Vec<_> = events.into_iter().map(Into::into).collect();
+        let events: Vec<RenderedMessage> = events.into_iter().map(Into::into).collect();
         let new_len = events.len();
 
         // Extend the messages list with the new events

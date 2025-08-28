@@ -12,7 +12,6 @@ use gpui::{
     Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -21,7 +20,7 @@ use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::popup_menu::PopupMenu;
 use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
-use crate::chatspace;
+use crate::chatspace::{self, ChatSpace};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -159,8 +158,8 @@ impl Onboarding {
         .detach();
     }
 
-    fn set_proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        Identity::start_browser_proxy(cx);
+    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ChatSpace::proxy_signer(window, cx);
     }
 
     fn write_uri_to_disk(&mut self, uri: &NostrConnectURI, cx: &mut Context<Self>) {

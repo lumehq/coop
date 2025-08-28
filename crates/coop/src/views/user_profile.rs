@@ -10,7 +10,6 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
@@ -35,7 +34,7 @@ pub struct UserProfile {
 impl UserProfile {
     pub fn new(public_key: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let registry = Registry::read_global(cx);
-        let identity = Identity::read_global(cx).public_key();
+        let identity = registry.identity(cx).public_key();
         let profile = registry.get_person(&public_key, cx);
 
         let mut tasks = smallvec![];
