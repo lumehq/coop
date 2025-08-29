@@ -11,6 +11,13 @@ use crate::paths::support_dir;
 pub mod constants;
 pub mod paths;
 
+#[derive(Debug, Clone)]
+pub enum NostrNotice {
+    RelayFailed,
+    AuthFailed(RelayUrl),
+    Custom(String),
+}
+
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum NostrSignal {
@@ -19,6 +26,12 @@ pub enum NostrSignal {
 
     /// A signal to notify UI that the client's signer has been unset
     SignerUnset,
+
+    /// A signal to notify UI that the relay requires authentication
+    Auth((String, RelayUrl)),
+
+    /// A signal to notify UI that the relay has been authenticated
+    Authenticated(RelayUrl),
 
     /// A signal to notify UI that the browser proxy service is down
     ProxyDown,
@@ -39,7 +52,7 @@ pub enum NostrSignal {
     DmRelayNotFound,
 
     /// A signal to notify UI that there are errors or notices occurred
-    Notice(String),
+    Notice(NostrNotice),
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
@@ -60,7 +73,7 @@ pub fn nostr_client() -> &'static Client {
 
         let opts = ClientOptions::new()
             .gossip(true)
-            .automatic_authentication(true)
+            .automatic_authentication(false)
             .verify_subscriptions(false)
             // Sleep after idle for 30 seconds
             .sleep_when_idle(SleepWhenIdle::Enabled {

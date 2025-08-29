@@ -39,6 +39,10 @@ common:
     en: "Quit"
   restart:
     en: "Restart"
+  confirm:
+    en: "Confirm"
+  ignore:
+    en: "Ignore"
 
 auto_update:
   updating:
@@ -85,6 +89,14 @@ proxy:
     en: "Waiting for approval"
   description:
     en: "Open your default browser and approve the connection request in your Nostr Signer extension"
+
+auth:
+  title:
+    en: "Authentication"
+  require:
+    en: "This relay requires authentication to read messages. Click the confirm button to continue."
+  warning:
+    en: "Without authentication, you cannot read messages from this relay."
 
 startup:
   client_keys_warning:

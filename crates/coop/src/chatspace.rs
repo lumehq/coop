@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS, TOTAL_RETRY, WAIT_FOR_FINISH,
 };
-use global::{global_channel, nostr_client, starting_time, NostrSignal};
+use global::{global_channel, nostr_client, starting_time, NostrNotice, NostrSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
@@ -115,7 +116,7 @@ impl ChatSpace {
         subscriptions.push(
             // Subscribe to open chat room requests
             cx.subscribe_in(&registry, window, move |this, _, event, window, cx| {
-                this.handle_registry_event(event, window, cx);
+                this.process_registry_event(event, window, cx);
             }),
         );
 
@@ -260,97 +261,120 @@ impl ChatSpace {
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let mut processed_events: HashSet<EventId> = HashSet::new();
+        let mut auth_requests: HashMap<RelayUrl, Cow<'_, str>> = HashMap::new();
         let mut notifications = client.notifications();
 
         while let Ok(notification) = notifications.recv().await {
-            let RelayPoolNotification::Message { message, .. } = notification else {
+            let RelayPoolNotification::Message { message, relay_url } = notification else {
                 continue;
             };
 
-            let RelayMessage::Event { event, .. } = message else {
-                continue;
-            };
-
-            // Skip events that have already been processed
-            if !processed_events.insert(event.id) {
-                continue;
-            }
-
-            match event.kind {
-                Kind::RelayList => {
-                    // Get metadata for event's pubkey that matches the current user's pubkey
-                    if let Ok(true) = Self::is_self_event(&event).await {
-                        let mut relay_tracking = relay_tracking.lock().await;
-                        relay_tracking.nip65 = RelayTrackStatus::Found;
-
-                        // Fetch user's metadata event
-                        Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
-
-                        // Fetch user's contact list event
-                        Self::fetch_single_event(Kind::ContactList, event.pubkey).await;
-
-                        // Fetch user's inbox relays event
-                        Self::fetch_single_event(Kind::InboxRelays, event.pubkey).await;
+            match message {
+                RelayMessage::Event { event, .. } => {
+                    // Skip events that have already been processed
+                    if !processed_events.insert(event.id) {
+                        continue;
                     }
-                }
-                Kind::InboxRelays => {
-                    if let Ok(true) = Self::is_self_event(&event).await {
-                        let relays = event
-                            .tags
-                            .filter_standardized(TagKind::Relay)
-                            .filter_map(|t| {
-                                if let TagStandard::Relay(url) = t {
-                                    Some(url.to_owned())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect_vec();
 
-                        if !relays.is_empty() {
-                            let mut relay_tracking = relay_tracking.lock().await;
-                            relay_tracking.nip17 = RelayTrackStatus::Found;
+                    match event.kind {
+                        Kind::RelayList => {
+                            // Get metadata for event's pubkey that matches the current user's pubkey
+                            if let Ok(true) = Self::is_self_event(&event).await {
+                                let mut relay_tracking = relay_tracking.lock().await;
+                                relay_tracking.nip65 = RelayTrackStatus::Found;
 
-                            for relay in relays.iter() {
-                                _ = client.add_relay(relay).await;
-                                _ = client.connect_relay(relay).await;
-                            }
+                                // Fetch user's metadata event
+                                Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
 
-                            let id = SubscriptionId::new("inbox");
-                            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
+                                // Fetch user's contact list event
+                                Self::fetch_single_event(Kind::ContactList, event.pubkey).await;
 
-                            if client
-                                .subscribe_with_id_to(relays.clone(), id, filter, None)
-                                .await
-                                .is_ok()
-                            {
-                                log::info!("Subscribed to messages in: {relays:?}");
+                                // Fetch user's inbox relays event
+                                Self::fetch_single_event(Kind::InboxRelays, event.pubkey).await;
                             }
                         }
+                        Kind::InboxRelays => {
+                            if let Ok(true) = Self::is_self_event(&event).await {
+                                let relays = event
+                                    .tags
+                                    .filter_standardized(TagKind::Relay)
+                                    .filter_map(|t| {
+                                        if let TagStandard::Relay(url) = t {
+                                            Some(url.to_owned())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect_vec();
+
+                                if !relays.is_empty() {
+                                    let mut relay_tracking = relay_tracking.lock().await;
+                                    relay_tracking.nip17 = RelayTrackStatus::Found;
+
+                                    for relay in relays.iter() {
+                                        if client.add_relay(relay).await.is_err() {
+                                            channel
+                                                .0
+                                                .send(NostrSignal::Notice(NostrNotice::RelayFailed))
+                                                .await
+                                                .ok();
+                                        }
+                                        if client.connect_relay(relay).await.is_err() {
+                                            channel
+                                                .0
+                                                .send(NostrSignal::Notice(NostrNotice::RelayFailed))
+                                                .await
+                                                .ok();
+                                        }
+                                    }
+
+                                    // Subscribe to gift wrap events only in the current user's NIP-17 relays
+                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
+                                }
+                            }
+                        }
+                        Kind::ContactList => {
+                            if let Ok(true) = Self::is_self_event(&event).await {
+                                let public_keys = event.tags.public_keys().copied().collect_vec();
+                                let kinds = vec![Kind::Metadata, Kind::ContactList];
+                                let limit = public_keys.len() * kinds.len();
+                                let filter =
+                                    Filter::new().limit(limit).authors(public_keys).kinds(kinds);
+
+                                client
+                                    .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
+                                    .await
+                                    .ok();
+                            }
+                        }
+                        Kind::Metadata => {
+                            channel
+                                .0
+                                .send(NostrSignal::Metadata(event.into_owned()))
+                                .await
+                                .ok();
+                        }
+                        Kind::GiftWrap => {
+                            event_tx.send(event.into_owned()).await.ok();
+                        }
+                        _ => {}
                     }
                 }
-                Kind::ContactList => {
-                    if let Ok(true) = Self::is_self_event(&event).await {
-                        let public_keys = event.tags.public_keys().copied().collect_vec();
-                        let kinds = vec![Kind::Metadata, Kind::ContactList];
-                        let limit = public_keys.len() * kinds.len();
-                        let filter = Filter::new().limit(limit).authors(public_keys).kinds(kinds);
-
-                        client
-                            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
+                RelayMessage::Auth { challenge } => {
+                    // Prevent duplicate auth requests
+                    if auth_requests
+                        .insert(relay_url.clone(), challenge.clone())
+                        .is_none()
+                    {
+                        channel
+                            .0
+                            .send(NostrSignal::Auth((challenge.to_string(), relay_url)))
                             .await
                             .ok();
                     }
                 }
-                Kind::Metadata => {
-                    channel
-                        .0
-                        .send(NostrSignal::Metadata(event.into_owned()))
-                        .await
-                        .ok();
-                }
-                Kind::GiftWrap => {
-                    event_tx.send(event.into_owned()).await.ok();
+                RelayMessage::Notice(msg) => {
+                    log::info!("Notice: {msg} - {relay_url}");
                 }
                 _ => {}
             }
@@ -442,6 +466,16 @@ impl ChatSpace {
                         registry.update(cx, |this, cx| {
                             this.reset(cx);
                         });
+                    }
+                    NostrSignal::Auth((challenge, relay_url)) => {
+                        e.update(cx, |this, cx| {
+                            this.auth_popup(challenge, relay_url, window, cx);
+                        })
+                        .ok();
+                    }
+                    NostrSignal::Authenticated(relay_url) => {
+                        window.close_modal(cx);
+                        window.push_notification(format!("Authenticated: {relay_url}"), cx);
                     }
                     NostrSignal::ProxyDown => {
                         if !is_open_proxy_modal {
@@ -573,6 +607,20 @@ impl ChatSpace {
         }
     }
 
+    async fn fetch_gift_wrap(relays: Vec<RelayUrl>, public_key: PublicKey) {
+        let client = nostr_client();
+        let subscription_id = SubscriptionId::new("inbox");
+        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+        if client
+            .subscribe_with_id_to(&relays, subscription_id, filter, None)
+            .await
+            .is_ok()
+        {
+            log::info!("Subscribed to messages in: {relays:?}");
+        }
+    }
+
     /// Fetches NIP-65 relay list for a given public key
     async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
@@ -693,17 +741,55 @@ impl ChatSpace {
         is_cached
     }
 
-    pub fn set_onboarding_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let panel = Arc::new(onboarding::init(window, cx));
-        let center = DockItem::panel(panel);
+    async fn auth(challenge: String, url: RelayUrl) -> Result<(), Error> {
+        let client = nostr_client();
+        let channel = global_channel();
+        let signer = client.signer().await?;
 
-        self.dock.update(cx, |this, cx| {
-            this.reset(window, cx);
-            this.set_center(center, window, cx);
-        });
+        // Construct event
+        let event: Event = EventBuilder::auth(challenge, url.clone())
+            .sign(&signer)
+            .await?;
+
+        // Get the event ID
+        let id = event.id;
+
+        // Get the relay
+        let relay = client.pool().relay(url).await?;
+
+        // Subscribe to notifications
+        let mut notifications = relay.notifications();
+
+        // Send the AUTH message
+        relay.send_msg(ClientMessage::Auth(Cow::Borrowed(&event)))?;
+
+        while let Ok(notification) = notifications.recv().await {
+            match notification {
+                RelayNotification::Message {
+                    message: RelayMessage::Ok { event_id, .. },
+                } => {
+                    if id == event_id {
+                        // Re-subscribe to previous subscription
+                        relay.resubscribe().await?;
+
+                        // Notify the channel about the successful authentication
+                        channel
+                            .0
+                            .send(NostrSignal::Authenticated(relay.url().to_owned()))
+                            .await?;
+
+                        return Ok(());
+                    }
+                }
+                RelayNotification::Shutdown => break,
+                _ => {}
+            }
+        }
+
+        Err(anyhow!("Auth failed"))
     }
 
-    fn handle_registry_event(
+    fn process_registry_event(
         &mut self,
         event: &RegistryEvent,
         window: &mut Window,
@@ -732,6 +818,77 @@ impl ChatSpace {
             }
             _ => {}
         };
+    }
+
+    fn auth_popup(
+        &mut self,
+        challenge: String,
+        relay: RelayUrl,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.open_modal(cx, move |this, _window, cx| {
+            this.confirm()
+                .show_close(false)
+                .overlay_closable(false)
+                .keyboard(false)
+                .button_props(
+                    ModalButtonProps::default()
+                        .ok_text(t!("common.confirm"))
+                        .cancel_text("common.reject"),
+                )
+                .title(shared_t!("auth.title"))
+                .child(
+                    v_flex()
+                        .gap_1()
+                        .text_sm()
+                        .child(
+                            div()
+                                .py_1()
+                                .px_2()
+                                .rounded_md()
+                                .bg(cx.theme().elevated_surface_background)
+                                .child(relay.to_string()),
+                        )
+                        .child(div().child(shared_t!("auth.require")))
+                        .child(
+                            div()
+                                .text_xs()
+                                .italic()
+                                .text_color(cx.theme().text_muted)
+                                .child(shared_t!("auth.warning")),
+                        ),
+                )
+                .on_ok({
+                    let challenge = challenge.clone();
+                    let url = relay.clone();
+
+                    move |_, _window, cx| {
+                        let challenge = challenge.clone();
+                        let url = url.clone();
+
+                        cx.background_spawn(async move {
+                            if let Err(e) = Self::auth(challenge, url).await {
+                                log::error!("Failed to authenticate: {e}");
+                            }
+                        })
+                        .detach();
+
+                        // false to prevent closing the modal
+                        false
+                    }
+                })
+        });
+    }
+
+    pub fn set_onboarding_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let panel = Arc::new(onboarding::init(window, cx));
+        let center = DockItem::panel(panel);
+
+        self.dock.update(cx, |this, cx| {
+            this.reset(window, cx);
+            this.set_center(center, window, cx);
+        });
     }
 
     pub fn set_account_layout(
