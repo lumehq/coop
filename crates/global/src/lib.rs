@@ -29,9 +29,19 @@ impl AuthReq {
 
 #[derive(Debug, Clone)]
 pub enum Notice {
-    RelayFailed,
+    RelayFailed(RelayUrl),
     AuthFailed(RelayUrl),
     Custom(String),
+}
+
+impl Notice {
+    pub fn as_str(&self) -> String {
+        match self {
+            Notice::AuthFailed(url) => format!("Authenticate failed for relay {url}"),
+            Notice::RelayFailed(url) => format!("Failed to connect the relay {url}"),
+            Notice::Custom(msg) => msg.into(),
+        }
+    }
 }
 
 /// Signals sent through the global event channel to notify UI

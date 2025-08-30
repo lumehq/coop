@@ -397,7 +397,7 @@ impl ChatSpace {
                         }
                         Kind::InboxRelays => {
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays = event
+                                let relays: Vec<RelayUrl> = event
                                     .tags
                                     .filter_standardized(TagKind::Relay)
                                     .filter_map(|t| {
@@ -407,7 +407,7 @@ impl ChatSpace {
                                             None
                                         }
                                     })
-                                    .collect_vec();
+                                    .collect();
 
                                 if !relays.is_empty() {
                                     let mut relay_tracking = relay_tracking.lock().await;
@@ -415,19 +415,17 @@ impl ChatSpace {
 
                                     for relay in relays.iter() {
                                         if client.add_relay(relay).await.is_err() {
-                                            ingester
-                                                .send(IngesterSignal::Notice(Notice::RelayFailed))
-                                                .await;
+                                            let notice = Notice::RelayFailed(relay.clone());
+                                            ingester.send(IngesterSignal::Notice(notice)).await;
                                         }
                                         if client.connect_relay(relay).await.is_err() {
-                                            ingester
-                                                .send(IngesterSignal::Notice(Notice::RelayFailed))
-                                                .await;
+                                            let notice = Notice::RelayFailed(relay.clone());
+                                            ingester.send(IngesterSignal::Notice(notice)).await;
                                         }
                                     }
 
                                     // Subscribe to gift wrap events only in the current user's NIP-17 relays
-                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
+                                    Self::fetch_gift_wrap(&relays, event.pubkey).await;
                                 }
                             }
                         }
@@ -577,8 +575,8 @@ impl ChatSpace {
                         })
                         .ok();
                     }
-                    IngesterSignal::Notice(_msg) => {
-                        // window.push_notification(msg, cx);
+                    IngesterSignal::Notice(msg) => {
+                        window.push_notification(msg.as_str(), cx);
                     }
                 };
             })
@@ -607,13 +605,13 @@ impl ChatSpace {
         }
     }
 
-    async fn fetch_gift_wrap(relays: Vec<RelayUrl>, public_key: PublicKey) {
+    async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
         let client = nostr_client();
         let subscription_id = SubscriptionId::new("inbox");
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         if client
-            .subscribe_with_id_to(&relays, subscription_id, filter, None)
+            .subscribe_with_id_to(relays.to_owned(), subscription_id, filter, None)
             .await
             .is_ok()
         {

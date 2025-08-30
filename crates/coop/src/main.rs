@@ -20,10 +20,6 @@ pub(crate) mod views;
 i18n::init!();
 
 fn main() {
-    // Set SMOL_THREADS to 3
-    // TODO: allow user to configure this
-    std::env::set_var("SMOL_THREADS", "3");
-
     // Initialize logging
     tracing_subscriber::fmt::init();
 
