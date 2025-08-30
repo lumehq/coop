@@ -1,14 +1,12 @@
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use global::nostr_client;
-use gpui::{
-    App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task, WeakEntity, Window,
-};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
+use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -29,7 +27,7 @@ struct GlobalRegistry(Entity<Registry>);
 impl Global for GlobalRegistry {}
 
 #[derive(Debug)]
-pub enum RegistrySignal {
+pub enum RegistryEvent {
     Open(WeakEntity<Room>),
     Close(u64),
     NewRequest(RoomKind),
@@ -41,19 +39,21 @@ pub struct Registry {
     pub rooms: Vec<Entity<Room>>,
 
     /// Collection of all persons (user profiles)
-    pub persons: BTreeMap<PublicKey, Entity<Profile>>,
+    pub persons: HashMap<PublicKey, Entity<Profile>>,
 
     /// Indicates if rooms are currently being loaded
     ///
     /// Always equal to `true` when the app starts
     pub loading: bool,
 
-    /// Subscriptions for observing changes
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    /// Public Key of the current user
+    pub identity: Option<PublicKey>,
+
+    /// Tasks for asynchronous operations
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
-impl EventEmitter<RegistrySignal> for Registry {}
+impl EventEmitter<RegistryEvent> for Registry {}
 
 impl Registry {
     /// Retrieve the Global Registry state
@@ -73,74 +73,68 @@ impl Registry {
 
     /// Create a new Registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let mut subscriptions = smallvec![];
+        let mut tasks = smallvec![];
 
-        // Load all user profiles from the database when the Registry is created
-        subscriptions.push(cx.observe_new::<Self>(|this, _window, cx| {
-            let task = this.load_local_person(cx);
-            this.set_persons_from_task(task, cx);
-        }));
+        let load_local_persons: Task<Result<Vec<Profile>, Error>> =
+            cx.background_spawn(async move {
+                let client = nostr_client();
+                let filter = Filter::new().kind(Kind::Metadata).limit(200);
+                let events = client.database().query(filter).await?;
+                let mut profiles = vec![];
 
-        // When any Room is created, load members metadata
-        subscriptions.push(cx.observe_new::<Room>(|this, _window, cx| {
-            let state = Self::global(cx);
-            let task = this.load_metadata(cx);
+                for event in events.into_iter() {
+                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                    let profile = Profile::new(event.pubkey, metadata);
+                    profiles.push(profile);
+                }
 
-            state.update(cx, |this, cx| {
-                this.set_persons_from_task(task, cx);
+                Ok(profiles)
             });
-        }));
+
+        tasks.push(
+            // Load all user profiles from the database when the Registry is created
+            cx.spawn(async move |this, cx| {
+                if let Ok(profiles) = load_local_persons.await {
+                    this.update(cx, |this, cx| {
+                        this.set_persons(profiles, cx);
+                    })
+                    .ok();
+                }
+            }),
+        );
 
         Self {
             rooms: vec![],
-            persons: BTreeMap::new(),
+            persons: HashMap::new(),
+            identity: None,
             loading: true,
-            subscriptions,
+            _tasks: tasks,
         }
     }
 
-    pub fn reset(&mut self, cx: &mut Context<Self>) {
-        self.rooms = vec![];
-        self.loading = true;
+    /// Returns the identity of the user.
+    ///
+    /// WARNING: This method will panic if user is not logged in.
+    pub fn identity(&self, cx: &App) -> Profile {
+        self.get_person(&self.identity.unwrap(), cx)
+    }
+
+    /// Sets the identity of the user.
+    pub fn set_identity(&mut self, identity: PublicKey, cx: &mut Context<Self>) {
+        self.identity = Some(identity);
         cx.notify();
     }
 
-    pub(crate) fn set_persons_from_task(
-        &mut self,
-        task: Task<Result<Vec<Profile>, Error>>,
-        cx: &mut Context<Self>,
-    ) {
-        cx.spawn(async move |this, cx| {
-            if let Ok(profiles) = task.await {
-                this.update(cx, |this, cx| {
-                    for profile in profiles {
-                        this.persons
-                            .insert(profile.public_key(), cx.new(|_| profile));
-                    }
-                    cx.notify();
-                })
-                .ok();
-            }
-        })
-        .detach();
+    /// Insert batch of persons
+    pub fn set_persons(&mut self, profiles: Vec<Profile>, cx: &mut Context<Self>) {
+        for profile in profiles.into_iter() {
+            self.persons
+                .insert(profile.public_key(), cx.new(|_| profile));
+        }
+        cx.notify();
     }
 
-    pub(crate) fn load_local_person(&self, cx: &App) -> Task<Result<Vec<Profile>, Error>> {
-        cx.background_spawn(async move {
-            let filter = Filter::new().kind(Kind::Metadata).limit(100);
-            let events = nostr_client().database().query(filter).await?;
-            let mut profiles = vec![];
-
-            for event in events.into_iter() {
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                let profile = Profile::new(event.pubkey, metadata);
-                profiles.push(profile);
-            }
-
-            Ok(profiles)
-        })
-    }
-
+    /// Get single person
     pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
         self.persons
             .get(public_key)
@@ -149,6 +143,7 @@ impl Registry {
             .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
     }
 
+    /// Get group of persons
     pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Profile> {
         let mut profiles = vec![];
 
@@ -160,6 +155,7 @@ impl Registry {
         profiles
     }
 
+    /// Insert or update a person
     pub fn insert_or_update_person(&mut self, event: Event, cx: &mut App) {
         let public_key = event.pubkey;
         let Ok(metadata) = Metadata::from_json(event.content) else {
@@ -213,7 +209,7 @@ impl Registry {
     /// Close a room.
     pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
         if self.rooms.iter().any(|r| r.read(cx).id == id) {
-            cx.emit(RegistrySignal::Close(id));
+            cx.emit(RegistryEvent::Close(id));
         }
     }
 
@@ -253,6 +249,14 @@ impl Registry {
         cx.notify();
     }
 
+    /// Reset the registry.
+    pub fn reset(&mut self, cx: &mut Context<Self>) {
+        self.rooms = vec![];
+        self.loading = true;
+        self.identity = None;
+        cx.notify();
+    }
+
     /// Load all rooms from the database.
     pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         log::info!("Starting to load chat rooms...");
@@ -260,7 +264,7 @@ impl Registry {
         // Get the contact bypass setting
         let contact_bypass = AppSettings::get_contact_bypass(cx);
 
-        let task: Task<Result<BTreeSet<Room>, Error>> = cx.background_spawn(async move {
+        let task: Task<Result<HashSet<Room>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
@@ -279,7 +283,7 @@ impl Registry {
             let recv_events = client.database().query(recv).await?;
             let events = send_events.merge(recv_events);
 
-            let mut rooms: BTreeSet<Room> = BTreeSet::new();
+            let mut rooms: HashSet<Room> = HashSet::new();
 
             // Process each event and group by room hash
             for event in events
@@ -343,7 +347,7 @@ impl Registry {
         .detach();
     }
 
-    pub(crate) fn extend_rooms(&mut self, rooms: BTreeSet<Room>, cx: &mut Context<Self>) {
+    pub(crate) fn extend_rooms(&mut self, rooms: HashSet<Room>, cx: &mut Context<Self>) {
         let mut room_map: HashMap<u64, usize> = HashMap::with_capacity(self.rooms.len());
 
         for (index, room) in self.rooms.iter().enumerate() {
@@ -380,7 +384,7 @@ impl Registry {
             weak_room
         };
 
-        cx.emit(RegistrySignal::Open(weak_room));
+        cx.emit(RegistryEvent::Open(weak_room));
     }
 
     /// Refresh messages for a room in the global registry
@@ -400,13 +404,17 @@ impl Registry {
     /// Updates room ordering based on the most recent messages.
     pub fn event_to_message(
         &mut self,
-        identity: PublicKey,
+        gift_wrap_id: EventId,
         event: Event,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let id = event.uniq_id();
         let author = event.pubkey;
+
+        let Some(identity) = self.identity else {
+            return;
+        };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             // Update room
@@ -420,7 +428,7 @@ impl Registry {
 
                 // Emit the new message to the room
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(event, cx);
+                    this.emit_message(gift_wrap_id, event, cx);
                 });
             });
 
@@ -436,7 +444,7 @@ impl Registry {
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RegistrySignal::NewRequest(RoomKind::default()));
+                cx.emit(RegistryEvent::NewRequest(RoomKind::default()));
             });
         }
     }

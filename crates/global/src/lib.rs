@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -13,41 +12,109 @@ use crate::paths::support_dir;
 pub mod constants;
 pub mod paths;
 
-/// Signals sent through the global event channel to notify UI components
+#[derive(Debug, Clone)]
+pub struct AuthReq {
+    pub challenge: String,
+    pub url: RelayUrl,
+}
+
+impl AuthReq {
+    pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
+        Self {
+            challenge: challenge.into(),
+            url,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Notice {
+    RelayFailed(RelayUrl),
+    AuthFailed(RelayUrl),
+    Custom(String),
+}
+
+impl Notice {
+    pub fn as_str(&self) -> String {
+        match self {
+            Notice::AuthFailed(url) => format!("Authenticate failed for relay {url}"),
+            Notice::RelayFailed(url) => format!("Failed to connect the relay {url}"),
+            Notice::Custom(msg) => msg.into(),
+        }
+    }
+}
+
+/// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
-pub enum NostrSignal {
-    /// Signer has been set
+pub enum IngesterSignal {
+    /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
-    /// Signer has been unset
+    /// A signal to notify UI that the client's signer has been unset
     SignerUnset,
 
-    /// Browser Signer Proxy service is not running
+    /// A signal to notify UI that the relay requires authentication
+    Auth(AuthReq),
+
+    /// A signal to notify UI that the browser proxy service is down
     ProxyDown,
 
-    /// Received a new metadata event from Relay Pool
+    /// A signal to notify UI that a new metadata event has been received
     Metadata(Event),
 
-    /// Received a new gift wrap event from Relay Pool
-    GiftWrap(Event),
+    /// A signal to notify UI that a new gift wrap event has been received
+    GiftWrap((EventId, Event)),
 
-    /// Finished processing all gift wrap events
+    /// A signal to notify UI that all gift wrap events have been processed
     Finish,
 
-    /// Partially finished processing all gift wrap events
+    /// A signal to notify UI that partial processing of gift wrap events has been completed
     PartialFinish,
 
-    /// DM relays have been found
-    DmRelaysFound,
+    /// A signal to notify UI that no DM relay for current user was found
+    DmRelayNotFound,
 
-    /// Notice from Relay Pool
-    Notice(String),
+    /// A signal to notify UI that there are errors or notices occurred
+    Notice(Notice),
+}
+
+#[derive(Debug)]
+pub struct Ingester {
+    rx: Receiver<IngesterSignal>,
+    tx: Sender<IngesterSignal>,
+}
+
+impl Default for Ingester {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Ingester {
+    pub fn new() -> Self {
+        let (tx, rx) = smol::channel::bounded::<IngesterSignal>(2048);
+        Self { rx, tx }
+    }
+
+    pub fn signals(&self) -> &Receiver<IngesterSignal> {
+        &self.rx
+    }
+
+    pub async fn send(&self, signal: IngesterSignal) {
+        if let Err(e) = self.tx.send(signal).await {
+            log::error!("Failed to send signal: {e}");
+        }
+    }
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-static GLOBAL_CHANNEL: OnceLock<(Sender<NostrSignal>, Receiver<NostrSignal>)> = OnceLock::new();
-static PROCESSED_EVENTS: OnceLock<RwLock<BTreeSet<EventId>>> = OnceLock::new();
+
+static INGESTER: OnceLock<Ingester> = OnceLock::new();
+
+static SENT_IDS: OnceLock<RwLock<Vec<EventId>>> = OnceLock::new();
+
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
+
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
@@ -63,7 +130,7 @@ pub fn nostr_client() -> &'static Client {
 
         let opts = ClientOptions::new()
             .gossip(true)
-            .automatic_authentication(true)
+            .automatic_authentication(false)
             .verify_subscriptions(false)
             // Sleep after idle for 30 seconds
             .sleep_when_idle(SleepWhenIdle::Enabled {
@@ -74,19 +141,16 @@ pub fn nostr_client() -> &'static Client {
     })
 }
 
-pub fn global_channel() -> &'static (Sender<NostrSignal>, Receiver<NostrSignal>) {
-    GLOBAL_CHANNEL.get_or_init(|| {
-        let (sender, receiver) = smol::channel::bounded::<NostrSignal>(2048);
-        (sender, receiver)
-    })
-}
-
-pub fn processed_events() -> &'static RwLock<BTreeSet<EventId>> {
-    PROCESSED_EVENTS.get_or_init(|| RwLock::new(BTreeSet::new()))
+pub fn ingester() -> &'static Ingester {
+    INGESTER.get_or_init(Ingester::new)
 }
 
 pub fn starting_time() -> &'static Timestamp {
     CURRENT_TIMESTAMP.get_or_init(Timestamp::now)
+}
+
+pub fn sent_ids() -> &'static RwLock<Vec<EventId>> {
+    SENT_IDS.get_or_init(|| RwLock::new(Vec::new()))
 }
 
 pub fn first_run() -> &'static bool {

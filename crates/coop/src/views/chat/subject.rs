@@ -28,8 +28,8 @@ impl Subject {
         cx.new(|_| Self { input })
     }
 
-    pub fn new_subject(&self, cx: &App) -> SharedString {
-        self.input.read(cx).value().clone()
+    pub fn new_subject(&self, cx: &App) -> String {
+        self.input.read(cx).value().to_string()
     }
 }
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::TextUtils;
+use common::display::{ReadableTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -15,12 +15,11 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::t;
-use identity::Identity;
 use itertools::Itertools;
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use registry::room::{Room, RoomKind};
-use registry::{Registry, RegistrySignal};
+use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -82,7 +81,7 @@ impl Sidebar {
             &chats,
             window,
             move |this, _chats, event, _window, cx| {
-                if let RegistrySignal::NewRequest(kind) = event {
+                if let RegistryEvent::NewRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();
@@ -211,7 +210,7 @@ impl Sidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let query = query.to_owned();
         let query_cloned = query.clone();
 
@@ -271,7 +270,7 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
@@ -325,7 +324,7 @@ impl Sidebar {
             return;
         };
 
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
             // Create a gift wrap event to represent as room
             Self::create_temp_room(identity, public_key).await
@@ -553,7 +552,7 @@ impl Sidebar {
                         .room_id(room_id)
                         .name(this.display_name(cx))
                         .avatar(this.display_image(proxy, cx))
-                        .created_at(this.ago())
+                        .created_at(this.created_at.to_ago())
                         .public_key(this.members[0])
                         .kind(this.kind)
                         .on_click(handler),

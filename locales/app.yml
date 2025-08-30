@@ -35,6 +35,16 @@ common:
     en: "Open Browser"
   refreshed:
     en: "Refreshed"
+  quit:
+    en: "Quit"
+  restart:
+    en: "Restart"
+  approve:
+    en: "Approve"
+  ignore:
+    en: "Ignore"
+  relay:
+    en: "Relay"
 
 auto_update:
   updating:
@@ -81,6 +91,14 @@ proxy:
     en: "Waiting for approval"
   description:
     en: "Open your default browser and approve the connection request in your Nostr Signer extension"
+
+auth:
+  label:
+    en: "Authentication Required"
+  message:
+    en: "Approve the authentication request to allow Coop to continue getting your messages."
+  requests:
+    en: "You have %{u} total pending authentication requests"
 
 startup:
   client_keys_warning:

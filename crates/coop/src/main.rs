@@ -1,192 +1,44 @@
-use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
-use anyhow::{anyhow, Error};
 use assets::Assets;
-use common::event::EventUtils;
-use global::constants::{
-    APP_ID, APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT,
-    SEARCH_RELAYS, WAIT_FOR_FINISH,
-};
-use global::{global_channel, nostr_client, processed_events, starting_time, NostrSignal};
+use global::constants::{APP_ID, APP_NAME};
+use global::{ingester, nostr_client, sent_ids, starting_time};
 use gpui::{
-    actions, point, px, size, App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem,
-    SharedString, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
-    WindowKind, WindowOptions,
+    point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
+    TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
+    WindowOptions,
 };
-use itertools::Itertools;
-use nostr_sdk::prelude::*;
-use smol::channel::{self, Sender};
 use theme::Theme;
 use ui::Root;
 
+use crate::actions::{load_embedded_fonts, quit, Quit};
+
+pub(crate) mod actions;
 pub(crate) mod chatspace;
 pub(crate) mod views;
 
 i18n::init!();
 
-actions!(coop, [Quit]);
-
 fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    // Initialize the Nostr Client
-    let client = nostr_client();
+    // Initialize the Nostr client
+    let _client = nostr_client();
+
+    // Initialize the ingester
+    let _ingester = ingester();
 
     // Initialize the starting time
     let _starting_time = starting_time();
+
+    // Initialize the sent IDs storage
+    let _sent_ids = sent_ids();
 
     // Initialize the Application
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
-
-    let (pubkey_tx, pubkey_rx) = channel::bounded::<PublicKey>(1024);
-    let (event_tx, event_rx) = channel::bounded::<Event>(2048);
-
-    app.background_executor()
-        .spawn(async move {
-            // Subscribe for app updates from the bootstrap relays.
-            if let Err(e) = connect(client).await {
-                log::error!("Failed to connect to bootstrap relays: {e}");
-            }
-
-            // Handle Nostr notifications.
-            //
-            // Send the redefined signal back to GPUI via channel.
-            if let Err(e) = handle_nostr_notifications(&event_tx).await {
-                log::error!("Failed to handle Nostr notifications: {e}");
-            }
-        })
-        .detach();
-
-    app.background_executor()
-        .spawn(async move {
-            let channel = global_channel();
-
-            loop {
-                if let Ok(signer) = client.signer().await {
-                    if let Ok(public_key) = signer.get_public_key().await {
-                        // Notify the app that the signer has been set.
-                        _ = channel.0.send(NostrSignal::SignerSet(public_key)).await;
-
-                        // Get the NIP-65 relays for the public key.
-                        get_nip65_relays(public_key).await.ok();
-
-                        break;
-                    }
-                }
-                smol::Timer::after(Duration::from_secs(1)).await;
-            }
-        })
-        .detach();
-
-    app.background_executor()
-        .spawn(async move {
-            let duration = Duration::from_millis(METADATA_BATCH_TIMEOUT);
-            let mut processed_pubkeys: BTreeSet<PublicKey> = BTreeSet::new();
-            let mut batch: BTreeSet<PublicKey> = BTreeSet::new();
-
-            /// Internal events for the metadata batching system
-            enum BatchEvent {
-                NewKeys(PublicKey),
-                Timeout,
-                Closed,
-            }
-
-            loop {
-                let duration = smol::Timer::after(duration);
-
-                let recv = || async {
-                    if let Ok(public_key) = pubkey_rx.recv().await {
-                        BatchEvent::NewKeys(public_key)
-                    } else {
-                        BatchEvent::Closed
-                    }
-                };
-
-                let timeout = || async {
-                    duration.await;
-                    BatchEvent::Timeout
-                };
-
-                match smol::future::or(recv(), timeout()).await {
-                    BatchEvent::NewKeys(public_key) => {
-                        // Prevent duplicate keys from being processed
-                        if processed_pubkeys.insert(public_key) {
-                            batch.insert(public_key);
-                        }
-                        // Process the batch if it's full
-                        if batch.len() >= METADATA_BATCH_LIMIT {
-                            sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
-                        }
-                    }
-                    BatchEvent::Timeout => {
-                        if !batch.is_empty() {
-                            sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
-                        }
-                    }
-                    BatchEvent::Closed => {
-                        if !batch.is_empty() {
-                            sync_data_for_pubkeys(std::mem::take(&mut batch)).await;
-                        }
-                        break;
-                    }
-                }
-            }
-        })
-        .detach();
-
-    app.background_executor()
-        .spawn(async move {
-            let channel = global_channel();
-            let mut counter = 0;
-
-            loop {
-                // Signer is unset, probably user is not ready to retrieve gift wrap events
-                if client.signer().await.is_err() {
-                    smol::Timer::after(Duration::from_secs(1)).await;
-                    continue;
-                }
-
-                let duration = smol::Timer::after(Duration::from_secs(WAIT_FOR_FINISH));
-
-                let recv = || async {
-                    // no inline
-                    (event_rx.recv().await).ok()
-                };
-
-                let timeout = || async {
-                    duration.await;
-                    None
-                };
-
-                match smol::future::or(recv(), timeout()).await {
-                    Some(event) => {
-                        let cached = unwrap_gift(&event, &pubkey_tx).await;
-
-                        // Increment the total messages counter if message is not from cache
-                        if !cached {
-                            counter += 1;
-                        }
-
-                        // Send partial finish signal to GPUI
-                        if counter >= 20 {
-                            channel.0.send(NostrSignal::PartialFinish).await.ok();
-                            // Reset counter
-                            counter = 0;
-                        }
-                    }
-                    None => {
-                        // Notify the UI that the processing is finished
-                        channel.0.send(NostrSignal::Finish).await.ok();
-                    }
-                }
-            }
-        })
-        .detach();
 
     // Run application
     app.run(move |cx| {
@@ -263,281 +115,4 @@ fn main() {
         })
         .expect("Failed to open window. Please restart the application.");
     });
-}
-
-fn load_embedded_fonts(cx: &App) {
-    let asset_source = cx.asset_source();
-    let font_paths = asset_source.list("fonts").unwrap();
-    let embedded_fonts = Mutex::new(Vec::new());
-    let executor = cx.background_executor();
-
-    executor.block(executor.scoped(|scope| {
-        for font_path in &font_paths {
-            if !font_path.ends_with(".ttf") {
-                continue;
-            }
-
-            scope.spawn(async {
-                let font_bytes = asset_source.load(font_path).unwrap().unwrap();
-                embedded_fonts.lock().unwrap().push(font_bytes);
-            });
-        }
-    }));
-
-    cx.text_system()
-        .add_fonts(embedded_fonts.into_inner().unwrap())
-        .unwrap();
-}
-
-fn quit(_: &Quit, cx: &mut App) {
-    log::info!("Gracefully quitting the application . . .");
-    cx.quit();
-}
-
-async fn connect(client: &Client) -> Result<(), Error> {
-    for relay in BOOTSTRAP_RELAYS.into_iter() {
-        client.add_relay(relay).await?;
-    }
-
-    log::info!("Connected to bootstrap relays");
-
-    for relay in SEARCH_RELAYS.into_iter() {
-        client.add_relay(relay).await?;
-    }
-
-    log::info!("Connected to search relays");
-
-    // Establish connection to relays
-    client.connect().await;
-
-    Ok(())
-}
-
-async fn handle_nostr_notifications(event_tx: &Sender<Event>) -> Result<(), Error> {
-    let client = nostr_client();
-    let channel = global_channel();
-    let auto_close = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let mut notifications = client.notifications();
-
-    while let Ok(notification) = notifications.recv().await {
-        let RelayPoolNotification::Message { message, .. } = notification else {
-            continue;
-        };
-
-        let RelayMessage::Event { event, .. } = message else {
-            continue;
-        };
-
-        // Skip events that have already been processed
-        if !processed_events().write().await.insert(event.id) {
-            continue;
-        }
-
-        match event.kind {
-            Kind::RelayList => {
-                // Get metadata for event's pubkey that matches the current user's pubkey
-                if let Ok(true) = is_from_current_user(&event).await {
-                    let sub_id = SubscriptionId::new("metadata");
-                    let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::InboxRelays];
-                    let filter = Filter::new().kinds(kinds).author(event.pubkey).limit(10);
-
-                    client
-                        .subscribe_with_id(sub_id, filter, Some(auto_close))
-                        .await
-                        .ok();
-                }
-            }
-            Kind::InboxRelays => {
-                if let Ok(true) = is_from_current_user(&event).await {
-                    // Get all inbox relays
-                    let relays = event
-                        .tags
-                        .filter_standardized(TagKind::Relay)
-                        .filter_map(|t| {
-                            if let TagStandard::Relay(url) = t {
-                                Some(url.to_owned())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect_vec();
-
-                    if !relays.is_empty() {
-                        // Add relays to nostr client
-                        for relay in relays.iter() {
-                            _ = client.add_relay(relay).await;
-                            _ = client.connect_relay(relay).await;
-                        }
-
-                        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(event.pubkey);
-                        let sub_id = SubscriptionId::new("gift-wrap");
-
-                        // Notify the UI that the current user has set up the DM relays
-                        channel.0.send(NostrSignal::DmRelaysFound).await.ok();
-
-                        if client
-                            .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
-                            .await
-                            .is_ok()
-                        {
-                            log::info!("Subscribing to messages in: {relays:?}");
-                        }
-                    }
-                }
-            }
-            Kind::ContactList => {
-                if let Ok(true) = is_from_current_user(&event).await {
-                    let public_keys: Vec<PublicKey> = event.tags.public_keys().copied().collect();
-                    let kinds = vec![Kind::Metadata, Kind::ContactList];
-                    let lens = public_keys.len() * kinds.len();
-                    let filter = Filter::new().limit(lens).authors(public_keys).kinds(kinds);
-
-                    client
-                        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
-                        .await
-                        .ok();
-                }
-            }
-            Kind::Metadata => {
-                channel
-                    .0
-                    .send(NostrSignal::Metadata(event.into_owned()))
-                    .await
-                    .ok();
-            }
-            Kind::GiftWrap => {
-                event_tx.send(event.into_owned()).await.ok();
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-async fn get_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
-    let client = nostr_client();
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let sub_id = SubscriptionId::new("nip65-relays");
-
-    let filter = Filter::new()
-        .kind(Kind::RelayList)
-        .author(public_key)
-        .limit(1);
-
-    client.subscribe_with_id(sub_id, filter, Some(opts)).await?;
-
-    Ok(())
-}
-
-async fn is_from_current_user(event: &Event) -> Result<bool, Error> {
-    let client = nostr_client();
-    let signer = client.signer().await?;
-    let public_key = signer.get_public_key().await?;
-
-    Ok(public_key == event.pubkey)
-}
-
-async fn sync_data_for_pubkeys(public_keys: BTreeSet<PublicKey>) {
-    let client = nostr_client();
-    let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-    let kinds = vec![Kind::Metadata, Kind::ContactList];
-
-    let filter = Filter::new()
-        .limit(public_keys.len() * kinds.len())
-        .authors(public_keys)
-        .kinds(kinds);
-
-    client
-        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-        .await
-        .ok();
-}
-
-/// Stores an unwrapped event in local database with reference to original
-async fn set_unwrapped(root: EventId, unwrapped: &Event) -> Result<(), Error> {
-    let client = nostr_client();
-
-    // Save unwrapped event
-    client.database().save_event(unwrapped).await?;
-
-    // Create a reference event pointing to the unwrapped event
-    let event = EventBuilder::new(Kind::ApplicationSpecificData, "")
-        .tags(vec![Tag::identifier(root), Tag::event(unwrapped.id)])
-        .sign(&Keys::generate())
-        .await?;
-
-    // Save reference event
-    client.database().save_event(&event).await?;
-
-    Ok(())
-}
-
-/// Retrieves a previously unwrapped event from local database
-async fn get_unwrapped(root: EventId) -> Result<Event, Error> {
-    let client = nostr_client();
-    let filter = Filter::new()
-        .kind(Kind::ApplicationSpecificData)
-        .identifier(root)
-        .limit(1);
-
-    if let Some(event) = client.database().query(filter).await?.first_owned() {
-        let target_id = event.tags.event_ids().collect_vec()[0];
-
-        if let Some(event) = client.database().event_by_id(target_id).await? {
-            Ok(event)
-        } else {
-            Err(anyhow!("Event not found."))
-        }
-    } else {
-        Err(anyhow!("Event is not cached yet."))
-    }
-}
-
-/// Unwraps a gift-wrapped event and processes its contents.
-async fn unwrap_gift(gift: &Event, pubkey_tx: &Sender<PublicKey>) -> bool {
-    let client = nostr_client();
-    let channel = global_channel();
-    let mut is_cached = false;
-
-    let event = match get_unwrapped(gift.id).await {
-        Ok(event) => {
-            is_cached = true;
-            event
-        }
-        Err(_) => {
-            match client.unwrap_gift_wrap(gift).await {
-                Ok(unwrap) => {
-                    // Sign the unwrapped event with a RANDOM KEYS
-                    let Ok(unwrapped) = unwrap.rumor.sign_with_keys(&Keys::generate()) else {
-                        log::error!("Failed to sign event");
-                        return false;
-                    };
-
-                    // Save this event to the database for future use.
-                    if let Err(e) = set_unwrapped(gift.id, &unwrapped).await {
-                        log::warn!("Failed to cache unwrapped event: {e}")
-                    }
-
-                    unwrapped
-                }
-                Err(e) => {
-                    log::error!("Failed to unwrap event: {e}");
-                    return false;
-                }
-            }
-        }
-    };
-
-    // Send all pubkeys to the metadata batch to sync data
-    for public_key in event.all_pubkeys() {
-        pubkey_tx.send(public_key).await.ok();
-    }
-
-    // Send a notify to GPUI if this is a new message
-    if starting_time() <= &event.created_at {
-        channel.0.send(NostrSignal::GiftWrap(event)).await.ok();
-    }
-
-    is_cached
 }

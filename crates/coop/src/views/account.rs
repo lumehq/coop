@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use common::handle_auth::CoopAuthUrlHandler;
-use global::constants::ACCOUNT_IDENTIFIER;
-use global::nostr_client;
+use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use global::{ingester, nostr_client, IngesterSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -13,7 +13,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
-use identity::Identity;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use theme::ActiveTheme;
@@ -24,6 +23,8 @@ use ui::indicator::Indicator;
 use ui::input::{InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Disableable, Sizable, StyledExt};
+
+use crate::chatspace::ChatSpace;
 
 pub fn init(
     secret: String,
@@ -69,7 +70,7 @@ impl Account {
                 self.nostr_connect(uri, window, cx);
             }
         } else if self.is_extension {
-            self.proxy(window, cx);
+            self.set_proxy(window, cx);
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
             self.keys(enc, window, cx);
         } else {
@@ -82,8 +83,7 @@ impl Account {
         let client_keys = ClientKeys::global(cx);
         let app_keys = client_keys.read(cx).keys();
 
-        let secs = 30;
-        let timeout = Duration::from_secs(secs);
+        let timeout = Duration::from_secs(BUNKER_TIMEOUT);
         let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
 
         // Handle auth url with the default browser
@@ -109,8 +109,8 @@ impl Account {
         .detach();
     }
 
-    fn proxy(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        Identity::start_browser_proxy(cx);
+    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ChatSpace::proxy_signer(window, cx);
     }
 
     fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
@@ -239,26 +239,23 @@ impl Account {
         .detach();
     }
 
-    fn logout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+    fn logout(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.background_spawn(async move {
             let client = nostr_client();
+            let ingester = ingester();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_IDENTIFIER);
 
             // Delete account
-            client.database().delete(filter).await?;
+            client.database().delete(filter).await.ok();
 
-            Ok(())
-        });
+            // Unset the client's signer
+            client.unset_signer().await;
 
-        cx.spawn_in(window, async move |_this, cx| {
-            if task.await.is_ok() {
-                cx.update(|_window, cx| {
-                    cx.restart();
-                })
-                .ok();
-            }
+            // Notify the channel about the signer being unset
+            ingester.send(IngesterSignal::SignerUnset).await;
         })
         .detach();
     }

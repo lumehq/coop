@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, rems, App, ClickEvent, Div, InteractiveElement, IntoElement, ParentElement as _,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
@@ -23,7 +23,6 @@ use crate::views::screening;
 #[derive(IntoElement)]
 pub struct RoomListItem {
     ix: usize,
-    base: Div,
     room_id: Option<u64>,
     public_key: Option<PublicKey>,
     name: Option<SharedString>,
@@ -38,7 +37,6 @@ impl RoomListItem {
     pub fn new(ix: usize) -> Self {
         Self {
             ix,
-            base: h_flex().h_9().w_full().px_1p5().gap_2(),
             room_id: None,
             public_key: None,
             name: None,
@@ -59,18 +57,18 @@ impl RoomListItem {
         self
     }
 
-    pub fn name(mut self, name: SharedString) -> Self {
-        self.name = Some(name);
+    pub fn name(mut self, name: impl Into<SharedString>) -> Self {
+        self.name = Some(name.into());
         self
     }
 
-    pub fn avatar(mut self, avatar: SharedString) -> Self {
-        self.avatar = Some(avatar);
+    pub fn avatar(mut self, avatar: impl Into<SharedString>) -> Self {
+        self.avatar = Some(avatar.into());
         self
     }
 
-    pub fn created_at(mut self, created_at: SharedString) -> Self {
-        self.created_at = Some(created_at);
+    pub fn created_at(mut self, created_at: impl Into<SharedString>) -> Self {
+        self.created_at = Some(created_at.into());
         self
     }
 
@@ -111,9 +109,12 @@ impl RenderOnce for RoomListItem {
             self.handler,
         )
         else {
-            return self
-                .base
+            return h_flex()
                 .id(self.ix)
+                .h_9()
+                .w_full()
+                .px_1p5()
+                .gap_2()
                 .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
                 .child(
                     div()
@@ -125,8 +126,12 @@ impl RenderOnce for RoomListItem {
                 );
         };
 
-        self.base
+        h_flex()
             .id(self.ix)
+            .h_9()
+            .w_full()
+            .px_1p5()
+            .gap_2()
             .text_sm()
             .rounded(cx.theme().radius)
             .when(!hide_avatar, |this| {

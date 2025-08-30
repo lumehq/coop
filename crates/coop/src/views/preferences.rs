@@ -1,11 +1,11 @@
-use common::display::DisplayProfile;
+use common::display::ReadableProfile;
 use gpui::http_client::Url;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
-use identity::Identity;
+use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -16,7 +16,7 @@ use ui::modal::ModalButtonProps;
 use ui::switch::Switch;
 use ui::{v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
 
-use crate::views::{edit_profile, messaging_relays};
+use crate::views::{edit_profile, setup_relay};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     Preferences::new(window, cx)
@@ -89,7 +89,7 @@ impl Preferences {
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
         let title = SharedString::new(t!("relays.modal_title"));
-        let view = messaging_relays::init(window, cx);
+        let view = setup_relay::init(Kind::InboxRelays, window, cx);
         let weak_view = view.downgrade();
 
         window.open_modal(cx, move |this, _window, _cx| {
@@ -115,8 +115,7 @@ impl Preferences {
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let input_state = self.media_input.downgrade();
-        let identity = Identity::read_global(cx).public_key();
-        let profile = Registry::read_global(cx).get_person(&identity, cx);
+        let profile = Registry::read_global(cx).identity(cx);
 
         let backup_messages = AppSettings::get_backup_messages(cx);
         let screening = AppSettings::get_screening(cx);

@@ -1,9 +1,9 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use anyhow::anyhow;
-use common::display::DisplayProfile;
+use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
-use global::nostr_client;
+use global::{nostr_client, sent_ids};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
@@ -14,7 +14,6 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
-use identity::Identity;
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::RenderedMessage;
@@ -31,7 +30,6 @@ use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
-use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::text::RenderedText;
 use ui::{
@@ -56,7 +54,7 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     list_state: ListState,
-    messages: BTreeSet<RenderedMessage>,
+    messages: Vec<RenderedMessage>,
     rendered_texts_by_id: HashMap<EventId, RenderedText>,
     reports_by_id: HashMap<EventId, Vec<SendReport>>,
     // New Message
@@ -107,7 +105,7 @@ impl Chat {
                     }
                     Err(e) => {
                         cx.update(|window, cx| {
-                            window.push_notification(Notification::error(e.to_string()), cx);
+                            window.push_notification(e.to_string(), cx);
                         })
                         .ok();
                     }
@@ -138,10 +136,10 @@ impl Chat {
             // Subscribe to room events
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
-                    RoomSignal::NewMessage(event) => {
-                        if !this.is_seen_message(event) {
+                    RoomSignal::NewMessage((gift_wrap_id, event)) => {
+                        if !this.is_sent_by_coop(gift_wrap_id) {
                             this.insert_message(event, cx);
-                        };
+                        }
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
@@ -156,7 +154,7 @@ impl Chat {
             focus_handle: cx.focus_handle(),
             uploading: false,
             sending: false,
-            messages: BTreeSet::new(),
+            messages: Vec::new(),
             rendered_texts_by_id: HashMap::new(),
             reports_by_id: HashMap::new(),
             room,
@@ -219,14 +217,10 @@ impl Chat {
         content
     }
 
-    /// Check if the event is a seen message
-    fn is_seen_message(&self, event: &Event) -> bool {
-        if let Some(message) = self.messages.last() {
-            let duration = event.created_at.as_u64() - message.created_at.as_u64();
-            message.content == event.content && message.author == event.pubkey && duration <= 20
-        } else {
-            false
-        }
+    /// Check if the event is sent by Coop
+    fn is_sent_by_coop(&self, gift_wrap_id: &EventId) -> bool {
+        let sent_ids = sent_ids();
+        sent_ids.read_blocking().contains(gift_wrap_id)
     }
 
     /// Set the sending state of the chat panel
@@ -263,7 +257,7 @@ impl Chat {
 
         // Get the current room entity
         let room = self.room.read(cx);
-        let identity = Identity::read_global(cx).public_key();
+        let identity = Registry::read_global(cx).identity(cx).public_key();
 
         // Create a temporary message for optimistic update
         let temp_message = room.create_temp_message(identity, &content, replies.as_ref());
@@ -346,7 +340,7 @@ impl Chat {
         let new_len = 1;
 
         // Extend the messages list with the new events
-        self.messages.insert(event.into());
+        self.messages.push(event.into());
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -360,11 +354,12 @@ impl Chat {
         E::Item: Into<RenderedMessage>,
     {
         let old_len = self.messages.len();
-        let events: Vec<_> = events.into_iter().map(Into::into).collect();
+        let events: Vec<RenderedMessage> = events.into_iter().map(Into::into).collect();
         let new_len = events.len();
 
         // Extend the messages list with the new events
         self.messages.extend(events);
+        self.messages.sort_by_key(|ev| ev.created_at);
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -532,7 +527,7 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let Some(message) = self.messages.iter().nth(ix) else {
+        let Some(message) = self.messages.get(ix) else {
             return div().id(ix);
         };
 
@@ -591,7 +586,7 @@ impl Chat {
                                             .text_color(cx.theme().text)
                                             .child(author.display_name()),
                                     )
-                                    .child(div().child(message.ago()))
+                                    .child(div().child(message.created_at.to_human_time()))
                                     .when_some(is_sent_success, |this, status| {
                                         this.when(status, |this| {
                                             this.child(self.render_message_sent(&id, cx))

@@ -8,15 +8,16 @@ pub const ACCOUNT_IDENTIFIER: &str = "coop:user";
 pub const SETTINGS_D: &str = "coop:settings";
 
 /// Bootstrap Relays.
-pub const BOOTSTRAP_RELAYS: [&str; 4] = [
+pub const BOOTSTRAP_RELAYS: [&str; 5] = [
     "wss://relay.damus.io",
     "wss://relay.primal.net",
+    "wss://relay.nos.social",
     "wss://user.kindpag.es",
     "wss://purplepag.es",
 ];
 
 /// Search Relays.
-pub const SEARCH_RELAYS: [&str; 2] = ["wss://search.nos.today", "wss://relay.nostr.band"];
+pub const SEARCH_RELAYS: [&str; 1] = ["wss://relay.nostr.band"];
 
 /// NIP65 Relays. Used for new account
 pub const NIP65_RELAYS: [&str; 4] = [
@@ -27,13 +28,19 @@ pub const NIP65_RELAYS: [&str; 4] = [
 ];
 
 /// Messaging Relays. Used for new account
-pub const NIP17_RELAYS: [&str; 2] = ["wss://nip17.com", "wss://relay.0xchat.com"];
+pub const NIP17_RELAYS: [&str; 2] = ["wss://nip17.com", "wss://auth.nostr1.com"];
 
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 
+/// Default retry count for fetching NIP-17 relays
+pub const TOTAL_RETRY: u64 = 2;
+
 /// Default timeout (in seconds) for Nostr Connect
 pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
+
+/// Default timeout (in seconds) for Nostr Connect (Bunker)
+pub const BUNKER_TIMEOUT: u64 = 30;
 
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 100;
@@ -43,9 +50,6 @@ pub const METADATA_BATCH_TIMEOUT: u64 = 300;
 
 /// Maximum timeout for waiting for finish (seconds)
 pub const WAIT_FOR_FINISH: u64 = 60;
-
-/// Default width for all modals.
-pub const DEFAULT_MODAL_WIDTH: f32 = 420.;
 
 /// Default width of the sidebar.
 pub const DEFAULT_SIDEBAR_WIDTH: f32 = 240.;
