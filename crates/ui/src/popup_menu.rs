@@ -3,10 +3,11 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    actions, anchored, canvas, div, px, rems, Action, AnyElement, App, AppContext, Bounds, Context,
-    Corner, DismissEvent, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyBinding, Keystroke, ParentElement, Pixels, Render, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
+    actions, anchored, canvas, div, px, rems, Action, AnyElement, App, AppContext, AsKeystroke,
+    Bounds, Context, Corner, DismissEvent, Edges, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, KeyBinding, Keystroke, ParentElement, Pixels, Render,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, WeakEntity,
+    Window,
 };
 use theme::ActiveTheme;
 
@@ -472,7 +473,7 @@ impl PopupMenu {
                     keybinding
                         .keystrokes()
                         .iter()
-                        .map(|key| key_shortcut(key.clone())),
+                        .map(|key| key_shortcut(key.as_keystroke().clone())),
                 );
 
                 return Some(el);

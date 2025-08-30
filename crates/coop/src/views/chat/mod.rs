@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
-use global::nostr_client;
+use global::{nostr_client, sent_ids};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
@@ -136,10 +136,10 @@ impl Chat {
             // Subscribe to room events
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
-                    RoomSignal::NewMessage(event) => {
-                        if !this.is_seen_message(event) {
+                    RoomSignal::NewMessage((gift_wrap_id, event)) => {
+                        if !this.is_sent_by_coop(gift_wrap_id) {
                             this.insert_message(event, cx);
-                        };
+                        }
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
@@ -217,14 +217,10 @@ impl Chat {
         content
     }
 
-    /// Check if the event is a seen message
-    fn is_seen_message(&self, event: &Event) -> bool {
-        if let Some(message) = self.messages.last() {
-            let duration = event.created_at.as_u64() - message.created_at.as_u64();
-            message.content == event.content && message.author == event.pubkey && duration <= 20
-        } else {
-            false
-        }
+    /// Check if the event is sent by Coop
+    fn is_sent_by_coop(&self, gift_wrap_id: &EventId) -> bool {
+        let sent_ids = sent_ids();
+        sent_ids.read_blocking().contains(gift_wrap_id)
     }
 
     /// Set the sending state of the chat panel

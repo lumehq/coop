@@ -12,7 +12,7 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS, TOTAL_RETRY, WAIT_FOR_FINISH,
 };
-use global::{ingester, nostr_client, starting_time, AuthReq, IngesterSignal, Notice};
+use global::{ingester, nostr_client, sent_ids, starting_time, AuthReq, IngesterSignal, Notice};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
@@ -358,6 +358,7 @@ impl ChatSpace {
     ) -> Result<(), Error> {
         let client = nostr_client();
         let ingester = ingester();
+        let sent_ids = sent_ids();
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
@@ -467,6 +468,10 @@ impl ChatSpace {
                         ingester.send(IngesterSignal::Auth(auth_req)).await;
                     }
                 }
+                RelayMessage::Ok { event_id, .. } => {
+                    // Keep track of events sent by Coop
+                    sent_ids.write().await.push(event_id);
+                }
                 RelayMessage::Notice(msg) => {
                     log::info!("Notice: {msg} - {relay_url}");
                 }
@@ -561,9 +566,9 @@ impl ChatSpace {
                         });
                     }
                     // Convert the gift wrapped message to a message
-                    IngesterSignal::GiftWrap(event) => {
+                    IngesterSignal::GiftWrap((gift_wrap_id, event)) => {
                         registry.update(cx, |this, cx| {
-                            this.event_to_message(event, window, cx);
+                            this.event_to_message(gift_wrap_id, event, window, cx);
                         });
                     }
                     IngesterSignal::DmRelayNotFound => {
@@ -734,7 +739,9 @@ impl ChatSpace {
 
         // Send a notify to GPUI if this is a new message
         if &event.created_at >= starting_time() {
-            ingester.send(IngesterSignal::GiftWrap(event)).await;
+            ingester
+                .send(IngesterSignal::GiftWrap((gift.id, event)))
+                .await;
         }
 
         is_cached

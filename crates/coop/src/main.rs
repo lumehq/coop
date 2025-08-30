@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use assets::Assets;
 use global::constants::{APP_ID, APP_NAME};
-use global::{ingester, nostr_client, starting_time};
+use global::{ingester, nostr_client, sent_ids, starting_time};
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
@@ -35,6 +35,9 @@ fn main() {
 
     // Initialize the starting time
     let _starting_time = starting_time();
+
+    // Initialize the sent IDs storage
+    let _sent_ids = sent_ids();
 
     // Initialize the Application
     let app = Application::new()

@@ -5,6 +5,7 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::channel::{Receiver, Sender};
+use smol::lock::RwLock;
 
 use crate::paths::support_dir;
 
@@ -52,7 +53,7 @@ pub enum IngesterSignal {
     Metadata(Event),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    GiftWrap(Event),
+    GiftWrap((EventId, Event)),
 
     /// A signal to notify UI that all gift wrap events have been processed
     Finish,
@@ -100,6 +101,8 @@ static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
 
 static INGESTER: OnceLock<Ingester> = OnceLock::new();
 
+static SENT_IDS: OnceLock<RwLock<Vec<EventId>>> = OnceLock::new();
+
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
 
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
@@ -134,6 +137,10 @@ pub fn ingester() -> &'static Ingester {
 
 pub fn starting_time() -> &'static Timestamp {
     CURRENT_TIMESTAMP.get_or_init(Timestamp::now)
+}
+
+pub fn sent_ids() -> &'static RwLock<Vec<EventId>> {
+    SENT_IDS.get_or_init(|| RwLock::new(Vec::new()))
 }
 
 pub fn first_run() -> &'static bool {

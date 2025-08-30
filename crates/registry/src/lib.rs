@@ -402,7 +402,13 @@ impl Registry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn event_to_message(&mut self, event: Event, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn event_to_message(
+        &mut self,
+        gift_wrap_id: EventId,
+        event: Event,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let id = event.uniq_id();
         let author = event.pubkey;
 
@@ -422,7 +428,7 @@ impl Registry {
 
                 // Emit the new message to the room
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(event, cx);
+                    this.emit_message(gift_wrap_id, event, cx);
                 });
             });
 

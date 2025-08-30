@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::nostr_client;
@@ -62,7 +62,7 @@ impl SendReport {
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
-    NewMessage(Box<Event>),
+    NewMessage((EventId, Box<Event>)),
     Refresh,
 }
 
@@ -355,8 +355,8 @@ impl Room {
     }
 
     /// Emits a new message signal to the current room
-    pub fn emit_message(&self, event: Event, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage(Box::new(event)));
+    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
     }
 
     /// Emits a signal to refresh the current room's messages.
@@ -417,7 +417,7 @@ impl Room {
         let content = content.to_owned();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
-        let public_keys = self.members.clone();
+        let mut public_keys = self.members.clone();
 
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -460,26 +460,25 @@ impl Room {
                 tags.push(Tag::custom(TagKind::custom("picture"), vec![picture]));
             }
 
-            let Some((current_user, receivers)) = public_keys.split_last() else {
-                return Err(anyhow!("Something is wrong. Cannot get receivers list."));
-            };
+            // Remove the current public key from the list of receivers
+            public_keys.retain(|&pk| pk != public_key);
 
             // Stored all send errors
             let mut reports = vec![];
 
-            for receiver in receivers.iter() {
+            for receiver in public_keys.into_iter() {
                 match client
-                    .send_private_msg(*receiver, &content, tags.clone())
+                    .send_private_msg(receiver, &content, tags.clone())
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::output(*receiver, output));
+                        reports.push(SendReport::output(receiver, output));
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
-                            reports.push(SendReport::nip17_relays_not_found(*receiver));
+                            reports.push(SendReport::nip17_relays_not_found(receiver));
                         } else {
-                            reports.push(SendReport::error(*receiver, e.to_string()));
+                            reports.push(SendReport::error(receiver, e.to_string()));
                         }
                     }
                 }
@@ -488,17 +487,17 @@ impl Room {
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && backup {
                 match client
-                    .send_private_msg(*current_user, &content, tags.clone())
+                    .send_private_msg(public_key, &content, tags.clone())
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::output(*current_user, output));
+                        reports.push(SendReport::output(public_key, output));
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
-                            reports.push(SendReport::nip17_relays_not_found(*current_user));
+                            reports.push(SendReport::nip17_relays_not_found(public_key));
                         } else {
-                            reports.push(SendReport::error(*current_user, e.to_string()));
+                            reports.push(SendReport::error(public_key, e.to_string()));
                         }
                     }
                 }
