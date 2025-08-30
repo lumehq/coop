@@ -12,7 +12,22 @@ pub mod constants;
 pub mod paths;
 
 #[derive(Debug, Clone)]
-pub enum NostrNotice {
+pub struct AuthReq {
+    pub challenge: String,
+    pub url: RelayUrl,
+}
+
+impl AuthReq {
+    pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
+        Self {
+            challenge: challenge.into(),
+            url,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Notice {
     RelayFailed,
     AuthFailed(RelayUrl),
     Custom(String),
@@ -20,7 +35,7 @@ pub enum NostrNotice {
 
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
-pub enum NostrSignal {
+pub enum IngesterSignal {
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -28,10 +43,7 @@ pub enum NostrSignal {
     SignerUnset,
 
     /// A signal to notify UI that the relay requires authentication
-    Auth((String, RelayUrl)),
-
-    /// A signal to notify UI that the relay has been authenticated
-    Authenticated(RelayUrl),
+    Auth(AuthReq),
 
     /// A signal to notify UI that the browser proxy service is down
     ProxyDown,
@@ -52,12 +64,44 @@ pub enum NostrSignal {
     DmRelayNotFound,
 
     /// A signal to notify UI that there are errors or notices occurred
-    Notice(NostrNotice),
+    Notice(Notice),
+}
+
+#[derive(Debug)]
+pub struct Ingester {
+    rx: Receiver<IngesterSignal>,
+    tx: Sender<IngesterSignal>,
+}
+
+impl Default for Ingester {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Ingester {
+    pub fn new() -> Self {
+        let (tx, rx) = smol::channel::bounded::<IngesterSignal>(2048);
+        Self { rx, tx }
+    }
+
+    pub fn signals(&self) -> &Receiver<IngesterSignal> {
+        &self.rx
+    }
+
+    pub async fn send(&self, signal: IngesterSignal) {
+        if let Err(e) = self.tx.send(signal).await {
+            log::error!("Failed to send signal: {e}");
+        }
+    }
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-static GLOBAL_CHANNEL: OnceLock<(Sender<NostrSignal>, Receiver<NostrSignal>)> = OnceLock::new();
+
+static INGESTER: OnceLock<Ingester> = OnceLock::new();
+
 static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
+
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
@@ -84,11 +128,8 @@ pub fn nostr_client() -> &'static Client {
     })
 }
 
-pub fn global_channel() -> &'static (Sender<NostrSignal>, Receiver<NostrSignal>) {
-    GLOBAL_CHANNEL.get_or_init(|| {
-        let (sender, receiver) = smol::channel::bounded::<NostrSignal>(2048);
-        (sender, receiver)
-    })
+pub fn ingester() -> &'static Ingester {
+    INGESTER.get_or_init(Ingester::new)
 }
 
 pub fn starting_time() -> &'static Timestamp {

@@ -125,6 +125,7 @@ impl Registry {
         cx.notify();
     }
 
+    /// Insert batch of persons
     pub fn set_persons(&mut self, profiles: Vec<Profile>, cx: &mut Context<Self>) {
         for profile in profiles.into_iter() {
             self.persons
@@ -133,6 +134,7 @@ impl Registry {
         cx.notify();
     }
 
+    /// Get single person
     pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
         self.persons
             .get(public_key)
@@ -141,6 +143,7 @@ impl Registry {
             .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
     }
 
+    /// Get group of persons
     pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Profile> {
         let mut profiles = vec![];
 
@@ -152,6 +155,7 @@ impl Registry {
         profiles
     }
 
+    /// Insert or update a person
     pub fn insert_or_update_person(&mut self, event: Event, cx: &mut App) {
         let public_key = event.pubkey;
         let Ok(metadata) = Metadata::from_json(event.content) else {

@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, AnyView, App, AppContext, Context, Decorations, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement as _, Render, Styled, Window,
+    IntoElement, ParentElement as _, Render, SharedString, Styled, Window,
 };
 use theme::{ActiveTheme, CLIENT_SIDE_DECORATION_ROUNDING};
 
@@ -33,6 +33,9 @@ pub trait ContextModal: Sized {
 
     /// Pushes a notification to the notification list.
     fn push_notification(&mut self, note: impl Into<Notification>, cx: &mut App);
+
+    /// Clears a notification by its ID.
+    fn clear_notification_by_id(&mut self, id: SharedString, cx: &mut App);
 
     /// Clear all notifications
     fn clear_notifications(&mut self, cx: &mut App);
@@ -108,6 +111,15 @@ impl ContextModal for Window {
         Root::update(self, cx, move |root, window, cx| {
             root.notification
                 .update(cx, |view, cx| view.clear(window, cx));
+            cx.notify();
+        })
+    }
+
+    fn clear_notification_by_id(&mut self, id: SharedString, cx: &mut App) {
+        Root::update(self, cx, move |root, window, cx| {
+            root.notification.update(cx, |view, cx| {
+                view.close(id.clone(), window, cx);
+            });
             cx.notify();
         })
     }

@@ -39,10 +39,12 @@ common:
     en: "Quit"
   restart:
     en: "Restart"
-  confirm:
-    en: "Confirm"
+  approve:
+    en: "Approve"
   ignore:
     en: "Ignore"
+  relay:
+    en: "Relay"
 
 auto_update:
   updating:
@@ -91,12 +93,12 @@ proxy:
     en: "Open your default browser and approve the connection request in your Nostr Signer extension"
 
 auth:
-  title:
-    en: "Authentication"
-  require:
-    en: "This relay requires authentication to read messages. Click the confirm button to continue."
-  warning:
-    en: "Without authentication, you cannot read messages from this relay."
+  label:
+    en: "Authentication Required"
+  message:
+    en: "Approve the authentication request to allow Coop to continue getting your messages."
+  requests:
+    en: "You have %{u} total pending authentication requests"
 
 startup:
   client_keys_warning:

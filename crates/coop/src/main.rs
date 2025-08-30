@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use assets::Assets;
 use global::constants::{APP_ID, APP_NAME};
-use global::{nostr_client, starting_time};
+use global::{ingester, nostr_client, starting_time};
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
@@ -20,11 +20,18 @@ pub(crate) mod views;
 i18n::init!();
 
 fn main() {
+    // Set SMOL_THREADS to 3
+    // TODO: allow user to configure this
+    std::env::set_var("SMOL_THREADS", "3");
+
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    // Initialize the Nostr Client
+    // Initialize the Nostr client
     let _client = nostr_client();
+
+    // Initialize the ingester
+    let _ingester = ingester();
 
     // Initialize the starting time
     let _starting_time = starting_time();

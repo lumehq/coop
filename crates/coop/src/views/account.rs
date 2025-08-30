@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::display::ReadableProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use global::{global_channel, nostr_client, NostrSignal};
+use global::{ingester, nostr_client, IngesterSignal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -242,7 +242,7 @@ impl Account {
     fn logout(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         cx.background_spawn(async move {
             let client = nostr_client();
-            let channel = global_channel();
+            let ingester = ingester();
 
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
@@ -255,7 +255,7 @@ impl Account {
             client.unset_signer().await;
 
             // Notify the channel about the signer being unset
-            channel.0.send(NostrSignal::SignerUnset).await.ok();
+            ingester.send(IngesterSignal::SignerUnset).await;
         })
         .detach();
     }
