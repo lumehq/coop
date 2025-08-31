@@ -520,10 +520,19 @@ impl ChatSpace {
                     IngesterSignal::Auth(req) => {
                         let relay_url = &req.url;
                         let challenge = &req.challenge;
+                        let auth_auth = AppSettings::get_auto_auth(cx);
+                        let auth_relays = AppSettings::read_global(cx).auth_relays();
 
                         view.update(cx, |this, cx| {
                             this.push_auth_request(challenge, relay_url, cx);
-                            this.open_auth_request(challenge, relay_url, window, cx);
+
+                            if auth_auth && auth_relays.contains(relay_url) {
+                                // Automatically authenticate if the relay is authenticated before
+                                this.auth(challenge, relay_url, window, cx);
+                            } else {
+                                // Otherwise open the auth request popup
+                                this.open_auth_request(challenge, relay_url, window, cx);
+                            }
                         })
                         .ok();
                     }
@@ -783,6 +792,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let settings = AppSettings::global(cx);
         let challenge = challenge.to_string();
         let url = url.to_owned();
         let challenge_clone = challenge.clone();
@@ -841,8 +851,15 @@ impl ChatSpace {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             this.remove_auth_request(&challenge, cx);
+
+                            // Save the authenticated relay to automatically authenticate future requests
+                            settings.update(cx, |this, cx| {
+                                this.push_auth_relay(url.clone(), cx);
+                            });
+
                             // Clear the current notification
                             window.clear_notification_by_id(SharedString::from(challenge), cx);
+
                             // Push a new notification after current cycle
                             cx.defer_in(window, move |_, window, cx| {
                                 window
@@ -1039,7 +1056,7 @@ impl ChatSpace {
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
                 .title(shared_t!("common.preferences"))
-                .width(px(480.))
+                .width(px(580.))
                 .child(view.clone())
         });
     }
@@ -1201,6 +1218,7 @@ impl ChatSpace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let is_auto_auth = AppSettings::read_global(cx).is_auto_auth();
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
         let auth_requests = self.auth_requests.len();
@@ -1239,7 +1257,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(auth_requests > 0, |this| {
+            .when(auth_requests > 0 && !is_auto_auth, |this| {
                 this.child(
                     h_flex()
                         .id("requests")

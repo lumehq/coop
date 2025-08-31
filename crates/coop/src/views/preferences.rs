@@ -4,22 +4,22 @@ use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::switch::Switch;
-use ui::{v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
 
 use crate::views::{edit_profile, setup_relay};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
-    Preferences::new(window, cx)
+    cx.new(|cx| Preferences::new(window, cx))
 }
 
 pub struct Preferences {
@@ -27,17 +27,15 @@ pub struct Preferences {
 }
 
 impl Preferences {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| {
-            let media_server = AppSettings::get_media_server(cx).to_string();
-            let media_input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .default_value(media_server.clone())
-                    .placeholder(media_server)
-            });
+    pub fn new(window: &mut Window, cx: &mut App) -> Self {
+        let media_server = AppSettings::get_media_server(cx).to_string();
+        let media_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(media_server.clone())
+                .placeholder(media_server)
+        });
 
-            Self { media_input }
-        })
+        Self { media_input }
     }
 
     fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -117,58 +115,50 @@ impl Render for Preferences {
         let input_state = self.media_input.downgrade();
         let profile = Registry::read_global(cx).identity(cx);
 
-        let backup_messages = AppSettings::get_backup_messages(cx);
+        let auto_auth = AppSettings::get_auto_auth(cx);
+        let backup = AppSettings::get_backup_messages(cx);
         let screening = AppSettings::get_screening(cx);
-        let contact_bypass = AppSettings::get_contact_bypass(cx);
-        let proxy_avatar = AppSettings::get_proxy_user_avatars(cx);
-        let hide_avatar = AppSettings::get_hide_user_avatars(cx);
+        let bypass = AppSettings::get_contact_bypass(cx);
+        let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let hide = AppSettings::get_hide_user_avatars(cx);
 
         v_flex()
             .child(
                 v_flex()
-                    .py_2()
+                    .pb_2()
                     .gap_2()
                     .child(
                         div()
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(SharedString::new(t!("preferences.account_header"))),
+                            .child(shared_t!("preferences.account_header")),
                     )
                     .child(
-                        div()
+                        h_flex()
                             .w_full()
-                            .flex()
                             .justify_between()
-                            .items_center()
                             .child(
-                                div()
-                                    .id("current-user")
-                                    .flex()
-                                    .items_center()
+                                h_flex()
+                                    .id("user")
                                     .gap_2()
-                                    .child(
-                                        Avatar::new(profile.avatar_url(proxy_avatar))
-                                            .size(rems(2.4)),
-                                    )
+                                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(2.4)))
                                     .child(
                                         div()
                                             .flex_1()
                                             .text_sm()
                                             .child(
                                                 div()
-                                                    .line_height(relative(1.3))
                                                     .font_semibold()
+                                                    .line_height(relative(1.3))
                                                     .child(profile.display_name()),
                                             )
                                             .child(
                                                 div()
-                                                    .line_height(relative(1.3))
                                                     .text_xs()
                                                     .text_color(cx.theme().text_muted)
-                                                    .child(SharedString::new(t!(
-                                                        "preferences.see_your_profile"
-                                                    ))),
+                                                    .line_height(relative(1.3))
+                                                    .child(shared_t!("preferences.account_btn")),
                                             ),
                                     )
                                     .on_click(cx.listener(move |this, _e, window, cx| {
@@ -178,8 +168,9 @@ impl Render for Preferences {
                             .child(
                                 Button::new("relays")
                                     .label("Messaging Relays")
-                                    .ghost()
-                                    .small()
+                                    .xsmall()
+                                    .ghost_alt()
+                                    .rounded(ButtonRounded::Full)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.open_relays(window, cx);
                                     })),
@@ -196,39 +187,48 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(SharedString::new(t!("preferences.media_server_header"))),
+                            .child(shared_t!("preferences.relay_and_media")),
                     )
                     .child(
-                        div()
+                        v_flex()
                             .my_1()
-                            .flex()
-                            .items_start()
                             .gap_1()
-                            .child(TextInput::new(&self.media_input).xsmall())
                             .child(
-                                Button::new("update")
-                                    .icon(IconName::CheckCircleFill)
-                                    .ghost()
-                                    .with_size(Size::Size(px(26.)))
-                                    .on_click(move |_, window, cx| {
-                                        if let Some(input) = input_state.upgrade() {
-                                            let Ok(url) = Url::parse(input.read(cx).value()) else {
-                                                window.push_notification(
-                                                    t!("preferences.url_not_valid"),
-                                                    cx,
-                                                );
-                                                return;
-                                            };
-                                            AppSettings::update_media_server(url, cx);
-                                        }
-                                    }),
+                                h_flex()
+                                    .gap_1()
+                                    .child(TextInput::new(&self.media_input).xsmall())
+                                    .child(
+                                        Button::new("update")
+                                            .icon(IconName::Check)
+                                            .ghost()
+                                            .with_size(Size::Size(px(26.)))
+                                            .on_click(move |_, _window, cx| {
+                                                if let Some(input) = input_state.upgrade() {
+                                                    let Ok(url) =
+                                                        Url::parse(input.read(cx).value())
+                                                    else {
+                                                        return;
+                                                    };
+                                                    AppSettings::update_media_server(url, cx);
+                                                }
+                                            }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().text_muted)
+                                    .child(shared_t!("preferences.media_description")),
                             ),
                     )
                     .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::new(t!("preferences.media_description"))),
+                        Switch::new("auth")
+                            .label(t!("preferences.auto_auth"))
+                            .description(t!("preferences.auto_auth_description"))
+                            .checked(auto_auth)
+                            .on_click(move |_, _window, cx| {
+                                AppSettings::update_auto_auth(!auto_auth, cx);
+                            }),
                     ),
             )
             .child(
@@ -242,7 +242,7 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(SharedString::new(t!("preferences.messages_header"))),
+                            .child(shared_t!("preferences.messages_header")),
                     )
                     .child(
                         v_flex()
@@ -260,18 +260,18 @@ impl Render for Preferences {
                                 Switch::new("bypass")
                                     .label(t!("preferences.bypass_label"))
                                     .description(t!("preferences.bypass_description"))
-                                    .checked(contact_bypass)
+                                    .checked(bypass)
                                     .on_click(move |_, _window, cx| {
-                                        AppSettings::update_contact_bypass(!contact_bypass, cx);
+                                        AppSettings::update_contact_bypass(!bypass, cx);
                                     }),
                             )
                             .child(
-                                Switch::new("backup_messages")
-                                    .label(t!("preferences.backup_messages_label"))
+                                Switch::new("backup")
+                                    .label(t!("preferences.backup_label"))
                                     .description(t!("preferences.backup_description"))
-                                    .checked(backup_messages)
+                                    .checked(backup)
                                     .on_click(move |_, _window, cx| {
-                                        AppSettings::update_backup_messages(!backup_messages, cx);
+                                        AppSettings::update_backup_messages(!backup, cx);
                                     }),
                             ),
                     ),
@@ -287,27 +287,27 @@ impl Render for Preferences {
                             .text_sm()
                             .text_color(cx.theme().text_placeholder)
                             .font_semibold()
-                            .child(SharedString::new(t!("preferences.display_header"))),
+                            .child(shared_t!("preferences.display_header")),
                     )
                     .child(
                         v_flex()
                             .gap_2()
                             .child(
-                                Switch::new("hide_user_avatars")
+                                Switch::new("hide_avatar")
                                     .label(t!("preferences.hide_avatars_label"))
                                     .description(t!("preferences.hide_avatar_description"))
-                                    .checked(hide_avatar)
+                                    .checked(hide)
                                     .on_click(move |_, _window, cx| {
-                                        AppSettings::update_hide_user_avatars(!hide_avatar, cx);
+                                        AppSettings::update_hide_user_avatars(!hide, cx);
                                     }),
                             )
                             .child(
-                                Switch::new("proxy_user_avatars")
+                                Switch::new("proxy_avatar")
                                     .label(t!("preferences.proxy_avatars_label"))
                                     .description(t!("preferences.proxy_description"))
-                                    .checked(proxy_avatar)
+                                    .checked(proxy)
                                     .on_click(move |_, _window, cx| {
-                                        AppSettings::update_proxy_user_avatars(!proxy_avatar, cx);
+                                        AppSettings::update_proxy_user_avatars(!proxy, cx);
                                     }),
                             ),
                     ),

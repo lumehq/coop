@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use global::constants::SETTINGS_D;
+use global::constants::SETTINGS_IDENTIFIER;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
@@ -11,7 +11,7 @@ pub fn init(cx: &mut App) {
 
     // Observe for state changes and save settings to database
     state.update(cx, |this, cx| {
-        this.subscriptions
+        this._subscriptions
             .push(cx.observe(&state, |this, _state, cx| {
                 this.set_settings(cx);
             }));
@@ -49,6 +49,7 @@ setting_accessors! {
     pub screening: bool,
     pub contact_bypass: bool,
     pub auto_login: bool,
+    pub auto_auth: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,6 +61,8 @@ pub struct Settings {
     pub screening: bool,
     pub contact_bypass: bool,
     pub auto_login: bool,
+    pub auto_auth: bool,
+    pub authenticated_relays: Vec<RelayUrl>,
 }
 
 impl Default for Settings {
@@ -72,6 +75,8 @@ impl Default for Settings {
             screening: true,
             contact_bypass: true,
             auto_login: false,
+            auto_auth: true,
+            authenticated_relays: vec![],
         }
     }
 }
@@ -88,8 +93,8 @@ impl Global for GlobalAppSettings {}
 
 pub struct AppSettings {
     setting_values: Settings,
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+    _subscriptions: SmallVec<[Subscription; 1]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl AppSettings {
@@ -110,54 +115,53 @@ impl AppSettings {
 
     fn new(cx: &mut Context<Self>) -> Self {
         let setting_values = Settings::default();
-        let mut subscriptions = smallvec![];
+        let mut tasks = smallvec![];
 
-        subscriptions.push(cx.observe_new::<Self>(move |this, _window, cx| {
-            this.get_settings_from_db(cx);
-        }));
-
-        Self {
-            setting_values,
-            subscriptions,
-        }
-    }
-
-    pub(crate) fn get_settings_from_db(&self, cx: &mut Context<Self>) {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier(SETTINGS_D)
+                .identifier(SETTINGS_IDENTIFIER)
                 .limit(1);
 
-            if let Some(event) = nostr_client().database().query(filter).await?.first_owned() {
-                log::info!("Successfully loaded settings from database");
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
                 Ok(serde_json::from_str(&event.content).unwrap_or(Settings::default()))
             } else {
                 Err(anyhow!("Not found"))
             }
         });
 
-        cx.spawn(async move |this, cx| {
-            if let Ok(settings) = task.await {
-                this.update(cx, |this, cx| {
-                    this.setting_values = settings;
-                    cx.notify();
-                })
-                .ok();
-            }
-        })
-        .detach();
+        tasks.push(
+            // Load settings from database
+            cx.spawn(async move |this, cx| {
+                if let Ok(settings) = task.await {
+                    this.update(cx, |this, cx| {
+                        this.setting_values = settings;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            }),
+        );
+
+        Self {
+            setting_values,
+            _subscriptions: smallvec![],
+            _tasks: tasks,
+        }
     }
 
     pub(crate) fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.setting_values) {
             cx.background_spawn(async move {
-                if let Ok(event) = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                    .tags(vec![Tag::identifier(SETTINGS_D)])
+                let client = nostr_client();
+                let builder = EventBuilder::new(Kind::ApplicationSpecificData, content)
+                    .tags(vec![Tag::identifier(SETTINGS_IDENTIFIER)])
                     .sign(&Keys::generate())
-                    .await
-                {
-                    if let Err(e) = nostr_client().database().save_event(&event).await {
+                    .await;
+
+                if let Ok(event) = builder {
+                    if let Err(e) = client.database().save_event(&event).await {
                         log::error!("Failed to save user settings: {e}");
                     } else {
                         log::info!("New settings have been saved successfully");
@@ -166,5 +170,18 @@ impl AppSettings {
             })
             .detach();
         }
+    }
+
+    pub fn is_auto_auth(&self) -> bool {
+        !self.setting_values.authenticated_relays.is_empty() && self.setting_values.auto_auth
+    }
+
+    pub fn auth_relays(&self) -> Vec<RelayUrl> {
+        self.setting_values.authenticated_relays.clone()
+    }
+
+    pub fn push_auth_relay(&mut self, relay_url: RelayUrl, cx: &mut Context<Self>) {
+        self.setting_values.authenticated_relays.push(relay_url);
+        cx.notify();
     }
 }

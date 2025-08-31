@@ -257,40 +257,42 @@ profile:
     en: "No bio."
 
 preferences:
-  media_description:
-    en: "Coop currently only supports NIP-96 media servers."
-  backup_description:
-    en: "When you send a message, Coop will also forward it to your configured Messaging Relays. Disabling this will cause all messages sent during the current session to disappear when the app is closed."
-  screening_description:
-    en: "When opening a chat request, Coop will show a popup to help you verify the sender."
-  bypass_description:
-    en: "Requests from your contacts will automatically go to inbox."
-  hide_avatar_description:
-    en: "Unload all avatar pictures to improve performance and reduce memory usage."
-  proxy_description:
-    en: "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)."
   account_header:
     en: "Account"
-  see_your_profile:
+  account_btn:
     en: "See your profile"
-  media_server_header:
-    en: "Media Server"
-  url_not_valid:
-    en: "URL is not valid"
-  messages_header:
-    en: "Messages"
-  backup_messages_label:
+  relay_and_media:
+    en: "Relay and Media"
+  media_description:
+    en: "Coop currently only supports NIP-96 media servers."
+  auto_auth:
+    en: "Automatically authenticate for known relays"
+  auto_auth_description:
+    en: "After you approve the authentication request, Coop will automatically complete this step next time."
+  backup_label:
     en: "Backup messages"
+  backup_description:
+    en: "When you send a message, Coop will also forward it to your configured Messaging Relays. Disabling this will cause all messages sent during the current session to disappear when the app is closed."
   screening_label:
     en: "Screening"
+  screening_description:
+    en: "When opening a chat request, Coop will show a popup to help you verify the sender."
   bypass_label:
     en: "Skip screening for contacts"
-  display_header:
-    en: "Display"
+  bypass_description:
+    en: "Requests from your contacts will automatically go to inbox."
   hide_avatars_label:
     en: "Hide user avatars"
+  hide_avatar_description:
+    en: "Unload all avatar pictures to improve performance and reduce memory usage."
   proxy_avatars_label:
     en: "Proxy user avatars"
+  proxy_description:
+    en: "Use wsrv.nl to resize and downscale avatar pictures (saves ~50MB of data)."
+  messages_header:
+    en: "Messages"
+  display_header:
+    en: "Display"
 
 compose:
   placeholder_npub:
