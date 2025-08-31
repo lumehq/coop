@@ -1056,7 +1056,7 @@ impl ChatSpace {
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
                 .title(shared_t!("common.preferences"))
-                .width(px(540.))
+                .width(px(580.))
                 .child(view.clone())
         });
     }

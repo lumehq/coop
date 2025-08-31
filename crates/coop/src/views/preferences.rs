@@ -168,7 +168,7 @@ impl Render for Preferences {
                             .child(
                                 Button::new("relays")
                                     .label("Messaging Relays")
-                                    .small()
+                                    .xsmall()
                                     .ghost_alt()
                                     .rounded(ButtonRounded::Full)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
