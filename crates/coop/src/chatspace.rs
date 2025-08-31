@@ -520,10 +520,18 @@ impl ChatSpace {
                     IngesterSignal::Auth(req) => {
                         let relay_url = &req.url;
                         let challenge = &req.challenge;
+                        let auth_relays = AppSettings::read_global(cx).authenticated_relays();
 
                         view.update(cx, |this, cx| {
                             this.push_auth_request(challenge, relay_url, cx);
-                            this.open_auth_request(challenge, relay_url, window, cx);
+
+                            if auth_relays.contains(relay_url) {
+                                // Automatically authenticate if the relay is authenticated before
+                                this.auth(challenge, relay_url, window, cx);
+                            } else {
+                                // Otherwise open the auth request popup
+                                this.open_auth_request(challenge, relay_url, window, cx);
+                            }
                         })
                         .ok();
                     }
@@ -783,6 +791,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let settings = AppSettings::global(cx);
         let challenge = challenge.to_string();
         let url = url.to_owned();
         let challenge_clone = challenge.clone();
@@ -841,8 +850,15 @@ impl ChatSpace {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
                             this.remove_auth_request(&challenge, cx);
+
+                            // Save the authenticated relay to automatically authenticate future requests
+                            settings.update(cx, |this, cx| {
+                                this.push_authenticated_relay(url.clone(), cx);
+                            });
+
                             // Clear the current notification
                             window.clear_notification_by_id(SharedString::from(challenge), cx);
+
                             // Push a new notification after current cycle
                             cx.defer_in(window, move |_, window, cx| {
                                 window

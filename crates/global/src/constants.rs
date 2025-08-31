@@ -5,7 +5,7 @@ pub const APP_UPDATER_ENDPOINT: &str = "https://coop-updater.reya.su/";
 pub const KEYRING_URL: &str = "Coop Safe Storage";
 
 pub const ACCOUNT_IDENTIFIER: &str = "coop:user";
-pub const SETTINGS_D: &str = "coop:settings";
+pub const SETTINGS_IDENTIFIER: &str = "coop:settings";
 
 /// Bootstrap Relays.
 pub const BOOTSTRAP_RELAYS: [&str; 5] = [
