@@ -49,6 +49,7 @@ setting_accessors! {
     pub screening: bool,
     pub contact_bypass: bool,
     pub auto_login: bool,
+    pub auto_auth: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,6 +61,7 @@ pub struct Settings {
     pub screening: bool,
     pub contact_bypass: bool,
     pub auto_login: bool,
+    pub auto_auth: bool,
     pub authenticated_relays: Vec<RelayUrl>,
 }
 
@@ -73,6 +75,7 @@ impl Default for Settings {
             screening: true,
             contact_bypass: true,
             auto_login: false,
+            auto_auth: true,
             authenticated_relays: vec![],
         }
     }
@@ -169,11 +172,15 @@ impl AppSettings {
         }
     }
 
-    pub fn authenticated_relays(&self) -> Vec<RelayUrl> {
+    pub fn is_auto_auth(&self) -> bool {
+        !self.setting_values.authenticated_relays.is_empty() && self.setting_values.auto_auth
+    }
+
+    pub fn auth_relays(&self) -> Vec<RelayUrl> {
         self.setting_values.authenticated_relays.clone()
     }
 
-    pub fn push_authenticated_relay(&mut self, relay_url: RelayUrl, cx: &mut Context<Self>) {
+    pub fn push_auth_relay(&mut self, relay_url: RelayUrl, cx: &mut Context<Self>) {
         self.setting_values.authenticated_relays.push(relay_url);
         cx.notify();
     }

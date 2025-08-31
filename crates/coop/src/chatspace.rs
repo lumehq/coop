@@ -520,12 +520,13 @@ impl ChatSpace {
                     IngesterSignal::Auth(req) => {
                         let relay_url = &req.url;
                         let challenge = &req.challenge;
-                        let auth_relays = AppSettings::read_global(cx).authenticated_relays();
+                        let auth_auth = AppSettings::get_auto_auth(cx);
+                        let auth_relays = AppSettings::read_global(cx).auth_relays();
 
                         view.update(cx, |this, cx| {
                             this.push_auth_request(challenge, relay_url, cx);
 
-                            if auth_relays.contains(relay_url) {
+                            if auth_auth && auth_relays.contains(relay_url) {
                                 // Automatically authenticate if the relay is authenticated before
                                 this.auth(challenge, relay_url, window, cx);
                             } else {
@@ -853,7 +854,7 @@ impl ChatSpace {
 
                             // Save the authenticated relay to automatically authenticate future requests
                             settings.update(cx, |this, cx| {
-                                this.push_authenticated_relay(url.clone(), cx);
+                                this.push_auth_relay(url.clone(), cx);
                             });
 
                             // Clear the current notification
@@ -1055,7 +1056,7 @@ impl ChatSpace {
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
                 .title(shared_t!("common.preferences"))
-                .width(px(480.))
+                .width(px(540.))
                 .child(view.clone())
         });
     }
@@ -1217,6 +1218,7 @@ impl ChatSpace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
+        let is_auto_auth = AppSettings::read_global(cx).is_auto_auth();
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
         let auth_requests = self.auth_requests.len();
@@ -1255,7 +1257,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(auth_requests > 0, |this| {
+            .when(auth_requests > 0 && !is_auto_auth, |this| {
                 this.child(
                     h_flex()
                         .id("requests")
