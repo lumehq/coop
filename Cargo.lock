@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "assets"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "gpui",
@@ -425,7 +425,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "auto_update"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "cargo-packager-updater",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "client_keys"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "global",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1242,7 +1242,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "coop"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "assets",
@@ -2371,7 +2371,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "global"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "dirs 5.0.1",
@@ -2919,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "i18n"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "rust-i18n",
 ]
@@ -5054,7 +5054,7 @@ checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 
 [[package]]
 name = "registry"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "common",
@@ -5843,7 +5843,7 @@ dependencies = [
 
 [[package]]
 name = "settings"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "global",
@@ -5910,7 +5910,7 @@ dependencies = [
 
 [[package]]
 name = "signer_proxy"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "atomic-destructor",
@@ -6452,7 +6452,7 @@ dependencies = [
 
 [[package]]
 name = "theme"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "gpui",
@@ -6612,7 +6612,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "title_bar"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "common",
@@ -6983,7 +6983,7 @@ dependencies = [
 
 [[package]]
 name = "ui"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "common",
