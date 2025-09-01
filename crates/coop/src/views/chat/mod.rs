@@ -75,10 +75,7 @@ pub struct Chat {
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let attachments = cx.new(|_| vec![]);
-        let replies_to = cx.new(|_| vec![]);
         let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
-
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
@@ -90,6 +87,8 @@ impl Chat {
                 .clean_on_escape()
         });
 
+        let attachments = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| vec![]);
         let load_messages = room.read(cx).load_messages(cx);
 
         let mut subscriptions = smallvec![];

@@ -15,7 +15,6 @@ use ui::actions::OpenProfile;
 use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
 use ui::modal::ModalButtonProps;
-use ui::skeleton::Skeleton;
 use ui::{h_flex, ContextModal, StyledExt};
 
 use crate::views::screening;
@@ -109,21 +108,7 @@ impl RenderOnce for RoomListItem {
             self.handler,
         )
         else {
-            return h_flex()
-                .id(self.ix)
-                .h_9()
-                .w_full()
-                .px_1p5()
-                .gap_2()
-                .child(Skeleton::new().flex_shrink_0().size_6().rounded_full())
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .justify_between()
-                        .child(Skeleton::new().w_32().h_2p5().rounded_sm())
-                        .child(Skeleton::new().w_6().h_2p5().rounded_sm()),
-                );
+            return div().id(self.ix);
         };
 
         h_flex()
