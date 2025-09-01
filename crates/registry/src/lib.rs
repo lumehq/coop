@@ -295,8 +295,9 @@ impl Registry {
                     continue;
                 }
 
-                // Get all public keys from the event
-                let public_keys = event.all_pubkeys();
+                // Get all public keys from the event's tags
+                let mut public_keys = event.all_pubkeys();
+                public_keys.retain(|pk| pk != &public_key);
 
                 // Bypass screening flag
                 let mut bypass = false;
