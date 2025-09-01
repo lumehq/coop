@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
@@ -54,7 +54,7 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     list_state: ListState,
-    messages: Vec<RenderedMessage>,
+    messages: BTreeSet<RenderedMessage>,
     rendered_texts_by_id: HashMap<EventId, RenderedText>,
     reports_by_id: HashMap<EventId, Vec<SendReport>>,
     // New Message
@@ -154,7 +154,7 @@ impl Chat {
             focus_handle: cx.focus_handle(),
             uploading: false,
             sending: false,
-            messages: Vec::new(),
+            messages: BTreeSet::new(),
             rendered_texts_by_id: HashMap::new(),
             reports_by_id: HashMap::new(),
             room,
@@ -340,7 +340,7 @@ impl Chat {
         let new_len = 1;
 
         // Extend the messages list with the new events
-        self.messages.push(event.into());
+        self.messages.insert(event.into());
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -359,7 +359,6 @@ impl Chat {
 
         // Extend the messages list with the new events
         self.messages.extend(events);
-        self.messages.sort_by_key(|ev| ev.created_at);
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -527,7 +526,7 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let Some(message) = self.messages.get(ix) else {
+        let Some(message) = self.messages.iter().nth(ix) else {
             return div().id(ix);
         };
 
