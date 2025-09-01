@@ -33,7 +33,6 @@ mod list_item;
 
 const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
-const TOTAL_SKELETONS: usize = 3;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
@@ -595,7 +594,6 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let loading = registry.loading;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
@@ -610,15 +608,6 @@ impl Render for Sidebar {
                 registry.request_rooms(cx)
             }
         };
-
-        // Get total rooms count
-        let mut total_rooms = rooms.len();
-
-        // If loading in progress
-        // Add 3 skeletons to the room list
-        if loading {
-            total_rooms += TOTAL_SKELETONS;
-        }
 
         v_flex()
             .image_cache(self.image_cache.clone())
@@ -707,7 +696,7 @@ impl Render for Sidebar {
                     .child(
                         uniform_list(
                             "rooms",
-                            total_rooms,
+                            rooms.len(),
                             cx.processor(move |this, range, _window, cx| {
                                 this.list_items(&rooms, range, cx)
                             }),

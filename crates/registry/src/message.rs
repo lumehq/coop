@@ -2,6 +2,18 @@ use std::hash::Hash;
 
 use nostr_sdk::prelude::*;
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Message {
+    User(RenderedMessage),
+    System,
+}
+
+impl Message {
+    pub fn user(user: impl Into<RenderedMessage>) -> Self {
+        Self::User(user.into())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RenderedMessage {
     pub id: EventId,
