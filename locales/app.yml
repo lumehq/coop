@@ -325,6 +325,8 @@ chat:
     en: "This conversation is private. Only members can see each other's messages."
   placeholder:
     en: "Message..."
+  not_found:
+    en: "Something is wrong. Coop cannot display this message"
   empty_message_error:
     en: "Cannot send an empty message"
   copy_message_button:

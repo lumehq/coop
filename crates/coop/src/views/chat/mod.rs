@@ -7,16 +7,16 @@ use global::{nostr_client, sent_ids};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
-    ClipboardItem, Context, Div, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
+    ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString, Stateful,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use registry::message::RenderedMessage;
+use registry::message::{Message, RenderedMessage};
 use registry::room::{Room, RoomKind, RoomSignal, SendReport};
 use registry::Registry;
 use serde::Deserialize;
@@ -48,23 +48,25 @@ pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Cha
 }
 
 pub struct Chat {
-    // Panel
-    id: SharedString,
-    focus_handle: FocusHandle,
     // Chat Room
     room: Entity<Room>,
     list_state: ListState,
-    messages: Vec<RenderedMessage>,
+    messages: Vec<Message>,
     rendered_texts_by_id: HashMap<EventId, RenderedText>,
     reports_by_id: HashMap<EventId, Vec<SendReport>>,
+
     // New Message
     input: Entity<InputState>,
     replies_to: Entity<Vec<EventId>>,
     sending: bool,
+
     // Media Attachment
     attachments: Entity<Vec<Url>>,
     uploading: bool,
-    // System
+
+    // Panel
+    id: SharedString,
+    focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
     _subscriptions: SmallVec<[Subscription; 2]>,
@@ -154,7 +156,7 @@ impl Chat {
             focus_handle: cx.focus_handle(),
             uploading: false,
             sending: false,
-            messages: Vec::new(),
+            messages: vec![Message::System],
             rendered_texts_by_id: HashMap::new(),
             reports_by_id: HashMap::new(),
             room,
@@ -329,9 +331,17 @@ impl Chat {
 
     /// Get a message by its ID
     fn message(&self, id: &EventId) -> Option<&RenderedMessage> {
-        self.messages.iter().find(|m| m.id == *id)
+        self.messages.iter().find_map(|msg| {
+            if let Message::User(rendered) = msg {
+                if &rendered.id == id {
+                    return Some(rendered);
+                }
+            }
+            None
+        })
     }
 
+    /// Convert and insert a nostr event into the chat panel
     fn insert_message<E>(&mut self, event: E, cx: &mut Context<Self>)
     where
         E: Into<RenderedMessage>,
@@ -340,7 +350,7 @@ impl Chat {
         let new_len = 1;
 
         // Extend the messages list with the new events
-        self.messages.push(event.into());
+        self.messages.push(Message::user(event));
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -348,25 +358,42 @@ impl Chat {
         cx.notify();
     }
 
+    /// Convert and insert bulk nostr events into the chat panel
     fn insert_messages<E>(&mut self, events: E, cx: &mut Context<Self>)
     where
         E: IntoIterator,
         E::Item: Into<RenderedMessage>,
     {
-        let old_len = self.messages.len();
-        let old_events: HashSet<EventId> = self.messages.iter().map(|msg| msg.id).collect();
-
-        let events: Vec<RenderedMessage> = events
-            .into_iter()
-            .map(Into::into)
-            .filter(|msg| !old_events.contains(&msg.id))
+        let old_events: HashSet<EventId> = self
+            .messages
+            .iter()
+            .filter_map(|msg| {
+                if let Message::User(rendered) = msg {
+                    Some(rendered.id)
+                } else {
+                    None
+                }
+            })
             .collect();
 
+        let events: Vec<Message> = events
+            .into_iter()
+            .map(|ev| ev.into())
+            .filter(|msg: &RenderedMessage| !old_events.contains(&msg.id))
+            .map(Message::User)
+            .collect();
+
+        let old_len = self.messages.len();
         let new_len = events.len();
 
         // Extend the messages list with the new events
         self.messages.extend(events);
-        self.messages.sort_by_key(|m| m.created_at);
+        self.messages.sort_by(|a, b| match (a, b) {
+            (Message::System, Message::System) => std::cmp::Ordering::Equal,
+            (Message::System, Message::User(_)) => std::cmp::Ordering::Less,
+            (Message::User(_), Message::System) => std::cmp::Ordering::Greater,
+            (Message::User(a_msg), Message::User(b_msg)) => a_msg.created_at.cmp(&b_msg.created_at),
+        });
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -380,7 +407,13 @@ impl Chat {
     }
 
     fn scroll_to(&self, id: EventId) {
-        if let Some(ix) = self.messages.iter().position(|m| m.id == id) {
+        if let Some(ix) = self.messages.iter().position(|m| {
+            if let Message::User(msg) = m {
+                msg.id == id
+            } else {
+                false
+            }
+        }) {
             self.list_state.scroll_to_reveal_item(ix);
         }
     }
@@ -503,8 +536,7 @@ impl Chat {
         cx.notify();
     }
 
-    #[allow(dead_code)]
-    fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .id(ix)
             .group("")
@@ -527,18 +559,30 @@ impl Chat {
                     .text_color(cx.theme().elevated_surface_background),
             )
             .child(shared_t!("chat.notice"))
+            .into_any_element()
+    }
+
+    fn render_message_not_found(&self, cx: &Context<Self>) -> AnyElement {
+        div()
+            .w_full()
+            .py_1()
+            .px_3()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().danger_foreground)
+                    .child(shared_t!("chat.not_found")),
+            )
+            .into_any_element()
     }
 
     fn render_message(
-        &mut self,
+        &self,
         ix: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let Some(message) = self.messages.get(ix) else {
-            return div().id(ix);
-        };
-
+        message: &RenderedMessage,
+        text: AnyElement,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide_avatar = AppSettings::get_hide_user_avatars(cx);
 
@@ -553,13 +597,6 @@ impl Chat {
 
         // Check if message is sent successfully
         let is_sent_success = self.is_sent_success(&id);
-
-        // Get or insert rendered text
-        let rendered_text = self
-            .rendered_texts_by_id
-            .entry(id)
-            .or_insert_with(|| RenderedText::new(&message.content, cx))
-            .element(ix.into(), window, cx);
 
         div()
             .id(ix)
@@ -604,7 +641,7 @@ impl Chat {
                             .when(has_replies, |this| {
                                 this.children(self.render_message_replies(replies, cx))
                             })
-                            .child(rendered_text)
+                            .child(text)
                             .when(is_sent_failed, |this| {
                                 this.child(self.render_message_reports(&id, cx))
                             }),
@@ -624,6 +661,7 @@ impl Chat {
                 }
             }))
             .hover(|this| this.bg(cx.theme().surface_background))
+            .into_any_element()
     }
 
     fn render_message_replies(
@@ -1135,8 +1173,23 @@ impl Render for Chat {
             .child(
                 list(
                     self.list_state.clone(),
-                    cx.processor(move |this, ix, window, cx| {
-                        this.render_message(ix, window, cx).into_any_element()
+                    cx.processor(move |this, ix: usize, window, cx| {
+                        if let Some(message) = this.messages.get(ix) {
+                            match message {
+                                Message::User(rendered) => {
+                                    let text = this
+                                        .rendered_texts_by_id
+                                        .entry(rendered.id)
+                                        .or_insert_with(|| RenderedText::new(&rendered.content, cx))
+                                        .element(ix.into(), window, cx);
+
+                                    this.render_message(ix, rendered, text, cx)
+                                }
+                                Message::System => this.render_announcement(ix, cx),
+                            }
+                        } else {
+                            this.render_message_not_found(cx)
+                        }
                     }),
                 )
                 .flex_1(),
