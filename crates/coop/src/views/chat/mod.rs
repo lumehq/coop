@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
@@ -54,7 +54,7 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     list_state: ListState,
-    messages: BTreeSet<RenderedMessage>,
+    messages: Vec<RenderedMessage>,
     rendered_texts_by_id: HashMap<EventId, RenderedText>,
     reports_by_id: HashMap<EventId, Vec<SendReport>>,
     // New Message
@@ -154,7 +154,7 @@ impl Chat {
             focus_handle: cx.focus_handle(),
             uploading: false,
             sending: false,
-            messages: BTreeSet::new(),
+            messages: Vec::new(),
             rendered_texts_by_id: HashMap::new(),
             reports_by_id: HashMap::new(),
             room,
@@ -340,7 +340,7 @@ impl Chat {
         let new_len = 1;
 
         // Extend the messages list with the new events
-        self.messages.insert(event.into());
+        self.messages.push(event.into());
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -354,11 +354,19 @@ impl Chat {
         E::Item: Into<RenderedMessage>,
     {
         let old_len = self.messages.len();
-        let events: Vec<RenderedMessage> = events.into_iter().map(Into::into).collect();
+        let old_events: HashSet<EventId> = self.messages.iter().map(|msg| msg.id).collect();
+
+        let events: Vec<RenderedMessage> = events
+            .into_iter()
+            .map(Into::into)
+            .filter(|msg| !old_events.contains(&msg.id))
+            .collect();
+
         let new_len = events.len();
 
         // Extend the messages list with the new events
         self.messages.extend(events);
+        self.messages.sort_by_key(|m| m.created_at);
 
         // Update list state with the new messages
         self.list_state.splice(old_len..old_len, new_len);
@@ -495,6 +503,7 @@ impl Chat {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> Stateful<Div> {
         v_flex()
             .id(ix)
@@ -526,7 +535,7 @@ impl Chat {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let Some(message) = self.messages.iter().nth(ix) else {
+        let Some(message) = self.messages.get(ix) else {
             return div().id(ix);
         };
 
@@ -1127,11 +1136,7 @@ impl Render for Chat {
                 list(
                     self.list_state.clone(),
                     cx.processor(move |this, ix, window, cx| {
-                        if ix == 0 {
-                            this.render_announcement(ix, cx).into_any_element()
-                        } else {
-                            this.render_message(ix, window, cx).into_any_element()
-                        }
+                        this.render_message(ix, window, cx).into_any_element()
                     }),
                 )
                 .flex_1(),
