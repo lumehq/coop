@@ -248,7 +248,7 @@ impl ChatSpace {
                 }
             }
 
-            smol::Timer::after(Duration::from_secs(1)).await;
+            smol::Timer::after(Duration::from_millis(300)).await;
         }
     }
 
