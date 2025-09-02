@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -12,13 +13,13 @@ use crate::paths::support_dir;
 pub mod constants;
 pub mod paths;
 
-#[derive(Debug, Clone)]
-pub struct AuthReq {
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AuthRequest {
     pub challenge: String,
     pub url: RelayUrl,
 }
 
-impl AuthReq {
+impl AuthRequest {
     pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
         Self {
             challenge: challenge.into(),
@@ -54,7 +55,7 @@ pub enum IngesterSignal {
     SignerUnset,
 
     /// A signal to notify UI that the relay requires authentication
-    Auth(AuthReq),
+    Auth(AuthRequest),
 
     /// A signal to notify UI that the browser proxy service is down
     ProxyDown,
@@ -107,14 +108,18 @@ impl Ingester {
     }
 }
 
+/// A simple storage to store all runtime states that using across the application.
+#[derive(Debug, Default)]
+pub struct CoopSimpleStorage {
+    pub init_at: Timestamp,
+    pub sent_ids: RwLock<HashSet<EventId>>,
+    pub resent_ids: RwLock<Vec<Output<EventId>>>,
+    pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
+}
+
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-
 static INGESTER: OnceLock<Ingester> = OnceLock::new();
-
-static SENT_IDS: OnceLock<RwLock<Vec<EventId>>> = OnceLock::new();
-
-static CURRENT_TIMESTAMP: OnceLock<Timestamp> = OnceLock::new();
-
+static COOP_SIMPLE_STORAGE: OnceLock<CoopSimpleStorage> = OnceLock::new();
 static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
@@ -132,7 +137,6 @@ pub fn nostr_client() -> &'static Client {
             .gossip(true)
             .automatic_authentication(false)
             .verify_subscriptions(false)
-            // Sleep after idle for 30 seconds
             .sleep_when_idle(SleepWhenIdle::Enabled {
                 timeout: Duration::from_secs(30),
             });
@@ -145,12 +149,8 @@ pub fn ingester() -> &'static Ingester {
     INGESTER.get_or_init(Ingester::new)
 }
 
-pub fn starting_time() -> &'static Timestamp {
-    CURRENT_TIMESTAMP.get_or_init(Timestamp::now)
-}
-
-pub fn sent_ids() -> &'static RwLock<Vec<EventId>> {
-    SENT_IDS.get_or_init(|| RwLock::new(Vec::new()))
+pub fn css() -> &'static CoopSimpleStorage {
+    COOP_SIMPLE_STORAGE.get_or_init(CoopSimpleStorage::default)
 }
 
 pub fn first_run() -> &'static bool {

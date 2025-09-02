@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
-use global::{nostr_client, sent_ids};
+use global::{css, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
@@ -220,8 +220,7 @@ impl Chat {
 
     /// Check if the event is sent by Coop
     fn is_sent_by_coop(&self, gift_wrap_id: &EventId) -> bool {
-        let sent_ids = sent_ids();
-        sent_ids.read_blocking().contains(gift_wrap_id)
+        css().sent_ids.read_blocking().contains(gift_wrap_id)
     }
 
     /// Set the sending state of the chat panel
