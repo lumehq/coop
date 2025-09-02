@@ -10,7 +10,7 @@ use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, SEARCH_RELAYS, TOTAL_RETRY, WAIT_FOR_FINISH,
+    METADATA_BATCH_TIMEOUT, RELAY_RETRY, SEARCH_RELAYS, WAIT_FOR_FINISH,
 };
 use global::{css, ingester, nostr_client, AuthRequest, IngesterSignal, Notice};
 use gpui::prelude::FluentBuilder;
@@ -218,14 +218,14 @@ impl ChatSpace {
                         break;
                     } else {
                         retry += 1;
-                        if retry == TOTAL_RETRY {
+                        if retry == RELAY_RETRY {
                             ingester.send(IngesterSignal::DmRelayNotFound).await;
                             break;
                         }
                     }
                 } else {
                     nip65_retry += 1;
-                    if nip65_retry == TOTAL_RETRY {
+                    if nip65_retry == RELAY_RETRY {
                         ingester.send(IngesterSignal::DmRelayNotFound).await;
                         break;
                     }
@@ -458,27 +458,26 @@ impl ChatSpace {
                 }
                 RelayMessage::Auth { challenge } => {
                     if challenges.insert(challenge.clone()) {
-                        ingester
-                            .send(IngesterSignal::Auth(AuthRequest::new(challenge, relay_url)))
-                            .await;
+                        let req = AuthRequest::new(challenge, relay_url);
+                        // Send a signal to the ingester to handle the auth request
+                        ingester.send(IngesterSignal::Auth(req)).await;
                     }
                 }
                 RelayMessage::Ok {
                     event_id, message, ..
                 } => {
+                    // Keep track of events sent by Coop
+                    css.sent_ids.write().await.insert(event_id);
+
+                    // Keep track of events that need to be resent
                     match MachineReadablePrefix::parse(&message) {
                         Some(MachineReadablePrefix::AuthRequired) => {
                             if client.has_signer().await {
                                 css.resend_queue.write().await.insert(event_id, relay_url);
                             };
                         }
-                        Some(msg) => {
-                            log::warn!("Relay response: {msg}");
-                        }
-                        None => {
-                            // Keep track of events sent by Coop
-                            css.sent_ids.write().await.insert(event_id);
-                        }
+                        Some(_) => {}
+                        None => {}
                     }
                 }
                 _ => {}
@@ -496,6 +495,7 @@ impl ChatSpace {
         while let Ok(signal) = signals.recv().await {
             cx.update(|window, cx| {
                 let registry = Registry::global(cx);
+                let settings = AppSettings::global(cx);
 
                 match signal {
                     IngesterSignal::SignerSet(public_key) => {
@@ -506,6 +506,11 @@ impl ChatSpace {
                             this.set_default_layout(window, cx);
                         })
                         .ok();
+
+                        // Load user's settings
+                        settings.update(cx, |this, cx| {
+                            this.load_settings(cx);
+                        });
 
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
@@ -528,13 +533,14 @@ impl ChatSpace {
                     IngesterSignal::Auth(req) => {
                         let relay_url = &req.url;
                         let challenge = &req.challenge;
-                        let auth_auth = AppSettings::get_auto_auth(cx);
-                        let auth_relays = AppSettings::read_global(cx).auth_relays();
+                        let auto_auth = AppSettings::get_auto_auth(cx);
+                        let is_authenticated_relays =
+                            AppSettings::read_global(cx).is_authenticated_relays(relay_url);
 
                         view.update(cx, |this, cx| {
                             this.push_auth_request(challenge, relay_url, cx);
 
-                            if auth_auth && auth_relays.contains(relay_url) {
+                            if auto_auth && is_authenticated_relays {
                                 // Automatically authenticate if the relay is authenticated before
                                 this.auth(challenge, relay_url, window, cx);
                             } else {
@@ -842,17 +848,24 @@ impl ChatSpace {
                             // Get all failed events that need to be resent
                             let mut queue = css.resend_queue.write().await;
 
-                            for (id, url) in queue.drain().collect::<Vec<_>>() {
-                                if relay_url == &url {
+                            let ids: Vec<EventId> = queue
+                                .iter()
+                                .filter(|(_, url)| relay_url == *url)
+                                .map(|(id, _)| *id)
+                                .collect();
+
+                            for id in ids.into_iter() {
+                                if let Some(relay_url) = queue.remove(&id) {
                                     if let Some(event) = client.database().event_by_id(&id).await? {
                                         let event_id = relay.send_event(&event).await?;
-                                        let success = HashSet::from([relay_url.clone()]);
+
                                         let output = Output {
                                             val: event_id,
                                             failed: HashMap::new(),
-                                            success,
+                                            success: HashSet::from([relay_url]),
                                         };
 
+                                        css.sent_ids.write().await.insert(event_id);
                                         css.resent_ids.write().await.push(output);
                                     }
                                 }
@@ -879,7 +892,7 @@ impl ChatSpace {
 
                             // Save the authenticated relay to automatically authenticate future requests
                             settings.update(cx, |this, cx| {
-                                this.push_auth_relay(url.clone(), cx);
+                                this.push_relay(&url, cx);
                             });
 
                             // Clear the current notification

@@ -34,7 +34,10 @@ pub const NIP17_RELAYS: [&str; 2] = ["wss://nip17.com", "wss://auth.nostr1.com"]
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 
 /// Default retry count for fetching NIP-17 relays
-pub const TOTAL_RETRY: u64 = 2;
+pub const RELAY_RETRY: u64 = 2;
+
+/// Default retry count for sending messages
+pub const SEND_RETRY: u64 = 5;
 
 /// Default timeout (in seconds) for Nostr Connect
 pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;

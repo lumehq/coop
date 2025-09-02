@@ -94,7 +94,6 @@ impl Global for GlobalAppSettings {}
 pub struct AppSettings {
     setting_values: Settings,
     _subscriptions: SmallVec<[Subscription; 1]>,
-    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl AppSettings {
@@ -113,15 +112,23 @@ impl AppSettings {
         cx.set_global(GlobalAppSettings(state));
     }
 
-    fn new(cx: &mut Context<Self>) -> Self {
-        let setting_values = Settings::default();
-        let mut tasks = smallvec![];
+    fn new(_cx: &mut Context<Self>) -> Self {
+        Self {
+            setting_values: Settings::default(),
+            _subscriptions: smallvec![],
+        }
+    }
 
+    pub fn load_settings(&self, cx: &mut Context<Self>) {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
             let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(SETTINGS_IDENTIFIER)
+                .author(public_key)
                 .limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
@@ -131,44 +138,37 @@ impl AppSettings {
             }
         });
 
-        tasks.push(
-            // Load settings from database
-            cx.spawn(async move |this, cx| {
-                if let Ok(settings) = task.await {
-                    this.update(cx, |this, cx| {
-                        this.setting_values = settings;
-                        cx.notify();
-                    })
-                    .ok();
-                }
-            }),
-        );
-
-        Self {
-            setting_values,
-            _subscriptions: smallvec![],
-            _tasks: tasks,
-        }
+        cx.spawn(async move |this, cx| {
+            if let Ok(settings) = task.await {
+                this.update(cx, |this, cx| {
+                    this.setting_values = settings;
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
-    pub(crate) fn set_settings(&self, cx: &mut Context<Self>) {
+    pub fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.setting_values) {
-            cx.background_spawn(async move {
+            let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
                 let client = nostr_client();
-                let builder = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                    .tags(vec![Tag::identifier(SETTINGS_IDENTIFIER)])
-                    .sign(&Keys::generate())
-                    .await;
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
 
-                if let Ok(event) = builder {
-                    if let Err(e) = client.database().save_event(&event).await {
-                        log::error!("Failed to save user settings: {e}");
-                    } else {
-                        log::info!("New settings have been saved successfully");
-                    }
-                }
-            })
-            .detach();
+                let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+                    .tag(Tag::identifier(SETTINGS_IDENTIFIER))
+                    .build(public_key)
+                    .sign(&Keys::generate())
+                    .await?;
+
+                client.database().save_event(&event).await?;
+
+                Ok(())
+            });
+
+            task.detach();
         }
     }
 
@@ -176,12 +176,16 @@ impl AppSettings {
         !self.setting_values.authenticated_relays.is_empty() && self.setting_values.auto_auth
     }
 
-    pub fn auth_relays(&self) -> Vec<RelayUrl> {
-        self.setting_values.authenticated_relays.clone()
+    pub fn is_authenticated_relays(&self, url: &RelayUrl) -> bool {
+        self.setting_values.authenticated_relays.contains(url)
     }
 
-    pub fn push_auth_relay(&mut self, relay_url: RelayUrl, cx: &mut Context<Self>) {
-        self.setting_values.authenticated_relays.push(relay_url);
-        cx.notify();
+    pub fn push_relay(&mut self, relay_url: &RelayUrl, cx: &mut Context<Self>) {
+        if !self.is_authenticated_relays(relay_url) {
+            self.setting_values
+                .authenticated_relays
+                .push(relay_url.to_owned());
+            cx.notify();
+        }
     }
 }
