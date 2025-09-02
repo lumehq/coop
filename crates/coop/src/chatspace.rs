@@ -12,7 +12,7 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS, TOTAL_RETRY, WAIT_FOR_FINISH,
 };
-use global::{ingester, nostr_client, sent_ids, starting_time, AuthReq, IngesterSignal, Notice};
+use global::{css, ingester, nostr_client, AuthRequest, IngesterSignal, Notice};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
@@ -358,12 +358,12 @@ impl ChatSpace {
     ) -> Result<(), Error> {
         let client = nostr_client();
         let ingester = ingester();
-        let sent_ids = sent_ids();
+        let css = css();
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let mut processed_events: HashSet<EventId> = HashSet::new();
-        let mut auth_requests: HashMap<RelayUrl, Cow<'_, str>> = HashMap::new();
+        let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
         let mut notifications = client.notifications();
 
         while let Ok(notification) = notifications.recv().await {
@@ -457,21 +457,29 @@ impl ChatSpace {
                     }
                 }
                 RelayMessage::Auth { challenge } => {
-                    // Prevent duplicate auth requests
-                    if auth_requests
-                        .insert(relay_url.clone(), challenge.clone())
-                        .is_none()
-                    {
-                        let auth_req = AuthReq::new(challenge, relay_url);
-                        ingester.send(IngesterSignal::Auth(auth_req)).await;
+                    if challenges.insert(challenge.clone()) {
+                        ingester
+                            .send(IngesterSignal::Auth(AuthRequest::new(challenge, relay_url)))
+                            .await;
                     }
                 }
-                RelayMessage::Ok { event_id, .. } => {
-                    // Keep track of events sent by Coop
-                    sent_ids.write().await.push(event_id);
-                }
-                RelayMessage::Notice(msg) => {
-                    log::info!("Notice: {msg} - {relay_url}");
+                RelayMessage::Ok {
+                    event_id, message, ..
+                } => {
+                    match MachineReadablePrefix::parse(&message) {
+                        Some(MachineReadablePrefix::AuthRequired) => {
+                            if client.has_signer().await {
+                                css.resend_queue.write().await.insert(event_id, relay_url);
+                            };
+                        }
+                        Some(msg) => {
+                            log::warn!("Relay response: {msg}");
+                        }
+                        None => {
+                            // Keep track of events sent by Coop
+                            css.sent_ids.write().await.insert(event_id);
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -708,6 +716,7 @@ impl ChatSpace {
     async fn unwrap_gift_wrap_event(gift: &Event, pubkey_tx: &Sender<PublicKey>) -> bool {
         let client = nostr_client();
         let ingester = ingester();
+        let css = css();
         let mut is_cached = false;
 
         let event = match Self::get_unwrapped_event(gift.id).await {
@@ -745,7 +754,7 @@ impl ChatSpace {
         }
 
         // Send a notify to GPUI if this is a new message
-        if &event.created_at >= starting_time() {
+        if event.created_at >= css.init_at {
             ingester
                 .send(IngesterSignal::GiftWrap((gift.id, event)))
                 .await;
@@ -800,6 +809,7 @@ impl ChatSpace {
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
+            let css = css();
             let signer = client.signer().await?;
 
             // Construct event
@@ -827,16 +837,31 @@ impl ChatSpace {
                     } => {
                         if id == event_id {
                             // Re-subscribe to previous subscription
-                            match relay.resubscribe().await {
-                                Ok(_) => {
-                                    log::info!("{relay_url} - re-subscribe");
+                            relay.resubscribe().await?;
+
+                            // Get all failed events that need to be resent
+                            let mut queue = css.resend_queue.write().await;
+
+                            for (id, url) in queue.drain().collect::<Vec<_>>() {
+                                if relay_url == &url {
+                                    if let Some(event) = client.database().event_by_id(&id).await? {
+                                        let event_id = relay.send_event(&event).await?;
+                                        let success = HashSet::from([relay_url.clone()]);
+                                        let output = Output {
+                                            val: event_id,
+                                            failed: HashMap::new(),
+                                            success,
+                                        };
+
+                                        css.resent_ids.write().await.push(output);
+                                    }
                                 }
-                                Err(e) => return Err(e.into()),
                             }
 
                             return Ok(());
                         }
                     }
+                    RelayNotification::AuthenticationFailed => break,
                     RelayNotification::Shutdown => break,
                     _ => {}
                 }

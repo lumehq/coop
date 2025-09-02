@@ -1,10 +1,11 @@
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 
 use anyhow::Error;
 use common::display::ReadableProfile;
 use common::event::EventUtils;
-use global::nostr_client;
+use global::{css, nostr_client};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -472,7 +473,31 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::output(receiver, output));
+                        if output
+                            .failed
+                            .iter()
+                            .any(|(_, msg)| msg.starts_with("auth-required:"))
+                        {
+                            let id = output.id();
+                            let mut retry = 0;
+
+                            // Wait for authenticated and resent event successfully
+                            loop {
+                                if let Some(output) =
+                                    css().resent_ids.read().await.iter().find(|o| o.id() == id)
+                                {
+                                    reports.push(SendReport::output(receiver, output.to_owned()));
+                                    break;
+                                } else if retry == 3 {
+                                    break;
+                                } else {
+                                    retry += 1;
+                                }
+                                smol::Timer::after(Duration::from_secs(1)).await;
+                            }
+                        } else {
+                            reports.push(SendReport::output(receiver, output));
+                        }
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
