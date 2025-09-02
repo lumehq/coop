@@ -262,12 +262,13 @@ impl Registry {
         log::info!("Starting to load chat rooms...");
 
         // Get the contact bypass setting
-        let contact_bypass = AppSettings::get_contact_bypass(cx);
+        let bypass_setting = AppSettings::get_contact_bypass(cx);
 
         let task: Task<Result<HashSet<Room>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
+            let contacts = client.database().contacts_public_keys(public_key).await?;
 
             // Get messages sent by the user
             let send = Filter::new()
@@ -300,13 +301,12 @@ impl Registry {
                 public_keys.retain(|pk| pk != &public_key);
 
                 // Bypass screening flag
-                let mut bypass = false;
+                let mut bypassed = false;
 
-                // If user enabled bypass screening for contacts
-                // Check if room's members are in contact with current user
-                if contact_bypass {
-                    let contacts = client.database().contacts_public_keys(public_key).await?;
-                    bypass = public_keys.iter().any(|k| contacts.contains(k));
+                // If the user has enabled bypass screening in settings,
+                // check if any of the room's members are contacts of the current user
+                if bypass_setting {
+                    bypassed = public_keys.iter().any(|k| contacts.contains(k));
                 }
 
                 // Check if the current user has sent at least one message to this room
@@ -321,7 +321,7 @@ impl Registry {
                 // Create a new room
                 let room = Room::new(&event).rearrange_by(public_key);
 
-                if is_ongoing || bypass {
+                if is_ongoing || bypassed {
                     rooms.insert(room.kind(RoomKind::Ongoing));
                 } else {
                     rooms.insert(room);
@@ -349,23 +349,28 @@ impl Registry {
     }
 
     pub(crate) fn extend_rooms(&mut self, rooms: HashSet<Room>, cx: &mut Context<Self>) {
-        let mut room_map: HashMap<u64, usize> = HashMap::with_capacity(self.rooms.len());
-
-        for (index, room) in self.rooms.iter().enumerate() {
-            room_map.insert(room.read(cx).id, index);
-        }
+        let mut room_map: HashMap<u64, usize> = self
+            .rooms
+            .iter()
+            .enumerate()
+            .map(|(idx, room)| (room.read(cx).id, idx))
+            .collect();
 
         for new_room in rooms.into_iter() {
             // Check if we already have a room with this ID
             if let Some(&index) = room_map.get(&new_room.id) {
                 self.rooms[index].update(cx, |this, cx| {
-                    *this = new_room;
-                    cx.notify();
+                    if new_room.created_at > this.created_at {
+                        *this = new_room;
+                        cx.notify();
+                    }
                 });
             } else {
-                let new_index = self.rooms.len();
-                room_map.insert(new_room.id, new_index);
+                let new_room_id = new_room.id;
                 self.rooms.push(cx.new(|_| new_room));
+
+                let new_index = self.rooms.len();
+                room_map.insert(new_room_id, new_index);
             }
         }
     }
@@ -418,9 +423,13 @@ impl Registry {
         };
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
+            let is_new_event = event.created_at > room.read(cx).created_at;
+
             // Update room
             room.update(cx, |this, cx| {
-                this.created_at(event.created_at, cx);
+                if is_new_event {
+                    this.created_at(event.created_at, cx);
+                }
 
                 // Set this room is ongoing if the new message is from current user
                 if author == identity {
@@ -433,8 +442,10 @@ impl Registry {
                 });
             });
 
-            // Re-sort the rooms registry by their created at
-            self.sort(cx);
+            // Resort all rooms in the registry by their created at (after updated)
+            if is_new_event {
+                self.sort(cx);
+            }
         } else {
             let room = Room::new(&event)
                 .kind(RoomKind::default())
