@@ -251,9 +251,15 @@ impl Registry {
 
     /// Reset the registry.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        self.rooms = vec![];
+        // Reset the loading status (default: true)
         self.loading = true;
+
+        // Clear the current identity
         self.identity = None;
+
+        // Clear all current rooms
+        self.rooms.clear();
+
         cx.notify();
     }
 
