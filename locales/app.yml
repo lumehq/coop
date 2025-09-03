@@ -380,6 +380,6 @@ sidebar:
 
 loading:
   label:
-    en: "Downloading messages"
+    en: "Getting messages. This may take a while..."
   tooltip:
-    en: "This may take a while. Please be patient."
+    en: "The progress runs in the background. It doesn't affect your experience."
