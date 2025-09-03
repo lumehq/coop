@@ -117,6 +117,17 @@ pub struct CoopSimpleStorage {
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
 }
 
+impl CoopSimpleStorage {
+    pub fn new() -> Self {
+        Self {
+            init_at: Timestamp::now(),
+            sent_ids: RwLock::new(HashSet::new()),
+            resent_ids: RwLock::new(Vec::new()),
+            resend_queue: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
 static INGESTER: OnceLock<Ingester> = OnceLock::new();
 static COOP_SIMPLE_STORAGE: OnceLock<CoopSimpleStorage> = OnceLock::new();
@@ -150,7 +161,7 @@ pub fn ingester() -> &'static Ingester {
 }
 
 pub fn css() -> &'static CoopSimpleStorage {
-    COOP_SIMPLE_STORAGE.get_or_init(CoopSimpleStorage::default)
+    COOP_SIMPLE_STORAGE.get_or_init(CoopSimpleStorage::new)
 }
 
 pub fn first_run() -> &'static bool {

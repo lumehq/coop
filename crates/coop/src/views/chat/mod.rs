@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
@@ -14,6 +12,7 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
+use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::{Message, RenderedMessage};
@@ -51,14 +50,13 @@ pub struct Chat {
     // Chat Room
     room: Entity<Room>,
     list_state: ListState,
-    messages: Vec<Message>,
-    rendered_texts_by_id: HashMap<EventId, RenderedText>,
-    reports_by_id: HashMap<EventId, Vec<SendReport>>,
+    messages: BTreeSet<Message>,
+    rendered_texts_by_id: BTreeMap<EventId, RenderedText>,
+    reports_by_id: BTreeMap<EventId, Vec<SendReport>>,
 
     // New Message
     input: Entity<InputState>,
     replies_to: Entity<Vec<EventId>>,
-    sending: bool,
 
     // Media Attachment
     attachments: Entity<Vec<Url>>,
@@ -75,7 +73,8 @@ pub struct Chat {
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let list_state = ListState::new(1, ListAlignment::Bottom, px(1024.));
+        let attachments = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| vec![]);
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
@@ -87,8 +86,9 @@ impl Chat {
                 .clean_on_escape()
         });
 
-        let attachments = cx.new(|_| vec![]);
-        let replies_to = cx.new(|_| vec![]);
+        let messages = BTreeSet::from([Message::system()]);
+        let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
+
         let load_messages = room.read(cx).load_messages(cx);
 
         let mut subscriptions = smallvec![];
@@ -154,10 +154,9 @@ impl Chat {
             image_cache: RetainAllImageCache::new(cx),
             focus_handle: cx.focus_handle(),
             uploading: false,
-            sending: false,
-            messages: vec![Message::System],
-            rendered_texts_by_id: HashMap::new(),
-            reports_by_id: HashMap::new(),
+            rendered_texts_by_id: BTreeMap::new(),
+            reports_by_id: BTreeMap::new(),
+            messages,
             room,
             list_state,
             input,
@@ -223,19 +222,10 @@ impl Chat {
         css().sent_ids.read_blocking().contains(gift_wrap_id)
     }
 
-    /// Set the sending state of the chat panel
-    fn set_sending(&mut self, sending: bool, cx: &mut Context<Self>) {
-        self.sending = sending;
-        cx.notify();
-    }
-
     /// Send a message to all members of the chat
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Get the message which includes all attachments
         let content = self.input_content(cx);
-
-        // Get the backup setting
-        let backup = AppSettings::get_backup_messages(cx);
 
         // Return if message is empty
         if content.trim().is_empty() {
@@ -243,14 +233,14 @@ impl Chat {
             return;
         }
 
-        // Mark sending in progress
-        self.set_sending(true, cx);
-
         // Temporary disable input
         self.input.update(cx, |this, cx| {
             this.set_loading(true, cx);
             this.set_disabled(true, cx);
         });
+
+        // Get the backup setting
+        let backup = AppSettings::get_backup_messages(cx);
 
         // Get replies_to if it's present
         let replies = self.replies_to.read(cx).clone();
@@ -266,17 +256,23 @@ impl Chat {
         // Create a task for sending the message in the background
         let send_message = room.send_in_background(&content, replies, backup, cx);
 
-        // Optimistically update message list
-        self.insert_message(temp_message, cx);
+        cx.defer_in(window, |this, window, cx| {
+            // Optimistically update message list
+            this.insert_message(temp_message, cx);
 
-        // Remove all replies
-        self.remove_all_replies(cx);
+            // Scroll to reveal the new message
+            this.list_state
+                .scroll_to_reveal_item(this.messages.len() + 1);
 
-        // Reset the input state
-        self.input.update(cx, |this, cx| {
-            this.set_loading(false, cx);
-            this.set_disabled(false, cx);
-            this.set_value("", window, cx);
+            // Remove all replies
+            this.remove_all_replies(cx);
+
+            // Reset the input state
+            this.input.update(cx, |this, cx| {
+                this.set_loading(false, cx);
+                this.set_disabled(false, cx);
+                this.set_value("", window, cx);
+            });
         });
 
         // Continue sending the message in the background
@@ -284,15 +280,20 @@ impl Chat {
             match send_message.await {
                 Ok(reports) => {
                     this.update(cx, |this, cx| {
-                        // Don't change the room kind if send failed
                         this.room.update(cx, |this, cx| {
                             if this.kind != RoomKind::Ongoing {
-                                this.kind = RoomKind::Ongoing;
-                                cx.notify();
+                                // Update the room kind to ongoing
+                                // But keep the room kind if send failed
+                                if reports.iter().all(|r| !r.is_sent_success()) {
+                                    this.kind = RoomKind::Ongoing;
+                                    cx.notify();
+                                }
                             }
                         });
+
+                        // Insert the sent reports
                         this.reports_by_id.insert(temp_id, reports);
-                        this.sending = false;
+
                         cx.notify();
                     })
                     .ok();
@@ -340,62 +341,23 @@ impl Chat {
     }
 
     /// Convert and insert a nostr event into the chat panel
-    fn insert_message<E>(&mut self, event: E, cx: &mut Context<Self>)
+    fn insert_message<E>(&mut self, event: E, _cx: &mut Context<Self>)
     where
         E: Into<RenderedMessage>,
     {
         let old_len = self.messages.len();
-        let new_len = 1;
 
         // Extend the messages list with the new events
-        self.messages.push(Message::user(event));
-
-        // Update list state with the new messages
-        self.list_state.splice(old_len..old_len, new_len);
-
-        cx.notify();
+        if self.messages.insert(Message::user(event)) {
+            self.list_state.splice(old_len..old_len, 1);
+        }
     }
 
-    /// Convert and insert bulk nostr events into the chat panel
-    fn insert_messages<E>(&mut self, events: E, cx: &mut Context<Self>)
-    where
-        E: IntoIterator,
-        E::Item: Into<RenderedMessage>,
-    {
-        let old_events: HashSet<EventId> = self
-            .messages
-            .iter()
-            .filter_map(|msg| {
-                if let Message::User(rendered) = msg {
-                    Some(rendered.id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let events: Vec<Message> = events
-            .into_iter()
-            .map(|ev| ev.into())
-            .filter(|msg: &RenderedMessage| !old_events.contains(&msg.id))
-            .map(Message::User)
-            .collect();
-
-        let old_len = self.messages.len();
-        let new_len = events.len();
-
-        // Extend the messages list with the new events
-        self.messages.extend(events);
-        self.messages.sort_by(|a, b| match (a, b) {
-            (Message::System, Message::System) => std::cmp::Ordering::Equal,
-            (Message::System, Message::User(_)) => std::cmp::Ordering::Less,
-            (Message::User(_), Message::System) => std::cmp::Ordering::Greater,
-            (Message::User(a_msg), Message::User(b_msg)) => a_msg.created_at.cmp(&b_msg.created_at),
-        });
-
-        // Update list state with the new messages
-        self.list_state.splice(old_len..old_len, new_len);
-
+    /// Convert and insert a vector of nostr events into the chat panel
+    fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
+        for event in events.into_iter() {
+            self.insert_message(event, cx);
+        }
         cx.notify();
     }
 
@@ -560,15 +522,18 @@ impl Chat {
             .into_any_element()
     }
 
-    fn render_message_not_found(&self, cx: &Context<Self>) -> AnyElement {
+    fn render_message_not_found(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
         div()
+            .id(ix)
             .w_full()
             .py_1()
             .px_3()
             .child(
-                div()
+                h_flex()
+                    .gap_1()
                     .text_xs()
                     .text_color(cx.theme().danger_foreground)
+                    .child(SharedString::from(ix.to_string()))
                     .child(shared_t!("chat.not_found")),
             )
             .into_any_element()
@@ -1172,7 +1137,7 @@ impl Render for Chat {
                 list(
                     self.list_state.clone(),
                     cx.processor(move |this, ix: usize, window, cx| {
-                        if let Some(message) = this.messages.get(ix) {
+                        if let Some(message) = this.messages.get_index(ix) {
                             match message {
                                 Message::User(rendered) => {
                                     let text = this
@@ -1183,10 +1148,10 @@ impl Render for Chat {
 
                                     this.render_message(ix, rendered, text, cx)
                                 }
-                                Message::System => this.render_announcement(ix, cx),
+                                Message::System(_) => this.render_announcement(ix, cx),
                             }
                         } else {
-                            this.render_message_not_found(cx)
+                            this.render_message_not_found(ix, cx)
                         }
                     }),
                 )

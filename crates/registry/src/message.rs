@@ -2,15 +2,36 @@ use std::hash::Hash;
 
 use nostr_sdk::prelude::*;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Message {
     User(RenderedMessage),
-    System,
+    System(Timestamp),
 }
 
 impl Message {
     pub fn user(user: impl Into<RenderedMessage>) -> Self {
         Self::User(user.into())
+    }
+
+    pub fn system() -> Self {
+        Self::System(Timestamp::default())
+    }
+}
+
+impl Ord for Message {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Message::User(a), Message::User(b)) => a.cmp(b),
+            (Message::System(a), Message::System(b)) => a.cmp(b),
+            (Message::User(a), Message::System(b)) => a.created_at.cmp(b),
+            (Message::System(a), Message::User(b)) => a.cmp(&b.created_at),
+        }
+    }
+}
+
+impl PartialOrd for Message {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
