@@ -62,3 +62,4 @@ oneshot.workspace = true
 webbrowser.workspace = true
 
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }
+indexset = "0.12.3"

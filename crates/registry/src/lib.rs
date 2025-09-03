@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Error;
 use common::event::EventUtils;
@@ -6,7 +7,6 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
-use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
