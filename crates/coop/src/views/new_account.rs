@@ -194,14 +194,11 @@ impl NewAccount {
         cx.spawn_in(window, async move |this, cx| {
             match Flatten::flatten(task.await.map_err(|e| e.into())) {
                 Ok(Ok(url)) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            this.uploading(false, cx);
-                            this.avatar_input.update(cx, |this, cx| {
-                                this.set_value(url.to_string(), window, cx);
-                            });
-                        })
-                        .ok();
+                    this.update_in(cx, |this, window, cx| {
+                        this.uploading(false, cx);
+                        this.avatar_input.update(cx, |this, cx| {
+                            this.set_value(url.to_string(), window, cx);
+                        });
                     })
                     .ok();
                 }

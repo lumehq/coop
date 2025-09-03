@@ -192,11 +192,8 @@ impl Sidebar {
 
     fn debounced_search(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn_in(window, async move |this, cx| {
-            cx.update(|window, cx| {
-                this.update(cx, |this, cx| {
-                    this.search(window, cx);
-                })
-                .ok();
+            this.update_in(cx, |this, window, cx| {
+                this.search(window, cx);
             })
             .ok();
         })
@@ -227,18 +224,15 @@ impl Sidebar {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(Some(results)) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            let msg = t!("sidebar.empty", query = query_cloned);
-                            let rooms = results.into_iter().map(|r| cx.new(|_| r)).collect_vec();
+                    this.update_in(cx, |this, window, cx| {
+                        let msg = t!("sidebar.empty", query = query_cloned);
+                        let rooms = results.into_iter().map(|r| cx.new(|_| r)).collect_vec();
 
-                            if rooms.is_empty() {
-                                window.push_notification(msg, cx);
-                            }
+                        if rooms.is_empty() {
+                            window.push_notification(msg, cx);
+                        }
 
-                            this.results(rooms, true, window, cx);
-                        })
-                        .ok();
+                        this.results(rooms, true, window, cx);
                     })
                     .ok();
                 }
@@ -254,12 +248,10 @@ impl Sidebar {
                 }
                 // Async task failed
                 Err(e) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            window.push_notification(e.to_string(), cx);
-                            this.set_finding(false, window, cx);
-                            this.set_cancel_handle(None, cx);
-                        })
+                    this.update_in(cx, |this, window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                        this.set_finding(false, window, cx);
+                        this.set_cancel_handle(None, cx);
                     })
                     .ok();
                 }

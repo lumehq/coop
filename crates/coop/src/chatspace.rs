@@ -886,25 +886,21 @@ impl ChatSpace {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(_) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            this.remove_auth_request(&challenge, cx);
+                    this.update_in(cx, |this, window, cx| {
+                        this.remove_auth_request(&challenge, cx);
 
-                            // Save the authenticated relay to automatically authenticate future requests
-                            settings.update(cx, |this, cx| {
-                                this.push_relay(&url, cx);
-                            });
+                        // Save the authenticated relay to automatically authenticate future requests
+                        settings.update(cx, |this, cx| {
+                            this.push_relay(&url, cx);
+                        });
 
-                            // Clear the current notification
-                            window.clear_notification_by_id(SharedString::from(challenge), cx);
+                        // Clear the current notification
+                        window.clear_notification_by_id(SharedString::from(challenge), cx);
 
-                            // Push a new notification after current cycle
-                            cx.defer_in(window, move |_, window, cx| {
-                                window
-                                    .push_notification(format!("{url} has been authenticated"), cx);
-                            });
-                        })
-                        .ok();
+                        // Push a new notification after current cycle
+                        cx.defer_in(window, move |_, window, cx| {
+                            window.push_notification(format!("{url} has been authenticated"), cx);
+                        });
                     })
                     .ok();
                 }

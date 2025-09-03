@@ -69,32 +69,29 @@ impl EditProfile {
 
             cx.spawn_in(window, async move |this, cx| {
                 if let Ok(Some(metadata)) = task.await {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this: &mut EditProfile, cx| {
-                            this.avatar_input.update(cx, |this, cx| {
-                                if let Some(avatar) = metadata.picture.as_ref() {
-                                    this.set_value(avatar, window, cx);
-                                }
-                            });
-                            this.bio_input.update(cx, |this, cx| {
-                                if let Some(bio) = metadata.about.as_ref() {
-                                    this.set_value(bio, window, cx);
-                                }
-                            });
-                            this.name_input.update(cx, |this, cx| {
-                                if let Some(display_name) = metadata.display_name.as_ref() {
-                                    this.set_value(display_name, window, cx);
-                                }
-                            });
-                            this.website_input.update(cx, |this, cx| {
-                                if let Some(website) = metadata.website.as_ref() {
-                                    this.set_value(website, window, cx);
-                                }
-                            });
-                            this.profile = Some(metadata);
-                            cx.notify();
-                        })
-                        .ok();
+                    this.update_in(cx, |this: &mut EditProfile, window, cx| {
+                        this.avatar_input.update(cx, |this, cx| {
+                            if let Some(avatar) = metadata.picture.as_ref() {
+                                this.set_value(avatar, window, cx);
+                            }
+                        });
+                        this.bio_input.update(cx, |this, cx| {
+                            if let Some(bio) = metadata.about.as_ref() {
+                                this.set_value(bio, window, cx);
+                            }
+                        });
+                        this.name_input.update(cx, |this, cx| {
+                            if let Some(display_name) = metadata.display_name.as_ref() {
+                                this.set_value(display_name, window, cx);
+                            }
+                        });
+                        this.website_input.update(cx, |this, cx| {
+                            if let Some(website) = metadata.website.as_ref() {
+                                this.set_value(website, window, cx);
+                            }
+                        });
+                        this.profile = Some(metadata);
+                        cx.notify();
                     })
                     .ok();
                 }

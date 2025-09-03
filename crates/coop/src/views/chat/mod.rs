@@ -460,12 +460,9 @@ impl Chat {
                     .ok();
                 }
                 Err(e) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            window.push_notification(e.to_string(), cx);
-                            this.uploading(false, cx);
-                        })
-                        .ok();
+                    this.update_in(cx, |this, window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                        this.uploading(false, cx);
                     })
                     .ok();
                 }

@@ -108,12 +108,9 @@ impl AutoUpdater {
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Some(update)) = checking.await {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_status(AutoUpdateStatus::checked(update), cx);
-                        this.install_update(window, cx);
-                    })
-                    .ok();
+                this.update_in(cx, |this, window, cx| {
+                    this.set_status(AutoUpdateStatus::checked(update), cx);
+                    this.install_update(window, cx);
                 })
                 .ok();
             } else {

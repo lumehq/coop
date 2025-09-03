@@ -340,9 +340,11 @@ impl Registry {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(rooms) => {
-                    this.update(cx, |this, cx| {
-                        this.extend_rooms(rooms, cx);
-                        this.sort(cx);
+                    this.update_in(cx, |_, window, cx| {
+                        cx.defer_in(window, |this, _window, cx| {
+                            this.extend_rooms(rooms, cx);
+                            this.sort(cx);
+                        });
                     })
                     .ok();
                 }
@@ -450,7 +452,9 @@ impl Registry {
 
             // Resort all rooms in the registry by their created at (after updated)
             if is_new_event {
-                self.sort(cx);
+                cx.defer_in(window, |this, _window, cx| {
+                    this.sort(cx);
+                });
             }
         } else {
             let room = Room::new(&event)
