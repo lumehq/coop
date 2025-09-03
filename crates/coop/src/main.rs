@@ -79,6 +79,9 @@ fn main() {
 
         // Open a window with default options
         cx.open_window(opts, |window, cx| {
+            // Bring the app to the foreground
+            cx.activate(true);
+
             // Automatically sync theme with system appearance
             window
                 .observe_window_appearance(|window, cx| {
@@ -88,7 +91,6 @@ fn main() {
 
             // Root Entity
             cx.new(|cx| {
-                cx.activate(true);
                 // Initialize the tokio runtime
                 gpui_tokio::init(cx);
 

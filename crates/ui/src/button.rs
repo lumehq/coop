@@ -359,6 +359,8 @@ impl RenderOnce for Button {
                         Size::XSmall => {
                             if self.icon.is_some() {
                                 this.h_6().pl_2().pr_2p5()
+                            } else if self.cta {
+                                this.h_6().px_4()
                             } else {
                                 this.h_6().px_2()
                             }
@@ -366,6 +368,8 @@ impl RenderOnce for Button {
                         Size::Small => {
                             if self.icon.is_some() {
                                 this.h_7().pl_2().pr_2p5()
+                            } else if self.cta {
+                                this.h_7().px_4()
                             } else {
                                 this.h_7().px_2()
                             }
