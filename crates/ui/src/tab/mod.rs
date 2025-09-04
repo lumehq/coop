@@ -11,7 +11,6 @@ pub mod tab_bar;
 
 #[derive(IntoElement)]
 pub struct Tab {
-    id: ElementId,
     base: Stateful<Div>,
     label: AnyElement,
     prefix: Option<AnyElement>,
@@ -25,7 +24,6 @@ impl Tab {
         let id: ElementId = id.into();
 
         Self {
-            id: id.clone(),
             base: div().id(id),
             label: label.into_any_element(),
             disabled: false,
@@ -55,13 +53,13 @@ impl Tab {
 }
 
 impl Selectable for Tab {
-    fn element_id(&self) -> &ElementId {
-        &self.id
-    }
-
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.selected
     }
 }
 

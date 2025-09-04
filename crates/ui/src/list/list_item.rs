@@ -15,7 +15,6 @@ type Suffix = Option<Box<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>
 
 #[derive(IntoElement)]
 pub struct ListItem {
-    id: ElementId,
     base: Stateful<Div>,
     disabled: bool,
     selected: bool,
@@ -30,8 +29,8 @@ pub struct ListItem {
 impl ListItem {
     pub fn new(id: impl Into<ElementId>) -> Self {
         let id: ElementId = id.into();
+
         Self {
-            id: id.clone(),
             base: h_flex().id(id).gap_x_1().py_1().px_2().text_base(),
             disabled: false,
             selected: false,
@@ -104,13 +103,13 @@ impl Disableable for ListItem {
 }
 
 impl Selectable for ListItem {
-    fn element_id(&self) -> &ElementId {
-        &self.id
-    }
-
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.selected
     }
 }
 

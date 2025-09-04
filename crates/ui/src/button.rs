@@ -1,8 +1,8 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement as _, Styled, Window,
+    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString, Stateful,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
 };
 use theme::ActiveTheme;
 
@@ -121,8 +121,8 @@ type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>
 /// A Button element.
 #[derive(IntoElement)]
 pub struct Button {
-    pub base: Div,
-    id: ElementId,
+    base: Stateful<Div>,
+    style: StyleRefinement,
 
     icon: Option<Icon>,
     label: Option<SharedString>,
@@ -156,8 +156,8 @@ impl From<Button> for AnyElement {
 impl Button {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
-            base: div().flex_shrink_0(),
-            id: id.into(),
+            base: div().id(id.into()).flex_shrink_0(),
+            style: StyleRefinement::default(),
             icon: None,
             label: None,
             disabled: false,
@@ -255,13 +255,13 @@ impl Disableable for Button {
 }
 
 impl Selectable for Button {
-    fn element_id(&self) -> &ElementId {
-        &self.id
-    }
-
     fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.selected
     }
 }
 
@@ -280,8 +280,8 @@ impl ButtonVariants for Button {
 }
 
 impl Styled for Button {
-    fn style(&mut self) -> &mut gpui::StyleRefinement {
-        self.base.style()
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
     }
 }
 
@@ -308,11 +308,11 @@ impl RenderOnce for Button {
         };
 
         self.base
-            .id(self.id)
+            .flex_shrink_0()
             .flex()
             .items_center()
             .justify_center()
-            .cursor_pointer()
+            .cursor_default()
             .overflow_hidden()
             .map(|this| match self.rounded {
                 ButtonRounded::Normal => this.rounded(cx.theme().radius),
@@ -392,10 +392,6 @@ impl RenderOnce for Button {
                 }
             })
             .text_color(normal_style.fg)
-            .when(self.selected, |this| {
-                let selected_style = style.selected(window, cx);
-                this.bg(selected_style.bg).text_color(selected_style.fg)
-            })
             .when(!self.disabled && !self.selected, |this| {
                 this.bg(normal_style.bg)
                     .hover(|this| {
@@ -407,6 +403,10 @@ impl RenderOnce for Button {
                         this.bg(active_style.bg).text_color(active_style.fg)
                     })
             })
+            .when(self.selected, |this| {
+                let selected_style = style.selected(window, cx);
+                this.bg(selected_style.bg).text_color(selected_style.fg)
+            })
             .when(self.disabled, |this| {
                 let disabled_style = style.disabled(window, cx);
                 this.cursor_not_allowed()
@@ -414,6 +414,7 @@ impl RenderOnce for Button {
                     .text_color(disabled_style.fg)
                     .shadow_none()
             })
+            .refine_style(&self.style)
             .child({
                 h_flex()
                     .id("label")
