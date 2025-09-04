@@ -10,7 +10,7 @@ use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, RELAY_RETRY, SEARCH_RELAYS, WAIT_FOR_FINISH,
+    METADATA_BATCH_TIMEOUT, SEARCH_RELAYS, WAIT_FOR_FINISH,
 };
 use global::{css, ingester, nostr_client, AuthRequest, IngesterSignal, Notice};
 use gpui::prelude::FluentBuilder;
@@ -28,7 +28,6 @@ use settings::AppSettings;
 use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use smol::channel::{Receiver, Sender};
-use smol::lock::Mutex;
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::actions::OpenProfile;
@@ -64,20 +63,6 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
     ChatSpace::set_center_panel(panel, window, cx);
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-enum RelayTrackStatus {
-    #[default]
-    Waiting,
-    NotFound,
-    Found,
-}
-
-#[derive(Debug, Clone, Default)]
-struct RelayTracking {
-    nip17: RelayTrackStatus,
-    nip65: RelayTrackStatus,
-}
-
 pub struct ChatSpace {
     title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
@@ -94,9 +79,6 @@ impl ChatSpace {
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
-
-        let relay_tracking = Arc::new(Mutex::new(RelayTracking::default()));
-        let relay_tracking_clone = relay_tracking.clone();
 
         let (pubkey_tx, pubkey_rx) = smol::channel::bounded::<PublicKey>(1024);
         let (event_tx, event_rx) = smol::channel::bounded::<Event>(2048);
@@ -132,7 +114,7 @@ impl ChatSpace {
                     .await
                     .expect("Failed connect the bootstrap relays. Please restart the application.");
 
-                Self::process_nostr_events(&relay_tracking_clone, &event_tx, &pubkey_tx_clone)
+                Self::process_nostr_events(&event_tx, &pubkey_tx_clone)
                     .await
                     .expect("Failed to handle nostr events. Please restart the application.");
             }),
@@ -142,7 +124,7 @@ impl ChatSpace {
             // Wait for the signer to be set
             // Also verify NIP65 and NIP17 relays after the signer is set
             cx.background_spawn(async move {
-                Self::wait_for_signer_set(&relay_tracking).await;
+                Self::wait_for_signer_set().await;
             }),
         );
 
@@ -198,44 +180,41 @@ impl ChatSpace {
         Ok(())
     }
 
-    async fn wait_for_signer_set(relay_tracking: &Arc<Mutex<RelayTracking>>) {
+    async fn wait_for_signer_set() {
         let client = nostr_client();
         let ingester = ingester();
-
-        let mut signer_set = false;
-        let mut retry = 0;
-        let mut nip65_retry = 0;
+        let loop_duration = Duration::from_millis(500);
+        let mut is_sent_signal = false;
+        let mut identity: Option<PublicKey> = None;
 
         loop {
-            if signer_set {
-                let state = relay_tracking.lock().await;
+            if let Some(public_key) = identity {
+                let nip65 = Filter::new().kind(Kind::RelayList).author(public_key);
 
-                if state.nip65 == RelayTrackStatus::Found {
-                    if state.nip17 == RelayTrackStatus::Found {
-                        break;
-                    } else if state.nip17 == RelayTrackStatus::NotFound {
-                        ingester.send(IngesterSignal::DmRelayNotFound).await;
+                if client.database().count(nip65).await.unwrap_or(0) > 0 {
+                    let nip17 = Filter::new().kind(Kind::InboxRelays).author(public_key);
+
+                    if client.database().count(nip17).await.unwrap_or(0) > 0 {
                         break;
                     } else {
-                        retry += 1;
-                        if retry == RELAY_RETRY {
+                        // Prevent sending multiple signals
+                        if !is_sent_signal {
                             ingester.send(IngesterSignal::DmRelayNotFound).await;
-                            break;
+                            is_sent_signal = true;
                         }
                     }
                 } else {
-                    nip65_retry += 1;
-                    if nip65_retry == RELAY_RETRY {
+                    // Prevent sending multiple signals
+                    if !is_sent_signal {
                         ingester.send(IngesterSignal::DmRelayNotFound).await;
-                        break;
+                        is_sent_signal = true;
                     }
                 }
-            }
-
-            if !signer_set {
+            } else {
+                // Wait for signer set
                 if let Ok(signer) = client.signer().await {
                     if let Ok(public_key) = signer.get_public_key().await {
-                        signer_set = true;
+                        identity = Some(public_key);
 
                         // Notify the app that the signer has been set.
                         ingester.send(IngesterSignal::SignerSet(public_key)).await;
@@ -248,7 +227,7 @@ impl ChatSpace {
                 }
             }
 
-            smol::Timer::after(Duration::from_millis(300)).await;
+            smol::Timer::after(loop_duration).await;
         }
     }
 
@@ -352,7 +331,6 @@ impl ChatSpace {
     }
 
     async fn process_nostr_events(
-        relay_tracking: &Arc<Mutex<RelayTracking>>,
         event_tx: &Sender<Event>,
         pubkey_tx: &Sender<PublicKey>,
     ) -> Result<(), Error> {
@@ -382,9 +360,6 @@ impl ChatSpace {
                         Kind::RelayList => {
                             // Get metadata for event's pubkey that matches the current user's pubkey
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let mut relay_tracking = relay_tracking.lock().await;
-                                relay_tracking.nip65 = RelayTrackStatus::Found;
-
                                 // Fetch user's metadata event
                                 Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
 
@@ -397,22 +372,9 @@ impl ChatSpace {
                         }
                         Kind::InboxRelays => {
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays: Vec<RelayUrl> = event
-                                    .tags
-                                    .filter_standardized(TagKind::Relay)
-                                    .filter_map(|t| {
-                                        if let TagStandard::Relay(url) = t {
-                                            Some(url.to_owned())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect();
+                                let relays: Vec<RelayUrl> = Self::extract_relay_list(&event);
 
                                 if !relays.is_empty() {
-                                    let mut relay_tracking = relay_tracking.lock().await;
-                                    relay_tracking.nip17 = RelayTrackStatus::Found;
-
                                     for relay in relays.iter() {
                                         if client.add_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
@@ -605,6 +567,20 @@ impl ChatSpace {
             })
             .ok();
         }
+    }
+
+    fn extract_relay_list(event: &Event) -> Vec<RelayUrl> {
+        event
+            .tags
+            .filter_standardized(TagKind::Relay)
+            .filter_map(|t| {
+                if let TagStandard::Relay(url) = t {
+                    Some(url.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Checks if an event is belong to the current user
