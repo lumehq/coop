@@ -6,7 +6,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
     ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, ObjectFit,
+    InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
     ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
 };
@@ -139,7 +139,7 @@ impl Chat {
                 match signal {
                     RoomSignal::NewMessage((gift_wrap_id, event)) => {
                         if !this.is_sent_by_coop(gift_wrap_id) {
-                            this.insert_message(event, cx);
+                            this.insert_message(event, false, cx);
                         }
                     }
                     RoomSignal::Refresh => {
@@ -258,11 +258,7 @@ impl Chat {
 
         cx.defer_in(window, |this, window, cx| {
             // Optimistically update message list
-            this.insert_message(temp_message, cx);
-
-            // Scroll to reveal the new message
-            this.list_state
-                .scroll_to_reveal_item(this.messages.len() + 1);
+            this.insert_message(temp_message, true, cx);
 
             // Remove all replies
             this.remove_all_replies(cx);
@@ -341,7 +337,7 @@ impl Chat {
     }
 
     /// Convert and insert a nostr event into the chat panel
-    fn insert_message<E>(&mut self, event: E, _cx: &mut Context<Self>)
+    fn insert_message<E>(&mut self, event: E, scroll: bool, cx: &mut Context<Self>)
     where
         E: Into<RenderedMessage>,
     {
@@ -350,13 +346,21 @@ impl Chat {
         // Extend the messages list with the new events
         if self.messages.insert(Message::user(event)) {
             self.list_state.splice(old_len..old_len, 1);
+
+            if scroll {
+                self.list_state.scroll_to(ListOffset {
+                    item_ix: self.list_state.item_count(),
+                    offset_in_item: px(0.0),
+                });
+                cx.notify();
+            }
         }
     }
 
     /// Convert and insert a vector of nostr events into the chat panel
     fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
         for event in events.into_iter() {
-            self.insert_message(event, cx);
+            self.insert_message(event, false, cx);
         }
         cx.notify();
     }

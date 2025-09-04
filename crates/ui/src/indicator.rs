@@ -20,7 +20,7 @@ impl Indicator {
     pub fn new() -> Self {
         Self {
             size: Size::Small,
-            speed: Duration::from_secs_f64(0.8),
+            speed: Duration::from_secs(1),
             icon: Icon::new(IconName::Loader),
             color: None,
         }
@@ -52,17 +52,15 @@ impl Sizable for Indicator {
 
 impl RenderOnce for Indicator {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        div()
-            .child(
-                self.icon
-                    .with_size(self.size)
-                    .when_some(self.color, |this, color| this.text_color(color))
-                    .with_animation(
-                        "circle",
-                        Animation::new(self.speed).repeat().with_easing(ease_in_out),
-                        |this, delta| this.transform(Transformation::rotate(percentage(delta))),
-                    ),
-            )
-            .into_element()
+        div().child(
+            self.icon
+                .with_size(self.size)
+                .when_some(self.color, |this, color| this.text_color(color))
+                .with_animation(
+                    "circle",
+                    Animation::new(self.speed).repeat().with_easing(ease_in_out),
+                    |this, delta| this.transform(Transformation::rotate(percentage(delta))),
+                ),
+        )
     }
 }

@@ -1231,7 +1231,7 @@ impl ChatSpace {
                 this.child(
                     h_flex()
                         .id("downloading")
-                        .px_4()
+                        .px_2()
                         .h_6()
                         .gap_1()
                         .text_xs()
@@ -1434,7 +1434,7 @@ impl Render for ChatSpace {
 
         // Only render titlebar child elements if user is logged in
         if registry.identity.is_some() {
-            let profile = Registry::read_global(cx).identity(cx);
+            let profile = registry.identity(cx);
 
             let left_side = self
                 .render_titlebar_left_side(window, cx)
@@ -1457,9 +1457,7 @@ impl Render for ChatSpace {
             .relative()
             .size_full()
             .child(
-                div()
-                    .flex()
-                    .flex_col()
+                v_flex()
                     .size_full()
                     // Title Bar
                     .child(self.title_bar.clone())

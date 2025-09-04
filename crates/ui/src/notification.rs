@@ -299,7 +299,7 @@ impl Render for Notification {
             .border_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().surface_background)
-            .rounded(cx.theme().radius)
+            .rounded(cx.theme().radius * 1.6)
             .shadow_md()
             .p_2()
             .gap_3()
