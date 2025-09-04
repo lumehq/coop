@@ -10,7 +10,6 @@ use gpui::{
     TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::Registry;
 use smallvec::{smallvec, SmallVec};
@@ -19,6 +18,8 @@ use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, StyledExt};
+
+use crate::chatspace::ChatSpace;
 
 pub fn init(kind: Kind, window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
     cx.new(|cx| SetupRelay::new(kind, window, cx))
@@ -82,7 +83,7 @@ impl SetupRelay {
             let filter = Filter::new().kind(kind).author(identity).limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first() {
-                let relays = event
+                let relays: Vec<RelayUrl> = event
                     .tags
                     .iter()
                     .filter_map(|tag| tag.as_standardized())
@@ -95,7 +96,7 @@ impl SetupRelay {
                             None
                         }
                     })
-                    .collect_vec();
+                    .collect();
 
                 Ok(relays)
             } else {
@@ -195,21 +196,31 @@ impl SetupRelay {
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
             let tags: Vec<Tag> = relays
                 .iter()
                 .map(|relay| Tag::relay(relay.clone()))
                 .collect();
 
-            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(tags);
+            let event = EventBuilder::new(Kind::InboxRelays, "")
+                .tags(tags)
+                .build(public_key)
+                .sign(&signer)
+                .await?;
 
             // Set messaging relays
-            client.send_event_builder(builder).await?;
+            client.send_event(&event).await?;
 
             // Connect to messaging relays
-            for relay in relays.into_iter() {
-                _ = client.add_relay(&relay).await;
-                _ = client.connect_relay(&relay).await;
+            for relay in relays.iter() {
+                _ = client.add_relay(relay).await;
+                _ = client.connect_relay(relay).await;
             }
+
+            // Fetch gift wrap events
+            ChatSpace::fetch_gift_wrap(&relays, public_key).await;
 
             Ok(())
         });
@@ -223,11 +234,8 @@ impl SetupRelay {
                     .ok();
                 }
                 Err(e) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            this.set_error(e.to_string(), window, cx);
-                        })
-                        .ok();
+                    this.update_in(cx, |this, window, cx| {
+                        this.set_error(e.to_string(), window, cx);
                     })
                     .ok();
                 }

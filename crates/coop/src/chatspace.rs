@@ -192,8 +192,20 @@ impl ChatSpace {
                 if client.database().count(nip65).await.unwrap_or(0) > 0 {
                     let nip17 = Filter::new().kind(Kind::InboxRelays).author(public_key);
 
-                    if client.database().count(nip17).await.unwrap_or(0) > 0 {
-                        break;
+                    if let Ok(events) = client.database().query(nip17).await {
+                        if let Some(event) = events.first_owned() {
+                            let relay_urls = Self::extract_relay_list(&event);
+
+                            if relay_urls.is_empty() {
+                                // Prevent sending multiple signals
+                                if !is_sent_signal {
+                                    ingester.send(IngesterSignal::DmRelayNotFound).await;
+                                    is_sent_signal = true;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
                     } else {
                         // Prevent sending multiple signals
                         if !is_sent_signal {
@@ -232,7 +244,7 @@ impl ChatSpace {
     async fn observe_giftwrap() {
         let css = css();
         let ingester = ingester();
-        let loop_duration = Duration::from_secs(2);
+        let loop_duration = Duration::from_secs(30);
         let mut is_notified = false;
 
         loop {
@@ -577,7 +589,7 @@ impl ChatSpace {
     }
 
     /// Fetches a single event by kind and public key
-    async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
+    pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
         let client = nostr_client();
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -588,7 +600,7 @@ impl ChatSpace {
         }
     }
 
-    async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
+    pub async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
         let client = nostr_client();
         let sub_id = css().gift_wrap_sub_id.clone();
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
@@ -603,7 +615,7 @@ impl ChatSpace {
     }
 
     /// Fetches NIP-65 relay list for a given public key
-    async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
+    pub async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
