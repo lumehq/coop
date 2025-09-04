@@ -16,7 +16,7 @@ impl Tooltip {
 
 impl Render for Tooltip {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(deferred(
+        div().child(
             div()
                 .font_family(".SystemUIFont")
                 .m_3()
@@ -30,6 +30,6 @@ impl Render for Tooltip {
                 .text_color(cx.theme().text_muted)
                 .line_height(relative(1.25))
                 .child(self.text.clone()),
-        ))
+        )
     }
 }

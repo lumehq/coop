@@ -73,6 +73,9 @@ pub enum IngesterSignal {
     /// A signal to notify UI that gift wrap events have been processed
     GiftWrapProcessed,
 
+    /// A signal to notify UI that gift wrap events have been partially processed
+    GiftWrapPartialProcessed,
+
     /// A signal to notify UI that relay has sent EOSE for gift wrap subscription
     Eose,
 

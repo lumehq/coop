@@ -244,14 +244,23 @@ impl ChatSpace {
     async fn observe_giftwrap() {
         let css = css();
         let ingester = ingester();
-        let loop_duration = Duration::from_secs(30);
+        let loop_duration = Duration::from_secs(5);
         let mut is_notified = false;
+        let mut partial_processing = 0;
 
         loop {
-            if css.gift_wrap_processing.load(Ordering::SeqCst) {
+            if partial_processing >= 2 {
+                ingester
+                    .send(IngesterSignal::GiftWrapPartialProcessed)
+                    .await;
+                // Reset the partial processing counter
+                partial_processing = 0;
+            } else if css.gift_wrap_processing.load(Ordering::SeqCst) {
                 ingester.send(IngesterSignal::GiftWrapProcessing).await;
                 // Reset the flag
                 css.gift_wrap_processing.store(false, Ordering::SeqCst);
+                // Increment the partial processing counter
+                partial_processing += 1;
             } else {
                 // Only send signal if not already notified
                 if !is_notified {
@@ -516,6 +525,15 @@ impl ChatSpace {
                     IngesterSignal::GiftWrapProcessing => {
                         registry.update(cx, |this, cx| {
                             this.set_loading(true, cx);
+                        });
+                    }
+                    IngesterSignal::GiftWrapPartialProcessed => {
+                        registry.update(cx, |this, cx| {
+                            this.load_rooms(window, cx);
+                            // Send a signal to refresh all opened rooms' messages
+                            if let Some(ids) = ChatSpace::all_panels(window, cx) {
+                                this.refresh_rooms(ids, cx);
+                            }
                         });
                     }
                     IngesterSignal::GiftWrapProcessed => {
