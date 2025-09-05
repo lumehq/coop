@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::display::ReadableProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use global::{ingester, nostr_client, IngesterSignal};
+use global::{ingester, nostr_client, Signal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -255,7 +255,7 @@ impl Account {
             client.unset_signer().await;
 
             // Notify the channel about the signer being unset
-            ingester.send(IngesterSignal::SignerUnset).await;
+            ingester.send(Signal::SignerUnset).await;
         })
         .detach();
     }

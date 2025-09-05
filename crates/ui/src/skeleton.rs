@@ -56,7 +56,7 @@ impl RenderOnce for Skeleton {
             .bg(color)
             .with_animation(
                 "skeleton",
-                Animation::new(Duration::from_secs(2))
+                Animation::new(Duration::from_secs(3))
                     .repeat()
                     .with_easing(bounce(ease_in_out)),
                 move |this, delta| {

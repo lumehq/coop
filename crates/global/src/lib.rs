@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::AtomicBool;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -47,7 +48,7 @@ impl Notice {
 
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
-pub enum IngesterSignal {
+pub enum Signal {
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -64,13 +65,13 @@ pub enum IngesterSignal {
     Metadata(Event),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    GiftWrap((EventId, Event)),
+    Message((EventId, Event)),
 
-    /// A signal to notify UI that all gift wrap events have been processed
-    Finish,
+    /// A signal to notify UI that gift wrap events still processing
+    EventProcessing,
 
-    /// A signal to notify UI that partial processing of gift wrap events has been completed
-    PartialFinish,
+    /// A signal to notify UI that gift wrap events have been processed
+    EventProcessed(bool),
 
     /// A signal to notify UI that no DM relay for current user was found
     DmRelayNotFound,
@@ -81,8 +82,8 @@ pub enum IngesterSignal {
 
 #[derive(Debug)]
 pub struct Ingester {
-    rx: Receiver<IngesterSignal>,
-    tx: Sender<IngesterSignal>,
+    rx: Receiver<Signal>,
+    tx: Sender<Signal>,
 }
 
 impl Default for Ingester {
@@ -93,15 +94,15 @@ impl Default for Ingester {
 
 impl Ingester {
     pub fn new() -> Self {
-        let (tx, rx) = smol::channel::bounded::<IngesterSignal>(2048);
+        let (tx, rx) = smol::channel::bounded::<Signal>(2048);
         Self { rx, tx }
     }
 
-    pub fn signals(&self) -> &Receiver<IngesterSignal> {
+    pub fn signals(&self) -> &Receiver<Signal> {
         &self.rx
     }
 
-    pub async fn send(&self, signal: IngesterSignal) {
+    pub async fn send(&self, signal: Signal) {
         if let Err(e) = self.tx.send(signal).await {
             log::error!("Failed to send signal: {e}");
         }
@@ -109,18 +110,28 @@ impl Ingester {
 }
 
 /// A simple storage to store all runtime states that using across the application.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CoopSimpleStorage {
     pub init_at: Timestamp,
+    pub gift_wrap_sub_id: SubscriptionId,
+    pub gift_wrap_processing: AtomicBool,
     pub sent_ids: RwLock<HashSet<EventId>>,
     pub resent_ids: RwLock<Vec<Output<EventId>>>,
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
+}
+
+impl Default for CoopSimpleStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CoopSimpleStorage {
     pub fn new() -> Self {
         Self {
             init_at: Timestamp::now(),
+            gift_wrap_sub_id: SubscriptionId::new("inbox"),
+            gift_wrap_processing: AtomicBool::new(true),
             sent_ids: RwLock::new(HashSet::new()),
             resent_ids: RwLock::new(Vec::new()),
             resend_queue: RwLock::new(HashMap::new()),

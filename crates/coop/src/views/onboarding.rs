@@ -17,6 +17,7 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
+use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
@@ -148,7 +149,10 @@ impl Onboarding {
                     }
                     Err(e) => {
                         cx.update(|window, cx| {
-                            window.push_notification(e.to_string(), cx);
+                            window.push_notification(
+                                Notification::error(e.to_string()).title("Nostr Connect"),
+                                cx,
+                            );
                         })
                         .ok();
                     }

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,9 +11,9 @@ use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, RELAY_RETRY, SEARCH_RELAYS, WAIT_FOR_FINISH,
+    METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use global::{css, ingester, nostr_client, AuthRequest, IngesterSignal, Notice};
+use global::{css, ingester, nostr_client, AuthRequest, Notice, Signal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
@@ -28,7 +29,6 @@ use settings::AppSettings;
 use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use smol::channel::{Receiver, Sender};
-use smol::lock::Mutex;
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::actions::OpenProfile;
@@ -64,20 +64,6 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
     ChatSpace::set_center_panel(panel, window, cx);
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-enum RelayTrackStatus {
-    #[default]
-    Waiting,
-    NotFound,
-    Found,
-}
-
-#[derive(Debug, Clone, Default)]
-struct RelayTracking {
-    nip17: RelayTrackStatus,
-    nip65: RelayTrackStatus,
-}
-
 pub struct ChatSpace {
     title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
@@ -95,13 +81,7 @@ impl ChatSpace {
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
 
-        let relay_tracking = Arc::new(Mutex::new(RelayTracking::default()));
-        let relay_tracking_clone = relay_tracking.clone();
-
         let (pubkey_tx, pubkey_rx) = smol::channel::bounded::<PublicKey>(1024);
-        let (event_tx, event_rx) = smol::channel::bounded::<Event>(2048);
-
-        let pubkey_tx_clone = pubkey_tx.clone();
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -132,7 +112,7 @@ impl ChatSpace {
                     .await
                     .expect("Failed connect the bootstrap relays. Please restart the application.");
 
-                Self::process_nostr_events(&relay_tracking_clone, &event_tx, &pubkey_tx_clone)
+                Self::process_nostr_events(&pubkey_tx)
                     .await
                     .expect("Failed to handle nostr events. Please restart the application.");
             }),
@@ -140,9 +120,16 @@ impl ChatSpace {
 
         tasks.push(
             // Wait for the signer to be set
-            // Also verify NIP65 and NIP17 relays after the signer is set
+            // Also verify NIP-65 and NIP-17 relays after the signer is set
             cx.background_spawn(async move {
-                Self::wait_for_signer_set(&relay_tracking).await;
+                Self::observe_signer().await;
+            }),
+        );
+
+        tasks.push(
+            // Observe gift wrap process in the background
+            cx.background_spawn(async move {
+                Self::observe_giftwrap().await;
             }),
         );
 
@@ -150,13 +137,6 @@ impl ChatSpace {
             // Listen all metadata requests then batch them into single subscription
             cx.background_spawn(async move {
                 Self::process_batching_metadata(&pubkey_rx).await;
-            }),
-        );
-
-        tasks.push(
-            // Process gift wrap event in the background
-            cx.background_spawn(async move {
-                Self::process_gift_wrap(&pubkey_tx, &event_rx).await;
             }),
         );
 
@@ -198,47 +178,61 @@ impl ChatSpace {
         Ok(())
     }
 
-    async fn wait_for_signer_set(relay_tracking: &Arc<Mutex<RelayTracking>>) {
+    async fn observe_signer() {
         let client = nostr_client();
         let ingester = ingester();
-
-        let mut signer_set = false;
-        let mut retry = 0;
-        let mut nip65_retry = 0;
+        let loop_duration = Duration::from_millis(500);
+        let mut is_sent_signal = false;
+        let mut identity: Option<PublicKey> = None;
 
         loop {
-            if signer_set {
-                let state = relay_tracking.lock().await;
+            if let Some(public_key) = identity {
+                let nip65 = Filter::new().kind(Kind::RelayList).author(public_key);
 
-                if state.nip65 == RelayTrackStatus::Found {
-                    if state.nip17 == RelayTrackStatus::Found {
-                        break;
-                    } else if state.nip17 == RelayTrackStatus::NotFound {
-                        ingester.send(IngesterSignal::DmRelayNotFound).await;
-                        break;
-                    } else {
-                        retry += 1;
-                        if retry == RELAY_RETRY {
-                            ingester.send(IngesterSignal::DmRelayNotFound).await;
-                            break;
+                if client.database().count(nip65).await.unwrap_or(0) > 0 {
+                    let nip17 = Filter::new().kind(Kind::InboxRelays).author(public_key);
+
+                    match client.database().query(nip17).await {
+                        Ok(events) => {
+                            if let Some(event) = events.first_owned() {
+                                let relay_urls = Self::extract_relay_list(&event);
+
+                                if relay_urls.is_empty() {
+                                    if !is_sent_signal {
+                                        ingester.send(Signal::DmRelayNotFound).await;
+                                        is_sent_signal = true;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            } else if !is_sent_signal {
+                                ingester.send(Signal::DmRelayNotFound).await;
+                                is_sent_signal = true;
+                            } else {
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            if !is_sent_signal {
+                                ingester.send(Signal::DmRelayNotFound).await;
+                                is_sent_signal = true;
+                            }
                         }
                     }
+                } else if !is_sent_signal {
+                    ingester.send(Signal::DmRelayNotFound).await;
+                    is_sent_signal = true;
                 } else {
-                    nip65_retry += 1;
-                    if nip65_retry == RELAY_RETRY {
-                        ingester.send(IngesterSignal::DmRelayNotFound).await;
-                        break;
-                    }
+                    break;
                 }
-            }
-
-            if !signer_set {
+            } else {
+                // Wait for signer set
                 if let Ok(signer) = client.signer().await {
                     if let Ok(public_key) = signer.get_public_key().await {
-                        signer_set = true;
+                        identity = Some(public_key);
 
                         // Notify the app that the signer has been set.
-                        ingester.send(IngesterSignal::SignerSet(public_key)).await;
+                        ingester.send(Signal::SignerSet(public_key)).await;
 
                         // Subscribe to the NIP-65 relays for the public key.
                         if let Err(e) = Self::fetch_nip65_relays(public_key).await {
@@ -248,7 +242,39 @@ impl ChatSpace {
                 }
             }
 
-            smol::Timer::after(Duration::from_millis(300)).await;
+            smol::Timer::after(loop_duration).await;
+        }
+    }
+
+    async fn observe_giftwrap() {
+        let client = nostr_client();
+        let css = css();
+        let ingester = ingester();
+        let loop_duration = Duration::from_secs(10);
+        let mut total_notify = 0;
+
+        loop {
+            if client.has_signer().await {
+                if css.gift_wrap_processing.load(Ordering::Acquire) {
+                    ingester.send(Signal::EventProcessing).await;
+
+                    // Reset gift wrap processing flag
+                    let _ = css.gift_wrap_processing.compare_exchange(
+                        true,
+                        false,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    );
+                } else {
+                    // Only send signal to ingester a maximum of three times
+                    if total_notify <= 3 {
+                        ingester.send(Signal::EventProcessed(true)).await;
+                        total_notify += 1;
+                    }
+                }
+            }
+
+            smol::Timer::after(loop_duration).await;
         }
     }
 
@@ -265,26 +291,27 @@ impl ChatSpace {
         }
 
         loop {
-            match smol::future::or(
-                async {
+            let futs = smol::future::or(
+                async move {
                     if let Ok(public_key) = rx.recv().await {
                         BatchEvent::PublicKey(public_key)
                     } else {
                         BatchEvent::Closed
                     }
                 },
-                async {
+                async move {
                     smol::Timer::after(timeout).await;
                     BatchEvent::Timeout
                 },
-            )
-            .await
-            {
+            );
+
+            match futs.await {
                 BatchEvent::PublicKey(public_key) => {
                     // Prevent duplicate keys from being processed
                     if processed_pubkeys.insert(public_key) {
                         batch.insert(public_key);
                     }
+
                     // Process the batch if it's full
                     if batch.len() >= METADATA_BATCH_LIMIT {
                         Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
@@ -295,73 +322,21 @@ impl ChatSpace {
                 }
                 BatchEvent::Closed => {
                     Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
-                    // Exit the current loop
                     break;
                 }
             }
         }
     }
 
-    async fn process_gift_wrap(pubkey_tx: &Sender<PublicKey>, event_rx: &Receiver<Event>) {
-        let client = nostr_client();
-        let ingester = ingester();
-        let timeout = Duration::from_secs(WAIT_FOR_FINISH);
-
-        let mut counter = 0;
-
-        loop {
-            // Signer is unset, probably user is not ready to retrieve gift wrap events
-            if client.signer().await.is_err() {
-                smol::Timer::after(Duration::from_secs(1)).await;
-                continue;
-            }
-
-            let recv = || async {
-                // no inline
-                (event_rx.recv().await).ok()
-            };
-
-            let timeout = || async {
-                smol::Timer::after(timeout).await;
-                None
-            };
-
-            match smol::future::or(recv(), timeout()).await {
-                Some(event) => {
-                    let cached = Self::unwrap_gift_wrap_event(&event, pubkey_tx).await;
-
-                    // Increment the total messages counter if message is not from cache
-                    if !cached {
-                        counter += 1;
-                    }
-
-                    // Send partial finish signal to GPUI
-                    if counter >= 20 {
-                        ingester.send(IngesterSignal::PartialFinish).await;
-                        // Reset counter
-                        counter = 0;
-                    }
-                }
-                None => {
-                    // Notify the UI that the processing is finished
-                    ingester.send(IngesterSignal::Finish).await;
-                    break;
-                }
-            }
-        }
-    }
-
-    async fn process_nostr_events(
-        relay_tracking: &Arc<Mutex<RelayTracking>>,
-        event_tx: &Sender<Event>,
-        pubkey_tx: &Sender<PublicKey>,
-    ) -> Result<(), Error> {
+    async fn process_nostr_events(pubkey_tx: &Sender<PublicKey>) -> Result<(), Error> {
         let client = nostr_client();
         let ingester = ingester();
         let css = css();
+
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
+        let mut event_counter = 0;
         let mut processed_events: HashSet<EventId> = HashSet::new();
         let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
         let mut notifications = client.notifications();
@@ -382,9 +357,6 @@ impl ChatSpace {
                         Kind::RelayList => {
                             // Get metadata for event's pubkey that matches the current user's pubkey
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let mut relay_tracking = relay_tracking.lock().await;
-                                relay_tracking.nip65 = RelayTrackStatus::Found;
-
                                 // Fetch user's metadata event
                                 Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
 
@@ -397,30 +369,17 @@ impl ChatSpace {
                         }
                         Kind::InboxRelays => {
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays: Vec<RelayUrl> = event
-                                    .tags
-                                    .filter_standardized(TagKind::Relay)
-                                    .filter_map(|t| {
-                                        if let TagStandard::Relay(url) = t {
-                                            Some(url.to_owned())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect();
+                                let relays: Vec<RelayUrl> = Self::extract_relay_list(&event);
 
                                 if !relays.is_empty() {
-                                    let mut relay_tracking = relay_tracking.lock().await;
-                                    relay_tracking.nip17 = RelayTrackStatus::Found;
-
                                     for relay in relays.iter() {
                                         if client.add_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
-                                            ingester.send(IngesterSignal::Notice(notice)).await;
+                                            ingester.send(Signal::Notice(notice)).await;
                                         }
                                         if client.connect_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
-                                            ingester.send(IngesterSignal::Notice(notice)).await;
+                                            ingester.send(Signal::Notice(notice)).await;
                                         }
                                     }
 
@@ -444,23 +403,35 @@ impl ChatSpace {
                             }
                         }
                         Kind::Metadata => {
-                            ingester
-                                .send(IngesterSignal::Metadata(event.into_owned()))
-                                .await;
+                            ingester.send(Signal::Metadata(event.into_owned())).await;
                         }
                         Kind::GiftWrap => {
-                            if event_tx.send(event.clone().into_owned()).await.is_err() {
-                                Self::unwrap_gift_wrap_event(&event, pubkey_tx).await;
+                            // Mark gift wrap event as currently being processed
+                            css.gift_wrap_processing.store(true, Ordering::Release);
+
+                            // Process the gift wrap event
+                            Self::unwrap_gift_wrap_event(&event, pubkey_tx).await;
+
+                            // Trigger a partial UI reload if at least 50 events have been processed
+                            if event_counter >= 20 {
+                                ingester.send(Signal::EventProcessed(false)).await;
+                                event_counter = 0;
                             }
+                            event_counter += 1;
                         }
                         _ => {}
+                    }
+                }
+                RelayMessage::EndOfStoredEvents(subscription_id) => {
+                    if *subscription_id == css.gift_wrap_sub_id {
+                        ingester.send(Signal::EventProcessed(false)).await;
                     }
                 }
                 RelayMessage::Auth { challenge } => {
                     if challenges.insert(challenge.clone()) {
                         let req = AuthRequest::new(challenge, relay_url);
                         // Send a signal to the ingester to handle the auth request
-                        ingester.send(IngesterSignal::Auth(req)).await;
+                        ingester.send(Signal::Auth(req)).await;
                     }
                 }
                 RelayMessage::Ok {
@@ -498,7 +469,7 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
-                    IngesterSignal::SignerSet(public_key) => {
+                    Signal::SignerSet(public_key) => {
                         window.close_modal(cx);
 
                         // Setup the default layout for current workspace
@@ -515,10 +486,10 @@ impl ChatSpace {
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
                             this.set_identity(public_key, cx);
-                            this.load_rooms(window, cx);
+                            this.load_rooms(false, window, cx);
                         });
                     }
-                    IngesterSignal::SignerUnset => {
+                    Signal::SignerUnset => {
                         // Setup the onboarding layout for current workspace
                         view.update(cx, |this, cx| {
                             this.set_onboarding_layout(window, cx);
@@ -530,7 +501,7 @@ impl ChatSpace {
                             this.reset(cx);
                         });
                     }
-                    IngesterSignal::Auth(req) => {
+                    Signal::Auth(req) => {
                         let relay_url = &req.url;
                         let challenge = &req.challenge;
                         let auto_auth = AppSettings::get_auto_auth(cx);
@@ -550,30 +521,27 @@ impl ChatSpace {
                         })
                         .ok();
                     }
-                    IngesterSignal::ProxyDown => {
+                    Signal::ProxyDown => {
                         if !is_open_proxy_modal {
+                            is_open_proxy_modal = true;
+
                             view.update(cx, |this, cx| {
                                 this.render_proxy_modal(window, cx);
                             })
                             .ok();
-                            is_open_proxy_modal = true;
                         }
                     }
-                    // Load chat rooms and stop the loading status
-                    IngesterSignal::Finish => {
+                    // Notify the user that the gift wrap still processing
+                    Signal::EventProcessing => {
                         registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.set_loading(false, cx);
-                            // Send a signal to refresh all opened rooms' messages
-                            if let Some(ids) = ChatSpace::all_panels(window, cx) {
-                                this.refresh_rooms(ids, cx);
-                            }
+                            this.set_loading(true, cx);
                         });
                     }
-                    // Load chat rooms without setting as finished
-                    IngesterSignal::PartialFinish => {
+                    Signal::EventProcessed(finish) => {
                         registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
+                            // Load all chat rooms in the database
+                            this.load_rooms(finish, window, cx);
+
                             // Send a signal to refresh all opened rooms' messages
                             if let Some(ids) = ChatSpace::all_panels(window, cx) {
                                 this.refresh_rooms(ids, cx);
@@ -581,30 +549,45 @@ impl ChatSpace {
                         });
                     }
                     // Add the new metadata to the registry or update the existing one
-                    IngesterSignal::Metadata(event) => {
+                    Signal::Metadata(event) => {
                         registry.update(cx, |this, cx| {
                             this.insert_or_update_person(event, cx);
                         });
                     }
                     // Convert the gift wrapped message to a message
-                    IngesterSignal::GiftWrap((gift_wrap_id, event)) => {
+                    Signal::Message((gift_wrap_id, event)) => {
                         registry.update(cx, |this, cx| {
                             this.event_to_message(gift_wrap_id, event, window, cx);
                         });
                     }
-                    IngesterSignal::DmRelayNotFound => {
+                    // Notify the user that the DM relay is not set
+                    Signal::DmRelayNotFound => {
                         view.update(cx, |this, cx| {
                             this.set_no_nip17_relays(cx);
                         })
                         .ok();
                     }
-                    IngesterSignal::Notice(msg) => {
+                    Signal::Notice(msg) => {
                         window.push_notification(msg.as_str(), cx);
                     }
                 };
             })
             .ok();
         }
+    }
+
+    fn extract_relay_list(event: &Event) -> Vec<RelayUrl> {
+        event
+            .tags
+            .filter_standardized(TagKind::Relay)
+            .filter_map(|t| {
+                if let TagStandard::Relay(url) = t {
+                    Some(url.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Checks if an event is belong to the current user
@@ -617,7 +600,7 @@ impl ChatSpace {
     }
 
     /// Fetches a single event by kind and public key
-    async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
+    pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
         let client = nostr_client();
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -628,13 +611,13 @@ impl ChatSpace {
         }
     }
 
-    async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
+    pub async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
         let client = nostr_client();
-        let subscription_id = SubscriptionId::new("inbox");
+        let sub_id = css().gift_wrap_sub_id.clone();
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         if client
-            .subscribe_with_id_to(relays.to_owned(), subscription_id, filter, None)
+            .subscribe_with_id_to(relays.to_owned(), sub_id, filter, None)
             .await
             .is_ok()
         {
@@ -643,7 +626,7 @@ impl ChatSpace {
     }
 
     /// Fetches NIP-65 relay list for a given public key
-    async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
+    pub async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -761,9 +744,7 @@ impl ChatSpace {
 
         // Send a notify to GPUI if this is a new message
         if event.created_at >= css.init_at {
-            ingester
-                .send(IngesterSignal::GiftWrap((gift.id, event)))
-                .await;
+            ingester.send(Signal::Message((gift.id, event))).await;
         }
 
         is_cached
@@ -1119,7 +1100,7 @@ impl ChatSpace {
             client.reset().await;
 
             // Notify the channel about the signer being unset
-            ingester.send(IngesterSignal::SignerUnset).await;
+            ingester.send(Signal::SignerUnset).await;
         })
         .detach();
     }
@@ -1221,7 +1202,7 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let loading = self.has_nip17_relays && self.auth_requests.is_empty() && registry.loading;
+        let loading = registry.loading;
 
         h_flex()
             .gap_2()
@@ -1376,7 +1357,7 @@ impl ChatSpace {
 
                             break;
                         } else {
-                            ingester.send(IngesterSignal::ProxyDown).await;
+                            ingester.send(Signal::ProxyDown).await;
                         }
                         smol::Timer::after(Duration::from_secs(1)).await;
                     }
