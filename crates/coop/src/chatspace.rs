@@ -291,26 +291,27 @@ impl ChatSpace {
         }
 
         loop {
-            match smol::future::or(
-                async {
+            let futs = smol::future::or(
+                async move {
                     if let Ok(public_key) = rx.recv().await {
                         BatchEvent::PublicKey(public_key)
                     } else {
                         BatchEvent::Closed
                     }
                 },
-                async {
+                async move {
                     smol::Timer::after(timeout).await;
                     BatchEvent::Timeout
                 },
-            )
-            .await
-            {
+            );
+
+            match futs.await {
                 BatchEvent::PublicKey(public_key) => {
                     // Prevent duplicate keys from being processed
                     if processed_pubkeys.insert(public_key) {
                         batch.insert(public_key);
                     }
+
                     // Process the batch if it's full
                     if batch.len() >= METADATA_BATCH_LIMIT {
                         Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;

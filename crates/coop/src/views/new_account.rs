@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use common::nip96::nip96_upload;
-use global::constants::ACCOUNT_IDENTIFIER;
+use global::constants::{ACCOUNT_IDENTIFIER, NIP17_RELAYS, NIP65_RELAYS};
 use global::nostr_client;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -70,6 +70,7 @@ impl NewAccount {
         window.open_modal(cx, move |modal, _window, _cx| {
             let weak_view = weak_view.clone();
             let current_view = current_view.clone();
+
             modal
                 .alert()
                 .title(shared_t!("new_account.backup_label"))
@@ -124,8 +125,44 @@ impl NewAccount {
         // Set the client's signer with the current keys
         cx.background_spawn(async move {
             let client = nostr_client();
+
+            // Set the client's signer with the current keys
             client.set_signer(keys).await;
-            client.set_metadata(&metadata).await.ok();
+
+            // Set metadata
+            if let Err(e) = client.set_metadata(&metadata).await {
+                log::error!("Failed to set metadata: {e}");
+            }
+
+            // Set NIP-65 relays
+            let builder = EventBuilder::new(Kind::RelayList, "").tags(
+                NIP65_RELAYS.into_iter().filter_map(|url| {
+                    if let Ok(url) = RelayUrl::parse(url) {
+                        Some(Tag::relay_metadata(url, None))
+                    } else {
+                        None
+                    }
+                }),
+            );
+
+            if let Err(e) = client.send_event_builder(builder).await {
+                log::error!("Failed to send NIP-65 relay list event: {e}");
+            }
+
+            // Set NIP-17 relays
+            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
+                NIP17_RELAYS.into_iter().filter_map(|url| {
+                    if let Ok(url) = RelayUrl::parse(url) {
+                        Some(Tag::relay(url))
+                    } else {
+                        None
+                    }
+                }),
+            );
+
+            if let Err(e) = client.send_event_builder(builder).await {
+                log::error!("Failed to send messaging relay list event: {e}");
+            };
         })
         .detach();
     }
