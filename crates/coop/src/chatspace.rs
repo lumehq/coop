@@ -247,29 +247,33 @@ impl ChatSpace {
     }
 
     async fn observe_giftwrap() {
+        let client = nostr_client();
         let css = css();
         let ingester = ingester();
         let loop_duration = Duration::from_secs(10);
-        let mut notified = false;
+        let mut total_notify = 0;
 
         loop {
-            if css.gift_wrap_processing.load(Ordering::Acquire) {
-                ingester.send(Signal::EventProcessing).await;
+            if client.has_signer().await {
+                if css.gift_wrap_processing.load(Ordering::Acquire) {
+                    ingester.send(Signal::EventProcessing).await;
 
-                // Reset gift wrap processing flag
-                let _ = css.gift_wrap_processing.compare_exchange(
-                    true,
-                    false,
-                    Ordering::Release,
-                    Ordering::Relaxed,
-                );
-            } else {
-                // Only send signal if not already notified
-                if !notified {
-                    ingester.send(Signal::EventProcessed(true)).await;
-                    notified = true;
+                    // Reset gift wrap processing flag
+                    let _ = css.gift_wrap_processing.compare_exchange(
+                        true,
+                        false,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    );
+                } else {
+                    // Only send signal to ingester a maximum of three times
+                    if total_notify <= 3 {
+                        ingester.send(Signal::EventProcessed(true)).await;
+                        total_notify += 1;
+                    }
                 }
             }
+
             smol::Timer::after(loop_duration).await;
         }
     }
@@ -331,6 +335,7 @@ impl ChatSpace {
         let auto_close =
             SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
+        let mut event_counter = 0;
         let mut processed_events: HashSet<EventId> = HashSet::new();
         let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
         let mut notifications = client.notifications();
@@ -400,9 +405,18 @@ impl ChatSpace {
                             ingester.send(Signal::Metadata(event.into_owned())).await;
                         }
                         Kind::GiftWrap => {
+                            // Mark gift wrap event as currently being processed
                             css.gift_wrap_processing.store(true, Ordering::Release);
+
                             // Process the gift wrap event
                             Self::unwrap_gift_wrap_event(&event, pubkey_tx).await;
+
+                            // Trigger a partial UI reload if at least 50 events have been processed
+                            if event_counter >= 20 {
+                                ingester.send(Signal::EventProcessed(false)).await;
+                                event_counter = 0;
+                            }
+                            event_counter += 1;
                         }
                         _ => {}
                     }
