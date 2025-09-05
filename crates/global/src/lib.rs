@@ -48,7 +48,7 @@ impl Notice {
 
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
-pub enum IngesterSignal {
+pub enum Signal {
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -65,19 +65,13 @@ pub enum IngesterSignal {
     Metadata(Event),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    GiftWrap((EventId, Event)),
+    Message((EventId, Event)),
 
     /// A signal to notify UI that gift wrap events still processing
-    GiftWrapProcessing,
+    EventProcessing,
 
     /// A signal to notify UI that gift wrap events have been processed
-    GiftWrapProcessed,
-
-    /// A signal to notify UI that gift wrap events have been partially processed
-    GiftWrapPartialProcessed,
-
-    /// A signal to notify UI that relay has sent EOSE for gift wrap subscription
-    Eose,
+    EventProcessed(bool),
 
     /// A signal to notify UI that no DM relay for current user was found
     DmRelayNotFound,
@@ -88,8 +82,8 @@ pub enum IngesterSignal {
 
 #[derive(Debug)]
 pub struct Ingester {
-    rx: Receiver<IngesterSignal>,
-    tx: Sender<IngesterSignal>,
+    rx: Receiver<Signal>,
+    tx: Sender<Signal>,
 }
 
 impl Default for Ingester {
@@ -100,15 +94,15 @@ impl Default for Ingester {
 
 impl Ingester {
     pub fn new() -> Self {
-        let (tx, rx) = smol::channel::bounded::<IngesterSignal>(2048);
+        let (tx, rx) = smol::channel::bounded::<Signal>(2048);
         Self { rx, tx }
     }
 
-    pub fn signals(&self) -> &Receiver<IngesterSignal> {
+    pub fn signals(&self) -> &Receiver<Signal> {
         &self.rx
     }
 
-    pub async fn send(&self, signal: IngesterSignal) {
+    pub async fn send(&self, signal: Signal) {
         if let Err(e) = self.tx.send(signal).await {
             log::error!("Failed to send signal: {e}");
         }

@@ -264,7 +264,7 @@ impl Registry {
     }
 
     /// Load all rooms from the database.
-    pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn load_rooms(&mut self, finish: bool, window: &mut Window, cx: &mut Context<Self>) {
         log::info!("Starting to load chat rooms...");
 
         // Get the contact bypass setting
@@ -340,8 +340,11 @@ impl Registry {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(rooms) => {
-                    this.update_in(cx, |_, window, cx| {
-                        cx.defer_in(window, |this, _window, cx| {
+                    this.update_in(cx, move |_, window, cx| {
+                        cx.defer_in(window, move |this, _window, cx| {
+                            if finish {
+                                this.set_loading(false, cx);
+                            }
                             this.extend_rooms(rooms, cx);
                             this.sort(cx);
                         });

@@ -13,7 +13,7 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use global::{css, ingester, nostr_client, AuthRequest, IngesterSignal, Notice};
+use global::{css, ingester, nostr_client, AuthRequest, Notice, Signal};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
@@ -192,33 +192,38 @@ impl ChatSpace {
                 if client.database().count(nip65).await.unwrap_or(0) > 0 {
                     let nip17 = Filter::new().kind(Kind::InboxRelays).author(public_key);
 
-                    if let Ok(events) = client.database().query(nip17).await {
-                        if let Some(event) = events.first_owned() {
-                            let relay_urls = Self::extract_relay_list(&event);
+                    match client.database().query(nip17).await {
+                        Ok(events) => {
+                            if let Some(event) = events.first_owned() {
+                                let relay_urls = Self::extract_relay_list(&event);
 
-                            if relay_urls.is_empty() {
-                                // Prevent sending multiple signals
-                                if !is_sent_signal {
-                                    ingester.send(IngesterSignal::DmRelayNotFound).await;
-                                    is_sent_signal = true;
+                                if relay_urls.is_empty() {
+                                    if !is_sent_signal {
+                                        ingester.send(Signal::DmRelayNotFound).await;
+                                        is_sent_signal = true;
+                                    }
+                                } else {
+                                    break;
                                 }
+                            } else if !is_sent_signal {
+                                ingester.send(Signal::DmRelayNotFound).await;
+                                is_sent_signal = true;
                             } else {
                                 break;
                             }
                         }
-                    } else {
-                        // Prevent sending multiple signals
-                        if !is_sent_signal {
-                            ingester.send(IngesterSignal::DmRelayNotFound).await;
-                            is_sent_signal = true;
+                        Err(_) => {
+                            if !is_sent_signal {
+                                ingester.send(Signal::DmRelayNotFound).await;
+                                is_sent_signal = true;
+                            }
                         }
                     }
+                } else if !is_sent_signal {
+                    ingester.send(Signal::DmRelayNotFound).await;
+                    is_sent_signal = true;
                 } else {
-                    // Prevent sending multiple signals
-                    if !is_sent_signal {
-                        ingester.send(IngesterSignal::DmRelayNotFound).await;
-                        is_sent_signal = true;
-                    }
+                    break;
                 }
             } else {
                 // Wait for signer set
@@ -227,7 +232,7 @@ impl ChatSpace {
                         identity = Some(public_key);
 
                         // Notify the app that the signer has been set.
-                        ingester.send(IngesterSignal::SignerSet(public_key)).await;
+                        ingester.send(Signal::SignerSet(public_key)).await;
 
                         // Subscribe to the NIP-65 relays for the public key.
                         if let Err(e) = Self::fetch_nip65_relays(public_key).await {
@@ -244,28 +249,25 @@ impl ChatSpace {
     async fn observe_giftwrap() {
         let css = css();
         let ingester = ingester();
-        let loop_duration = Duration::from_secs(5);
-        let mut is_notified = false;
-        let mut partial_processing = 0;
+        let loop_duration = Duration::from_secs(10);
+        let mut notified = false;
 
         loop {
-            if partial_processing >= 2 {
-                ingester
-                    .send(IngesterSignal::GiftWrapPartialProcessed)
-                    .await;
-                // Reset the partial processing counter
-                partial_processing = 0;
-            } else if css.gift_wrap_processing.load(Ordering::SeqCst) {
-                ingester.send(IngesterSignal::GiftWrapProcessing).await;
-                // Reset the flag
-                css.gift_wrap_processing.store(false, Ordering::SeqCst);
-                // Increment the partial processing counter
-                partial_processing += 1;
+            if css.gift_wrap_processing.load(Ordering::Acquire) {
+                ingester.send(Signal::EventProcessing).await;
+
+                // Reset gift wrap processing flag
+                let _ = css.gift_wrap_processing.compare_exchange(
+                    true,
+                    false,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                );
             } else {
                 // Only send signal if not already notified
-                if !is_notified {
-                    ingester.send(IngesterSignal::GiftWrapProcessed).await;
-                    is_notified = true;
+                if !notified {
+                    ingester.send(Signal::EventProcessed(true)).await;
+                    notified = true;
                 }
             }
             smol::Timer::after(loop_duration).await;
@@ -367,11 +369,11 @@ impl ChatSpace {
                                     for relay in relays.iter() {
                                         if client.add_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
-                                            ingester.send(IngesterSignal::Notice(notice)).await;
+                                            ingester.send(Signal::Notice(notice)).await;
                                         }
                                         if client.connect_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
-                                            ingester.send(IngesterSignal::Notice(notice)).await;
+                                            ingester.send(Signal::Notice(notice)).await;
                                         }
                                     }
 
@@ -395,17 +397,10 @@ impl ChatSpace {
                             }
                         }
                         Kind::Metadata => {
-                            ingester
-                                .send(IngesterSignal::Metadata(event.into_owned()))
-                                .await;
+                            ingester.send(Signal::Metadata(event.into_owned())).await;
                         }
                         Kind::GiftWrap => {
-                            let _ = css.gift_wrap_processing.compare_exchange(
-                                false,
-                                true,
-                                Ordering::SeqCst,
-                                Ordering::Relaxed,
-                            );
+                            css.gift_wrap_processing.store(true, Ordering::Release);
                             // Process the gift wrap event
                             Self::unwrap_gift_wrap_event(&event, pubkey_tx).await;
                         }
@@ -414,14 +409,14 @@ impl ChatSpace {
                 }
                 RelayMessage::EndOfStoredEvents(subscription_id) => {
                     if *subscription_id == css.gift_wrap_sub_id {
-                        ingester.send(IngesterSignal::GiftWrapProcessing).await;
+                        ingester.send(Signal::EventProcessed(false)).await;
                     }
                 }
                 RelayMessage::Auth { challenge } => {
                     if challenges.insert(challenge.clone()) {
                         let req = AuthRequest::new(challenge, relay_url);
                         // Send a signal to the ingester to handle the auth request
-                        ingester.send(IngesterSignal::Auth(req)).await;
+                        ingester.send(Signal::Auth(req)).await;
                     }
                 }
                 RelayMessage::Ok {
@@ -459,7 +454,7 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
-                    IngesterSignal::SignerSet(public_key) => {
+                    Signal::SignerSet(public_key) => {
                         window.close_modal(cx);
 
                         // Setup the default layout for current workspace
@@ -476,10 +471,10 @@ impl ChatSpace {
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
                             this.set_identity(public_key, cx);
-                            this.load_rooms(window, cx);
+                            this.load_rooms(false, window, cx);
                         });
                     }
-                    IngesterSignal::SignerUnset => {
+                    Signal::SignerUnset => {
                         // Setup the onboarding layout for current workspace
                         view.update(cx, |this, cx| {
                             this.set_onboarding_layout(window, cx);
@@ -491,7 +486,7 @@ impl ChatSpace {
                             this.reset(cx);
                         });
                     }
-                    IngesterSignal::Auth(req) => {
+                    Signal::Auth(req) => {
                         let relay_url = &req.url;
                         let challenge = &req.challenge;
                         let auto_auth = AppSettings::get_auto_auth(cx);
@@ -511,7 +506,7 @@ impl ChatSpace {
                         })
                         .ok();
                     }
-                    IngesterSignal::ProxyDown => {
+                    Signal::ProxyDown => {
                         if !is_open_proxy_modal {
                             is_open_proxy_modal = true;
 
@@ -522,33 +517,16 @@ impl ChatSpace {
                         }
                     }
                     // Notify the user that the gift wrap still processing
-                    IngesterSignal::GiftWrapProcessing => {
+                    Signal::EventProcessing => {
                         registry.update(cx, |this, cx| {
                             this.set_loading(true, cx);
                         });
                     }
-                    IngesterSignal::GiftWrapPartialProcessed => {
+                    Signal::EventProcessed(finish) => {
                         registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            // Send a signal to refresh all opened rooms' messages
-                            if let Some(ids) = ChatSpace::all_panels(window, cx) {
-                                this.refresh_rooms(ids, cx);
-                            }
-                        });
-                    }
-                    IngesterSignal::GiftWrapProcessed => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.set_loading(false, cx);
-                            // Send a signal to refresh all opened rooms' messages
-                            if let Some(ids) = ChatSpace::all_panels(window, cx) {
-                                this.refresh_rooms(ids, cx);
-                            }
-                        });
-                    }
-                    IngesterSignal::Eose => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
+                            // Load all chat rooms in the database
+                            this.load_rooms(finish, window, cx);
+
                             // Send a signal to refresh all opened rooms' messages
                             if let Some(ids) = ChatSpace::all_panels(window, cx) {
                                 this.refresh_rooms(ids, cx);
@@ -556,25 +534,25 @@ impl ChatSpace {
                         });
                     }
                     // Add the new metadata to the registry or update the existing one
-                    IngesterSignal::Metadata(event) => {
+                    Signal::Metadata(event) => {
                         registry.update(cx, |this, cx| {
                             this.insert_or_update_person(event, cx);
                         });
                     }
                     // Convert the gift wrapped message to a message
-                    IngesterSignal::GiftWrap((gift_wrap_id, event)) => {
+                    Signal::Message((gift_wrap_id, event)) => {
                         registry.update(cx, |this, cx| {
                             this.event_to_message(gift_wrap_id, event, window, cx);
                         });
                     }
                     // Notify the user that the DM relay is not set
-                    IngesterSignal::DmRelayNotFound => {
+                    Signal::DmRelayNotFound => {
                         view.update(cx, |this, cx| {
                             this.set_no_nip17_relays(cx);
                         })
                         .ok();
                     }
-                    IngesterSignal::Notice(msg) => {
+                    Signal::Notice(msg) => {
                         window.push_notification(msg.as_str(), cx);
                     }
                 };
@@ -751,9 +729,7 @@ impl ChatSpace {
 
         // Send a notify to GPUI if this is a new message
         if event.created_at >= css.init_at {
-            ingester
-                .send(IngesterSignal::GiftWrap((gift.id, event)))
-                .await;
+            ingester.send(Signal::Message((gift.id, event))).await;
         }
 
         is_cached
@@ -1109,7 +1085,7 @@ impl ChatSpace {
             client.reset().await;
 
             // Notify the channel about the signer being unset
-            ingester.send(IngesterSignal::SignerUnset).await;
+            ingester.send(Signal::SignerUnset).await;
         })
         .detach();
     }
@@ -1211,7 +1187,7 @@ impl ChatSpace {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let loading = self.has_nip17_relays && self.auth_requests.is_empty() && registry.loading;
+        let loading = registry.loading;
 
         h_flex()
             .gap_2()
@@ -1366,7 +1342,7 @@ impl ChatSpace {
 
                             break;
                         } else {
-                            ingester.send(IngesterSignal::ProxyDown).await;
+                            ingester.send(Signal::ProxyDown).await;
                         }
                         smol::Timer::after(Duration::from_secs(1)).await;
                     }
