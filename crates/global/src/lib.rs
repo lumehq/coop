@@ -3,10 +3,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use nostr_connect::prelude::*;
+use flume::{Receiver, Sender};
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
-use smol::channel::{Receiver, Sender};
 use smol::lock::RwLock;
 
 use crate::paths::support_dir;
@@ -46,6 +45,14 @@ impl Notice {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum UnwrappingStatus {
+    #[default]
+    Initialized,
+    Processing,
+    Complete,
+}
+
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum Signal {
@@ -67,11 +74,8 @@ pub enum Signal {
     /// A signal to notify UI that a new gift wrap event has been received
     Message((EventId, Event)),
 
-    /// A signal to notify UI that gift wrap events still processing
-    EventProcessing,
-
-    /// A signal to notify UI that gift wrap events have been processed
-    EventProcessed(bool),
+    /// A signal to notify UI that gift wrap process status has changed
+    GiftWrapProcess(UnwrappingStatus),
 
     /// A signal to notify UI that no DM relay for current user was found
     DmRelayNotFound,
@@ -94,7 +98,7 @@ impl Default for Ingester {
 
 impl Ingester {
     pub fn new() -> Self {
-        let (tx, rx) = smol::channel::bounded::<Signal>(2048);
+        let (tx, rx) = flume::bounded::<Signal>(2048);
         Self { rx, tx }
     }
 
@@ -103,7 +107,7 @@ impl Ingester {
     }
 
     pub async fn send(&self, signal: Signal) {
-        if let Err(e) = self.tx.send(signal).await {
+        if let Err(e) = self.tx.send_async(signal).await {
             log::error!("Failed to send signal: {e}");
         }
     }
@@ -131,7 +135,7 @@ impl CoopSimpleStorage {
         Self {
             init_at: Timestamp::now(),
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
-            gift_wrap_processing: AtomicBool::new(true),
+            gift_wrap_processing: AtomicBool::new(false),
             sent_ids: RwLock::new(HashSet::new()),
             resent_ids: RwLock::new(Vec::new()),
             resend_queue: RwLock::new(HashMap::new()),

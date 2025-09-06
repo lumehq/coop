@@ -5,7 +5,7 @@ use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::nostr_client;
+use global::{nostr_client, UnwrappingStatus};
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -41,10 +41,8 @@ pub struct Registry {
     /// Collection of all persons (user profiles)
     pub persons: HashMap<PublicKey, Entity<Profile>>,
 
-    /// Indicates if rooms are currently being loaded
-    ///
-    /// Always equal to `true` when the app starts
-    pub loading: bool,
+    /// Status of the unwrapping process
+    pub unwrapping_status: Entity<UnwrappingStatus>,
 
     /// Public Key of the current user
     pub identity: Option<PublicKey>,
@@ -73,6 +71,7 @@ impl Registry {
 
     /// Create a new Registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
         let mut tasks = smallvec![];
 
         let load_local_persons: Task<Result<Vec<Profile>, Error>> =
@@ -104,10 +103,10 @@ impl Registry {
         );
 
         Self {
+            unwrapping_status,
             rooms: vec![],
             persons: HashMap::new(),
             identity: None,
-            loading: true,
             _tasks: tasks,
         }
     }
@@ -244,15 +243,17 @@ impl Registry {
     }
 
     /// Set the loading status of the registry.
-    pub fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.loading = status;
-        cx.notify();
+    pub fn set_unwrapping_status(&mut self, status: UnwrappingStatus, cx: &mut Context<Self>) {
+        self.unwrapping_status.update(cx, |this, cx| {
+            *this = status;
+            cx.notify();
+        });
     }
 
     /// Reset the registry.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        // Reset the loading status (default: true)
-        self.loading = true;
+        // Reset the unwrapping status
+        self.set_unwrapping_status(UnwrappingStatus::default(), cx);
 
         // Clear the current identity
         self.identity = None;
@@ -264,7 +265,7 @@ impl Registry {
     }
 
     /// Load all rooms from the database.
-    pub fn load_rooms(&mut self, finish: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         log::info!("Starting to load chat rooms...");
 
         // Get the contact bypass setting
@@ -342,9 +343,6 @@ impl Registry {
                 Ok(rooms) => {
                     this.update_in(cx, move |_, window, cx| {
                         cx.defer_in(window, move |this, _window, cx| {
-                            if finish {
-                                this.set_loading(false, cx);
-                            }
                             this.extend_rooms(rooms, cx);
                             this.sort(cx);
                         });
@@ -405,12 +403,14 @@ impl Registry {
     }
 
     /// Refresh messages for a room in the global registry
-    pub fn refresh_rooms(&mut self, ids: Vec<u64>, cx: &mut Context<Self>) {
-        for room in self.rooms.iter() {
-            if ids.contains(&room.read(cx).id) {
-                room.update(cx, |this, cx| {
-                    this.emit_refresh(cx);
-                });
+    pub fn refresh_rooms(&mut self, ids: Option<Vec<u64>>, cx: &mut Context<Self>) {
+        if let Some(ids) = ids {
+            for room in self.rooms.iter() {
+                if ids.contains(&room.read(cx).id) {
+                    room.update(cx, |this, cx| {
+                        this.emit_refresh(cx);
+                    });
+                }
             }
         }
     }

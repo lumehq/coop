@@ -6,7 +6,7 @@ use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{ReadableTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
-use global::nostr_client;
+use global::{nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
@@ -33,7 +33,6 @@ mod list_item;
 
 const FIND_DELAY: u64 = 600;
 const FIND_LIMIT: usize = 10;
-const TOTAL_SKELETONS: usize = 3;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     Sidebar::new(window, cx)
@@ -587,7 +586,6 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let loading = registry.loading;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
@@ -606,10 +604,9 @@ impl Render for Sidebar {
         // Get total rooms count
         let mut total_rooms = rooms.len();
 
-        // If loading in progress
-        // Add 3 skeletons to the room list
-        if loading {
-            total_rooms += TOTAL_SKELETONS;
+        // Add 3 dummy rooms to display as skeletons
+        if registry.unwrapping_status.read(cx) != &UnwrappingStatus::Complete {
+            total_rooms += 3
         }
 
         v_flex()

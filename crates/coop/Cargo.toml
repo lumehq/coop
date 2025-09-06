@@ -59,6 +59,7 @@ smallvec.workspace = true
 smol.workspace = true
 futures.workspace = true
 oneshot.workspace = true
+flume.workspace = true
 webbrowser.workspace = true
 
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] }

@@ -148,7 +148,8 @@ impl Onboarding {
                         client.set_signer(signer).await;
                     }
                     Err(e) => {
-                        cx.update(|window, cx| {
+                        log::warn!("Nostr Connect instance (QR Code) is timeout. TODO: fix this");
+                        this.update_in(cx, |_, window, cx| {
                             window.push_notification(
                                 Notification::error(e.to_string()).title("Nostr Connect"),
                                 cx,
