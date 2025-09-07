@@ -184,7 +184,7 @@ relays:
 
 manage_relays:
   modal:
-    en: "Massaging Relay Status"
+    en: "Messaging Relay Status"
   time:
     en: "Last activity: %{t}"
 
@@ -359,9 +359,13 @@ chat:
     en: "%{u} has not set up Messaging Relays, so they won't receive your message."
 
 sidebar:
-  find_or_start_conversation:
+  reload_menu:
+    en: "Reload"
+  status_menu:
+    en: "Relay Status"
+  search_label:
     en: "Find or start a conversation"
-  press_enter_to_search:
+  search_tooltip:
     en: "Press Enter to search"
   empty:
     en: "There are no users matching query %{query}"

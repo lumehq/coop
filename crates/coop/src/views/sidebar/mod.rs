@@ -29,7 +29,7 @@ use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::{PopupMenu, PopupMenuExt};
 use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Selectable, Sizable, StyledExt};
 
-use crate::actions::{GiftWrapManage, Reload};
+use crate::actions::{RelayStatus, Reload};
 
 mod list_item;
 
@@ -71,17 +71,16 @@ impl Sidebar {
         let global_result = cx.new(|_| None);
         let cancel_handle = cx.new(|_| None);
 
-        let find_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(t!("sidebar.find_or_start_conversation"))
-        });
+        let find_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("sidebar.search_label")));
 
-        let chats = Registry::global(cx);
+        let registry = Registry::global(cx);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(cx.subscribe_in(
-            &chats,
+            &registry,
             window,
-            move |this, _chats, event, _window, cx| {
+            move |this, _, event, _window, cx| {
                 if let RegistryEvent::NewRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
@@ -528,7 +527,7 @@ impl Sidebar {
         window.push_notification(t!("common.refreshed"), cx);
     }
 
-    fn on_manage(&mut self, _ev: &GiftWrapManage, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let css = css();
@@ -564,7 +563,8 @@ impl Sidebar {
 
                     for relay in relays.clone().into_iter() {
                         let url = relay.url().to_string();
-                        let time = relay.stats().connected_at().to_human_time();
+                        let time = relay.stats().connected_at().to_ago();
+                        let connected = relay.is_connected();
 
                         items.push(
                             h_flex()
@@ -582,7 +582,7 @@ impl Sidebar {
                                             Icon::new(IconName::Signal)
                                                 .small()
                                                 .text_color(cx.theme().danger_active)
-                                                .when(relay.is_connected(), |this| {
+                                                .when(connected, |this| {
                                                     this.text_color(gpui::green().alpha(0.75))
                                                 }),
                                         )
@@ -717,7 +717,7 @@ impl Render for Sidebar {
                             .suffix(
                                 Button::new("find")
                                     .icon(IconName::Search)
-                                    .tooltip(t!("sidebar.press_enter_to_search"))
+                                    .tooltip(t!("sidebar.search_tooltip"))
                                     .transparent()
                                     .small(),
                             ),
@@ -793,8 +793,14 @@ impl Render for Sidebar {
                                             .ghost()
                                             .rounded(ButtonRounded::Full)
                                             .popup_menu(move |this, _window, _cx| {
-                                                this.menu("Reload", Box::new(Reload))
-                                                    .menu("Relay Status", Box::new(GiftWrapManage))
+                                                this.menu(
+                                                    t!("sidebar.reload_menu"),
+                                                    Box::new(Reload),
+                                                )
+                                                .menu(
+                                                    t!("sidebar.status_menu"),
+                                                    Box::new(RelayStatus),
+                                                )
                                             }),
                                     ),
                             ),
