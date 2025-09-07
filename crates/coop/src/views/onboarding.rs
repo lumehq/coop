@@ -9,7 +9,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
     EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
@@ -66,8 +66,8 @@ pub struct Onboarding {
     // Panel
     name: SharedString,
     focus_handle: FocusHandle,
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    _subscriptions: SmallVec<[Subscription; 2]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Onboarding {
@@ -104,10 +104,11 @@ impl Onboarding {
             nostr_connect,
             nostr_connect_uri,
             qr_code,
-            subscriptions,
             connecting: false,
             name: "Onboarding".into(),
             focus_handle: cx.focus_handle(),
+            _subscriptions: subscriptions,
+            _tasks: smallvec![],
         }
     }
 
@@ -131,36 +132,37 @@ impl Onboarding {
             cx.notify();
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            let client = nostr_client();
-            let connect = this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone());
+        self._tasks.push(
+            // Wait for Nostr Connect approval
+            cx.spawn_in(window, async move |this, cx| {
+                let client = nostr_client();
+                let connect = this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone());
 
-            if let Ok(Some(signer)) = connect {
-                match signer.bunker_uri().await {
-                    Ok(uri) => {
-                        this.update(cx, |this, cx| {
-                            this.set_connecting(cx);
-                            this.write_uri_to_disk(&uri, cx);
-                        })
-                        .ok();
+                if let Ok(Some(signer)) = connect {
+                    match signer.bunker_uri().await {
+                        Ok(uri) => {
+                            this.update(cx, |this, cx| {
+                                this.set_connecting(cx);
+                                this.write_uri_to_disk(&uri, cx);
+                            })
+                            .ok();
 
-                        // Set the client's signer with the current nostr connect instance
-                        client.set_signer(signer).await;
-                    }
-                    Err(e) => {
-                        log::warn!("Nostr Connect instance (QR Code) is timeout. TODO: fix this");
-                        this.update_in(cx, |_, window, cx| {
-                            window.push_notification(
-                                Notification::error(e.to_string()).title("Nostr Connect"),
-                                cx,
-                            );
-                        })
-                        .ok();
-                    }
-                };
-            }
-        })
-        .detach();
+                            // Set the client's signer with the current nostr connect instance
+                            client.set_signer(signer).await;
+                        }
+                        Err(e) => {
+                            this.update_in(cx, |_, window, cx| {
+                                window.push_notification(
+                                    Notification::error(e.to_string()).title("Nostr Connect"),
+                                    cx,
+                                );
+                            })
+                            .ok();
+                        }
+                    };
+                }
+            }),
+        )
     }
 
     fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {

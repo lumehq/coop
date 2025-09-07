@@ -40,7 +40,7 @@ use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{DarkMode, Logout, Settings};
 use crate::views::compose::compose_button;
@@ -64,10 +64,17 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
 }
 
 pub struct ChatSpace {
+    // Workspace
     title_bar: Entity<TitleBar>,
     dock: Entity<DockArea>,
-    auth_requests: Vec<(String, RelayUrl)>,
+
+    // Temporarily store all authentication requests
+    auth_requests: HashMap<AuthRequest, bool>,
+
+    // Local state to determine if the user has set up NIP-17 relays
     has_nip17_relays: bool,
+
+    // System
     _subscriptions: SmallVec<[Subscription; 3]>,
     _tasks: SmallVec<[Task<()>; 5]>,
 }
@@ -174,7 +181,7 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
-            auth_requests: vec![],
+            auth_requests: HashMap::new(),
             has_nip17_relays: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
@@ -279,9 +286,10 @@ impl ChatSpace {
 
         loop {
             if client.has_signer().await {
+                total_loops += 1;
+
                 if css.gift_wrap_processing.load(Ordering::Acquire) {
                     is_start_processing = true;
-                    total_loops += 1;
 
                     // Reset gift wrap processing flag
                     let _ = css.gift_wrap_processing.compare_exchange(
@@ -295,8 +303,8 @@ impl ChatSpace {
                     ingester.send(signal).await;
                 } else {
                     // Only run further if we are already processing
-                    // Wait until after 3 loops to prevent exiting early while events are still being processed
-                    if is_start_processing && total_loops >= 3 {
+                    // Wait until after 2 loops to prevent exiting early while events are still being processed
+                    if is_start_processing && total_loops >= 2 {
                         let signal = Signal::GiftWrapProcess(UnwrappingStatus::Complete);
                         ingester.send(signal).await;
 
@@ -522,21 +530,19 @@ impl ChatSpace {
                         });
                     }
                     Signal::Auth(req) => {
-                        let relay_url = &req.url;
-                        let challenge = &req.challenge;
+                        let url = &req.url;
                         let auto_auth = AppSettings::get_auto_auth(cx);
-                        let is_authenticated_relays =
-                            AppSettings::read_global(cx).is_authenticated_relays(relay_url);
+                        let is_authenticated = AppSettings::read_global(cx).is_authenticated(url);
 
                         view.update(cx, |this, cx| {
-                            this.push_auth_request(challenge, relay_url, cx);
+                            this.push_auth_request(&req, cx);
 
-                            if auto_auth && is_authenticated_relays {
+                            if auto_auth && is_authenticated {
                                 // Automatically authenticate if the relay is authenticated before
-                                this.auth(challenge, relay_url, window, cx);
+                                this.auth(req, window, cx);
                             } else {
                                 // Otherwise open the auth request popup
-                                this.open_auth_request(challenge, relay_url, window, cx);
+                                this.open_auth_request(req, window, cx);
                             }
                         })
                         .ok();
@@ -780,18 +786,17 @@ impl ChatSpace {
         };
     }
 
-    fn auth(
-        &mut self,
-        challenge: &str,
-        url: &RelayUrl,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
         let settings = AppSettings::global(cx);
-        let challenge = challenge.to_string();
-        let url = url.to_owned();
+
+        let challenge = req.challenge.to_owned();
+        let url = req.url.to_owned();
+
         let challenge_clone = challenge.clone();
         let url_clone = url.clone();
+
+        // Set Coop is sending auth for this request
+        self.sending_auth_request(&challenge, cx);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
@@ -885,7 +890,7 @@ impl ChatSpace {
                     .ok();
                 }
                 Err(e) => {
-                    cx.update(|window, cx| {
+                    this.update_in(cx, |_, window, cx| {
                         window.push_notification(Notification::error(e.to_string()), cx);
                     })
                     .ok();
@@ -895,16 +900,10 @@ impl ChatSpace {
         .detach();
     }
 
-    fn open_auth_request(
-        &mut self,
-        challenge: &str,
-        relay_url: &RelayUrl,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_auth_request(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
         let weak_view = cx.entity().downgrade();
-        let challenge = challenge.to_string();
-        let relay_url = relay_url.to_owned();
+        let challenge = req.challenge.to_owned();
+        let relay_url = req.url.to_owned();
         let url_as_string = SharedString::from(relay_url.to_string());
 
         let note = Notification::new()
@@ -929,19 +928,25 @@ impl ChatSpace {
                     )
                     .into_any_element()
             })
-            .action(move |_window, _cx| {
+            .action(move |_window, cx| {
                 let weak_view = weak_view.clone();
-                let challenge = challenge.clone();
-                let relay_url = relay_url.clone();
+                let req = req.clone();
+                let loading = weak_view
+                    .read_with(cx, |this, cx| {
+                        this.is_sending_auth_request(&req.challenge, cx)
+                    })
+                    .unwrap_or_default();
 
                 Button::new("approve")
                     .label(t!("common.approve"))
                     .small()
                     .primary()
+                    .loading(loading)
+                    .disabled(loading)
                     .on_click(move |_e, window, cx| {
                         weak_view
                             .update(cx, |this, cx| {
-                                this.auth(&challenge, &relay_url, window, cx);
+                                this.auth(req.clone(), window, cx);
                             })
                             .ok();
                     })
@@ -951,21 +956,40 @@ impl ChatSpace {
     }
 
     fn reopen_auth_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for (challenge, relay_url) in self.auth_requests.clone().iter() {
-            self.open_auth_request(challenge, relay_url, window, cx);
+        for req in self.auth_requests.clone().into_iter() {
+            self.open_auth_request(req.0, window, cx);
         }
     }
 
-    fn push_auth_request(&mut self, challenge: &str, url: &RelayUrl, cx: &mut Context<Self>) {
-        self.auth_requests.push((challenge.into(), url.to_owned()));
+    fn push_auth_request(&mut self, req: &AuthRequest, cx: &mut Context<Self>) {
+        self.auth_requests.insert(req.to_owned(), false);
         cx.notify();
     }
 
-    fn remove_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        if let Some(ix) = self.auth_requests.iter().position(|(c, _)| c == challenge) {
-            self.auth_requests.remove(ix);
-            cx.notify();
+    fn sending_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
+        for (req, status) in self.auth_requests.iter_mut() {
+            if req.challenge == challenge {
+                *status = true;
+                cx.notify();
+            }
         }
+    }
+
+    fn is_sending_auth_request(&self, challenge: &str, _cx: &App) -> bool {
+        if let Some(req) = self
+            .auth_requests
+            .iter()
+            .find(|(req, _)| req.challenge == challenge)
+        {
+            req.1.to_owned()
+        } else {
+            false
+        }
+    }
+
+    fn remove_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
+        self.auth_requests.retain(|r, _| r.challenge != challenge);
+        cx.notify();
     }
 
     fn set_onboarding_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1016,6 +1040,11 @@ impl ChatSpace {
         });
     }
 
+    fn set_no_nip17_relays(&mut self, cx: &mut Context<Self>) {
+        self.has_nip17_relays = false;
+        cx.notify();
+    }
+
     fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task = cx.background_spawn(async move {
             let client = nostr_client();
@@ -1057,11 +1086,6 @@ impl ChatSpace {
             }
         })
         .detach();
-    }
-
-    fn set_no_nip17_relays(&mut self, cx: &mut Context<Self>) {
-        self.has_nip17_relays = false;
-        cx.notify();
     }
 
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
