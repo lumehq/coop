@@ -11,9 +11,7 @@ use registry::room::RoomKind;
 use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::actions::OpenProfile;
 use ui::avatar::Avatar;
-use ui::context_menu::ContextMenuExt;
 use ui::modal::ModalButtonProps;
 use ui::skeleton::Skeleton;
 use ui::{h_flex, ContextModal, StyledExt};
@@ -167,10 +165,6 @@ impl RenderOnce for RoomListItem {
                             .child(created_at),
                     ),
             )
-            .context_menu(move |this, _window, _cx| {
-                // TODO: add share chat room
-                this.menu(t!("profile.view"), Box::new(OpenProfile(public_key)))
-            })
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .on_click(move |event, window, cx| {
                 handler(event, window, cx);

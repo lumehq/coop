@@ -168,26 +168,28 @@ impl Chat {
     }
 
     /// Load all messages belonging to this room
-    fn load_messages(&self, window: &mut Window, cx: &mut Context<Self>) {
+    fn load_messages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let load_messages = self.room.read(cx).load_messages(cx);
 
-        cx.spawn_in(window, async move |this, cx| {
-            match load_messages.await {
-                Ok(events) => {
-                    this.update(cx, |this, cx| {
-                        this.insert_messages(events, cx);
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(e.to_string(), cx);
-                    })
-                    .ok();
-                }
-            };
-        })
-        .detach();
+        self._tasks.push(
+            // Run the task in the background
+            cx.spawn_in(window, async move |this, cx| {
+                match load_messages.await {
+                    Ok(events) => {
+                        this.update(cx, |this, cx| {
+                            this.insert_messages(events, cx);
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(e.to_string(), cx);
+                        })
+                        .ok();
+                    }
+                };
+            }),
+        );
     }
 
     #[allow(dead_code)]

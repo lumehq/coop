@@ -15,6 +15,7 @@ use gpui::{
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -44,6 +45,7 @@ pub struct Account {
     // Panel
     name: SharedString,
     focus_handle: FocusHandle,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Account {
@@ -59,6 +61,7 @@ impl Account {
             loading: false,
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
+            _tasks: smallvec![],
         })
     }
 
@@ -89,24 +92,25 @@ impl Account {
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
 
-        // Handle connection
-        cx.spawn_in(window, async move |_this, cx| {
-            let client = nostr_client();
+        self._tasks.push(
+            // Handle connection
+            cx.spawn_in(window, async move |_this, cx| {
+                let client = nostr_client();
 
-            match signer.bunker_uri().await {
-                Ok(_) => {
-                    // Set the client's signer with the current nostr connect instance
-                    client.set_signer(signer).await;
+                match signer.bunker_uri().await {
+                    Ok(_) => {
+                        // Set the client's signer with the current nostr connect instance
+                        client.set_signer(signer).await;
+                    }
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(e.to_string(), cx);
+                        })
+                        .ok();
+                    }
                 }
-                Err(e) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(e.to_string(), cx);
-                    })
-                    .ok();
-                }
-            }
-        })
-        .detach();
+            }),
+        );
     }
 
     fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -240,24 +244,26 @@ impl Account {
     }
 
     fn logout(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let ingester = ingester();
+        self._tasks.push(
+            // Reset the nostr client in the background
+            cx.background_spawn(async move {
+                let client = nostr_client();
+                let ingester = ingester();
 
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER);
+                let filter = Filter::new()
+                    .kind(Kind::ApplicationSpecificData)
+                    .identifier(ACCOUNT_IDENTIFIER);
 
-            // Delete account
-            client.database().delete(filter).await.ok();
+                // Delete account
+                client.database().delete(filter).await.ok();
 
-            // Unset the client's signer
-            client.unset_signer().await;
+                // Unset the client's signer
+                client.unset_signer().await;
 
-            // Notify the channel about the signer being unset
-            ingester.send(Signal::SignerUnset).await;
-        })
-        .detach();
+                // Notify the channel about the signer being unset
+                ingester.send(Signal::SignerUnset).await;
+            }),
+        );
     }
 
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
