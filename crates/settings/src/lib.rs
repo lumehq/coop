@@ -176,12 +176,12 @@ impl AppSettings {
         !self.setting_values.authenticated_relays.is_empty() && self.setting_values.auto_auth
     }
 
-    pub fn is_authenticated_relays(&self, url: &RelayUrl) -> bool {
+    pub fn is_authenticated(&self, url: &RelayUrl) -> bool {
         self.setting_values.authenticated_relays.contains(url)
     }
 
     pub fn push_relay(&mut self, relay_url: &RelayUrl, cx: &mut Context<Self>) {
-        if !self.is_authenticated_relays(relay_url) {
+        if !self.is_authenticated(relay_url) {
             self.setting_values
                 .authenticated_relays
                 .push(relay_url.to_owned());
