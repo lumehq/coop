@@ -30,14 +30,10 @@ pub enum NotificationType {
 impl NotificationType {
     fn icon(&self, cx: &App) -> Icon {
         match self {
-            Self::Info => Icon::new(IconName::Info).text_color(cx.theme().element_active),
-            Self::Warning => Icon::new(IconName::Report).text_color(cx.theme().warning_foreground),
-            Self::Success => {
-                Icon::new(IconName::CheckCircle).text_color(cx.theme().element_foreground)
-            }
-            Self::Error => {
-                Icon::new(IconName::CloseCircle).text_color(cx.theme().danger_foreground)
-            }
+            Self::Info => Icon::new(IconName::Info).text_color(cx.theme().element_foreground),
+            Self::Success => Icon::new(IconName::Info).text_color(cx.theme().secondary_foreground),
+            Self::Warning => Icon::new(IconName::Warning).text_color(cx.theme().warning_foreground),
+            Self::Error => Icon::new(IconName::Warning).text_color(cx.theme().danger_foreground),
         }
     }
 }

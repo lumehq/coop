@@ -1313,7 +1313,7 @@ impl ChatSpace {
                 )
             })
             .when(!self.has_nip17_relays, |this| {
-                this.child(setup_nip17_relay(t!("relays.button_label")))
+                this.child(setup_nip17_relay(t!("relays.button")))
             })
             .child(
                 Button::new("user")
