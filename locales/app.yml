@@ -45,6 +45,10 @@ common:
     en: "Ignore"
   relay:
     en: "Relay"
+  relay_invalid:
+    en: "Relay URL is not valid."
+  recommended:
+    en: "Recommended:"
 
 auto_update:
   updating:
@@ -167,20 +171,22 @@ login:
     en: "Logging in..."
 
 relays:
-  button_label:
+  button:
     en: "Configure the Messaging Relays to receive messages"
-  modal_title:
+  modal:
     en: "Set Up Messaging Relays"
   description:
     en: "In order to receive messages from others, you need to set up at least one Messaging Relay."
-  add_some_relays:
+  help_text:
     en: "Please add some relays."
-  invalid:
-    en: "Relay URL is not valid."
   empty:
-    en: "You need to add at least 1 relay to receive messages."
-  recommended:
-    en: "Recommended:"
+    en: "You need to add at least 1 relay to receive messages from others."
+
+manage_relays:
+  modal:
+    en: "Massaging Relay Status"
+  time:
+    en: "Last activity: %{t}"
 
 subject:
   title:

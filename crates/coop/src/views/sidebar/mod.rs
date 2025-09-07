@@ -6,15 +6,15 @@ use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{ReadableTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
-use global::{nostr_client, UnwrappingStatus};
+use global::{css, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString, Styled,
-    Subscription, Task, Window,
+    Focusable, InteractiveElement, IntoElement, ParentElement, Render, RetainAllImageCache,
+    SharedString, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::t;
+use i18n::{shared_t, t};
 use itertools::Itertools;
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
@@ -26,8 +26,10 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::popup_menu::PopupMenu;
-use ui::{v_flex, ContextModal, IconName, Selectable, Sizable, StyledExt};
+use ui::popup_menu::{PopupMenu, PopupMenuExt};
+use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Selectable, Sizable, StyledExt};
+
+use crate::actions::{GiftWrapManage, Reload};
 
 mod list_item;
 
@@ -519,6 +521,87 @@ impl Sidebar {
         });
     }
 
+    fn on_reload(&mut self, _ev: &Reload, window: &mut Window, cx: &mut Context<Self>) {
+        Registry::global(cx).update(cx, |this, cx| {
+            this.load_rooms(window, cx);
+        });
+        window.push_notification(t!("common.refreshed"), cx);
+    }
+
+    fn on_manage(&mut self, _ev: &GiftWrapManage, window: &mut Window, cx: &mut Context<Self>) {
+        let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let css = css();
+            let subscription = client.subscription(&css.gift_wrap_sub_id).await;
+            let mut relays: Vec<Relay> = vec![];
+
+            for (url, _filter) in subscription.into_iter() {
+                relays.push(client.pool().relay(url).await?);
+            }
+
+            Ok(relays)
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(relays) = task.await {
+                this.update_in(cx, |this, window, cx| {
+                    this.manage_relays(relays, window, cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn manage_relays(&mut self, relays: Vec<Relay>, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, _window, cx| {
+            this.show_close(true)
+                .overlay_closable(true)
+                .keyboard(true)
+                .title(shared_t!("manage_relays.modal"))
+                .child(v_flex().pb_4().gap_2().children({
+                    let mut items = Vec::with_capacity(relays.len());
+
+                    for relay in relays.clone().into_iter() {
+                        let url = relay.url().to_string();
+                        let time = relay.stats().connected_at().to_human_time();
+
+                        items.push(
+                            h_flex()
+                                .h_8()
+                                .px_2()
+                                .justify_between()
+                                .text_xs()
+                                .bg(cx.theme().elevated_surface_background)
+                                .rounded(cx.theme().radius)
+                                .child(
+                                    h_flex()
+                                        .gap_1()
+                                        .font_semibold()
+                                        .child(
+                                            Icon::new(IconName::Signal)
+                                                .small()
+                                                .text_color(cx.theme().danger_active)
+                                                .when(relay.is_connected(), |this| {
+                                                    this.text_color(gpui::green().alpha(0.75))
+                                                }),
+                                        )
+                                        .child(url),
+                                )
+                                .child(
+                                    div()
+                                        .text_right()
+                                        .text_color(cx.theme().text_muted)
+                                        .child(shared_t!("manage_relays.time", t = time)),
+                                ),
+                        );
+                    }
+
+                    items
+                }))
+        });
+    }
+
     fn list_items(
         &self,
         rooms: &[Entity<Room>],
@@ -610,6 +693,8 @@ impl Render for Sidebar {
         }
 
         v_flex()
+            .on_action(cx.listener(Self::on_reload))
+            .on_action(cx.listener(Self::on_manage))
             .image_cache(self.image_cache.clone())
             .size_full()
             .relative()
@@ -693,6 +778,25 @@ impl Render for Sidebar {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::default(), cx);
                                     })),
+                            )
+                            .child(
+                                h_flex()
+                                    .flex_1()
+                                    .w_full()
+                                    .justify_end()
+                                    .items_center()
+                                    .text_xs()
+                                    .child(
+                                        Button::new("option")
+                                            .icon(IconName::Ellipsis)
+                                            .xsmall()
+                                            .ghost()
+                                            .rounded(ButtonRounded::Full)
+                                            .popup_menu(move |this, _window, _cx| {
+                                                this.menu("Reload", Box::new(Reload))
+                                                    .menu("Relay Status", Box::new(GiftWrapManage))
+                                            }),
+                                    ),
                             ),
                     )
                     .child(

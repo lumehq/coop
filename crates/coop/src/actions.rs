@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use gpui::{actions, App};
 
 actions!(coop, [DarkMode, Settings, Logout, Quit]);
+actions!(sidebar, [Reload, GiftWrapManage]);
 
 pub fn load_embedded_fonts(cx: &App) {
     let asset_source = cx.asset_source();

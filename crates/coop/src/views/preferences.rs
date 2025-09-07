@@ -86,7 +86,6 @@ impl Preferences {
     }
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let title = SharedString::new(t!("relays.modal_title"));
         let view = setup_relay::init(Kind::InboxRelays, window, cx);
         let weak_view = view.downgrade();
 
@@ -94,7 +93,7 @@ impl Preferences {
             let weak_view = weak_view.clone();
 
             this.confirm()
-                .title(title.clone())
+                .title(shared_t!("relays.modal"))
                 .child(view.clone())
                 .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
                 .on_ok(move |_, window, cx| {

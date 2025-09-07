@@ -45,7 +45,7 @@ where
 
                     modal
                         .confirm()
-                        .title(shared_t!("relays.modal_title"))
+                        .title(shared_t!("relays.modal"))
                         .child(view.clone())
                         .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
                         .on_ok(move |_, window, cx| {
@@ -299,7 +299,7 @@ impl SetupRelay {
             .justify_center()
             .text_sm()
             .text_align(TextAlign::Center)
-            .child(shared_t!("relays.add_some_relays"))
+            .child(shared_t!("relays.help_text"))
     }
 }
 
@@ -339,7 +339,7 @@ impl Render for SetupRelay {
                                     .text_xs()
                                     .font_semibold()
                                     .text_color(cx.theme().text_muted)
-                                    .child(shared_t!("relays.recommended")),
+                                    .child(shared_t!("common.recommended")),
                             )
                             .child(h_flex().gap_1().children({
                                 NIP17_RELAYS.iter().map(|&relay| {
