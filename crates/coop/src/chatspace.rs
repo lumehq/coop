@@ -221,12 +221,12 @@ impl ChatSpace {
                 let nip65 = Filter::new().kind(Kind::RelayList).author(public_key);
 
                 if client.database().count(nip65).await.unwrap_or(0) > 0 {
-                    let nip17 = Filter::new().kind(Kind::InboxRelays).author(public_key);
+                    let dm_relays = Filter::new().kind(Kind::InboxRelays).author(public_key);
 
-                    match client.database().query(nip17).await {
+                    match client.database().query(dm_relays).await {
                         Ok(events) => {
                             if let Some(event) = events.first_owned() {
-                                let relay_urls = Self::extract_relay_list(&event);
+                                let relay_urls = nip17::extract_relay_list(&event).collect_vec();
 
                                 if relay_urls.is_empty() {
                                     if !is_sent_signal {
@@ -374,9 +374,6 @@ impl ChatSpace {
         let ingester = ingester();
         let css = css();
 
-        let auto_close =
-            SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
         let mut processed_events: HashSet<EventId> = HashSet::new();
         let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
         let mut notifications = client.notifications();
@@ -395,7 +392,6 @@ impl ChatSpace {
 
                     match event.kind {
                         Kind::RelayList => {
-                            // Get metadata for event's pubkey that matches the current user's pubkey
                             if let Ok(true) = Self::is_self_event(&event).await {
                                 // Fetch user's metadata event
                                 Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
@@ -409,10 +405,10 @@ impl ChatSpace {
                         }
                         Kind::InboxRelays => {
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays: Vec<RelayUrl> = Self::extract_relay_list(&event);
+                                let relays = nip17::extract_relay_list(&event).collect_vec();
 
                                 if !relays.is_empty() {
-                                    for relay in relays.iter() {
+                                    for relay in relays.clone().into_iter() {
                                         if client.add_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
                                             ingester.send(Signal::Notice(notice)).await;
@@ -424,7 +420,7 @@ impl ChatSpace {
                                     }
 
                                     // Subscribe to gift wrap events only in the current user's NIP-17 relays
-                                    Self::fetch_gift_wrap(&relays, event.pubkey).await;
+                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
                                 }
                             }
                         }
@@ -437,7 +433,7 @@ impl ChatSpace {
                                     Filter::new().limit(limit).authors(public_keys).kinds(kinds);
 
                                 client
-                                    .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
+                                    .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
                                     .await
                                     .ok();
                             }
@@ -587,20 +583,6 @@ impl ChatSpace {
         }
     }
 
-    fn extract_relay_list(event: &Event) -> Vec<RelayUrl> {
-        event
-            .tags
-            .filter_standardized(TagKind::Relay)
-            .filter_map(|t| {
-                if let TagStandard::Relay(url) = t {
-                    Some(url.to_owned())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     /// Checks if an event is belong to the current user
     async fn is_self_event(event: &Event) -> Result<bool, Error> {
         let client = nostr_client();
@@ -613,22 +595,21 @@ impl ChatSpace {
     /// Fetches a single event by kind and public key
     pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
         let client = nostr_client();
-        let auto_close =
-            SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let css = css();
         let filter = Filter::new().kind(kind).author(public_key).limit(1);
 
-        if let Err(e) = client.subscribe(filter, Some(auto_close)).await {
+        if let Err(e) = client.subscribe(filter, css.auto_close_opts).await {
             log::info!("Failed to subscribe: {e}");
         }
     }
 
-    pub async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
+    pub async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
         let client = nostr_client();
         let sub_id = css().gift_wrap_sub_id.clone();
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         if client
-            .subscribe_with_id_to(relays.to_owned(), sub_id, filter, None)
+            .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
             .await
             .is_ok()
         {
@@ -639,8 +620,7 @@ impl ChatSpace {
     /// Fetches NIP-65 relay list for a given public key
     pub async fn fetch_nip65_relays(public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
-        let auto_close =
-            SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let css = css();
 
         let filter = Filter::new()
             .kind(Kind::RelayList)
@@ -648,7 +628,7 @@ impl ChatSpace {
             .limit(1);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(auto_close))
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
             .await?;
 
         Ok(())
@@ -656,18 +636,15 @@ impl ChatSpace {
 
     /// Fetches metadata for a list of public keys
     async fn fetch_metadata_for_pubkeys(public_keys: HashSet<PublicKey>) {
-        if public_keys.is_empty() {
-            return;
-        };
-
         let client = nostr_client();
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let kinds = vec![Kind::Metadata, Kind::ContactList];
-        let limit = public_keys.len() * kinds.len();
+        let css = css();
+
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let limit = public_keys.len() * kinds.len() + 20; // + 20 to ensure Coop has enough metadata
         let filter = Filter::new().limit(limit).authors(public_keys).kinds(kinds);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
             .await
             .ok();
     }

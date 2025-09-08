@@ -1,9 +1,13 @@
+use std::time::Duration;
+
 use common::display::{shorten_pubkey, ReadableProfile};
 use common::nip05::nip05_verify;
+use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
+use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, rems, App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render,
-    SharedString, Styled, Task, Window,
+    div, px, relative, rems, uniform_list, App, AppContext, Context, Div, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -14,6 +18,7 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::indicator::Indicator;
 use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
@@ -24,9 +29,10 @@ pub struct Screening {
     profile: Profile,
     verified: bool,
     followed: bool,
-    dm_relays: bool,
-    mutual_contacts: usize,
-    _tasks: SmallVec<[Task<()>; 1]>,
+    dm_relays: Option<bool>,
+    active: Option<bool>,
+    mutual_contacts: Vec<Profile>,
+    _tasks: SmallVec<[Task<()>; 4]>,
 }
 
 impl Screening {
@@ -37,33 +43,69 @@ impl Screening {
 
         let mut tasks = smallvec![];
 
-        let check_trust_score: Task<(bool, usize, bool)> = cx.background_spawn(async move {
+        let contact_check: Task<(bool, Vec<Profile>)> = cx.background_spawn(async move {
             let client = nostr_client();
 
-            let follow = Filter::new()
-                .kind(Kind::ContactList)
-                .author(identity)
-                .pubkey(public_key)
+            // Check if user is in contact list
+            let contacts = client.database().contacts_public_keys(identity).await;
+            let followed = contacts.unwrap_or_default().contains(&public_key);
+
+            // Check mutual contacts
+            let contact_list = Filter::new().kind(Kind::ContactList).pubkey(public_key);
+            let mut mutual_contacts = vec![];
+
+            if let Ok(events) = client.database().query(contact_list).await {
+                for event in events.into_iter().filter(|ev| ev.pubkey != identity) {
+                    if let Ok(metadata) = client.database().metadata(event.pubkey).await {
+                        let profile = Profile::new(event.pubkey, metadata.unwrap_or_default());
+                        mutual_contacts.push(profile);
+                    }
+                }
+            }
+
+            (followed, mutual_contacts)
+        });
+
+        let activity_check = cx.background_spawn(async move {
+            let client = nostr_client();
+            let mut activity = false;
+
+            let filter = Filter::new()
+                .author(public_key)
+                .since(Timestamp::now() - Duration::from_secs(172800))
                 .limit(1);
 
-            let contacts = Filter::new()
-                .kind(Kind::ContactList)
-                .pubkey(public_key)
-                .limit(1);
+            if let Ok(mut stream) = client
+                .stream_events_from(BOOTSTRAP_RELAYS, filter, Duration::from_secs(2))
+                .await
+            {
+                while stream.next().await.is_some() {
+                    activity = true
+                }
+            }
 
-            let relays = Filter::new()
+            activity
+        });
+
+        let relay_check = cx.background_spawn(async move {
+            let client = nostr_client();
+            let mut relay = false;
+
+            let filter = Filter::new()
                 .kind(Kind::InboxRelays)
                 .author(public_key)
                 .limit(1);
 
-            let is_follow = client.database().count(follow).await.unwrap_or(0) >= 1;
-            let mutual_contacts = client.database().count(contacts).await.unwrap_or(0);
-            let dm_relays = client.database().count(relays).await.unwrap_or(0) >= 1;
+            if let Ok(mut stream) = client.stream_events(filter, Duration::from_secs(2)).await {
+                while stream.next().await.is_some() {
+                    relay = true
+                }
+            }
 
-            (is_follow, mutual_contacts, dm_relays)
+            relay
         });
 
-        let verify_nip05 = if let Some(address) = profile.metadata().nip05 {
+        let addr_check = if let Some(address) = profile.metadata().nip05 {
             Some(Tokio::spawn(cx, async move {
                 nip05_verify(public_key, &address).await.unwrap_or(false)
             }))
@@ -72,20 +114,49 @@ impl Screening {
         };
 
         tasks.push(
-            // Load all necessary data
+            // Run the contact check in the background
             cx.spawn_in(window, async move |this, cx| {
-                let (followed, mutual_contacts, dm_relays) = check_trust_score.await;
+                let (followed, mutual_contacts) = contact_check.await;
 
                 this.update(cx, |this, cx| {
                     this.followed = followed;
                     this.mutual_contacts = mutual_contacts;
-                    this.dm_relays = dm_relays;
                     cx.notify();
                 })
                 .ok();
+            }),
+        );
 
-                // Update the NIP05 verification status if user has NIP05 address
-                if let Some(task) = verify_nip05 {
+        tasks.push(
+            // Run the activity check in the background
+            cx.spawn_in(window, async move |this, cx| {
+                let active = activity_check.await;
+
+                this.update(cx, |this, cx| {
+                    this.active = Some(active);
+                    cx.notify();
+                })
+                .ok();
+            }),
+        );
+
+        tasks.push(
+            // Run the relay check in the background
+            cx.spawn_in(window, async move |this, cx| {
+                let relay = relay_check.await;
+
+                this.update(cx, |this, cx| {
+                    this.dm_relays = Some(relay);
+                    cx.notify();
+                })
+                .ok();
+            }),
+        );
+
+        tasks.push(
+            // Run the NIP-05 verification in the background
+            cx.spawn_in(window, async move |this, cx| {
+                if let Some(task) = addr_check {
                     if let Ok(verified) = task.await {
                         this.update(cx, |this, cx| {
                             this.verified = verified;
@@ -101,8 +172,9 @@ impl Screening {
             profile,
             verified: false,
             followed: false,
-            dm_relays: false,
-            mutual_contacts: 0,
+            dm_relays: None,
+            active: None,
+            mutual_contacts: vec![],
             _tasks: tasks,
         }
     }
@@ -141,12 +213,54 @@ impl Screening {
         })
         .detach();
     }
+
+    fn mutual_contacts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let contacts = self.mutual_contacts.clone();
+
+        window.open_modal(cx, move |this, _window, _cx| {
+            let contacts = contacts.clone();
+            let total = contacts.len();
+
+            this.title(shared_t!("screening.mutual_label")).child(
+                v_flex().gap_1().pb_4().child(
+                    uniform_list("contacts", total, move |range, _window, cx| {
+                        let mut items = Vec::with_capacity(total);
+
+                        for ix in range {
+                            if let Some(contact) = contacts.get(ix) {
+                                items.push(
+                                    h_flex()
+                                        .h_11()
+                                        .w_full()
+                                        .px_2()
+                                        .gap_1p5()
+                                        .rounded(cx.theme().radius)
+                                        .text_sm()
+                                        .hover(|this| {
+                                            this.bg(cx.theme().elevated_surface_background)
+                                        })
+                                        .child(
+                                            Avatar::new(contact.avatar_url(true)).size(rems(1.75)),
+                                        )
+                                        .child(contact.display_name()),
+                                );
+                            }
+                        }
+
+                        items
+                    })
+                    .h(px(300.)),
+                ),
+            )
+        });
+    }
 }
 
 impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let shorten_pubkey = shorten_pubkey(self.profile.public_key(), 8);
+        let total_mutuals = self.mutual_contacts.len();
 
         v_flex()
             .gap_4()
@@ -168,12 +282,10 @@ impl Render for Screening {
                 h_flex()
                     .gap_3()
                     .child(
-                        div()
+                        h_flex()
                             .p_1()
                             .flex_1()
                             .h_7()
-                            .flex()
-                            .items_center()
                             .justify_center()
                             .rounded_full()
                             .bg(cx.theme().surface_background)
@@ -217,25 +329,54 @@ impl Render for Screening {
                             .items_start()
                             .gap_2()
                             .text_sm()
-                            .child(status_badge(self.followed, cx))
+                            .child(status_badge(Some(self.followed), cx))
                             .child(
                                 v_flex()
                                     .text_sm()
                                     .child(shared_t!("screening.contact_label"))
-                                    .child(div().text_color(cx.theme().text_muted).child({
-                                        if self.followed {
-                                            shared_t!("screening.contact")
-                                        } else {
-                                            shared_t!("screening.not_contact")
-                                        }
-                                    })),
+                                    .child(
+                                        div()
+                                            .line_clamp(1)
+                                            .text_color(cx.theme().text_muted)
+                                            .child({
+                                                if self.followed {
+                                                    shared_t!("screening.contact")
+                                                } else {
+                                                    shared_t!("screening.not_contact")
+                                                }
+                                            }),
+                                    ),
                             ),
                     )
                     .child(
                         h_flex()
                             .items_start()
                             .gap_2()
-                            .child(status_badge(self.verified, cx))
+                            .text_sm()
+                            .child(status_badge(self.active, cx))
+                            .child(
+                                v_flex()
+                                    .text_sm()
+                                    .child(shared_t!("screening.active_label"))
+                                    .child(
+                                        div()
+                                            .line_clamp(1)
+                                            .text_color(cx.theme().text_muted)
+                                            .child({
+                                                if self.active == Some(true) {
+                                                    shared_t!("screening.active")
+                                                } else {
+                                                    shared_t!("screening.no_active")
+                                                }
+                                            }),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .items_start()
+                            .gap_2()
+                            .child(status_badge(Some(self.verified), cx))
                             .child(
                                 v_flex()
                                     .text_sm()
@@ -246,35 +387,61 @@ impl Render for Screening {
                                             shared_t!("screening.nip05_label")
                                         }
                                     })
-                                    .child(div().text_color(cx.theme().text_muted).child({
-                                        if self.address(cx).is_some() {
-                                            if self.verified {
-                                                shared_t!("screening.nip05_ok")
-                                            } else {
-                                                shared_t!("screening.nip05_failed")
-                                            }
-                                        } else {
-                                            shared_t!("screening.nip05_empty")
-                                        }
-                                    })),
+                                    .child(
+                                        div()
+                                            .line_clamp(1)
+                                            .text_color(cx.theme().text_muted)
+                                            .child({
+                                                if self.address(cx).is_some() {
+                                                    if self.verified {
+                                                        shared_t!("screening.nip05_ok")
+                                                    } else {
+                                                        shared_t!("screening.nip05_failed")
+                                                    }
+                                                } else {
+                                                    shared_t!("screening.nip05_empty")
+                                                }
+                                            }),
+                                    ),
                             ),
                     )
                     .child(
                         h_flex()
                             .items_start()
                             .gap_2()
-                            .child(status_badge(self.mutual_contacts > 0, cx))
+                            .child(status_badge(Some(total_mutuals > 0), cx))
                             .child(
                                 v_flex()
                                     .text_sm()
-                                    .child(shared_t!("screening.mutual_label"))
-                                    .child(div().text_color(cx.theme().text_muted).child({
-                                        if self.mutual_contacts > 0 {
-                                            shared_t!("screening.mutual", u = self.mutual_contacts)
-                                        } else {
-                                            shared_t!("screening.no_mutual")
-                                        }
-                                    })),
+                                    .child(
+                                        h_flex()
+                                            .gap_0p5()
+                                            .child(shared_t!("screening.mutual_label"))
+                                            .child(
+                                                Button::new("mutuals")
+                                                    .icon(IconName::Info)
+                                                    .xsmall()
+                                                    .ghost()
+                                                    .rounded(ButtonRounded::Full)
+                                                    .on_click(cx.listener(
+                                                        move |this, _, window, cx| {
+                                                            this.mutual_contacts(window, cx);
+                                                        },
+                                                    )),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .line_clamp(1)
+                                            .text_color(cx.theme().text_muted)
+                                            .child({
+                                                if total_mutuals > 0 {
+                                                    shared_t!("screening.mutual", u = total_mutuals)
+                                                } else {
+                                                    shared_t!("screening.no_mutual")
+                                                }
+                                            }),
+                                    ),
                             ),
                     )
                     .child(
@@ -287,36 +454,43 @@ impl Render for Screening {
                                     .w_full()
                                     .text_sm()
                                     .child({
-                                        if self.dm_relays {
+                                        if self.dm_relays == Some(true) {
                                             shared_t!("screening.relay_found")
                                         } else {
                                             shared_t!("screening.relay_empty")
                                         }
                                     })
-                                    .child(div().w_full().text_color(cx.theme().text_muted).child(
-                                        {
-                                            if self.dm_relays {
-                                                shared_t!("screening.relay_found_desc")
-                                            } else {
-                                                shared_t!("screening.relay_empty_desc")
-                                            }
-                                        },
-                                    )),
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .line_clamp(1)
+                                            .text_color(cx.theme().text_muted)
+                                            .child({
+                                                if self.dm_relays == Some(true) {
+                                                    shared_t!("screening.relay_found_desc")
+                                                } else {
+                                                    shared_t!("screening.relay_empty_desc")
+                                                }
+                                            }),
+                                    ),
                             ),
                     ),
             )
     }
 }
 
-fn status_badge(status: bool, cx: &App) -> Div {
-    div()
-        .pt_1()
-        .flex_shrink_0()
-        .child(Icon::new(IconName::CheckCircleFill).small().text_color({
-            if status {
-                cx.theme().icon_accent
-            } else {
-                cx.theme().icon_muted
-            }
-        }))
+fn status_badge(status: Option<bool>, cx: &App) -> Div {
+    div().pt_1().flex_shrink_0().map(|this| {
+        if let Some(status) = status {
+            this.child(Icon::new(IconName::CheckCircleFill).small().text_color({
+                if status {
+                    cx.theme().icon_accent
+                } else {
+                    cx.theme().icon_muted
+                }
+            }))
+        } else {
+            this.child(Indicator::new().xsmall())
+        }
+    })
 }

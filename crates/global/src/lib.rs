@@ -119,6 +119,7 @@ pub struct CoopSimpleStorage {
     pub init_at: Timestamp,
     pub gift_wrap_sub_id: SubscriptionId,
     pub gift_wrap_processing: AtomicBool,
+    pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
     pub sent_ids: RwLock<HashSet<EventId>>,
     pub resent_ids: RwLock<Vec<Output<EventId>>>,
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
@@ -136,6 +137,9 @@ impl CoopSimpleStorage {
             init_at: Timestamp::now(),
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
             gift_wrap_processing: AtomicBool::new(false),
+            auto_close_opts: Some(
+                SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
+            ),
             sent_ids: RwLock::new(HashSet::new()),
             resent_ids: RwLock::new(Vec::new()),
             resend_queue: RwLock::new(HashMap::new()),

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use global::constants::NIP17_RELAYS;
-use global::nostr_client;
+use global::{css, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
@@ -18,8 +18,6 @@ use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, StyledExt};
-
-use crate::chatspace::ChatSpace;
 
 pub fn init(kind: Kind, window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
     cx.new(|cx| SetupRelay::new(kind, window, cx))
@@ -220,7 +218,16 @@ impl SetupRelay {
             }
 
             // Fetch gift wrap events
-            ChatSpace::fetch_gift_wrap(&relays, public_key).await;
+            let sub_id = css().gift_wrap_sub_id.clone();
+            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+            if client
+                .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
+                .await
+                .is_ok()
+            {
+                log::info!("Subscribed to messages in: {relays:?}");
+            };
 
             Ok(())
         });

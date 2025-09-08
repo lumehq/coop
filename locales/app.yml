@@ -219,6 +219,12 @@ screening:
     en: "This person is one of your contacts."
   not_contact:
     en: "This person is not one of your contacts."
+  active_label:
+    en: "Activity"
+  active:
+    en: "This person has activity in the last 2 days"
+  no_active:
+    en: "This person has no activity in the last 2 days"
   mutual_label:
     en: "Mutual contacts"
   mutual:
