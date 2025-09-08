@@ -2,8 +2,8 @@ use common::display::{shorten_pubkey, ReadableProfile};
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::{
-    div, relative, rems, App, AppContext, Context, Div, Entity, IntoElement, ParentElement, Render,
-    SharedString, Styled, Task, Window,
+    div, px, relative, rems, uniform_list, App, AppContext, Context, Div, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -25,7 +25,7 @@ pub struct Screening {
     verified: bool,
     followed: bool,
     dm_relays: bool,
-    mutual_contacts: usize,
+    mutual_contacts: Vec<Profile>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
@@ -37,30 +37,31 @@ impl Screening {
 
         let mut tasks = smallvec![];
 
-        let check_trust_score: Task<(bool, usize, bool)> = cx.background_spawn(async move {
+        let screening: Task<(bool, bool, Vec<Profile>)> = cx.background_spawn(async move {
             let client = nostr_client();
 
-            let follow = Filter::new()
-                .kind(Kind::ContactList)
-                .author(identity)
-                .pubkey(public_key)
-                .limit(1);
-
-            let contacts = Filter::new()
-                .kind(Kind::ContactList)
-                .pubkey(public_key)
-                .limit(1);
-
-            let relays = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
-
-            let is_follow = client.database().count(follow).await.unwrap_or(0) >= 1;
-            let mutual_contacts = client.database().count(contacts).await.unwrap_or(0);
+            // Get user's DM relays
+            let relays = Filter::new().kind(Kind::InboxRelays).author(public_key);
             let dm_relays = client.database().count(relays).await.unwrap_or(0) >= 1;
 
-            (is_follow, mutual_contacts, dm_relays)
+            // Get user's contacts
+            let contacts = client.database().contacts_public_keys(identity).await;
+            let followed = contacts.unwrap_or_default().contains(&public_key);
+
+            // Get user's contact list
+            let contacts = Filter::new().kind(Kind::ContactList).pubkey(public_key);
+            let mut mutual_contacts = vec![];
+
+            if let Ok(events) = client.database().query(contacts).await {
+                for event in events.into_iter().filter(|ev| ev.pubkey != identity) {
+                    if let Ok(metadata) = client.database().metadata(event.pubkey).await {
+                        let profile = Profile::new(event.pubkey, metadata.unwrap_or_default());
+                        mutual_contacts.push(profile);
+                    }
+                }
+            }
+
+            (followed, dm_relays, mutual_contacts)
         });
 
         let verify_nip05 = if let Some(address) = profile.metadata().nip05 {
@@ -74,8 +75,9 @@ impl Screening {
         tasks.push(
             // Load all necessary data
             cx.spawn_in(window, async move |this, cx| {
-                let (followed, mutual_contacts, dm_relays) = check_trust_score.await;
+                let (followed, dm_relays, mutual_contacts) = screening.await;
 
+                // Update screening information
                 this.update(cx, |this, cx| {
                     this.followed = followed;
                     this.mutual_contacts = mutual_contacts;
@@ -84,7 +86,7 @@ impl Screening {
                 })
                 .ok();
 
-                // Update the NIP05 verification status if user has NIP05 address
+                // Update the NIP-05 verification status if user has NIP-05 address
                 if let Some(task) = verify_nip05 {
                     if let Ok(verified) = task.await {
                         this.update(cx, |this, cx| {
@@ -102,7 +104,7 @@ impl Screening {
             verified: false,
             followed: false,
             dm_relays: false,
-            mutual_contacts: 0,
+            mutual_contacts: vec![],
             _tasks: tasks,
         }
     }
@@ -141,12 +143,54 @@ impl Screening {
         })
         .detach();
     }
+
+    fn mutual_contacts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let contacts = self.mutual_contacts.clone();
+
+        window.open_modal(cx, move |this, _window, _cx| {
+            let contacts = contacts.clone();
+            let total = contacts.len();
+
+            this.title(shared_t!("screening.mutual_label")).child(
+                v_flex().gap_1().pb_4().child(
+                    uniform_list("contacts", total, move |range, _window, cx| {
+                        let mut items = Vec::with_capacity(total);
+
+                        for ix in range {
+                            if let Some(contact) = contacts.get(ix) {
+                                items.push(
+                                    h_flex()
+                                        .h_9()
+                                        .w_full()
+                                        .px_2()
+                                        .gap_1p5()
+                                        .rounded(cx.theme().radius)
+                                        .text_sm()
+                                        .hover(|this| {
+                                            this.bg(cx.theme().elevated_surface_background)
+                                        })
+                                        .child(
+                                            Avatar::new(contact.avatar_url(true)).size(rems(1.75)),
+                                        )
+                                        .child(contact.display_name()),
+                                );
+                            }
+                        }
+
+                        items
+                    })
+                    .h(px(300.)),
+                ),
+            )
+        });
+    }
 }
 
 impl Render for Screening {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let shorten_pubkey = shorten_pubkey(self.profile.public_key(), 8);
+        let total_mutuals = self.mutual_contacts.len();
 
         v_flex()
             .gap_4()
@@ -263,14 +307,30 @@ impl Render for Screening {
                         h_flex()
                             .items_start()
                             .gap_2()
-                            .child(status_badge(self.mutual_contacts > 0, cx))
+                            .child(status_badge(total_mutuals > 0, cx))
                             .child(
                                 v_flex()
                                     .text_sm()
-                                    .child(shared_t!("screening.mutual_label"))
+                                    .child(
+                                        h_flex()
+                                            .gap_0p5()
+                                            .child(shared_t!("screening.mutual_label"))
+                                            .child(
+                                                Button::new("mutuals")
+                                                    .icon(IconName::Info)
+                                                    .xsmall()
+                                                    .ghost()
+                                                    .rounded(ButtonRounded::Full)
+                                                    .on_click(cx.listener(
+                                                        move |this, _, window, cx| {
+                                                            this.mutual_contacts(window, cx);
+                                                        },
+                                                    )),
+                                            ),
+                                    )
                                     .child(div().text_color(cx.theme().text_muted).child({
-                                        if self.mutual_contacts > 0 {
-                                            shared_t!("screening.mutual", u = self.mutual_contacts)
+                                        if total_mutuals > 0 {
+                                            shared_t!("screening.mutual", u = total_mutuals)
                                         } else {
                                             shared_t!("screening.no_mutual")
                                         }
