@@ -160,7 +160,7 @@ impl Screening {
                             if let Some(contact) = contacts.get(ix) {
                                 items.push(
                                     h_flex()
-                                        .h_9()
+                                        .h_11()
                                         .w_full()
                                         .px_2()
                                         .gap_1p5()
