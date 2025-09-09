@@ -220,11 +220,13 @@ screening:
   not_contact:
     en: "This person is not one of your contacts."
   active_label:
-    en: "Activity"
-  active:
-    en: "This person has activity in the last 2 days"
+    en: "Activity on Public Relays"
+  active_tooltip:
+    en: "This may be inaccurate if the user only publishes to their private relays."
   no_active:
-    en: "This person has no activity in the last 2 days"
+    en: "This person hasn't had any activity."
+  active_at:
+    en: "Last active: %{d}."
   mutual_label:
     en: "Mutual contacts"
   mutual:
