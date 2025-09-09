@@ -636,12 +636,18 @@ impl ChatSpace {
 
     /// Fetches metadata for a list of public keys
     async fn fetch_metadata_for_pubkeys(public_keys: HashSet<PublicKey>) {
+        if public_keys.is_empty() {
+            return;
+        }
+
         let client = nostr_client();
         let css = css();
 
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
-        let limit = public_keys.len() * kinds.len() + 20; // + 20 to ensure Coop has enough metadata
-        let filter = Filter::new().limit(limit).authors(public_keys).kinds(kinds);
+        let limit = public_keys.len() * kinds.len() + 20;
+
+        // A filter to fetch metadata
+        let filter = Filter::new().authors(public_keys).kinds(kinds).limit(limit);
 
         client
             .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)

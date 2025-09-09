@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::{shorten_pubkey, ReadableProfile};
+use common::display::{shorten_pubkey, ReadableProfile, ReadableTimestamp};
 use common::nip05::nip05_verify;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
@@ -30,7 +30,7 @@ pub struct Screening {
     verified: bool,
     followed: bool,
     dm_relays: Option<bool>,
-    active: Option<bool>,
+    last_active: Option<Timestamp>,
     mutual_contacts: Vec<Profile>,
     _tasks: SmallVec<[Task<()>; 4]>,
 }
@@ -68,19 +68,15 @@ impl Screening {
 
         let activity_check = cx.background_spawn(async move {
             let client = nostr_client();
-            let mut activity = false;
-
-            let filter = Filter::new()
-                .author(public_key)
-                .since(Timestamp::now() - Duration::from_secs(172800))
-                .limit(1);
+            let filter = Filter::new().author(public_key).limit(1);
+            let mut activity: Option<Timestamp> = None;
 
             if let Ok(mut stream) = client
                 .stream_events_from(BOOTSTRAP_RELAYS, filter, Duration::from_secs(2))
                 .await
             {
-                while stream.next().await.is_some() {
-                    activity = true
+                while let Some(event) = stream.next().await {
+                    activity = Some(event.created_at);
                 }
             }
 
@@ -133,7 +129,7 @@ impl Screening {
                 let active = activity_check.await;
 
                 this.update(cx, |this, cx| {
-                    this.active = Some(active);
+                    this.last_active = active;
                     cx.notify();
                 })
                 .ok();
@@ -173,7 +169,7 @@ impl Screening {
             verified: false,
             followed: false,
             dm_relays: None,
-            active: None,
+            last_active: None,
             mutual_contacts: vec![],
             _tasks: tasks,
         }
@@ -261,6 +257,7 @@ impl Render for Screening {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let shorten_pubkey = shorten_pubkey(self.profile.public_key(), 8);
         let total_mutuals = self.mutual_contacts.len();
+        let last_active = self.last_active.map(|_| true);
 
         v_flex()
             .gap_4()
@@ -353,20 +350,36 @@ impl Render for Screening {
                             .items_start()
                             .gap_2()
                             .text_sm()
-                            .child(status_badge(self.active, cx))
+                            .child(status_badge(last_active, cx))
                             .child(
                                 v_flex()
                                     .text_sm()
-                                    .child(shared_t!("screening.active_label"))
+                                    .child(
+                                        h_flex()
+                                            .gap_0p5()
+                                            .child(shared_t!("screening.active_label"))
+                                            .child(
+                                                Button::new("active")
+                                                    .icon(IconName::Info)
+                                                    .xsmall()
+                                                    .ghost()
+                                                    .rounded(ButtonRounded::Full)
+                                                    .tooltip(t!("screening.active_tooltip")),
+                                            ),
+                                    )
                                     .child(
                                         div()
+                                            .w_full()
                                             .line_clamp(1)
                                             .text_color(cx.theme().text_muted)
-                                            .child({
-                                                if self.active == Some(true) {
-                                                    shared_t!("screening.active")
+                                            .map(|this| {
+                                                if let Some(date) = self.last_active {
+                                                    this.child(shared_t!(
+                                                        "screening.active_at",
+                                                        d = date.to_human_time()
+                                                    ))
                                                 } else {
-                                                    shared_t!("screening.no_active")
+                                                    this.child(shared_t!("screening.no_active"))
                                                 }
                                             }),
                                     ),
@@ -480,17 +493,21 @@ impl Render for Screening {
 }
 
 fn status_badge(status: Option<bool>, cx: &App) -> Div {
-    div().pt_1().flex_shrink_0().map(|this| {
-        if let Some(status) = status {
-            this.child(Icon::new(IconName::CheckCircleFill).small().text_color({
-                if status {
-                    cx.theme().icon_accent
-                } else {
-                    cx.theme().icon_muted
-                }
-            }))
-        } else {
-            this.child(Indicator::new().xsmall())
-        }
-    })
+    h_flex()
+        .size_6()
+        .justify_center()
+        .flex_shrink_0()
+        .map(|this| {
+            if let Some(status) = status {
+                this.child(Icon::new(IconName::CheckCircleFill).small().text_color({
+                    if status {
+                        cx.theme().icon_accent
+                    } else {
+                        cx.theme().icon_muted
+                    }
+                }))
+            } else {
+                this.child(Indicator::new().small())
+            }
+        })
 }
