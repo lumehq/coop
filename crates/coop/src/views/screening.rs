@@ -493,17 +493,21 @@ impl Render for Screening {
 }
 
 fn status_badge(status: Option<bool>, cx: &App) -> Div {
-    div().pt_1().flex_shrink_0().map(|this| {
-        if let Some(status) = status {
-            this.child(Icon::new(IconName::CheckCircleFill).small().text_color({
-                if status {
-                    cx.theme().icon_accent
-                } else {
-                    cx.theme().icon_muted
-                }
-            }))
-        } else {
-            this.child(Indicator::new().xsmall())
-        }
-    })
+    h_flex()
+        .size_6()
+        .justify_center()
+        .flex_shrink_0()
+        .map(|this| {
+            if let Some(status) = status {
+                this.child(Icon::new(IconName::CheckCircleFill).small().text_color({
+                    if status {
+                        cx.theme().icon_accent
+                    } else {
+                        cx.theme().icon_muted
+                    }
+                }))
+            } else {
+                this.child(Indicator::new().small())
+            }
+        })
 }
