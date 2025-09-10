@@ -58,9 +58,11 @@ auto_update:
 
 user:
   dark_mode:
-    en: "Dark Mode"
+    en: "Dark mode"
   settings:
     en: "Settings"
+  reload_metadata:
+    en: "Reload metadata"
   sign_out:
     en: "Sign out"
 
