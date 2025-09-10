@@ -439,7 +439,10 @@ impl ChatSpace {
                             }
                         }
                         Kind::Metadata => {
-                            ingester.send(Signal::Metadata(event.into_owned())).await;
+                            if let Ok(metadata) = Metadata::from_json(&event.content) {
+                                let profile = Profile::new(event.pubkey, metadata);
+                                ingester.send(Signal::Metadata(profile)).await;
+                            }
                         }
                         Kind::GiftWrap => {
                             Self::unwrap_gift_wrap(&event, pubkey_tx).await;
@@ -558,9 +561,9 @@ impl ChatSpace {
                             this.set_unwrapping_status(status, cx);
                         });
                     }
-                    Signal::Metadata(event) => {
+                    Signal::Metadata(profile) => {
                         registry.update(cx, |this, cx| {
-                            this.insert_or_update_person(event, cx);
+                            this.insert_or_update_person(profile, cx);
                         });
                     }
                     Signal::Message((gift_wrap_id, event)) => {

@@ -68,8 +68,8 @@ pub enum Signal {
     /// A signal to notify UI that the browser proxy service is down
     ProxyDown,
 
-    /// A signal to notify UI that a new metadata event has been received
-    Metadata(Event),
+    /// A signal to notify UI that a new profile has been received
+    Metadata(Profile),
 
     /// A signal to notify UI that a new gift wrap event has been received
     Message((EventId, Event)),
