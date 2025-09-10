@@ -155,21 +155,19 @@ impl Registry {
     }
 
     /// Insert or update a person
-    pub fn insert_or_update_person(&mut self, event: Event, cx: &mut App) {
-        let public_key = event.pubkey;
-        let Ok(metadata) = Metadata::from_json(event.content) else {
-            // Invalid metadata, no need to process further.
-            return;
-        };
+    pub fn insert_or_update_person(&mut self, profile: Profile, cx: &mut App) {
+        let public_key = profile.public_key();
 
-        if let Some(person) = self.persons.get(&public_key) {
-            person.update(cx, |this, cx| {
-                *this = Profile::new(public_key, metadata);
-                cx.notify();
-            });
-        } else {
-            self.persons
-                .insert(public_key, cx.new(|_| Profile::new(public_key, metadata)));
+        match self.persons.get(&public_key) {
+            Some(person) => {
+                person.update(cx, |this, cx| {
+                    *this = profile;
+                    cx.notify();
+                });
+            }
+            None => {
+                self.persons.insert(public_key, cx.new(|_| profile));
+            }
         }
     }
 

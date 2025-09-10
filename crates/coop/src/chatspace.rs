@@ -42,7 +42,7 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable, StyledExt};
 
-use crate::actions::{DarkMode, Logout, Settings};
+use crate::actions::{DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
 use crate::views::setup_relay::setup_nip17_relay;
 use crate::views::{
@@ -439,7 +439,10 @@ impl ChatSpace {
                             }
                         }
                         Kind::Metadata => {
-                            ingester.send(Signal::Metadata(event.into_owned())).await;
+                            if let Ok(metadata) = Metadata::from_json(&event.content) {
+                                let profile = Profile::new(event.pubkey, metadata);
+                                ingester.send(Signal::Metadata(profile)).await;
+                            }
                         }
                         Kind::GiftWrap => {
                             Self::unwrap_gift_wrap(&event, pubkey_tx).await;
@@ -558,9 +561,9 @@ impl ChatSpace {
                             this.set_unwrapping_status(status, cx);
                         });
                     }
-                    Signal::Metadata(event) => {
+                    Signal::Metadata(profile) => {
                         registry.update(cx, |this, cx| {
-                            this.insert_or_update_person(event, cx);
+                            this.insert_or_update_person(profile, cx);
                         });
                     }
                     Signal::Message((gift_wrap_id, event)) => {
@@ -1090,6 +1093,50 @@ impl ChatSpace {
         }
     }
 
+    fn on_reload_metadata(
+        &mut self,
+        _ev: &ReloadMetadata,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let css = css();
+
+            let filter = Filter::new().kind(Kind::PrivateDirectMessage);
+
+            let pubkeys: Vec<PublicKey> = client
+                .database()
+                .query(filter)
+                .await?
+                .into_iter()
+                .flat_map(|event| event.all_pubkeys())
+                .unique()
+                .collect();
+
+            let filter = Filter::new()
+                .kind(Kind::Metadata)
+                .limit(pubkeys.len())
+                .authors(pubkeys);
+
+            client
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
+                .await?;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |_, cx| {
+            if task.await.is_ok() {
+                cx.update(|window, cx| {
+                    window.push_notification(t!("common.refreshed"), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -1309,6 +1356,8 @@ impl ChatSpace {
                         this.menu(t!("user.dark_mode"), Box::new(DarkMode))
                             .menu(t!("user.settings"), Box::new(Settings))
                             .separator()
+                            .menu(t!("user.reload_metadata"), Box::new(ReloadMetadata))
+                            .separator()
                             .menu(t!("user.sign_out"), Box::new(Logout))
                     }),
             )
@@ -1429,6 +1478,7 @@ impl Render for ChatSpace {
             .on_action(cx.listener(Self::on_dark_mode))
             .on_action(cx.listener(Self::on_sign_out))
             .on_action(cx.listener(Self::on_open_profile))
+            .on_action(cx.listener(Self::on_reload_metadata))
             .relative()
             .size_full()
             .child(

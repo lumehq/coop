@@ -41,28 +41,28 @@ impl Preferences {
     fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
         let view = edit_profile::init(window, cx);
         let weak_view = view.downgrade();
-        let title = SharedString::new(t!("profile.title"));
 
         window.open_modal(cx, move |modal, _window, _cx| {
             let weak_view = weak_view.clone();
 
             modal
                 .confirm()
-                .title(title.clone())
+                .title(shared_t!("profile.title"))
                 .child(view.clone())
                 .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
                             let set_metadata = this.set_metadata(cx);
+                            let registry = Registry::global(cx);
 
                             cx.spawn_in(window, async move |_, cx| {
                                 match set_metadata.await {
-                                    Ok(event) => {
-                                        if let Some(event) = event {
+                                    Ok(profile) => {
+                                        if let Some(profile) = profile {
                                             cx.update(|_, cx| {
-                                                Registry::global(cx).update(cx, |this, cx| {
-                                                    this.insert_or_update_person(event, cx);
+                                                registry.update(cx, |this, cx| {
+                                                    this.insert_or_update_person(profile, cx);
                                                 });
                                             })
                                             .ok();

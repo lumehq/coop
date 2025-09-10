@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use gpui::{actions, App};
 
-actions!(coop, [DarkMode, Settings, Logout, Quit]);
+actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
 actions!(sidebar, [Reload, RelayStatus]);
 
 pub fn load_embedded_fonts(cx: &App) {

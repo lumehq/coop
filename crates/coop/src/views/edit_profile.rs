@@ -164,7 +164,7 @@ impl EditProfile {
         .detach();
     }
 
-    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Option<Event>, Error>> {
+    pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Option<Profile>, Error>> {
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
@@ -189,7 +189,14 @@ impl EditProfile {
         cx.background_spawn(async move {
             let client = nostr_client();
             let output = client.set_metadata(&new_metadata).await?;
-            let event = client.database().event_by_id(&output.val).await?;
+            let event = client
+                .database()
+                .event_by_id(&output.val)
+                .await?
+                .map(|event| {
+                    let metadata = Metadata::from_json(&event.content).unwrap_or_default();
+                    Profile::new(event.pubkey, metadata)
+                });
 
             Ok(event)
         })
