@@ -1283,7 +1283,6 @@ impl ChatSpace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let is_auto_auth = AppSettings::read_global(cx).is_auto_auth();
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
         let auth_requests = self.auth_requests.len();
@@ -1322,7 +1321,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(auth_requests > 0 && !is_auto_auth, |this| {
+            .when(auth_requests > 0, |this| {
                 this.child(
                     h_flex()
                         .id("requests")

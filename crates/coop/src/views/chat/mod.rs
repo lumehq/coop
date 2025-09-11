@@ -24,7 +24,7 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
@@ -305,6 +305,34 @@ impl Chat {
             }
         })
         .detach();
+    }
+
+    fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(reports) = self.reports_by_id.get(id).cloned() {
+            let id_clone = id.to_owned();
+            let task = self.room.read(cx).resend(reports, cx);
+
+            cx.spawn_in(window, async move |this, cx| {
+                match task.await {
+                    Ok(reports) => {
+                        this.update(cx, |this, cx| {
+                            this.reports_by_id.entry(id_clone).and_modify(|this| {
+                                *this = reports;
+                            });
+                            cx.notify();
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(e.to_string(), cx);
+                        })
+                        .ok();
+                    }
+                };
+            })
+            .detach();
+        }
     }
 
     /// Check if a message failed to send by its ID
@@ -609,7 +637,23 @@ impl Chat {
                             })
                             .child(text)
                             .when(is_sent_failed, |this| {
-                                this.child(self.render_message_reports(&id, cx))
+                                this.child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(self.render_message_reports(&id, cx))
+                                        .child(
+                                            Button::new(SharedString::from(id.to_hex()))
+                                                .label(t!("common.resend"))
+                                                .danger()
+                                                .xsmall()
+                                                .rounded(ButtonRounded::Full)
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.resend_message(&id, window, cx);
+                                                    },
+                                                )),
+                                        ),
+                                )
                             }),
                     ),
             )
@@ -704,11 +748,11 @@ impl Chat {
     fn render_message_reports(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         h_flex()
             .id("")
-            .gap_1()
+            .gap_0p5()
             .text_color(cx.theme().danger_foreground)
             .text_xs()
             .italic()
-            .child(Icon::new(IconName::Info).small())
+            .child(Icon::new(IconName::Info).xsmall())
             .child(shared_t!("chat.sent_failed"))
             .when_some(self.sent_reports(id).cloned(), |this, reports| {
                 this.on_click(move |_e, window, cx| {
@@ -836,8 +880,8 @@ impl Chat {
                                         .px_2()
                                         .w_full()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
-                                        .text_color(cx.theme().text)
+                                        .bg(cx.theme().secondary_background)
+                                        .text_color(cx.theme().secondary_foreground)
                                         .child(
                                             div()
                                                 .text_xs()

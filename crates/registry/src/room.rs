@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
@@ -398,17 +399,7 @@ impl Room {
         event
     }
 
-    /// Sends a message to all members in the background task
-    ///
-    /// # Arguments
-    ///
-    /// * `content` - The content of the message to send
-    /// * `cx` - The App context
-    ///
-    /// # Returns
-    ///
-    /// A Task that resolves to Result<Vec<String>, Error> where the
-    /// strings contain error messages for any failed sends
+    /// Create a task to sends a message to all members in the background
     pub fn send_in_background(
         &self,
         content: &str,
@@ -429,9 +420,9 @@ impl Room {
 
             let mut tags = public_keys
                 .iter()
-                .filter_map(|pubkey| {
-                    if pubkey != &public_key {
-                        Some(Tag::public_key(*pubkey))
+                .filter_map(|&this| {
+                    if this != public_key {
+                        Some(Tag::public_key(this))
                     } else {
                         None
                     }
@@ -538,6 +529,53 @@ impl Room {
             }
 
             Ok(reports)
+        })
+    }
+
+    /// Create a task to resend a failed message
+    pub fn resend(
+        &self,
+        reports: Vec<SendReport>,
+        cx: &App,
+    ) -> Task<Result<Vec<SendReport>, Error>> {
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let mut send_reports = vec![];
+
+            for output in reports.into_iter().filter_map(|r| r.output) {
+                let id = output.id();
+                let urls = output.failed.keys().collect_vec();
+
+                if let Some(event) = client.database().event_by_id(id).await? {
+                    for url in urls.into_iter() {
+                        let relay = client.pool().relay(url).await?;
+                        let id = relay.send_event(&event).await?;
+                        let output: Output<EventId> = Output {
+                            val: id,
+                            success: HashSet::from([url.to_owned()]),
+                            failed: HashMap::new(),
+                        };
+
+                        send_reports.push(SendReport::output(event.pubkey, output));
+                    }
+                }
+            }
+
+            if let Some(report) = send_reports.first() {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                let id = report.output.clone().unwrap().val;
+
+                if let Some(event) = client.database().event_by_id(&id).await? {
+                    let output = client
+                        .send_private_msg(public_key, event.content, event.tags)
+                        .await?;
+
+                    send_reports.push(SendReport::output(public_key, output));
+                }
+            }
+
+            Ok(send_reports)
         })
     }
 }
