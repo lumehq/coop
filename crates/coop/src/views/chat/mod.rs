@@ -312,6 +312,7 @@ impl Chat {
             if let Some(message) = self.message(id) {
                 let backup = AppSettings::get_backup_messages(cx);
                 let id_clone = id.to_owned();
+                let message = message.content.to_owned();
                 let task = self.room.read(cx).resend(reports, message, backup, cx);
 
                 cx.spawn_in(window, async move |this, cx| {
@@ -821,7 +822,7 @@ impl Chat {
                         ),
                 )
             })
-            .when_some(report.local_error.clone(), |this, error| {
+            .when_some(report.error.clone(), |this, error| {
                 this.child(
                     h_flex()
                         .flex_wrap()
@@ -836,7 +837,7 @@ impl Chat {
                         .child(div().flex_1().w_full().text_center().child(error)),
                 )
             })
-            .when_some(report.output.clone(), |this, output| {
+            .when_some(report.status.clone(), |this, output| {
                 this.child(
                     v_flex()
                         .gap_2()

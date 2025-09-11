@@ -48,14 +48,6 @@ pub struct RenderedMessage {
     pub mentions: Vec<PublicKey>,
     /// List of event of the message this message is a reply to
     pub replies_to: Vec<EventId>,
-    /// List of tags associated with the message
-    tags: Tags,
-}
-
-impl RenderedMessage {
-    pub fn tags(&self) -> &Tags {
-        &self.tags
-    }
 }
 
 impl From<Event> for RenderedMessage {
@@ -70,7 +62,6 @@ impl From<Event> for RenderedMessage {
             created_at: inner.created_at,
             mentions,
             replies_to,
-            tags: inner.tags,
         }
     }
 }
@@ -88,7 +79,6 @@ impl From<UnsignedEvent> for RenderedMessage {
             created_at: inner.created_at,
             mentions,
             replies_to,
-            tags: inner.tags,
         }
     }
 }

@@ -12,51 +12,56 @@ use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
-use crate::message::RenderedMessage;
 use crate::Registry;
 
 #[derive(Debug, Clone)]
 pub struct SendReport {
     pub receiver: PublicKey,
-    pub output: Option<Output<EventId>>,
-    pub local_error: Option<SharedString>,
+    pub tags: Option<Vec<Tag>>,
+    pub status: Option<Output<EventId>>,
+    pub error: Option<SharedString>,
     pub nip17_relays_not_found: bool,
 }
 
 impl SendReport {
-    pub fn output(receiver: PublicKey, output: Output<EventId>) -> Self {
+    pub fn new(receiver: PublicKey) -> Self {
         Self {
             receiver,
-            output: Some(output),
-            local_error: None,
+            status: None,
+            error: None,
+            tags: None,
             nip17_relays_not_found: false,
         }
     }
 
-    pub fn error(receiver: PublicKey, error: impl Into<SharedString>) -> Self {
-        Self {
-            receiver,
-            output: None,
-            local_error: Some(error.into()),
-            nip17_relays_not_found: false,
-        }
+    pub fn not_found(mut self) -> Self {
+        self.nip17_relays_not_found = true;
+        self
     }
 
-    pub fn nip17_relays_not_found(receiver: PublicKey) -> Self {
-        Self {
-            receiver,
-            output: None,
-            local_error: None,
-            nip17_relays_not_found: true,
-        }
+    pub fn error(mut self, error: impl Into<SharedString>) -> Self {
+        self.error = Some(error.into());
+        self.nip17_relays_not_found = false;
+        self
+    }
+
+    pub fn status(mut self, output: Output<EventId>) -> Self {
+        self.status = Some(output);
+        self.nip17_relays_not_found = false;
+        self
+    }
+
+    pub fn tags(mut self, tags: &Vec<Tag>) -> Self {
+        self.tags = Some(tags.to_owned());
+        self
     }
 
     pub fn is_relay_error(&self) -> bool {
-        self.local_error.is_some() || self.nip17_relays_not_found
+        self.error.is_some() || self.nip17_relays_not_found
     }
 
     pub fn is_sent_success(&self) -> bool {
-        if let Some(output) = self.output.as_ref() {
+        if let Some(output) = self.status.as_ref() {
             !output.success.is_empty()
         } else {
             false
@@ -461,9 +466,9 @@ impl Room {
             // Stored all send errors
             let mut reports = vec![];
 
-            for receiver in public_keys.into_iter() {
+            for pubkey in public_keys.into_iter() {
                 match client
-                    .send_private_msg(receiver, &content, tags.clone())
+                    .send_private_msg(pubkey, &content, tags.clone())
                     .await
                 {
                     Ok(output) => {
@@ -472,39 +477,38 @@ impl Room {
                             .iter()
                             .any(|(_, msg)| msg.starts_with("auth-required:"))
                         {
-                            let id = output.id();
+                            reports.push(SendReport::new(pubkey).status(output).tags(&tags));
+                            continue;
+                        }
 
-                            // Wait for authenticated and resent event successfully
-                            for attempt in 0..=SEND_RETRY {
-                                // Check if event was successfully resent
-                                if let Some(resend_output) = css
-                                    .resent_ids
-                                    .read()
-                                    .await
-                                    .iter()
-                                    .find(|output| output.id() == id)
-                                    .cloned()
-                                {
-                                    reports.push(SendReport::output(receiver, resend_output));
-                                    break;
-                                }
+                        let id = output.id();
+                        let resent_ids = css.resent_ids.read().await;
 
-                                if attempt == SEND_RETRY {
-                                    reports.push(SendReport::output(receiver, output));
-                                    break;
-                                }
-
-                                smol::Timer::after(Duration::from_secs(1)).await;
+                        // Wait for authenticated and resent event successfully
+                        for attempt in 0..=SEND_RETRY {
+                            // Check if event was successfully resent
+                            if let Some(resend_output) =
+                                resent_ids.iter().find(|output| output.id() == id).cloned()
+                            {
+                                reports.push(
+                                    SendReport::new(pubkey).status(resend_output).tags(&tags),
+                                );
+                                break;
                             }
-                        } else {
-                            reports.push(SendReport::output(receiver, output));
+
+                            if attempt == SEND_RETRY {
+                                reports.push(SendReport::new(pubkey).status(output).tags(&tags));
+                                break;
+                            }
+
+                            smol::Timer::after(Duration::from_secs(1)).await;
                         }
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
-                            reports.push(SendReport::nip17_relays_not_found(receiver));
+                            reports.push(SendReport::new(pubkey).not_found().tags(&tags));
                         } else {
-                            reports.push(SendReport::error(receiver, e.to_string()));
+                            reports.push(SendReport::new(pubkey).error(e.to_string()).tags(&tags));
                         }
                     }
                 }
@@ -517,13 +521,14 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        reports.push(SendReport::output(public_key, output));
+                        reports.push(SendReport::new(public_key).status(output).tags(&tags));
                     }
                     Err(e) => {
                         if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
-                            reports.push(SendReport::nip17_relays_not_found(public_key));
+                            reports.push(SendReport::new(public_key).not_found());
                         } else {
-                            reports.push(SendReport::error(public_key, e.to_string()));
+                            reports
+                                .push(SendReport::new(public_key).error(e.to_string()).tags(&tags));
                         }
                     }
                 }
@@ -537,46 +542,53 @@ impl Room {
     pub fn resend(
         &self,
         reports: Vec<SendReport>,
-        message: &RenderedMessage,
+        message: String,
         backup: bool,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
-        let content = message.content.clone();
-        let tags = message.tags().to_owned();
-
         cx.background_spawn(async move {
             let client = nostr_client();
-            let mut send_reports = vec![];
+            let mut resend_reports = vec![];
+            let mut resend_tag = vec![];
 
-            for output in reports.into_iter().filter_map(|r| r.output) {
-                let id = output.id();
-                let urls = output.failed.keys().collect_vec();
+            for report in reports.into_iter() {
+                if let Some(output) = report.status {
+                    let id = output.id();
+                    let urls = output.failed.keys().collect_vec();
 
-                if let Some(event) = client.database().event_by_id(id).await? {
-                    for url in urls.into_iter() {
-                        let relay = client.pool().relay(url).await?;
-                        let id = relay.send_event(&event).await?;
-                        let output: Output<EventId> = Output {
-                            val: id,
-                            success: HashSet::from([url.to_owned()]),
-                            failed: HashMap::new(),
-                        };
+                    if let Some(event) = client.database().event_by_id(id).await? {
+                        for url in urls.into_iter() {
+                            let relay = client.pool().relay(url).await?;
+                            let id = relay.send_event(&event).await?;
+                            let resend_output: Output<EventId> = Output {
+                                val: id,
+                                success: HashSet::from([url.to_owned()]),
+                                failed: HashMap::new(),
+                            };
 
-                        send_reports.push(SendReport::output(event.pubkey, output));
+                            resend_reports
+                                .push(SendReport::new(report.receiver).status(resend_output));
+                        }
+
+                        if let Some(tags) = report.tags {
+                            resend_tag.extend(tags);
+                        }
                     }
                 }
             }
 
             // Only send a backup message to current user if sent successfully to others
-            if backup && !send_reports.is_empty() {
+            if backup && !resend_reports.is_empty() {
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let output = client.send_private_msg(public_key, content, tags).await?;
+                let output = client
+                    .send_private_msg(public_key, message, resend_tag)
+                    .await?;
 
-                send_reports.push(SendReport::output(public_key, output));
+                resend_reports.push(SendReport::new(public_key).status(output));
             }
 
-            Ok(send_reports)
+            Ok(resend_reports)
         })
     }
 }
