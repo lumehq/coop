@@ -715,8 +715,9 @@ impl Chat {
                     let reports = reports.clone();
 
                     window.open_modal(cx, move |this, _window, cx| {
-                        this.title(shared_t!("chat.reports")).child(
-                            v_flex().pb_4().gap_4().children({
+                        this.show_close(true)
+                            .title(shared_t!("chat.reports"))
+                            .child(v_flex().gap_4().pb_4().w_full().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
                                 for report in reports.iter() {
@@ -724,8 +725,7 @@ impl Chat {
                                 }
 
                                 items
-                            }),
-                        )
+                            }))
                     });
                 })
             })
@@ -739,6 +739,7 @@ impl Chat {
 
         v_flex()
             .gap_2()
+            .w_full()
             .child(
                 h_flex()
                     .gap_2()
@@ -792,34 +793,32 @@ impl Chat {
                 this.child(
                     v_flex()
                         .gap_2()
-                        .text_xs()
+                        .w_full()
                         .children({
                             let mut items = Vec::with_capacity(output.failed.len());
 
                             for (url, msg) in output.failed.into_iter() {
                                 items.push(
-                                    h_flex()
-                                        .gap_1()
-                                        .justify_between()
-                                        .text_sm()
+                                    v_flex()
+                                        .gap_0p5()
+                                        .py_1()
+                                        .px_2()
+                                        .w_full()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().danger_background)
+                                        .text_color(cx.theme().danger_foreground)
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().elevated_surface_background)
-                                                .rounded_sm()
-                                                .child(url.to_string()),
+                                                .text_xs()
+                                                .font_semibold()
+                                                .line_height(relative(1.25))
+                                                .child(SharedString::from(url.to_string())),
                                         )
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().danger_background)
-                                                .text_color(cx.theme().danger_foreground)
-                                                .rounded_sm()
-                                                .child(msg.to_string()),
+                                                .text_sm()
+                                                .line_height(relative(1.25))
+                                                .child(SharedString::from(msg.to_string())),
                                         ),
                                 )
                             }
@@ -831,27 +830,25 @@ impl Chat {
 
                             for url in output.success.into_iter() {
                                 items.push(
-                                    h_flex()
-                                        .gap_1()
-                                        .justify_between()
-                                        .text_sm()
+                                    v_flex()
+                                        .gap_0p5()
+                                        .py_1()
+                                        .px_2()
+                                        .w_full()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .text_color(cx.theme().text)
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().elevated_surface_background)
-                                                .rounded_sm()
-                                                .child(url.to_string()),
+                                                .text_xs()
+                                                .font_semibold()
+                                                .line_height(relative(1.25))
+                                                .child(SharedString::from(url.to_string())),
                                         )
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().secondary_background)
-                                                .text_color(cx.theme().secondary_foreground)
-                                                .rounded_sm()
+                                                .text_sm()
+                                                .line_height(relative(1.25))
                                                 .child(shared_t!("chat.sent_success")),
                                         ),
                                 )

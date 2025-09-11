@@ -422,6 +422,7 @@ impl Room {
         let mut public_keys = self.members.clone();
 
         cx.background_spawn(async move {
+            let css = css();
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
@@ -484,14 +485,20 @@ impl Room {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
                                 // Check if event was successfully resent
-                                if let Some(output) =
-                                    css().resent_ids.read().await.iter().find(|o| o.id() == id)
+                                if let Some(resend_output) = css
+                                    .resent_ids
+                                    .read()
+                                    .await
+                                    .iter()
+                                    .find(|output| output.id() == id)
+                                    .cloned()
                                 {
-                                    reports.push(SendReport::output(receiver, output.to_owned()));
+                                    reports.push(SendReport::output(receiver, resend_output));
                                     break;
                                 }
 
                                 if attempt == SEND_RETRY {
+                                    reports.push(SendReport::output(receiver, output));
                                     break;
                                 }
 
