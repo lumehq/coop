@@ -309,29 +309,32 @@ impl Chat {
 
     fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(reports) = self.reports_by_id.get(id).cloned() {
-            let id_clone = id.to_owned();
-            let task = self.room.read(cx).resend(reports, cx);
+            if let Some(message) = self.message(id) {
+                let backup = AppSettings::get_backup_messages(cx);
+                let id_clone = id.to_owned();
+                let task = self.room.read(cx).resend(reports, message, backup, cx);
 
-            cx.spawn_in(window, async move |this, cx| {
-                match task.await {
-                    Ok(reports) => {
-                        this.update(cx, |this, cx| {
-                            this.reports_by_id.entry(id_clone).and_modify(|this| {
-                                *this = reports;
-                            });
-                            cx.notify();
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|window, cx| {
-                            window.push_notification(e.to_string(), cx);
-                        })
-                        .ok();
-                    }
-                };
-            })
-            .detach();
+                cx.spawn_in(window, async move |this, cx| {
+                    match task.await {
+                        Ok(reports) => {
+                            this.update(cx, |this, cx| {
+                                this.reports_by_id.entry(id_clone).and_modify(|this| {
+                                    *this = reports;
+                                });
+                                cx.notify();
+                            })
+                            .ok();
+                        }
+                        Err(e) => {
+                            cx.update(|window, cx| {
+                                window.push_notification(e.to_string(), cx);
+                            })
+                            .ok();
+                        }
+                    };
+                })
+                .detach();
+            }
         }
     }
 

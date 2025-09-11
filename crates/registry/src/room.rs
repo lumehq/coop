@@ -12,6 +12,7 @@ use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
+use crate::message::RenderedMessage;
 use crate::Registry;
 
 #[derive(Debug, Clone)]
@@ -536,8 +537,13 @@ impl Room {
     pub fn resend(
         &self,
         reports: Vec<SendReport>,
+        message: &RenderedMessage,
+        backup: bool,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
+        let content = message.content.clone();
+        let tags = message.tags().to_owned();
+
         cx.background_spawn(async move {
             let client = nostr_client();
             let mut send_reports = vec![];
@@ -561,18 +567,13 @@ impl Room {
                 }
             }
 
-            if let Some(report) = send_reports.first() {
+            // Only send a backup message to current user if sent successfully to others
+            if backup && !send_reports.is_empty() {
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
-                let id = report.output.clone().unwrap().val;
+                let output = client.send_private_msg(public_key, content, tags).await?;
 
-                if let Some(event) = client.database().event_by_id(&id).await? {
-                    let output = client
-                        .send_private_msg(public_key, event.content, event.tags)
-                        .await?;
-
-                    send_reports.push(SendReport::output(public_key, output));
-                }
+                send_reports.push(SendReport::output(public_key, output));
             }
 
             Ok(send_reports)
