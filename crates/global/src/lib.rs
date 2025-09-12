@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicBool;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -13,10 +14,16 @@ use crate::paths::support_dir;
 pub mod constants;
 pub mod paths;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
-    pub challenge: String,
     pub url: RelayUrl,
+    pub challenge: String,
+}
+
+impl Hash for AuthRequest {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.url.hash(state);
+    }
 }
 
 impl AuthRequest {

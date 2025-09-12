@@ -725,15 +725,17 @@ impl Chat {
     }
 
     fn render_message_sent(&self, id: &EventId, _cx: &Context<Self>) -> impl IntoElement {
-        div().id("").child(shared_t!("chat.sent")).when_some(
-            self.sent_reports(id).cloned(),
-            |this, reports| {
+        div()
+            .id(SharedString::from(id.to_hex()))
+            .child(shared_t!("chat.sent"))
+            .when_some(self.sent_reports(id).cloned(), |this, reports| {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
                     window.open_modal(cx, move |this, _window, cx| {
-                        this.title(shared_t!("chat.reports")).child(
-                            v_flex().pb_4().gap_4().children({
+                        this.show_close(true)
+                            .title(shared_t!("chat.reports"))
+                            .child(v_flex().pb_4().gap_4().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
                                 for report in reports.iter() {
@@ -741,17 +743,15 @@ impl Chat {
                                 }
 
                                 items
-                            }),
-                        )
+                            }))
                     });
                 })
-            },
-        )
+            })
     }
 
     fn render_message_reports(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         h_flex()
-            .id("")
+            .id(SharedString::from(id.to_hex()))
             .gap_0p5()
             .text_color(cx.theme().danger_foreground)
             .text_xs()
@@ -966,7 +966,7 @@ impl Chat {
         let path: SharedString = url.to_string().into();
 
         div()
-            .id("")
+            .id(SharedString::from(url.to_string()))
             .relative()
             .w_16()
             .child(

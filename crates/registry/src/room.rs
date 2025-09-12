@@ -424,7 +424,7 @@ impl Room {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
-            let mut tags = public_keys
+            let mut tags: Vec<Tag> = public_keys
                 .iter()
                 .filter_map(|&this| {
                     if this != public_key {
@@ -433,7 +433,7 @@ impl Room {
                         None
                     }
                 })
-                .collect_vec();
+                .collect();
 
             // Add event reference if it's present (replying to another event)
             if replies.len() == 1 {
@@ -472,36 +472,32 @@ impl Room {
                     .await
                 {
                     Ok(output) => {
-                        if output
-                            .failed
-                            .iter()
-                            .any(|(_, msg)| msg.starts_with("auth-required:"))
-                        {
-                            reports.push(SendReport::new(pubkey).status(output).tags(&tags));
-                            continue;
-                        }
+                        let id = output.id().to_owned();
+                        let auth_required = output.failed.iter().any(|m| m.1.starts_with("auth-"));
+                        let report = SendReport::new(pubkey).status(output).tags(&tags);
 
-                        let id = output.id();
-                        let resent_ids = css.resent_ids.read().await;
+                        if auth_required {
+                            // Get all resent event ids
+                            let ids = css.resent_ids.read().await;
 
-                        // Wait for authenticated and resent event successfully
-                        for attempt in 0..=SEND_RETRY {
-                            // Check if event was successfully resent
-                            if let Some(resend_output) =
-                                resent_ids.iter().find(|output| output.id() == id).cloned()
-                            {
-                                reports.push(
-                                    SendReport::new(pubkey).status(resend_output).tags(&tags),
-                                );
-                                break;
+                            // Wait for authenticated and resent event successfully
+                            for attempt in 0..=SEND_RETRY {
+                                // Check if event was successfully resent
+                                if let Some(output) = ids.iter().find(|e| e.id() == &id).cloned() {
+                                    let output = SendReport::new(pubkey).status(output).tags(&tags);
+                                    reports.push(output);
+                                    break;
+                                }
+
+                                if attempt == SEND_RETRY {
+                                    reports.push(report);
+                                    break;
+                                }
+
+                                smol::Timer::after(Duration::from_secs(1)).await;
                             }
-
-                            if attempt == SEND_RETRY {
-                                reports.push(SendReport::new(pubkey).status(output).tags(&tags));
-                                break;
-                            }
-
-                            smol::Timer::after(Duration::from_secs(1)).await;
+                        } else {
+                            reports.push(report);
                         }
                     }
                     Err(e) => {
@@ -554,20 +550,19 @@ impl Room {
             for report in reports.into_iter() {
                 if let Some(output) = report.status {
                     let id = output.id();
-                    let urls = output.failed.keys().collect_vec();
+                    let urls: Vec<&RelayUrl> = output.failed.keys().collect();
 
                     if let Some(event) = client.database().event_by_id(id).await? {
                         for url in urls.into_iter() {
                             let relay = client.pool().relay(url).await?;
                             let id = relay.send_event(&event).await?;
-                            let resend_output: Output<EventId> = Output {
+                            let resent: Output<EventId> = Output {
                                 val: id,
                                 success: HashSet::from([url.to_owned()]),
                                 failed: HashMap::new(),
                             };
 
-                            resend_reports
-                                .push(SendReport::new(report.receiver).status(resend_output));
+                            resend_reports.push(SendReport::new(report.receiver).status(resent));
                         }
 
                         if let Some(tags) = report.tags {
