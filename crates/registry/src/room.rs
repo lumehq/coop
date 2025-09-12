@@ -345,19 +345,21 @@ impl Room {
 
         cx.background_spawn(async move {
             let client = nostr_client();
+            let public_key = members[members.len() - 1];
 
-            let filter = Filter::new()
+            let sent = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
-                .authors(members.clone())
+                .author(public_key)
                 .pubkeys(members.clone());
 
-            let events: Vec<Event> = client
-                .database()
-                .query(filter)
-                .await?
-                .into_iter()
-                .filter(|ev| ev.compare_pubkeys(&members))
-                .collect();
+            let recv = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .authors(members)
+                .pubkey(public_key);
+
+            let sent_events = client.database().query(sent).await?;
+            let recv_events = client.database().query(recv).await?;
+            let events: Vec<Event> = sent_events.merge(recv_events).into_iter().collect();
 
             Ok(events)
         })
