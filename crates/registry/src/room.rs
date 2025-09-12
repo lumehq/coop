@@ -20,7 +20,7 @@ pub struct SendReport {
     pub tags: Option<Vec<Tag>>,
     pub status: Option<Output<EventId>>,
     pub error: Option<SharedString>,
-    pub nip17_relays_not_found: bool,
+    pub relays_not_found: bool,
 }
 
 impl SendReport {
@@ -30,24 +30,24 @@ impl SendReport {
             status: None,
             error: None,
             tags: None,
-            nip17_relays_not_found: false,
+            relays_not_found: false,
         }
     }
 
     pub fn not_found(mut self) -> Self {
-        self.nip17_relays_not_found = true;
+        self.relays_not_found = true;
         self
     }
 
     pub fn error(mut self, error: impl Into<SharedString>) -> Self {
         self.error = Some(error.into());
-        self.nip17_relays_not_found = false;
+        self.relays_not_found = false;
         self
     }
 
     pub fn status(mut self, output: Output<EventId>) -> Self {
         self.status = Some(output);
-        self.nip17_relays_not_found = false;
+        self.relays_not_found = false;
         self
     }
 
@@ -57,7 +57,7 @@ impl SendReport {
     }
 
     pub fn is_relay_error(&self) -> bool {
-        self.error.is_some() || self.nip17_relays_not_found
+        self.error.is_some() || self.relays_not_found
     }
 
     pub fn is_sent_success(&self) -> bool {

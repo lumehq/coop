@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicBool;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -18,18 +17,14 @@ pub mod paths;
 pub struct AuthRequest {
     pub url: RelayUrl,
     pub challenge: String,
-}
-
-impl Hash for AuthRequest {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.url.hash(state);
-    }
+    pub sending: bool,
 }
 
 impl AuthRequest {
     pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
         Self {
             challenge: challenge.into(),
+            sending: false,
             url,
         }
     }

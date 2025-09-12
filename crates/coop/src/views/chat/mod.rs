@@ -801,7 +801,7 @@ impl Chat {
                             .child(name.clone()),
                     ),
             )
-            .when(report.nip17_relays_not_found, |this| {
+            .when(report.relays_not_found, |this| {
                 this.child(
                     h_flex()
                         .flex_wrap()
