@@ -732,10 +732,8 @@ impl ChatSpace {
             match event.created_at >= css.init_at {
                 // New message: send a signal to notify the UI
                 true => {
-                    // Prevent notification if the event was sent by Coop
-                    if !css.sent_ids.read().await.contains(&target.id) {
-                        ingester.send(Signal::Message((target.id, event))).await;
-                    }
+                    smol::Timer::after(Duration::from_millis(200)).await;
+                    ingester.send(Signal::Message((target.id, event))).await;
                 }
                 // Old message: Coop is probably processing the user's messages during initial load
                 false => {

@@ -853,8 +853,7 @@ impl Chat {
                                         .px_2()
                                         .w_full()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().danger_background)
-                                        .text_color(cx.theme().danger_foreground)
+                                        .bg(cx.theme().elevated_surface_background)
                                         .child(
                                             div()
                                                 .text_xs()
@@ -865,6 +864,7 @@ impl Chat {
                                         .child(
                                             div()
                                                 .text_sm()
+                                                .text_color(cx.theme().danger_foreground)
                                                 .line_height(relative(1.25))
                                                 .child(SharedString::from(msg.to_string())),
                                         ),
@@ -884,8 +884,7 @@ impl Chat {
                                         .px_2()
                                         .w_full()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().secondary_background)
-                                        .text_color(cx.theme().secondary_foreground)
+                                        .bg(cx.theme().elevated_surface_background)
                                         .child(
                                             div()
                                                 .text_xs()
@@ -896,6 +895,7 @@ impl Chat {
                                         .child(
                                             div()
                                                 .text_sm()
+                                                .text_color(cx.theme().secondary_foreground)
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("chat.sent_success")),
                                         ),

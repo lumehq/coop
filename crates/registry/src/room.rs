@@ -479,24 +479,29 @@ impl Room {
                         let report = SendReport::new(pubkey).status(output).tags(&tags);
 
                         if auth_required {
-                            // Get all resent event ids
-                            let ids = css.resent_ids.read().await;
-
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
                                 // Check if event was successfully resent
-                                if let Some(output) = ids.iter().find(|e| e.id() == &id).cloned() {
+                                if let Some(output) = css
+                                    .resent_ids
+                                    .read()
+                                    .await
+                                    .iter()
+                                    .find(|e| e.id() == &id)
+                                    .cloned()
+                                {
                                     let output = SendReport::new(pubkey).status(output).tags(&tags);
                                     reports.push(output);
                                     break;
                                 }
 
+                                // Check if retry limit exceeded
                                 if attempt == SEND_RETRY {
                                     reports.push(report);
                                     break;
                                 }
 
-                                smol::Timer::after(Duration::from_secs(1)).await;
+                                smol::Timer::after(Duration::from_millis(1200)).await;
                             }
                         } else {
                             reports.push(report);
