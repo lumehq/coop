@@ -24,7 +24,7 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
+use ui::button::{Button, ButtonRounded, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
@@ -305,6 +305,38 @@ impl Chat {
             }
         })
         .detach();
+    }
+
+    fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(reports) = self.reports_by_id.get(id).cloned() {
+            if let Some(message) = self.message(id) {
+                let backup = AppSettings::get_backup_messages(cx);
+                let id_clone = id.to_owned();
+                let message = message.content.to_owned();
+                let task = self.room.read(cx).resend(reports, message, backup, cx);
+
+                cx.spawn_in(window, async move |this, cx| {
+                    match task.await {
+                        Ok(reports) => {
+                            this.update(cx, |this, cx| {
+                                this.reports_by_id.entry(id_clone).and_modify(|this| {
+                                    *this = reports;
+                                });
+                                cx.notify();
+                            })
+                            .ok();
+                        }
+                        Err(e) => {
+                            cx.update(|window, cx| {
+                                window.push_notification(e.to_string(), cx);
+                            })
+                            .ok();
+                        }
+                    };
+                })
+                .detach();
+            }
+        }
     }
 
     /// Check if a message failed to send by its ID
@@ -609,7 +641,23 @@ impl Chat {
                             })
                             .child(text)
                             .when(is_sent_failed, |this| {
-                                this.child(self.render_message_reports(&id, cx))
+                                this.child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(self.render_message_reports(&id, cx))
+                                        .child(
+                                            Button::new(SharedString::from(id.to_hex()))
+                                                .label(t!("common.resend"))
+                                                .danger()
+                                                .xsmall()
+                                                .rounded(ButtonRounded::Full)
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.resend_message(&id, window, cx);
+                                                    },
+                                                )),
+                                        ),
+                                )
                             }),
                     ),
             )
@@ -677,15 +725,17 @@ impl Chat {
     }
 
     fn render_message_sent(&self, id: &EventId, _cx: &Context<Self>) -> impl IntoElement {
-        div().id("").child(shared_t!("chat.sent")).when_some(
-            self.sent_reports(id).cloned(),
-            |this, reports| {
+        div()
+            .id(SharedString::from(id.to_hex()))
+            .child(shared_t!("chat.sent"))
+            .when_some(self.sent_reports(id).cloned(), |this, reports| {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
                     window.open_modal(cx, move |this, _window, cx| {
-                        this.title(shared_t!("chat.reports")).child(
-                            v_flex().pb_4().gap_4().children({
+                        this.show_close(true)
+                            .title(shared_t!("chat.reports"))
+                            .child(v_flex().pb_4().gap_4().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
                                 for report in reports.iter() {
@@ -693,30 +743,29 @@ impl Chat {
                                 }
 
                                 items
-                            }),
-                        )
+                            }))
                     });
                 })
-            },
-        )
+            })
     }
 
     fn render_message_reports(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         h_flex()
-            .id("")
-            .gap_1()
+            .id(SharedString::from(id.to_hex()))
+            .gap_0p5()
             .text_color(cx.theme().danger_foreground)
             .text_xs()
             .italic()
-            .child(Icon::new(IconName::Info).small())
+            .child(Icon::new(IconName::Info).xsmall())
             .child(shared_t!("chat.sent_failed"))
             .when_some(self.sent_reports(id).cloned(), |this, reports| {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
                     window.open_modal(cx, move |this, _window, cx| {
-                        this.title(shared_t!("chat.reports")).child(
-                            v_flex().pb_4().gap_4().children({
+                        this.show_close(true)
+                            .title(shared_t!("chat.reports"))
+                            .child(v_flex().gap_4().pb_4().w_full().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
                                 for report in reports.iter() {
@@ -724,8 +773,7 @@ impl Chat {
                                 }
 
                                 items
-                            }),
-                        )
+                            }))
                     });
                 })
             })
@@ -739,6 +787,7 @@ impl Chat {
 
         v_flex()
             .gap_2()
+            .w_full()
             .child(
                 h_flex()
                     .gap_2()
@@ -752,7 +801,7 @@ impl Chat {
                             .child(name.clone()),
                     ),
             )
-            .when(report.nip17_relays_not_found, |this| {
+            .when(report.relays_not_found, |this| {
                 this.child(
                     h_flex()
                         .flex_wrap()
@@ -773,7 +822,7 @@ impl Chat {
                         ),
                 )
             })
-            .when_some(report.local_error.clone(), |this, error| {
+            .when_some(report.error.clone(), |this, error| {
                 this.child(
                     h_flex()
                         .flex_wrap()
@@ -788,38 +837,36 @@ impl Chat {
                         .child(div().flex_1().w_full().text_center().child(error)),
                 )
             })
-            .when_some(report.output.clone(), |this, output| {
+            .when_some(report.status.clone(), |this, output| {
                 this.child(
                     v_flex()
                         .gap_2()
-                        .text_xs()
+                        .w_full()
                         .children({
                             let mut items = Vec::with_capacity(output.failed.len());
 
                             for (url, msg) in output.failed.into_iter() {
                                 items.push(
-                                    h_flex()
-                                        .gap_1()
-                                        .justify_between()
-                                        .text_sm()
+                                    v_flex()
+                                        .gap_0p5()
+                                        .py_1()
+                                        .px_2()
+                                        .w_full()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().elevated_surface_background)
-                                                .rounded_sm()
-                                                .child(url.to_string()),
+                                                .text_xs()
+                                                .font_semibold()
+                                                .line_height(relative(1.25))
+                                                .child(SharedString::from(url.to_string())),
                                         )
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().danger_background)
+                                                .text_sm()
                                                 .text_color(cx.theme().danger_foreground)
-                                                .rounded_sm()
-                                                .child(msg.to_string()),
+                                                .line_height(relative(1.25))
+                                                .child(SharedString::from(msg.to_string())),
                                         ),
                                 )
                             }
@@ -831,27 +878,25 @@ impl Chat {
 
                             for url in output.success.into_iter() {
                                 items.push(
-                                    h_flex()
-                                        .gap_1()
-                                        .justify_between()
-                                        .text_sm()
+                                    v_flex()
+                                        .gap_0p5()
+                                        .py_1()
+                                        .px_2()
+                                        .w_full()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().elevated_surface_background)
-                                                .rounded_sm()
-                                                .child(url.to_string()),
+                                                .text_xs()
+                                                .font_semibold()
+                                                .line_height(relative(1.25))
+                                                .child(SharedString::from(url.to_string())),
                                         )
                                         .child(
                                             div()
-                                                .flex_1()
-                                                .py_0p5()
-                                                .px_2()
-                                                .bg(cx.theme().secondary_background)
+                                                .text_sm()
                                                 .text_color(cx.theme().secondary_foreground)
-                                                .rounded_sm()
+                                                .line_height(relative(1.25))
                                                 .child(shared_t!("chat.sent_success")),
                                         ),
                                 )
@@ -921,7 +966,7 @@ impl Chat {
         let path: SharedString = url.to_string().into();
 
         div()
-            .id("")
+            .id(SharedString::from(url.to_string()))
             .relative()
             .w_16()
             .child(

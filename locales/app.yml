@@ -49,6 +49,8 @@ common:
     en: "Relay URL is not valid."
   recommended:
     en: "Recommended:"
+  resend:
+    en: "Resend"
 
 auto_update:
   updating:

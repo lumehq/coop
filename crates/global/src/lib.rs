@@ -13,16 +13,18 @@ use crate::paths::support_dir;
 pub mod constants;
 pub mod paths;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
-    pub challenge: String,
     pub url: RelayUrl,
+    pub challenge: String,
+    pub sending: bool,
 }
 
 impl AuthRequest {
     pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
         Self {
             challenge: challenge.into(),
+            sending: false,
             url,
         }
     }

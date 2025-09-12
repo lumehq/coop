@@ -37,7 +37,7 @@ pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 pub const RELAY_RETRY: u64 = 2;
 
 /// Default retry count for sending messages
-pub const SEND_RETRY: u64 = 5;
+pub const SEND_RETRY: u64 = 10;
 
 /// Default timeout (in seconds) for Nostr Connect
 pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;

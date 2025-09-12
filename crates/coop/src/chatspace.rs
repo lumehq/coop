@@ -64,18 +64,22 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
 }
 
 pub struct ChatSpace {
-    // Workspace
+    // App's Title Bar
     title_bar: Entity<TitleBar>,
+
+    // App's Dock Area
     dock: Entity<DockArea>,
 
-    // Temporarily store all authentication requests
-    auth_requests: HashMap<AuthRequest, bool>,
+    // All authentication requests
+    auth_requests: HashMap<RelayUrl, AuthRequest>,
 
     // Local state to determine if the user has set up NIP-17 relays
-    has_nip17_relays: bool,
+    nip17_relays: bool,
 
-    // System
+    // All subscriptions for observing the app state
     _subscriptions: SmallVec<[Subscription; 3]>,
+
+    // All long running tasks
     _tasks: SmallVec<[Task<()>; 5]>,
 }
 
@@ -182,7 +186,7 @@ impl ChatSpace {
             dock,
             title_bar,
             auth_requests: HashMap::new(),
-            has_nip17_relays: true,
+            nip17_relays: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -573,7 +577,7 @@ impl ChatSpace {
                     }
                     Signal::DmRelayNotFound => {
                         view.update(cx, |this, cx| {
-                            this.set_no_nip17_relays(cx);
+                            this.set_required_relays(cx);
                         })
                         .ok();
                     }
@@ -728,10 +732,8 @@ impl ChatSpace {
             match event.created_at >= css.init_at {
                 // New message: send a signal to notify the UI
                 true => {
-                    // Prevent notification if the event was sent by Coop
-                    if !css.sent_ids.read().await.contains(&target.id) {
-                        ingester.send(Signal::Message((target.id, event))).await;
-                    }
+                    smol::Timer::after(Duration::from_millis(200)).await;
+                    ingester.send(Signal::Message((target.id, event))).await;
                 }
                 // Old message: Coop is probably processing the user's messages during initial load
                 false => {
@@ -942,20 +944,20 @@ impl ChatSpace {
     }
 
     fn reopen_auth_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for req in self.auth_requests.clone().into_iter() {
-            self.open_auth_request(req.0, window, cx);
+        for (_, request) in self.auth_requests.clone().into_iter() {
+            self.open_auth_request(request, window, cx);
         }
     }
 
     fn push_auth_request(&mut self, req: &AuthRequest, cx: &mut Context<Self>) {
-        self.auth_requests.insert(req.to_owned(), false);
+        self.auth_requests.insert(req.url.clone(), req.to_owned());
         cx.notify();
     }
 
     fn sending_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        for (req, status) in self.auth_requests.iter_mut() {
+        for (_, req) in self.auth_requests.iter_mut() {
             if req.challenge == challenge {
-                *status = true;
+                req.sending = true;
                 cx.notify();
             }
         }
@@ -965,16 +967,16 @@ impl ChatSpace {
         if let Some(req) = self
             .auth_requests
             .iter()
-            .find(|(req, _)| req.challenge == challenge)
+            .find(|(_, req)| req.challenge == challenge)
         {
-            req.1.to_owned()
+            req.1.sending
         } else {
             false
         }
     }
 
     fn remove_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        self.auth_requests.retain(|r, _| r.challenge != challenge);
+        self.auth_requests.retain(|_, r| r.challenge != challenge);
         cx.notify();
     }
 
@@ -1026,8 +1028,8 @@ impl ChatSpace {
         });
     }
 
-    fn set_no_nip17_relays(&mut self, cx: &mut Context<Self>) {
-        self.has_nip17_relays = false;
+    fn set_required_relays(&mut self, cx: &mut Context<Self>) {
+        self.nip17_relays = false;
         cx.notify();
     }
 
@@ -1054,19 +1056,13 @@ impl ChatSpace {
 
         cx.spawn_in(window, async move |this, cx| {
             if let Ok((secret, profile)) = task.await {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_account_layout(secret, profile, window, cx);
-                    })
-                    .ok();
+                this.update_in(cx, |this, window, cx| {
+                    this.set_account_layout(secret, profile, window, cx);
                 })
                 .ok();
             } else {
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_onboarding_layout(window, cx);
-                    })
-                    .ok();
+                this.update_in(cx, |this, window, cx| {
+                    this.set_onboarding_layout(window, cx);
                 })
                 .ok();
             }
@@ -1283,7 +1279,6 @@ impl ChatSpace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let is_auto_auth = AppSettings::read_global(cx).is_auto_auth();
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
         let auth_requests = self.auth_requests.len();
@@ -1322,7 +1317,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(auth_requests > 0 && !is_auto_auth, |this| {
+            .when(auth_requests > 0, |this| {
                 this.child(
                     h_flex()
                         .id("requests")
@@ -1342,7 +1337,7 @@ impl ChatSpace {
                         })),
                 )
             })
-            .when(!self.has_nip17_relays, |this| {
+            .when(!self.nip17_relays, |this| {
                 this.child(setup_nip17_relay(t!("relays.button")))
             })
             .child(
