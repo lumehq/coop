@@ -246,7 +246,7 @@ impl ChatSpace {
                 Ok(mut stream) => {
                     let mut processed_ids = HashSet::new();
 
-                    while let Some(event) = stream.next().await {
+                    if let Some(event) = stream.next().await {
                         if processed_ids.insert(event.id) {
                             // Fetch user's metadata event
                             Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
@@ -259,6 +259,8 @@ impl ChatSpace {
 
                             break;
                         }
+                    } else {
+                        ingester.send(Signal::DmRelayNotFound).await;
                     }
                 }
                 Err(e) => {
@@ -580,7 +582,7 @@ impl ChatSpace {
             Ok(mut stream) => {
                 let mut processed_ids = HashSet::new();
 
-                while let Some(event) = stream.next().await {
+                if let Some(event) = stream.next().await {
                     if processed_ids.insert(event.id) {
                         let relays = nip17::extract_relay_list(&event).collect_vec();
 
@@ -599,9 +601,9 @@ impl ChatSpace {
                             // Subscribe to gift wrap events only in the current user's NIP-17 relays
                             Self::fetch_gift_wrap(relays, event.pubkey).await;
                         }
-
-                        break;
                     }
+                } else {
+                    ingester.send(Signal::DmRelayNotFound).await;
                 }
             }
             Err(e) => {
