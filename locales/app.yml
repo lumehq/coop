@@ -51,6 +51,8 @@ common:
     en: "Recommended:"
   resend:
     en: "Resend"
+  seen_on:
+    en: "Seen on"
 
 auto_update:
   updating:

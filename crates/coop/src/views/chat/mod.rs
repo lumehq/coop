@@ -29,7 +29,7 @@ use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
-use ui::popup_menu::PopupMenu;
+use ui::popup_menu::{PopupMenu, PopupMenuExt};
 use ui::text::RenderedText;
 use ui::{
     h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
@@ -40,7 +40,7 @@ mod subject;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
-pub struct ChangeSubject(pub String);
+pub struct SeenOn(pub EventId);
 
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
     cx.new(|cx| Chat::new(room, window, cx))
@@ -920,30 +920,44 @@ impl Chat {
     }
 
     fn render_actions(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
-        let groups = vec![
-            Button::new("reply")
-                .icon(IconName::Reply)
-                .tooltip(t!("chat.reply_button"))
-                .small()
-                .ghost()
-                .on_click({
-                    let id = id.to_owned();
-                    cx.listener(move |this, _event, _window, cx| {
-                        this.reply_to(&id, cx);
-                    })
-                }),
-            Button::new("copy")
-                .icon(IconName::Copy)
-                .tooltip(t!("chat.copy_message_button"))
-                .small()
-                .ghost()
-                .on_click({
-                    let id = id.to_owned();
-                    cx.listener(move |this, _event, _window, cx| {
-                        this.copy_message(&id, cx);
-                    })
-                }),
-        ];
+        let reply = Button::new("reply")
+            .icon(IconName::Reply)
+            .tooltip(t!("chat.reply_button"))
+            .small()
+            .ghost()
+            .on_click({
+                let id = id.to_owned();
+                cx.listener(move |this, _event, _window, cx| {
+                    this.reply_to(&id, cx);
+                })
+            })
+            .into_any_element();
+
+        let copy = Button::new("copy")
+            .icon(IconName::Copy)
+            .tooltip(t!("chat.copy_message_button"))
+            .small()
+            .ghost()
+            .on_click({
+                let id = id.to_owned();
+                cx.listener(move |this, _event, _window, cx| {
+                    this.copy_message(&id, cx);
+                })
+            })
+            .into_any_element();
+
+        let more = Button::new("seen-on")
+            .icon(IconName::Ellipsis)
+            .small()
+            .ghost()
+            .popup_menu({
+                let id = id.to_owned();
+                move |this, _window, _cx| {
+                    // TODO: add more actions
+                    this.menu(t!("common.seen_on"), Box::new(SeenOn(id)))
+                }
+            })
+            .into_any_element();
 
         h_flex()
             .p_0p5()
@@ -957,7 +971,7 @@ impl Chat {
             .border_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
-            .children(groups)
+            .children(vec![reply, copy, more])
             .group_hover("", |this| this.visible())
     }
 
@@ -1133,6 +1147,62 @@ impl Chat {
                 .ok();
             })
     }
+
+    fn on_open_seen_on(&mut self, ev: &SeenOn, window: &mut Window, cx: &mut Context<Self>) {
+        let id = ev.0;
+
+        let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let css = css();
+            let mut relays: Vec<RelayUrl> = vec![];
+
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .event(id)
+                .limit(1);
+
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                if let Some(Ok(id)) = event.tags.identifier().map(EventId::parse) {
+                    if let Some(urls) = css.seen_on_relays.read().await.get(&id).cloned() {
+                        relays.extend(urls);
+                    }
+                }
+            }
+
+            Ok(relays)
+        });
+
+        cx.spawn_in(window, async move |_, cx| {
+            if let Ok(urls) = task.await {
+                cx.update(|window, cx| {
+                    window.open_modal(cx, move |this, _window, cx| {
+                        this.title(shared_t!("common.seen_on")).child(
+                            v_flex().pb_4().gap_2().children({
+                                let mut items = Vec::with_capacity(urls.len());
+
+                                for url in urls.clone().into_iter() {
+                                    items.push(
+                                        h_flex()
+                                            .h_8()
+                                            .px_2()
+                                            .bg(cx.theme().elevated_surface_background)
+                                            .rounded(cx.theme().radius)
+                                            .font_semibold()
+                                            .text_xs()
+                                            .child(url.to_string()),
+                                    )
+                                }
+
+                                items
+                            }),
+                        )
+                    });
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
 }
 
 impl Panel for Chat {
@@ -1179,6 +1249,7 @@ impl Focusable for Chat {
 impl Render for Chat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .on_action(cx.listener(Self::on_open_seen_on))
             .image_cache(self.image_cache.clone())
             .size_full()
             .child(
