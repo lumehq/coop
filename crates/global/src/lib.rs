@@ -166,7 +166,7 @@ pub fn nostr_client() -> &'static Client {
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
         let opts = ClientOptions::new()
-            .gossip(true)
+            .gossip(false)
             .automatic_authentication(false)
             .verify_subscriptions(false)
             .sleep_when_idle(SleepWhenIdle::Enabled {

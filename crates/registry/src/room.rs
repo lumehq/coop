@@ -331,15 +331,71 @@ impl Room {
         }
     }
 
+    /// Connect to all room's members messaging relays
+    pub fn connect_relays(
+        &self,
+        cx: &App,
+    ) -> Task<Result<HashMap<PublicKey, HashSet<RelayUrl>>, Error>> {
+        let members = self.members.clone();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let mut processed = HashSet::new();
+            let mut relays = HashMap::new();
+
+            for member in members.into_iter() {
+                let filter = Filter::new().kind(Kind::RelayList).author(member).limit(1);
+
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                    let nip65: Vec<RelayUrl> = nip65::extract_owned_relay_list(event)
+                        .take(3)
+                        .filter_map(|(url, metadata)| {
+                            if metadata.is_none() || metadata == Some(RelayMetadata::Read) {
+                                Some(url)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    for url in nip65.iter() {
+                        client.add_relay(url).await?;
+                        client.connect_relay(url).await?;
+                    }
+
+                    let filter = Filter::new()
+                        .kind(Kind::InboxRelays)
+                        .author(member)
+                        .limit(1);
+
+                    let mut stream = client
+                        .stream_events_from(nip65, filter, Duration::from_secs(3))
+                        .await?;
+
+                    if let Some(event) = stream.next().await {
+                        if processed.insert(event.id) {
+                            let nip17: HashSet<RelayUrl> =
+                                nip17::extract_owned_relay_list(event).collect();
+
+                            for url in nip17.iter() {
+                                client.add_relay(url).await?;
+                                client.connect_relay(url).await?;
+                            }
+
+                            relays
+                                .entry(member)
+                                .or_insert_with(HashSet::new)
+                                .extend(nip17);
+                        }
+                    }
+                }
+            }
+
+            Ok(relays)
+        })
+    }
+
     /// Loads all messages for this room from the database
-    ///
-    /// # Arguments
-    ///
-    /// * `cx` - The App context
-    ///
-    /// # Returns
-    ///
-    /// A Task that resolves to Result<Vec<Event>, Error> containing all messages for this room
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
         let members = self.members.clone();
 

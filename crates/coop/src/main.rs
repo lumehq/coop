@@ -15,6 +15,7 @@ use crate::actions::{load_embedded_fonts, quit, Quit};
 
 pub(crate) mod actions;
 pub(crate) mod chatspace;
+pub(crate) mod errors;
 pub(crate) mod views;
 
 i18n::init!();
