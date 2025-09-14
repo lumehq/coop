@@ -340,10 +340,31 @@ impl Room {
 
         cx.background_spawn(async move {
             let client = nostr_client();
-            let mut processed = HashSet::new();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let mut processed: HashSet<EventId> = HashSet::new();
             let mut relays = HashMap::new();
 
             for member in members.into_iter() {
+                if member == public_key {
+                    let filter = Filter::new()
+                        .kind(Kind::InboxRelays)
+                        .author(member)
+                        .limit(1);
+
+                    if let Some(event) = client.database().query(filter).await?.first_owned() {
+                        let nip17 = nip17::extract_owned_relay_list(event).collect_vec();
+                        log::info!("User's Messaging Relays: {nip17:?}");
+                        relays
+                            .entry(member)
+                            .or_insert_with(HashSet::new)
+                            .extend(nip17);
+
+                        continue;
+                    }
+                }
+
                 let filter = Filter::new().kind(Kind::RelayList).author(member).limit(1);
 
                 if let Some(event) = client.database().query(filter).await?.first_owned() {
@@ -374,9 +395,8 @@ impl Room {
 
                     if let Some(event) = stream.next().await {
                         if processed.insert(event.id) {
-                            let nip17: HashSet<RelayUrl> =
-                                nip17::extract_owned_relay_list(event).collect();
-
+                            let nip17 = nip17::extract_owned_relay_list(event).collect_vec();
+                            log::info!("Member's Messaging Relays: {nip17:?}");
                             for url in nip17.iter() {
                                 client.add_relay(url).await?;
                                 client.connect_relay(url).await?;

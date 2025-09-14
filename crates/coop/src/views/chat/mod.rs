@@ -127,7 +127,6 @@ impl Chat {
                 match connect_relays.await {
                     Ok(relays) => {
                         this.update(cx, |this, cx| {
-                            log::info!("connected relays: {relays:?}");
                             this.relays.update(cx, |this, cx| {
                                 *this = relays;
                                 cx.notify();
@@ -220,7 +219,9 @@ impl Chat {
             let client = nostr_client();
 
             for url in urls.into_iter() {
-                client.disconnect_relay(url).await.ok();
+                client.remove_relay(&url).await.ok();
+                client.disconnect_relay(&url).await.ok();
+                log::info!("Disconnected from relay {url}");
             }
         })
         .detach();
