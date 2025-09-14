@@ -382,6 +382,14 @@ impl ChatSpace {
 
             match message {
                 RelayMessage::Event { event, .. } => {
+                    // Keep track of which relays have seen this event
+                    css.seen_on_relays
+                        .write()
+                        .await
+                        .entry(event.id)
+                        .or_insert_with(HashSet::new)
+                        .insert(relay_url);
+
                     // Skip events that have already been processed
                     if !processed_events.insert(event.id) {
                         continue;
