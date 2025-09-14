@@ -115,13 +115,15 @@ impl Ingester {
     }
 }
 
-/// A simple storage to store all runtime states that using across the application.
+/// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct CoopSimpleStorage {
     pub init_at: Timestamp,
+    pub last_used_at: Option<Timestamp>,
     pub gift_wrap_sub_id: SubscriptionId,
     pub gift_wrap_processing: AtomicBool,
     pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
+    pub seen_on_relays: RwLock<HashMap<EventId, HashSet<RelayUrl>>>,
     pub sent_ids: RwLock<HashSet<EventId>>,
     pub resent_ids: RwLock<Vec<Output<EventId>>>,
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
@@ -137,11 +139,13 @@ impl CoopSimpleStorage {
     pub fn new() -> Self {
         Self {
             init_at: Timestamp::now(),
+            last_used_at: None,
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
             gift_wrap_processing: AtomicBool::new(false),
             auto_close_opts: Some(
                 SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
             ),
+            seen_on_relays: RwLock::new(HashMap::new()),
             sent_ids: RwLock::new(HashSet::new()),
             resent_ids: RwLock::new(Vec::new()),
             resend_queue: RwLock::new(HashMap::new()),
