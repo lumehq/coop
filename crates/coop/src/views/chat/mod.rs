@@ -643,16 +643,27 @@ impl Chat {
     fn render_warning(&mut self, ix: usize, content: String, cx: &mut Context<Self>) -> AnyElement {
         div()
             .id(ix)
+            .relative()
             .w_full()
             .py_1()
             .px_3()
+            .bg(cx.theme().warning_background)
             .child(
                 h_flex()
                     .gap_3()
                     .text_sm()
                     .text_color(cx.theme().warning_foreground)
-                    .child(Avatar::new("brand/avatar.png").size(rems(2.)))
+                    .child(Avatar::new("brand/system.png").size(rems(2.)))
                     .child(SharedString::from(content)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().warning_active),
             )
             .into_any_element()
     }
