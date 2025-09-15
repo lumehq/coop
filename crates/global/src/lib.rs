@@ -57,7 +57,7 @@ pub enum UnwrappingStatus {
 
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
-pub enum Signal {
+pub enum SignalKind {
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -71,25 +71,54 @@ pub enum Signal {
     ProxyDown,
 
     /// A signal to notify UI that a new profile has been received
-    Metadata(Profile),
+    NewProfile(Profile),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    Message((EventId, Event)),
+    NewMessage((EventId, Event)),
 
-    /// A signal to notify UI that gift wrap process status has changed
-    GiftWrapProcess(UnwrappingStatus),
+    /// A signal to notify UI that no DM relays for current user was found
+    RelaysNotFound,
 
-    /// A signal to notify UI that no DM relay for current user was found
-    DmRelayNotFound,
+    /// A signal to notify UI that gift wrap status has changed
+    GiftWrapStatus(UnwrappingStatus),
 
     /// A signal to notify UI that there are errors or notices occurred
     Notice(Notice),
 }
 
 #[derive(Debug)]
+pub struct Signal {
+    rx: Receiver<SignalKind>,
+    tx: Sender<SignalKind>,
+}
+
+impl Default for Signal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Signal {
+    pub fn new() -> Self {
+        let (tx, rx) = flume::bounded::<SignalKind>(2048);
+        Self { rx, tx }
+    }
+
+    pub fn receiver(&self) -> &Receiver<SignalKind> {
+        &self.rx
+    }
+
+    pub async fn send(&self, kind: SignalKind) {
+        if let Err(e) = self.tx.send_async(kind).await {
+            log::error!("Failed to send signal: {e}");
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Ingester {
-    rx: Receiver<Signal>,
-    tx: Sender<Signal>,
+    rx: Receiver<PublicKey>,
+    tx: Sender<PublicKey>,
 }
 
 impl Default for Ingester {
@@ -100,17 +129,17 @@ impl Default for Ingester {
 
 impl Ingester {
     pub fn new() -> Self {
-        let (tx, rx) = flume::bounded::<Signal>(2048);
+        let (tx, rx) = flume::bounded::<PublicKey>(1024);
         Self { rx, tx }
     }
 
-    pub fn signals(&self) -> &Receiver<Signal> {
+    pub fn receiver(&self) -> &Receiver<PublicKey> {
         &self.rx
     }
 
-    pub async fn send(&self, signal: Signal) {
-        if let Err(e) = self.tx.send_async(signal).await {
-            log::error!("Failed to send signal: {e}");
+    pub async fn send(&self, public_key: PublicKey) {
+        if let Err(e) = self.tx.send_async(public_key).await {
+            log::error!("Failed to send public key: {e}");
         }
     }
 }
@@ -119,14 +148,28 @@ impl Ingester {
 #[derive(Debug)]
 pub struct CoopSimpleStorage {
     pub init_at: Timestamp,
+
     pub last_used_at: Option<Timestamp>,
+
+    pub is_first_run: AtomicBool,
+
     pub gift_wrap_sub_id: SubscriptionId,
+
     pub gift_wrap_processing: AtomicBool,
+
     pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
+
     pub seen_on_relays: RwLock<HashMap<EventId, HashSet<RelayUrl>>>,
+
     pub sent_ids: RwLock<HashSet<EventId>>,
+
     pub resent_ids: RwLock<Vec<Output<EventId>>>,
+
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
+
+    pub signal: Signal,
+
+    pub ingester: Ingester,
 }
 
 impl Default for CoopSimpleStorage {
@@ -137,14 +180,22 @@ impl Default for CoopSimpleStorage {
 
 impl CoopSimpleStorage {
     pub fn new() -> Self {
+        let init_at = Timestamp::now();
+        let first_run = first_run();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let signal = Signal::default();
+        let ingester = Ingester::default();
+
         Self {
-            init_at: Timestamp::now(),
+            init_at,
+            signal,
+            ingester,
             last_used_at: None,
+            is_first_run: AtomicBool::new(first_run),
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
             gift_wrap_processing: AtomicBool::new(false),
-            auto_close_opts: Some(
-                SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE),
-            ),
+            auto_close_opts: Some(opts),
             seen_on_relays: RwLock::new(HashMap::new()),
             sent_ids: RwLock::new(HashSet::new()),
             resent_ids: RwLock::new(Vec::new()),
@@ -154,9 +205,7 @@ impl CoopSimpleStorage {
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-static INGESTER: OnceLock<Ingester> = OnceLock::new();
 static COOP_SIMPLE_STORAGE: OnceLock<CoopSimpleStorage> = OnceLock::new();
-static FIRST_RUN: OnceLock<bool> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
     NOSTR_CLIENT.get_or_init(|| {
@@ -181,25 +230,19 @@ pub fn nostr_client() -> &'static Client {
     })
 }
 
-pub fn ingester() -> &'static Ingester {
-    INGESTER.get_or_init(Ingester::new)
-}
-
 pub fn css() -> &'static CoopSimpleStorage {
     COOP_SIMPLE_STORAGE.get_or_init(CoopSimpleStorage::new)
 }
 
-pub fn first_run() -> &'static bool {
-    FIRST_RUN.get_or_init(|| {
-        let flag = support_dir().join(format!(".{}-first_run", env!("CARGO_PKG_VERSION")));
+fn first_run() -> bool {
+    let flag = support_dir().join(format!(".{}-first_run", env!("CARGO_PKG_VERSION")));
 
-        if !flag.exists() {
-            if std::fs::write(&flag, "").is_err() {
-                return false;
-            }
-            true // First run
-        } else {
-            false // Not first run
+    if !flag.exists() {
+        if std::fs::write(&flag, "").is_err() {
+            return false;
         }
-    })
+        true // First run
+    } else {
+        false // Not first run
+    }
 }

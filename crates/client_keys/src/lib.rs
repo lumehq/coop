@@ -1,5 +1,7 @@
+use std::sync::atomic::Ordering;
+
 use global::constants::KEYRING_URL;
-use global::first_run;
+use global::css;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -59,6 +61,7 @@ impl ClientKeys {
             return;
         }
 
+        let css = css();
         let read_client_keys = cx.read_credentials(KEYRING_URL);
 
         cx.spawn_in(window, async move |this, cx| {
@@ -73,7 +76,7 @@ impl ClientKeys {
                     this.set_keys(Some(keys), false, true, cx);
                 })
                 .ok();
-            } else if *first_run() {
+            } else if css.is_first_run.load(Ordering::Acquire) {
                 // If this is the first run, generate new keys and use them for the client keys
                 this.update(cx, |this, cx| {
                     this.new_keys(cx);
