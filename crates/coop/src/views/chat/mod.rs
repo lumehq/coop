@@ -395,13 +395,15 @@ impl Chat {
                 cx.spawn_in(window, async move |this, cx| {
                     match task.await {
                         Ok(reports) => {
-                            this.update(cx, |this, cx| {
-                                this.reports_by_id.entry(id_clone).and_modify(|this| {
-                                    *this = reports;
-                                });
-                                cx.notify();
-                            })
-                            .ok();
+                            if !reports.is_empty() {
+                                this.update(cx, |this, cx| {
+                                    this.reports_by_id.entry(id_clone).and_modify(|this| {
+                                        *this = reports;
+                                    });
+                                    cx.notify();
+                                })
+                                .ok();
+                            }
                         }
                         Err(e) => {
                             cx.update(|window, cx| {
