@@ -5,12 +5,17 @@ use nostr_sdk::prelude::*;
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Message {
     User(RenderedMessage),
+    Warning(String, Timestamp),
     System(Timestamp),
 }
 
 impl Message {
     pub fn user(user: impl Into<RenderedMessage>) -> Self {
         Self::User(user.into())
+    }
+
+    pub fn warning(content: String) -> Self {
+        Self::Warning(content, Timestamp::now())
     }
 
     pub fn system() -> Self {
@@ -25,6 +30,11 @@ impl Ord for Message {
             (Message::System(a), Message::System(b)) => a.cmp(b),
             (Message::User(a), Message::System(b)) => a.created_at.cmp(b),
             (Message::System(a), Message::User(b)) => a.cmp(&b.created_at),
+            (Message::Warning(_, a), Message::Warning(_, b)) => a.cmp(b),
+            (Message::Warning(_, a), Message::User(b)) => a.cmp(&b.created_at),
+            (Message::User(a), Message::Warning(_, b)) => a.created_at.cmp(b),
+            (Message::Warning(_, a), Message::System(b)) => a.cmp(b),
+            (Message::System(a), Message::Warning(_, b)) => a.cmp(b),
         }
     }
 }
