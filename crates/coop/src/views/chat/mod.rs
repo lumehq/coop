@@ -72,15 +72,20 @@ pub struct Chat {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 4]>,
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let relays = cx.new(|_| HashMap::new());
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| vec![]);
+
+        let relays = cx.new(|_| {
+            let this: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
+            this
+        });
+
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
@@ -169,13 +174,27 @@ impl Chat {
                 match signal {
                     RoomSignal::NewMessage((gift_wrap_id, event)) => {
                         if !this.is_sent_by_coop(gift_wrap_id) {
-                            this.insert_message(event, false, cx);
+                            this.insert_message(Message::user(event), false, cx);
                         }
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
                     }
                 };
+            }),
+        );
+
+        subscriptions.push(
+            // Observe the messaging relays of the room's members
+            cx.observe_in(&relays, window, |this, entity, _window, cx| {
+                for (public_key, urls) in entity.read(cx).clone().into_iter() {
+                    if urls.is_empty() {
+                        let profile = Registry::read_global(cx).get_person(&public_key, cx);
+                        let content = t!("chat.nip17_not_found", u = profile.name());
+
+                        this.insert_warning(content, cx);
+                    }
+                }
             }),
         );
 
@@ -318,7 +337,7 @@ impl Chat {
 
         cx.defer_in(window, |this, window, cx| {
             // Optimistically update message list
-            this.insert_message(temp_message, true, cx);
+            this.insert_message(Message::user(temp_message), true, cx);
 
             // Remove all replies
             this.remove_all_replies(cx);
@@ -397,6 +416,41 @@ impl Chat {
         }
     }
 
+    /// Insert a message into the chat panel
+    fn insert_message<E>(&mut self, m: E, scroll: bool, cx: &mut Context<Self>)
+    where
+        E: Into<Message>,
+    {
+        let old_len = self.messages.len();
+
+        // Extend the messages list with the new events
+        if self.messages.insert(m.into()) {
+            self.list_state.splice(old_len..old_len, 1);
+
+            if scroll {
+                self.list_state.scroll_to(ListOffset {
+                    item_ix: self.list_state.item_count(),
+                    offset_in_item: px(0.0),
+                });
+                cx.notify();
+            }
+        }
+    }
+
+    /// Convert and insert a vector of nostr events into the chat panel
+    fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
+        for event in events.into_iter() {
+            let m = Message::user(event);
+            self.insert_message(m, false, cx);
+        }
+        cx.notify();
+    }
+
+    fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
+        let m = Message::warning(content.into());
+        self.insert_message(m, true, cx);
+    }
+
     /// Check if a message failed to send by its ID
     fn is_sent_failed(&self, id: &EventId) -> bool {
         self.reports_by_id
@@ -426,35 +480,6 @@ impl Chat {
             }
             None
         })
-    }
-
-    /// Convert and insert a nostr event into the chat panel
-    fn insert_message<E>(&mut self, event: E, scroll: bool, cx: &mut Context<Self>)
-    where
-        E: Into<RenderedMessage>,
-    {
-        let old_len = self.messages.len();
-
-        // Extend the messages list with the new events
-        if self.messages.insert(Message::user(event)) {
-            self.list_state.splice(old_len..old_len, 1);
-
-            if scroll {
-                self.list_state.scroll_to(ListOffset {
-                    item_ix: self.list_state.item_count(),
-                    offset_in_item: px(0.0),
-                });
-                cx.notify();
-            }
-        }
-    }
-
-    /// Convert and insert a vector of nostr events into the chat panel
-    fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
-        for event in events.into_iter() {
-            self.insert_message(event, false, cx);
-        }
-        cx.notify();
     }
 
     fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
@@ -615,6 +640,23 @@ impl Chat {
             .into_any_element()
     }
 
+    fn render_warning(&mut self, ix: usize, content: String, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id(ix)
+            .w_full()
+            .py_1()
+            .px_3()
+            .child(
+                h_flex()
+                    .gap_3()
+                    .text_sm()
+                    .text_color(cx.theme().warning_foreground)
+                    .child(Avatar::new("brand/avatar.png").size(rems(2.)))
+                    .child(SharedString::from(content)),
+            )
+            .into_any_element()
+    }
+
     fn render_message_not_found(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
         div()
             .id(ix)
@@ -662,8 +704,7 @@ impl Chat {
             .py_1()
             .px_3()
             .child(
-                div()
-                    .flex()
+                h_flex()
                     .gap_3()
                     .when(!hide_avatar, |this| {
                         this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
@@ -675,9 +716,7 @@ impl Chat {
                             .flex_initial()
                             .overflow_hidden()
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
+                                h_flex()
                                     .gap_2()
                                     .text_sm()
                                     .text_color(cx.theme().text_placeholder)
@@ -1324,6 +1363,9 @@ impl Render for Chat {
                                         .element(ix.into(), window, cx);
 
                                     this.render_message(ix, rendered, text, cx)
+                                }
+                                Message::Warning(content, _) => {
+                                    this.render_warning(ix, content.to_owned(), cx)
                                 }
                                 Message::System(_) => this.render_announcement(ix, cx),
                             }

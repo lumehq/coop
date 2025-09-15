@@ -29,10 +29,9 @@ pub struct Screening {
     profile: Profile,
     verified: bool,
     followed: bool,
-    dm_relays: Option<bool>,
     last_active: Option<Timestamp>,
     mutual_contacts: Vec<Profile>,
-    _tasks: SmallVec<[Task<()>; 4]>,
+    _tasks: SmallVec<[Task<()>; 3]>,
 }
 
 impl Screening {
@@ -83,24 +82,6 @@ impl Screening {
             activity
         });
 
-        let relay_check = cx.background_spawn(async move {
-            let client = nostr_client();
-            let mut relay = false;
-
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
-
-            if let Ok(mut stream) = client.stream_events(filter, Duration::from_secs(2)).await {
-                while stream.next().await.is_some() {
-                    relay = true
-                }
-            }
-
-            relay
-        });
-
         let addr_check = if let Some(address) = profile.metadata().nip05 {
             Some(Tokio::spawn(cx, async move {
                 nip05_verify(public_key, &address).await.unwrap_or(false)
@@ -137,19 +118,6 @@ impl Screening {
         );
 
         tasks.push(
-            // Run the relay check in the background
-            cx.spawn_in(window, async move |this, cx| {
-                let relay = relay_check.await;
-
-                this.update(cx, |this, cx| {
-                    this.dm_relays = Some(relay);
-                    cx.notify();
-                })
-                .ok();
-            }),
-        );
-
-        tasks.push(
             // Run the NIP-05 verification in the background
             cx.spawn_in(window, async move |this, cx| {
                 if let Some(task) = addr_check {
@@ -168,7 +136,6 @@ impl Screening {
             profile,
             verified: false,
             followed: false,
-            dm_relays: None,
             last_active: None,
             mutual_contacts: vec![],
             _tasks: tasks,
@@ -452,37 +419,6 @@ impl Render for Screening {
                                                     shared_t!("screening.mutual", u = total_mutuals)
                                                 } else {
                                                     shared_t!("screening.no_mutual")
-                                                }
-                                            }),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .items_start()
-                            .gap_2()
-                            .child(status_badge(self.dm_relays, cx))
-                            .child(
-                                v_flex()
-                                    .w_full()
-                                    .text_sm()
-                                    .child({
-                                        if self.dm_relays == Some(true) {
-                                            shared_t!("screening.relay_found")
-                                        } else {
-                                            shared_t!("screening.relay_empty")
-                                        }
-                                    })
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .line_clamp(1)
-                                            .text_color(cx.theme().text_muted)
-                                            .child({
-                                                if self.dm_relays == Some(true) {
-                                                    shared_t!("screening.relay_found_desc")
-                                                } else {
-                                                    shared_t!("screening.relay_empty_desc")
                                                 }
                                             }),
                                     ),

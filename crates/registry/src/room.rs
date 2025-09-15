@@ -340,32 +340,25 @@ impl Room {
 
         cx.background_spawn(async move {
             let client = nostr_client();
+            let timeout = Duration::from_secs(3);
             let mut processed = HashSet::new();
             let mut relays: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
 
-            if let Some((author, members)) = members.split_last() {
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(author.to_owned())
-                    .limit(1);
-
-                if let Some(event) = client.database().query(filter).await?.first_owned() {
-                    let urls = nip17::extract_owned_relay_list(event).collect_vec();
-                    relays.insert(author.to_owned(), urls);
-                }
-
+            if let Some((_, members)) = members.split_last() {
                 for member in members.iter() {
+                    relays.insert(member.to_owned(), vec![]);
+
                     let filter = Filter::new()
                         .kind(Kind::InboxRelays)
                         .author(member.to_owned())
                         .limit(1);
 
-                    let mut stream = client.stream_events(filter, Duration::from_secs(3)).await?;
-
-                    if let Some(event) = stream.next().await {
-                        if processed.insert(event.id) {
-                            let urls = nip17::extract_owned_relay_list(event).collect_vec();
-                            relays.insert(member.to_owned(), urls);
+                    if let Ok(mut stream) = client.stream_events(filter, timeout).await {
+                        if let Some(event) = stream.next().await {
+                            if processed.insert(event.id) {
+                                let urls = nip17::extract_owned_relay_list(event).collect_vec();
+                                relays.entry(member.to_owned()).or_default().extend(urls);
+                            }
                         }
                     }
                 }
