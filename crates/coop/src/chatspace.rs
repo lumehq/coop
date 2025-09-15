@@ -436,11 +436,6 @@ impl ChatSpace {
                                 } else {
                                     css.signal.send(SignalKind::RelaysNotFound).await;
                                 }
-                            } else {
-                                for (id, relays) in client.subscriptions().await {
-                                    log::info!("sub id: {id:?}");
-                                    log::info!("relays: {relays:?}");
-                                }
                             }
                         }
                         Kind::ContactList => {

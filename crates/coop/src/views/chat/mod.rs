@@ -717,7 +717,8 @@ impl Chat {
             .py_1()
             .px_3()
             .child(
-                h_flex()
+                div()
+                    .flex()
                     .gap_3()
                     .when(!hide_avatar, |this| {
                         this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
