@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
@@ -49,6 +51,9 @@ pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Cha
 pub struct Chat {
     // Chat Room
     room: Entity<Room>,
+    relays: Entity<HashMap<PublicKey, Vec<RelayUrl>>>,
+
+    // Messages
     list_state: ListState,
     messages: BTreeSet<Message>,
     rendered_texts_by_id: BTreeMap<EventId, RenderedText>,
@@ -67,12 +72,13 @@ pub struct Chat {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
-    _subscriptions: SmallVec<[Subscription; 2]>,
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _subscriptions: SmallVec<[Subscription; 3]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let relays = cx.new(|_| HashMap::new());
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| vec![]);
         let input = cx.new(|cx| {
@@ -89,10 +95,34 @@ impl Chat {
         let messages = BTreeSet::from([Message::system()]);
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
+        let connect_relays = room.read(cx).connect_relays(cx);
         let load_messages = room.read(cx).load_messages(cx);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
+
+        tasks.push(
+            // Load all messages belonging to this room
+            cx.spawn_in(window, async move |this, cx| {
+                match connect_relays.await {
+                    Ok(relays) => {
+                        this.update(cx, |this, cx| {
+                            this.relays.update(cx, |this, cx| {
+                                *this = relays;
+                                cx.notify();
+                            });
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(e.to_string(), cx);
+                        })
+                        .ok();
+                    }
+                };
+            }),
+        );
 
         tasks.push(
             // Load all messages belonging to this room
@@ -149,6 +179,19 @@ impl Chat {
             }),
         );
 
+        subscriptions.push(
+            // Observe when user close chat panel
+            cx.on_release_in(window, move |this, window, cx| {
+                this.disconnect_relays(cx);
+                this.messages.clear();
+                this.rendered_texts_by_id.clear();
+                this.reports_by_id.clear();
+                this.image_cache.update(cx, |this, cx| {
+                    this.clear(window, cx);
+                });
+            }),
+        );
+
         Self {
             id: room.read(cx).id.to_string().into(),
             image_cache: RetainAllImageCache::new(cx),
@@ -156,6 +199,7 @@ impl Chat {
             uploading: false,
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
+            relays,
             messages,
             room,
             list_state,
@@ -165,6 +209,20 @@ impl Chat {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
+    }
+
+    /// Disconnect all relays when the user closes the chat panel
+    fn disconnect_relays(&mut self, cx: &mut App) {
+        let relays = self.relays.read(cx).clone();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+
+            for relay in relays.values().flatten() {
+                client.disconnect_relay(relay).await.ok();
+            }
+        })
+        .detach();
     }
 
     /// Load all messages belonging to this room

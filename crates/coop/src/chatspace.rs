@@ -416,24 +416,31 @@ impl ChatSpace {
                             }
                         }
                         Kind::InboxRelays => {
-                            let relays = nip17::extract_relay_list(&event).collect_vec();
+                            if let Ok(true) = Self::is_self_event(&event).await {
+                                let relays = nip17::extract_relay_list(&event).collect_vec();
 
-                            if !relays.is_empty() {
-                                for relay in relays.clone().into_iter() {
-                                    if client.add_relay(relay).await.is_err() {
-                                        let notice = Notice::RelayFailed(relay.clone());
-                                        css.signal.send(SignalKind::Notice(notice)).await;
+                                if !relays.is_empty() {
+                                    for relay in relays.clone().into_iter() {
+                                        if client.add_relay(relay).await.is_err() {
+                                            let notice = Notice::RelayFailed(relay.clone());
+                                            css.signal.send(SignalKind::Notice(notice)).await;
+                                        }
+                                        if client.connect_relay(relay).await.is_err() {
+                                            let notice = Notice::RelayFailed(relay.clone());
+                                            css.signal.send(SignalKind::Notice(notice)).await;
+                                        }
                                     }
-                                    if client.connect_relay(relay).await.is_err() {
-                                        let notice = Notice::RelayFailed(relay.clone());
-                                        css.signal.send(SignalKind::Notice(notice)).await;
-                                    }
+
+                                    // Subscribe to gift wrap events only in the current user's NIP-17 relays
+                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
+                                } else {
+                                    css.signal.send(SignalKind::RelaysNotFound).await;
                                 }
-
-                                // Subscribe to gift wrap events only in the current user's NIP-17 relays
-                                Self::fetch_gift_wrap(relays, event.pubkey).await;
                             } else {
-                                css.signal.send(SignalKind::RelaysNotFound).await;
+                                for (id, relays) in client.subscriptions().await {
+                                    log::info!("sub id: {id:?}");
+                                    log::info!("relays: {relays:?}");
+                                }
                             }
                         }
                         Kind::ContactList => {

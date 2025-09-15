@@ -331,15 +331,51 @@ impl Room {
         }
     }
 
+    /// Connects to all members' messaging relays
+    pub fn connect_relays(
+        &self,
+        cx: &App,
+    ) -> Task<Result<HashMap<PublicKey, Vec<RelayUrl>>, Error>> {
+        let members = self.members.clone();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let mut processed = HashSet::new();
+            let mut relays: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
+
+            if let Some((author, members)) = members.split_last() {
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(author.to_owned())
+                    .limit(1);
+
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                    let urls = nip17::extract_owned_relay_list(event).collect_vec();
+                    relays.insert(author.to_owned(), urls);
+                }
+
+                for member in members.iter() {
+                    let filter = Filter::new()
+                        .kind(Kind::InboxRelays)
+                        .author(member.to_owned())
+                        .limit(1);
+
+                    let mut stream = client.stream_events(filter, Duration::from_secs(3)).await?;
+
+                    if let Some(event) = stream.next().await {
+                        if processed.insert(event.id) {
+                            let urls = nip17::extract_owned_relay_list(event).collect_vec();
+                            relays.insert(member.to_owned(), urls);
+                        }
+                    }
+                }
+            };
+
+            Ok(relays)
+        })
+    }
+
     /// Loads all messages for this room from the database
-    ///
-    /// # Arguments
-    ///
-    /// * `cx` - The App context
-    ///
-    /// # Returns
-    ///
-    /// A Task that resolves to Result<Vec<Event>, Error> containing all messages for this room
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
         let members = self.members.clone();
 
@@ -363,16 +399,6 @@ impl Room {
 
             Ok(events)
         })
-    }
-
-    /// Emits a new message signal to the current room
-    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
-    }
-
-    /// Emits a signal to refresh the current room's messages.
-    pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::Refresh);
     }
 
     /// Creates a temporary message for optimistic updates
@@ -592,5 +618,15 @@ impl Room {
 
             Ok(resend_reports)
         })
+    }
+
+    /// Emits a new message signal to the current room
+    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
+    }
+
+    /// Emits a signal to refresh the current room's messages.
+    pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::Refresh);
     }
 }
