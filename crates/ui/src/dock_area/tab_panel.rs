@@ -412,16 +412,15 @@ impl TabPanel {
         let is_zoomed = self.is_zoomed && state.zoomable;
         let view = cx.entity().clone();
         let build_popup_menu = move |this, cx: &App| view.read(cx).popup_menu(this, cx);
+        let toolbar = self.toolbar_buttons(window, cx);
+        let has_toolbar = !toolbar.is_empty();
 
         h_flex()
+            .p_0p5()
             .gap_1()
             .occlude()
-            .items_center()
-            .children(
-                self.toolbar_buttons(window, cx)
-                    .into_iter()
-                    .map(|btn| btn.small().ghost()),
-            )
+            .rounded_full()
+            .children(toolbar.into_iter().map(|btn| btn.small().ghost().rounded()))
             .when(self.is_zoomed, |this| {
                 this.child(
                     Button::new("zoom")
@@ -434,11 +433,16 @@ impl TabPanel {
                         })),
                 )
             })
+            .when(has_toolbar, |this| {
+                this.bg(cx.theme().surface_background)
+                    .child(div().flex_shrink_0().h_4().w_px().bg(cx.theme().border))
+            })
             .child(
                 Button::new("menu")
                     .icon(IconName::Ellipsis)
                     .small()
                     .ghost()
+                    .rounded()
                     .popup_menu({
                         let zoomable = state.zoomable;
                         let closable = state.closable;
@@ -647,7 +651,7 @@ impl TabPanel {
             .child(
                 div()
                     .size_full()
-                    .rounded_lg()
+                    .rounded_xl()
                     .shadow_sm()
                     .when(cx.theme().mode.is_dark(), |this| this.shadow_lg())
                     .bg(cx.theme().panel_background)
@@ -667,7 +671,7 @@ impl TabPanel {
                             .p_1()
                             .child(
                                 div()
-                                    .rounded_lg()
+                                    .rounded_xl()
                                     .border_1()
                                     .border_color(cx.theme().element_disabled)
                                     .bg(cx.theme().drop_target_background)

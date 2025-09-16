@@ -14,7 +14,7 @@ use nostr_sdk::prelude::*;
 use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, StyledExt};
@@ -33,7 +33,7 @@ where
             .label(label)
             .warning()
             .xsmall()
-            .rounded(ButtonRounded::Full)
+            .rounded()
             .on_click(move |_, window, cx| {
                 let view = cx.new(|cx| SetupRelay::new(Kind::InboxRelays, window, cx));
                 let weak_view = view.downgrade();

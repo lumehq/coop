@@ -401,6 +401,14 @@ sidebar:
     en: "Incoming new conversations"
   trusted_contacts_tooltip:
     en: "Only show rooms from trusted contacts"
+  no_requests:
+    en: "No message requests"
+  no_requests_label:
+    en: "New message requests from people you don't know will appear here."
+  no_conversations:
+    en: "No conversations"
+  no_conversations_label:
+    en: "Start a conversation with someone to get started."
 
 loading:
   label:

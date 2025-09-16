@@ -1,12 +1,13 @@
 use gpui::{
     div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
 use ui::button::Button;
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::popup_menu::PopupMenu;
-use ui::StyledExt;
+use ui::{v_flex, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
     Welcome::new(window, cx)
@@ -14,8 +15,7 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
 
 pub struct Welcome {
     name: SharedString,
-    closable: bool,
-    zoomable: bool,
+    version: SharedString,
     focus_handle: FocusHandle,
 }
 
@@ -25,10 +25,11 @@ impl Welcome {
     }
 
     fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let version = SharedString::from(format!("Version: {}", env!("CARGO_PKG_VERSION")));
+
         Self {
+            version,
             name: "Welcome".into(),
-            closable: true,
-            zoomable: true,
             focus_handle: cx.focus_handle(),
         }
     }
@@ -39,16 +40,15 @@ impl Panel for Welcome {
         self.name.clone()
     }
 
-    fn title(&self, _cx: &App) -> AnyElement {
-        "👋".into_any_element()
-    }
-
-    fn closable(&self, _cx: &App) -> bool {
-        self.closable
-    }
-
-    fn zoomable(&self, _cx: &App) -> bool {
-        self.zoomable
+    fn title(&self, cx: &App) -> AnyElement {
+        div()
+            .child(
+                svg()
+                    .path("brand/coop.svg")
+                    .size_4()
+                    .text_color(cx.theme().element_background),
+            )
+            .into_any_element()
     }
 
     fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
@@ -76,11 +76,10 @@ impl Render for Welcome {
             .items_center()
             .justify_center()
             .child(
-                div()
-                    .flex()
-                    .flex_col()
+                v_flex()
+                    .gap_2()
                     .items_center()
-                    .gap_1()
+                    .justify_center()
                     .child(
                         svg()
                             .path("brand/coop.svg")
@@ -88,11 +87,26 @@ impl Render for Welcome {
                             .text_color(cx.theme().elevated_surface_background),
                     )
                     .child(
-                        div()
-                            .child("coop on nostr")
-                            .text_color(cx.theme().text_placeholder)
-                            .font_semibold()
-                            .text_sm(),
+                        v_flex()
+                            .items_center()
+                            .justify_center()
+                            .text_center()
+                            .child(
+                                div()
+                                    .font_semibold()
+                                    .text_color(cx.theme().text_muted)
+                                    .child("coop on nostr"),
+                            )
+                            .child(
+                                div()
+                                    .id("version")
+                                    .text_color(cx.theme().text_placeholder)
+                                    .text_xs()
+                                    .child(self.version.clone())
+                                    .on_click(|_, _window, cx| {
+                                        cx.open_url("https://github.com/lumehq/coop/releases");
+                                    }),
+                            ),
                     ),
             )
     }

@@ -405,12 +405,13 @@ impl Render for ResizablePanel {
             return div();
         }
 
-        let view = cx.entity().clone();
         let total_size = self
             .group
             .as_ref()
             .and_then(|group| group.upgrade())
             .map(|group| group.read(cx).total_size());
+
+        let view = cx.entity();
 
         div()
             .flex()

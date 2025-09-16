@@ -26,7 +26,7 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
@@ -761,7 +761,7 @@ impl Chat {
                                                 .label(t!("common.resend"))
                                                 .danger()
                                                 .xsmall()
-                                                .rounded(ButtonRounded::Full)
+                                                .rounded()
                                                 .on_click(cx.listener(
                                                     move |this, _, window, cx| {
                                                         this.resend_message(&id, window, cx);
@@ -1031,45 +1031,6 @@ impl Chat {
     }
 
     fn render_actions(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
-        let reply = Button::new("reply")
-            .icon(IconName::Reply)
-            .tooltip(t!("chat.reply_button"))
-            .small()
-            .ghost()
-            .on_click({
-                let id = id.to_owned();
-                cx.listener(move |this, _event, _window, cx| {
-                    this.reply_to(&id, cx);
-                })
-            })
-            .into_any_element();
-
-        let copy = Button::new("copy")
-            .icon(IconName::Copy)
-            .tooltip(t!("chat.copy_message_button"))
-            .small()
-            .ghost()
-            .on_click({
-                let id = id.to_owned();
-                cx.listener(move |this, _event, _window, cx| {
-                    this.copy_message(&id, cx);
-                })
-            })
-            .into_any_element();
-
-        let more = Button::new("seen-on")
-            .icon(IconName::Ellipsis)
-            .small()
-            .ghost()
-            .popup_menu({
-                let id = id.to_owned();
-                move |this, _window, _cx| {
-                    // TODO: add more actions
-                    this.menu(t!("common.seen_on"), Box::new(SeenOn(id)))
-                }
-            })
-            .into_any_element();
-
         h_flex()
             .p_0p5()
             .gap_1()
@@ -1082,7 +1043,45 @@ impl Chat {
             .border_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
-            .children(vec![reply, copy, more])
+            .child(
+                Button::new("reply")
+                    .icon(IconName::Reply)
+                    .tooltip(t!("chat.reply_button"))
+                    .small()
+                    .ghost()
+                    .on_click({
+                        let id = id.to_owned();
+                        cx.listener(move |this, _event, _window, cx| {
+                            this.reply_to(&id, cx);
+                        })
+                    }),
+            )
+            .child(
+                Button::new("copy")
+                    .icon(IconName::Copy)
+                    .tooltip(t!("chat.copy_message_button"))
+                    .small()
+                    .ghost()
+                    .on_click({
+                        let id = id.to_owned();
+                        cx.listener(move |this, _event, _window, cx| {
+                            this.copy_message(&id, cx);
+                        })
+                    }),
+            )
+            .child(div().flex_shrink_0().h_4().w_px().bg(cx.theme().border))
+            .child(
+                Button::new("seen-on")
+                    .icon(IconName::Ellipsis)
+                    .small()
+                    .ghost()
+                    .popup_menu({
+                        let id = id.to_owned();
+                        move |this, _window, _cx| {
+                            this.menu(t!("common.seen_on"), Box::new(SeenOn(id)))
+                        }
+                    }),
+            )
             .group_hover("", |this| this.visible())
     }
 

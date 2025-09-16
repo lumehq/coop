@@ -9,9 +9,9 @@ use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::{css, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ParentElement, Render, RetainAllImageCache,
-    SharedString, Styled, Subscription, Task, Window,
+    div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -23,7 +23,7 @@ use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::{PopupMenu, PopupMenuExt};
@@ -669,6 +669,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
+        let loading = registry.unwrapping_status.read(cx) != &UnwrappingStatus::Complete;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
@@ -688,7 +689,7 @@ impl Render for Sidebar {
         let mut total_rooms = rooms.len();
 
         // Add 3 dummy rooms to display as skeletons
-        if registry.unwrapping_status.read(cx) != &UnwrappingStatus::Complete {
+        if loading {
             total_rooms += 3
         }
 
@@ -752,7 +753,7 @@ impl Render for Sidebar {
                                     .cta()
                                     .bold()
                                     .secondary()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .selected(self.filter(&RoomKind::Ongoing, cx))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::Ongoing, cx);
@@ -773,7 +774,7 @@ impl Render for Sidebar {
                                     .cta()
                                     .bold()
                                     .secondary()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .selected(!self.filter(&RoomKind::Ongoing, cx))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::default(), cx);
@@ -791,7 +792,7 @@ impl Render for Sidebar {
                                             .icon(IconName::Ellipsis)
                                             .xsmall()
                                             .ghost()
-                                            .rounded(ButtonRounded::Full)
+                                            .rounded()
                                             .popup_menu(move |this, _window, _cx| {
                                                 this.menu(
                                                     t!("sidebar.reload_menu"),
@@ -805,6 +806,57 @@ impl Render for Sidebar {
                                     ),
                             ),
                     )
+                    .when(!loading && total_rooms == 0, |this| {
+                        this.map(|this| {
+                            if self.filter(&RoomKind::Ongoing, cx) {
+                                this.child(
+                                    v_flex()
+                                        .py_2()
+                                        .gap_1p5()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_center()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_semibold()
+                                                .line_height(relative(1.25))
+                                                .child(shared_t!("sidebar.no_conversations")),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().text_muted)
+                                                .line_height(relative(1.25))
+                                                .child(shared_t!("sidebar.no_conversations_label")),
+                                        ),
+                                )
+                            } else {
+                                this.child(
+                                    v_flex()
+                                        .py_2()
+                                        .gap_1p5()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_center()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_semibold()
+                                                .line_height(relative(1.25))
+                                                .child(shared_t!("sidebar.no_requests")),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().text_muted)
+                                                .line_height(relative(1.25))
+                                                .child(shared_t!("sidebar.no_requests_label")),
+                                        ),
+                                )
+                            }
+                        })
+                    })
                     .child(
                         uniform_list(
                             "rooms",
