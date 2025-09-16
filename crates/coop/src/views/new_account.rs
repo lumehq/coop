@@ -14,7 +14,7 @@ use settings::AppSettings;
 use smol::fs;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
 use ui::modal::ModalButtonProps;
@@ -352,7 +352,7 @@ impl Render for NewAccount {
                                             .label(t!("common.upload"))
                                             .ghost()
                                             .small()
-                                            .rounded(ButtonRounded::Full)
+                                            .rounded()
                                             .disabled(self.submitting || self.uploading)
                                             .loading(self.uploading)
                                             .on_click(cx.listener(move |this, _, window, cx| {

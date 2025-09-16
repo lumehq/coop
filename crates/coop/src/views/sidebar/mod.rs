@@ -23,7 +23,7 @@ use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::{PopupMenu, PopupMenuExt};
@@ -753,7 +753,7 @@ impl Render for Sidebar {
                                     .cta()
                                     .bold()
                                     .secondary()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .selected(self.filter(&RoomKind::Ongoing, cx))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::Ongoing, cx);
@@ -774,7 +774,7 @@ impl Render for Sidebar {
                                     .cta()
                                     .bold()
                                     .secondary()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .selected(!self.filter(&RoomKind::Ongoing, cx))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::default(), cx);
@@ -792,7 +792,7 @@ impl Render for Sidebar {
                                             .icon(IconName::Ellipsis)
                                             .xsmall()
                                             .ghost()
-                                            .rounded(ButtonRounded::Full)
+                                            .rounded()
                                             .popup_menu(move |this, _window, _cx| {
                                                 this.menu(
                                                     t!("sidebar.reload_menu"),

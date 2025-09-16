@@ -10,7 +10,7 @@ use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::switch::Switch;
@@ -169,7 +169,7 @@ impl Render for Preferences {
                                     .label("Messaging Relays")
                                     .xsmall()
                                     .ghost_alt()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.open_relays(window, cx);
                                     })),

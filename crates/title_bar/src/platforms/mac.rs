@@ -3,4 +3,4 @@
 ///
 /// Magic number: There is one extra pixel of padding on the left side due to
 /// the 1px border around the window on macOS apps.
-pub const TRAFFIC_LIGHT_PADDING: f32 = 71.;
+pub const TRAFFIC_LIGHT_PADDING: f32 = 80.;

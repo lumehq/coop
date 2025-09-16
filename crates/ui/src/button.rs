@@ -10,11 +10,6 @@ use crate::indicator::Indicator;
 use crate::tooltip::Tooltip;
 use crate::{h_flex, Disableable, Icon, Selectable, Sizable, Size, StyledExt};
 
-pub enum ButtonRounded {
-    Normal,
-    Full,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ButtonCustomVariant {
     color: Hsla,
@@ -130,7 +125,7 @@ pub struct Button {
     children: Vec<AnyElement>,
 
     variant: ButtonVariant,
-    rounded: ButtonRounded,
+    rounded: bool,
     size: Size,
 
     disabled: bool,
@@ -163,7 +158,7 @@ impl Button {
             disabled: false,
             selected: false,
             variant: ButtonVariant::default(),
-            rounded: ButtonRounded::Normal,
+            rounded: false,
             size: Size::Medium,
             tooltip: None,
             on_click: None,
@@ -177,9 +172,9 @@ impl Button {
         }
     }
 
-    /// Set the border radius of the Button.
-    pub fn rounded(mut self, rounded: impl Into<ButtonRounded>) -> Self {
-        self.rounded = rounded.into();
+    /// Make the button rounded.
+    pub fn rounded(mut self) -> Self {
+        self.rounded = true;
         self
     }
 
@@ -315,8 +310,8 @@ impl RenderOnce for Button {
             .cursor_default()
             .overflow_hidden()
             .map(|this| match self.rounded {
-                ButtonRounded::Normal => this.rounded(cx.theme().radius),
-                ButtonRounded::Full => this.rounded_full(),
+                false => this.rounded(cx.theme().radius),
+                true => this.rounded_full(),
             })
             .map(|this| {
                 if self.label.is_none() && self.children.is_empty() {

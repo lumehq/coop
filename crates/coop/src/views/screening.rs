@@ -17,7 +17,7 @@ use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::indicator::Indicator;
 use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
@@ -268,7 +268,7 @@ impl Render for Screening {
                                     .label(t!("profile.njump"))
                                     .secondary()
                                     .small()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.open_njump(window, cx);
                                     })),
@@ -278,7 +278,7 @@ impl Render for Screening {
                                     .tooltip(t!("screening.report"))
                                     .icon(IconName::Report)
                                     .danger()
-                                    .rounded(ButtonRounded::Full)
+                                    .rounded()
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.report(window, cx);
                                     })),
@@ -330,7 +330,7 @@ impl Render for Screening {
                                                     .icon(IconName::Info)
                                                     .xsmall()
                                                     .ghost()
-                                                    .rounded(ButtonRounded::Full)
+                                                    .rounded()
                                                     .tooltip(t!("screening.active_tooltip")),
                                             ),
                                     )
@@ -402,7 +402,7 @@ impl Render for Screening {
                                                     .icon(IconName::Info)
                                                     .xsmall()
                                                     .ghost()
-                                                    .rounded(ButtonRounded::Full)
+                                                    .rounded()
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
                                                             this.mutual_contacts(window, cx);

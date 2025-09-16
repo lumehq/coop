@@ -22,7 +22,7 @@ use smallvec::{smallvec, SmallVec};
 use smol::Timer;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
-use ui::button::{Button, ButtonRounded, ButtonVariants};
+use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
 use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
@@ -34,7 +34,7 @@ pub fn compose_button() -> impl IntoElement {
             .ghost_alt()
             .cta()
             .small()
-            .rounded(ButtonRounded::Full)
+            .rounded()
             .on_click(move |_, window, cx| {
                 let compose = cx.new(|cx| Compose::new(window, cx));
                 let title = SharedString::new(t!("sidebar.direct_messages"));
