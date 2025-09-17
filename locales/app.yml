@@ -315,10 +315,6 @@ preferences:
     en: "Display"
 
 compose:
-  placeholder_npub:
-    en: "npub or nprofile..."
-  placeholder_title:
-    en: "Family...(Optional)"
   create_dm_button:
     en: "Create DM"
   creating_dm_button:

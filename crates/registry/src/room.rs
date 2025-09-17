@@ -124,13 +124,13 @@ impl Eq for Room {}
 
 impl EventEmitter<RoomSignal> for Room {}
 
-impl Room {
-    pub fn new(event: &Event) -> Self {
-        let id = event.uniq_id();
-        let created_at = event.created_at;
+impl From<&Event> for Room {
+    fn from(val: &Event) -> Self {
+        let id = val.uniq_id();
+        let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = event
+        let members = val
             .all_pubkeys()
             .into_iter()
             .unique()
@@ -138,20 +138,20 @@ impl Room {
             .collect_vec();
 
         // Get the subject from the event's tags
-        let subject = if let Some(tag) = event.tags.find(TagKind::Subject) {
+        let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
             tag.content().map(|s| s.to_owned())
         } else {
             None
         };
 
         // Get the picture from the event's tags
-        let picture = if let Some(tag) = event.tags.find(TagKind::custom("picture")) {
+        let picture = if let Some(tag) = val.tags.find(TagKind::custom("picture")) {
             tag.content().map(|s| s.to_owned())
         } else {
             None
         };
 
-        Self {
+        Room {
             id,
             created_at,
             subject,
@@ -160,47 +160,68 @@ impl Room {
             kind: RoomKind::default(),
         }
     }
+}
 
-    /// Sets the kind of the room and returns the modified room
-    ///
-    /// This is a builder-style method that allows chaining room modifications.
-    ///
-    /// # Arguments
-    ///
-    /// * `kind` - The RoomKind to set for this room
-    ///
-    /// # Returns
-    ///
-    /// The modified Room instance with the new kind
-    pub fn kind(mut self, kind: RoomKind) -> Self {
-        self.kind = kind;
-        self
+impl From<&UnsignedEvent> for Room {
+    fn from(val: &UnsignedEvent) -> Self {
+        let id = val.uniq_id();
+        let created_at = val.created_at;
+
+        // Get the members from the event's tags and event's pubkey
+        let members = val
+            .all_pubkeys()
+            .into_iter()
+            .unique()
+            .sorted()
+            .collect_vec();
+
+        // Get the subject from the event's tags
+        let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
+            tag.content().map(|s| s.to_owned())
+        } else {
+            None
+        };
+
+        // Get the picture from the event's tags
+        let picture = if let Some(tag) = val.tags.find(TagKind::custom("picture")) {
+            tag.content().map(|s| s.to_owned())
+        } else {
+            None
+        };
+
+        Room {
+            id,
+            created_at,
+            subject,
+            picture,
+            members,
+            kind: RoomKind::default(),
+        }
+    }
+}
+
+impl Room {
+    /// Constructs a new room instance from an nostr event.
+    pub fn new(event: impl Into<Room>) -> Self {
+        event.into()
     }
 
-    /// Sets the rearrange_by field of the room and returns the modified room
-    ///
-    /// This is a builder-style method that allows chaining room modifications.
-    ///
-    /// # Arguments
-    ///
-    /// * `rearrange_by` - The PublicKey to set for rearranging the member list
-    ///
-    /// # Returns
-    ///
-    /// The modified Room instance with the new member list after rearrangement
-    pub fn rearrange_by(mut self, rearrange_by: PublicKey) -> Self {
+    /// Call this function to ensure the current user is always at the bottom of the members list
+    pub fn current_user(mut self, public_key: PublicKey) -> Self {
         let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) =
-            self.members.iter().partition(|&key| key != &rearrange_by);
+            self.members.iter().partition(|&key| key != &public_key);
         self.members = not_match;
         self.members.extend(matches);
         self
     }
 
+    /// Sets the kind of the room and returns the modified room
+    pub fn kind(mut self, kind: RoomKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
     /// Set the room kind to ongoing
-    ///
-    /// # Arguments
-    ///
-    /// * `cx` - The context to notify about the update
     pub fn set_ongoing(&mut self, cx: &mut Context<Self>) {
         if self.kind != RoomKind::Ongoing {
             self.kind = RoomKind::Ongoing;
@@ -209,59 +230,29 @@ impl Room {
     }
 
     /// Checks if the room is a group chat
-    ///
-    /// # Returns
-    ///
-    /// true if the room has more than 2 members, false otherwise
     pub fn is_group(&self) -> bool {
         self.members.len() > 2
     }
 
     /// Updates the creation timestamp of the room
-    ///
-    /// # Arguments
-    ///
-    /// * `created_at` - The new Timestamp to set
-    /// * `cx` - The context to notify about the update
     pub fn created_at(&mut self, created_at: impl Into<Timestamp>, cx: &mut Context<Self>) {
         self.created_at = created_at.into();
         cx.notify();
     }
 
     /// Updates the subject of the room
-    ///
-    /// # Arguments
-    ///
-    /// * `subject` - The new subject to set
-    /// * `cx` - The context to notify about the update
     pub fn subject(&mut self, subject: String, cx: &mut Context<Self>) {
         self.subject = Some(subject);
         cx.notify();
     }
 
     /// Updates the picture of the room
-    ///
-    /// # Arguments
-    ///
-    /// * `picture` - The new subject to set
-    /// * `cx` - The context to notify about the update
     pub fn picture(&mut self, picture: String, cx: &mut Context<Self>) {
         self.picture = Some(picture);
         cx.notify();
     }
 
     /// Gets the display name for the room
-    ///
-    /// If the room has a subject set, that will be used as the display name.
-    /// Otherwise, it will generate a name based on the room members.
-    ///
-    /// # Arguments
-    ///
-    /// * `cx` - The application context
-    ///
-    /// # Returns
-    ///
-    /// A string containing the display name
     pub fn display_name(&self, cx: &App) -> String {
         if let Some(subject) = self.subject.clone() {
             subject
@@ -271,20 +262,6 @@ impl Room {
     }
 
     /// Gets the display image for the room
-    ///
-    /// The image is determined by:
-    /// - The room's picture if set
-    /// - The first member's avatar for 1:1 chats
-    /// - A default group image for group chats
-    ///
-    /// # Arguments
-    ///
-    /// * `proxy` - Whether to use the proxy for the avatar URL
-    /// * `cx` - The application context
-    ///
-    /// # Returns
-    ///
-    /// A string containing the image path or URL
     pub fn display_image(&self, proxy: bool, cx: &App) -> String {
         if let Some(picture) = self.picture.as_ref() {
             picture.clone()

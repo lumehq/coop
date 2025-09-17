@@ -155,7 +155,7 @@ impl Sidebar {
         Self::request_metadata(client, public_key).await?;
 
         // Create a temporary room
-        let room = Room::new(&event).rearrange_by(identity);
+        let room = Room::new(&event).current_user(identity);
 
         Ok(room)
     }

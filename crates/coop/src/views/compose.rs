@@ -8,14 +8,14 @@ use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, uniform_list, AppContext, Context, Entity, InteractiveElement,
+    div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
     Subscription, Task, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
-use registry::room::{Room, RoomKind};
+use registry::room::Room;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -24,6 +24,7 @@ use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
+use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
@@ -37,10 +38,26 @@ pub fn compose_button() -> impl IntoElement {
             .rounded()
             .on_click(move |_, window, cx| {
                 let compose = cx.new(|cx| Compose::new(window, cx));
-                let title = SharedString::new(t!("sidebar.direct_messages"));
 
-                window.open_modal(cx, move |modal, _window, _cx| {
-                    modal.title(title.clone()).child(compose.clone())
+                window.open_modal(cx, move |modal, _window, cx| {
+                    let label = if compose.read(cx).selected(cx).len() > 1 {
+                        shared_t!("compose.create_group_dm_button")
+                    } else {
+                        shared_t!("compose.create_dm_button")
+                    };
+
+                    modal
+                        .confirm()
+                        .overlay_closable(true)
+                        .keyboard(true)
+                        .show_close(true)
+                        .button_props(ModalButtonProps::default().ok_text(label))
+                        .title(shared_t!("sidebar.direct_messages"))
+                        .child(compose.clone())
+                        .on_ok(move |_, window, cx| {
+                            // true to close the modal
+                            true
+                        })
                 })
             }),
     )
@@ -75,39 +92,32 @@ impl Contact {
 pub struct Compose {
     /// Input for the room's subject
     title_input: Entity<InputState>,
+
     /// Input for the room's members
     user_input: Entity<InputState>,
+
     /// The current user's contacts
     contacts: Vec<Entity<Contact>>,
+
     /// Input error message
     error_message: Entity<Option<SharedString>>,
-    adding: bool,
-    submitting: bool,
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+
+    _subscriptions: SmallVec<[Subscription; 1]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+        let error_message = cx.new(|_| None);
+
         let user_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder(t!("compose.placeholder_npub")));
+            cx.new(|cx| InputState::new(window, cx).placeholder("npub or nprofile..."));
 
         let title_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder(t!("compose.placeholder_title")));
+            cx.new(|cx| InputState::new(window, cx).placeholder("Family...(Optional)"));
 
-        let error_message = cx.new(|_| None);
         let mut subscriptions = smallvec![];
-
-        // Handle Enter event for user input
-        subscriptions.push(cx.subscribe_in(
-            &user_input,
-            window,
-            move |this, _input, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.add_and_select_contact(window, cx)
-                };
-            },
-        ));
+        let mut tasks = smallvec![];
 
         let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
@@ -122,32 +132,46 @@ impl Compose {
             Ok(contacts)
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            match get_contacts.await {
-                Ok(contacts) => {
-                    this.update(cx, |this, cx| {
-                        this.extend_contacts(contacts, cx);
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx);
-                    })
-                    .ok();
-                }
-            };
-        })
-        .detach();
+        tasks.push(
+            // Load all contacts
+            cx.spawn_in(window, async move |this, cx| {
+                match get_contacts.await {
+                    Ok(contacts) => {
+                        this.update(cx, |this, cx| {
+                            this.extend_contacts(contacts, cx);
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        cx.update(|window, cx| {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        })
+                        .ok();
+                    }
+                };
+            }),
+        );
+
+        subscriptions.push(
+            // Handle Enter event for user input
+            cx.subscribe_in(
+                &user_input,
+                window,
+                move |this, _input, event, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
+                        this.add_and_select_contact(window, cx)
+                    };
+                },
+            ),
+        );
 
         Self {
-            adding: false,
-            submitting: false,
-            contacts: vec![],
             title_input,
             user_input,
             error_message,
-            subscriptions,
+            contacts: vec![],
+            _subscriptions: subscriptions,
+            _tasks: tasks,
         }
     }
 
@@ -164,6 +188,8 @@ impl Compose {
     }
 
     pub fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = Registry::global(cx);
+        let identity = registry.read(cx).identity(cx);
         let public_keys: Vec<PublicKey> = self.selected(cx);
 
         if public_keys.is_empty() {
@@ -171,62 +197,29 @@ impl Compose {
             return;
         };
 
-        // Show loading spinner
-        self.set_submitting(true, cx);
-
         // Convert selected pubkeys into Nostr tags
-        let mut tag_list: Vec<Tag> = public_keys.iter().map(|pk| Tag::public_key(*pk)).collect();
+        let mut tags: Vec<Tag> = public_keys.iter().map(|pk| Tag::public_key(*pk)).collect();
 
         // Add subject if it is present
         if !self.title_input.read(cx).value().is_empty() {
-            tag_list.push(Tag::custom(
+            tags.push(Tag::custom(
                 TagKind::Subject,
                 vec![self.title_input.read(cx).value().to_string()],
             ));
         }
 
-        let event: Task<Result<Room, Error>> = cx.background_spawn(async move {
-            let signer = nostr_client().signer().await?;
-            let public_key = signer.get_public_key().await?;
+        // Create event
+        let event = EventBuilder::private_msg_rumor(public_keys[0], "")
+            .tags(tags)
+            .build(identity.public_key());
 
-            let room = EventBuilder::private_msg_rumor(public_keys[0], "")
-                .tags(Tags::from_list(tag_list))
-                .build(public_key)
-                .sign(&Keys::generate())
-                .await
-                .map(|event| Room::new(&event).kind(RoomKind::Ongoing))?;
-
-            Ok(room)
+        // Create and insert the new room into the registry
+        registry.update(cx, |this, cx| {
+            this.push_room(cx.new(|_| Room::new(&event)), cx);
         });
 
-        cx.spawn_in(window, async move |this, cx| {
-            match event.await {
-                Ok(room) => {
-                    cx.update(|window, cx| {
-                        let registry = Registry::global(cx);
-                        // Reset local state
-                        this.update(cx, |this, cx| {
-                            this.set_submitting(false, cx);
-                        })
-                        .ok();
-                        // Create and insert the new room into the registry
-                        registry.update(cx, |this, cx| {
-                            this.push_room(cx.new(|_| room), cx);
-                        });
-                        // Close the current modal
-                        window.close_modal(cx);
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    this.update(cx, |this, cx| {
-                        this.set_error(Some(e.to_string().into()), cx);
-                    })
-                    .ok();
-                }
-            };
-        })
-        .detach();
+        // Close the current modal
+        window.close_modal(cx);
     }
 
     fn extend_contacts<I>(&mut self, contacts: I, cx: &mut Context<Self>)
@@ -251,7 +244,7 @@ impl Compose {
         }
     }
 
-    fn selected(&self, cx: &Context<Self>) -> Vec<PublicKey> {
+    fn selected(&self, cx: &App) -> Vec<PublicKey> {
         self.contacts
             .iter()
             .filter_map(|contact| {
@@ -266,9 +259,6 @@ impl Compose {
 
     fn add_and_select_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let content = self.user_input.read(cx).value().to_string();
-
-        // Prevent multiple requests
-        self.set_adding(true, cx);
 
         // Show loading indicator in the input
         self.user_input.update(cx, |this, cx| {
@@ -313,16 +303,12 @@ impl Compose {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(contact) => {
-                    cx.update(|window, cx| {
-                        this.update(cx, |this, cx| {
-                            this.push_contact(contact, cx);
-                            this.set_adding(false, cx);
-                            this.user_input.update(cx, |this, cx| {
-                                this.set_value("", window, cx);
-                                this.set_loading(false, cx);
-                            });
-                        })
-                        .ok();
+                    this.update_in(cx, |this, window, cx| {
+                        this.push_contact(contact, cx);
+                        this.user_input.update(cx, |this, cx| {
+                            this.set_value("", window, cx);
+                            this.set_loading(false, cx);
+                        });
                     })
                     .ok();
                 }
@@ -338,10 +324,6 @@ impl Compose {
     }
 
     fn set_error(&mut self, error: impl Into<Option<SharedString>>, cx: &mut Context<Self>) {
-        if self.adding {
-            self.set_adding(false, cx);
-        }
-
         // Unlock the user input
         self.user_input.update(cx, |this, cx| {
             this.set_loading(false, cx);
@@ -362,16 +344,6 @@ impl Compose {
             .ok();
         })
         .detach();
-    }
-
-    fn set_adding(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.adding = status;
-        cx.notify();
-    }
-
-    fn set_submitting(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.submitting = status;
-        cx.notify();
     }
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
@@ -397,9 +369,7 @@ impl Compose {
                     .justify_between()
                     .rounded(cx.theme().radius)
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
+                        h_flex()
                             .gap_1p5()
                             .text_sm()
                             .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
@@ -428,15 +398,8 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = if self.submitting {
-            t!("compose.creating_dm_button")
-        } else if self.selected(cx).len() > 1 {
-            t!("compose.create_group_dm_button")
-        } else {
-            t!("compose.create_dm_button")
-        };
-
         let error = self.error_message.read(cx).as_ref();
+        let loading = self.user_input.read(cx).loading(cx);
 
         v_flex()
             .mb_4()
@@ -445,7 +408,7 @@ impl Render for Compose {
                 div()
                     .text_sm()
                     .text_color(cx.theme().text_muted)
-                    .child(SharedString::new(t!("compose.description"))),
+                    .child(shared_t!("compose.description")),
             )
             .when_some(error, |this, msg| {
                 this.child(
@@ -466,7 +429,7 @@ impl Render for Compose {
                         div()
                             .text_sm()
                             .font_semibold()
-                            .child(SharedString::new(t!("compose.subject_label"))),
+                            .child(shared_t!("compose.subject_label")),
                     )
                     .child(TextInput::new(&self.title_input).small().appearance(false)),
             )
@@ -481,22 +444,20 @@ impl Render for Compose {
                                 div()
                                     .text_sm()
                                     .font_semibold()
-                                    .child(SharedString::new(t!("compose.to_label"))),
+                                    .child(shared_t!("compose.to_label")),
                             )
                             .child(
                                 h_flex()
                                     .gap_1()
                                     .child(
-                                        TextInput::new(&self.user_input)
-                                            .small()
-                                            .disabled(self.adding),
+                                        TextInput::new(&self.user_input).small().disabled(loading),
                                     )
                                     .child(
                                         Button::new("add")
                                             .icon(IconName::PlusCircleFill)
                                             .ghost()
-                                            .loading(self.adding)
-                                            .disabled(self.adding)
+                                            .loading(loading)
+                                            .disabled(loading)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.add_and_select_contact(window, cx);
                                             })),
@@ -512,21 +473,17 @@ impl Render for Compose {
                                     .items_center()
                                     .justify_center()
                                     .text_center()
+                                    .text_xs()
                                     .child(
                                         div()
-                                            .text_xs()
                                             .font_semibold()
                                             .line_height(relative(1.2))
-                                            .child(SharedString::new(t!(
-                                                "compose.no_contacts_message"
-                                            ))),
+                                            .child(shared_t!("compose.no_contacts_message")),
                                     )
                                     .child(
-                                        div().text_xs().text_color(cx.theme().text_muted).child(
-                                            SharedString::new(t!(
-                                                "compose.no_contacts_description"
-                                            )),
-                                        ),
+                                        div()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(shared_t!("compose.no_contacts_description")),
                                     ),
                             )
                         } else {
@@ -542,18 +499,6 @@ impl Render for Compose {
                             )
                         }
                     }),
-            )
-            .child(
-                Button::new("create_dm_btn")
-                    .label(label)
-                    .primary()
-                    .small()
-                    .w_full()
-                    .loading(self.submitting)
-                    .disabled(self.submitting || self.adding)
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.submit(window, cx);
-                    })),
             )
     }
 }
