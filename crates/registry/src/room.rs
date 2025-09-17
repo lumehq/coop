@@ -201,8 +201,21 @@ impl From<&UnsignedEvent> for Room {
 }
 
 impl Room {
+    pub fn new(receiver: PublicKey, tags: Tags, cx: &App) -> Self {
+        let identity = Registry::read_global(cx).identity(cx);
+
+        let mut event = EventBuilder::private_msg_rumor(receiver, "")
+            .tags(tags)
+            .build(identity.public_key());
+
+        // Ensure event ID is generated
+        event.ensure_id();
+
+        Room::from(&event).current_user(identity.public_key())
+    }
+
     /// Constructs a new room instance from an nostr event.
-    pub fn new(event: impl Into<Room>) -> Self {
+    pub fn from(event: impl Into<Room>) -> Self {
         event.into()
     }
 
@@ -397,6 +410,7 @@ impl Room {
         }
 
         let mut event = builder.tags(tags).build(receiver);
+
         // Ensure event ID is set
         event.ensure_id();
 

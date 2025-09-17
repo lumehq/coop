@@ -324,7 +324,7 @@ impl Registry {
                 let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
 
                 // Create a new room
-                let room = Room::new(&event).current_user(public_key);
+                let room = Room::from(&event).current_user(public_key);
 
                 if is_ongoing || bypassed {
                     rooms.insert(room.kind(RoomKind::Ongoing));
@@ -458,7 +458,7 @@ impl Registry {
                 });
             }
         } else {
-            let room = Room::new(&event).current_user(identity);
+            let room = Room::from(&event).current_user(identity);
 
             // Push the new room to the front of the list
             self.add_room(cx.new(|_| room), cx);

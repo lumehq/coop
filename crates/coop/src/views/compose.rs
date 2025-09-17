@@ -5,15 +5,15 @@ use anyhow::{anyhow, Error};
 use common::display::{ReadableProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
-use global::nostr_client;
+use global::{css, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
     Subscription, Task, Window,
 };
+use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::room::Room;
 use registry::Registry;
@@ -38,8 +38,10 @@ pub fn compose_button() -> impl IntoElement {
             .rounded()
             .on_click(move |_, window, cx| {
                 let compose = cx.new(|cx| Compose::new(window, cx));
+                let weak_view = compose.downgrade();
 
                 window.open_modal(cx, move |modal, _window, cx| {
+                    let weak_view = weak_view.clone();
                     let label = if compose.read(cx).selected(cx).len() > 1 {
                         shared_t!("compose.create_group_dm_button")
                     } else {
@@ -47,7 +49,7 @@ pub fn compose_button() -> impl IntoElement {
                     };
 
                     modal
-                        .confirm()
+                        .alert()
                         .overlay_closable(true)
                         .keyboard(true)
                         .show_close(true)
@@ -55,8 +57,14 @@ pub fn compose_button() -> impl IntoElement {
                         .title(shared_t!("sidebar.direct_messages"))
                         .child(compose.clone())
                         .on_ok(move |_, window, cx| {
-                            // true to close the modal
-                            true
+                            weak_view
+                                .update(cx, |this, cx| {
+                                    this.submit(window, cx);
+                                })
+                                .ok();
+
+                            // false to prevent the modal from closing
+                            false
                         })
                 })
             }),
@@ -124,10 +132,10 @@ impl Compose {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
-            let contacts = profiles
+            let contacts: Vec<Contact> = profiles
                 .into_iter()
                 .map(|profile| Contact::new(profile.public_key()))
-                .collect_vec();
+                .collect();
 
             Ok(contacts)
         });
@@ -175,51 +183,17 @@ impl Compose {
         }
     }
 
-    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+    async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
+        let css = css();
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
             .await?;
 
         Ok(())
-    }
-
-    pub fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx);
-        let identity = registry.read(cx).identity(cx);
-        let public_keys: Vec<PublicKey> = self.selected(cx);
-
-        if public_keys.is_empty() {
-            self.set_error(Some(t!("compose.receiver_required").into()), cx);
-            return;
-        };
-
-        // Convert selected pubkeys into Nostr tags
-        let mut tags: Vec<Tag> = public_keys.iter().map(|pk| Tag::public_key(*pk)).collect();
-
-        // Add subject if it is present
-        if !self.title_input.read(cx).value().is_empty() {
-            tags.push(Tag::custom(
-                TagKind::Subject,
-                vec![self.title_input.read(cx).value().to_string()],
-            ));
-        }
-
-        // Create event
-        let event = EventBuilder::private_msg_rumor(public_keys[0], "")
-            .tags(tags)
-            .build(identity.public_key());
-
-        // Create and insert the new room into the registry
-        registry.update(cx, |this, cx| {
-            this.push_room(cx.new(|_| Room::new(&event)), cx);
-        });
-
-        // Close the current modal
-        window.close_modal(cx);
     }
 
     fn extend_contacts<I>(&mut self, contacts: I, cx: &mut Context<Self>)
@@ -231,14 +205,24 @@ impl Compose {
         cx.notify();
     }
 
-    fn push_contact(&mut self, contact: Contact, cx: &mut Context<Self>) {
-        if !self
-            .contacts
-            .iter()
-            .any(|e| e.read(cx).public_key == contact.public_key)
-        {
-            self.contacts.insert(0, cx.new(|_| contact));
-            cx.notify();
+    fn push_contact(&mut self, contact: Contact, window: &mut Window, cx: &mut Context<Self>) {
+        let pk = contact.public_key;
+
+        if !self.contacts.iter().any(|e| e.read(cx).public_key == pk) {
+            cx.background_spawn(async move {
+                Self::request_metadata(pk).await.ok();
+            })
+            .detach();
+
+            cx.defer_in(window, |this, window, cx| {
+                this.contacts.insert(0, cx.new(|_| contact));
+                this.user_input.update(cx, |this, cx| {
+                    this.set_value("", window, cx);
+                    this.set_loading(false, cx);
+                });
+
+                cx.notify();
+            });
         } else {
             self.set_error(Some(t!("compose.contact_existed").into()), cx);
         }
@@ -265,62 +249,84 @@ impl Compose {
             this.set_loading(true, cx);
         });
 
-        let task: Task<Result<Contact, Error>> = if content.contains("@") {
-            cx.background_spawn(async move {
-                let (tx, rx) = oneshot::channel::<Option<Nip05Profile>>();
-
-                nostr_sdk::async_utility::task::spawn(async move {
-                    let profile = nip05_profile(&content).await.ok();
-                    tx.send(profile).ok();
-                });
-
-                if let Ok(Some(profile)) = rx.await {
-                    let client = nostr_client();
+        if let Ok(public_key) = content.to_public_key() {
+            let contact = Contact::new(public_key).select();
+            self.push_contact(contact, window, cx);
+        } else if content.contains("@") {
+            let task = Tokio::spawn(cx, async move {
+                if let Ok(profile) = nip05_profile(&content).await {
                     let public_key = profile.public_key;
                     let contact = Contact::new(public_key).select();
 
-                    Self::request_metadata(client, public_key).await?;
-
                     Ok(contact)
                 } else {
-                    Err(anyhow!(t!("common.not_found")))
+                    Err(anyhow!("Not found"))
                 }
-            })
-        } else if let Ok(public_key) = content.to_public_key() {
-            cx.background_spawn(async move {
-                let client = nostr_client();
-                let contact = Contact::new(public_key).select();
+            });
 
-                Self::request_metadata(client, public_key).await?;
-
-                Ok(contact)
+            cx.spawn_in(window, async move |this, cx| {
+                match task.await {
+                    Ok(Ok(contact)) => {
+                        this.update_in(cx, |this, window, cx| {
+                            this.push_contact(contact, window, cx);
+                        })
+                        .ok();
+                    }
+                    Ok(Err(e)) => {
+                        this.update(cx, |this, cx| {
+                            this.set_error(Some(e.to_string().into()), cx);
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        log::error!("Tokio error: {e}");
+                    }
+                };
             })
-        } else {
-            self.set_error(Some(t!("common.pubkey_invalid").into()), cx);
+            .detach();
+        }
+    }
+
+    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = Registry::global(cx);
+        let public_keys: Vec<PublicKey> = self.selected(cx);
+
+        if !self.user_input.read(cx).value().is_empty() {
+            self.add_and_select_contact(window, cx);
             return;
         };
 
-        cx.spawn_in(window, async move |this, cx| {
-            match task.await {
-                Ok(contact) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.push_contact(contact, cx);
-                        this.user_input.update(cx, |this, cx| {
-                            this.set_value("", window, cx);
-                            this.set_loading(false, cx);
-                        });
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    this.update(cx, |this, cx| {
-                        this.set_error(Some(e.to_string().into()), cx);
-                    })
-                    .ok();
-                }
-            };
-        })
-        .detach();
+        if public_keys.is_empty() {
+            self.set_error(Some(t!("compose.receiver_required").into()), cx);
+            return;
+        };
+
+        // Convert selected pubkeys into Nostr tags
+        let mut tags: Tags = Tags::from_list(
+            public_keys
+                .iter()
+                .map(|pubkey| Tag::public_key(pubkey.to_owned()))
+                .collect(),
+        );
+
+        // Add subject if it is present
+        if !self.title_input.read(cx).value().is_empty() {
+            tags.push(Tag::custom(
+                TagKind::Subject,
+                vec![self.title_input.read(cx).value().to_string()],
+            ));
+        }
+
+        // Create a new room
+        let room = Room::new(public_keys[0], tags, cx);
+
+        // Insert the new room into the registry
+        registry.update(cx, |this, cx| {
+            this.push_room(cx.new(|_| room), cx);
+        });
+
+        // Close the current modal
+        window.close_modal(cx);
     }
 
     fn set_error(&mut self, error: impl Into<Option<SharedString>>, cx: &mut Context<Self>) {
@@ -363,8 +369,8 @@ impl Compose {
             items.push(
                 h_flex()
                     .id(ix)
-                    .px_1()
-                    .h_9()
+                    .px_2()
+                    .h_11()
                     .w_full()
                     .justify_between()
                     .rounded(cx.theme().radius)
@@ -402,7 +408,6 @@ impl Render for Compose {
         let loading = self.user_input.read(cx).loading(cx);
 
         v_flex()
-            .mb_4()
             .gap_2()
             .child(
                 div()
@@ -435,7 +440,7 @@ impl Render for Compose {
             )
             .child(
                 v_flex()
-                    .my_1()
+                    .pt_1()
                     .gap_2()
                     .child(
                         v_flex()
@@ -447,16 +452,14 @@ impl Render for Compose {
                                     .child(shared_t!("compose.to_label")),
                             )
                             .child(
-                                h_flex()
-                                    .gap_1()
-                                    .child(
-                                        TextInput::new(&self.user_input).small().disabled(loading),
-                                    )
-                                    .child(
+                                TextInput::new(&self.user_input)
+                                    .small()
+                                    .disabled(loading)
+                                    .suffix(
                                         Button::new("add")
                                             .icon(IconName::PlusCircleFill)
-                                            .ghost()
-                                            .loading(loading)
+                                            .transparent()
+                                            .small()
                                             .disabled(loading)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.add_and_select_contact(window, cx);
@@ -495,7 +498,7 @@ impl Render for Compose {
                                         this.list_items(range, cx)
                                     }),
                                 )
-                                .min_h(px(300.)),
+                                .h(px(300.)),
                             )
                         }
                     }),
