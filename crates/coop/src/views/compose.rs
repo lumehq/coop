@@ -71,10 +71,10 @@ pub fn compose_button() -> impl IntoElement {
     )
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Contact {
     public_key: PublicKey,
-    select: bool,
+    selected: bool,
 }
 
 impl AsRef<PublicKey> for Contact {
@@ -87,12 +87,12 @@ impl Contact {
     pub fn new(public_key: PublicKey) -> Self {
         Self {
             public_key,
-            select: false,
+            selected: false,
         }
     }
 
-    pub fn select(mut self) -> Self {
-        self.select = true;
+    pub fn selected(mut self) -> Self {
+        self.selected = true;
         self
     }
 }
@@ -104,10 +104,10 @@ pub struct Compose {
     /// Input for the room's members
     user_input: Entity<InputState>,
 
-    /// The current user's contacts
-    contacts: Vec<Entity<Contact>>,
+    /// User's contacts
+    contacts: Entity<Vec<Contact>>,
 
-    /// Input error message
+    /// Error message
     error_message: Entity<Option<SharedString>>,
 
     _subscriptions: SmallVec<[Subscription; 1]>,
@@ -116,6 +116,7 @@ pub struct Compose {
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+        let contacts = cx.new(|_| vec![]);
         let error_message = cx.new(|_| None);
 
         let user_input =
@@ -177,7 +178,7 @@ impl Compose {
             title_input,
             user_input,
             error_message,
-            contacts: vec![],
+            contacts,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -200,45 +201,42 @@ impl Compose {
     where
         I: IntoIterator<Item = Contact>,
     {
-        self.contacts
-            .extend(contacts.into_iter().map(|contact| cx.new(|_| contact)));
-        cx.notify();
+        self.contacts.update(cx, |this, cx| {
+            this.extend(contacts);
+            cx.notify();
+        });
     }
 
     fn push_contact(&mut self, contact: Contact, window: &mut Window, cx: &mut Context<Self>) {
         let pk = contact.public_key;
 
-        if !self.contacts.iter().any(|e| e.read(cx).public_key == pk) {
-            cx.background_spawn(async move {
+        if !self.contacts.read(cx).iter().any(|c| c.public_key == pk) {
+            self._tasks.push(cx.background_spawn(async move {
                 Self::request_metadata(pk).await.ok();
-            })
-            .detach();
+            }));
 
             cx.defer_in(window, |this, window, cx| {
-                this.contacts.insert(0, cx.new(|_| contact));
+                this.contacts.update(cx, |this, cx| {
+                    this.insert(0, contact);
+                    cx.notify();
+                });
                 this.user_input.update(cx, |this, cx| {
                     this.set_value("", window, cx);
                     this.set_loading(false, cx);
                 });
-
-                cx.notify();
             });
         } else {
             self.set_error(Some(t!("compose.contact_existed").into()), cx);
         }
     }
 
-    fn selected(&self, cx: &App) -> Vec<PublicKey> {
-        self.contacts
-            .iter()
-            .filter_map(|contact| {
-                if contact.read(cx).select {
-                    Some(contact.read(cx).public_key)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    fn select_contact(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
+        self.contacts.update(cx, |this, cx| {
+            if let Some(contact) = this.iter_mut().find(|c| c.public_key == public_key) {
+                contact.selected = true;
+            }
+            cx.notify();
+        });
     }
 
     fn add_and_select_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -250,13 +248,13 @@ impl Compose {
         });
 
         if let Ok(public_key) = content.to_public_key() {
-            let contact = Contact::new(public_key).select();
+            let contact = Contact::new(public_key).selected();
             self.push_contact(contact, window, cx);
         } else if content.contains("@") {
             let task = Tokio::spawn(cx, async move {
                 if let Ok(profile) = nip05_profile(&content).await {
                     let public_key = profile.public_key;
-                    let contact = Contact::new(public_key).select();
+                    let contact = Contact::new(public_key).selected();
 
                     Ok(contact)
                 } else {
@@ -285,6 +283,20 @@ impl Compose {
             })
             .detach();
         }
+    }
+
+    fn selected(&self, cx: &App) -> Vec<PublicKey> {
+        self.contacts
+            .read(cx)
+            .iter()
+            .filter_map(|contact| {
+                if contact.selected {
+                    Some(contact.public_key)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -355,16 +367,15 @@ impl Compose {
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let registry = Registry::read_global(cx);
-        let mut items = Vec::with_capacity(self.contacts.len());
+        let mut items = Vec::with_capacity(self.contacts.read(cx).len());
 
         for ix in range {
-            let Some(entity) = self.contacts.get(ix).cloned() else {
+            let Some(contact) = self.contacts.read(cx).get(ix) else {
                 continue;
             };
 
-            let public_key = entity.read(cx).as_ref();
-            let profile = registry.get_person(public_key, cx);
-            let selected = entity.read(cx).select;
+            let public_key = contact.public_key;
+            let profile = registry.get_person(&public_key, cx);
 
             items.push(
                 h_flex()
@@ -381,7 +392,7 @@ impl Compose {
                             .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
                             .child(profile.display_name()),
                     )
-                    .when(selected, |this| {
+                    .when(contact.selected, |this| {
                         this.child(
                             Icon::new(IconName::CheckCircleFill)
                                 .small()
@@ -389,11 +400,8 @@ impl Compose {
                         )
                     })
                     .hover(|this| this.bg(cx.theme().elevated_surface_background))
-                    .on_click(cx.listener(move |_this, _event, _window, cx| {
-                        entity.update(cx, |this, cx| {
-                            this.select = !this.select;
-                            cx.notify();
-                        });
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        this.select_contact(public_key, cx);
                     })),
             );
         }
@@ -406,6 +414,7 @@ impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let error = self.error_message.read(cx).as_ref();
         let loading = self.user_input.read(cx).loading(cx);
+        let contacts = self.contacts.read(cx);
 
         v_flex()
             .gap_2()
@@ -468,7 +477,7 @@ impl Render for Compose {
                             ),
                     )
                     .map(|this| {
-                        if self.contacts.is_empty() {
+                        if contacts.is_empty() {
                             this.child(
                                 v_flex()
                                     .h_24()
@@ -493,7 +502,7 @@ impl Render for Compose {
                             this.child(
                                 uniform_list(
                                     "contacts",
-                                    self.contacts.len(),
+                                    contacts.len(),
                                     cx.processor(move |this, range, _window, cx| {
                                         this.list_items(range, cx)
                                     }),

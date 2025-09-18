@@ -201,6 +201,7 @@ impl From<&UnsignedEvent> for Room {
 }
 
 impl Room {
+    /// Constructs a new room instance with a given receiver.
     pub fn new(receiver: PublicKey, tags: Tags, cx: &App) -> Self {
         let identity = Registry::read_global(cx).identity(cx);
 
