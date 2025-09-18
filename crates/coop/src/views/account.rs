@@ -343,41 +343,43 @@ impl Render for Account {
                             .text_color(cx.theme().element_foreground)
                             .rounded_lg()
                             .text_sm()
-                            .map(|this| {
-                                if self.loading {
-                                    this.child(
-                                        div()
-                                            .size_full()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(Indicator::new().small()),
-                                    )
-                                } else {
-                                    this.child(
-                                        div()
-                                            .h_full()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .gap_2()
-                                            .child(shared_t!("onboarding.choose_account"))
-                                            .child(
-                                                h_flex()
-                                                    .gap_1()
-                                                    .child(
-                                                        Avatar::new(self.profile.avatar_url(true))
-                                                            .size(rems(1.5)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .pb_px()
-                                                            .font_semibold()
-                                                            .child(self.profile.display_name()),
-                                                    ),
-                                            ),
-                                    )
-                                }
+                            .when(self.loading, |this| {
+                                this.child(
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(Indicator::new().small()),
+                                )
+                            })
+                            .when(!self.loading, |this| {
+                                let avatar = self.profile.avatar_url(true);
+                                let name = self.profile.display_name();
+
+                                this.child(
+                                    h_flex()
+                                        .h_full()
+                                        .justify_center()
+                                        .gap_2()
+                                        .child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(Avatar::new(avatar).size(rems(1.5)))
+                                                .child(div().pb_px().font_semibold().child(name)),
+                                        )
+                                        .child(SharedString::from("-"))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .when(self.is_bunker, |this| {
+                                                    this.child(SharedString::from("Nostr Connect"))
+                                                })
+                                                .when(self.is_extension, |this| {
+                                                    this.child(SharedString::from("Extension"))
+                                                }),
+                                        ),
+                                )
                             })
                             .hover(|this| this.bg(cx.theme().element_hover))
                             .on_click(cx.listener(move |this, _e, window, cx| {
