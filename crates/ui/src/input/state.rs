@@ -781,6 +781,11 @@ impl InputState {
         self
     }
 
+    /// Get the loading state of the input field.
+    pub fn loading(&self, _cx: &App) -> bool {
+        self.loading
+    }
+
     /// Set true to show indicator at the input right.
     pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
         self.loading = loading;
