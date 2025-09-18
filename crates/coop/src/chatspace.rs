@@ -992,7 +992,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(secret, profile, window, cx));
+        let panel = Arc::new(account::init(profile, secret, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {

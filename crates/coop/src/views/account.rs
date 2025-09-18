@@ -22,18 +22,14 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::input::{InputState, TextInput};
+use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
-use ui::{h_flex, v_flex, ContextModal, Disableable, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::chatspace::ChatSpace;
 
-pub fn init(
-    secret: String,
-    profile: Profile,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<Account> {
-    Account::new(secret, profile, window, cx)
+pub fn init(profile: Profile, secret: String, cx: &mut App) -> Entity<Account> {
+    cx.new(|cx| Account::new(secret, profile, cx))
 }
 
 pub struct Account {
@@ -49,11 +45,11 @@ pub struct Account {
 }
 
 impl Account {
-    fn new(secret: String, profile: Profile, _window: &mut Window, cx: &mut App) -> Entity<Self> {
+    fn new(secret: String, profile: Profile, cx: &mut App) -> Self {
         let is_bunker = secret.starts_with("bunker://");
         let is_extension = secret.starts_with("extension");
 
-        cx.new(|cx| Self {
+        Self {
             profile,
             is_bunker,
             is_extension,
@@ -62,7 +58,7 @@ impl Account {
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
             _tasks: smallvec![],
-        })
+        }
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -93,8 +89,8 @@ impl Account {
         signer.auth_url_handler(CoopAuthUrlHandler);
 
         self._tasks.push(
-            // Handle connection
-            cx.spawn_in(window, async move |_this, cx| {
+            // Handle connection in the background
+            cx.spawn_in(window, async move |this, cx| {
                 let client = nostr_client();
 
                 match signer.bunker_uri().await {
@@ -103,8 +99,9 @@ impl Account {
                         client.set_signer(signer).await;
                     }
                     Err(e) => {
-                        cx.update(|window, cx| {
-                            window.push_notification(e.to_string(), cx);
+                        this.update_in(cx, |this, window, cx| {
+                            this.set_loading(false, cx);
+                            window.push_notification(Notification::error(e.to_string()), cx);
                         })
                         .ok();
                     }
@@ -346,41 +343,43 @@ impl Render for Account {
                             .text_color(cx.theme().element_foreground)
                             .rounded_lg()
                             .text_sm()
-                            .map(|this| {
-                                if self.loading {
-                                    this.child(
-                                        div()
-                                            .size_full()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(Indicator::new().small()),
-                                    )
-                                } else {
-                                    this.child(
-                                        div()
-                                            .h_full()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .gap_2()
-                                            .child(shared_t!("onboarding.choose_account"))
-                                            .child(
-                                                h_flex()
-                                                    .gap_1()
-                                                    .child(
-                                                        Avatar::new(self.profile.avatar_url(true))
-                                                            .size(rems(1.5)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .pb_px()
-                                                            .font_semibold()
-                                                            .child(self.profile.display_name()),
-                                                    ),
-                                            ),
-                                    )
-                                }
+                            .when(self.loading, |this| {
+                                this.child(
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(Indicator::new().small()),
+                                )
+                            })
+                            .when(!self.loading, |this| {
+                                let avatar = self.profile.avatar_url(true);
+                                let name = self.profile.display_name();
+
+                                this.child(
+                                    h_flex()
+                                        .h_full()
+                                        .justify_center()
+                                        .gap_2()
+                                        .child(
+                                            h_flex()
+                                                .gap_1()
+                                                .child(Avatar::new(avatar).size(rems(1.5)))
+                                                .child(div().pb_px().font_semibold().child(name)),
+                                        )
+                                        .child(SharedString::from("-"))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .when(self.is_bunker, |this| {
+                                                    this.child(SharedString::from("Nostr Connect"))
+                                                })
+                                                .when(self.is_extension, |this| {
+                                                    this.child(SharedString::from("Extension"))
+                                                }),
+                                        ),
+                                )
                             })
                             .hover(|this| this.bg(cx.theme().element_hover))
                             .on_click(cx.listener(move |this, _e, window, cx| {
@@ -391,7 +390,6 @@ impl Render for Account {
                         Button::new("logout")
                             .label(t!("user.sign_out"))
                             .ghost()
-                            .disabled(self.loading)
                             .on_click(cx.listener(move |this, _e, window, cx| {
                                 this.logout(window, cx);
                             })),
