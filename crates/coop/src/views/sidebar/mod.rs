@@ -6,7 +6,7 @@ use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{ReadableTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
-use global::{css, nostr_client, UnwrappingStatus};
+use global::{app_state, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -530,8 +530,8 @@ impl Sidebar {
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let css = css();
-            let subscription = client.subscription(&css.gift_wrap_sub_id).await;
+            let app_state = app_state();
+            let subscription = client.subscription(&app_state.gift_wrap_sub_id).await;
             let mut relays: Vec<Relay> = vec![];
 
             for (url, _filter) in subscription.into_iter() {

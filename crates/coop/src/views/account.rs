@@ -5,7 +5,7 @@ use client_keys::ClientKeys;
 use common::display::ReadableProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use global::{css, nostr_client, SignalKind};
+use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -245,7 +245,7 @@ impl Account {
             // Reset the nostr client in the background
             cx.background_spawn(async move {
                 let client = nostr_client();
-                let css = css();
+                let app_state = app_state();
 
                 let filter = Filter::new()
                     .kind(Kind::ApplicationSpecificData)
@@ -258,7 +258,7 @@ impl Account {
                 client.unset_signer().await;
 
                 // Notify the channel about the signer being unset
-                css.signal.send(SignalKind::SignerUnset).await;
+                app_state.signal.send(SignalKind::SignerUnset).await;
             }),
         );
     }
@@ -339,8 +339,7 @@ impl Render for Account {
                             .id("account")
                             .h_10()
                             .w_72()
-                            .bg(cx.theme().element_background)
-                            .text_color(cx.theme().element_foreground)
+                            .bg(cx.theme().elevated_surface_background)
                             .rounded_lg()
                             .text_sm()
                             .when(self.loading, |this| {
@@ -368,19 +367,40 @@ impl Render for Account {
                                                 .child(Avatar::new(avatar).size(rems(1.5)))
                                                 .child(div().pb_px().font_semibold().child(name)),
                                         )
-                                        .child(SharedString::from("-"))
                                         .child(
                                             div()
-                                                .text_xs()
                                                 .when(self.is_bunker, |this| {
-                                                    this.child(SharedString::from("Nostr Connect"))
+                                                    this.child(
+                                                        div()
+                                                            .py_0p5()
+                                                            .px_2()
+                                                            .text_xs()
+                                                            .bg(cx.theme().secondary_active)
+                                                            .text_color(
+                                                                cx.theme().secondary_foreground,
+                                                            )
+                                                            .rounded_full()
+                                                            .child("Nostr Connect"),
+                                                    )
                                                 })
                                                 .when(self.is_extension, |this| {
-                                                    this.child(SharedString::from("Extension"))
+                                                    this.child(
+                                                        div()
+                                                            .py_0p5()
+                                                            .px_2()
+                                                            .text_xs()
+                                                            .bg(cx.theme().secondary_active)
+                                                            .text_color(
+                                                                cx.theme().secondary_foreground,
+                                                            )
+                                                            .rounded_full()
+                                                            .child("Extension"),
+                                                    )
                                                 }),
                                         ),
                                 )
                             })
+                            .active(|this| this.bg(cx.theme().element_active))
                             .hover(|this| this.bg(cx.theme().element_hover))
                             .on_click(cx.listener(move |this, _e, window, cx| {
                                 this.login(window, cx);

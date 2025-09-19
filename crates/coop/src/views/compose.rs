@@ -5,7 +5,7 @@ use anyhow::{anyhow, Error};
 use common::display::{ReadableProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
-use global::{css, nostr_client};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
@@ -186,12 +186,12 @@ impl Compose {
 
     async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
             .await?;
 
         Ok(())

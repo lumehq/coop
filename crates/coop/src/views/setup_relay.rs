@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use global::constants::NIP17_RELAYS;
-use global::{css, nostr_client};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
@@ -218,7 +218,7 @@ impl SetupRelay {
             }
 
             // Fetch gift wrap events
-            let sub_id = css().gift_wrap_sub_id.clone();
+            let sub_id = app_state().gift_wrap_sub_id.clone();
             let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
             if client

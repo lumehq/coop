@@ -13,7 +13,7 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use global::{css, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
+use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
@@ -213,7 +213,7 @@ impl ChatSpace {
 
     async fn observe_signer() {
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
         let stream_timeout = Duration::from_secs(5);
         let loop_duration = Duration::from_secs(1);
 
@@ -229,7 +229,10 @@ impl ChatSpace {
             };
 
             // Notify the app that the signer has been set.
-            css.signal.send(SignalKind::SignerSet(public_key)).await;
+            app_state
+                .signal
+                .send(SignalKind::SignerSet(public_key))
+                .await;
 
             // Subscribe to the NIP-65 relays for the public key.
             let filter = Filter::new()
@@ -248,12 +251,12 @@ impl ChatSpace {
                         nip65_found = true;
                     } else {
                         // Timeout
-                        css.signal.send(SignalKind::RelaysNotFound).await;
+                        app_state.signal.send(SignalKind::RelaysNotFound).await;
                     }
                 }
                 Err(e) => {
                     log::error!("Error fetching NIP-65 Relay: {e:?}");
-                    css.signal.send(SignalKind::RelaysNotFound).await;
+                    app_state.signal.send(SignalKind::RelaysNotFound).await;
                 }
             };
 
@@ -270,12 +273,12 @@ impl ChatSpace {
                             break;
                         } else {
                             // Timeout
-                            css.signal.send(SignalKind::RelaysNotFound).await;
+                            app_state.signal.send(SignalKind::RelaysNotFound).await;
                         }
                     }
                     Err(e) => {
                         log::error!("Error fetching NIP-17 Relay: {e:?}");
-                        css.signal.send(SignalKind::RelaysNotFound).await;
+                        app_state.signal.send(SignalKind::RelaysNotFound).await;
                     }
                 };
             }
@@ -286,7 +289,7 @@ impl ChatSpace {
 
     async fn observe_giftwrap() {
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
         let loop_duration = Duration::from_secs(20);
         let mut is_start_processing = false;
         let mut total_loops = 0;
@@ -295,11 +298,11 @@ impl ChatSpace {
             if client.has_signer().await {
                 total_loops += 1;
 
-                if css.gift_wrap_processing.load(Ordering::Acquire) {
+                if app_state.gift_wrap_processing.load(Ordering::Acquire) {
                     is_start_processing = true;
 
                     // Reset gift wrap processing flag
-                    let _ = css.gift_wrap_processing.compare_exchange(
+                    let _ = app_state.gift_wrap_processing.compare_exchange(
                         true,
                         false,
                         Ordering::Release,
@@ -307,13 +310,13 @@ impl ChatSpace {
                     );
 
                     let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
-                    css.signal.send(signal).await;
+                    app_state.signal.send(signal).await;
                 } else {
                     // Only run further if we are already processing
                     // Wait until after 2 loops to prevent exiting early while events are still being processed
                     if is_start_processing && total_loops >= 2 {
                         let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Complete);
-                        css.signal.send(signal).await;
+                        app_state.signal.send(signal).await;
 
                         // Reset the counter
                         is_start_processing = false;
@@ -327,7 +330,7 @@ impl ChatSpace {
     }
 
     async fn process_batching_metadata() {
-        let css = css();
+        let app_state = app_state();
         let timeout = Duration::from_millis(METADATA_BATCH_TIMEOUT);
         let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
         let mut batch: HashSet<PublicKey> = HashSet::new();
@@ -342,7 +345,7 @@ impl ChatSpace {
         loop {
             let futs = smol::future::or(
                 async move {
-                    if let Ok(public_key) = css.ingester.receiver().recv_async().await {
+                    if let Ok(public_key) = app_state.ingester.receiver().recv_async().await {
                         BatchEvent::PublicKey(public_key)
                     } else {
                         BatchEvent::Closed
@@ -379,7 +382,7 @@ impl ChatSpace {
 
     async fn process_nostr_events() -> Result<(), Error> {
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
 
         let mut processed_events: HashSet<EventId> = HashSet::new();
         let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
@@ -393,7 +396,8 @@ impl ChatSpace {
             match message {
                 RelayMessage::Event { event, .. } => {
                     // Keep track of which relays have seen this event
-                    css.seen_on_relays
+                    app_state
+                        .seen_on_relays
                         .write()
                         .await
                         .entry(event.id)
@@ -423,18 +427,18 @@ impl ChatSpace {
                                     for relay in relays.clone().into_iter() {
                                         if client.add_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
-                                            css.signal.send(SignalKind::Notice(notice)).await;
+                                            app_state.signal.send(SignalKind::Notice(notice)).await;
                                         }
                                         if client.connect_relay(relay).await.is_err() {
                                             let notice = Notice::RelayFailed(relay.clone());
-                                            css.signal.send(SignalKind::Notice(notice)).await;
+                                            app_state.signal.send(SignalKind::Notice(notice)).await;
                                         }
                                     }
 
                                     // Subscribe to gift wrap events only in the current user's NIP-17 relays
                                     Self::fetch_gift_wrap(relays, event.pubkey).await;
                                 } else {
-                                    css.signal.send(SignalKind::RelaysNotFound).await;
+                                    app_state.signal.send(SignalKind::RelaysNotFound).await;
                                 }
                             }
                         }
@@ -447,7 +451,11 @@ impl ChatSpace {
                                     Filter::new().limit(limit).authors(public_keys).kinds(kinds);
 
                                 client
-                                    .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
+                                    .subscribe_to(
+                                        BOOTSTRAP_RELAYS,
+                                        filter,
+                                        app_state.auto_close_opts,
+                                    )
                                     .await
                                     .ok();
                             }
@@ -456,7 +464,7 @@ impl ChatSpace {
                             let metadata = Metadata::from_json(&event.content).unwrap_or_default();
                             let profile = Profile::new(event.pubkey, metadata);
 
-                            css.signal.send(SignalKind::NewProfile(profile)).await;
+                            app_state.signal.send(SignalKind::NewProfile(profile)).await;
                         }
                         Kind::GiftWrap => {
                             Self::unwrap_gift_wrap(&event).await;
@@ -465,28 +473,32 @@ impl ChatSpace {
                     }
                 }
                 RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if *subscription_id == css.gift_wrap_sub_id {
+                    if *subscription_id == app_state.gift_wrap_sub_id {
                         let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
-                        css.signal.send(signal).await;
+                        app_state.signal.send(signal).await;
                     }
                 }
                 RelayMessage::Auth { challenge } => {
                     if challenges.insert(challenge.clone()) {
                         let req = AuthRequest::new(challenge, relay_url);
                         // Send a signal to the ingester to handle the auth request
-                        css.signal.send(SignalKind::Auth(req)).await;
+                        app_state.signal.send(SignalKind::Auth(req)).await;
                     }
                 }
                 RelayMessage::Ok {
                     event_id, message, ..
                 } => {
                     // Keep track of events sent by Coop
-                    css.sent_ids.write().await.insert(event_id);
+                    app_state.sent_ids.write().await.insert(event_id);
 
                     // Keep track of events that need to be resent
                     match MachineReadablePrefix::parse(&message) {
                         Some(MachineReadablePrefix::AuthRequired) => {
-                            css.resend_queue.write().await.insert(event_id, relay_url);
+                            app_state
+                                .resend_queue
+                                .write()
+                                .await
+                                .insert(event_id, relay_url);
                         }
                         Some(_) => {}
                         None => {}
@@ -500,10 +512,10 @@ impl ChatSpace {
     }
 
     async fn process_nostr_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
-        let css = css();
+        let app_state = app_state();
         let mut is_open_proxy_modal = false;
 
-        while let Ok(signal) = css.signal.receiver().recv_async().await {
+        while let Ok(signal) = app_state.signal.receiver().recv_async().await {
             cx.update(|window, cx| {
                 let registry = Registry::global(cx);
                 let settings = AppSettings::global(cx);
@@ -611,10 +623,10 @@ impl ChatSpace {
     /// Fetches a single event by kind and public key
     pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
         let filter = Filter::new().kind(kind).author(public_key).limit(1);
 
-        if let Err(e) = client.subscribe(filter, css.auto_close_opts).await {
+        if let Err(e) = client.subscribe(filter, app_state.auto_close_opts).await {
             log::info!("Failed to subscribe: {e}");
         }
     }
@@ -622,11 +634,11 @@ impl ChatSpace {
     /// Fetches gift wrap events for a given public key and relays
     pub async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
         let client = nostr_client();
-        let sub_id = css().gift_wrap_sub_id.clone();
+        let id = app_state().gift_wrap_sub_id.clone();
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         if client
-            .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
+            .subscribe_with_id_to(relays.clone(), id, filter, None)
             .await
             .is_ok()
         {
@@ -641,7 +653,7 @@ impl ChatSpace {
         }
 
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
 
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let limit = public_keys.len() * kinds.len() + 20;
@@ -650,7 +662,7 @@ impl ChatSpace {
         let filter = Filter::new().authors(public_keys).kinds(kinds).limit(limit);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
             .await
             .ok();
     }
@@ -698,7 +710,7 @@ impl ChatSpace {
     /// Unwraps a gift-wrapped event and processes its contents.
     async fn unwrap_gift_wrap(target: &Event) {
         let client = nostr_client();
-        let css = css();
+        let app_state = app_state();
         let mut message: Option<Event> = None;
 
         if let Ok(event) = Self::get_unwrapped_event(target.id).await {
@@ -718,21 +730,24 @@ impl ChatSpace {
         if let Some(event) = message {
             // Send all pubkeys to the metadata batch to sync data
             for public_key in event.all_pubkeys() {
-                css.ingester.send(public_key).await;
+                app_state.ingester.send(public_key).await;
             }
 
-            match event.created_at >= css.init_at {
+            match event.created_at >= app_state.init_at {
                 // New message: send a signal to notify the UI
                 true => {
                     // A small delay to prevent UI flickering
                     smol::Timer::after(Duration::from_millis(200)).await;
-                    css.signal
+                    app_state
+                        .signal
                         .send(SignalKind::NewMessage((target.id, event)))
                         .await;
                 }
                 // Old message: Coop is probably processing the user's messages during initial load
                 false => {
-                    css.gift_wrap_processing.store(true, Ordering::Release);
+                    app_state
+                        .gift_wrap_processing
+                        .store(true, Ordering::Release);
                 }
             }
         }
@@ -783,7 +798,7 @@ impl ChatSpace {
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let css = css();
+            let app_state = app_state();
             let signer = client.signer().await?;
 
             // Construct event
@@ -814,7 +829,7 @@ impl ChatSpace {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut queue = css.resend_queue.write().await;
+                            let mut queue = app_state.resend_queue.write().await;
 
                             let ids: Vec<EventId> = queue
                                 .iter()
@@ -833,8 +848,8 @@ impl ChatSpace {
                                             success: HashSet::from([relay_url]),
                                         };
 
-                                        css.sent_ids.write().await.insert(event_id);
-                                        css.resent_ids.write().await.push(output);
+                                        app_state.sent_ids.write().await.insert(event_id);
+                                        app_state.resent_ids.write().await.push(output);
                                     }
                                 }
                             }
@@ -1092,7 +1107,7 @@ impl ChatSpace {
     ) {
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let css = css();
+            let app_state = app_state();
 
             let filter = Filter::new().kind(Kind::PrivateDirectMessage);
 
@@ -1111,7 +1126,7 @@ impl ChatSpace {
                 .authors(pubkeys);
 
             client
-                .subscribe_to(BOOTSTRAP_RELAYS, filter, css.auto_close_opts)
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
                 .await?;
 
             Ok(())
@@ -1131,7 +1146,7 @@ impl ChatSpace {
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         cx.background_spawn(async move {
             let client = nostr_client();
-            let css = css();
+            let app_state = app_state();
 
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
@@ -1144,7 +1159,7 @@ impl ChatSpace {
             client.reset().await;
 
             // Notify the channel about the signer being unset
-            css.signal.send(SignalKind::SignerUnset).await;
+            app_state.signal.send(SignalKind::SignerUnset).await;
         })
         .detach();
     }
@@ -1368,7 +1383,7 @@ impl ChatSpace {
 
             this._tasks.push(cx.background_spawn(async move {
                 let client = nostr_client();
-                let css = css();
+                let app_state = app_state();
 
                 if proxy.start().await.is_ok() {
                     webbrowser::open(&url).ok();
@@ -1399,7 +1414,7 @@ impl ChatSpace {
 
                             break;
                         } else {
-                            css.signal.send(SignalKind::ProxyDown).await;
+                            app_state.signal.send(SignalKind::ProxyDown).await;
                         }
                         smol::Timer::after(Duration::from_secs(1)).await;
                     }

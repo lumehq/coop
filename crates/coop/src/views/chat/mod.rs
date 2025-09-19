@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
-use global::{css, nostr_client};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
@@ -298,7 +298,7 @@ impl Chat {
 
     /// Check if the event is sent by Coop
     fn is_sent_by_coop(&self, gift_wrap_id: &EventId) -> bool {
-        css().sent_ids.read_blocking().contains(gift_wrap_id)
+        app_state().sent_ids.read_blocking().contains(gift_wrap_id)
     }
 
     /// Send a message to all members of the chat
@@ -1263,7 +1263,7 @@ impl Chat {
 
         let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let css = css();
+            let app_state = app_state();
             let mut relays: Vec<RelayUrl> = vec![];
 
             let filter = Filter::new()
@@ -1273,7 +1273,7 @@ impl Chat {
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
                 if let Some(Ok(id)) = event.tags.identifier().map(EventId::parse) {
-                    if let Some(urls) = css.seen_on_relays.read().await.get(&id).cloned() {
+                    if let Some(urls) = app_state.seen_on_relays.read().await.get(&id).cloned() {
                         relays.extend(urls);
                     }
                 }

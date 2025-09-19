@@ -7,7 +7,7 @@ use anyhow::Error;
 use common::display::ReadableProfile;
 use common::event::EventUtils;
 use global::constants::SEND_RETRY;
-use global::{css, nostr_client};
+use global::{app_state, nostr_client};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
@@ -432,7 +432,7 @@ impl Room {
         let mut public_keys = self.members.clone();
 
         cx.background_spawn(async move {
-            let css = css();
+            let app_state = app_state();
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
@@ -492,15 +492,10 @@ impl Room {
                         if auth_required {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
+                                let ids = app_state.resent_ids.read().await;
+
                                 // Check if event was successfully resent
-                                if let Some(output) = css
-                                    .resent_ids
-                                    .read()
-                                    .await
-                                    .iter()
-                                    .find(|e| e.id() == &id)
-                                    .cloned()
-                                {
+                                if let Some(output) = ids.iter().find(|e| e.id() == &id).cloned() {
                                     let output = SendReport::new(pubkey).status(output).tags(&tags);
                                     reports.push(output);
                                     break;

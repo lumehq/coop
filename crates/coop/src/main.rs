@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use assets::Assets;
 use global::constants::{APP_ID, APP_NAME};
-use global::{css, nostr_client};
+use global::{app_state, nostr_client};
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
@@ -27,7 +27,7 @@ fn main() {
     let _client = nostr_client();
 
     // Initialize the coop simple storage
-    let _css = css();
+    let _app_state = app_state();
 
     // Initialize the Application
     let app = Application::new()

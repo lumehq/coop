@@ -146,7 +146,7 @@ impl Ingester {
 
 /// A simple storage to store all states that using across the application.
 #[derive(Debug)]
-pub struct CoopSimpleStorage {
+pub struct AppState {
     pub init_at: Timestamp,
 
     pub last_used_at: Option<Timestamp>,
@@ -172,13 +172,13 @@ pub struct CoopSimpleStorage {
     pub ingester: Ingester,
 }
 
-impl Default for CoopSimpleStorage {
+impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl CoopSimpleStorage {
+impl AppState {
     pub fn new() -> Self {
         let init_at = Timestamp::now();
         let first_run = first_run();
@@ -205,7 +205,7 @@ impl CoopSimpleStorage {
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-static COOP_SIMPLE_STORAGE: OnceLock<CoopSimpleStorage> = OnceLock::new();
+static APP_STATE: OnceLock<AppState> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
     NOSTR_CLIENT.get_or_init(|| {
@@ -223,15 +223,15 @@ pub fn nostr_client() -> &'static Client {
             .automatic_authentication(false)
             .verify_subscriptions(false)
             .sleep_when_idle(SleepWhenIdle::Enabled {
-                timeout: Duration::from_secs(30),
+                timeout: Duration::from_secs(300),
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
     })
 }
 
-pub fn css() -> &'static CoopSimpleStorage {
-    COOP_SIMPLE_STORAGE.get_or_init(CoopSimpleStorage::new)
+pub fn app_state() -> &'static AppState {
+    APP_STATE.get_or_init(AppState::new)
 }
 
 fn first_run() -> bool {
