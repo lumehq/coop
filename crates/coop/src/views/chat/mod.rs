@@ -33,10 +33,7 @@ use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::{PopupMenu, PopupMenuExt};
 use ui::text::RenderedText;
-use ui::{
-    h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
-    StyledExt,
-};
+use ui::{h_flex, v_flex, ContextModal, Icon, IconName, InteractiveElementExt, Sizable, StyledExt};
 
 mod subject;
 
@@ -65,7 +62,6 @@ pub struct Chat {
 
     // Media Attachment
     attachments: Entity<Vec<Url>>,
-    uploading: bool,
 
     // Panel
     id: SharedString,
@@ -215,7 +211,6 @@ impl Chat {
             id: room.read(cx).id.to_string().into(),
             image_cache: RetainAllImageCache::new(cx),
             focus_handle: cx.focus_handle(),
-            uploading: false,
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
             relays,
@@ -538,12 +533,6 @@ impl Chat {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.uploading {
-            return;
-        }
-        // Block the upload button to until current task is resolved
-        self.uploading(true, cx);
-
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
@@ -575,15 +564,14 @@ impl Chat {
                         .ok();
                     }
                     Ok(None) => {
-                        this.update(cx, |this, cx| {
-                            this.uploading(false, cx);
+                        this.update_in(cx, |_this, window, cx| {
+                            window.push_notification("Failed to upload file", cx);
                         })
                         .ok();
                     }
                     Err(e) => {
-                        this.update_in(cx, |this, window, cx| {
+                        this.update_in(cx, |_this, window, cx| {
                             window.push_notification(Notification::error(e.to_string()), cx);
-                            this.uploading(false, cx);
                         })
                         .ok();
                     }
@@ -600,7 +588,6 @@ impl Chat {
             this.push(url);
             cx.notify();
         });
-        self.uploading(false, cx);
     }
 
     fn remove_attachment(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
@@ -617,11 +604,6 @@ impl Chat {
             this.clear();
             cx.notify();
         });
-    }
-
-    fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.uploading = status;
-        cx.notify();
     }
 
     fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
@@ -1428,8 +1410,6 @@ impl Render for Chat {
                                                     .icon(IconName::Upload)
                                                     .ghost()
                                                     .large()
-                                                    .disabled(self.uploading)
-                                                    .loading(self.uploading)
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
                                                             this.upload(window, cx);
