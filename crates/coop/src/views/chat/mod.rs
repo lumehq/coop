@@ -828,7 +828,7 @@ impl Chat {
                             .w_full()
                             .text_ellipsis()
                             .line_clamp(1)
-                            .child(message.content.clone()),
+                            .child(SharedString::from(&message.content)),
                     )
                     .hover(|this| this.bg(cx.theme().elevated_surface_background))
                     .on_click({
@@ -1188,7 +1188,7 @@ impl Chat {
                         .text_sm()
                         .text_ellipsis()
                         .line_clamp(1)
-                        .child(text.content.clone()),
+                        .child(SharedString::from(&text.content)),
                 )
         } else {
             div()
