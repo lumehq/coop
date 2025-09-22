@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use global::{app_state, nostr_client, SignalKind};
@@ -353,7 +353,7 @@ impl Render for Account {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = self.profile.avatar_url(true);
+                                let avatar = self.profile.avatar(true);
                                 let name = self.profile.display_name();
 
                                 this.child(
@@ -370,6 +370,8 @@ impl Render for Account {
                                         .child(
                                             div()
                                                 .when(self.is_bunker, |this| {
+                                                    let label = SharedString::from("Nostr Connect");
+
                                                     this.child(
                                                         div()
                                                             .py_0p5()
@@ -380,10 +382,12 @@ impl Render for Account {
                                                                 cx.theme().secondary_foreground,
                                                             )
                                                             .rounded_full()
-                                                            .child("Nostr Connect"),
+                                                            .child(label),
                                                     )
                                                 })
                                                 .when(self.is_extension, |this| {
+                                                    let label = SharedString::from("Extension");
+
                                                     this.child(
                                                         div()
                                                             .py_0p5()
@@ -394,7 +398,7 @@ impl Render for Account {
                                                                 cx.theme().secondary_foreground,
                                                             )
                                                             .rounded_full()
-                                                            .child("Extension"),
+                                                            .child(label),
                                                     )
                                                 }),
                                         ),

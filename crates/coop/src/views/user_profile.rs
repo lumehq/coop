@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -140,7 +140,7 @@ impl Render for UserProfile {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar_url(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
                     .child(
                         v_flex()
                             .child(
@@ -194,7 +194,7 @@ impl Render for UserProfile {
                         div()
                             .block()
                             .text_color(cx.theme().text_muted)
-                            .child("Public Key:"),
+                            .child(SharedString::from("Public Key:")),
                     )
                     .child(
                         h_flex()

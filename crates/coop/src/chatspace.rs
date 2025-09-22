@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use common::event::EventUtils;
 use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
@@ -1356,7 +1356,7 @@ impl ChatSpace {
                     .reverse()
                     .transparent()
                     .icon(IconName::CaretDown)
-                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.49)))
+                    .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
                     .popup_menu(|this, _window, _cx| {
                         this.menu(t!("user.dark_mode"), Box::new(DarkMode))
                             .menu(t!("user.settings"), Box::new(Settings))

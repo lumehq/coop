@@ -29,10 +29,10 @@ macro_rules! init {
 #[macro_export]
 macro_rules! shared_t {
     ($key:expr) => {
-        SharedString::new(t!($key))
+        SharedString::from(t!($key))
     };
     ($key:expr, $($param:ident = $value:expr),+) => {
-        SharedString::new(t!($key, $($param = $value),+))
+        SharedString::from(t!($key, $($param = $value),+))
     };
 }
 

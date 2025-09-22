@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::display::{ReadableProfile, ReadableTimestamp};
+use common::display::{ReadableTimestamp, RenderedProfile};
 use common::nip96::nip96_upload;
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
@@ -729,7 +729,7 @@ impl Chat {
                     .flex()
                     .gap_3()
                     .when(!hide_avatar, |this| {
-                        this.child(Avatar::new(author.avatar_url(proxy)).size(rems(2.)))
+                        this.child(Avatar::new(author.avatar(proxy)).size(rems(2.)))
                     })
                     .child(
                         v_flex()
@@ -902,7 +902,7 @@ impl Chat {
         let registry = Registry::read_global(cx);
         let profile = registry.get_person(&report.receiver, cx);
         let name = profile.display_name();
-        let avatar = profile.avatar_url(true);
+        let avatar = profile.avatar(true);
 
         v_flex()
             .gap_2()

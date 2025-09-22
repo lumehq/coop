@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::{shorten_pubkey, ReadableProfile, ReadableTimestamp};
+use common::display::{shorten_pubkey, ReadableTimestamp, RenderedProfile};
 use common::nip05::nip05_verify;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;
@@ -202,9 +202,7 @@ impl Screening {
                                         .hover(|this| {
                                             this.bg(cx.theme().elevated_surface_background)
                                         })
-                                        .child(
-                                            Avatar::new(contact.avatar_url(true)).size(rems(1.75)),
-                                        )
+                                        .child(Avatar::new(contact.avatar(true)).size(rems(1.75)))
                                         .child(contact.display_name()),
                                 );
                             }
@@ -234,7 +232,7 @@ impl Render for Screening {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar_url(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
                     .child(
                         div()
                             .font_semibold()

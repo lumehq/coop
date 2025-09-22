@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::display::{ReadableProfile, TextUtils};
+use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::{app_state, nostr_client};
@@ -389,7 +389,7 @@ impl Compose {
                         h_flex()
                             .gap_1p5()
                             .text_sm()
-                            .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
+                            .child(Avatar::new(profile.avatar(proxy)).size(rems(1.75)))
                             .child(profile.display_name()),
                     )
                     .when(contact.selected, |this| {

@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use anyhow::Error;
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use common::event::EventUtils;
 use global::constants::SEND_RETRY;
 use global::{app_state, nostr_client};
@@ -267,22 +267,22 @@ impl Room {
     }
 
     /// Gets the display name for the room
-    pub fn display_name(&self, cx: &App) -> String {
+    pub fn display_name(&self, cx: &App) -> SharedString {
         if let Some(subject) = self.subject.clone() {
-            subject
+            SharedString::from(subject)
         } else {
-            self.merge_name(cx)
+            self.merged_name(cx)
         }
     }
 
     /// Gets the display image for the room
-    pub fn display_image(&self, proxy: bool, cx: &App) -> String {
+    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
         if let Some(picture) = self.picture.as_ref() {
-            picture.clone()
+            SharedString::from(picture)
         } else if !self.is_group() {
-            self.first_member(cx).avatar_url(proxy)
+            self.first_member(cx).avatar(proxy)
         } else {
-            "brand/group.png".into()
+            SharedString::from("brand/group.png")
         }
     }
 
@@ -295,7 +295,7 @@ impl Room {
     }
 
     /// Merge the names of the first two members of the room.
-    pub(crate) fn merge_name(&self, cx: &App) -> String {
+    pub(crate) fn merged_name(&self, cx: &App) -> SharedString {
         let registry = Registry::read_global(cx);
 
         if self.is_group() {
@@ -308,7 +308,7 @@ impl Room {
             let mut name = profiles
                 .iter()
                 .take(2)
-                .map(|p| p.display_name())
+                .map(|p| p.name())
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -316,7 +316,7 @@ impl Room {
                 name = format!("{}, +{}", name, profiles.len() - 2);
             }
 
-            name
+            SharedString::from(name)
         } else {
             self.first_member(cx).display_name()
         }
