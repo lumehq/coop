@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::anyhow;
 use common::display::{ReadableProfile, ReadableTimestamp};
 use common::nip96::nip96_upload;
 use global::{app_state, nostr_client};
@@ -31,6 +30,7 @@ use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
+use ui::notification::Notification;
 use ui::popup_menu::{PopupMenu, PopupMenuExt};
 use ui::text::RenderedText;
 use ui::{
@@ -215,7 +215,6 @@ impl Chat {
             id: room.read(cx).id.to_string().into(),
             image_cache: RetainAllImageCache::new(cx),
             focus_handle: cx.focus_handle(),
-            uploading: false,
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
             relays,
@@ -225,6 +224,7 @@ impl Chat {
             input,
             replies_to,
             attachments,
+            uploading: false,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -282,15 +282,17 @@ impl Chat {
         let attachments = self.attachments.read(cx);
 
         if !attachments.is_empty() {
-            content = format!(
-                "{}\n{}",
-                content,
-                attachments
-                    .iter()
-                    .map(|url| url.to_string())
-                    .collect_vec()
-                    .join("\n")
-            )
+            let urls = attachments
+                .iter()
+                .map(|url| url.to_string())
+                .collect_vec()
+                .join("\n");
+
+            if content.is_empty() {
+                content = urls;
+            } else {
+                content = format!("{content}\n{urls}");
+            }
         }
 
         content
@@ -341,6 +343,9 @@ impl Chat {
 
             // Remove all replies
             this.remove_all_replies(cx);
+
+            // remove all attachments
+            this.remove_all_attachments(cx);
 
             // Reset the input state
             this.input.update(cx, |this, cx| {
@@ -533,65 +538,67 @@ impl Chat {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.uploading {
-            return;
-        }
-        // Block the upload button to until current task is resolved
-        self.uploading(true, cx);
-
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
-        // Open native file dialog
-        let paths = cx.prompt_for_paths(PathPromptOptions {
+        let path = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: false,
             prompt: None,
         });
 
-        let task = Tokio::spawn(cx, async move {
-            match Flatten::flatten(paths.await.map_err(|e| e.into())) {
-                Ok(Some(mut paths)) => {
-                    if let Some(path) = paths.pop() {
-                        let file = fs::read(path).await?;
-                        let url = nip96_upload(nostr_client(), &nip96_server, file).await?;
+        cx.spawn_in(window, async move |this, cx| {
+            let mut paths = path.await.ok()?.ok()??;
+            let path = paths.pop()?;
 
-                        Ok(url)
-                    } else {
-                        Err(anyhow!("Path not found"))
+            let upload = Tokio::spawn(cx, async move {
+                let client = nostr_client();
+                let file = fs::read(path).await.ok()?;
+                let url = nip96_upload(client, &nip96_server, file).await.ok()?;
+
+                Some(url)
+            });
+
+            if let Ok(task) = upload {
+                this.update(cx, |this, cx| {
+                    this.set_uploading(true, cx);
+                })
+                .ok();
+
+                match Flatten::flatten(task.await.map_err(|e| e.into())) {
+                    Ok(Some(url)) => {
+                        this.update(cx, |this, cx| {
+                            this.add_attachment(url, cx);
+                            this.set_uploading(false, cx);
+                        })
+                        .ok();
+                    }
+                    Ok(None) => {
+                        this.update_in(cx, |this, window, cx| {
+                            window.push_notification("Failed to upload file", cx);
+                            this.set_uploading(false, cx);
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        this.update_in(cx, |this, window, cx| {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                            this.set_uploading(false, cx);
+                        })
+                        .ok();
                     }
                 }
-                Ok(None) => Err(anyhow!("User cancelled")),
-                Err(e) => Err(anyhow!("File dialog error: {e}")),
             }
-        });
 
-        cx.spawn_in(window, async move |this, cx| {
-            match Flatten::flatten(task.await.map_err(|e| e.into())) {
-                Ok(Ok(url)) => {
-                    this.update(cx, |this, cx| {
-                        this.add_attachment(url, cx);
-                    })
-                    .ok();
-                }
-                Ok(Err(e)) => {
-                    log::warn!("User cancelled: {e}");
-                    this.update(cx, |this, cx| {
-                        this.uploading(false, cx);
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    this.update_in(cx, |this, window, cx| {
-                        window.push_notification(e.to_string(), cx);
-                        this.uploading(false, cx);
-                    })
-                    .ok();
-                }
-            }
+            Some(())
         })
         .detach();
+    }
+
+    fn set_uploading(&mut self, uploading: bool, cx: &mut Context<Self>) {
+        self.uploading = uploading;
+        cx.notify();
     }
 
     fn add_attachment(&mut self, url: Url, cx: &mut Context<Self>) {
@@ -599,7 +606,6 @@ impl Chat {
             this.push(url);
             cx.notify();
         });
-        self.uploading(false, cx);
     }
 
     fn remove_attachment(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
@@ -611,9 +617,11 @@ impl Chat {
         });
     }
 
-    fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.uploading = status;
-        cx.notify();
+    fn remove_all_attachments(&mut self, cx: &mut Context<Self>) {
+        self.attachments.update(cx, |this, cx| {
+            this.clear();
+            cx.notify();
+        });
     }
 
     fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
@@ -1418,10 +1426,10 @@ impl Render for Chat {
                                             .child(
                                                 Button::new("upload")
                                                     .icon(IconName::Upload)
+                                                    .loading(self.uploading)
+                                                    .disabled(self.uploading)
                                                     .ghost()
                                                     .large()
-                                                    .disabled(self.uploading)
-                                                    .loading(self.uploading)
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
                                                             this.upload(window, cx);
