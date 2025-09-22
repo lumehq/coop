@@ -33,7 +33,10 @@ use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::{PopupMenu, PopupMenuExt};
 use ui::text::RenderedText;
-use ui::{h_flex, v_flex, ContextModal, Icon, IconName, InteractiveElementExt, Sizable, StyledExt};
+use ui::{
+    h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
+    StyledExt,
+};
 
 mod subject;
 
@@ -62,6 +65,7 @@ pub struct Chat {
 
     // Media Attachment
     attachments: Entity<Vec<Url>>,
+    uploading: bool,
 
     // Panel
     id: SharedString,
@@ -220,6 +224,7 @@ impl Chat {
             input,
             replies_to,
             attachments,
+            uploading: false,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -556,22 +561,30 @@ impl Chat {
             });
 
             if let Ok(task) = upload {
+                this.update(cx, |this, cx| {
+                    this.set_uploading(true, cx);
+                })
+                .ok();
+
                 match Flatten::flatten(task.await.map_err(|e| e.into())) {
                     Ok(Some(url)) => {
                         this.update(cx, |this, cx| {
                             this.add_attachment(url, cx);
+                            this.set_uploading(false, cx);
                         })
                         .ok();
                     }
                     Ok(None) => {
-                        this.update_in(cx, |_this, window, cx| {
+                        this.update_in(cx, |this, window, cx| {
                             window.push_notification("Failed to upload file", cx);
+                            this.set_uploading(false, cx);
                         })
                         .ok();
                     }
                     Err(e) => {
-                        this.update_in(cx, |_this, window, cx| {
+                        this.update_in(cx, |this, window, cx| {
                             window.push_notification(Notification::error(e.to_string()), cx);
+                            this.set_uploading(false, cx);
                         })
                         .ok();
                     }
@@ -581,6 +594,11 @@ impl Chat {
             Some(())
         })
         .detach();
+    }
+
+    fn set_uploading(&mut self, uploading: bool, cx: &mut Context<Self>) {
+        self.uploading = uploading;
+        cx.notify();
     }
 
     fn add_attachment(&mut self, url: Url, cx: &mut Context<Self>) {
@@ -1408,6 +1426,8 @@ impl Render for Chat {
                                             .child(
                                                 Button::new("upload")
                                                     .icon(IconName::Upload)
+                                                    .loading(self.uploading)
+                                                    .disabled(self.uploading)
                                                     .ghost()
                                                     .large()
                                                     .on_click(cx.listener(
