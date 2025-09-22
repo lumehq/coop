@@ -56,7 +56,7 @@ pub struct Sidebar {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl Sidebar {
@@ -77,23 +77,30 @@ impl Sidebar {
         let registry = Registry::global(cx);
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.subscribe_in(
-            &registry,
-            window,
-            move |this, _, event, _window, cx| {
+        subscriptions.push(
+            // Clear the image cache when sidebar is closed
+            cx.on_release_in(window, move |this, window, cx| {
+                this.image_cache.update(cx, |this, cx| {
+                    this.clear(window, cx);
+                })
+            }),
+        );
+
+        subscriptions.push(
+            // Subscribe for registry new events
+            cx.subscribe_in(&registry, window, move |this, _, event, _window, cx| {
                 if let RegistryEvent::NewRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();
                     });
                 }
-            },
-        ));
+            }),
+        );
 
-        subscriptions.push(cx.subscribe_in(
-            &find_input,
-            window,
-            |this, _state, event, window, cx| {
+        subscriptions.push(
+            // Subscribe for find input events
+            cx.subscribe_in(&find_input, window, |this, _state, event, window, cx| {
                 match event {
                     InputEvent::PressEnter { .. } => this.search(window, cx),
                     InputEvent::Change(text) => {
@@ -112,8 +119,8 @@ impl Sidebar {
                     }
                     _ => {}
                 }
-            },
-        ));
+            }),
+        );
 
         Self {
             name: "Sidebar".into(),

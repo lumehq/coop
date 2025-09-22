@@ -76,7 +76,7 @@ pub struct ChatSpace {
     nip17_relays: bool,
 
     // All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 4]>,
 
     // All long running tasks
     _tasks: SmallVec<[Task<()>; 5]>,
@@ -93,6 +93,13 @@ impl ChatSpace {
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
+
+        subscriptions.push(
+            // Automatically sync theme with system appearance
+            window.observe_window_appearance(|window, cx| {
+                Theme::sync_system_appearance(Some(window), cx);
+            }),
+        );
 
         subscriptions.push(
             // Observe the client keys and show an alert modal if they fail to initialize
@@ -1007,7 +1014,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(profile, secret, cx));
+        let panel = Arc::new(account::init(profile, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
