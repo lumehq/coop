@@ -719,7 +719,7 @@ impl Chat {
 
         div()
             .id(ix)
-            .group(SharedString::from(id.to_hex()))
+            .group("")
             .relative()
             .w_full()
             .py_1()
