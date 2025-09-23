@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
 use global::constants::IMAGE_RESIZE_SERVICE;
-use gpui::{Image, ImageFormat, SharedString};
+use gpui::{Image, ImageFormat, SharedString, SharedUri};
 use nostr_sdk::prelude::*;
 use qrcode::render::svg;
 use qrcode::QrCode;
@@ -16,12 +16,12 @@ const DAYS_IN_MONTH: i64 = 30;
 const FALLBACK_IMG: &str = "https://image.nostr.build/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png";
 
 pub trait RenderedProfile {
-    fn avatar(&self, proxy: bool) -> SharedString;
+    fn avatar(&self, proxy: bool) -> SharedUri;
     fn display_name(&self) -> SharedString;
 }
 
 impl RenderedProfile for Profile {
-    fn avatar(&self, proxy: bool) -> SharedString {
+    fn avatar(&self, proxy: bool) -> SharedUri {
         self.metadata()
             .picture
             .as_ref()
@@ -32,12 +32,12 @@ impl RenderedProfile for Profile {
                         "{IMAGE_RESIZE_SERVICE}/?url={picture}&w=100&h=100&fit=cover&mask=circle&default={FALLBACK_IMG}&n=-1"
                     );
 
-                    SharedString::from(url)
+                    SharedUri::from(url)
                 } else {
-                    SharedString::from(picture)
+                    SharedUri::from(picture)
                 }
             })
-            .unwrap_or_else(|| SharedString::from("brand/avatar.png"))
+            .unwrap_or_else(|| SharedUri::from("brand/avatar.png"))
     }
 
     fn display_name(&self) -> SharedString {

@@ -3,7 +3,6 @@ use std::time::Duration;
 use anyhow::Error;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
-use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
@@ -27,6 +26,7 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
+use crate::actions::CoopAuthUrlHandler;
 use crate::chatspace::ChatSpace;
 
 pub fn init(

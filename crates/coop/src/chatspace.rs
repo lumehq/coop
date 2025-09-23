@@ -16,9 +16,9 @@ use global::constants::{
 use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Task, WeakEntity, Window,
+    deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
 use itertools::Itertools;
@@ -1276,7 +1276,7 @@ impl ChatSpace {
             .w_full()
             .child(compose_button())
             .when(status != &UnwrappingStatus::Complete, |this| {
-                this.child(
+                this.child(deferred(
                     h_flex()
                         .px_2()
                         .h_6()
@@ -1285,7 +1285,7 @@ impl ChatSpace {
                         .rounded_full()
                         .bg(cx.theme().surface_background)
                         .child(shared_t!("loading.label")),
-                )
+                ))
             })
     }
 
@@ -1486,6 +1486,7 @@ impl Render for ChatSpace {
         }
 
         div()
+            .id(SharedString::from("chatspace"))
             .on_action(cx.listener(Self::on_settings))
             .on_action(cx.listener(Self::on_dark_mode))
             .on_action(cx.listener(Self::on_sign_out))

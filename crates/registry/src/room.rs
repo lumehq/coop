@@ -8,7 +8,7 @@ use common::display::RenderedProfile;
 use common::event::EventUtils;
 use global::constants::SEND_RETRY;
 use global::{app_state, nostr_client};
-use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
+use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
@@ -276,13 +276,13 @@ impl Room {
     }
 
     /// Gets the display image for the room
-    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
+    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedUri {
         if let Some(picture) = self.picture.as_ref() {
-            SharedString::from(picture)
+            SharedUri::from(picture)
         } else if !self.is_group() {
             self.first_member(cx).avatar(proxy)
         } else {
-            SharedString::from("brand/group.png")
+            SharedUri::from("brand/group.png")
         }
     }
 

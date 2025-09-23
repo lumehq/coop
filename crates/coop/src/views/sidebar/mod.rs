@@ -9,8 +9,8 @@ use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::{app_state, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
     RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
@@ -751,9 +751,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.all_conversations_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
-                                            this.child(
+                                            this.child(deferred(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            )
+                                            ))
                                         })
                                     })
                                     .small()
@@ -772,9 +772,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.requests_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
-                                            this.child(
+                                            this.child(deferred(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            )
+                                            ))
                                         })
                                     })
                                     .small()
@@ -816,7 +816,7 @@ impl Render for Sidebar {
                     .when(!loading && total_rooms == 0, |this| {
                         this.map(|this| {
                             if self.filter(&RoomKind::Ongoing, cx) {
-                                this.child(
+                                this.child(deferred(
                                     v_flex()
                                         .py_2()
                                         .gap_1p5()
@@ -837,9 +837,9 @@ impl Render for Sidebar {
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("sidebar.no_conversations_label")),
                                         ),
-                                )
+                                ))
                             } else {
-                                this.child(
+                                this.child(deferred(
                                     v_flex()
                                         .py_2()
                                         .gap_1p5()
@@ -860,7 +860,7 @@ impl Render for Sidebar {
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("sidebar.no_requests_label")),
                                         ),
-                                )
+                                ))
                             }
                         })
                     })

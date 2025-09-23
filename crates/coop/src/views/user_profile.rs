@@ -128,9 +128,8 @@ impl UserProfile {
 impl Render for UserProfile {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-
-        let Ok(bech32) = self.profile.public_key().to_bech32();
-        let shared_bech32 = SharedString::new(bech32);
+        let bech32 = self.profile.public_key().to_bech32().unwrap();
+        let shared_bech32 = SharedString::from(bech32);
 
         v_flex()
             .gap_4()
@@ -245,7 +244,8 @@ impl Render for UserProfile {
                                 self.profile
                                     .metadata()
                                     .about
-                                    .unwrap_or(t!("profile.no_bio").to_string()),
+                                    .map(SharedString::from)
+                                    .unwrap_or(shared_t!("profile.no_bio")),
                             ),
                     ),
             )

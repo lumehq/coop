@@ -2,7 +2,7 @@ use gpui::{
     div, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
     Styled, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use theme::ActiveTheme;
 use ui::input::{InputState, TextInput};
 use ui::{v_flex, Sizable};
@@ -41,7 +41,7 @@ impl Render for Subject {
                 div()
                     .text_sm()
                     .text_color(cx.theme().text_muted)
-                    .child(SharedString::new(t!("subject.title"))),
+                    .child(shared_t!("subject.title")),
             )
             .child(TextInput::new(&self.input).small())
             .child(
@@ -49,7 +49,7 @@ impl Render for Subject {
                     .text_xs()
                     .italic()
                     .text_color(cx.theme().text_placeholder)
-                    .child(SharedString::new(t!("subject.help_text"))),
+                    .child(shared_t!("subject.help_text")),
             )
     }
 }

@@ -1405,9 +1405,7 @@ impl Render for Chat {
                     .px_3()
                     .py_2()
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
+                        v_flex()
                             .gap_1p5()
                             .children(self.render_attachment_list(window, cx))
                             .children(self.render_reply_list(window, cx))
