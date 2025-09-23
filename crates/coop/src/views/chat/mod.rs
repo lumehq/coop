@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::display::{ReadableTimestamp, RenderedProfile};
+use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
@@ -8,7 +8,7 @@ use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
     ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString, SharedUri,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
@@ -719,7 +719,7 @@ impl Chat {
 
         div()
             .id(ix)
-            .group("")
+            .group(SharedString::from(id.to_hex()))
             .relative()
             .w_full()
             .py_1()
@@ -748,7 +748,7 @@ impl Chat {
                                             .text_color(cx.theme().text)
                                             .child(author.display_name()),
                                     )
-                                    .child(div().child(message.created_at.to_human_time()))
+                                    .child(message.created_at.to_human_time())
                                     .when_some(is_sent_success, |this, status| {
                                         this.when(status, |this| {
                                             this.child(self.render_message_sent(&id, cx))
@@ -784,14 +784,12 @@ impl Chat {
             .child(self.render_actions(&id, cx))
             .on_mouse_down(
                 MouseButton::Middle,
-                cx.listener(move |this, _event, _window, cx| {
+                cx.listener(move |this, _, _window, cx| {
                     this.copy_message(&id, cx);
                 }),
             )
-            .on_double_click(cx.listener({
-                move |this, _event, _window, cx| {
-                    this.reply_to(&id, cx);
-                }
+            .on_double_click(cx.listener(move |this, _, _window, cx| {
+                this.reply_to(&id, cx);
             }))
             .hover(|this| this.bg(cx.theme().surface_background))
             .into_any_element()
@@ -1094,15 +1092,12 @@ impl Chat {
     }
 
     fn render_attachment(&self, url: &Url, cx: &Context<Self>) -> impl IntoElement {
-        let url = url.clone();
-        let path: SharedString = url.to_string().into();
-
         div()
             .id(SharedString::from(url.to_string()))
             .relative()
             .w_16()
             .child(
-                img(path.clone())
+                img(SharedUri::from(url.to_string()))
                     .size_16()
                     .shadow_lg()
                     .rounded(cx.theme().radius)
@@ -1121,9 +1116,12 @@ impl Chat {
                     .bg(red())
                     .child(Icon::new(IconName::Close).size_2().text_color(white())),
             )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.remove_attachment(&url, window, cx);
-            }))
+            .on_click({
+                let url = url.clone();
+                cx.listener(move |this, _, window, cx| {
+                    this.remove_attachment(&url, window, cx);
+                })
+            })
     }
 
     fn render_attachment_list(

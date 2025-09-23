@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::{shorten_pubkey, ReadableTimestamp, RenderedProfile};
+use common::display::{shorten_pubkey, RenderedProfile, RenderedTimestamp};
 use common::nip05::nip05_verify;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::nostr_client;

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::{ReadableTimestamp, TextUtils};
+use common::display::{RenderedTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::{app_state, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
