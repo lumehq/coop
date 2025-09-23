@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Script to release a new version of the application
+# Usage: ./release <new_version>
+
+set -e  # Exit on any error
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <new_version>"
+    echo "Example: $0 1.0.0"
+    exit 1
+fi
+
+NEW_VERSION="$1"
+WORKSPACE_CARGO="Cargo.toml"
+CRATE_CARGO="crates/coop/Cargo.toml"
+
+# Check if both Cargo.toml files exist
+if [ ! -f "$WORKSPACE_CARGO" ]; then
+    echo "Error: $WORKSPACE_CARGO not found in current directory"
+    exit 1
+fi
+
+if [ ! -f "$CRATE_CARGO" ]; then
+    echo "Error: $CRATE_CARGO not found"
+    exit 1
+fi
+
+# Function to update version in a Cargo.toml file
+update_version() {
+    local file="$1"
+    local backup="${file}.bak"
+
+    # Backup the original file
+    cp "$file" "$backup"
+
+    # Replace the version in Cargo.toml
+    if sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"$NEW_VERSION\"/" "$file"; then
+        echo "✓ Updated version to $NEW_VERSION in $file"
+        # Remove backup created by sed
+        if [ -f "${file}.bak" ]; then
+            rm "${file}.bak"
+        fi
+    else
+        echo "Error: Failed to update version in $file"
+        # Restore original backup
+        mv "$backup" "$file"
+        exit 1
+    fi
+
+    # Remove the initial backup file
+    rm -f "$backup"
+}
+
+# Update both Cargo.toml files
+echo "Updating versions..."
+update_version "$WORKSPACE_CARGO"
+update_version "$CRATE_CARGO"
+
+# Create git tag
+TAG_NAME="v$NEW_VERSION"
+COMMIT_MSG="Release version $NEW_VERSION"
+
+if git tag -a "$TAG_NAME" -m "$COMMIT_MSG"; then
+    echo "✓ Created git tag: $TAG_NAME"
+else
+    echo "Error: Failed to create git tag"
+    exit 1
+fi
+
+# Push to origin (both commits and tags)
+echo "Pushing to origin..."
+if git push origin main && git push origin "$TAG_NAME"; then
+    echo "✓ Successfully pushed to origin"
+    echo "✓ Release $NEW_VERSION completed successfully!"
+else
+    echo "Error: Failed to push to origin"
+    exit 1
+fi
