@@ -1,9 +1,23 @@
 use std::sync::Mutex;
 
 use gpui::{actions, App};
+use nostr_connect::prelude::*;
 
 actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
 actions!(sidebar, [Reload, RelayStatus]);
+
+#[derive(Debug, Clone)]
+pub struct CoopAuthUrlHandler;
+
+impl AuthUrlHandler for CoopAuthUrlHandler {
+    fn on_auth_url(&self, auth_url: Url) -> BoxedFuture<Result<()>> {
+        Box::pin(async move {
+            log::info!("Received Auth URL: {auth_url}");
+            webbrowser::open(auth_url.as_str())?;
+            Ok(())
+        })
+    }
+}
 
 pub fn load_embedded_fonts(cx: &App) {
     let asset_source = cx.asset_source();

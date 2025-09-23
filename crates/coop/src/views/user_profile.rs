@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use common::nip05::nip05_verify;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -128,9 +128,8 @@ impl UserProfile {
 impl Render for UserProfile {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-
-        let Ok(bech32) = self.profile.public_key().to_bech32();
-        let shared_bech32 = SharedString::new(bech32);
+        let bech32 = self.profile.public_key().to_bech32().unwrap();
+        let shared_bech32 = SharedString::from(bech32);
 
         v_flex()
             .gap_4()
@@ -140,7 +139,7 @@ impl Render for UserProfile {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar_url(proxy)).size(rems(4.)))
+                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
                     .child(
                         v_flex()
                             .child(
@@ -194,7 +193,7 @@ impl Render for UserProfile {
                         div()
                             .block()
                             .text_color(cx.theme().text_muted)
-                            .child("Public Key:"),
+                            .child(SharedString::from("Public Key:")),
                     )
                     .child(
                         h_flex()
@@ -245,7 +244,8 @@ impl Render for UserProfile {
                                 self.profile
                                     .metadata()
                                     .about
-                                    .unwrap_or(t!("profile.no_bio").to_string()),
+                                    .map(SharedString::from)
+                                    .unwrap_or(shared_t!("profile.no_bio")),
                             ),
                     ),
             )

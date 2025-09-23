@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use client_keys::ClientKeys;
-use common::handle_auth::CoopAuthUrlHandler;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -18,6 +17,8 @@ use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::{v_flex, ContextModal, Disableable, Sizable, StyledExt};
+
+use crate::actions::CoopAuthUrlHandler;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     Login::new(window, cx)

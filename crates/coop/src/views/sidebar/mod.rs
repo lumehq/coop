@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::{ReadableTimestamp, TextUtils};
+use common::display::{RenderedTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use global::{app_state, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
     RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
@@ -56,7 +56,7 @@ pub struct Sidebar {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
     #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 2]>,
+    subscriptions: SmallVec<[Subscription; 3]>,
 }
 
 impl Sidebar {
@@ -77,23 +77,30 @@ impl Sidebar {
         let registry = Registry::global(cx);
         let mut subscriptions = smallvec![];
 
-        subscriptions.push(cx.subscribe_in(
-            &registry,
-            window,
-            move |this, _, event, _window, cx| {
+        subscriptions.push(
+            // Clear the image cache when sidebar is closed
+            cx.on_release_in(window, move |this, window, cx| {
+                this.image_cache.update(cx, |this, cx| {
+                    this.clear(window, cx);
+                })
+            }),
+        );
+
+        subscriptions.push(
+            // Subscribe for registry new events
+            cx.subscribe_in(&registry, window, move |this, _, event, _window, cx| {
                 if let RegistryEvent::NewRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();
                     });
                 }
-            },
-        ));
+            }),
+        );
 
-        subscriptions.push(cx.subscribe_in(
-            &find_input,
-            window,
-            |this, _state, event, window, cx| {
+        subscriptions.push(
+            // Subscribe for find input events
+            cx.subscribe_in(&find_input, window, |this, _state, event, window, cx| {
                 match event {
                     InputEvent::PressEnter { .. } => this.search(window, cx),
                     InputEvent::Change(text) => {
@@ -112,8 +119,8 @@ impl Sidebar {
                     }
                     _ => {}
                 }
-            },
-        ));
+            }),
+        );
 
         Self {
             name: "Sidebar".into(),
@@ -744,9 +751,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.all_conversations_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
-                                            this.child(
+                                            this.child(deferred(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            )
+                                            ))
                                         })
                                     })
                                     .small()
@@ -765,9 +772,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.requests_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
-                                            this.child(
+                                            this.child(deferred(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            )
+                                            ))
                                         })
                                     })
                                     .small()
@@ -809,7 +816,7 @@ impl Render for Sidebar {
                     .when(!loading && total_rooms == 0, |this| {
                         this.map(|this| {
                             if self.filter(&RoomKind::Ongoing, cx) {
-                                this.child(
+                                this.child(deferred(
                                     v_flex()
                                         .py_2()
                                         .gap_1p5()
@@ -830,9 +837,9 @@ impl Render for Sidebar {
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("sidebar.no_conversations_label")),
                                         ),
-                                )
+                                ))
                             } else {
-                                this.child(
+                                this.child(deferred(
                                     v_flex()
                                         .py_2()
                                         .gap_1p5()
@@ -853,7 +860,7 @@ impl Render for Sidebar {
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("sidebar.no_requests_label")),
                                         ),
-                                )
+                                ))
                             }
                         })
                     })

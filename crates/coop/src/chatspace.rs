@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use common::event::EventUtils;
 use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
@@ -16,9 +16,9 @@ use global::constants::{
 use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Task, WeakEntity, Window,
+    deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
 use itertools::Itertools;
@@ -70,13 +70,13 @@ pub struct ChatSpace {
     dock: Entity<DockArea>,
 
     // All authentication requests
-    auth_requests: HashMap<RelayUrl, AuthRequest>,
+    auth_requests: Entity<HashMap<RelayUrl, AuthRequest>>,
 
     // Local state to determine if the user has set up NIP-17 relays
     nip17_relays: bool,
 
     // All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 4]>,
 
     // All long running tasks
     _tasks: SmallVec<[Task<()>; 5]>,
@@ -90,9 +90,17 @@ impl ChatSpace {
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
+        let auth_requests = cx.new(|_| HashMap::new());
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
+
+        subscriptions.push(
+            // Automatically sync theme with system appearance
+            window.observe_window_appearance(|window, cx| {
+                Theme::sync_system_appearance(Some(window), cx);
+            }),
+        );
 
         subscriptions.push(
             // Observe the client keys and show an alert modal if they fail to initialize
@@ -183,7 +191,7 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
-            auth_requests: HashMap::new(),
+            auth_requests,
             nip17_relays: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
@@ -954,28 +962,33 @@ impl ChatSpace {
     }
 
     fn reopen_auth_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for (_, request) in self.auth_requests.clone().into_iter() {
+        for (_, request) in self.auth_requests.read(cx).clone() {
             self.open_auth_request(request, window, cx);
         }
     }
 
     fn push_auth_request(&mut self, req: &AuthRequest, cx: &mut Context<Self>) {
-        self.auth_requests.insert(req.url.clone(), req.to_owned());
-        cx.notify();
+        self.auth_requests.update(cx, |this, cx| {
+            this.insert(req.url.clone(), req.to_owned());
+            cx.notify();
+        });
     }
 
     fn sending_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        for (_, req) in self.auth_requests.iter_mut() {
-            if req.challenge == challenge {
-                req.sending = true;
-                cx.notify();
+        self.auth_requests.update(cx, |this, cx| {
+            for (_, req) in this.iter_mut() {
+                if req.challenge == challenge {
+                    req.sending = true;
+                    cx.notify();
+                }
             }
-        }
+        });
     }
 
-    fn is_sending_auth_request(&self, challenge: &str, _cx: &App) -> bool {
+    fn is_sending_auth_request(&self, challenge: &str, cx: &App) -> bool {
         if let Some(req) = self
             .auth_requests
+            .read(cx)
             .iter()
             .find(|(_, req)| req.challenge == challenge)
         {
@@ -986,8 +999,10 @@ impl ChatSpace {
     }
 
     fn remove_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        self.auth_requests.retain(|_, r| r.challenge != challenge);
-        cx.notify();
+        self.auth_requests.update(cx, |this, cx| {
+            this.retain(|_, r| r.challenge != challenge);
+            cx.notify();
+        });
     }
 
     fn set_onboarding_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1007,7 +1022,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(profile, secret, cx));
+        let panel = Arc::new(account::init(profile, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
@@ -1269,7 +1284,7 @@ impl ChatSpace {
             .w_full()
             .child(compose_button())
             .when(status != &UnwrappingStatus::Complete, |this| {
-                this.child(
+                this.child(deferred(
                     h_flex()
                         .px_2()
                         .h_6()
@@ -1278,7 +1293,7 @@ impl ChatSpace {
                         .rounded_full()
                         .bg(cx.theme().surface_background)
                         .child(shared_t!("loading.label")),
-                )
+                ))
             })
     }
 
@@ -1291,7 +1306,7 @@ impl ChatSpace {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
-        let auth_requests = self.auth_requests.len();
+        let auth_requests = self.auth_requests.read(cx).len();
 
         h_flex()
             .gap_1()
@@ -1356,7 +1371,7 @@ impl ChatSpace {
                     .reverse()
                     .transparent()
                     .icon(IconName::CaretDown)
-                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.49)))
+                    .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
                     .popup_menu(|this, _window, _cx| {
                         this.menu(t!("user.dark_mode"), Box::new(DarkMode))
                             .menu(t!("user.settings"), Box::new(Settings))
@@ -1479,6 +1494,7 @@ impl Render for ChatSpace {
         }
 
         div()
+            .id(SharedString::from("chatspace"))
             .on_action(cx.listener(Self::on_settings))
             .on_action(cx.listener(Self::on_dark_mode))
             .on_action(cx.listener(Self::on_sign_out))

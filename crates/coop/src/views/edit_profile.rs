@@ -8,7 +8,7 @@ use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
     PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
-use i18n::t;
+use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
@@ -260,7 +260,7 @@ impl Render for EditProfile {
                     .flex_col()
                     .gap_1()
                     .text_sm()
-                    .child(SharedString::new(t!("profile.label_name")))
+                    .child(shared_t!("profile.label_name"))
                     .child(TextInput::new(&self.name_input).small()),
             )
             .child(
@@ -269,7 +269,7 @@ impl Render for EditProfile {
                     .flex_col()
                     .gap_1()
                     .text_sm()
-                    .child(SharedString::new(t!("profile.label_website")))
+                    .child(shared_t!("profile.label_website"))
                     .child(TextInput::new(&self.website_input).small()),
             )
             .child(
@@ -278,7 +278,7 @@ impl Render for EditProfile {
                     .flex_col()
                     .gap_1()
                     .text_sm()
-                    .child(SharedString::new(t!("profile.label_bio")))
+                    .child(shared_t!("profile.label_bio"))
                     .child(TextInput::new(&self.bio_input).small()),
             )
     }

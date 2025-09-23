@@ -95,7 +95,7 @@ impl Render for Welcome {
                                 div()
                                     .font_semibold()
                                     .text_color(cx.theme().text_muted)
-                                    .child("coop on nostr"),
+                                    .child(SharedString::from("coop on nostr")),
                             )
                             .child(
                                 div()

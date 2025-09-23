@@ -1,4 +1,4 @@
-use common::display::ReadableProfile;
+use common::display::RenderedProfile;
 use gpui::http_client::Url;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
@@ -141,7 +141,7 @@ impl Render for Preferences {
                                 h_flex()
                                     .id("user")
                                     .gap_2()
-                                    .child(Avatar::new(profile.avatar_url(proxy)).size(rems(2.4)))
+                                    .child(Avatar::new(profile.avatar(proxy)).size(rems(2.4)))
                                     .child(
                                         div()
                                             .flex_1()

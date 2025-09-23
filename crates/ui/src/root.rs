@@ -194,7 +194,7 @@ impl Root {
         }
     }
 
-    // Render Notification layer.
+    /// Render Notification layer.
     pub fn render_notification_layer(
         window: &mut Window,
         cx: &mut App,

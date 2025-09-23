@@ -2,15 +2,15 @@ use std::time::Duration;
 
 use anyhow::Error;
 use client_keys::ClientKeys;
-use common::display::ReadableProfile;
-use common::handle_auth::CoopAuthUrlHandler;
+use common::display::RenderedProfile;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
+    WeakEntity, Window,
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
@@ -26,10 +26,16 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
+use crate::actions::CoopAuthUrlHandler;
 use crate::chatspace::ChatSpace;
 
-pub fn init(profile: Profile, secret: String, cx: &mut App) -> Entity<Account> {
-    cx.new(|cx| Account::new(secret, profile, cx))
+pub fn init(
+    profile: Profile,
+    secret: String,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<Account> {
+    cx.new(|cx| Account::new(secret, profile, window, cx))
 }
 
 pub struct Account {
@@ -38,16 +44,31 @@ pub struct Account {
     is_bunker: bool,
     is_extension: bool,
     loading: bool,
-    // Panel
+
     name: SharedString,
     focus_handle: FocusHandle,
+    image_cache: Entity<RetainAllImageCache>,
+
+    _subscriptions: SmallVec<[Subscription; 1]>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Account {
-    fn new(secret: String, profile: Profile, cx: &mut App) -> Self {
+    fn new(secret: String, profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let is_bunker = secret.starts_with("bunker://");
         let is_extension = secret.starts_with("extension");
+
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(
+            // Clear the local state when user closes the account panel
+            cx.on_release_in(window, move |this, window, cx| {
+                this.stored_secret.clear();
+                this.image_cache.update(cx, |this, cx| {
+                    this.clear(window, cx);
+                });
+            }),
+        );
 
         Self {
             profile,
@@ -57,6 +78,8 @@ impl Account {
             loading: false,
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
+            image_cache: RetainAllImageCache::new(cx),
+            _subscriptions: subscriptions,
             _tasks: smallvec![],
         }
     }
@@ -298,6 +321,7 @@ impl Focusable for Account {
 impl Render for Account {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
+            .image_cache(self.image_cache.clone())
             .relative()
             .size_full()
             .gap_10()
@@ -353,7 +377,7 @@ impl Render for Account {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = self.profile.avatar_url(true);
+                                let avatar = self.profile.avatar(true);
                                 let name = self.profile.display_name();
 
                                 this.child(
@@ -370,6 +394,8 @@ impl Render for Account {
                                         .child(
                                             div()
                                                 .when(self.is_bunker, |this| {
+                                                    let label = SharedString::from("Nostr Connect");
+
                                                     this.child(
                                                         div()
                                                             .py_0p5()
@@ -380,10 +406,12 @@ impl Render for Account {
                                                                 cx.theme().secondary_foreground,
                                                             )
                                                             .rounded_full()
-                                                            .child("Nostr Connect"),
+                                                            .child(label),
                                                     )
                                                 })
                                                 .when(self.is_extension, |this| {
+                                                    let label = SharedString::from("Extension");
+
                                                     this.child(
                                                         div()
                                                             .py_0p5()
@@ -394,7 +422,7 @@ impl Render for Account {
                                                                 cx.theme().secondary_foreground,
                                                             )
                                                             .rounded_full()
-                                                            .child("Extension"),
+                                                            .child(label),
                                                     )
                                                 }),
                                         ),

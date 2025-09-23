@@ -8,7 +8,6 @@ use gpui::{
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
-use theme::Theme;
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
@@ -78,13 +77,6 @@ fn main() {
         cx.open_window(opts, |window, cx| {
             // Bring the app to the foreground
             cx.activate(true);
-
-            // Automatically sync theme with system appearance
-            window
-                .observe_window_appearance(|window, cx| {
-                    Theme::sync_system_appearance(Some(window), cx);
-                })
-                .detach();
 
             // Root Entity
             cx.new(|cx| {

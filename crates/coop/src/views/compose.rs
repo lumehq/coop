@@ -2,15 +2,15 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::display::{ReadableProfile, TextUtils};
+use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
 use global::constants::BOOTSTRAP_RELAYS;
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Task, Window,
+    IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -110,7 +110,8 @@ pub struct Compose {
     /// Error message
     error_message: Entity<Option<SharedString>>,
 
-    _subscriptions: SmallVec<[Subscription; 1]>,
+    image_cache: Entity<RetainAllImageCache>,
+    _subscriptions: SmallVec<[Subscription; 2]>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
@@ -162,6 +163,15 @@ impl Compose {
         );
 
         subscriptions.push(
+            // Clear the image cache when sidebar is closed
+            cx.on_release_in(window, move |this, window, cx| {
+                this.image_cache.update(cx, |this, cx| {
+                    this.clear(window, cx);
+                })
+            }),
+        );
+
+        subscriptions.push(
             // Handle Enter event for user input
             cx.subscribe_in(
                 &user_input,
@@ -179,6 +189,7 @@ impl Compose {
             user_input,
             error_message,
             contacts,
+            image_cache: RetainAllImageCache::new(cx),
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -389,7 +400,7 @@ impl Compose {
                         h_flex()
                             .gap_1p5()
                             .text_sm()
-                            .child(Avatar::new(profile.avatar_url(proxy)).size(rems(1.75)))
+                            .child(Avatar::new(profile.avatar(proxy)).size(rems(1.75)))
                             .child(profile.display_name()),
                     )
                     .when(contact.selected, |this| {
@@ -417,6 +428,7 @@ impl Render for Compose {
         let contacts = self.contacts.read(cx);
 
         v_flex()
+            .image_cache(self.image_cache.clone())
             .gap_2()
             .child(
                 div()
