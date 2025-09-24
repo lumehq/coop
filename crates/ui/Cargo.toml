@@ -28,3 +28,6 @@ uuid = "1.10"
 once_cell = "1.19.0"
 image = "0.25.1"
 linkify = "0.10.0"
+lsp-types = "0.97.0"
+rope = { git = "https://github.com/zed-industries/zed.git" }
+sum_tree = { git = "https://github.com/zed-industries/zed.git" }

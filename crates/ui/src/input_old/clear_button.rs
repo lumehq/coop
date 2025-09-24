@@ -1,15 +1,16 @@
 use gpui::{App, Styled};
+use i18n::t;
 use theme::ActiveTheme;
 
-use crate::button::{Button, ButtonVariants};
-use crate::{Icon, IconName, Sizable};
+use crate::button::{Button, ButtonVariants as _};
+use crate::{Icon, IconName, Sizable as _};
 
 #[inline]
 pub(crate) fn clear_button(cx: &App) -> Button {
     Button::new("clean")
         .icon(Icon::new(IconName::CloseCircle))
-        .tooltip("Clear")
+        .tooltip(t!("common.clear"))
         .small()
-        .transparent()
         .text_color(cx.theme().text_muted)
+        .transparent()
 }

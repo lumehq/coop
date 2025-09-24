@@ -22,10 +22,10 @@ pub struct History<I: HistoryItem> {
     redos: Vec<I>,
     last_changed_at: Instant,
     version: usize,
-    pub(crate) ignore: bool,
     max_undo: usize,
     group_interval: Option<Duration>,
     unique: bool,
+    pub ignore: bool,
 }
 
 impl<I> History<I>
