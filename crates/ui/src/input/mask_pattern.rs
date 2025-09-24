@@ -305,11 +305,7 @@ impl MaskPattern {
                     let mut chars: Vec<char> = int_part.chars().rev().collect();
 
                     // Removing the sign from formatting to avoid cases such as: -,123
-                    let maybe_signed = if let Some(pos) = chars.iter().position(is_sign) {
-                        Some(chars.remove(pos))
-                    } else {
-                        None
-                    };
+                    let maybe_signed = chars.iter().position(is_sign).map(|pos| chars.remove(pos));
 
                     let mut result = String::new();
                     for (i, ch) in chars.iter().enumerate() {
@@ -324,14 +320,14 @@ impl MaskPattern {
                         if fraction == &Some(0) {
                             int_with_sep
                         } else {
-                            format!("{}.{}", int_with_sep, frac)
+                            format!("{int_with_sep}.{frac}")
                         }
                     } else {
                         int_with_sep
                     };
 
                     let final_str = if let Some(sign) = maybe_signed {
-                        format!("{}{}", sign, final_str)
+                        format!("{sign}{final_str}")
                     } else {
                         final_str
                     };
@@ -386,7 +382,7 @@ impl MaskPattern {
                     return result;
                 }
 
-                return mask_text.to_owned();
+                mask_text.to_owned()
             }
             Self::Pattern { tokens, .. } => {
                 let mut result = String::new();

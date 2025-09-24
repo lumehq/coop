@@ -25,7 +25,6 @@ use super::mode::{InputMode, TabSize};
 use super::rope_ext::RopeExt;
 use super::text_wrapper::{LineItem, TextWrapper};
 use crate::history::History;
-use crate::scroll::ScrollbarState;
 use crate::Root;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -268,11 +267,11 @@ pub struct InputState {
     pub(super) clean_on_escape: bool,
     pub(super) soft_wrap: bool,
     pub(super) pattern: Option<regex::Regex>,
+    #[allow(clippy::type_complexity)]
     pub(super) validate: Option<Box<dyn Fn(&str, &mut Context<Self>) -> bool + 'static>>,
     pub(crate) scroll_handle: ScrollHandle,
     /// The deferred scroll offset to apply on next layout.
     pub(crate) deferred_scroll_offset: Option<Point<Pixels>>,
-    pub(super) scroll_state: ScrollbarState,
     /// The size of the scrollable content.
     pub(crate) scroll_size: gpui::Size<Pixels>,
 
@@ -352,7 +351,6 @@ impl InputState {
             last_selected_range: None,
             last_cursor: None,
             scroll_handle: ScrollHandle::new(),
-            scroll_state: ScrollbarState::default(),
             scroll_size: gpui::size(px(0.), px(0.)),
             deferred_scroll_offset: None,
             preferred_column: None,
@@ -401,10 +399,8 @@ impl InputState {
     ///
     /// Only for [`InputMode::MultiLine`] and [`InputMode::CodeEditor`] mode.
     pub fn tab_size(mut self, tab: TabSize) -> Self {
-        debug_assert!(self.mode.is_multi_line());
-        match &mut self.mode {
-            InputMode::MultiLine { tab: t, .. } => *t = tab,
-            _ => {}
+        if let InputMode::MultiLine { tab: t, .. } = &mut self.mode {
+            *t = tab
         }
         self
     }
@@ -762,10 +758,7 @@ impl InputState {
         let max_point = self.text.max_point();
         let row = position.line.min(max_point.row);
         let col = position.character.min(self.text.line_len(row));
-
-        let offset = self
-            .text
-            .point_to_offset(rope::Point::new(row as u32, col as u32));
+        let offset = self.text.point_to_offset(rope::Point::new(row, col));
 
         self.move_to(offset, cx);
         self.update_preferred_column();
@@ -1053,52 +1046,11 @@ impl InputState {
             offset += 1;
         }
 
-        let line = self
-            .text_for_range(self.range_to_utf16(&(0..offset + 1)), &mut None, window, cx)
+        self.text_for_range(self.range_to_utf16(&(0..offset + 1)), &mut None, window, cx)
             .unwrap_or_default()
             .rfind('\n')
             .map(|i| i + 1)
-            .unwrap_or(0);
-        line
-    }
-
-    /// Get indent string of next line.
-    ///
-    /// To get current and next line indent, to return more depth one.
-    pub(super) fn indent_of_next_line(&mut self) -> String {
-        if self.mode.is_single_line() {
-            return "".into();
-        }
-
-        let mut current_indent = String::new();
-        let mut next_indent = String::new();
-        let current_line_start_pos = self.start_of_line();
-        let next_line_start_pos = self.end_of_line();
-        for c in self.text.chars().skip(current_line_start_pos) {
-            if !c.is_whitespace() {
-                break;
-            }
-            if c == '\n' || c == '\r' {
-                break;
-            }
-            current_indent.push(c);
-        }
-
-        for c in self.text.chars().skip(next_line_start_pos) {
-            if !c.is_whitespace() {
-                break;
-            }
-            if c == '\n' || c == '\r' {
-                break;
-            }
-            next_indent.push(c);
-        }
-
-        if next_indent.len() > current_indent.len() {
-            return next_indent;
-        } else {
-            return current_indent;
-        }
+            .unwrap_or(0)
     }
 
     pub(super) fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
@@ -1193,7 +1145,7 @@ impl InputState {
             // Get current line indent
             let indent = "".to_string();
             // Add newline and indent
-            let new_line_text = format!("\n{}", indent);
+            let new_line_text = format!("\n{indent}");
             self.replace_text_in_range_silent(None, &new_line_text, window, cx);
             self.pause_blink_cursor(cx);
         } else {
@@ -1392,7 +1344,7 @@ impl InputState {
         // If there have IME marked range and is empty (Means pressed Esc to abort IME typing)
         // Clear the marked range.
         if let Some(ime_marked_range) = &self.ime_marked_range {
-            if ime_marked_range.len() == 0 {
+            if ime_marked_range.is_empty() {
                 self.ime_marked_range = None;
             }
         }
@@ -1608,7 +1560,7 @@ impl InputState {
         _cx: &App,
     ) -> usize {
         // If the text is empty, always return 0
-        if self.text.len() == 0 {
+        if self.text.is_empty() {
             return 0;
         }
 
@@ -1662,14 +1614,15 @@ impl InputState {
             if let Ok(v) = index_result {
                 index += v;
                 break;
-            } else if let Ok(_) =
-                rendered_line.index_for_position(point(px(0.), pos.y), line_height)
+            } else if rendered_line
+                .index_for_position(point(px(0.), pos.y), line_height)
+                .is_ok()
             {
                 // Click in the this line but not in the text, move cursor to the end of the line.
                 // The fallback index is saved in Err from `index_for_position` method.
                 index += index_result.unwrap_err();
                 break;
-            } else if rendered_line.text.trim_end_matches(|c| c == '\r').len() == 0 {
+            } else if rendered_line.text.trim_end_matches('\r').is_empty() {
                 // empty line on Windows is `\r`, other is ''
                 let line_bounds = Bounds {
                     origin: line_origin,
@@ -1787,7 +1740,7 @@ impl InputState {
             }
         }
 
-        for (_, c) in next_chars.enumerate() {
+        for c in next_chars {
             if !is_word(c) {
                 break;
             }
@@ -1893,7 +1846,7 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.text.len() == 0 {
+        if self.text.is_empty() {
             return;
         }
 
@@ -1984,37 +1937,6 @@ impl InputState {
                 cx.notify();
             }
         }
-    }
-
-    pub(super) fn selected_text(&self) -> Rope {
-        let range_utf16 = self.range_to_utf16(&self.selected_range.into());
-        let range = self.range_from_utf16(&range_utf16);
-        self.text.slice(range)
-    }
-
-    pub(crate) fn range_to_bounds(&self, range: &Range<usize>) -> Option<Bounds<Pixels>> {
-        let Some(last_layout) = self.last_layout.as_ref() else {
-            return None;
-        };
-
-        let Some(last_bounds) = self.last_bounds else {
-            return None;
-        };
-
-        let (_, _, start_pos) = self.line_and_position_for_offset(range.start);
-        let (_, _, end_pos) = self.line_and_position_for_offset(range.end);
-
-        let Some(start_pos) = start_pos else {
-            return None;
-        };
-        let Some(end_pos) = end_pos else {
-            return None;
-        };
-
-        Some(Bounds::from_corners(
-            last_bounds.origin + start_pos,
-            last_bounds.origin + end_pos + point(px(0.), last_layout.line_height),
-        ))
     }
 
     /// Replace text by [`lsp_types::Range`].
@@ -2140,7 +2062,7 @@ impl EntityInputHandler for InputState {
             }
         }
 
-        self.push_history(&old_text, &range, &new_text);
+        self.push_history(&old_text, &range, new_text);
         self.text_wrapper
             .update(&self.text, &range, &Rope::from(new_text), false, cx);
         self.selected_range = (new_offset..new_offset).into();

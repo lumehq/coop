@@ -50,6 +50,7 @@ pub trait RopeExt {
     fn word_range(&self, offset: usize) -> Option<Range<usize>>;
 
     /// Get word at the given offset (byte).
+    #[allow(dead_code)]
     fn word_at(&self, offset: usize) -> String;
 }
 

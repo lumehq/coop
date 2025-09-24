@@ -20,7 +20,7 @@ impl Default for TabSize {
 }
 
 impl TabSize {
-    pub(super) fn to_string(&self) -> SharedString {
+    pub(super) fn to_string(self) -> SharedString {
         if self.hard_tabs {
             "\t".into()
         } else {

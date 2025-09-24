@@ -87,6 +87,7 @@ impl TextElement {
 
         // If the input has a fixed height (Otherwise is auto-grow), we need to add a bottom margin to the input.
         let top_bottom_margin = if state.mode.is_auto_grow() {
+            #[allow(clippy::if_same_then_else)]
             line_height
         } else if visible_range.len() < BOTTOM_MARGIN_ROWS * 8 {
             line_height
@@ -228,7 +229,7 @@ impl TextElement {
             scroll_offset = deferred_scroll_offset;
         }
 
-        bounds.origin = bounds.origin + scroll_offset;
+        bounds.origin += scroll_offset;
 
         (cursor_bounds, scroll_offset, current_row)
     }
@@ -357,7 +358,7 @@ impl TextElement {
         // print_points_as_svg_path(&line_corners, &points);
 
         let path_origin = bounds.origin + point(line_number_width, px(0.));
-        let first_p = *points.get(0).unwrap();
+        let first_p = *points.first().unwrap();
         let mut builder = gpui::PathBuilder::fill();
         builder.move_to(path_origin + first_p);
         for p in points.iter().skip(1) {
@@ -393,7 +394,7 @@ impl TextElement {
         let range = start_ix.max(last_layout.visible_range_offset.start)
             ..end_ix.min(last_layout.visible_range_offset.end);
 
-        Self::layout_match_range(range, &last_layout, bounds)
+        Self::layout_match_range(range, last_layout, bounds)
     }
 
     /// Calculate the visible range of lines in the viewport.
@@ -454,8 +455,6 @@ pub(super) struct PrepaintState {
     scroll_size: Size<Pixels>,
     cursor_bounds: Option<Bounds<Pixels>>,
     cursor_scroll_offset: Point<Pixels>,
-    /// row index (zero based), no wrap, same line as the cursor.
-    current_row: Option<usize>,
     selection_path: Option<Path<Pixels>>,
     hover_highlight_path: Option<Path<Pixels>>,
     search_match_paths: Vec<(Path<Pixels>, bool)>,
@@ -468,34 +467,6 @@ impl IntoElement for TextElement {
 
     fn into_element(self) -> Self::Element {
         self
-    }
-}
-
-/// A debug function to print points as SVG path.
-#[allow(unused)]
-fn print_points_as_svg_path(
-    line_corners: &Vec<Corners<Point<Pixels>>>,
-    points: &Vec<Point<Pixels>>,
-) {
-    for corners in line_corners {
-        println!(
-            "tl: ({}, {}), tr: ({}, {}), bl: ({}, {}), br: ({}, {})",
-            corners.top_left.x.0 as i32,
-            corners.top_left.y.0 as i32,
-            corners.top_right.x.0 as i32,
-            corners.top_right.y.0 as i32,
-            corners.bottom_left.x.0 as i32,
-            corners.bottom_left.y.0 as i32,
-            corners.bottom_right.x.0 as i32,
-            corners.bottom_right.y.0 as i32,
-        );
-    }
-
-    if points.len() > 0 {
-        println!("M{},{}", points[0].x.0 as i32, points[0].y.0 as i32);
-        for p in points.iter().skip(1) {
-            println!("L{},{}", p.x.0 as i32, p.y.0 as i32);
-        }
     }
 }
 
@@ -554,7 +525,7 @@ impl Element for TextElement {
         let line_height = window.line_height();
 
         let (visible_range, visible_top) =
-            self.calculate_visible_range(&state, line_height, bounds.size.height);
+            self.calculate_visible_range(state, line_height, bounds.size.height);
         let visible_start_offset = state.text.line_start_offset(visible_range.start);
         let visible_end_offset = state
             .text
@@ -563,7 +534,7 @@ impl Element for TextElement {
         let state = self.state.read(cx);
         let multi_line = state.mode.is_multi_line();
         let text = state.text.clone();
-        let is_empty = text.len() == 0;
+        let is_empty = text.is_empty();
         let placeholder = self.placeholder.clone();
         let style = window.text_style();
         let font_size = style.font_size.to_pixels(window.rem_size());
@@ -728,7 +699,7 @@ impl Element for TextElement {
 
         // Calculate the scroll offset to keep the cursor in view
 
-        let (cursor_bounds, cursor_scroll_offset, current_row) =
+        let (cursor_bounds, cursor_scroll_offset, _) =
             self.layout_cursor(&last_layout, &mut bounds, window, cx);
         last_layout.cursor_bounds = cursor_bounds;
 
@@ -745,7 +716,6 @@ impl Element for TextElement {
             line_numbers,
             cursor_bounds,
             cursor_scroll_offset,
-            current_row,
             selection_path,
             search_match_paths,
             hover_highlight_path,
@@ -768,7 +738,6 @@ impl Element for TextElement {
         let focused = focus_handle.is_focused(window);
         let bounds = prepaint.bounds;
         let selected_range = self.state.read(cx).selected_range;
-        let visible_range = &prepaint.last_layout.visible_range;
 
         window.handle_input(
             &focus_handle,
@@ -822,12 +791,8 @@ impl Element for TextElement {
             offset_y += invisible_top_padding;
 
             // Each item is the normal lines.
-            for (ix, lines) in line_numbers.iter().enumerate() {
-                let row = visible_range.start + ix;
-                let is_active = prepaint.current_row == Some(row);
-                let p = point(input_bounds.origin.x, origin.y + offset_y);
+            for lines in line_numbers.iter() {
                 let height = line_height * lines.len() as f32;
-
                 offset_y += height;
             }
         }
@@ -890,12 +855,8 @@ impl Element for TextElement {
             ));
 
             // Each item is the normal lines.
-            for (ix, lines) in line_numbers.iter().enumerate() {
-                let row = visible_range.start + ix;
-
+            for lines in line_numbers.iter() {
                 let p = point(input_bounds.origin.x, origin.y + offset_y);
-                let is_active = prepaint.current_row == Some(row);
-                let height = line_height * lines.len() as f32;
 
                 for line in lines {
                     _ = line.paint(p, line_height, window, cx);
@@ -920,7 +881,7 @@ impl Element for TextElement {
         });
 
         if let Some(hitbox) = prepaint.hover_definition_hitbox.as_ref() {
-            window.set_cursor_style(gpui::CursorStyle::PointingHand, &hitbox);
+            window.set_cursor_style(gpui::CursorStyle::PointingHand, hitbox);
         }
 
         self.paint_mouse_listeners(window, cx);
