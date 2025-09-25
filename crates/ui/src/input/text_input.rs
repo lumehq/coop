@@ -202,6 +202,9 @@ impl RenderOnce for TextInput {
                             .on_action(window.listener_for(&self.state, InputState::outdent_inline))
                             .on_action(window.listener_for(&self.state, InputState::indent_block))
                             .on_action(window.listener_for(&self.state, InputState::outdent_block))
+                            .on_action(
+                                window.listener_for(&self.state, InputState::shift_to_new_line),
+                            )
                     })
             })
             .on_action(window.listener_for(&self.state, InputState::left))

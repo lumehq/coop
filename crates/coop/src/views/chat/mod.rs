@@ -89,9 +89,8 @@ impl Chat {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
-                .rows(1)
-                .multi_line()
                 .auto_grow(1, 20)
+                .prevent_new_line_on_enter()
                 .clean_on_escape()
         });
 

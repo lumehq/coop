@@ -722,6 +722,7 @@ impl Render for Sidebar {
                             .small()
                             .cleanable()
                             .appearance(true)
+                            .text_xs()
                             .suffix(
                                 Button::new("find")
                                     .icon(IconName::Search)

@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -25,6 +26,7 @@ use super::mode::{InputMode, TabSize};
 use super::rope_ext::RopeExt;
 use super::text_wrapper::{LineItem, TextWrapper};
 use crate::history::History;
+use crate::input::element::RIGHT_MARGIN;
 use crate::Root;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
@@ -72,6 +74,7 @@ actions!(
         Paste,
         Undo,
         Redo,
+        NewLine,
         MoveToStartOfLine,
         MoveToEndOfLine,
         MoveToStart,
@@ -137,6 +140,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("end", MoveEnd, Some(CONTEXT)),
         KeyBinding::new("shift-home", SelectToStartOfLine, Some(CONTEXT)),
         KeyBinding::new("shift-end", SelectToEndOfLine, Some(CONTEXT)),
+        KeyBinding::new("shift-enter", NewLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
         KeyBinding::new("ctrl-shift-a", SelectToStartOfLine, Some(CONTEXT)),
         #[cfg(target_os = "macos")]
@@ -248,7 +252,6 @@ pub struct InputState {
     /// - "Hello 世界💝" = 16
     /// - "💝" = 4
     pub(super) selected_range: Selection,
-    pub(super) searchable: bool,
     /// Range for save the selected word, use to keep word range when drag move.
     pub(super) selected_word_range: Option<Selection>,
     pub(super) selection_reversed: bool,
@@ -267,6 +270,7 @@ pub struct InputState {
     pub(super) clean_on_escape: bool,
     pub(super) soft_wrap: bool,
     pub(super) pattern: Option<regex::Regex>,
+    pub(super) new_line_on_enter: bool,
     #[allow(clippy::type_complexity)]
     pub(super) validate: Option<Box<dyn Fn(&str, &mut Context<Self>) -> bool + 'static>>,
     pub(crate) scroll_handle: ScrollHandle,
@@ -287,6 +291,7 @@ pub struct InputState {
     /// The first element is the x-coordinate (Pixels), preferred to use this.
     /// The second element is the column (usize), fallback to use this.
     preferred_column: Option<(Pixels, usize)>,
+
     _subscriptions: Vec<Subscription>,
 }
 
@@ -299,7 +304,7 @@ impl InputState {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let blink_cursor = cx.new(|_| BlinkCursor::new());
-        let history = History::new().group_interval(std::time::Duration::from_secs(1));
+        let history = History::new().group_interval(Duration::from_secs(1));
 
         let _subscriptions = vec![
             // Observe the blink cursor to repaint the view when it changes.
@@ -332,7 +337,6 @@ impl InputState {
             blink_cursor,
             history,
             selected_range: Selection::default(),
-            searchable: false,
             selected_word_range: None,
             selection_reversed: false,
             ime_marked_range: None,
@@ -342,6 +346,7 @@ impl InputState {
             masked: false,
             clean_on_escape: false,
             soft_wrap: true,
+            new_line_on_enter: true,
             loading: false,
             pattern: None,
             validate: None,
@@ -379,13 +384,6 @@ impl InputState {
             min_rows,
             max_rows,
         };
-        self
-    }
-
-    /// Set this input is searchable, default is false (Default true for Code Editor).
-    pub fn searchable(mut self, searchable: bool) -> Self {
-        debug_assert!(self.mode.is_multi_line());
-        self.searchable = searchable;
         self
     }
 
@@ -479,6 +477,7 @@ impl InputState {
 
         let mut prev_lines_offset = last_layout.visible_range_offset.start;
         let mut y_offset = last_layout.visible_top;
+
         for (line_index, line) in last_layout.lines.iter().enumerate() {
             let local_offset = offset.saturating_sub(prev_lines_offset);
             if let Some(pos) = line.position_for_index(local_offset, line_height) {
@@ -490,6 +489,7 @@ impl InputState {
             y_offset += line.size(line_height).height;
             prev_lines_offset += line.len() + 1;
         }
+
         (0, 0, None)
     }
 
@@ -613,7 +613,6 @@ impl InputState {
     ///
     /// Only for [`InputMode::SingleLine`] mode.
     pub fn masked(mut self, masked: bool) -> Self {
-        debug_assert!(self.mode.is_single_line());
         self.masked = masked;
         self
     }
@@ -622,7 +621,6 @@ impl InputState {
     ///
     /// Only for [`InputMode::SingleLine`] mode.
     pub fn set_masked(&mut self, masked: bool, _: &mut Window, cx: &mut Context<Self>) {
-        debug_assert!(self.mode.is_single_line());
         self.masked = masked;
         cx.notify();
     }
@@ -635,14 +633,18 @@ impl InputState {
 
     /// Set the soft wrap mode for multi-line input, default is true.
     pub fn soft_wrap(mut self, wrap: bool) -> Self {
-        debug_assert!(self.mode.is_multi_line());
         self.soft_wrap = wrap;
+        self
+    }
+
+    /// Disables new lines on enter when multi-line is enabled.
+    pub fn prevent_new_line_on_enter(mut self) -> Self {
+        self.new_line_on_enter = false;
         self
     }
 
     /// Update the soft wrap mode for multi-line input, default is true.
     pub fn set_soft_wrap(&mut self, wrap: bool, _: &mut Window, cx: &mut Context<Self>) {
-        debug_assert!(self.mode.is_multi_line());
         self.soft_wrap = wrap;
         if wrap {
             let wrap_width = self
@@ -667,7 +669,6 @@ impl InputState {
     ///
     /// Only for [`InputMode::SingleLine`] mode.
     pub fn pattern(mut self, pattern: regex::Regex) -> Self {
-        debug_assert!(self.mode.is_single_line());
         self.pattern = Some(pattern);
         self
     }
@@ -681,7 +682,6 @@ impl InputState {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
-        debug_assert!(self.mode.is_single_line());
         self.pattern = Some(pattern);
     }
 
@@ -689,7 +689,6 @@ impl InputState {
     ///
     /// Only for [`InputMode::SingleLine`] mode.
     pub fn validate(mut self, f: impl Fn(&str, &mut Context<Self>) -> bool + 'static) -> Self {
-        debug_assert!(self.mode.is_single_line());
         self.validate = Some(Box::new(f));
         self
     }
@@ -892,6 +891,22 @@ impl InputState {
         self.pause_blink_cursor(cx);
         let offset = self.end_of_line();
         self.move_to(offset, cx);
+    }
+
+    pub(super) fn shift_to_new_line(
+        &mut self,
+        _: &NewLine,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.mode.is_multi_line() {
+            // Get current line indent
+            let indent = "".to_string();
+            // Add newline and indent
+            let new_line_text = format!("\n{indent}");
+            self.replace_text_in_range_silent(None, &new_line_text, window, cx);
+            self.pause_blink_cursor(cx);
+        }
     }
 
     pub(super) fn move_to_start(
@@ -1141,7 +1156,7 @@ impl InputState {
     }
 
     pub(super) fn enter(&mut self, action: &Enter, window: &mut Window, cx: &mut Context<Self>) {
-        if self.mode.is_multi_line() {
+        if self.mode.is_multi_line() && self.new_line_on_enter {
             // Get current line indent
             let indent = "".to_string();
             // Add newline and indent
@@ -1358,6 +1373,12 @@ impl InputState {
             return;
         }
 
+        // Triple click to select line
+        if event.button == MouseButton::Left && event.click_count == 3 {
+            self.select_line(window, cx);
+            return;
+        }
+
         if event.modifiers.shift {
             self.select_to(offset, cx);
         } else {
@@ -1412,6 +1433,7 @@ impl InputState {
         let Some(last_layout) = self.last_layout.as_ref() else {
             return;
         };
+
         let Some(bounds) = self.last_bounds.as_ref() else {
             return;
         };
@@ -1429,6 +1451,23 @@ impl InputState {
             }
 
             row_offset_y += wrap_line.height(line_height);
+        }
+
+        if let Some(line) = last_layout
+            .lines
+            .get(row.saturating_sub(last_layout.visible_range.start))
+        {
+            // Check to scroll horizontally
+            if let Some(pos) = line.position_for_index(point.column as usize, line_height) {
+                let bounds_width = bounds.size.width - last_layout.line_number_width;
+                let col_offset_x = pos.x;
+                if col_offset_x - RIGHT_MARGIN < -scroll_offset.x {
+                    // If the position is out of the visible area, scroll to make it visible
+                    scroll_offset.x = -col_offset_x + RIGHT_MARGIN;
+                } else if col_offset_x + RIGHT_MARGIN > -scroll_offset.x + bounds_width {
+                    scroll_offset.x = -(col_offset_x - bounds_width + RIGHT_MARGIN);
+                }
+            }
         }
 
         // Check if row_offset_y is out of the viewport
@@ -1478,14 +1517,20 @@ impl InputState {
     }
 
     pub(super) fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(clipboard) = cx.read_from_clipboard() {
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let read_clipboard = cx.read_from_primary();
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        let read_clipboard = cx.read_from_clipboard();
+
+        if let Some(clipboard) = read_clipboard {
             let mut new_text = clipboard.text().unwrap_or_default();
+
             if !self.mode.is_multi_line() {
                 new_text = new_text.replace('\n', "");
             }
 
             self.replace_text_in_range_silent(None, &new_text, window, cx);
-            self.scroll_to(self.cursor(), cx);
+            //self.scroll_to(self.cursor(), cx);
         }
     }
 
@@ -1714,9 +1759,11 @@ impl InputState {
 
         let mut start = offset;
         let mut end = start;
+
         let prev_text = self
             .text_for_range(self.range_to_utf16(&(0..start)), &mut None, window, cx)
             .unwrap_or_default();
+
         let next_text = self
             .text_for_range(
                 self.range_to_utf16(&(end..self.text.len())),
@@ -1728,8 +1775,8 @@ impl InputState {
 
         let prev_chars = prev_text.chars().rev();
         let next_chars = next_text.chars();
-
         let pre_chars_count = prev_chars.clone().count();
+
         for (ix, c) in prev_chars.enumerate() {
             if !is_word(c) {
                 break;
@@ -1755,6 +1802,14 @@ impl InputState {
         self.selected_range = (start..end).into();
         self.selected_word_range = Some(self.selected_range);
         cx.notify()
+    }
+
+    /// Selects the entire line containing the cursor.
+    fn select_line(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let offset = self.start_of_line();
+        let end = self.end_of_line();
+        self.move_to(end, cx);
+        self.select_to(offset, cx);
     }
 
     /// Unselects the currently selected text.
