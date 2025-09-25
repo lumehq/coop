@@ -744,8 +744,6 @@ impl ChatSpace {
             match event.created_at >= app_state.init_at {
                 // New message: send a signal to notify the UI
                 true => {
-                    // A small delay to prevent UI flickering
-                    smol::Timer::after(Duration::from_millis(200)).await;
                     app_state
                         .signal
                         .send(SignalKind::NewMessage((target.id, event)))

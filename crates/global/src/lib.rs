@@ -159,9 +159,9 @@ pub struct AppState {
 
     pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
 
-    pub seen_on_relays: RwLock<HashMap<EventId, HashSet<RelayUrl>>>,
-
     pub sent_ids: RwLock<HashSet<EventId>>,
+
+    pub seen_on_relays: RwLock<HashMap<EventId, HashSet<RelayUrl>>>,
 
     pub resent_ids: RwLock<Vec<Output<EventId>>>,
 
@@ -196,8 +196,8 @@ impl AppState {
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
             gift_wrap_processing: AtomicBool::new(false),
             auto_close_opts: Some(opts),
-            seen_on_relays: RwLock::new(HashMap::new()),
             sent_ids: RwLock::new(HashSet::new()),
+            seen_on_relays: RwLock::new(HashMap::new()),
             resent_ids: RwLock::new(Vec::new()),
             resend_queue: RwLock::new(HashMap::new()),
         }
