@@ -204,7 +204,7 @@ impl Render for Preferences {
                                             .on_click(move |_, _window, cx| {
                                                 if let Some(input) = input_state.upgrade() {
                                                     let Ok(url) =
-                                                        Url::parse(input.read(cx).value())
+                                                        Url::parse(&input.read(cx).value())
                                                     else {
                                                         return;
                                                     };

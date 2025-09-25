@@ -89,11 +89,8 @@ impl Chat {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
-                .multi_line()
-                .prevent_new_line_on_enter()
-                .rows(1)
-                .multi_line()
                 .auto_grow(1, 20)
+                .prevent_new_line_on_enter()
                 .clean_on_escape()
         });
 
@@ -155,14 +152,8 @@ impl Chat {
                 &input,
                 window,
                 move |this: &mut Self, _input, event, window, cx| {
-                    match event {
-                        InputEvent::PressEnter { .. } => {
-                            this.send_message(window, cx);
-                        }
-                        InputEvent::Change(_) => {
-                            // this.mention_popup(text, input, cx);
-                        }
-                        _ => {}
+                    if let InputEvent::PressEnter { .. } = event {
+                        this.send_message(window, cx);
                     };
                 },
             ),

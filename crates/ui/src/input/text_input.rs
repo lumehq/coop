@@ -6,11 +6,10 @@ use gpui::{
 };
 use theme::ActiveTheme;
 
-use super::InputState;
-use crate::button::{Button, ButtonVariants as _};
+use super::clear_button::clear_button;
+use super::state::{InputState, CONTEXT};
+use crate::button::{Button, ButtonVariants};
 use crate::indicator::Indicator;
-use crate::input::clear_button::clear_button;
-use crate::scroll::{Scrollbar, ScrollbarAxis};
 use crate::{h_flex, IconName, Sizable, Size, StyleSized, StyledExt};
 
 #[derive(IntoElement)]
@@ -18,7 +17,6 @@ pub struct TextInput {
     state: Entity<InputState>,
     style: StyleRefinement,
     size: Size,
-    no_gap: bool,
     prefix: Option<AnyElement>,
     suffix: Option<AnyElement>,
     height: Option<DefiniteLength>,
@@ -26,6 +24,8 @@ pub struct TextInput {
     cleanable: bool,
     mask_toggle: bool,
     disabled: bool,
+    bordered: bool,
+    focus_bordered: bool,
 }
 
 impl Sizable for TextInput {
@@ -40,9 +40,8 @@ impl TextInput {
     pub fn new(state: &Entity<InputState>) -> Self {
         Self {
             state: state.clone(),
-            style: StyleRefinement::default(),
             size: Size::default(),
-            no_gap: false,
+            style: StyleRefinement::default(),
             prefix: None,
             suffix: None,
             height: None,
@@ -50,6 +49,8 @@ impl TextInput {
             cleanable: false,
             mask_toggle: false,
             disabled: false,
+            bordered: true,
+            focus_bordered: true,
         }
     }
 
@@ -75,9 +76,21 @@ impl TextInput {
         self
     }
 
-    /// Set the appearance of the input field.
+    /// Set the appearance of the input field, if false the input field will no border, background.
     pub fn appearance(mut self, appearance: bool) -> Self {
         self.appearance = appearance;
+        self
+    }
+
+    /// Set the bordered for the input, default: true
+    pub fn bordered(mut self, bordered: bool) -> Self {
+        self.bordered = bordered;
+        self
+    }
+
+    /// Set focus border for the input, default is true.
+    pub fn focus_bordered(mut self, bordered: bool) -> Self {
+        self.focus_bordered = bordered;
         self
     }
 
@@ -96,15 +109,6 @@ impl TextInput {
     /// Set to disable the input field.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
-        self
-    }
-
-    /// Set true to not use gap between input and prefix, suffix, and clear button.
-    ///
-    /// Default: false
-    #[allow(dead_code)]
-    pub(super) fn no_gap(mut self) -> Self {
-        self.no_gap = true;
         self
     }
 
@@ -132,33 +136,30 @@ impl TextInput {
     }
 }
 
+impl Styled for TextInput {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
 impl RenderOnce for TextInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         const LINE_HEIGHT: Rems = Rems(1.25);
+        let font = window.text_style().font();
+        let font_size = window.text_style().font_size.to_pixels(window.rem_size());
 
-        self.state.update(cx, |state, _| {
-            state.mode.set_height(self.height);
+        self.state.update(cx, |state, cx| {
+            state.text_wrapper.set_font(font, font_size, cx);
             state.disabled = self.disabled;
         });
 
         let state = self.state.read(cx);
-        let focused = state.focus_handle.is_focused(window);
 
-        let mut gap_x = match self.size {
+        let gap_x = match self.size {
             Size::Small => px(4.),
             Size::Large => px(8.),
             _ => px(4.),
         };
-
-        if self.no_gap {
-            gap_x = px(0.);
-        }
-
-        let prefix = self.prefix;
-        let suffix = self.suffix;
-
-        let show_clear_button =
-            self.cleanable && !state.loading && !state.text.is_empty() && state.is_single_line();
 
         let bg = if state.disabled {
             cx.theme().surface_background
@@ -166,10 +167,20 @@ impl RenderOnce for TextInput {
             cx.theme().elevated_surface_background
         };
 
+        let prefix = self.prefix;
+        let suffix = self.suffix;
+
+        let show_clear_button = self.cleanable
+            && !state.loading
+            && !state.text.is_empty()
+            && state.mode.is_single_line();
+
+        let has_suffix = suffix.is_some() || state.loading || self.mask_toggle || show_clear_button;
+
         div()
             .id(("input", self.state.entity_id()))
             .flex()
-            .key_context(crate::input::CONTEXT)
+            .key_context(CONTEXT)
             .track_focus(&state.focus_handle)
             .when(!state.disabled, |this| {
                 this.on_action(window.listener_for(&self.state, InputState::backspace))
@@ -182,17 +193,31 @@ impl RenderOnce for TextInput {
                     .on_action(window.listener_for(&self.state, InputState::delete_next_word))
                     .on_action(window.listener_for(&self.state, InputState::enter))
                     .on_action(window.listener_for(&self.state, InputState::escape))
+                    .on_action(window.listener_for(&self.state, InputState::paste))
+                    .on_action(window.listener_for(&self.state, InputState::cut))
+                    .on_action(window.listener_for(&self.state, InputState::undo))
+                    .on_action(window.listener_for(&self.state, InputState::redo))
+                    .when(state.mode.is_multi_line(), |this| {
+                        this.on_action(window.listener_for(&self.state, InputState::indent_inline))
+                            .on_action(window.listener_for(&self.state, InputState::outdent_inline))
+                            .on_action(window.listener_for(&self.state, InputState::indent_block))
+                            .on_action(window.listener_for(&self.state, InputState::outdent_block))
+                            .on_action(
+                                window.listener_for(&self.state, InputState::shift_to_new_line),
+                            )
+                    })
             })
             .on_action(window.listener_for(&self.state, InputState::left))
             .on_action(window.listener_for(&self.state, InputState::right))
             .on_action(window.listener_for(&self.state, InputState::select_left))
             .on_action(window.listener_for(&self.state, InputState::select_right))
-            .when(state.is_multi_line(), |this| {
+            .when(state.mode.is_multi_line(), |this| {
                 this.on_action(window.listener_for(&self.state, InputState::up))
                     .on_action(window.listener_for(&self.state, InputState::down))
                     .on_action(window.listener_for(&self.state, InputState::select_up))
                     .on_action(window.listener_for(&self.state, InputState::select_down))
-                    .on_action(window.listener_for(&self.state, InputState::shift_to_new_line))
+                    .on_action(window.listener_for(&self.state, InputState::page_up))
+                    .on_action(window.listener_for(&self.state, InputState::page_down))
             })
             .on_action(window.listener_for(&self.state, InputState::select_all))
             .on_action(window.listener_for(&self.state, InputState::select_to_start_of_line))
@@ -209,90 +234,69 @@ impl RenderOnce for TextInput {
             .on_action(window.listener_for(&self.state, InputState::select_to_end))
             .on_action(window.listener_for(&self.state, InputState::show_character_palette))
             .on_action(window.listener_for(&self.state, InputState::copy))
-            .on_action(window.listener_for(&self.state, InputState::paste))
-            .on_action(window.listener_for(&self.state, InputState::cut))
-            .on_action(window.listener_for(&self.state, InputState::undo))
-            .on_action(window.listener_for(&self.state, InputState::redo))
             .on_key_down(window.listener_for(&self.state, InputState::on_key_down))
             .on_mouse_down(
                 MouseButton::Left,
                 window.listener_for(&self.state, InputState::on_mouse_down),
             )
             .on_mouse_down(
-                MouseButton::Middle,
+                MouseButton::Right,
                 window.listener_for(&self.state, InputState::on_mouse_down),
             )
             .on_mouse_up(
                 MouseButton::Left,
                 window.listener_for(&self.state, InputState::on_mouse_up),
             )
+            .on_mouse_up(
+                MouseButton::Right,
+                window.listener_for(&self.state, InputState::on_mouse_up),
+            )
             .on_scroll_wheel(window.listener_for(&self.state, InputState::on_scroll_wheel))
             .size_full()
             .line_height(LINE_HEIGHT)
-            .cursor_text()
+            .input_px(self.size)
             .input_py(self.size)
             .input_h(self.size)
-            .when(state.is_multi_line(), |this| {
+            .cursor_text()
+            .text_size(font_size)
+            .items_center()
+            .when(state.mode.is_multi_line(), |this| {
                 this.h_auto()
                     .when_some(self.height, |this, height| this.h(height))
             })
             .when(self.appearance, |this| {
-                this.bg(bg)
-                    .rounded(cx.theme().radius)
-                    .when(focused, |this| this.border_color(cx.theme().ring))
+                this.bg(bg).rounded(cx.theme().radius)
             })
-            .when(prefix.is_none(), |this| this.input_pl(self.size))
-            .input_pr(self.size)
             .items_center()
             .gap(gap_x)
-            .children(prefix)
-            // TODO: Define height here, and use it in the input element
-            .child(self.state.clone())
-            .child(
-                h_flex()
-                    .id("suffix")
-                    .absolute()
-                    .gap(gap_x)
-                    .when(self.appearance, |this| this.bg(bg))
-                    .items_center()
-                    .when(suffix.is_none(), |this| this.pr_1())
-                    .right_0()
-                    .when(state.loading, |this| {
-                        this.child(Indicator::new().color(cx.theme().text_muted))
-                    })
-                    .when(self.mask_toggle, |this| {
-                        this.child(Self::render_toggle_mask_button(self.state.clone()))
-                    })
-                    .when(show_clear_button, |this| {
-                        this.child(clear_button(cx).on_click({
-                            let state = self.state.clone();
-                            move |_, window, cx| {
-                                state.update(cx, |state, cx| {
-                                    state.clean(window, cx);
-                                })
-                            }
-                        }))
-                    })
-                    .children(suffix),
-            )
-            .when(state.is_multi_line(), |this| {
-                if state.last_layout.is_some() {
-                    this.relative().child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .right(px(1.))
-                            .bottom_0()
-                            .child(
-                                Scrollbar::vertical(&state.scrollbar_state, &state.scroll_handle)
-                                    .axis(ScrollbarAxis::Vertical),
-                            ),
-                    )
-                } else {
-                    this
-                }
-            })
             .refine_style(&self.style)
+            .children(prefix)
+            .child(self.state.clone())
+            .when(has_suffix, |this| {
+                this.pr_2().child(
+                    h_flex()
+                        .id("suffix")
+                        .gap(gap_x)
+                        .when(self.appearance, |this| this.bg(bg))
+                        .items_center()
+                        .when(state.loading, |this| {
+                            this.child(Indicator::new().color(cx.theme().text_muted))
+                        })
+                        .when(self.mask_toggle, |this| {
+                            this.child(Self::render_toggle_mask_button(self.state.clone()))
+                        })
+                        .when(show_clear_button, |this| {
+                            this.child(clear_button(cx).on_click({
+                                let state = self.state.clone();
+                                move |_, window, cx| {
+                                    state.update(cx, |state, cx| {
+                                        state.clean(window, cx);
+                                    })
+                                }
+                            }))
+                        })
+                        .children(suffix),
+                )
+            })
     }
 }

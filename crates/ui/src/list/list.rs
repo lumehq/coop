@@ -299,14 +299,16 @@ where
 
     fn on_query_input_event(
         &mut self,
-        _: &Entity<InputState>,
+        state: &Entity<InputState>,
         event: &InputEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::Change(text) => {
+            InputEvent::Change => {
+                let text = state.read(cx).value();
                 let text = text.trim().to_string();
+
                 if Some(&text) == self.last_query.as_ref() {
                     return;
                 }
@@ -347,7 +349,7 @@ where
         }
     }
 
-    fn set_querying(&mut self, querying: bool, _: &mut Window, cx: &mut Context<Self>) {
+    fn set_querying(&mut self, querying: bool, _window: &mut Window, cx: &mut Context<Self>) {
         self.querying = querying;
         if let Some(input) = &self.query_input {
             input.update(cx, |input, cx| input.set_loading(querying, cx))

@@ -100,12 +100,12 @@ impl Sidebar {
 
         subscriptions.push(
             // Subscribe for find input events
-            cx.subscribe_in(&find_input, window, |this, _state, event, window, cx| {
+            cx.subscribe_in(&find_input, window, |this, state, event, window, cx| {
                 match event {
                     InputEvent::PressEnter { .. } => this.search(window, cx),
-                    InputEvent::Change(text) => {
+                    InputEvent::Change => {
                         // Clear the result when input is empty
-                        if text.is_empty() {
+                        if state.read(cx).value().is_empty() {
                             this.clear_search_results(window, cx);
                         } else {
                             // Run debounced search
@@ -722,6 +722,7 @@ impl Render for Sidebar {
                             .small()
                             .cleanable()
                             .appearance(true)
+                            .text_xs()
                             .suffix(
                                 Button::new("find")
                                     .icon(IconName::Search)

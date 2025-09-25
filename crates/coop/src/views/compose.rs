@@ -424,7 +424,7 @@ impl Compose {
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let error = self.error_message.read(cx).as_ref();
-        let loading = self.user_input.read(cx).loading(cx);
+        let loading = self.user_input.read(cx).loading;
         let contacts = self.contacts.read(cx);
 
         v_flex()
