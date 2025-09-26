@@ -164,9 +164,21 @@ impl Chat {
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
                     RoomSignal::NewMessage((gift_wrap_id, event)) => {
-                        if !this.is_sent_by_coop(gift_wrap_id) {
-                            this.insert_message(Message::user(event), false, cx);
-                        }
+                        let gift_wrap_id = gift_wrap_id.to_owned();
+                        let message = Message::user(event);
+
+                        cx.spawn_in(window, async move |this, cx| {
+                            let app_state = app_state();
+                            let sent_ids = app_state.sent_ids.read().await;
+
+                            this.update_in(cx, |this, _window, cx| {
+                                if !sent_ids.contains(&gift_wrap_id) {
+                                    this.insert_message(message, false, cx);
+                                }
+                            })
+                            .ok();
+                        })
+                        .detach();
                     }
                     RoomSignal::Refresh => {
                         this.load_messages(window, cx);
@@ -242,20 +254,19 @@ impl Chat {
         self._tasks.push(
             // Run the task in the background
             cx.spawn_in(window, async move |this, cx| {
-                match load_messages.await {
-                    Ok(events) => {
-                        this.update(cx, |this, cx| {
+                let result = load_messages.await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(events) => {
                             this.insert_messages(events, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|window, cx| {
-                            window.push_notification(e.to_string(), cx);
-                        })
-                        .ok();
-                    }
-                };
+                        }
+                        Err(e) => {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        }
+                    };
+                })
+                .ok();
             }),
         );
     }
@@ -289,11 +300,6 @@ impl Chat {
         content
     }
 
-    /// Check if the event is sent by Coop
-    fn is_sent_by_coop(&self, gift_wrap_id: &EventId) -> bool {
-        app_state().sent_ids.read_blocking().contains(gift_wrap_id)
-    }
-
     /// Send a message to all members of the chat
     fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Get the message which includes all attachments
@@ -304,12 +310,6 @@ impl Chat {
             window.push_notification(t!("chat.empty_message_error"), cx);
             return;
         }
-
-        // Temporary disable input
-        self.input.update(cx, |this, cx| {
-            this.set_loading(true, cx);
-            this.set_disabled(true, cx);
-        });
 
         // Get the backup setting
         let backup = AppSettings::get_backup_messages(cx);
@@ -328,29 +328,27 @@ impl Chat {
         // Create a task for sending the message in the background
         let send_message = room.send_in_background(&content, replies, backup, cx);
 
-        cx.defer_in(window, |this, window, cx| {
-            // Optimistically update message list
-            this.insert_message(Message::user(temp_message), true, cx);
+        // Optimistically update message list
+        self.insert_message(Message::user(temp_message), true, cx);
 
-            // Remove all replies
-            this.remove_all_replies(cx);
+        // Remove all replies
+        self.remove_all_replies(cx);
 
-            // remove all attachments
-            this.remove_all_attachments(cx);
+        // remove all attachments
+        self.remove_all_attachments(cx);
 
-            // Reset the input state
-            this.input.update(cx, |this, cx| {
-                this.set_loading(false, cx);
-                this.set_disabled(false, cx);
-                this.set_value("", window, cx);
-            });
+        // Reset the input state
+        self.input.update(cx, |this, cx| {
+            this.set_value("", window, cx);
         });
 
         // Continue sending the message in the background
         cx.spawn_in(window, async move |this, cx| {
-            match send_message.await {
-                Ok(reports) => {
-                    this.update(cx, |this, cx| {
+            let result = send_message.await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(reports) => {
                         this.room.update(cx, |this, cx| {
                             if this.kind != RoomKind::Ongoing {
                                 // Update the room kind to ongoing
@@ -366,16 +364,13 @@ impl Chat {
                         this.reports_by_id.insert(temp_id, reports);
 
                         cx.notify();
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    cx.update(|window, cx| {
+                    }
+                    Err(e) => {
                         window.push_notification(e.to_string(), cx);
-                    })
-                    .ok();
+                    }
                 }
-            }
+            })
+            .ok();
         })
         .detach();
     }
@@ -430,8 +425,9 @@ impl Chat {
                     item_ix: self.list_state.item_count(),
                     offset_in_item: px(0.0),
                 });
-                cx.notify();
             }
+
+            cx.notify();
         }
     }
 
@@ -439,11 +435,12 @@ impl Chat {
     fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
         for event in events.into_iter() {
             let m = Message::user(event);
+            // Bulk inserting messages, so no need to scroll to the latest message
             self.insert_message(m, false, cx);
         }
-        cx.notify();
     }
 
+    /// Insert a warning message into the chat panel
     fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
         let m = Message::warning(content.into());
         self.insert_message(m, true, cx);

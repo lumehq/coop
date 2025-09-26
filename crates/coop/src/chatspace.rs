@@ -676,7 +676,7 @@ impl ChatSpace {
     }
 
     /// Stores an unwrapped event in local database with reference to original
-    async fn set_unwrapped_event(root: EventId, unwrapped: &Event) -> Result<(), Error> {
+    async fn set_unwrapped_event(gift_wrap: EventId, unwrapped: &Event) -> Result<(), Error> {
         let client = nostr_client();
 
         // Save unwrapped event
@@ -684,7 +684,7 @@ impl ChatSpace {
 
         // Create a reference event pointing to the unwrapped event
         let event = EventBuilder::new(Kind::ApplicationSpecificData, "")
-            .tags(vec![Tag::identifier(root), Tag::event(unwrapped.id)])
+            .tags(vec![Tag::identifier(gift_wrap), Tag::event(unwrapped.id)])
             .sign(&Keys::generate())
             .await?;
 
@@ -744,8 +744,6 @@ impl ChatSpace {
             match event.created_at >= app_state.init_at {
                 // New message: send a signal to notify the UI
                 true => {
-                    // A small delay to prevent UI flickering
-                    smol::Timer::after(Duration::from_millis(200)).await;
                     app_state
                         .signal
                         .send(SignalKind::NewMessage((target.id, event)))
