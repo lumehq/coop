@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
@@ -169,22 +168,15 @@ impl Chat {
                         let message = Message::user(event);
 
                         cx.spawn_in(window, async move |this, cx| {
-                            cx.background_executor()
-                                .timer(Duration::from_millis(200))
-                                .await;
-
                             let app_state = app_state();
                             let sent_ids = app_state.sent_ids.read().await;
-                            let is_seen = sent_ids.contains(&gift_wrap_id);
 
-                            if !is_seen {
-                                this.update_in(cx, |this, _window, cx| {
+                            this.update_in(cx, |this, _window, cx| {
+                                if !sent_ids.contains(&gift_wrap_id) {
                                     this.insert_message(message, false, cx);
-                                })
-                                .ok();
-                            }
-
-                            drop(sent_ids);
+                                }
+                            })
+                            .ok();
                         })
                         .detach();
                     }
@@ -262,20 +254,19 @@ impl Chat {
         self._tasks.push(
             // Run the task in the background
             cx.spawn_in(window, async move |this, cx| {
-                match load_messages.await {
-                    Ok(events) => {
-                        this.update(cx, |this, cx| {
+                let result = load_messages.await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(events) => {
                             this.insert_messages(events, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|window, cx| {
-                            window.push_notification(e.to_string(), cx);
-                        })
-                        .ok();
-                    }
-                };
+                        }
+                        Err(e) => {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        }
+                    };
+                })
+                .ok();
             }),
         );
     }
@@ -444,11 +435,12 @@ impl Chat {
     fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
         for event in events.into_iter() {
             let m = Message::user(event);
+            // Bulk inserting messages, so no need to scroll to the latest message
             self.insert_message(m, false, cx);
         }
-        cx.notify();
     }
 
+    /// Insert a warning message into the chat panel
     fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
         let m = Message::warning(content.into());
         self.insert_message(m, true, cx);
@@ -749,8 +741,7 @@ impl Chat {
                                         this.when(status, |this| {
                                             this.child(self.render_message_sent(&id, cx))
                                         })
-                                    })
-                                    .child(SharedString::from(id.to_bech32().unwrap())),
+                                    }),
                             )
                             .when(has_replies, |this| {
                                 this.children(self.render_message_replies(replies, cx))

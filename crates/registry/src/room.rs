@@ -365,21 +365,51 @@ impl Room {
 
         cx.background_spawn(async move {
             let client = nostr_client();
-            let public_key = members[members.len() - 1];
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let sent_ids = app_state()
+                .sent_ids
+                .read()
+                .await
+                .iter()
+                .copied()
+                .collect_vec();
 
-            let sent = Filter::new()
+            // Get seen events from database
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifiers(sent_ids);
+
+            let seen_events = client.database().query(filter).await?;
+
+            // Extract seen event IDs
+            let seen_ids: Vec<EventId> = seen_events
+                .into_iter()
+                .filter_map(|event| event.tags.event_ids().next().copied())
+                .collect();
+
+            // Get events that sent by current user
+            let filter = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
                 .author(public_key)
                 .pubkeys(members.clone());
 
-            let recv = Filter::new()
+            let sent_events = client.database().query(filter).await?;
+
+            // Get events that received by current user
+            let filter = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
                 .authors(members)
                 .pubkey(public_key);
 
-            let sent_events = client.database().query(sent).await?;
-            let recv_events = client.database().query(recv).await?;
-            let events: Vec<Event> = sent_events.merge(recv_events).into_iter().collect();
+            let recv_events = client.database().query(filter).await?;
+
+            // Merge events
+            let events: Vec<Event> = sent_events
+                .merge(recv_events)
+                .into_iter()
+                .filter(|event| !seen_ids.contains(&event.id))
+                .collect();
 
             Ok(events)
         })
