@@ -24,8 +24,10 @@ use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use theme::ActiveTheme;
+use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
+use ui::context_menu::ContextMenuExt;
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
@@ -693,6 +695,7 @@ impl Chat {
 
         let id = message.id;
         let author = self.profile(&message.author, cx);
+        let public_key = author.public_key();
 
         let replies = message.replies_to.as_slice();
         let has_replies = !replies.is_empty();
@@ -715,7 +718,18 @@ impl Chat {
                     .flex()
                     .gap_3()
                     .when(!hide_avatar, |this| {
-                        this.child(Avatar::new(author.avatar(proxy)).size(rems(2.)))
+                        this.child(
+                            div()
+                                .id(SharedString::from(format!("{ix}-avatar")))
+                                .child(Avatar::new(author.avatar(proxy)).size(rems(2.)))
+                                .context_menu(move |this, _window, _cx| {
+                                    let view = Box::new(OpenPublicKey(public_key));
+                                    let copy = Box::new(CopyPublicKey(public_key));
+
+                                    this.menu(t!("profile.view"), view)
+                                        .menu(t!("profile.copy"), copy)
+                                }),
+                        )
                     })
                     .child(
                         v_flex()
@@ -1318,9 +1332,7 @@ impl Panel for Chat {
             let label = this.display_name(cx);
             let url = this.display_image(proxy, cx);
 
-            div()
-                .flex()
-                .items_center()
+            h_flex()
                 .gap_1p5()
                 .child(Avatar::new(url).size(rems(1.25)))
                 .child(label)
