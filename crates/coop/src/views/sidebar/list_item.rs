@@ -11,7 +11,9 @@ use registry::room::RoomKind;
 use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
+use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
+use ui::context_menu::ContextMenuExt;
 use ui::modal::ModalButtonProps;
 use ui::skeleton::Skeleton;
 use ui::{h_flex, ContextModal, StyledExt};
@@ -166,6 +168,10 @@ impl RenderOnce for RoomListItem {
                     ),
             )
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
+            .context_menu(move |this, _window, _cx| {
+                this.menu(t!("profile.view"), Box::new(OpenPublicKey(public_key)))
+                    .menu(t!("profile.copy"), Box::new(CopyPublicKey(public_key)))
+            })
             .on_click(move |event, window, cx| {
                 handler(event, window, cx);
 

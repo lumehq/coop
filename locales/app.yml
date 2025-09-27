@@ -275,6 +275,8 @@ profile:
     en: "Open in njump.me"
   no_bio:
     en: "No bio."
+  copy:
+    en: "Copy Public Key"
 
 preferences:
   account_header:

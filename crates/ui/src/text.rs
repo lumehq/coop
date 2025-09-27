@@ -13,7 +13,7 @@ use regex::Regex;
 use registry::Registry;
 use theme::ActiveTheme;
 
-use crate::actions::OpenProfile;
+use crate::actions::OpenPublicKey;
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(?:[a-zA-Z]+://)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(/.*)?$").unwrap()
@@ -140,7 +140,7 @@ impl RenderedText {
                         log::error!("Failed to parse public key from: {clean_url}");
                         return;
                     };
-                    window.dispatch_action(Box::new(OpenProfile(public_key)), cx);
+                    window.dispatch_action(Box::new(OpenPublicKey(public_key)), cx);
                 } else if is_url(token) {
                     if !token.starts_with("http") {
                         cx.open_url(&format!("https://{token}"));
