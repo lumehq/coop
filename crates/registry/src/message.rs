@@ -21,20 +21,26 @@ impl Message {
     pub fn system() -> Self {
         Self::System(Timestamp::default())
     }
+
+    fn timestamp(&self) -> &Timestamp {
+        match self {
+            Message::User(msg) => &msg.created_at,
+            Message::Warning(_, ts) => ts,
+            Message::System(ts) => ts,
+        }
+    }
 }
 
 impl Ord for Message {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Message::User(a), Message::User(b)) => a.cmp(b),
-            (Message::System(a), Message::System(b)) => a.cmp(b),
-            (Message::User(a), Message::System(b)) => a.created_at.cmp(b),
-            (Message::System(a), Message::User(b)) => a.cmp(&b.created_at),
-            (Message::Warning(_, a), Message::Warning(_, b)) => a.cmp(b),
-            (Message::Warning(_, a), Message::User(b)) => a.cmp(&b.created_at),
-            (Message::User(a), Message::Warning(_, b)) => a.created_at.cmp(b),
-            (Message::Warning(_, a), Message::System(b)) => a.cmp(b),
-            (Message::System(a), Message::Warning(_, b)) => a.cmp(b),
+            // System always comes first
+            (Message::System(_), Message::System(_)) => self.timestamp().cmp(other.timestamp()),
+            (Message::System(_), _) => std::cmp::Ordering::Less,
+            (_, Message::System(_)) => std::cmp::Ordering::Greater,
+
+            // For non-system messages, compare by timestamp
+            _ => self.timestamp().cmp(other.timestamp()),
         }
     }
 }
@@ -151,18 +157,14 @@ fn extract_reply_ids(inner: &Tags) -> Vec<EventId> {
     let mut replies_to = vec![];
 
     for tag in inner.filter(TagKind::e()) {
-        if let Some(content) = tag.content() {
-            if let Ok(id) = EventId::from_hex(content) {
-                replies_to.push(id);
-            }
+        if let Some(id) = tag.content().and_then(|id| EventId::parse(id).ok()) {
+            replies_to.push(id);
         }
     }
 
     for tag in inner.filter(TagKind::q()) {
-        if let Some(content) = tag.content() {
-            if let Ok(id) = EventId::from_hex(content) {
-                replies_to.push(id);
-            }
+        if let Some(id) = tag.content().and_then(|id| EventId::parse(id).ok()) {
+            replies_to.push(id);
         }
     }
 
