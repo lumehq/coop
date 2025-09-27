@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
@@ -61,7 +61,7 @@ pub struct Chat {
 
     // New Message
     input: Entity<InputState>,
-    replies_to: Entity<Vec<EventId>>,
+    replies_to: Entity<HashSet<EventId>>,
 
     // Media Attachment
     attachments: Entity<Vec<Url>>,
@@ -79,7 +79,7 @@ pub struct Chat {
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let attachments = cx.new(|_| vec![]);
-        let replies_to = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| HashSet::new());
 
         let relays = cx.new(|_| {
             let this: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
@@ -315,7 +315,7 @@ impl Chat {
         let backup = AppSettings::get_backup_messages(cx);
 
         // Get replies_to if it's present
-        let replies = self.replies_to.read(cx).clone();
+        let replies = self.replies_to.read(cx).iter().copied().collect_vec();
 
         // Get the current room entity
         let room = self.room.read(cx);
@@ -503,7 +503,7 @@ impl Chat {
     fn reply_to(&mut self, id: &EventId, cx: &mut Context<Self>) {
         if let Some(text) = self.message(id) {
             self.replies_to.update(cx, |this, cx| {
-                this.push(text.id);
+                this.insert(text.id);
                 cx.notify();
             });
         }
@@ -511,16 +511,14 @@ impl Chat {
 
     fn remove_reply(&mut self, id: &EventId, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
-            if let Some(ix) = this.iter().position(|this| this == id) {
-                this.remove(ix);
-                cx.notify();
-            }
+            this.remove(id);
+            cx.notify();
         });
     }
 
     fn remove_all_replies(&mut self, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
-            *this = vec![];
+            this.clear();
             cx.notify();
         });
     }
