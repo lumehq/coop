@@ -135,7 +135,6 @@ impl Onboarding {
         self._tasks.push(
             // Wait for Nostr Connect approval
             cx.spawn_in(window, async move |this, cx| {
-                let client = nostr_client();
                 let connect = this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone());
 
                 if let Ok(Some(signer)) = connect {
@@ -143,12 +142,9 @@ impl Onboarding {
                         Ok(uri) => {
                             this.update(cx, |this, cx| {
                                 this.set_connecting(cx);
-                                this.write_uri_to_disk(&uri, cx);
+                                this.write_uri_to_disk(signer, uri, cx);
                             })
                             .ok();
-
-                            // Set the client's signer with the current nostr connect instance
-                            client.set_signer(signer).await;
                         }
                         Err(e) => {
                             this.update_in(cx, |_, window, cx| {
@@ -169,38 +165,41 @@ impl Onboarding {
         ChatSpace::proxy_signer(window, cx);
     }
 
-    fn write_uri_to_disk(&mut self, uri: &NostrConnectURI, cx: &mut Context<Self>) {
-        let Some(public_key) = uri.remote_signer_public_key().cloned() else {
-            log::error!("Remote Signer's public key not found");
-            return;
-        };
+    fn write_uri_to_disk(
+        &mut self,
+        signer: NostrConnect,
+        uri: NostrConnectURI,
+        cx: &mut Context<Self>,
+    ) {
+        let mut uri_without_secret = uri.to_string();
 
-        let mut value = uri.to_string();
-
-        // Clear the secret param if it exists
+        // Clear the secret parameter in the URI if it exists
         if let Some(secret) = uri.secret() {
-            value = value.replace(secret, "");
+            uri_without_secret = uri_without_secret.replace(secret, "");
         }
 
-        cx.background_spawn(async move {
+        let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let keys = Keys::generate();
-            let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-            let kind = Kind::ApplicationSpecificData;
 
-            let builder = EventBuilder::new(kind, value)
-                .tags(tags)
+            // Update the client's signer
+            client.set_signer(signer).await;
+
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let event = EventBuilder::new(Kind::ApplicationSpecificData, uri_without_secret)
+                .tags(vec![Tag::identifier(ACCOUNT_IDENTIFIER)])
                 .build(public_key)
-                .sign(&keys)
-                .await;
+                .sign(&Keys::generate())
+                .await?;
 
-            if let Ok(event) = builder {
-                if let Err(e) = client.database().save_event(&event).await {
-                    log::error!("Failed to save event: {e}");
-                };
-            }
-        })
-        .detach();
+            // Save the event to the database
+            client.database().save_event(&event).await?;
+
+            Ok(())
+        });
+
+        task.detach();
     }
 
     fn copy_uri(&mut self, window: &mut Window, cx: &mut Context<Self>) {
