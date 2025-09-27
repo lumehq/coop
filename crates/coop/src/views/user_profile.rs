@@ -17,7 +17,7 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
-use ui::{h_flex, v_flex, Disableable, Icon, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<UserProfile> {
     cx.new(|cx| UserProfile::new(public_key, window, cx))
@@ -32,27 +32,24 @@ pub struct UserProfile {
 }
 
 impl UserProfile {
-    pub fn new(public_key: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(target: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let registry = Registry::read_global(cx);
-        let identity = registry.identity(cx).public_key();
-        let profile = registry.get_person(&public_key, cx);
+        let profile = registry.get_person(&target, cx);
 
         let mut tasks = smallvec![];
 
-        let check_follow: Task<bool> = cx.background_spawn(async move {
+        let check_follow: Task<Result<bool, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let filter = Filter::new()
-                .kind(Kind::ContactList)
-                .author(identity)
-                .pubkey(public_key)
-                .limit(1);
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let contact_list = client.database().contacts_public_keys(public_key).await?;
 
-            client.database().count(filter).await.unwrap_or(0) >= 1
+            Ok(contact_list.contains(&target))
         });
 
         let verify_nip05 = if let Some(address) = profile.metadata().nip05 {
             Some(Tokio::spawn(cx, async move {
-                nip05_verify(public_key, &address).await.unwrap_or(false)
+                nip05_verify(target, &address).await.unwrap_or(false)
             }))
         } else {
             None
@@ -61,7 +58,7 @@ impl UserProfile {
         tasks.push(
             // Load user profile data
             cx.spawn_in(window, async move |this, cx| {
-                let followed = check_follow.await;
+                let followed = check_follow.await.unwrap_or(false);
 
                 // Update the followed status
                 this.update(cx, |this, cx| {
@@ -133,6 +130,7 @@ impl Render for UserProfile {
 
         v_flex()
             .gap_4()
+            .text_sm()
             .child(
                 v_flex()
                     .gap_3()
@@ -188,10 +186,8 @@ impl Render for UserProfile {
             .child(
                 v_flex()
                     .gap_1()
-                    .text_sm()
                     .child(
                         div()
-                            .block()
                             .text_color(cx.theme().text_muted)
                             .child(SharedString::from("Public Key:")),
                     )
@@ -201,12 +197,13 @@ impl Render for UserProfile {
                             .child(
                                 div()
                                     .p_2()
-                                    .h_9()
+                                    .h_7()
                                     .rounded_md()
                                     .bg(cx.theme().elevated_surface_background)
                                     .truncate()
                                     .text_ellipsis()
                                     .line_clamp(1)
+                                    .line_height(relative(1.))
                                     .child(shared_bech32),
                             )
                             .child(
@@ -218,8 +215,8 @@ impl Render for UserProfile {
                                             IconName::Copy
                                         }
                                     })
-                                    .ghost()
-                                    .disabled(self.copied)
+                                    .cta()
+                                    .ghost_alt()
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.copy_pubkey(window, cx);
                                     })),
@@ -229,7 +226,6 @@ impl Render for UserProfile {
             .child(
                 v_flex()
                     .gap_1()
-                    .text_sm()
                     .child(
                         div()
                             .text_color(cx.theme().text_muted)

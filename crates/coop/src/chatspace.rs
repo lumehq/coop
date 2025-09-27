@@ -16,8 +16,8 @@ use global::constants::{
 use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem, Context,
+    Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use i18n::{shared_t, t};
@@ -30,7 +30,7 @@ use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
-use ui::actions::OpenProfile;
+use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
@@ -1177,7 +1177,7 @@ impl ChatSpace {
         .detach();
     }
 
-    fn on_open_profile(&mut self, ev: &OpenProfile, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_open_pubkey(&mut self, ev: &OpenPublicKey, window: &mut Window, cx: &mut Context<Self>) {
         let public_key = ev.0;
         let profile = user_profile::init(public_key, window, cx);
 
@@ -1193,6 +1193,12 @@ impl ChatSpace {
                     false
                 })
         });
+    }
+
+    fn on_copy_pubkey(&mut self, ev: &CopyPublicKey, window: &mut Window, cx: &mut Context<Self>) {
+        let Ok(bech32) = ev.0.to_bech32();
+        cx.write_to_clipboard(ClipboardItem::new_string(bech32));
+        window.push_notification(t!("common.copied"), cx);
     }
 
     fn render_proxy_modal(&mut self, window: &mut Window, cx: &mut App) {
@@ -1496,7 +1502,8 @@ impl Render for ChatSpace {
             .on_action(cx.listener(Self::on_settings))
             .on_action(cx.listener(Self::on_dark_mode))
             .on_action(cx.listener(Self::on_sign_out))
-            .on_action(cx.listener(Self::on_open_profile))
+            .on_action(cx.listener(Self::on_open_pubkey))
+            .on_action(cx.listener(Self::on_copy_pubkey))
             .on_action(cx.listener(Self::on_reload_metadata))
             .relative()
             .size_full()
