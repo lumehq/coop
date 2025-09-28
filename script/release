@@ -70,7 +70,7 @@ fi
 
 # Push to origin (both commits and tags)
 echo "Pushing to origin..."
-if git push origin main && git push origin "$TAG_NAME"; then
+if git push origin master && git push origin "$TAG_NAME"; then
     echo "✓ Successfully pushed to origin"
     echo "✓ Release $NEW_VERSION completed successfully!"
 else
