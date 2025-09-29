@@ -206,13 +206,14 @@ impl Chat {
         subscriptions.push(
             // Observe when user close chat panel
             cx.on_release_in(window, move |this, window, cx| {
-                this.disconnect_relays(cx);
                 this.messages.clear();
                 this.rendered_texts_by_id.clear();
                 this.reports_by_id.clear();
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
                 });
+
+                this.disconnect_relays(cx);
             }),
         );
 
@@ -1237,8 +1238,7 @@ impl Chat {
                                 weak_view.read_with(cx, |this, cx| this.new_subject(cx))
                             {
                                 room.update(cx, |this, cx| {
-                                    this.subject = Some(subject);
-                                    cx.notify();
+                                    this.set_subject(subject, cx);
                                 })
                                 .ok();
                             }

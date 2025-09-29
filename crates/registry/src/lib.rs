@@ -437,7 +437,7 @@ impl Registry {
             // Update room
             room.update(cx, |this, cx| {
                 if is_new_event {
-                    this.created_at(event.created_at, cx);
+                    this.set_created_at(event.created_at, cx);
                 }
 
                 // Set this room is ongoing if the new message is from current user
