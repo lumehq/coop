@@ -274,11 +274,6 @@ impl Chat {
         );
     }
 
-    #[allow(dead_code)]
-    fn mention_popup(&mut self, _text: &str, _input: &Entity<InputState>, _cx: &mut Context<Self>) {
-        // TODO: open mention popup at current cursor position
-    }
-
     /// Get user input content and merged all attachments
     fn input_content(&self, cx: &Context<Self>) -> String {
         let mut content = self.input.read(cx).value().trim().to_string();
@@ -322,17 +317,16 @@ impl Chat {
 
         // Get the current room entity
         let room = self.room.read(cx);
-        let identity = Registry::read_global(cx).identity(cx).public_key();
 
         // Create a temporary message for optimistic update
-        let temp_message = room.create_temp_message(identity, &content, replies.as_ref());
-        let temp_id = temp_message.id.unwrap();
+        let rumor = room.create_message(&content, replies.as_ref(), cx);
+        let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let send_message = room.send_in_background(&content, replies, backup, cx);
+        let send_message = room.send_message(rumor.clone(), backup, cx);
 
         // Optimistically update message list
-        self.insert_message(Message::user(temp_message), true, cx);
+        self.insert_message(Message::user(rumor), true, cx);
 
         // Remove all replies
         self.remove_all_replies(cx);
@@ -364,7 +358,7 @@ impl Chat {
                         });
 
                         // Insert the sent reports
-                        this.reports_by_id.insert(temp_id, reports);
+                        this.reports_by_id.insert(rumor_id, reports);
 
                         cx.notify();
                     }
@@ -378,37 +372,31 @@ impl Chat {
         .detach();
     }
 
+    /// Resend a failed message
     fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(reports) = self.reports_by_id.get(id).cloned() {
-            if let Some(message) = self.message(id) {
-                let backup = AppSettings::get_backup_messages(cx);
-                let id_clone = id.to_owned();
-                let message = message.content.to_owned();
-                let task = self.room.read(cx).resend(reports, message, backup, cx);
+            let id_clone = id.to_owned();
+            let resend = self.room.read(cx).resend_message(reports, cx);
 
-                cx.spawn_in(window, async move |this, cx| {
-                    match task.await {
+            cx.spawn_in(window, async move |this, cx| {
+                let result = resend.await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
                         Ok(reports) => {
-                            if !reports.is_empty() {
-                                this.update(cx, |this, cx| {
-                                    this.reports_by_id.entry(id_clone).and_modify(|this| {
-                                        *this = reports;
-                                    });
-                                    cx.notify();
-                                })
-                                .ok();
-                            }
+                            this.reports_by_id.entry(id_clone).and_modify(|this| {
+                                *this = reports;
+                            });
+                            cx.notify();
                         }
                         Err(e) => {
-                            cx.update(|window, cx| {
-                                window.push_notification(e.to_string(), cx);
-                            })
-                            .ok();
+                            window.push_notification(Notification::error(e.to_string()), cx);
                         }
                     };
                 })
-                .detach();
-            }
+                .ok();
+            })
+            .detach();
         }
     }
 
