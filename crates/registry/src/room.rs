@@ -17,9 +17,9 @@ use crate::Registry;
 #[derive(Debug, Clone)]
 pub struct SendReport {
     pub receiver: PublicKey,
-    pub tags: Option<Vec<Tag>>,
     pub status: Option<Output<EventId>>,
     pub error: Option<SharedString>,
+    pub on_hold: Option<Event>,
     pub relays_not_found: bool,
 }
 
@@ -29,13 +29,14 @@ impl SendReport {
             receiver,
             status: None,
             error: None,
-            tags: None,
+            on_hold: None,
             relays_not_found: false,
         }
     }
 
-    pub fn not_found(mut self) -> Self {
-        self.relays_not_found = true;
+    pub fn status(mut self, output: Output<EventId>) -> Self {
+        self.status = Some(output);
+        self.relays_not_found = false;
         self
     }
 
@@ -45,14 +46,13 @@ impl SendReport {
         self
     }
 
-    pub fn status(mut self, output: Output<EventId>) -> Self {
-        self.status = Some(output);
-        self.relays_not_found = false;
+    pub fn on_hold(mut self, event: Event) -> Self {
+        self.on_hold = Some(event);
         self
     }
 
-    pub fn tags(mut self, tags: &Vec<Tag>) -> Self {
-        self.tags = Some(tags.to_owned());
+    pub fn not_found(mut self) -> Self {
+        self.relays_not_found = true;
         self
     }
 
@@ -199,8 +199,6 @@ impl From<&UnsignedEvent> for Room {
         }
     }
 }
-
-type SendTask = Task<Result<Vec<SendReport>, Error>>;
 
 impl Room {
     /// Constructs a new room instance with a given receiver.
@@ -417,6 +415,16 @@ impl Room {
         })
     }
 
+    /// Emits a new message signal to the current room
+    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
+    }
+
+    /// Emits a signal to refresh the current room's messages.
+    pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::Refresh);
+    }
+
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
         let public_key = Registry::read_global(cx).identity(cx).public_key();
@@ -470,8 +478,13 @@ impl Room {
         event
     }
 
-    /// Sends a message to all room's members
-    pub fn send_message(&self, rumor: UnsignedEvent, backup: bool, cx: &App) -> SendTask {
+    /// Create a task to send a message to all room members
+    pub fn send_message(
+        &self,
+        rumor: UnsignedEvent,
+        backup: bool,
+        cx: &App,
+    ) -> Task<Result<Vec<SendReport>, Error>> {
         let mut members = self.members.clone();
 
         cx.background_spawn(async move {
@@ -525,36 +538,31 @@ impl Room {
                         }
                     }
                     Err(e) => {
-                        if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
-                            reports.push(SendReport::new(receiver).not_found());
-                        } else {
-                            reports.push(SendReport::new(receiver).error(e.to_string()));
-                        }
+                        reports.push(SendReport::new(receiver).error(e.to_string()));
                     }
                 }
             }
 
+            // Construct a gift wrap to back up to current user's owned messaging relays
+            let rumor = rumor.clone();
+            let event = EventBuilder::gift_wrap(&signer, &public_key, rumor, vec![]).await?;
+
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && backup {
-                let rumor = rumor.clone();
-                let event = EventBuilder::gift_wrap(&signer, &public_key, rumor, vec![]).await?;
-
                 if let Ok(relay_urls) = Self::messaging_relays(public_key).await {
                     match client.send_event_to(relay_urls, &event).await {
                         Ok(output) => {
                             reports.push(SendReport::new(public_key).status(output));
                         }
                         Err(e) => {
-                            if let nostr_sdk::client::Error::PrivateMsgRelaysNotFound = e {
-                                reports.push(SendReport::new(public_key).not_found());
-                            } else {
-                                reports.push(SendReport::new(public_key).error(e.to_string()));
-                            }
+                            reports.push(SendReport::new(public_key).error(e.to_string()));
                         }
                     }
                 } else {
                     reports.push(SendReport::new(public_key).not_found());
                 }
+            } else {
+                reports.push(SendReport::new(public_key).on_hold(event));
             }
 
             Ok(reports)
@@ -562,19 +570,33 @@ impl Room {
     }
 
     /// Create a task to resend a failed message
-    pub fn resend(
+    pub fn resend_message(
         &self,
         reports: Vec<SendReport>,
-        message: String,
-        backup: bool,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
         cx.background_spawn(async move {
             let client = nostr_client();
             let mut resend_reports = vec![];
-            let mut resend_tag = vec![];
 
             for report in reports.into_iter() {
+                let receiver = report.receiver;
+
+                if let Some(event) = report.on_hold {
+                    if let Ok(relay_urls) = Self::messaging_relays(receiver).await {
+                        match client.send_event_to(relay_urls, &event).await {
+                            Ok(output) => {
+                                resend_reports.push(SendReport::new(receiver).status(output));
+                            }
+                            Err(e) => {
+                                resend_reports.push(SendReport::new(receiver).error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        resend_reports.push(SendReport::new(receiver).not_found());
+                    }
+                }
+
                 if let Some(output) = report.status {
                     let id = output.id();
                     let urls: Vec<&RelayUrl> = output.failed.keys().collect();
@@ -583,45 +605,21 @@ impl Room {
                         for url in urls.into_iter() {
                             let relay = client.pool().relay(url).await?;
                             let id = relay.send_event(&event).await?;
+
                             let resent: Output<EventId> = Output {
                                 val: id,
                                 success: HashSet::from([url.to_owned()]),
                                 failed: HashMap::new(),
                             };
 
-                            resend_reports.push(SendReport::new(report.receiver).status(resent));
-                        }
-
-                        if let Some(tags) = report.tags {
-                            resend_tag.extend(tags);
+                            resend_reports.push(SendReport::new(receiver).status(resent));
                         }
                     }
                 }
             }
 
-            // Only send a backup message to current user if sent successfully to others
-            if backup && !resend_reports.is_empty() {
-                let signer = client.signer().await?;
-                let public_key = signer.get_public_key().await?;
-                let output = client
-                    .send_private_msg(public_key, message, resend_tag)
-                    .await?;
-
-                resend_reports.push(SendReport::new(public_key).status(output));
-            }
-
             Ok(resend_reports)
         })
-    }
-
-    /// Emits a new message signal to the current room
-    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
-    }
-
-    /// Emits a signal to refresh the current room's messages.
-    pub fn emit_refresh(&mut self, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::Refresh);
     }
 
     /// Gets messaging relays for public key
