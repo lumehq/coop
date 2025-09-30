@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
@@ -99,7 +100,7 @@ impl Chat {
         let messages = BTreeSet::from([Message::system()]);
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
-        let connect_relays = room.read(cx).connect_relays(cx);
+        let connect = room.read(cx).connect(cx);
         let load_messages = room.read(cx).load_messages(cx);
 
         let mut subscriptions = smallvec![];
@@ -108,43 +109,41 @@ impl Chat {
         tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
-                match connect_relays.await {
-                    Ok(relays) => {
-                        this.update(cx, |this, cx| {
-                            this.relays.update(cx, |this, cx| {
-                                *this = relays;
-                                cx.notify();
-                            });
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|window, cx| {
+                let result = load_messages.await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(events) => {
+                            this.insert_messages(events, cx);
+                        }
+                        Err(e) => {
                             window.push_notification(e.to_string(), cx);
-                        })
-                        .ok();
-                    }
-                };
+                        }
+                    };
+                })
+                .ok();
             }),
         );
 
         tasks.push(
-            // Load all messages belonging to this room
+            // Get messaging relays for all members
             cx.spawn_in(window, async move |this, cx| {
-                match load_messages.await {
-                    Ok(events) => {
-                        this.update(cx, |this, cx| {
-                            this.insert_messages(events, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        cx.update(|window, cx| {
-                            window.push_notification(e.to_string(), cx);
-                        })
-                        .ok();
-                    }
-                };
+                let result = connect.await;
+
+                this.update_in(cx, |this, _window, cx| {
+                    match result {
+                        Ok(relays) => {
+                            this.relays.update(cx, |this, cx| {
+                                this.extend(relays);
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            this.insert_warning(e.to_string(), cx);
+                        }
+                    };
+                })
+                .ok();
             }),
         );
 
@@ -192,9 +191,12 @@ impl Chat {
         subscriptions.push(
             // Observe the messaging relays of the room's members
             cx.observe_in(&relays, window, |this, entity, _window, cx| {
-                for (public_key, urls) in entity.read(cx).clone().into_iter() {
+                let registry = Registry::global(cx);
+                let relays = entity.read(cx).clone();
+
+                for (public_key, urls) in relays.iter() {
                     if urls.is_empty() {
-                        let profile = Registry::read_global(cx).get_person(&public_key, cx);
+                        let profile = registry.read(cx).get_person(public_key, cx);
                         let content = t!("chat.nip17_not_found", u = profile.name());
 
                         this.insert_warning(content, cx);
@@ -212,8 +214,6 @@ impl Chat {
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
                 });
-
-                this.disconnect_relays(cx);
             }),
         );
 
@@ -234,20 +234,6 @@ impl Chat {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
-    }
-
-    /// Disconnect all relays when the user closes the chat panel
-    fn disconnect_relays(&mut self, cx: &mut App) {
-        let relays = self.relays.read(cx).clone();
-
-        cx.background_spawn(async move {
-            let client = nostr_client();
-
-            for relay in relays.values().flatten() {
-                client.disconnect_relay(relay).await.ok();
-            }
-        })
-        .detach();
     }
 
     /// Load all messages belonging to this room
@@ -309,11 +295,18 @@ impl Chat {
             return;
         }
 
+        // Temporary disable the message input
+        self.input.update(cx, |this, cx| {
+            this.set_loading(false, cx);
+            this.set_disabled(false, cx);
+            this.set_value("", window, cx);
+        });
+
         // Get the backup setting
         let backup = AppSettings::get_backup_messages(cx);
 
         // Get replies_to if it's present
-        let replies = self.replies_to.read(cx).iter().copied().collect_vec();
+        let replies: Vec<EventId> = self.replies_to.read(cx).iter().copied().collect();
 
         // Get the current room entity
         let room = self.room.read(cx);
@@ -326,18 +319,24 @@ impl Chat {
         let send_message = room.send_message(rumor.clone(), backup, cx);
 
         // Optimistically update message list
-        self.insert_message(Message::user(rumor), true, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(100))
+                .await;
 
-        // Remove all replies
-        self.remove_all_replies(cx);
-
-        // remove all attachments
-        self.remove_all_attachments(cx);
-
-        // Reset the input state
-        self.input.update(cx, |this, cx| {
-            this.set_value("", window, cx);
-        });
+            this.update_in(cx, |this, window, cx| {
+                this.insert_message(Message::user(rumor), true, cx);
+                this.remove_all_replies(cx);
+                this.remove_all_attachments(cx);
+                this.input.update(cx, |this, cx| {
+                    this.set_loading(false, cx);
+                    this.set_disabled(false, cx);
+                    this.set_value("", window, cx);
+                });
+            })
+            .ok();
+        })
+        .detach();
 
         // Continue sending the message in the background
         cx.spawn_in(window, async move |this, cx| {
@@ -601,7 +600,7 @@ impl Chat {
         });
     }
 
-    fn render_announcement(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+    fn render_announcement(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
         v_flex()
             .id(ix)
             .group("")
@@ -627,7 +626,7 @@ impl Chat {
             .into_any_element()
     }
 
-    fn render_warning(&mut self, ix: usize, content: String, cx: &mut Context<Self>) -> AnyElement {
+    fn render_warning(&self, ix: usize, content: SharedString, cx: &Context<Self>) -> AnyElement {
         div()
             .id(ix)
             .relative()
@@ -641,7 +640,7 @@ impl Chat {
                     .text_sm()
                     .text_color(cx.theme().warning_foreground)
                     .child(Avatar::new("brand/system.png").size(rems(2.)))
-                    .child(SharedString::from(content)),
+                    .child(content),
             )
             .child(
                 div()
@@ -651,23 +650,6 @@ impl Chat {
                     .w(px(2.))
                     .h_full()
                     .bg(cx.theme().warning_active),
-            )
-            .into_any_element()
-    }
-
-    fn render_message_not_found(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
-        div()
-            .id(ix)
-            .w_full()
-            .py_1()
-            .px_3()
-            .child(
-                h_flex()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(cx.theme().danger_foreground)
-                    .child(SharedString::from(ix.to_string()))
-                    .child(shared_t!("chat.not_found")),
             )
             .into_any_element()
     }
@@ -1369,13 +1351,13 @@ impl Render for Chat {
 
                                     this.render_message(ix, rendered, text, cx)
                                 }
-                                Message::Warning(content, _) => {
-                                    this.render_warning(ix, content.to_owned(), cx)
+                                Message::Warning(content, _timestamp) => {
+                                    this.render_warning(ix, SharedString::from(content), cx)
                                 }
-                                Message::System(_) => this.render_announcement(ix, cx),
+                                Message::System(_timestamp) => this.render_announcement(ix, cx),
                             }
                         } else {
-                            this.render_message_not_found(ix, cx)
+                            this.render_warning(ix, shared_t!("chat.not_found"), cx)
                         }
                     }),
                 )

@@ -322,40 +322,68 @@ impl Room {
         }
     }
 
-    /// Connects to all members' messaging relays
-    pub fn connect_relays(
-        &self,
-        cx: &App,
-    ) -> Task<Result<HashMap<PublicKey, Vec<RelayUrl>>, Error>> {
+    /// Connects to all members's messaging relays
+    pub fn connect(&self, cx: &App) -> Task<Result<HashMap<PublicKey, Vec<RelayUrl>>, Error>> {
         let members = self.members.clone();
 
         cx.background_spawn(async move {
             let client = nostr_client();
-            let timeout = Duration::from_secs(3);
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let mut relays = HashMap::new();
             let mut processed = HashSet::new();
-            let mut relays: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
 
-            if let Some((_, members)) = members.split_last() {
-                for member in members.iter() {
-                    relays.insert(member.to_owned(), vec![]);
+            for member in members.into_iter() {
+                if member == public_key {
+                    continue;
+                };
 
-                    let filter = Filter::new()
-                        .kind(Kind::InboxRelays)
-                        .author(member.to_owned())
-                        .limit(1);
+                relays.insert(member, vec![]);
 
-                    if let Ok(mut stream) = client.stream_events(filter, timeout).await {
-                        if let Some(event) = stream.next().await {
-                            if processed.insert(event.id) {
-                                let urls = nip17::extract_owned_relay_list(event).collect_vec();
-                                relays.entry(member.to_owned()).or_default().extend(urls);
-                            }
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(member)
+                    .limit(1);
+
+                let mut stream = client
+                    .stream_events(filter, Duration::from_secs(10))
+                    .await?;
+
+                if let Some(event) = stream.next().await {
+                    if processed.insert(event.id) {
+                        let public_key = event.pubkey;
+                        let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
+
+                        // Check if at least one URL exists
+                        if urls.is_empty() {
+                            continue;
                         }
+
+                        // Connect to relays
+                        for url in urls.iter() {
+                            client.add_relay(url).await?;
+                            client.connect_relay(url).await?;
+                        }
+
+                        relays.entry(public_key).and_modify(|v| v.extend(urls));
                     }
                 }
-            };
+            }
 
             Ok(relays)
+        })
+    }
+
+    pub fn disconnect(&self, relays: Vec<RelayUrl>, cx: &App) -> Task<Result<(), Error>> {
+        cx.background_spawn(async move {
+            let client = nostr_client();
+
+            for relay in relays.into_iter() {
+                client.disconnect_relay(relay).await?;
+            }
+
+            Ok(())
         })
     }
 
@@ -434,10 +462,8 @@ impl Room {
         let mut tags = vec![];
 
         // Add receivers
-        if let Some((_, public_keys)) = self.members.split_last() {
-            for public_key in public_keys {
-                tags.push(Tag::public_key(public_key.to_owned()));
-            }
+        for member in self.members.iter() {
+            tags.push(Tag::public_key(member.to_owned()));
         }
 
         // Add subject tag if it's present
@@ -635,6 +661,7 @@ impl Room {
         if let Some(event) = client.database().query(filter).await?.first_owned() {
             let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
 
+            // Check if at least one URL exists
             if urls.is_empty() {
                 return Err(anyhow!("Not found"));
             }
