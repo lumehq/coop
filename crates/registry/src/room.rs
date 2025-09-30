@@ -168,12 +168,7 @@ impl From<&UnsignedEvent> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val
-            .all_pubkeys()
-            .into_iter()
-            .unique()
-            .sorted()
-            .collect_vec();
+        let members = val.all_pubkeys().into_iter().unique().collect_vec();
 
         // Get the subject from the event's tags
         let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
@@ -204,7 +199,6 @@ impl Room {
     /// Constructs a new room instance with a given receiver.
     pub fn new(receiver: PublicKey, tags: Tags, cx: &App) -> Self {
         let identity = Registry::read_global(cx).identity(cx);
-
         let mut event = EventBuilder::private_msg_rumor(receiver, "")
             .tags(tags)
             .build(identity.public_key());
@@ -212,21 +206,12 @@ impl Room {
         // Ensure event ID is generated
         event.ensure_id();
 
-        Room::from(&event).current_user(identity.public_key())
+        Room::from(&event)
     }
 
     /// Constructs a new room instance from an nostr event.
     pub fn from(event: impl Into<Room>) -> Self {
         event.into()
-    }
-
-    /// Call this function to ensure the current user is always at the bottom of the members list
-    pub fn current_user(mut self, public_key: PublicKey) -> Self {
-        let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) =
-            self.members.iter().partition(|&key| key != &public_key);
-        self.members = not_match;
-        self.members.extend(matches);
-        self
     }
 
     /// Sets the kind of the room and returns the modified room
@@ -280,17 +265,25 @@ impl Room {
         if let Some(picture) = self.picture.as_ref() {
             SharedUri::from(picture)
         } else if !self.is_group() {
-            self.first_member(cx).avatar(proxy)
+            self.display_member(cx).avatar(proxy)
         } else {
             SharedUri::from("brand/group.png")
         }
     }
 
-    /// Get the first member of the room.
+    /// Get a single member to represent the room
     ///
-    /// First member is always different from the current user.
-    fn first_member(&self, cx: &App) -> Profile {
+    /// This member is always different from the current user.
+    fn display_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
+        let identity = registry.identity(cx);
+
+        for member in self.members.iter() {
+            if member != &identity.public_key() {
+                return registry.get_person(member, cx);
+            }
+        }
+
         registry.get_person(&self.members[0], cx)
     }
 
@@ -318,7 +311,7 @@ impl Room {
 
             SharedString::from(name)
         } else {
-            self.first_member(cx).display_name()
+            self.display_member(cx).display_name()
         }
     }
 
