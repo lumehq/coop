@@ -14,8 +14,8 @@ impl Message {
         Self::User(user.into())
     }
 
-    pub fn warning(content: String) -> Self {
-        Self::Warning(content, Timestamp::now())
+    pub fn warning(content: impl Into<String>) -> Self {
+        Self::Warning(content.into(), Timestamp::now())
     }
 
     pub fn system() -> Self {

@@ -223,7 +223,7 @@ pub fn nostr_client() -> &'static Client {
             .automatic_authentication(false)
             .verify_subscriptions(false)
             .sleep_when_idle(SleepWhenIdle::Enabled {
-                timeout: Duration::from_secs(300),
+                timeout: Duration::from_secs(600),
             });
 
         ClientBuilder::default().database(lmdb).opts(opts).build()
