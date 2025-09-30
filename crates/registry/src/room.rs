@@ -462,6 +462,8 @@ impl Room {
         let mut tags = vec![];
 
         // Add receivers
+        //
+        // NOTE: current user will be removed from the list of receivers
         for member in self.members.iter() {
             tags.push(Tag::public_key(member.to_owned()));
         }
@@ -519,7 +521,8 @@ impl Room {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
-            // Remove the current public key from the list of receivers
+            // Remove the current user's public key from the list of receivers
+            // Current user will be handled separately
             members.retain(|&pk| pk != public_key);
 
             let mut reports: Vec<SendReport> = vec![];
@@ -608,21 +611,7 @@ impl Room {
             for report in reports.into_iter() {
                 let receiver = report.receiver;
 
-                if let Some(event) = report.on_hold {
-                    if let Ok(relay_urls) = Self::messaging_relays(receiver).await {
-                        match client.send_event_to(relay_urls, &event).await {
-                            Ok(output) => {
-                                resend_reports.push(SendReport::new(receiver).status(output));
-                            }
-                            Err(e) => {
-                                resend_reports.push(SendReport::new(receiver).error(e.to_string()));
-                            }
-                        }
-                    } else {
-                        resend_reports.push(SendReport::new(receiver).not_found());
-                    }
-                }
-
+                // Process failed events
                 if let Some(output) = report.status {
                     let id = output.id();
                     let urls: Vec<&RelayUrl> = output.failed.keys().collect();
@@ -640,6 +629,22 @@ impl Room {
 
                             resend_reports.push(SendReport::new(receiver).status(resent));
                         }
+                    }
+                }
+
+                // Process the on hold event if it exists
+                if let Some(event) = report.on_hold {
+                    if let Ok(relay_urls) = Self::messaging_relays(receiver).await {
+                        match client.send_event_to(relay_urls, &event).await {
+                            Ok(output) => {
+                                resend_reports.push(SendReport::new(receiver).status(output));
+                            }
+                            Err(e) => {
+                                resend_reports.push(SendReport::new(receiver).error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        resend_reports.push(SendReport::new(receiver).not_found());
                     }
                 }
             }
