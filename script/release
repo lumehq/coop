@@ -57,9 +57,65 @@ echo "Updating versions..."
 update_version "$WORKSPACE_CARGO"
 update_version "$CRATE_CARGO"
 
+# Check git status before committing
+echo "Checking git status..."
+if git status --porcelain | grep -q .; then
+    echo "Current uncommitted changes:"
+    git status --short
+
+    # Ask user if they want to commit all changes or just version files
+    echo ""
+    echo "Do you want to:"
+    echo "1) Commit all current changes (including the version updates)"
+    echo "2) Commit only the version file changes"
+    echo "3) Abort the release"
+    read -p "Enter choice (1/2/3): " choice
+
+    case $choice in
+        1)
+            echo "Committing all changes..."
+            git add .
+            ;;
+        2)
+            echo "Committing only version file changes..."
+            git add "$WORKSPACE_CARGO" "$CRATE_CARGO"
+            ;;
+        3)
+            echo "Release aborted by user"
+            exit 0
+            ;;
+        *)
+            echo "Invalid choice. Release aborted."
+            exit 1
+            ;;
+    esac
+else
+    # Only version files were modified, add them specifically
+    echo "Only version files were modified, adding them for commit..."
+    git add "$WORKSPACE_CARGO" "$CRATE_CARGO"
+fi
+
+# Commit the changes
+COMMIT_MSG="chore: release version $NEW_VERSION"
+
+if git commit -m "$COMMIT_MSG"; then
+    echo "✓ Committed version changes"
+else
+    echo "Error: Failed to commit version changes"
+    exit 1
+fi
+
+# Push version changes to origin
+echo "Pushing version changes to origin..."
+if git push origin master; then
+    echo "✓ Successfully pushed version changes to origin"
+else
+    echo "Error: Failed to push version changes to origin"
+    exit 1
+fi
+
 # Create git tag
 TAG_NAME="v$NEW_VERSION"
-COMMIT_MSG="Release version $NEW_VERSION"
 
 if git tag -a "$TAG_NAME" -m "$COMMIT_MSG"; then
     echo "✓ Created git tag: $TAG_NAME"
@@ -68,12 +124,12 @@ else
     exit 1
 fi
 
-# Push to origin (both commits and tags)
-echo "Pushing to origin..."
-if git push origin master && git push origin "$TAG_NAME"; then
-    echo "✓ Successfully pushed to origin"
+# Push tag to origin
+echo "Pushing tag to origin..."
+if git push origin "$TAG_NAME"; then
+    echo "✓ Successfully pushed tag to origin"
     echo "✓ Release $NEW_VERSION completed successfully!"
 else
-    echo "Error: Failed to push to origin"
+    echo "Error: Failed to push tag to origin"
     exit 1
 fi
