@@ -44,8 +44,8 @@ pub struct Registry {
     /// Status of the unwrapping process
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
-    /// Public Key of the current user
-    pub identity: Option<PublicKey>,
+    /// Public key of the currently activated signer
+    signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -106,21 +106,19 @@ impl Registry {
             unwrapping_status,
             rooms: vec![],
             persons: HashMap::new(),
-            identity: None,
+            signer_pubkey: None,
             _tasks: tasks,
         }
     }
 
-    /// Returns the identity of the user.
-    ///
-    /// WARNING: This method will panic if user is not logged in.
-    pub fn identity(&self, cx: &App) -> Profile {
-        self.get_person(&self.identity.unwrap(), cx)
+    /// Returns the public key of the currently activated signer.
+    pub fn signer_pubkey(&self) -> Option<PublicKey> {
+        self.signer_pubkey
     }
 
-    /// Sets the identity of the user.
-    pub fn set_identity(&mut self, identity: PublicKey, cx: &mut Context<Self>) {
-        self.identity = Some(identity);
+    /// Update the public key of the currently activated signer.
+    pub fn set_signer_pubkey(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
+        self.signer_pubkey = Some(public_key);
         cx.notify();
     }
 
@@ -254,7 +252,7 @@ impl Registry {
         self.set_unwrapping_status(UnwrappingStatus::default(), cx);
 
         // Clear the current identity
-        self.identity = None;
+        self.signer_pubkey = None;
 
         // Clear all current rooms
         self.rooms.clear();
@@ -276,7 +274,7 @@ impl Registry {
             let contacts = client.database().contacts_public_keys(public_key).await?;
 
             // Get messages sent by the user
-            let send = Filter::new()
+            let sent = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
                 .author(public_key);
 
@@ -285,9 +283,9 @@ impl Registry {
                 .kind(Kind::PrivateDirectMessage)
                 .pubkey(public_key);
 
-            let send_events = client.database().query(send).await?;
+            let sent_events = client.database().query(sent).await?;
             let recv_events = client.database().query(recv).await?;
-            let events = send_events.merge(recv_events);
+            let events = sent_events.merge(recv_events);
 
             let mut rooms: HashSet<Room> = HashSet::new();
 
@@ -297,12 +295,16 @@ impl Registry {
                 .sorted_by_key(|event| Reverse(event.created_at))
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
-                if rooms.iter().any(|room| room.id == event.uniq_id()) {
+                // Parse the room from the nostr event
+                let room = Room::from(&event);
+
+                // Skip if the room is already in the set
+                if rooms.iter().any(|r| r.id == room.id) {
                     continue;
                 }
 
                 // Get all public keys from the event's tags
-                let mut public_keys = event.all_pubkeys();
+                let mut public_keys: Vec<PublicKey> = room.members().to_vec();
                 public_keys.retain(|pk| pk != &public_key);
 
                 // Bypass screening flag
@@ -322,9 +324,6 @@ impl Registry {
 
                 // If current user has sent a message at least once, mark as ongoing
                 let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
-
-                // Create a new room
-                let room = Room::from(&event).current_user(public_key);
 
                 if is_ongoing || bypassed {
                     rooms.insert(room.kind(RoomKind::Ongoing));
@@ -419,7 +418,7 @@ impl Registry {
     /// Updates room ordering based on the most recent messages.
     pub fn event_to_message(
         &mut self,
-        gift_wrap_id: EventId,
+        gift_wrap: EventId,
         event: Event,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -427,7 +426,7 @@ impl Registry {
         let id = event.uniq_id();
         let author = event.pubkey;
 
-        let Some(identity) = self.identity else {
+        let Some(public_key) = self.signer_pubkey else {
             return;
         };
 
@@ -441,13 +440,13 @@ impl Registry {
                 }
 
                 // Set this room is ongoing if the new message is from current user
-                if author == identity {
+                if author == public_key {
                     this.set_ongoing(cx);
                 }
 
                 // Emit the new message to the room
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(gift_wrap_id, event, cx);
+                    this.emit_message(gift_wrap, event, cx);
                 });
             });
 
@@ -458,10 +457,8 @@ impl Registry {
                 });
             }
         } else {
-            let room = Room::from(&event).current_user(identity);
-
             // Push the new room to the front of the list
-            self.add_room(cx.new(|_| room), cx);
+            self.add_room(cx.new(|_| Room::from(&event)), cx);
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {

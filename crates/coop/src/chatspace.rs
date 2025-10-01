@@ -545,7 +545,7 @@ impl ChatSpace {
 
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
-                            this.set_identity(public_key, cx);
+                            this.set_signer_pubkey(public_key, cx);
                             this.load_rooms(window, cx);
                         });
                     }
@@ -1481,8 +1481,8 @@ impl Render for ChatSpace {
         let registry = Registry::read_global(cx);
 
         // Only render titlebar child elements if user is logged in
-        if registry.identity.is_some() {
-            let profile = registry.identity(cx);
+        if let Some(public_key) = registry.signer_pubkey() {
+            let profile = registry.get_person(&public_key, cx);
 
             let left_side = self
                 .render_titlebar_left_side(window, cx)

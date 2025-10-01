@@ -19,7 +19,6 @@ use registry::room::Room;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use smol::Timer;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -237,7 +236,7 @@ impl Compose {
                 });
             });
         } else {
-            self.set_error(Some(t!("compose.contact_existed").into()), cx);
+            self.set_error(t!("compose.contact_existed"), cx);
         }
     }
 
@@ -283,7 +282,7 @@ impl Compose {
                     }
                     Ok(Err(e)) => {
                         this.update(cx, |this, cx| {
-                            this.set_error(Some(e.to_string().into()), cx);
+                            this.set_error(e.to_string(), cx);
                         })
                         .ok();
                     }
@@ -312,47 +311,38 @@ impl Compose {
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let registry = Registry::global(cx);
-        let public_keys: Vec<PublicKey> = self.selected(cx);
+        let receivers: Vec<PublicKey> = self.selected(cx);
+        let subject_input = self.title_input.read(cx).value();
+        let subject = (!subject_input.is_empty()).then(|| subject_input.to_string());
 
         if !self.user_input.read(cx).value().is_empty() {
             self.add_and_select_contact(window, cx);
             return;
         };
 
-        if public_keys.is_empty() {
-            self.set_error(Some(t!("compose.receiver_required").into()), cx);
-            return;
-        };
+        cx.spawn_in(window, async move |this, cx| {
+            let result = Room::new(subject, receivers).await;
 
-        // Convert selected pubkeys into Nostr tags
-        let mut tags: Tags = Tags::from_list(
-            public_keys
-                .iter()
-                .map(|pubkey| Tag::public_key(pubkey.to_owned()))
-                .collect(),
-        );
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(room) => {
+                        registry.update(cx, |this, cx| {
+                            this.push_room(cx.new(|_| room), cx);
+                        });
 
-        // Add subject if it is present
-        if !self.title_input.read(cx).value().is_empty() {
-            tags.push(Tag::custom(
-                TagKind::Subject,
-                vec![self.title_input.read(cx).value().to_string()],
-            ));
-        }
-
-        // Create a new room
-        let room = Room::new(public_keys[0], tags, cx);
-
-        // Insert the new room into the registry
-        registry.update(cx, |this, cx| {
-            this.push_room(cx.new(|_| room), cx);
-        });
-
-        // Close the current modal
-        window.close_modal(cx);
+                        window.close_modal(cx);
+                    }
+                    Err(e) => {
+                        this.set_error(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
     }
 
-    fn set_error(&mut self, error: impl Into<Option<SharedString>>, cx: &mut Context<Self>) {
+    fn set_error(&mut self, error: impl Into<SharedString>, cx: &mut Context<Self>) {
         // Unlock the user input
         self.user_input.update(cx, |this, cx| {
             this.set_loading(false, cx);
@@ -360,15 +350,19 @@ impl Compose {
 
         // Update error message
         self.error_message.update(cx, |this, cx| {
-            *this = error.into();
+            *this = Some(error.into());
             cx.notify();
         });
 
         // Dismiss error after 2 seconds
         cx.spawn(async move |this, cx| {
-            Timer::after(Duration::from_secs(2)).await;
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+
             this.update(cx, |this, cx| {
-                this.set_error(None, cx);
+                this.error_message.update(cx, |this, cx| {
+                    *this = None;
+                    cx.notify();
+                });
             })
             .ok();
         })

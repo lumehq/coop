@@ -138,7 +138,8 @@ impl Sidebar {
         }
     }
 
-    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+    async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
@@ -152,23 +153,21 @@ impl Sidebar {
         Ok(())
     }
 
-    async fn create_temp_room(identity: PublicKey, public_key: PublicKey) -> Result<Room, Error> {
-        let client = nostr_client();
-        let keys = Keys::generate();
-        let builder = EventBuilder::private_msg_rumor(public_key, "");
-        let event = builder.build(identity).sign(&keys).await?;
-
+    async fn create_temp_room(receiver: PublicKey) -> Result<Room, Error> {
         // Request to get user's metadata
-        Self::request_metadata(client, public_key).await?;
+        Self::request_metadata(receiver).await?;
 
         // Create a temporary room
-        let room = Room::from(&event).current_user(identity);
+        let room = Room::new(None, vec![receiver]).await?;
 
         Ok(room)
     }
 
-    async fn nip50(identity: PublicKey, query: &str) -> BTreeSet<Room> {
+    async fn nip50(query: &str) -> Result<BTreeSet<Room>, Error> {
         let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
         let timeout = Duration::from_secs(2);
         let mut rooms: BTreeSet<Room> = BTreeSet::new();
 
@@ -184,18 +183,18 @@ impl Sidebar {
             // Process to verify the search results
             for event in events.into_iter().unique_by(|event| event.pubkey) {
                 // Skip if author is match current user
-                if event.pubkey == identity {
+                if event.pubkey == public_key {
                     continue;
                 }
 
                 // Return a temporary room
-                if let Ok(room) = Self::create_temp_room(identity, event.pubkey).await {
+                if let Ok(room) = Self::create_temp_room(event.pubkey).await {
                     rooms.insert(room);
                 }
             }
         }
 
-        rooms
+        Ok(rooms)
     }
 
     fn debounced_search(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
@@ -214,15 +213,11 @@ impl Sidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let identity = Registry::read_global(cx).identity(cx).public_key();
         let query = query.to_owned();
         let query_cloned = query.clone();
 
         let task = smol::future::or(
-            Tokio::spawn(cx, async move {
-                let rooms = Self::nip50(identity, &query).await;
-                Some(rooms)
-            }),
+            Tokio::spawn(cx, async move { Self::nip50(&query).await.ok() }),
             Tokio::spawn(cx, async move {
                 let _ = rx.recv().await.is_ok();
                 None
@@ -269,12 +264,11 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let identity = Registry::read_global(cx).identity(cx).public_key();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
             if let Ok(profile) = common::nip05::nip05_profile(&address).await {
-                Self::create_temp_room(identity, profile.public_key).await
+                Self::create_temp_room(profile.public_key).await
             } else {
                 Err(anyhow!(t!("sidebar.addr_error")))
             }
@@ -323,10 +317,9 @@ impl Sidebar {
             return;
         };
 
-        let identity = Registry::read_global(cx).identity(cx).public_key();
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
             // Create a gift wrap event to represent as room
-            Self::create_temp_room(identity, public_key).await
+            Self::create_temp_room(public_key).await
         });
 
         cx.spawn_in(window, async move |this, cx| {

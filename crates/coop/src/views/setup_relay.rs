@@ -11,7 +11,6 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
-use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
@@ -70,7 +69,6 @@ pub struct SetupRelay {
 
 impl SetupRelay {
     pub fn new(kind: Kind, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let identity = Registry::read_global(cx).identity(cx).public_key();
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
 
         let mut subscriptions = smallvec![];
@@ -78,7 +76,10 @@ impl SetupRelay {
 
         let load_relay = cx.background_spawn(async move {
             let client = nostr_client();
-            let filter = Filter::new().kind(kind).author(identity).limit(1);
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new().kind(kind).author(public_key).limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first() {
                 let relays: Vec<RelayUrl> = event

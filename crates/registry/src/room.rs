@@ -88,8 +88,6 @@ pub struct Room {
     pub created_at: Timestamp,
     /// Subject of the room
     pub subject: Option<String>,
-    /// Picture of the room
-    pub picture: Option<String>,
     /// All members of the room
     pub members: Vec<PublicKey>,
     /// Kind
@@ -130,32 +128,18 @@ impl From<&Event> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val
-            .all_pubkeys()
-            .into_iter()
-            .unique()
-            .sorted()
-            .collect_vec();
+        let members = val.all_pubkeys();
 
-        // Get the subject from the event's tags
-        let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
-            tag.content().map(|s| s.to_owned())
-        } else {
-            None
-        };
-
-        // Get the picture from the event's tags
-        let picture = if let Some(tag) = val.tags.find(TagKind::custom("picture")) {
-            tag.content().map(|s| s.to_owned())
-        } else {
-            None
-        };
+        // Get subject from tags
+        let subject = val
+            .tags
+            .find(TagKind::Subject)
+            .and_then(|tag| tag.content().map(|s| s.to_owned()));
 
         Room {
             id,
             created_at,
             subject,
-            picture,
             members,
             kind: RoomKind::default(),
         }
@@ -168,32 +152,18 @@ impl From<&UnsignedEvent> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val
-            .all_pubkeys()
-            .into_iter()
-            .unique()
-            .sorted()
-            .collect_vec();
+        let members = val.all_pubkeys();
 
-        // Get the subject from the event's tags
-        let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
-            tag.content().map(|s| s.to_owned())
-        } else {
-            None
-        };
-
-        // Get the picture from the event's tags
-        let picture = if let Some(tag) = val.tags.find(TagKind::custom("picture")) {
-            tag.content().map(|s| s.to_owned())
-        } else {
-            None
-        };
+        // Get subject from tags
+        let subject = val
+            .tags
+            .find(TagKind::Subject)
+            .and_then(|tag| tag.content().map(|s| s.to_owned()));
 
         Room {
             id,
             created_at,
             subject,
-            picture,
             members,
             kind: RoomKind::default(),
         }
@@ -201,32 +171,39 @@ impl From<&UnsignedEvent> for Room {
 }
 
 impl Room {
-    /// Constructs a new room instance with a given receiver.
-    pub fn new(receiver: PublicKey, tags: Tags, cx: &App) -> Self {
-        let identity = Registry::read_global(cx).identity(cx);
+    /// Constructs a new room instance for a private message with the given receiver and tags.
+    pub async fn new(subject: Option<String>, receivers: Vec<PublicKey>) -> Result<Self, Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
 
-        let mut event = EventBuilder::private_msg_rumor(receiver, "")
+        if receivers.is_empty() {
+            return Err(anyhow!("You need to add at least one receiver"));
+        };
+
+        // Convert receiver's public keys into tags
+        let mut tags: Tags = Tags::from_list(
+            receivers
+                .iter()
+                .map(|pubkey| Tag::public_key(pubkey.to_owned()))
+                .collect(),
+        );
+
+        // Add subject if it is present
+        if let Some(subject) = subject {
+            tags.push(Tag::from_standardized_without_cell(TagStandard::Subject(
+                subject,
+            )));
+        }
+
+        let mut event = EventBuilder::new(Kind::PrivateDirectMessage, "")
             .tags(tags)
-            .build(identity.public_key());
+            .build(public_key);
 
-        // Ensure event ID is generated
+        // Generate event ID
         event.ensure_id();
 
-        Room::from(&event).current_user(identity.public_key())
-    }
-
-    /// Constructs a new room instance from an nostr event.
-    pub fn from(event: impl Into<Room>) -> Self {
-        event.into()
-    }
-
-    /// Call this function to ensure the current user is always at the bottom of the members list
-    pub fn current_user(mut self, public_key: PublicKey) -> Self {
-        let (not_match, matches): (Vec<PublicKey>, Vec<PublicKey>) =
-            self.members.iter().partition(|&key| key != &public_key);
-        self.members = not_match;
-        self.members.extend(matches);
-        self
+        Ok(Room::from(&event))
     }
 
     /// Sets the kind of the room and returns the modified room
@@ -255,13 +232,12 @@ impl Room {
         cx.notify();
     }
 
-    /// Updates the picture of the room
-    pub fn set_picture(&mut self, picture: String, cx: &mut Context<Self>) {
-        self.picture = Some(picture);
-        cx.notify();
+    /// Returns the members of the room
+    pub fn members(&self) -> &Vec<PublicKey> {
+        &self.members
     }
 
-    /// Checks if the room is a group chat
+    /// Checks if the room has more than two members (group)
     pub fn is_group(&self) -> bool {
         self.members.len() > 2
     }
@@ -277,20 +253,27 @@ impl Room {
 
     /// Gets the display image for the room
     pub fn display_image(&self, proxy: bool, cx: &App) -> SharedUri {
-        if let Some(picture) = self.picture.as_ref() {
-            SharedUri::from(picture)
-        } else if !self.is_group() {
-            self.first_member(cx).avatar(proxy)
+        if !self.is_group() {
+            self.display_member(cx).avatar(proxy)
         } else {
             SharedUri::from("brand/group.png")
         }
     }
 
-    /// Get the first member of the room.
+    /// Get a single member to represent the room
     ///
-    /// First member is always different from the current user.
-    fn first_member(&self, cx: &App) -> Profile {
+    /// This member is always different from the current user.
+    fn display_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
+
+        if let Some(public_key) = registry.signer_pubkey() {
+            for member in self.members() {
+                if member != &public_key {
+                    return registry.get_person(member, cx);
+                }
+            }
+        }
+
         registry.get_person(&self.members[0], cx)
     }
 
@@ -299,11 +282,11 @@ impl Room {
         let registry = Registry::read_global(cx);
 
         if self.is_group() {
-            let profiles = self
+            let profiles: Vec<Profile> = self
                 .members
                 .iter()
-                .map(|pk| registry.get_person(pk, cx))
-                .collect::<Vec<_>>();
+                .map(|public_key| registry.get_person(public_key, cx))
+                .collect();
 
             let mut name = profiles
                 .iter()
@@ -318,7 +301,7 @@ impl Room {
 
             SharedString::from(name)
         } else {
-            self.first_member(cx).display_name()
+            self.display_member(cx).display_name()
         }
     }
 
@@ -455,9 +438,8 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
-        let public_key = Registry::read_global(cx).identity(cx).public_key();
+        let public_key = Registry::read_global(cx).signer_pubkey().unwrap();
         let subject = self.subject.clone();
-        let picture = self.picture.clone();
 
         let mut tags = vec![];
 
@@ -470,14 +452,9 @@ impl Room {
 
         // Add subject tag if it's present
         if let Some(subject) = subject {
-            tags.push(Tag::from_standardized(TagStandard::Subject(
-                subject.to_string(),
+            tags.push(Tag::from_standardized_without_cell(TagStandard::Subject(
+                subject,
             )));
-        }
-
-        // Add picture tag if it's present
-        if let Some(picture) = picture {
-            tags.push(Tag::custom(TagKind::custom("picture"), vec![picture]));
         }
 
         // Add reply/quote tag
@@ -485,7 +462,7 @@ impl Room {
             tags.push(Tag::event(replies[0]))
         } else {
             for id in replies {
-                tags.push(Tag::from_standardized(TagStandard::Quote {
+                tags.push(Tag::from_standardized_without_cell(TagStandard::Quote {
                     event_id: id.to_owned(),
                     relay_url: None,
                     public_key: None,
@@ -677,7 +654,7 @@ impl Room {
                 client.connect_relay(url).await?;
             }
 
-            relay_urls.extend(urls);
+            relay_urls.extend(urls.into_iter().take(3).unique());
         } else {
             return Err(anyhow!("Not found"));
         }

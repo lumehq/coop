@@ -147,28 +147,40 @@ impl Ingester {
 /// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct AppState {
+    /// The timestamp when the application was initialized.
     pub init_at: Timestamp,
 
+    /// The timestamp when the application was last used.
     pub last_used_at: Option<Timestamp>,
 
+    /// Whether this is the first run of the application.
     pub is_first_run: AtomicBool,
 
+    /// Subscription ID for listening to gift wrap events from relays.
     pub gift_wrap_sub_id: SubscriptionId,
 
-    pub gift_wrap_processing: AtomicBool,
-
+    /// Auto-close options for relay subscriptions
     pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
 
+    /// Whether gift wrap processing is in progress.
+    pub gift_wrap_processing: AtomicBool,
+
+    /// Tracking events sent by Coop in the current session
     pub sent_ids: RwLock<HashSet<EventId>>,
 
+    /// Tracking events seen on which relays in the current session
     pub seen_on_relays: RwLock<HashMap<EventId, HashSet<RelayUrl>>>,
 
+    /// Tracking events that have been resent by Coop in the current session
     pub resent_ids: RwLock<Vec<Output<EventId>>>,
 
+    /// Temporarily store events that need to be resent later
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
 
+    /// Signal channel for communication between Nostr and GPUI
     pub signal: Signal,
 
+    /// Ingester channel for processing public keys
     pub ingester: Ingester,
 }
 
