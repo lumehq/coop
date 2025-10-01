@@ -45,7 +45,7 @@ pub struct Registry {
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
     /// Public key of the currently activated signer
-    pub signer_pubkey: Option<PublicKey>,
+    signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -274,7 +274,7 @@ impl Registry {
             let contacts = client.database().contacts_public_keys(public_key).await?;
 
             // Get messages sent by the user
-            let send = Filter::new()
+            let sent = Filter::new()
                 .kind(Kind::PrivateDirectMessage)
                 .author(public_key);
 
@@ -283,9 +283,9 @@ impl Registry {
                 .kind(Kind::PrivateDirectMessage)
                 .pubkey(public_key);
 
-            let send_events = client.database().query(send).await?;
+            let sent_events = client.database().query(sent).await?;
             let recv_events = client.database().query(recv).await?;
-            let events = send_events.merge(recv_events);
+            let events = sent_events.merge(recv_events);
 
             let mut rooms: HashSet<Room> = HashSet::new();
 
@@ -295,12 +295,16 @@ impl Registry {
                 .sorted_by_key(|event| Reverse(event.created_at))
                 .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
             {
-                if rooms.iter().any(|room| room.id == event.uniq_id()) {
+                // Parse the room from the nostr event
+                let room = Room::from(&event);
+
+                // Skip if the room is already in the set
+                if rooms.iter().any(|r| r.id == room.id) {
                     continue;
                 }
 
                 // Get all public keys from the event's tags
-                let mut public_keys = event.all_pubkeys();
+                let mut public_keys: Vec<PublicKey> = room.members().to_vec();
                 public_keys.retain(|pk| pk != &public_key);
 
                 // Bypass screening flag
@@ -320,9 +324,6 @@ impl Registry {
 
                 // If current user has sent a message at least once, mark as ongoing
                 let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
-
-                // Create a new room
-                let room = Room::from(&event);
 
                 if is_ongoing || bypassed {
                     rooms.insert(room.kind(RoomKind::Ongoing));
@@ -456,10 +457,8 @@ impl Registry {
                 });
             }
         } else {
-            let room = Room::from(&event);
-
             // Push the new room to the front of the list
-            self.add_room(cx.new(|_| room), cx);
+            self.add_room(cx.new(|_| Room::from(&event)), cx);
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
