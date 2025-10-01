@@ -88,8 +88,6 @@ pub struct Room {
     pub created_at: Timestamp,
     /// Subject of the room
     pub subject: Option<String>,
-    /// Picture of the room
-    pub picture: Option<String>,
     /// All members of the room
     pub members: Vec<PublicKey>,
     /// Kind
@@ -138,17 +136,10 @@ impl From<&Event> for Room {
             .find(TagKind::Subject)
             .and_then(|tag| tag.content().map(|s| s.to_owned()));
 
-        // Get image from tags
-        let picture = val
-            .tags
-            .find(TagKind::Image)
-            .and_then(|tag| tag.content().map(|s| s.to_owned()));
-
         Room {
             id,
             created_at,
             subject,
-            picture,
             members,
             kind: RoomKind::default(),
         }
@@ -169,17 +160,10 @@ impl From<&UnsignedEvent> for Room {
             .find(TagKind::Subject)
             .and_then(|tag| tag.content().map(|s| s.to_owned()));
 
-        // Get image from tags
-        let picture = val
-            .tags
-            .find(TagKind::Image)
-            .and_then(|tag| tag.content().map(|s| s.to_owned()));
-
         Room {
             id,
             created_at,
             subject,
-            picture,
             members,
             kind: RoomKind::default(),
         }
@@ -248,12 +232,6 @@ impl Room {
         cx.notify();
     }
 
-    /// Updates the picture of the room
-    pub fn set_picture(&mut self, picture: String, cx: &mut Context<Self>) {
-        self.picture = Some(picture);
-        cx.notify();
-    }
-
     /// Returns the members of the room
     pub fn members(&self) -> &Vec<PublicKey> {
         &self.members
@@ -275,9 +253,7 @@ impl Room {
 
     /// Gets the display image for the room
     pub fn display_image(&self, proxy: bool, cx: &App) -> SharedUri {
-        if let Some(picture) = self.picture.as_ref() {
-            SharedUri::from(picture)
-        } else if !self.is_group() {
+        if !self.is_group() {
             self.display_member(cx).avatar(proxy)
         } else {
             SharedUri::from("brand/group.png")
@@ -306,11 +282,11 @@ impl Room {
         let registry = Registry::read_global(cx);
 
         if self.is_group() {
-            let profiles = self
+            let profiles: Vec<Profile> = self
                 .members
                 .iter()
-                .map(|pk| registry.get_person(pk, cx))
-                .collect::<Vec<_>>();
+                .map(|public_key| registry.get_person(public_key, cx))
+                .collect();
 
             let mut name = profiles
                 .iter()
@@ -464,7 +440,6 @@ impl Room {
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
         let public_key = Registry::read_global(cx).signer_pubkey().unwrap();
         let subject = self.subject.clone();
-        let picture = self.picture.clone();
 
         let mut tags = vec![];
 
@@ -477,14 +452,9 @@ impl Room {
 
         // Add subject tag if it's present
         if let Some(subject) = subject {
-            tags.push(Tag::from_standardized(TagStandard::Subject(
-                subject.to_string(),
+            tags.push(Tag::from_standardized_without_cell(TagStandard::Subject(
+                subject,
             )));
-        }
-
-        // Add picture tag if it's present
-        if let Some(picture) = picture {
-            tags.push(Tag::custom(TagKind::custom("picture"), vec![picture]));
         }
 
         // Add reply/quote tag
@@ -492,7 +462,7 @@ impl Room {
             tags.push(Tag::event(replies[0]))
         } else {
             for id in replies {
-                tags.push(Tag::from_standardized(TagStandard::Quote {
+                tags.push(Tag::from_standardized_without_cell(TagStandard::Quote {
                     event_id: id.to_owned(),
                     relay_url: None,
                     public_key: None,
