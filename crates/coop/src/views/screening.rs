@@ -37,33 +37,35 @@ pub struct Screening {
 impl Screening {
     pub fn new(public_key: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let registry = Registry::read_global(cx);
-        let identity = registry.identity(cx).public_key();
         let profile = registry.get_person(&public_key, cx);
 
         let mut tasks = smallvec![];
 
-        let contact_check: Task<(bool, Vec<Profile>)> = cx.background_spawn(async move {
-            let client = nostr_client();
+        let contact_check: Task<Result<(bool, Vec<Profile>), Error>> =
+            cx.background_spawn(async move {
+                let client = nostr_client();
+                let signer = client.signer().await?;
+                let signer_pubkey = signer.get_public_key().await?;
 
-            // Check if user is in contact list
-            let contacts = client.database().contacts_public_keys(identity).await;
-            let followed = contacts.unwrap_or_default().contains(&public_key);
+                // Check if user is in contact list
+                let contacts = client.database().contacts_public_keys(signer_pubkey).await;
+                let followed = contacts.unwrap_or_default().contains(&public_key);
 
-            // Check mutual contacts
-            let contact_list = Filter::new().kind(Kind::ContactList).pubkey(public_key);
-            let mut mutual_contacts = vec![];
+                // Check mutual contacts
+                let contact_list = Filter::new().kind(Kind::ContactList).pubkey(public_key);
+                let mut mutual_contacts = vec![];
 
-            if let Ok(events) = client.database().query(contact_list).await {
-                for event in events.into_iter().filter(|ev| ev.pubkey != identity) {
-                    if let Ok(metadata) = client.database().metadata(event.pubkey).await {
-                        let profile = Profile::new(event.pubkey, metadata.unwrap_or_default());
-                        mutual_contacts.push(profile);
+                if let Ok(events) = client.database().query(contact_list).await {
+                    for event in events.into_iter().filter(|ev| ev.pubkey != signer_pubkey) {
+                        if let Ok(metadata) = client.database().metadata(event.pubkey).await {
+                            let profile = Profile::new(event.pubkey, metadata.unwrap_or_default());
+                            mutual_contacts.push(profile);
+                        }
                     }
                 }
-            }
 
-            (followed, mutual_contacts)
-        });
+                Ok((followed, mutual_contacts))
+            });
 
         let activity_check = cx.background_spawn(async move {
             let client = nostr_client();
@@ -93,14 +95,14 @@ impl Screening {
         tasks.push(
             // Run the contact check in the background
             cx.spawn_in(window, async move |this, cx| {
-                let (followed, mutual_contacts) = contact_check.await;
-
-                this.update(cx, |this, cx| {
-                    this.followed = followed;
-                    this.mutual_contacts = mutual_contacts;
-                    cx.notify();
-                })
-                .ok();
+                if let Ok((followed, mutual_contacts)) = contact_check.await {
+                    this.update(cx, |this, cx| {
+                        this.followed = followed;
+                        this.mutual_contacts = mutual_contacts;
+                        cx.notify();
+                    })
+                    .ok();
+                }
             }),
         );
 

@@ -44,8 +44,8 @@ pub struct Registry {
     /// Status of the unwrapping process
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
-    /// Public Key of the current user
-    pub identity: Option<PublicKey>,
+    /// Public key of the currently activated signer
+    pub signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -106,21 +106,19 @@ impl Registry {
             unwrapping_status,
             rooms: vec![],
             persons: HashMap::new(),
-            identity: None,
+            signer_pubkey: None,
             _tasks: tasks,
         }
     }
 
-    /// Returns the identity of the user.
-    ///
-    /// WARNING: This method will panic if user is not logged in.
-    pub fn identity(&self, cx: &App) -> Profile {
-        self.get_person(&self.identity.unwrap(), cx)
+    /// Returns the public key of the currently activated signer.
+    pub fn signer_pubkey(&self) -> Option<PublicKey> {
+        self.signer_pubkey
     }
 
-    /// Sets the identity of the user.
-    pub fn set_identity(&mut self, identity: PublicKey, cx: &mut Context<Self>) {
-        self.identity = Some(identity);
+    /// Update the public key of the currently activated signer.
+    pub fn set_signer_pubkey(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
+        self.signer_pubkey = Some(public_key);
         cx.notify();
     }
 
@@ -254,7 +252,7 @@ impl Registry {
         self.set_unwrapping_status(UnwrappingStatus::default(), cx);
 
         // Clear the current identity
-        self.identity = None;
+        self.signer_pubkey = None;
 
         // Clear all current rooms
         self.rooms.clear();
@@ -419,7 +417,7 @@ impl Registry {
     /// Updates room ordering based on the most recent messages.
     pub fn event_to_message(
         &mut self,
-        gift_wrap_id: EventId,
+        gift_wrap: EventId,
         event: Event,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -427,7 +425,7 @@ impl Registry {
         let id = event.uniq_id();
         let author = event.pubkey;
 
-        let Some(identity) = self.identity else {
+        let Some(public_key) = self.signer_pubkey else {
             return;
         };
 
@@ -441,13 +439,13 @@ impl Registry {
                 }
 
                 // Set this room is ongoing if the new message is from current user
-                if author == identity {
+                if author == public_key {
                     this.set_ongoing(cx);
                 }
 
                 // Emit the new message to the room
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(gift_wrap_id, event, cx);
+                    this.emit_message(gift_wrap, event, cx);
                 });
             });
 

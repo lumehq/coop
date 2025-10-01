@@ -34,7 +34,7 @@ impl EventUtils for Event {
         let mut public_keys: Vec<PublicKey> = self.tags.public_keys().copied().collect();
         public_keys.push(self.pubkey);
 
-        public_keys
+        public_keys.into_iter().unique().collect()
     }
 
     fn compare_pubkeys(&self, other: &[PublicKey]) -> bool {

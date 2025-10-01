@@ -138,7 +138,8 @@ impl Sidebar {
         }
     }
 
-    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+    async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
@@ -153,20 +154,11 @@ impl Sidebar {
     }
 
     async fn create_temp_room(receiver: PublicKey) -> Result<Room, Error> {
-        let client = nostr_client();
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        let event = EventBuilder::private_msg_rumor(receiver, "")
-            .build(public_key)
-            .sign(&Keys::generate())
-            .await?;
-
         // Request to get user's metadata
-        Self::request_metadata(client, receiver).await?;
+        Self::request_metadata(receiver).await?;
 
         // Create a temporary room
-        let room = Room::from(&event);
+        let room = Room::new(None, vec![receiver]).await?;
 
         Ok(room)
     }

@@ -1,5 +1,6 @@
 use common::display::RenderedProfile;
 use gpui::http_client::Url;
+use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
@@ -111,15 +112,15 @@ impl Preferences {
 
 impl Render for Preferences {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let input_state = self.media_input.downgrade();
-        let profile = Registry::read_global(cx).identity(cx);
-
         let auto_auth = AppSettings::get_auto_auth(cx);
         let backup = AppSettings::get_backup_messages(cx);
         let screening = AppSettings::get_screening(cx);
         let bypass = AppSettings::get_contact_bypass(cx);
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide = AppSettings::get_hide_user_avatars(cx);
+
+        let registry = Registry::read_global(cx);
+        let input_state = self.media_input.downgrade();
 
         v_flex()
             .child(
@@ -133,48 +134,54 @@ impl Render for Preferences {
                             .font_semibold()
                             .child(shared_t!("preferences.account_header")),
                     )
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .justify_between()
-                            .child(
-                                h_flex()
-                                    .id("user")
-                                    .gap_2()
-                                    .child(Avatar::new(profile.avatar(proxy)).size(rems(2.4)))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .text_sm()
-                                            .child(
-                                                div()
-                                                    .font_semibold()
-                                                    .line_height(relative(1.3))
-                                                    .child(profile.display_name()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(cx.theme().text_muted)
-                                                    .line_height(relative(1.3))
-                                                    .child(shared_t!("preferences.account_btn")),
-                                            ),
-                                    )
-                                    .on_click(cx.listener(move |this, _e, window, cx| {
-                                        this.open_edit_profile(window, cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("relays")
-                                    .label("Messaging Relays")
-                                    .xsmall()
-                                    .ghost_alt()
-                                    .rounded()
-                                    .on_click(cx.listener(move |this, _e, window, cx| {
-                                        this.open_relays(window, cx);
-                                    })),
-                            ),
-                    ),
+                    .when_some(registry.signer_pubkey(), |this, public_key| {
+                        let profile = registry.get_person(&public_key, cx);
+
+                        this.child(
+                            h_flex()
+                                .w_full()
+                                .justify_between()
+                                .child(
+                                    h_flex()
+                                        .id("user")
+                                        .gap_2()
+                                        .child(Avatar::new(profile.avatar(proxy)).size(rems(2.4)))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .text_sm()
+                                                .child(
+                                                    div()
+                                                        .font_semibold()
+                                                        .line_height(relative(1.3))
+                                                        .child(profile.display_name()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(cx.theme().text_muted)
+                                                        .line_height(relative(1.3))
+                                                        .child(shared_t!(
+                                                            "preferences.account_btn"
+                                                        )),
+                                                ),
+                                        )
+                                        .on_click(cx.listener(move |this, _e, window, cx| {
+                                            this.open_edit_profile(window, cx);
+                                        })),
+                                )
+                                .child(
+                                    Button::new("relays")
+                                        .label("Messaging Relays")
+                                        .xsmall()
+                                        .ghost_alt()
+                                        .rounded()
+                                        .on_click(cx.listener(move |this, _e, window, cx| {
+                                            this.open_relays(window, cx);
+                                        })),
+                                ),
+                        )
+                    }),
             )
             .child(
                 v_flex()

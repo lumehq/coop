@@ -331,8 +331,6 @@ compose:
     en: "Your recently contacts will appear here."
   contact_existed:
     en: "Contact already added"
-  receiver_required:
-    en: "You need to add at least 1 receiver"
   description:
     en: "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com)."
   subject_label:

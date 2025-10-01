@@ -130,12 +130,7 @@ impl From<&Event> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val
-            .all_pubkeys()
-            .into_iter()
-            .unique()
-            .sorted()
-            .collect_vec();
+        let members = val.all_pubkeys();
 
         // Get the subject from the event's tags
         let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
@@ -168,7 +163,7 @@ impl From<&UnsignedEvent> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys().into_iter().unique().collect_vec();
+        let members = val.all_pubkeys();
 
         // Get the subject from the event's tags
         let subject = if let Some(tag) = val.tags.find(TagKind::Subject) {
@@ -196,17 +191,37 @@ impl From<&UnsignedEvent> for Room {
 }
 
 impl Room {
-    /// Constructs a new room instance with a given receiver.
-    pub fn new(receiver: PublicKey, tags: Tags, cx: &App) -> Self {
-        let identity = Registry::read_global(cx).identity(cx);
-        let mut event = EventBuilder::private_msg_rumor(receiver, "")
-            .tags(tags)
-            .build(identity.public_key());
+    /// Constructs a new room instance for a private message with the given receiver and tags.
+    pub async fn new(subject: Option<String>, receivers: Vec<PublicKey>) -> Result<Self, Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
 
-        // Ensure event ID is generated
+        if receivers.is_empty() {
+            return Err(anyhow!("You need to add at least 1 receiver"));
+        };
+
+        // Convert receiver's public keys into tags
+        let mut tags: Tags = Tags::from_list(
+            receivers
+                .iter()
+                .map(|pubkey| Tag::public_key(pubkey.to_owned()))
+                .collect(),
+        );
+
+        // Add subject if it is present
+        if let Some(subject) = subject {
+            tags.push(Tag::custom(TagKind::Subject, vec![subject]));
+        }
+
+        let mut event = EventBuilder::new(Kind::PrivateDirectMessage, "")
+            .tags(tags)
+            .build(public_key);
+
+        // Generate event ID
         event.ensure_id();
 
-        Room::from(&event)
+        Ok(Room::from(&event))
     }
 
     /// Constructs a new room instance from an nostr event.
@@ -276,14 +291,6 @@ impl Room {
     /// This member is always different from the current user.
     fn display_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
-        let identity = registry.identity(cx);
-
-        for member in self.members.iter() {
-            if member != &identity.public_key() {
-                return registry.get_person(member, cx);
-            }
-        }
-
         registry.get_person(&self.members[0], cx)
     }
 
@@ -448,7 +455,7 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
-        let public_key = Registry::read_global(cx).identity(cx).public_key();
+        let public_key = Registry::read_global(cx).signer_pubkey().unwrap();
         let subject = self.subject.clone();
         let picture = self.picture.clone();
 
@@ -670,7 +677,7 @@ impl Room {
                 client.connect_relay(url).await?;
             }
 
-            relay_urls.extend(urls);
+            relay_urls.extend(urls.into_iter().take(3).unique());
         } else {
             return Err(anyhow!("Not found"));
         }
