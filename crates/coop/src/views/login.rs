@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use client_keys::ClientKeys;
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT, KEYRING_URL};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -263,11 +262,9 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
-
+        let app_keys = Keys::generate();
         let timeout = Duration::from_secs(BUNKER_TIMEOUT);
-        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+        let mut signer = NostrConnect::new(uri, app_keys.clone(), timeout, None).unwrap();
 
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
@@ -293,36 +290,38 @@ impl Login {
 
         // Handle connection
         cx.spawn_in(window, async move |this, cx| {
-            match signer.bunker_uri().await {
-                Ok(uri) => {
-                    this.update(cx, |this, cx| {
-                        this.write_uri_to_disk(signer, uri, cx);
-                    })
-                    .ok();
-                }
-                Err(error) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.set_error(error.to_string(), window, cx);
-                        // Force reset the client keys
-                        //
-                        // This step is necessary to ensure that user can retry the connection
-                        client_keys.update(cx, |this, cx| {
-                            this.force_new_keys(cx);
-                        });
-                    })
-                    .ok();
-                }
+            let result = signer.bunker_uri().await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(uri) => {
+                        this.set_app_keys(app_keys, cx);
+                        this.connect(signer, uri, cx);
+                    }
+                    Err(e) => {
+                        this.set_error(e.to_string(), window, cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn set_app_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
+        let username = keys.public_key().to_hex();
+        let password = keys.secret_key().secret_bytes();
+        let task = cx.write_credentials(KEYRING_URL, &username, &password);
+
+        cx.background_spawn(async move {
+            if let Err(e) = task.await {
+                log::error!("Failed to save the client keys: {e}")
             }
         })
         .detach();
     }
 
-    fn write_uri_to_disk(
-        &mut self,
-        signer: NostrConnect,
-        uri: NostrConnectURI,
-        cx: &mut Context<Self>,
-    ) {
+    fn connect(&mut self, signer: NostrConnect, uri: NostrConnectURI, cx: &mut Context<Self>) {
         let mut uri_without_secret = uri.to_string();
 
         // Clear the secret parameter in the URI if it exists

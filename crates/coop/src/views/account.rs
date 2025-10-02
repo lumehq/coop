@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use client_keys::ClientKeys;
 use common::display::RenderedProfile;
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT, KEYRING_URL};
 use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -14,7 +13,7 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
-use nostr_sdk::prelude::*;
+use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -22,6 +21,7 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::input::{InputState, TextInput};
+use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
@@ -30,19 +30,18 @@ use crate::actions::CoopAuthUrlHandler;
 use crate::chatspace::ChatSpace;
 
 pub fn init(
-    profile: Profile,
+    public_key: PublicKey,
     secret: String,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<Account> {
-    cx.new(|cx| Account::new(secret, profile, window, cx))
+    cx.new(|cx| Account::new(public_key, secret, window, cx))
 }
 
 pub struct Account {
-    profile: Profile,
-    stored_secret: String,
-    is_bunker: bool,
-    is_extension: bool,
+    public_key: PublicKey,
+    secret: String,
+    app_keys: Option<Keys>,
     loading: bool,
 
     name: SharedString,
@@ -54,16 +53,40 @@ pub struct Account {
 }
 
 impl Account {
-    fn new(secret: String, profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let is_bunker = secret.starts_with("bunker://");
-        let is_extension = secret.starts_with("extension");
-
+    fn new(
+        public_key: PublicKey,
+        secret: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut tasks = smallvec![];
         let mut subscriptions = smallvec![];
+
+        let keyring = cx.read_credentials(KEYRING_URL);
+
+        if secret.starts_with("bunker://") {
+            tasks.push(
+                // Load the previous app keys for nostr connect
+                cx.spawn(async move |this, cx| {
+                    let result = keyring.await;
+
+                    this.update(cx, |this, cx| {
+                        if let Ok(Some((_, secret))) = result {
+                            if let Ok(secret_key) = SecretKey::from_slice(&secret) {
+                                this.set_app_keys(Keys::new(secret_key), cx);
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                }),
+            );
+        }
 
         subscriptions.push(
             // Clear the local state when user closes the account panel
             cx.on_release_in(window, move |this, window, cx| {
-                this.stored_secret.clear();
+                this.secret.clear();
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
                 });
@@ -71,39 +94,72 @@ impl Account {
         );
 
         Self {
-            profile,
-            is_bunker,
-            is_extension,
-            stored_secret: secret,
+            public_key,
+            secret,
+            app_keys: None,
             loading: false,
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             _subscriptions: subscriptions,
-            _tasks: smallvec![],
+            _tasks: tasks,
         }
+    }
+
+    fn load_app_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let keyring = cx.read_credentials(KEYRING_URL);
+
+        // Load the previous app keys for nostr connect
+        cx.spawn_in(window, async move |this, cx| {
+            let result = keyring.await;
+
+            this.update_in(cx, |this, window, cx| {
+                if let Ok(Some((_, secret))) = result {
+                    if let Ok(secret_key) = SecretKey::from_slice(&secret) {
+                        this.set_app_keys(Keys::new(secret_key), cx);
+                        window.close_modal(cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_loading(true, cx);
 
-        if self.is_bunker {
-            if let Ok(uri) = NostrConnectURI::parse(&self.stored_secret) {
-                self.nostr_connect(uri, window, cx);
+        if self.secret.starts_with("bunker://") {
+            if let Ok(uri) = NostrConnectURI::parse(&self.secret) {
+                self.login_with_nostr_connect(uri, window, cx);
+                return;
             }
-        } else if self.is_extension {
-            self.set_proxy(window, cx);
-        } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
-            self.keys(enc, window, cx);
-        } else {
-            window.push_notification("Cannot continue with current account", cx);
-            self.set_loading(false, cx);
+        } else if self.secret.starts_with("extension") {
+            self.login_with_extension(window, cx);
+            return;
+        } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.secret) {
+            self.login_with_keys(enc, window, cx);
+            return;
         }
+
+        self.set_loading(false, cx);
     }
 
-    fn nostr_connect(&mut self, uri: NostrConnectURI, window: &mut Window, cx: &mut Context<Self>) {
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
+    fn login_with_extension(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ChatSpace::proxy_signer(window, cx);
+    }
+
+    fn login_with_nostr_connect(
+        &mut self,
+        uri: NostrConnectURI,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(app_keys) = self.app_keys.take() else {
+            self.render_request_app_keys(window, cx);
+            return;
+        };
 
         let timeout = Duration::from_secs(BUNKER_TIMEOUT);
         let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
@@ -133,11 +189,12 @@ impl Account {
         );
     }
 
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
-    }
-
-    fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_keys(
+        &mut self,
+        enc: EncryptedSecretKey,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let pwd_input: Entity<InputState> = cx.new(|cx| InputState::new(window, cx).masked(true));
         let weak_input = pwd_input.downgrade();
 
@@ -290,6 +347,53 @@ impl Account {
         self.loading = status;
         cx.notify();
     }
+
+    fn set_app_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
+        self.app_keys = Some(keys);
+        cx.notify();
+    }
+
+    fn render_request_app_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let entity = cx.entity().downgrade();
+
+        window.open_modal(cx, move |this, _window, cx| {
+            let entity = entity.clone();
+
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .alert()
+                .button_props(ModalButtonProps::default().ok_text(t!("common.allow")))
+                .child(
+                    div()
+                        .w_full()
+                        .h_40()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .items_center()
+                        .justify_center()
+                        .text_center()
+                        .text_sm()
+                        .child(
+                            div()
+                                .font_semibold()
+                                .text_color(cx.theme().text_muted)
+                                .child(shared_t!("app_keys.label")),
+                        )
+                        .child(shared_t!("app_keys.description")),
+                )
+                .on_ok(move |_ev, window, cx| {
+                    entity
+                        .update(cx, |this, cx| {
+                            this.load_app_keys(window, cx);
+                        })
+                        .ok();
+                    // false to keep modal open
+                    false
+                })
+        });
+    }
 }
 
 impl Panel for Account {
@@ -320,6 +424,11 @@ impl Focusable for Account {
 
 impl Render for Account {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let registry = Registry::read_global(cx);
+        let profile = registry.get_person(&self.public_key, cx);
+        let is_bunker = self.secret.starts_with("bunker://");
+        let is_extension = self.secret.starts_with("extension");
+
         v_flex()
             .image_cache(self.image_cache.clone())
             .relative()
@@ -377,8 +486,8 @@ impl Render for Account {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = self.profile.avatar(true);
-                                let name = self.profile.display_name();
+                                let avatar = profile.avatar(true);
+                                let name = profile.display_name();
 
                                 this.child(
                                     h_flex()
@@ -393,7 +502,7 @@ impl Render for Account {
                                         )
                                         .child(
                                             div()
-                                                .when(self.is_bunker, |this| {
+                                                .when(is_bunker, |this| {
                                                     let label = SharedString::from("Nostr Connect");
 
                                                     this.child(
@@ -409,7 +518,7 @@ impl Render for Account {
                                                             .child(label),
                                                     )
                                                 })
-                                                .when(self.is_extension, |this| {
+                                                .when(is_extension, |this| {
                                                     let label = SharedString::from("Extension");
 
                                                     this.child(
