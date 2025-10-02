@@ -11,6 +11,7 @@ settings = { path = "../settings" }
 
 gpui.workspace = true
 nostr.workspace = true
+nostr-lmdb.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 itertools.workspace = true

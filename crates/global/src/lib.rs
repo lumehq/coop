@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use flume::{Receiver, Sender};
+use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 use smol::lock::RwLock;

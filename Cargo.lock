@@ -436,6 +436,7 @@ dependencies = [
  "global",
  "gpui",
  "log",
+ "nostr-lmdb",
  "nostr-sdk",
  "smallvec",
  "smol",
@@ -1037,6 +1038,7 @@ dependencies = [
  "global",
  "gpui",
  "log",
+ "nostr-lmdb",
  "nostr-sdk",
  "smallvec",
 ]
@@ -1123,7 +1125,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1169,6 +1171,7 @@ dependencies = [
  "log",
  "nostr",
  "nostr-connect",
+ "nostr-lmdb",
  "nostr-sdk",
  "qrcode",
  "reqwest 0.12.23",
@@ -1250,6 +1253,7 @@ dependencies = [
  "log",
  "nostr",
  "nostr-connect",
+ "nostr-lmdb",
  "nostr-sdk",
  "oneshot",
  "registry",
@@ -1535,9 +1539,9 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "deflate64"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da692b8d1080ea3045efaab14434d40468c3d8657e42abddfffca87b428f4c1b"
+checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
 name = "deranged"
@@ -1564,7 +1568,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2069,9 +2073,9 @@ dependencies = [
 
 [[package]]
 name = "font-types"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02a596f5713680923a2080d86de50fe472fb290693cf0f701187a1c8b36996b7"
+checksum = "511e2c18a516c666d27867d2f9821f76e7d591f762e9fc41dd6cc5c90fe54b0b"
 dependencies = [
  "bytemuck",
 ]
@@ -2413,6 +2417,7 @@ dependencies = [
  "dirs 5.0.1",
  "flume",
  "log",
+ "nostr-lmdb",
  "nostr-sdk",
  "rustls",
  "smol",
@@ -2500,7 +2505,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2594,7 +2599,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2606,7 +2611,7 @@ dependencies = [
 [[package]]
 name = "gpui_tokio"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "gpui",
@@ -2826,7 +2831,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2846,7 +2851,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -3651,7 +3656,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3899,7 +3904,7 @@ dependencies = [
 [[package]]
 name = "nostr"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#a5b37e2bc510b609c20e3ea28b1f3892a186241c"
+source = "git+https://github.com/rust-nostr/nostr#ac431a02d9709c327768151a8cb71dc59f64d5ee"
 dependencies = [
  "aes",
  "base64",
@@ -3923,7 +3928,7 @@ dependencies = [
 [[package]]
 name = "nostr-connect"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#a5b37e2bc510b609c20e3ea28b1f3892a186241c"
+source = "git+https://github.com/rust-nostr/nostr#ac431a02d9709c327768151a8cb71dc59f64d5ee"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3935,7 +3940,7 @@ dependencies = [
 [[package]]
 name = "nostr-database"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#a5b37e2bc510b609c20e3ea28b1f3892a186241c"
+source = "git+https://github.com/rust-nostr/nostr#ac431a02d9709c327768151a8cb71dc59f64d5ee"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3946,7 +3951,7 @@ dependencies = [
 [[package]]
 name = "nostr-lmdb"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#a5b37e2bc510b609c20e3ea28b1f3892a186241c"
+source = "git+https://github.com/rust-nostr/nostr#ac431a02d9709c327768151a8cb71dc59f64d5ee"
 dependencies = [
  "async-utility",
  "flume",
@@ -3960,7 +3965,7 @@ dependencies = [
 [[package]]
 name = "nostr-relay-pool"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#a5b37e2bc510b609c20e3ea28b1f3892a186241c"
+source = "git+https://github.com/rust-nostr/nostr#ac431a02d9709c327768151a8cb71dc59f64d5ee"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -3977,12 +3982,11 @@ dependencies = [
 [[package]]
 name = "nostr-sdk"
 version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#a5b37e2bc510b609c20e3ea28b1f3892a186241c"
+source = "git+https://github.com/rust-nostr/nostr#ac431a02d9709c327768151a8cb71dc59f64d5ee"
 dependencies = [
  "async-utility",
  "nostr",
  "nostr-database",
- "nostr-lmdb",
  "nostr-relay-pool",
  "tokio",
 ]
@@ -4494,7 +4498,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "perf"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "collections",
  "serde",
@@ -5051,9 +5055,9 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
-version = "0.29.3"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04ca636dac446b5664bd16c069c00a9621806895b8bb02c2dc68542b23b8f25d"
+checksum = "6717cf23b488adf64b9d711329542ba34de147df262370221940dfabc2c91358"
 dependencies = [
  "bytemuck",
  "font-types",
@@ -5102,7 +5106,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "derive_refineable",
  "workspace-hack",
@@ -5149,6 +5153,7 @@ dependencies = [
  "itertools 0.13.0",
  "log",
  "nostr",
+ "nostr-lmdb",
  "nostr-sdk",
  "settings",
  "smallvec",
@@ -5256,7 +5261,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5311,7 +5316,7 @@ dependencies = [
 [[package]]
 name = "rope"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "arrayvec",
  "log",
@@ -5557,9 +5562,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.6"
+version = "0.103.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8572f3c2cb9934231157b45499fc41e1f58c589fdfb81a844ba873265e80f8eb"
+checksum = "e10b3f4191e8a80e6b43eebabfac91e5dcecebb27a71f04e820c47ec41d314bf"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -5806,7 +5811,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "serde",
@@ -5958,6 +5963,7 @@ dependencies = [
  "global",
  "gpui",
  "log",
+ "nostr-lmdb",
  "nostr-sdk",
  "paste",
  "serde",
@@ -6071,9 +6077,9 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "skrifa"
-version = "0.31.3"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbeb4ca4399663735553a09dd17ce7e49a0a0203f03b706b39628c4d913a8607"
+checksum = "8c31071dedf532758ecf3fed987cdb4bd9509f900e026ab684b4ecb81ea49841"
 dependencies = [
  "bytemuck",
  "read-fonts",
@@ -6258,7 +6264,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "arrayvec",
  "log",
@@ -6268,15 +6274,15 @@ dependencies = [
 
 [[package]]
 name = "sval"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc9739f56c5d0c44a5ed45473ec868af02eb896af8c05f616673a31e1d1bb09"
+checksum = "d94c4464e595f0284970fd9c7e9013804d035d4a61ab74b113242c874c05814d"
 
 [[package]]
 name = "sval_buffer"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f39b07436a8c271b34dad5070c634d1d3d76d6776e938ee97b4a66a5e8003d0b"
+checksum = "a0f46e34b20a39e6a2bf02b926983149b3af6609fd1ee8a6e63f6f340f3e2164"
 dependencies = [
  "sval",
  "sval_ref",
@@ -6284,18 +6290,18 @@ dependencies = [
 
 [[package]]
 name = "sval_dynamic"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffcb072d857431bf885580dacecf05ed987bac931230736739a79051dbf3499b"
+checksum = "03d0970e53c92ab5381d3b2db1828da8af945954d4234225f6dd9c3afbcef3f5"
 dependencies = [
  "sval",
 ]
 
 [[package]]
 name = "sval_fmt"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f214f427ad94a553e5ca5514c95c6be84667cbc5568cce957f03f3477d03d5c"
+checksum = "43e5e6e1613e1e7fc2e1a9fdd709622e54c122ceb067a60d170d75efd491a839"
 dependencies = [
  "itoa",
  "ryu",
@@ -6304,9 +6310,9 @@ dependencies = [
 
 [[package]]
 name = "sval_json"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "389ed34b32e638dec9a99c8ac92d0aa1220d40041026b625474c2b6a4d6f4feb"
+checksum = "aec382f7bfa6e367b23c9611f129b94eb7daaf3d8fae45a8d0a0211eb4d4c8e6"
 dependencies = [
  "itoa",
  "ryu",
@@ -6315,9 +6321,9 @@ dependencies = [
 
 [[package]]
 name = "sval_nested"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14bae8fcb2f24fee2c42c1f19037707f7c9a29a0cda936d2188d48a961c4bb2a"
+checksum = "3049d0f99ce6297f8f7d9953b35a0103b7584d8f638de40e64edb7105fa578ae"
 dependencies = [
  "sval",
  "sval_buffer",
@@ -6326,20 +6332,20 @@ dependencies = [
 
 [[package]]
 name = "sval_ref"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a4eaea3821d3046dcba81d4b8489421da42961889902342691fb7eab491d79e"
+checksum = "f88913e77506085c0a8bf6912bb6558591a960faf5317df6c1d9b227224ca6e1"
 dependencies = [
  "sval",
 ]
 
 [[package]]
 name = "sval_serde"
-version = "2.14.1"
+version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "172dd4aa8cb3b45c8ac8f3b4111d644cd26938b0643ede8f93070812b87fb339"
+checksum = "f579fd7254f4be6cd7b450034f856b78523404655848789c451bacc6aa8b387d"
 dependencies = [
- "serde",
+ "serde_core",
  "sval",
  "sval_nested",
 ]
@@ -6362,9 +6368,9 @@ dependencies = [
 
 [[package]]
 name = "swash"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f745de914febc7c9ab4388dfaf94bbc87e69f57bb41133a9b0c84d4be49856f3"
+checksum = "47846491253e976bdd07d0f9cc24b7daf24720d11309302ccbbc6e6b6e53550a"
 dependencies = [
  "skrifa",
  "yazi",
@@ -7298,7 +7304,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7333,7 +7339,7 @@ dependencies = [
 [[package]]
 name = "util_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#1659fb81e7ead8b050a9fe10bcea6e46c5ded6b0"
+source = "git+https://github.com/zed-industries/zed#c95b88d546bc76e3b90a920173341c49aa643794"
 dependencies = [
  "perf",
  "quote",

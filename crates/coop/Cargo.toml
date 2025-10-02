@@ -47,6 +47,7 @@ reqwest_client.workspace = true
 
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
+nostr-lmdb.workspace = true
 nostr.workspace = true
 
 anyhow.workspace = true
