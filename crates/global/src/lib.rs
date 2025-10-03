@@ -59,6 +59,12 @@ pub enum UnwrappingStatus {
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum SignalKind {
+    /// NIP-4e: user has already set up device keys
+    DeviceAlreadyExists(PublicKey),
+
+    /// NIP-4e: user has not set up device keys
+    DeviceNotSet,
+
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -145,6 +151,12 @@ impl Ingester {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Gossip {
+    pub nip65: HashMap<PublicKey, HashSet<(RelayUrl, Option<RelayMetadata>)>>,
+    pub nip17: HashMap<PublicKey, HashSet<RelayUrl>>,
+}
+
 /// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct AppState {
@@ -178,6 +190,9 @@ pub struct AppState {
     /// Temporarily store events that need to be resent later
     pub resend_queue: RwLock<HashMap<EventId, RelayUrl>>,
 
+    /// A storage for Coop's self-implemented gossip
+    pub gossip: RwLock<Gossip>,
+
     /// Signal channel for communication between Nostr and GPUI
     pub signal: Signal,
 
@@ -204,6 +219,7 @@ impl AppState {
             init_at,
             signal,
             ingester,
+            gossip: RwLock::new(Gossip::default()),
             last_used_at: None,
             is_first_run: AtomicBool::new(first_run),
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
@@ -232,7 +248,7 @@ pub fn nostr_client() -> &'static Client {
         let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
 
         let opts = ClientOptions::new()
-            .gossip(true)
+            .gossip(false)
             .automatic_authentication(false)
             .verify_subscriptions(false)
             .sleep_when_idle(SleepWhenIdle::Enabled {

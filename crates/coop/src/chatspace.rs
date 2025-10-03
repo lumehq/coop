@@ -12,7 +12,7 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
+use global::{app_state, nostr_client, AuthRequest, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem, Context,
@@ -243,8 +243,7 @@ impl ChatSpace {
     async fn observe_signer() {
         let client = nostr_client();
         let app_state = app_state();
-        let stream_timeout = Duration::from_secs(5);
-        let loop_duration = Duration::from_secs(1);
+        let loop_duration = Duration::from_millis(800);
 
         loop {
             let Ok(signer) = client.signer().await else {
@@ -263,53 +262,34 @@ impl ChatSpace {
                 .send(SignalKind::SignerSet(public_key))
                 .await;
 
-            // Subscribe to the NIP-65 relays for the public key.
+            // Subscribe to NIP-65 relays from the bootstrap relays
             let filter = Filter::new()
                 .kind(Kind::RelayList)
                 .author(public_key)
                 .limit(1);
 
-            let mut nip65_found = false;
-
             match client
-                .stream_events_from(BOOTSTRAP_RELAYS, filter, stream_timeout)
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
                 .await
             {
-                Ok(mut stream) => {
-                    if stream.next().await.is_some() {
-                        nip65_found = true;
-                    } else {
-                        // Timeout
-                        app_state.signal.send(SignalKind::RelaysNotFound).await;
-                    }
-                }
-                Err(e) => {
-                    log::error!("Error fetching NIP-65 Relay: {e:?}");
-                    app_state.signal.send(SignalKind::RelaysNotFound).await;
-                }
-            };
+                Ok(_) => {
+                    // Verify that the relays have been fetched after 5 seconds
+                    smol::spawn(async move {
+                        smol::Timer::after(Duration::from_secs(5)).await;
 
-            if nip65_found {
-                // Subscribe to the NIP-17 relays for the public key.
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(public_key)
-                    .limit(1);
+                        let filter = Filter::new().kind(Kind::RelayList).author(public_key);
+                        let total = client.database().count(filter).await.unwrap_or(0);
 
-                match client.stream_events(filter, stream_timeout).await {
-                    Ok(mut stream) => {
-                        if stream.next().await.is_some() {
-                            break;
-                        } else {
-                            // Timeout
+                        if total < 1 {
                             app_state.signal.send(SignalKind::RelaysNotFound).await;
                         }
-                    }
-                    Err(e) => {
-                        log::error!("Error fetching NIP-17 Relay: {e:?}");
-                        app_state.signal.send(SignalKind::RelaysNotFound).await;
-                    }
-                };
+                    })
+                    .detach();
+                }
+                Err(e) => {
+                    log::error!("Error fetching NIP-65 relays: {e:?}");
+                    app_state.signal.send(SignalKind::RelaysNotFound).await;
+                }
             }
 
             break;
@@ -430,7 +410,7 @@ impl ChatSpace {
                         .write()
                         .await
                         .entry(event.id)
-                        .or_insert_with(HashSet::new)
+                        .or_default()
                         .insert(relay_url);
 
                     // Skip events that have already been processed
@@ -440,51 +420,109 @@ impl ChatSpace {
 
                     match event.kind {
                         Kind::RelayList => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
-                                // Fetch user's metadata event
-                                Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
+                            // Extract relay urls and metadata from the event tags
+                            let relay_urls: Vec<(RelayUrl, Option<RelayMetadata>)> = event
+                                .tags
+                                .iter()
+                                .filter_map(|tag| {
+                                    if let Some(TagStandard::RelayMetadata {
+                                        relay_url,
+                                        metadata,
+                                    }) = tag.clone().to_standardized()
+                                    {
+                                        Some((relay_url, metadata))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
 
-                                // Fetch user's contact list event
-                                Self::fetch_single_event(Kind::ContactList, event.pubkey).await;
+                            // Fetch events if the relay list belongs to the current user
+                            if let Ok(true) = Self::is_self_event(&event).await {
+                                let urls: Vec<RelayUrl> = relay_urls
+                                    .iter()
+                                    .filter_map(|(url, m)| {
+                                        if m == &Some(RelayMetadata::Read) || m.is_none() {
+                                            Some(url.to_owned())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .take(3)
+                                    .collect();
+
+                                // Ensure relay list is not empty
+                                if urls.is_empty() {
+                                    app_state.signal.send(SignalKind::RelaysNotFound).await;
+                                    continue;
+                                }
+
+                                // Add and connect to relays
+                                for url in urls.iter() {
+                                    client.add_read_relay(url).await.ok();
+                                    client.connect_relay(url).await.ok();
+                                }
+
+                                // Fetch user's metadata
+                                Self::fetch_event(Kind::Metadata, &urls, event.pubkey).await;
+
+                                // Fetch user's contact list
+                                Self::fetch_event(Kind::ContactList, &urls, event.pubkey).await;
+
+                                // Fetch user's messaging relays
+                                Self::fetch_dm_event(&urls, event.pubkey).await;
                             }
+
+                            app_state
+                                .gossip
+                                .write()
+                                .await
+                                .nip65
+                                .entry(event.pubkey)
+                                .and_modify(|v| v.extend(relay_urls));
                         }
                         Kind::InboxRelays => {
+                            let relay_urls: Vec<RelayUrl> =
+                                nip17::extract_relay_list(&event).take(3).cloned().collect();
+
                             if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays = nip17::extract_relay_list(&event).collect_vec();
-
-                                if !relays.is_empty() {
-                                    for relay in relays.clone().into_iter() {
-                                        if client.add_relay(relay).await.is_err() {
-                                            let notice = Notice::RelayFailed(relay.clone());
-                                            app_state.signal.send(SignalKind::Notice(notice)).await;
-                                        }
-                                        if client.connect_relay(relay).await.is_err() {
-                                            let notice = Notice::RelayFailed(relay.clone());
-                                            app_state.signal.send(SignalKind::Notice(notice)).await;
-                                        }
-                                    }
-
-                                    // Subscribe to gift wrap events only in the current user's NIP-17 relays
-                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
-                                } else {
+                                // Ensure relay list is not empty
+                                if relay_urls.is_empty() {
                                     app_state.signal.send(SignalKind::RelaysNotFound).await;
+                                    continue;
                                 }
+
+                                // Add and connect to relays
+                                for url in relay_urls.iter() {
+                                    client.add_relay(url).await.ok();
+                                    client.connect_relay(url).await.ok();
+                                }
+
+                                // Subscribe to gift wrap events in messaging relays
+                                Self::fetch_gift_wrap(&relay_urls, event.pubkey).await;
                             }
+
+                            app_state
+                                .gossip
+                                .write()
+                                .await
+                                .nip17
+                                .entry(event.pubkey)
+                                .and_modify(|v| v.extend(relay_urls));
                         }
                         Kind::ContactList => {
                             if let Ok(true) = Self::is_self_event(&event).await {
+                                let opts = app_state.auto_close_opts;
+
                                 let public_keys = event.tags.public_keys().copied().collect_vec();
                                 let kinds = vec![Kind::Metadata, Kind::ContactList];
                                 let limit = public_keys.len() * kinds.len();
+
                                 let filter =
-                                    Filter::new().limit(limit).authors(public_keys).kinds(kinds);
+                                    Filter::new().kinds(kinds).authors(public_keys).limit(limit);
 
                                 client
-                                    .subscribe_to(
-                                        BOOTSTRAP_RELAYS,
-                                        filter,
-                                        app_state.auto_close_opts,
-                                    )
+                                    .subscribe_to(BOOTSTRAP_RELAYS, filter, opts)
                                     .await
                                     .ok();
                             }
@@ -634,6 +672,7 @@ impl ChatSpace {
                     SignalKind::Notice(msg) => {
                         window.push_notification(msg.as_str(), cx);
                     }
+                    _ => {}
                 };
             })
             .ok();
@@ -649,25 +688,54 @@ impl ChatSpace {
         Ok(public_key == event.pubkey)
     }
 
-    /// Fetches a single event by kind and public key
-    pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
+    /// Fetches and waits to receive a messaging relay event
+    pub async fn fetch_dm_event(urls: &[RelayUrl], public_key: PublicKey) {
         let client = nostr_client();
         let app_state = app_state();
+        let opts = app_state.auto_close_opts;
+
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
+
+        if let Err(e) = client.subscribe_to(urls, filter, opts).await {
+            log::info!("Failed to subscribe: {e}");
+        }
+
+        // Verify that the relays have been fetched after 5 seconds
+        smol::spawn(async move {
+            smol::Timer::after(Duration::from_secs(5)).await;
+
+            let filter = Filter::new().kind(Kind::InboxRelays).author(public_key);
+            let total = client.database().count(filter).await.unwrap_or(0);
+
+            if total < 1 {
+                app_state.signal.send(SignalKind::RelaysNotFound).await;
+            }
+        })
+        .detach();
+    }
+
+    /// Fetches a single event by kind and public key
+    pub async fn fetch_event(kind: Kind, urls: &[RelayUrl], public_key: PublicKey) {
+        let client = nostr_client();
+        let opts = app_state().auto_close_opts;
         let filter = Filter::new().kind(kind).author(public_key).limit(1);
 
-        if let Err(e) = client.subscribe(filter, app_state.auto_close_opts).await {
+        if let Err(e) = client.subscribe_to(urls, filter, opts).await {
             log::info!("Failed to subscribe: {e}");
         }
     }
 
     /// Fetches gift wrap events for a given public key and relays
-    pub async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
+    pub async fn fetch_gift_wrap(relays: &[RelayUrl], public_key: PublicKey) {
         let client = nostr_client();
         let id = app_state().gift_wrap_sub_id.clone();
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         if client
-            .subscribe_with_id_to(relays.clone(), id, filter, None)
+            .subscribe_with_id_to(relays, id, filter, None)
             .await
             .is_ok()
         {

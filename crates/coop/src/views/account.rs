@@ -62,9 +62,9 @@ impl Account {
         let mut tasks = smallvec![];
         let mut subscriptions = smallvec![];
 
-        let keyring = cx.read_credentials(KEYRING_URL);
-
         if secret.starts_with("bunker://") {
+            let keyring = cx.read_credentials(KEYRING_URL);
+
             tasks.push(
                 // Load the previous app keys for nostr connect
                 cx.spawn(async move |this, cx| {
