@@ -110,19 +110,11 @@ auth:
   requests:
     en: "You have %{u} pending authentication requests"
 
-startup:
-  client_keys_warning:
+app_keys:
+  label:
     en: "Warning"
-  client_keys_desc:
+  description:
     en: "Allow Coop to read the client keys stored in Keychain to continue"
-  create_new_keys:
-    en: "Create New Keys"
-  auto_login_in_progress:
-    en: "Auto login in progress"
-  stuck:
-    en: "Stuck?"
-  reset:
-    en: "Reset"
 
 new_account:
   title:

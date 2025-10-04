@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use client_keys::ClientKeys;
 use common::display::TextUtils;
-use global::constants::{ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use global::constants::{
+    ACCOUNT_IDENTIFIER, APP_NAME, KEYRING_URL, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
+};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -59,6 +60,7 @@ impl NostrConnectApp {
 }
 
 pub struct Onboarding {
+    app_keys: Keys,
     nostr_connect_uri: Entity<NostrConnectURI>,
     nostr_connect: Entity<Option<NostrConnect>>,
     qr_code: Entity<Option<Arc<Image>>>,
@@ -76,15 +78,15 @@ impl Onboarding {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let app_keys = Keys::generate();
         let nostr_connect = cx.new(|_| None);
         let qr_code = cx.new(|_| None);
 
         // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
         //
         // Direct connection initiated by the client
-        let nostr_connect_uri = cx.new(|cx| {
+        let nostr_connect_uri = cx.new(|_cx| {
             let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let app_keys = ClientKeys::read_global(cx).keys();
             NostrConnectURI::client(app_keys.public_key(), vec![relay], APP_NAME)
         });
 
@@ -104,6 +106,7 @@ impl Onboarding {
             nostr_connect,
             nostr_connect_uri,
             qr_code,
+            app_keys,
             connecting: false,
             name: "Onboarding".into(),
             focus_handle: cx.focus_handle(),
@@ -119,7 +122,7 @@ impl Onboarding {
 
     fn set_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let uri = self.nostr_connect_uri.read(cx).clone();
-        let app_keys = ClientKeys::read_global(cx).keys();
+        let app_keys = self.app_keys.clone();
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
 
         self.qr_code.update(cx, |this, cx| {
@@ -128,7 +131,7 @@ impl Onboarding {
         });
 
         self.nostr_connect.update(cx, |this, cx| {
-            *this = NostrConnect::new(uri, app_keys, timeout, None).ok();
+            *this = NostrConnect::new(uri, app_keys.clone(), timeout, None).ok();
             cx.notify();
         });
 
@@ -138,39 +141,40 @@ impl Onboarding {
                 let connect = this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone());
 
                 if let Ok(Some(signer)) = connect {
-                    match signer.bunker_uri().await {
-                        Ok(uri) => {
-                            this.update(cx, |this, cx| {
+                    let result = signer.bunker_uri().await;
+
+                    this.update_in(cx, |this, window, cx| {
+                        match result {
+                            Ok(uri) => {
                                 this.set_connecting(cx);
-                                this.write_uri_to_disk(signer, uri, cx);
-                            })
-                            .ok();
-                        }
-                        Err(e) => {
-                            this.update_in(cx, |_, window, cx| {
-                                window.push_notification(
-                                    Notification::error(e.to_string()).title("Nostr Connect"),
-                                    cx,
-                                );
-                            })
-                            .ok();
-                        }
-                    };
+                                this.set_app_keys(app_keys, cx);
+                                this.connect(signer, uri, cx);
+                            }
+                            Err(e) => {
+                                window.push_notification(Notification::error(e.to_string()), cx);
+                            }
+                        };
+                    })
+                    .ok();
                 }
             }),
         )
     }
 
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
+    fn set_app_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
+        let username = keys.public_key().to_hex();
+        let password = keys.secret_key().secret_bytes();
+        let task = cx.write_credentials(KEYRING_URL, &username, &password);
+
+        cx.background_spawn(async move {
+            if let Err(e) = task.await {
+                log::error!("Failed to save the client keys: {e}")
+            }
+        })
+        .detach();
     }
 
-    fn write_uri_to_disk(
-        &mut self,
-        signer: NostrConnect,
-        uri: NostrConnectURI,
-        cx: &mut Context<Self>,
-    ) {
+    fn connect(&mut self, signer: NostrConnect, uri: NostrConnectURI, cx: &mut Context<Self>) {
         let mut uri_without_secret = uri.to_string();
 
         // Clear the secret parameter in the URI if it exists
@@ -200,6 +204,10 @@ impl Onboarding {
         });
 
         task.detach();
+    }
+
+    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        ChatSpace::proxy_signer(window, cx);
     }
 
     fn copy_uri(&mut self, window: &mut Window, cx: &mut Context<Self>) {
