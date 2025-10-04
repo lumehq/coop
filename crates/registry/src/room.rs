@@ -313,45 +313,15 @@ impl Room {
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
-
-            let mut relays = HashMap::new();
-            let mut processed = HashSet::new();
+            let mut relays: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
 
             for member in members.into_iter() {
                 if member == public_key {
                     continue;
-                };
-
-                relays.insert(member, vec![]);
-
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(member)
-                    .limit(1);
-
-                let mut stream = client
-                    .stream_events(filter, Duration::from_secs(10))
-                    .await?;
-
-                if let Some(event) = stream.next().await {
-                    if processed.insert(event.id) {
-                        let public_key = event.pubkey;
-                        let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
-
-                        // Check if at least one URL exists
-                        if urls.is_empty() {
-                            continue;
-                        }
-
-                        // Connect to relays
-                        for url in urls.iter() {
-                            client.add_relay(url).await?;
-                            client.connect_relay(url).await?;
-                        }
-
-                        relays.entry(public_key).and_modify(|v| v.extend(urls));
-                    }
                 }
+
+                let urls = Self::messaging_relays(member).await.unwrap_or_default();
+                relays.entry(member).or_default().extend(urls);
             }
 
             Ok(relays)
@@ -630,33 +600,101 @@ impl Room {
         })
     }
 
+    /// Gets write relays for public key
+    async fn write_relays(public_key: PublicKey) -> Result<Vec<RelayUrl>, Error> {
+        let client = nostr_client();
+        let app_state = app_state();
+        let mut relay_urls: Vec<RelayUrl> = vec![];
+        let mut processed: HashSet<EventId> = HashSet::new();
+
+        if let Some(urls) = app_state.gossip.read().await.nip65.get(&public_key) {
+            relay_urls.extend(
+                urls.iter()
+                    .filter_map(|(url, m)| {
+                        if m == &Some(RelayMetadata::Write) || m.is_none() {
+                            Some(url.to_owned())
+                        } else {
+                            None
+                        }
+                    })
+                    .take(3),
+            );
+        } else {
+            let filter = Filter::new()
+                .kind(Kind::RelayList)
+                .author(public_key)
+                .limit(1);
+
+            let mut stream = client
+                .stream_events(filter, Duration::from_secs(10))
+                .await?;
+
+            if let Some(event) = stream.next().await {
+                if processed.insert(event.id) {
+                    relay_urls.extend(
+                        nip65::extract_relay_list(&event)
+                            .filter_map(|(url, m)| {
+                                if m == &Some(RelayMetadata::Write) || m.is_none() {
+                                    Some(url.to_owned())
+                                } else {
+                                    None
+                                }
+                            })
+                            .take(3),
+                    );
+                }
+            }
+        }
+
+        // Ensure relay list is not empty
+        if relay_urls.is_empty() {
+            return Err(anyhow!("No relays found"));
+        }
+
+        // Add and connect to relays
+        for url in relay_urls.iter() {
+            client.add_read_relay(url).await.ok();
+            client.connect_relay(url).await.ok();
+        }
+
+        Ok(relay_urls)
+    }
+
     /// Gets messaging relays for public key
     async fn messaging_relays(public_key: PublicKey) -> Result<Vec<RelayUrl>, Error> {
         let client = nostr_client();
+        let app_state = app_state();
+        let mut processed: HashSet<EventId> = HashSet::new();
         let mut relay_urls = vec![];
 
-        let filter = Filter::new()
-            .kind(Kind::InboxRelays)
-            .author(public_key)
-            .limit(1);
+        if let Some(urls) = app_state.gossip.read().await.nip17.get(&public_key) {
+            relay_urls.extend(urls.to_owned());
+        } else if let Ok(write_relays) = Self::write_relays(public_key).await {
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
 
-        if let Some(event) = client.database().query(filter).await?.first_owned() {
-            let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
+            let mut stream = client
+                .stream_events_from(write_relays, filter, Duration::from_secs(10))
+                .await?;
 
-            // Check if at least one URL exists
-            if urls.is_empty() {
-                return Err(anyhow!("Not found"));
+            if let Some(event) = stream.next().await {
+                if processed.insert(event.id) {
+                    relay_urls.extend(nip17::extract_owned_relay_list(event).take(3));
+                }
             }
+        }
 
-            // Connect to relays
-            for url in urls.iter() {
-                client.add_relay(url).await?;
-                client.connect_relay(url).await?;
-            }
+        // Ensure relay list is not empty
+        if relay_urls.is_empty() {
+            return Err(anyhow!("No relays found"));
+        }
 
-            relay_urls.extend(urls.into_iter().take(3).unique());
-        } else {
-            return Err(anyhow!("Not found"));
+        // Add and connect to relays
+        for url in relay_urls.iter() {
+            client.add_read_relay(url).await.ok();
+            client.connect_relay(url).await.ok();
         }
 
         Ok(relay_urls)

@@ -442,7 +442,7 @@ impl ChatSpace {
                                 let urls: Vec<RelayUrl> = relay_urls
                                     .iter()
                                     .filter_map(|(url, m)| {
-                                        if m == &Some(RelayMetadata::Read) || m.is_none() {
+                                        if m == &Some(RelayMetadata::Write) || m.is_none() {
                                             Some(url.to_owned())
                                         } else {
                                             None
