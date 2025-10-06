@@ -128,7 +128,7 @@ impl RopeExt for Rope {
     fn offset_to_position(&self, offset: usize) -> Position {
         let point = self.offset_to_point(offset);
         let line = self.line(point.row as usize);
-        let column = line.clip_offset(point.column as usize, sum_tree::Bias::Left);
+        let column = line.clip_offset(point.column as usize, zed_sum_tree::Bias::Left);
         let character = line.slice(0..column).chars().count();
         Position::new(point.row, character as u32)
     }
@@ -162,7 +162,7 @@ impl RopeExt for Rope {
             return None;
         }
 
-        let offset = self.clip_offset(offset, sum_tree::Bias::Left);
+        let offset = self.clip_offset(offset, zed_sum_tree::Bias::Left);
         self.slice(offset..self.len()).chars().next()
     }
 
@@ -171,7 +171,7 @@ impl RopeExt for Rope {
             return None;
         }
 
-        let offset = self.clip_offset(offset, sum_tree::Bias::Left);
+        let offset = self.clip_offset(offset, zed_sum_tree::Bias::Left);
 
         let mut left = String::new();
         for c in self.reversed_chars_at(offset) {

@@ -247,7 +247,7 @@ impl ResizablePanelGroup {
         }
 
         // If total size exceeds container size, adjust the main panel
-        let total_size: Pixels = new_sizes.iter().map(|s| s.0).sum::<f32>().into();
+        let total_size: Pixels = new_sizes.iter().map(|s| s.signum()).sum::<f32>().into();
         if total_size > container_size {
             let overflow = total_size - container_size;
             new_sizes[main_ix] = (new_sizes[main_ix] - overflow).max(PANEL_MIN_SIZE);
