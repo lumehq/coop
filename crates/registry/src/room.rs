@@ -475,8 +475,9 @@ impl Room {
             let mut reports: Vec<SendReport> = vec![];
 
             for receiver in members.into_iter() {
+                let signer = app_state.device.encryption.as_ref().unwrap_or(&signer);
                 let rumor = rumor.clone();
-                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
+                let event = EventBuilder::gift_wrap(signer, &receiver, rumor, vec![]).await?;
 
                 let Ok(relay_urls) = Self::messaging_relays(receiver).await else {
                     reports.push(SendReport::new(receiver).not_found());

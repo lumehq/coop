@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use common::display::RenderedProfile;
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT, KEYRING_URL};
+use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_KEYING, BUNKER_TIMEOUT};
 use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -63,7 +63,7 @@ impl Account {
         let mut subscriptions = smallvec![];
 
         if secret.starts_with("bunker://") {
-            let keyring = cx.read_credentials(KEYRING_URL);
+            let keyring = cx.read_credentials(BUNKER_KEYING);
 
             tasks.push(
                 // Load the previous app keys for nostr connect
@@ -107,7 +107,7 @@ impl Account {
     }
 
     fn load_app_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let keyring = cx.read_credentials(KEYRING_URL);
+        let keyring = cx.read_credentials(BUNKER_KEYING);
 
         // Load the previous app keys for nostr connect
         cx.spawn_in(window, async move |this, cx| {

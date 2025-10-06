@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT, KEYRING_URL};
+use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_KEYING, BUNKER_TIMEOUT};
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -311,7 +311,7 @@ impl Login {
     fn set_app_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         let username = keys.public_key().to_hex();
         let password = keys.secret_key().secret_bytes();
-        let task = cx.write_credentials(KEYRING_URL, &username, &password);
+        let task = cx.write_credentials(BUNKER_KEYING, &username, &password);
 
         cx.background_spawn(async move {
             if let Err(e) = task.await {

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use flume::{Receiver, Sender};
@@ -157,6 +157,12 @@ pub struct Gossip {
     pub nip17: HashMap<PublicKey, HashSet<RelayUrl>>,
 }
 
+#[derive(Debug, Default)]
+pub struct NostrDevice {
+    pub encryption: Option<Arc<dyn NostrSigner>>,
+    pub device: Option<Arc<dyn NostrSigner>>,
+}
+
 /// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct AppState {
@@ -168,6 +174,9 @@ pub struct AppState {
 
     /// Whether this is the first run of the application.
     pub is_first_run: AtomicBool,
+
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub device: NostrDevice,
 
     /// Subscription ID for listening to gift wrap events from relays.
     pub gift_wrap_sub_id: SubscriptionId,
@@ -219,6 +228,7 @@ impl AppState {
             init_at,
             signal,
             ingester,
+            device: NostrDevice::default(),
             gossip: RwLock::new(Gossip::default()),
             last_used_at: None,
             is_first_run: AtomicBool::new(first_run),

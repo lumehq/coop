@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use common::display::TextUtils;
 use global::constants::{
-    ACCOUNT_IDENTIFIER, APP_NAME, KEYRING_URL, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
+    ACCOUNT_IDENTIFIER, APP_NAME, BUNKER_KEYING, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
 };
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
@@ -164,7 +164,7 @@ impl Onboarding {
     fn set_app_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         let username = keys.public_key().to_hex();
         let password = keys.secret_key().secret_bytes();
-        let task = cx.write_credentials(KEYRING_URL, &username, &password);
+        let task = cx.write_credentials(BUNKER_KEYING, &username, &password);
 
         cx.background_spawn(async move {
             if let Err(e) = task.await {
