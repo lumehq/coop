@@ -3,7 +3,8 @@ use std::time::Duration;
 use anyhow::Error;
 use common::display::RenderedProfile;
 use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_KEYING, BUNKER_TIMEOUT};
-use global::{app_state, nostr_client, SignalKind};
+use global::signal::SignalKind;
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,

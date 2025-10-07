@@ -1,15 +1,21 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 
 use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::{nostr_client, UnwrappingStatus};
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
+use global::nostr_client;
+use global::paths::support_dir;
+use global::signal::UnwrappingStatus;
+use gpui::{
+    App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
+};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
+use secrecy::SecretString;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 
@@ -33,6 +39,21 @@ pub enum RegistryEvent {
     NewRequest(RoomKind),
 }
 
+#[derive(Debug, Clone)]
+pub struct Account {
+    public_key: PublicKey,
+    password: Option<SecretString>,
+}
+
+impl Account {
+    pub fn new(public_key: PublicKey) -> Self {
+        Self {
+            public_key,
+            password: None,
+        }
+    }
+}
+
 /// Main registry for managing chat rooms and user profiles
 pub struct Registry {
     /// Collection of all chat rooms
@@ -44,8 +65,11 @@ pub struct Registry {
     /// Status of the unwrapping process
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
-    /// Public key of the currently activated signer
-    signer_pubkey: Option<PublicKey>,
+    /// Currently active account
+    pub current_user: Option<PublicKey>,
+
+    /// All stored accounts
+    pub stored_accounts: Vec<Account>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -74,26 +98,23 @@ impl Registry {
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
         let mut tasks = smallvec![];
 
-        let load_local_persons: Task<Result<Vec<Profile>, Error>> =
-            cx.background_spawn(async move {
-                let client = nostr_client();
-                let filter = Filter::new().kind(Kind::Metadata).limit(200);
-                let events = client.database().query(filter).await?;
-                let mut profiles = vec![];
-
-                for event in events.into_iter() {
-                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                    let profile = Profile::new(event.pubkey, metadata);
-                    profiles.push(profile);
+        tasks.push(
+            // Load all user profiles from the database when the Registry is created
+            cx.spawn(async move |this, cx| {
+                if let Ok(accounts) = Self::get_accounts(cx).await {
+                    this.update(cx, |this, cx| {
+                        this.stored_accounts.extend(accounts);
+                        cx.notify();
+                    })
+                    .ok();
                 }
-
-                Ok(profiles)
-            });
+            }),
+        );
 
         tasks.push(
             // Load all user profiles from the database when the Registry is created
             cx.spawn(async move |this, cx| {
-                if let Ok(profiles) = load_local_persons.await {
+                if let Ok(profiles) = Self::get_persons(cx).await {
                     this.update(cx, |this, cx| {
                         this.set_persons(profiles, cx);
                     })
@@ -103,22 +124,72 @@ impl Registry {
         );
 
         Self {
-            unwrapping_status,
+            account: None,
+            stored_accounts: vec![],
             rooms: vec![],
             persons: HashMap::new(),
-            signer_pubkey: None,
+            unwrapping_status,
             _tasks: tasks,
         }
     }
 
-    /// Returns the public key of the currently activated signer.
-    pub fn signer_pubkey(&self) -> Option<PublicKey> {
-        self.signer_pubkey
+    /// Create a async task to get all cached profiles
+    fn get_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let filter = Filter::new().kind(Kind::Metadata).limit(200);
+            let events = client.database().query(filter).await?;
+            let mut profiles = vec![];
+
+            for event in events.into_iter() {
+                let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                let profile = Profile::new(event.pubkey, metadata);
+                profiles.push(profile);
+            }
+
+            Ok(profiles)
+        })
     }
 
-    /// Update the public key of the currently activated signer.
-    pub fn set_signer_pubkey(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
-        self.signer_pubkey = Some(public_key);
+    /// Create a async task to get all stored accounts
+    fn get_accounts(cx: &AsyncApp) -> Task<Result<Vec<Account>, Error>> {
+        cx.background_spawn(async move {
+            let support_dir = support_dir();
+            let path = support_dir.join("keys/");
+
+            let mut accounts = vec![];
+            let mut entries = smol::fs::read_dir(path).await?;
+
+            while let Some(entry) = entries.next().await {
+                let Ok(dir) = entry else {
+                    continue;
+                };
+
+                if dir.path().extension() != Some(OsStr::new("dat")) {
+                    continue;
+                }
+
+                let Ok(name) = dir.file_name().into_string() else {
+                    continue;
+                };
+
+                if let Ok(public_key) = PublicKey::parse(&name) {
+                    accounts.push(Account::new(public_key));
+                }
+            }
+
+            Ok(accounts)
+        })
+    }
+
+    /// Returns the current user's public key
+    pub fn current_user(&self) -> Option<PublicKey> {
+        self.account.as_ref().map(|account| account.public_key)
+    }
+
+    /// Sets the active account
+    pub fn set_account(&mut self, account: Account, cx: &mut Context<Self>) {
+        self.account = Some(account);
         cx.notify();
     }
 
@@ -251,8 +322,8 @@ impl Registry {
         // Reset the unwrapping status
         self.set_unwrapping_status(UnwrappingStatus::default(), cx);
 
-        // Clear the current identity
-        self.signer_pubkey = None;
+        // Unset account
+        self.account = None;
 
         // Clear all current rooms
         self.rooms.clear();
@@ -426,7 +497,7 @@ impl Registry {
         let id = event.uniq_id();
         let author = event.pubkey;
 
-        let Some(public_key) = self.signer_pubkey else {
+        let Some(public_key) = self.current_user() else {
             return;
         };
 

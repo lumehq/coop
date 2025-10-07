@@ -12,7 +12,8 @@ use global::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use global::{app_state, nostr_client, AuthRequest, SignalKind, UnwrappingStatus};
+use global::signal::{AuthRequest, SignalKind, UnwrappingStatus};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem, Context,
@@ -75,10 +76,10 @@ pub struct ChatSpace {
     nip17_relays: bool,
 
     // All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 4]>,
 
     // All long running tasks
-    _tasks: SmallVec<[Task<()>; 6]>,
+    _tasks: SmallVec<[Task<()>; 5]>,
 }
 
 impl ChatSpace {
@@ -90,42 +91,8 @@ impl ChatSpace {
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let auth_requests = cx.new(|_| HashMap::new());
 
-        let get_local_account: Task<Result<(PublicKey, String), Error>> =
-            cx.background_spawn(async move {
-                let client = nostr_client();
-                let filter = Filter::new()
-                    .kind(Kind::ApplicationSpecificData)
-                    .identifier(ACCOUNT_IDENTIFIER)
-                    .limit(1);
-
-                if let Some(event) = client.database().query(filter).await?.first_owned() {
-                    Ok((event.pubkey, event.content))
-                } else {
-                    Err(anyhow!("Empty"))
-                }
-            });
-
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
-
-        tasks.push(
-            // Get the local account
-            cx.spawn_in(window, async move |this, cx| {
-                let result = get_local_account.await;
-
-                this.update_in(cx, |this, window, cx| {
-                    match result {
-                        Ok((public_key, secret)) => {
-                            this.set_account_layout(public_key, secret, window, cx);
-                        }
-                        Err(_) => {
-                            this.set_onboarding_layout(window, cx);
-                        }
-                    };
-                })
-                .ok();
-            }),
-        );
 
         tasks.push(
             // Connect to the bootstrap relays
@@ -591,7 +558,7 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
-                    SignalKind::SignerSet(public_key) => {
+                    SignalKind::SignerSet(_) => {
                         window.close_modal(cx);
 
                         // Setup the default layout for current workspace
@@ -607,7 +574,6 @@ impl ChatSpace {
 
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
-                            this.set_signer_pubkey(public_key, cx);
                             this.load_rooms(window, cx);
                         });
                     }
@@ -848,7 +814,7 @@ impl ChatSpace {
 
         if let Ok(event) = Self::get_unwrapped_event(target.id).await {
             message = Some(event);
-        } else if let Some(signer) = app_state.device.read().await.encryption.as_ref() {
+        } else if let Some(signer) = app_state.device.read().await.encryption() {
             if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, target).await {
                 cache_miss = Some(unwrapped);
             } else if let Ok(unwrapped) = client.unwrap_gift_wrap(target).await {
@@ -1529,7 +1495,7 @@ impl Render for ChatSpace {
         let registry = Registry::read_global(cx);
 
         // Only render titlebar child elements if user is logged in
-        if let Some(public_key) = registry.signer_pubkey() {
+        if let Some(public_key) = registry.current_user() {
             let profile = registry.get_person(&public_key, cx);
 
             let left_side = self

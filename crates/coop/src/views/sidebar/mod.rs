@@ -6,7 +6,8 @@ use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{RenderedTimestamp, TextUtils};
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
-use global::{app_state, nostr_client, UnwrappingStatus};
+use global::signal::UnwrappingStatus;
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,

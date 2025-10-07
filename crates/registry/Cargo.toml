@@ -20,3 +20,4 @@ smol.workspace = true
 log.workspace = true
 
 fuzzy-matcher = "0.3.7"
+secrecy = "0.10.3"
