@@ -14,8 +14,8 @@ use lsp_types::Position;
 use rope::{OffsetUtf16, Rope};
 use serde::Deserialize;
 use smallvec::SmallVec;
-use sum_tree::Bias;
 use unicode_segmentation::*;
+use zed_sum_tree::Bias;
 
 use super::blink_cursor::BlinkCursor;
 use super::change::Change;
@@ -481,7 +481,7 @@ impl InputState {
         for (line_index, line) in last_layout.lines.iter().enumerate() {
             let local_offset = offset.saturating_sub(prev_lines_offset);
             if let Some(pos) = line.position_for_index(local_offset, line_height) {
-                let sub_line_index = (pos.y.0 / line_height.0) as usize;
+                let sub_line_index = (pos.y.signum() / line_height.signum()) as usize;
                 let adjusted_pos = point(pos.x + last_layout.line_number_width, pos.y + y_offset);
                 return (line_index, sub_line_index, Some(adjusted_pos));
             }

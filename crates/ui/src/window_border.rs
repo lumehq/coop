@@ -6,7 +6,7 @@ use gpui::{
 };
 use theme::{CLIENT_SIDE_DECORATION_ROUNDING, CLIENT_SIDE_DECORATION_SHADOW};
 
-const WINDOW_BORDER_WIDTH: Pixels = Pixels(1.0);
+const WINDOW_BORDER_WIDTH: Pixels = px(1.0);
 
 /// Create a new window border.
 pub fn window_border() -> WindowBorder {
