@@ -81,17 +81,19 @@ pub enum RoomKind {
     #[default]
     Request,
 }
-
 #[derive(Debug)]
 pub struct Room {
     pub id: u64,
+    /// Timestamp of the last message sent in the room
     pub created_at: Timestamp,
+    /// Kind of room
+    pub kind: RoomKind,
     /// Subject of the room
     pub subject: Option<String>,
     /// All members of the room
-    pub members: Vec<PublicKey>,
-    /// Kind
-    pub kind: RoomKind,
+    ///
+    /// Also stores member's device public key (NIP-4e) when available
+    pub members: HashMap<PublicKey, Option<PublicKey>>,
 }
 
 impl Ord for Room {
@@ -127,14 +129,18 @@ impl From<&Event> for Room {
         let id = val.uniq_id();
         let created_at = val.created_at;
 
-        // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys();
-
         // Get subject from tags
         let subject = val
             .tags
             .find(TagKind::Subject)
             .and_then(|tag| tag.content().map(|s| s.to_owned()));
+
+        // Get the members from the event's tags and event's pubkey
+        let mut members: HashMap<PublicKey, Option<PublicKey>> = HashMap::new();
+
+        for pubkey in val.all_pubkeys().into_iter() {
+            members.insert(pubkey, None);
+        }
 
         Room {
             id,
@@ -151,14 +157,18 @@ impl From<&UnsignedEvent> for Room {
         let id = val.uniq_id();
         let created_at = val.created_at;
 
-        // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys();
-
         // Get subject from tags
         let subject = val
             .tags
             .find(TagKind::Subject)
             .and_then(|tag| tag.content().map(|s| s.to_owned()));
+
+        // Get the members from the event's tags and event's pubkey
+        let mut members: HashMap<PublicKey, Option<PublicKey>> = HashMap::new();
+
+        for pubkey in val.all_pubkeys().into_iter() {
+            members.insert(pubkey, None);
+        }
 
         Room {
             id,
@@ -232,11 +242,6 @@ impl Room {
         cx.notify();
     }
 
-    /// Returns the members of the room
-    pub fn members(&self) -> &Vec<PublicKey> {
-        &self.members
-    }
-
     /// Checks if the room has more than two members (group)
     pub fn is_group(&self) -> bool {
         self.members.len() > 2
@@ -267,14 +272,15 @@ impl Room {
         let registry = Registry::read_global(cx);
 
         if let Some(public_key) = registry.signer_pubkey() {
-            for member in self.members() {
+            for member in self.members.keys() {
                 if member != &public_key {
                     return registry.get_person(member, cx);
                 }
             }
         }
 
-        registry.get_person(&self.members[0], cx)
+        // Always return the first member
+        registry.get_person(self.members.keys().next().unwrap(), cx)
     }
 
     /// Merge the names of the first two members of the room.
@@ -284,7 +290,7 @@ impl Room {
         if self.is_group() {
             let profiles: Vec<Profile> = self
                 .members
-                .iter()
+                .keys()
                 .map(|public_key| registry.get_person(public_key, cx))
                 .collect();
 
@@ -307,7 +313,7 @@ impl Room {
 
     /// Connects to all members's messaging relays
     pub fn connect(&self, cx: &App) -> Task<Result<HashMap<PublicKey, Vec<RelayUrl>>, Error>> {
-        let members = self.members.clone();
+        let members: Vec<PublicKey> = self.members.keys().copied().collect();
 
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -342,7 +348,7 @@ impl Room {
 
     /// Loads all messages for this room from the database
     pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
-        let members = self.members.clone();
+        let members: Vec<PublicKey> = self.members.keys().copied().collect();
 
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -416,7 +422,7 @@ impl Room {
         // Add receivers
         //
         // NOTE: current user will be removed from the list of receivers
-        for member in self.members.iter() {
+        for member in self.members.keys() {
             tags.push(Tag::public_key(member.to_owned()));
         }
 
@@ -472,12 +478,14 @@ impl Room {
 
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
-            members.retain(|&pk| pk != public_key);
+            members.remove(&public_key);
 
             let mut reports: Vec<SendReport> = vec![];
 
-            for receiver in members.into_iter() {
+            for (user_pubkey, device_pubkey) in members.into_iter() {
                 let signer = device.encryption.as_ref().unwrap_or(&signer);
+                let receiver = device_pubkey.unwrap_or(user_pubkey);
+
                 let rumor = rumor.clone();
                 let event = EventBuilder::gift_wrap(signer, &receiver, rumor, vec![]).await?;
 
