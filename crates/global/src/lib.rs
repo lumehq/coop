@@ -176,7 +176,7 @@ pub struct AppState {
     pub is_first_run: AtomicBool,
 
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    pub device: NostrDevice,
+    pub device: RwLock<NostrDevice>,
 
     /// Subscription ID for listening to gift wrap events from relays.
     pub gift_wrap_sub_id: SubscriptionId,
@@ -228,7 +228,7 @@ impl AppState {
             init_at,
             signal,
             ingester,
-            device: NostrDevice::default(),
+            device: RwLock::new(NostrDevice::default()),
             gossip: RwLock::new(Gossip::default()),
             last_used_at: None,
             is_first_run: AtomicBool::new(first_run),

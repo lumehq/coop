@@ -463,10 +463,12 @@ impl Room {
         let mut members = self.members.clone();
 
         cx.background_spawn(async move {
-            let app_state = app_state();
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
+
+            let app_state = app_state();
+            let device = app_state.device.read().await;
 
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
@@ -475,7 +477,7 @@ impl Room {
             let mut reports: Vec<SendReport> = vec![];
 
             for receiver in members.into_iter() {
-                let signer = app_state.device.encryption.as_ref().unwrap_or(&signer);
+                let signer = device.encryption.as_ref().unwrap_or(&signer);
                 let rumor = rumor.clone();
                 let event = EventBuilder::gift_wrap(signer, &receiver, rumor, vec![]).await?;
 

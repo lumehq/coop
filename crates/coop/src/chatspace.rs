@@ -463,14 +463,17 @@ impl ChatSpace {
                                     client.connect_relay(url).await.ok();
                                 }
 
+                                // Fetch device announcement event
+                                Self::fetch_announcement_event(&urls, event.pubkey).await;
+
+                                // Fetch user's messaging relays
+                                Self::fetch_dm_event(&urls, event.pubkey).await;
+
                                 // Fetch user's metadata
                                 Self::fetch_event(Kind::Metadata, &urls, event.pubkey).await;
 
                                 // Fetch user's contact list
                                 Self::fetch_event(Kind::ContactList, &urls, event.pubkey).await;
-
-                                // Fetch user's messaging relays
-                                Self::fetch_dm_event(&urls, event.pubkey).await;
                             }
 
                             app_state
@@ -688,6 +691,37 @@ impl ChatSpace {
         Ok(public_key == event.pubkey)
     }
 
+    /// Fetches and waits to receive a device announcement event
+    pub async fn fetch_announcement_event(urls: &[RelayUrl], public_key: PublicKey) {
+        let client = nostr_client();
+        let app_state = app_state();
+        let opts = app_state.auto_close_opts;
+
+        let filter = Filter::new()
+            .kind(Kind::Custom(10044))
+            .author(public_key)
+            .limit(1);
+
+        if let Err(e) = client.subscribe_to(urls, filter, opts).await {
+            log::info!("Failed to subscribe: {e}");
+        }
+
+        // Verify that the relays have been fetched after 3 seconds
+        smol::spawn(async move {
+            smol::Timer::after(Duration::from_secs(3)).await;
+
+            let filter = Filter::new().kind(Kind::Custom(10044)).author(public_key);
+            let total = client.database().count(filter).await.unwrap_or(0);
+
+            // User doesn't have a device announcement
+            // Proceed to create one
+            if total < 1 {
+                app_state.signal.send(SignalKind::DeviceNotSet).await;
+            }
+        })
+        .detach();
+    }
+
     /// Fetches and waits to receive a messaging relay event
     pub async fn fetch_dm_event(urls: &[RelayUrl], public_key: PublicKey) {
         let client = nostr_client();
@@ -808,18 +842,27 @@ impl ChatSpace {
     async fn unwrap_gift_wrap(target: &Event) {
         let client = nostr_client();
         let app_state = app_state();
+
+        let mut cache_miss: Option<UnwrappedGift> = None;
         let mut message: Option<Event> = None;
 
         if let Ok(event) = Self::get_unwrapped_event(target.id).await {
             message = Some(event);
-        } else if let Ok(unwrapped) = client.unwrap_gift_wrap(target).await {
+        } else if let Some(signer) = app_state.device.read().await.encryption.as_ref() {
+            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, target).await {
+                cache_miss = Some(unwrapped);
+            } else if let Ok(unwrapped) = client.unwrap_gift_wrap(target).await {
+                cache_miss = Some(unwrapped);
+            }
+        }
+
+        if let Some(unwrapped) = cache_miss {
             // Sign the unwrapped event with a RANDOM KEYS
             if let Ok(event) = unwrapped.rumor.sign_with_keys(&Keys::generate()) {
                 // Save this event to the database for future use.
                 if let Err(e) = Self::set_unwrapped_event(target.id, &event).await {
                     log::warn!("Failed to cache unwrapped event: {e}")
                 }
-
                 message = Some(event);
             }
         }
