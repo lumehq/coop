@@ -266,7 +266,7 @@ impl Room {
     fn display_member(&self, cx: &App) -> Profile {
         let registry = Registry::read_global(cx);
 
-        if let Some(public_key) = registry.signer_pubkey() {
+        if let Some(public_key) = registry.current_user() {
             for member in self.members() {
                 if member != &public_key {
                     return registry.get_person(member, cx);
@@ -438,7 +438,7 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
-        let public_key = Registry::read_global(cx).signer_pubkey().unwrap();
+        let public_key = Registry::read_global(cx).current_user().unwrap();
         let subject = self.subject.clone();
 
         let mut tags = vec![];

@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::Error;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use global::constants::{ACCOUNT_PATH, BUNKER_TIMEOUT};
 use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -272,7 +272,7 @@ impl Account {
 
                 let filter = Filter::new()
                     .kind(Kind::ApplicationSpecificData)
-                    .identifier(ACCOUNT_IDENTIFIER);
+                    .identifier(ACCOUNT_PATH);
 
                 // Delete account
                 client.database().delete(filter).await.ok();

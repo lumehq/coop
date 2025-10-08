@@ -17,5 +17,6 @@ itertools.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 log.workspace = true
+secrecy.workspace = true
 
 fuzzy-matcher = "0.3.7"

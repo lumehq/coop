@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use flume::{Receiver, Sender};
@@ -12,6 +12,7 @@ use smol::lock::RwLock;
 use crate::paths::support_dir;
 
 pub mod constants;
+pub mod identiers;
 pub mod paths;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -145,14 +146,30 @@ impl Ingester {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct NostrDevice {
+    client: Option<Arc<dyn NostrSigner>>,
+    master: Option<Arc<dyn NostrSigner>>,
+}
+
+impl NostrDevice {
+    pub fn master(&self) -> Option<&Arc<dyn NostrSigner>> {
+        self.master.as_ref()
+    }
+
+    pub fn client(&self) -> Option<&Arc<dyn NostrSigner>> {
+        self.client.as_ref()
+    }
+}
+
 /// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct AppState {
     /// The timestamp when the application was initialized.
     pub init_at: Timestamp,
 
-    /// The timestamp when the application was last used.
-    pub last_used_at: Option<Timestamp>,
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub device: RwLock<NostrDevice>,
 
     /// Whether this is the first run of the application.
     pub is_first_run: AtomicBool,
@@ -204,11 +221,11 @@ impl AppState {
             init_at,
             signal,
             ingester,
-            last_used_at: None,
             is_first_run: AtomicBool::new(first_run),
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
             gift_wrap_processing: AtomicBool::new(false),
             auto_close_opts: Some(opts),
+            device: RwLock::new(NostrDevice::default()),
             sent_ids: RwLock::new(HashSet::new()),
             seen_on_relays: RwLock::new(HashMap::new()),
             resent_ids: RwLock::new(Vec::new()),
@@ -218,7 +235,6 @@ impl AppState {
 }
 
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();
-static APP_STATE: OnceLock<AppState> = OnceLock::new();
 
 pub fn nostr_client() -> &'static Client {
     NOSTR_CLIENT.get_or_init(|| {
@@ -242,6 +258,8 @@ pub fn nostr_client() -> &'static Client {
         ClientBuilder::default().database(lmdb).opts(opts).build()
     })
 }
+
+static APP_STATE: OnceLock<AppState> = OnceLock::new();
 
 pub fn app_state() -> &'static AppState {
     APP_STATE.get_or_init(AppState::new)

@@ -134,7 +134,7 @@ impl Render for Preferences {
                             .font_semibold()
                             .child(shared_t!("preferences.account_header")),
                     )
-                    .when_some(registry.signer_pubkey(), |this, public_key| {
+                    .when_some(registry.current_user(), |this, public_key| {
                         let profile = registry.get_person(&public_key, cx);
 
                         this.child(

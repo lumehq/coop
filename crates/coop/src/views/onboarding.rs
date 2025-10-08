@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use client_keys::ClientKeys;
 use common::display::TextUtils;
-use global::constants::{ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use global::identiers::account_identifier;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -188,7 +189,7 @@ impl Onboarding {
             let public_key = signer.get_public_key().await?;
 
             let event = EventBuilder::new(Kind::ApplicationSpecificData, uri_without_secret)
-                .tags(vec![Tag::identifier(ACCOUNT_IDENTIFIER)])
+                .tag(account_identifier().to_owned())
                 .build(public_key)
                 .sign(&Keys::generate())
                 .await?;

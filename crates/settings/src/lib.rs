@@ -1,5 +1,6 @@
 use anyhow::anyhow;
-use global::constants::SETTINGS_IDENTIFIER;
+use global::constants::SETTINGS_PATH;
+use global::identiers::settings_identifier;
 use global::nostr_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
@@ -127,7 +128,7 @@ impl AppSettings {
 
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier(SETTINGS_IDENTIFIER)
+                .identifier(SETTINGS_PATH)
                 .author(public_key)
                 .limit(1);
 
@@ -158,7 +159,7 @@ impl AppSettings {
                 let public_key = signer.get_public_key().await?;
 
                 let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                    .tag(Tag::identifier(SETTINGS_IDENTIFIER))
+                    .tag(settings_identifier().to_owned())
                     .build(public_key)
                     .sign(&Keys::generate())
                     .await?;

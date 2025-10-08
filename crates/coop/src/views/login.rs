@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use client_keys::ClientKeys;
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use global::constants::BUNKER_TIMEOUT;
+use global::identiers::account_identifier;
 use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -340,7 +341,7 @@ impl Login {
             let public_key = signer.get_public_key().await?;
 
             let event = EventBuilder::new(Kind::ApplicationSpecificData, uri_without_secret)
-                .tags(vec![Tag::identifier(ACCOUNT_IDENTIFIER)])
+                .tag(account_identifier().to_owned())
                 .build(public_key)
                 .sign(&Keys::generate())
                 .await?;
@@ -364,14 +365,11 @@ impl Login {
             {
                 let client = nostr_client();
                 let value = enc_key.to_bech32().unwrap();
-                let keys = Keys::generate();
-                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                let kind = Kind::ApplicationSpecificData;
 
-                let builder = EventBuilder::new(kind, value)
-                    .tags(tags)
+                let builder = EventBuilder::new(Kind::ApplicationSpecificData, value)
+                    .tag(account_identifier().to_owned())
                     .build(public_key)
-                    .sign(&keys)
+                    .sign(&Keys::generate())
                     .await;
 
                 if let Ok(event) = builder {

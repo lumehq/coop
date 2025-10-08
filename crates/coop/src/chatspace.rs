@@ -10,9 +10,10 @@ use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use global::constants::{
-    ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
+    ACCOUNT_PATH, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
+use global::identiers::account_identifier;
 use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -76,10 +77,10 @@ pub struct ChatSpace {
     nip17_relays: bool,
 
     // All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 4]>,
+    _subscriptions: SmallVec<[Subscription; 3]>,
 
     // All long running tasks
-    _tasks: SmallVec<[Task<()>; 5]>,
+    _tasks: SmallVec<[Task<()>; 6]>,
 }
 
 impl ChatSpace {
@@ -140,7 +141,7 @@ impl ChatSpace {
 
         subscriptions.push(
             // Subscribe to open chat room requests
-            cx.subscribe_in(&registry, window, move |this, _, event, window, cx| {
+            cx.subscribe_in(&registry, window, move |this, _e, event, window, cx| {
                 this.process_registry_event(event, window, cx);
             }),
         );
@@ -545,7 +546,7 @@ impl ChatSpace {
 
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
-                            this.set_signer_pubkey(public_key, cx);
+                            this.set_current_user(public_key, cx);
                             this.load_rooms(window, cx);
                         });
                     }
@@ -629,7 +630,7 @@ impl ChatSpace {
     }
 
     /// Fetches a single event by kind and public key
-    pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
+    async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
         let client = nostr_client();
         let app_state = app_state();
         let filter = Filter::new().kind(kind).author(public_key).limit(1);
@@ -640,7 +641,7 @@ impl ChatSpace {
     }
 
     /// Fetches gift wrap events for a given public key and relays
-    pub async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
+    async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
         let client = nostr_client();
         let id = app_state().gift_wrap_sub_id.clone();
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
@@ -1059,9 +1060,10 @@ impl ChatSpace {
     fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task = cx.background_spawn(async move {
             let client = nostr_client();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER)
+                .identifier(ACCOUNT_PATH)
                 .limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
@@ -1163,7 +1165,7 @@ impl ChatSpace {
 
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER);
+                .identifier(ACCOUNT_PATH);
 
             // Delete account
             client.database().delete(filter).await.ok();
@@ -1412,7 +1414,7 @@ impl ChatSpace {
                             // Save the signer to disk for further logins
                             if let Ok(public_key) = proxy.get_public_key().await {
                                 let keys = Keys::generate();
-                                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
+                                let tags = vec![account_identifier().to_owned()];
                                 let kind = Kind::ApplicationSpecificData;
 
                                 let builder = EventBuilder::new(kind, "extension")
@@ -1481,7 +1483,7 @@ impl Render for ChatSpace {
         let registry = Registry::read_global(cx);
 
         // Only render titlebar child elements if user is logged in
-        if let Some(public_key) = registry.signer_pubkey() {
+        if let Some(public_key) = registry.current_user() {
             let profile = registry.get_person(&public_key, cx);
 
             let left_side = self
