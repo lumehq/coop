@@ -300,8 +300,7 @@ impl Login {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(uri) => {
-                        this.write_bunker_keys(keys.secret_key(), cx);
-                        this.connect(signer, uri, cx);
+                        this.connect(signer, uri, keys.secret_key(), cx);
                     }
                     Err(e) => {
                         window.push_notification(Notification::error(e.to_string()), cx);
@@ -313,24 +312,14 @@ impl Login {
         .detach();
     }
 
-    fn write_bunker_keys(&mut self, secret: &SecretKey, cx: &mut Context<Self>) {
+    fn connect(
+        &mut self,
+        signer: NostrConnect,
+        uri: NostrConnectURI,
+        secret: &SecretKey,
+        cx: &mut Context<Self>,
+    ) {
         let secret_hex = secret.to_secret_hex();
-
-        let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-            let app_state = app_state();
-
-            // Write the secret key that used for connection to the database for future logins
-            app_state
-                .write_to_db(&secret_hex, AppIdentifierTag::Bunker)
-                .await?;
-
-            Ok(())
-        });
-
-        task.detach();
-    }
-
-    fn connect(&mut self, signer: NostrConnect, uri: NostrConnectURI, cx: &mut Context<Self>) {
         let mut uri_without_secret = uri.to_string();
 
         // Clear the secret parameter in the URI if it exists
@@ -348,6 +337,11 @@ impl Login {
             // Write current user connection to the database for future logins
             app_state
                 .write_to_db(&uri_without_secret, AppIdentifierTag::User)
+                .await?;
+
+            // Write the secret key that used for connection to the database for future logins
+            app_state
+                .write_to_db(&secret_hex, AppIdentifierTag::Bunker)
                 .await?;
 
             Ok(())

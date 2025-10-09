@@ -12,7 +12,6 @@ smol.workspace = true
 flume.workspace = true
 log.workspace = true
 anyhow.workspace = true
-secrecy.workspace = true
 
 whoami = "1.5.2"
 rustls = "0.23.23"

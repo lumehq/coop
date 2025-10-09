@@ -46,7 +46,6 @@ smallvec = "1.14.0"
 smol = "2"
 tracing = "0.1.40"
 webbrowser = "1.0.4"
-secrecy = "0.10.3"
 
 [profile.release]
 strip = true

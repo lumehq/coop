@@ -55,6 +55,11 @@ pub enum UnwrappingStatus {
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum SignalKind {
+    /// A signal to notify UI that the user hasn't set up an encryption key yet
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    EncryptionKeyNotFound,
+
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -64,17 +69,17 @@ pub enum SignalKind {
     /// A signal to notify UI that the relay requires authentication
     Auth(AuthRequest),
 
-    /// A signal to notify UI that the browser proxy service is down
-    ProxyDown,
-
     /// A signal to notify UI that a new profile has been received
     NewProfile(Profile),
 
     /// A signal to notify UI that a new gift wrap event has been received
     NewMessage((EventId, Event)),
 
-    /// A signal to notify UI that no DM relays for current user was found
-    RelaysNotFound,
+    /// A signal to notify UI that no NIP-17 relays for current user was found
+    DmRelayNotFound,
+
+    /// A signal to notify UI that no NIP-65 relays for current user was found
+    GossipRelayNotFound,
 
     /// A signal to notify UI that gift wrap status has changed
     GiftWrapStatus(UnwrappingStatus),
@@ -183,8 +188,16 @@ impl NostrDevice {
         self.master.as_ref()
     }
 
+    pub fn set_master(&mut self, master: Arc<dyn NostrSigner>) {
+        self.master = Some(master);
+    }
+
     pub fn client(&self) -> Option<&Arc<dyn NostrSigner>> {
         self.client.as_ref()
+    }
+
+    pub fn set_client(&mut self, client: Arc<dyn NostrSigner>) {
+        self.client = Some(client);
     }
 }
 
@@ -258,10 +271,16 @@ impl AppState {
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
+        let val = if id != AppIdentifierTag::User {
+            signer.nip44_encrypt(&public_key, content).await?
+        } else {
+            content.to_owned()
+        };
+
         // Construct a application data event (NIP-78)
         //
         // Only sign with a random keys
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, val)
             .tag(Tag::identifier(id))
             .build(public_key)
             .sign(&Keys::generate())
@@ -285,7 +304,13 @@ impl AppState {
             .limit(1);
 
         if let Some(event) = client.database().query(filter).await?.first_owned() {
-            Ok(event.content)
+            let val = if id != AppIdentifierTag::User {
+                signer.nip44_decrypt(&public_key, &event.content).await?
+            } else {
+                event.content
+            };
+
+            Ok(val)
         } else {
             Err(anyhow!("Not found"))
         }

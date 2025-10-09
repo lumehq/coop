@@ -5,15 +5,14 @@ use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::state::UnwrappingStatus;
 use global::nostr_client;
+use global::state::UnwrappingStatus;
 use gpui::{
     App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
 };
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
-use secrecy::{ExposeSecret, SecretString};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 
@@ -51,9 +50,6 @@ pub struct Registry {
     /// Public Key of the current user
     current_user: Option<PublicKey>,
 
-    /// Password used for decryption secret key
-    password: Entity<Option<SecretString>>,
-
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
 }
@@ -78,7 +74,6 @@ impl Registry {
 
     /// Create a new registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let password = cx.new(|_| None);
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
         let mut tasks = smallvec![];
 
@@ -95,7 +90,6 @@ impl Registry {
         );
 
         Self {
-            password,
             unwrapping_status,
             current_user: None,
             rooms: vec![],
@@ -131,27 +125,6 @@ impl Registry {
     pub fn set_current_user(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
         self.current_user = Some(public_key);
         cx.notify();
-    }
-
-    /// Returns true if the user has a password set
-    pub fn has_password(&self, cx: &App) -> bool {
-        self.password.read(cx).is_some()
-    }
-
-    /// Get the password for decryption
-    pub fn password(&self, cx: &App) -> Option<String> {
-        self.password
-            .read(cx)
-            .clone()
-            .map(|pwd| pwd.expose_secret().to_owned())
-    }
-
-    /// Update the password for decryption
-    pub fn set_password(&mut self, password: String, cx: &mut Context<Self>) {
-        self.password.update(cx, |this, cx| {
-            *this = Some(SecretString::new(Box::from(password)));
-            cx.notify();
-        })
     }
 
     /// Insert batch of persons
