@@ -1,7 +1,6 @@
 use anyhow::anyhow;
 use common::nip96::nip96_upload;
-use global::constants::{NIP17_RELAYS, NIP65_RELAYS};
-use global::identiers::account_identifier;
+use global::constants::{ACCOUNT_PATH, NIP17_RELAYS, NIP65_RELAYS};
 use global::nostr_client;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -180,7 +179,7 @@ impl NewAccount {
                 let value = enc_key.to_bech32().unwrap();
 
                 let builder = EventBuilder::new(Kind::ApplicationSpecificData, value)
-                    .tag(account_identifier().to_owned())
+                    .tag(Tag::identifier(ACCOUNT_PATH))
                     .build(public_key)
                     .sign(&Keys::generate())
                     .await;

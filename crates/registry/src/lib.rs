@@ -5,7 +5,8 @@ use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::{nostr_client, UnwrappingStatus};
+use global::app_state::UnwrappingStatus;
+use global::nostr_client;
 use gpui::{
     App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
 };

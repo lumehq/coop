@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use client_keys::ClientKeys;
-use global::constants::BUNKER_TIMEOUT;
-use global::identiers::account_identifier;
-use global::nostr_client;
+use global::app_state::AppIdentifierTag;
+use global::constants::{ACCOUNT_PATH, BUNKER_TIMEOUT};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
@@ -17,6 +16,7 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{v_flex, ContextModal, Disableable, Sizable, StyledExt};
 
@@ -31,11 +31,13 @@ pub struct Login {
     error: Entity<Option<SharedString>>,
     countdown: Entity<Option<u64>>,
     logging_in: bool,
+
     // Panel
     name: SharedString,
     focus_handle: FocusHandle,
-    #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+
+    // All subscriptions
+    _subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Login {
@@ -63,7 +65,7 @@ impl Login {
             input,
             error,
             countdown,
-            subscriptions,
+            _subscriptions: subscriptions,
             name: "Login".into(),
             focus_handle: cx.focus_handle(),
             logging_in: false,
@@ -264,14 +266,8 @@ impl Login {
             return;
         };
 
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
-
         let timeout = Duration::from_secs(BUNKER_TIMEOUT);
-        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
-
-        // Handle auth url with the default browser
-        signer.auth_url_handler(CoopAuthUrlHandler);
+        let keys = Keys::generate();
 
         // Start countdown
         cx.spawn_in(window, async move |this, cx| {
@@ -294,36 +290,47 @@ impl Login {
 
         // Handle connection
         cx.spawn_in(window, async move |this, cx| {
-            match signer.bunker_uri().await {
-                Ok(uri) => {
-                    this.update(cx, |this, cx| {
-                        this.write_uri_to_disk(signer, uri, cx);
-                    })
-                    .ok();
-                }
-                Err(error) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.set_error(error.to_string(), window, cx);
-                        // Force reset the client keys
-                        //
-                        // This step is necessary to ensure that user can retry the connection
-                        client_keys.update(cx, |this, cx| {
-                            this.force_new_keys(cx);
-                        });
-                    })
-                    .ok();
-                }
-            }
+            let mut signer = NostrConnect::new(uri, keys.clone(), timeout, None).unwrap();
+
+            // Automatically handle authentication url
+            signer.auth_url_handler(CoopAuthUrlHandler);
+
+            let result = signer.bunker_uri().await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(uri) => {
+                        this.write_bunker_keys(keys.secret_key(), cx);
+                        this.connect(signer, uri, cx);
+                    }
+                    Err(e) => {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    }
+                };
+            })
+            .ok();
         })
         .detach();
     }
 
-    fn write_uri_to_disk(
-        &mut self,
-        signer: NostrConnect,
-        uri: NostrConnectURI,
-        cx: &mut Context<Self>,
-    ) {
+    fn write_bunker_keys(&mut self, secret: &SecretKey, cx: &mut Context<Self>) {
+        let secret_hex = secret.to_secret_hex();
+
+        let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
+            let app_state = app_state();
+
+            // Write the secret key that used for connection to the database for future logins
+            app_state
+                .write_to_db(&secret_hex, AppIdentifierTag::Bunker)
+                .await?;
+
+            Ok(())
+        });
+
+        task.detach();
+    }
+
+    fn connect(&mut self, signer: NostrConnect, uri: NostrConnectURI, cx: &mut Context<Self>) {
         let mut uri_without_secret = uri.to_string();
 
         // Clear the secret parameter in the URI if it exists
@@ -333,21 +340,15 @@ impl Login {
 
         let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
             let client = nostr_client();
+            let app_state = app_state();
 
             // Update the client's signer
             client.set_signer(signer).await;
 
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let event = EventBuilder::new(Kind::ApplicationSpecificData, uri_without_secret)
-                .tag(account_identifier().to_owned())
-                .build(public_key)
-                .sign(&Keys::generate())
+            // Write current user connection to the database for future logins
+            app_state
+                .write_to_db(&uri_without_secret, AppIdentifierTag::User)
                 .await?;
-
-            // Save the event to the database
-            client.database().save_event(&event).await?;
 
             Ok(())
         });
@@ -367,7 +368,7 @@ impl Login {
                 let value = enc_key.to_bech32().unwrap();
 
                 let builder = EventBuilder::new(Kind::ApplicationSpecificData, value)
-                    .tag(account_identifier().to_owned())
+                    .tag(Tag::identifier(ACCOUNT_PATH))
                     .build(public_key)
                     .sign(&Keys::generate())
                     .await;

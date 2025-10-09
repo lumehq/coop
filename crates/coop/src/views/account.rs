@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use client_keys::ClientKeys;
 use common::display::RenderedProfile;
+use global::app_state::{AppIdentifierTag, SignalKind};
 use global::constants::{ACCOUNT_PATH, BUNKER_TIMEOUT};
-use global::{app_state, nostr_client, SignalKind};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -14,7 +14,7 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
-use nostr_sdk::prelude::*;
+use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -27,22 +27,20 @@ use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
-use crate::chatspace::ChatSpace;
 
 pub fn init(
-    profile: Profile,
+    public_key: PublicKey,
     secret: String,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<Account> {
-    cx.new(|cx| Account::new(secret, profile, window, cx))
+    cx.new(|cx| Account::new(public_key, secret, window, cx))
 }
 
 pub struct Account {
-    profile: Profile,
+    public_key: PublicKey,
     stored_secret: String,
-    is_bunker: bool,
-    is_extension: bool,
+    bunker_keys: Entity<Option<Keys>>,
     loading: bool,
 
     name: SharedString,
@@ -54,45 +52,69 @@ pub struct Account {
 }
 
 impl Account {
-    fn new(secret: String, profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let is_bunker = secret.starts_with("bunker://");
-        let is_extension = secret.starts_with("extension");
+    fn new(
+        public_key: PublicKey,
+        secret: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let bunker_keys = cx.new(|_| None);
 
+        let mut tasks = smallvec![];
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
-            // Clear the local state when user closes the account panel
+            // Clear the image cache when user closes the account panel
             cx.on_release_in(window, move |this, window, cx| {
-                this.stored_secret.clear();
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
                 });
             }),
         );
 
+        if secret.starts_with("bunker://") {
+            tasks.push(
+                // Load the bunker keys for re-connection
+                cx.spawn(async move |this, cx| {
+                    let app_state = app_state();
+
+                    if let Ok(content) = app_state.load_from_db(AppIdentifierTag::Bunker).await {
+                        if let Ok(secret) = SecretKey::parse(&content) {
+                            let keys = Keys::new(secret);
+
+                            this.update(cx, |this, cx| {
+                                this.bunker_keys.update(cx, |this, cx| {
+                                    *this = Some(keys);
+                                    cx.notify();
+                                });
+                            })
+                            .ok();
+                        }
+                    }
+                }),
+            );
+        }
+
         Self {
-            profile,
-            is_bunker,
-            is_extension,
+            public_key,
+            bunker_keys,
             stored_secret: secret,
             loading: false,
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             _subscriptions: subscriptions,
-            _tasks: smallvec![],
+            _tasks: tasks,
         }
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_loading(true, cx);
 
-        if self.is_bunker {
+        if self.stored_secret.starts_with("bunker://") {
             if let Ok(uri) = NostrConnectURI::parse(&self.stored_secret) {
                 self.nostr_connect(uri, window, cx);
             }
-        } else if self.is_extension {
-            self.set_proxy(window, cx);
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
             self.keys(enc, window, cx);
         } else {
@@ -102,11 +124,12 @@ impl Account {
     }
 
     fn nostr_connect(&mut self, uri: NostrConnectURI, window: &mut Window, cx: &mut Context<Self>) {
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
+        let Some(keys) = self.bunker_keys.read(cx).clone() else {
+            return;
+        };
 
         let timeout = Duration::from_secs(BUNKER_TIMEOUT);
-        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+        let mut signer = NostrConnect::new(uri, keys, timeout, None).unwrap();
 
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
@@ -114,10 +137,9 @@ impl Account {
         self._tasks.push(
             // Handle connection in the background
             cx.spawn_in(window, async move |this, cx| {
-                let client = nostr_client();
-
                 match signer.bunker_uri().await {
                     Ok(_) => {
+                        let client = nostr_client();
                         // Set the client's signer with the current nostr connect instance
                         client.set_signer(signer).await;
                     }
@@ -131,10 +153,6 @@ impl Account {
                 }
             }),
         );
-    }
-
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
     }
 
     fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
@@ -320,6 +338,10 @@ impl Focusable for Account {
 
 impl Render for Account {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let registry = Registry::read_global(cx);
+        let profile = registry.get_person(&self.public_key, cx);
+        let is_bunker = self.stored_secret.starts_with("bunker://");
+
         v_flex()
             .image_cache(self.image_cache.clone())
             .relative()
@@ -377,8 +399,8 @@ impl Render for Account {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = self.profile.avatar(true);
-                                let name = self.profile.display_name();
+                                let avatar = profile.avatar(true);
+                                let name = profile.display_name();
 
                                 this.child(
                                     h_flex()
@@ -391,41 +413,20 @@ impl Render for Account {
                                                 .child(Avatar::new(avatar).size(rems(1.5)))
                                                 .child(div().pb_px().font_semibold().child(name)),
                                         )
-                                        .child(
-                                            div()
-                                                .when(self.is_bunker, |this| {
-                                                    let label = SharedString::from("Nostr Connect");
+                                        .when(is_bunker, |this| {
+                                            let label = SharedString::from("Nostr Connect");
 
-                                                    this.child(
-                                                        div()
-                                                            .py_0p5()
-                                                            .px_2()
-                                                            .text_xs()
-                                                            .bg(cx.theme().secondary_active)
-                                                            .text_color(
-                                                                cx.theme().secondary_foreground,
-                                                            )
-                                                            .rounded_full()
-                                                            .child(label),
-                                                    )
-                                                })
-                                                .when(self.is_extension, |this| {
-                                                    let label = SharedString::from("Extension");
-
-                                                    this.child(
-                                                        div()
-                                                            .py_0p5()
-                                                            .px_2()
-                                                            .text_xs()
-                                                            .bg(cx.theme().secondary_active)
-                                                            .text_color(
-                                                                cx.theme().secondary_foreground,
-                                                            )
-                                                            .rounded_full()
-                                                            .child(label),
-                                                    )
-                                                }),
-                                        ),
+                                            this.child(
+                                                div()
+                                                    .py_0p5()
+                                                    .px_2()
+                                                    .text_xs()
+                                                    .bg(cx.theme().secondary_active)
+                                                    .text_color(cx.theme().secondary_foreground)
+                                                    .rounded_full()
+                                                    .child(label),
+                                            )
+                                        }),
                                 )
                             })
                             .active(|this| this.bg(cx.theme().element_active))

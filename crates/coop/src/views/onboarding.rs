@@ -1,16 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use client_keys::ClientKeys;
 use common::display::TextUtils;
+use global::app_state::AppIdentifierTag;
 use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
-use global::identiers::account_identifier;
-use global::nostr_client;
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, px, relative, svg, AnyElement, App, AppContext, ClipboardItem, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    div, img, px, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
@@ -22,7 +21,8 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
-use crate::chatspace::{self, ChatSpace};
+use crate::actions::CoopAuthUrlHandler;
+use crate::chatspace::{self};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -60,14 +60,13 @@ impl NostrConnectApp {
 }
 
 pub struct Onboarding {
-    nostr_connect_uri: Entity<NostrConnectURI>,
-    nostr_connect: Entity<Option<NostrConnect>>,
-    qr_code: Entity<Option<Arc<Image>>>,
-    connecting: bool,
-    // Panel
     name: SharedString,
     focus_handle: FocusHandle,
-    _subscriptions: SmallVec<[Subscription; 2]>,
+
+    /// QR Code for Nostr Connect
+    qr_code: Entity<Option<Arc<Image>>>,
+
+    /// All long running tasks
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
@@ -77,101 +76,65 @@ impl Onboarding {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr_connect = cx.new(|_| None);
-        let qr_code = cx.new(|_| None);
+        let keys = Keys::generate();
+        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+        let relay_url = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
+        let uri = NostrConnectURI::client(keys.public_key(), vec![relay_url], APP_NAME);
 
-        // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
-        //
-        // Direct connection initiated by the client
-        let nostr_connect_uri = cx.new(|cx| {
-            let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-            let app_keys = ClientKeys::read_global(cx).keys();
-            NostrConnectURI::client(app_keys.public_key(), vec![relay], APP_NAME)
-        });
+        let qr_code = cx.new(|_| uri.to_string().to_qr());
+        let mut tasks = smallvec![];
 
-        let mut subscriptions = smallvec![];
+        tasks.push(
+            // Wait for Nostr Connect approval
+            cx.spawn_in(window, async move |this, cx| {
+                let mut signer = NostrConnect::new(uri, keys.clone(), timeout, None).unwrap();
 
-        // Clean up when the current view is released
-        subscriptions.push(cx.on_release_in(window, |this, window, cx| {
-            this.shutdown_nostr_connect(window, cx);
-        }));
+                // Automatically handle authentication url
+                signer.auth_url_handler(CoopAuthUrlHandler);
 
-        // Set Nostr Connect after the view is initialized
-        cx.defer_in(window, |this, window, cx| {
-            this.set_connect(window, cx);
-        });
+                let result = signer.bunker_uri().await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(uri) => {
+                            this.write_bunker_keys(keys.secret_key(), cx);
+                            this.connect(signer, uri, cx);
+                        }
+                        Err(e) => {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        }
+                    };
+                })
+                .ok();
+            }),
+        );
 
         Self {
-            nostr_connect,
-            nostr_connect_uri,
-            qr_code,
-            connecting: false,
             name: "Onboarding".into(),
             focus_handle: cx.focus_handle(),
-            _subscriptions: subscriptions,
-            _tasks: smallvec![],
+            qr_code,
+            _tasks: tasks,
         }
     }
 
-    fn set_connecting(&mut self, cx: &mut Context<Self>) {
-        self.connecting = true;
-        cx.notify();
-    }
+    fn write_bunker_keys(&mut self, secret: &SecretKey, cx: &mut Context<Self>) {
+        let secret_hex = secret.to_secret_hex();
 
-    fn set_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let uri = self.nostr_connect_uri.read(cx).clone();
-        let app_keys = ClientKeys::read_global(cx).keys();
-        let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
+        let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
+            let app_state = app_state();
 
-        self.qr_code.update(cx, |this, cx| {
-            *this = uri.to_string().to_qr();
-            cx.notify();
+            // Write the secret key that used for connection to the database for future logins
+            app_state
+                .write_to_db(&secret_hex, AppIdentifierTag::Bunker)
+                .await?;
+
+            Ok(())
         });
 
-        self.nostr_connect.update(cx, |this, cx| {
-            *this = NostrConnect::new(uri, app_keys, timeout, None).ok();
-            cx.notify();
-        });
-
-        self._tasks.push(
-            // Wait for Nostr Connect approval
-            cx.spawn_in(window, async move |this, cx| {
-                let connect = this.read_with(cx, |this, cx| this.nostr_connect.read(cx).clone());
-
-                if let Ok(Some(signer)) = connect {
-                    match signer.bunker_uri().await {
-                        Ok(uri) => {
-                            this.update(cx, |this, cx| {
-                                this.set_connecting(cx);
-                                this.write_uri_to_disk(signer, uri, cx);
-                            })
-                            .ok();
-                        }
-                        Err(e) => {
-                            this.update_in(cx, |_, window, cx| {
-                                window.push_notification(
-                                    Notification::error(e.to_string()).title("Nostr Connect"),
-                                    cx,
-                                );
-                            })
-                            .ok();
-                        }
-                    };
-                }
-            }),
-        )
+        task.detach();
     }
 
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
-    }
-
-    fn write_uri_to_disk(
-        &mut self,
-        signer: NostrConnect,
-        uri: NostrConnectURI,
-        cx: &mut Context<Self>,
-    ) {
+    fn connect(&mut self, signer: NostrConnect, uri: NostrConnectURI, cx: &mut Context<Self>) {
         let mut uri_without_secret = uri.to_string();
 
         // Clear the secret parameter in the URI if it exists
@@ -181,45 +144,20 @@ impl Onboarding {
 
         let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
             let client = nostr_client();
+            let app_state = app_state();
 
             // Update the client's signer
             client.set_signer(signer).await;
 
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let event = EventBuilder::new(Kind::ApplicationSpecificData, uri_without_secret)
-                .tag(account_identifier().to_owned())
-                .build(public_key)
-                .sign(&Keys::generate())
+            // Write current user connection to the database for future logins
+            app_state
+                .write_to_db(&uri_without_secret, AppIdentifierTag::User)
                 .await?;
-
-            // Save the event to the database
-            client.database().save_event(&event).await?;
 
             Ok(())
         });
 
         task.detach();
-    }
-
-    fn copy_uri(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(
-            self.nostr_connect_uri.read(cx).to_string(),
-        ));
-        window.push_notification(t!("common.copied"), cx);
-    }
-
-    fn shutdown_nostr_connect(&mut self, _window: &mut Window, cx: &mut App) {
-        if !self.connecting {
-            if let Some(signer) = self.nostr_connect.read(cx).clone() {
-                cx.background_spawn(async move {
-                    log::info!("Shutting down Nostr Connect");
-                    signer.shutdown().await;
-                })
-                .detach();
-            }
-        }
     }
 
     fn render_apps(&self, cx: &Context<Self>) -> impl IntoIterator<Item = impl IntoElement> {
@@ -351,26 +289,6 @@ impl Render for Onboarding {
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         chatspace::login(window, cx);
                                     })),
-                            )
-                            .child(
-                                v_flex()
-                                    .gap_1()
-                                    .child(
-                                        Button::new("ext")
-                                            .label(t!("onboarding.ext_login"))
-                                            .ghost_alt()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.set_proxy(window, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        div()
-                                            .italic()
-                                            .text_xs()
-                                            .text_center()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("onboarding.ext_login_note")),
-                                    ),
                             ),
                     ),
             )
@@ -394,21 +312,12 @@ impl Render for Onboarding {
                                     .justify_center()
                                     .when_some(self.qr_code.read(cx).as_ref(), |this, qr| {
                                         this.child(
-                                            div()
-                                                .id("")
-                                                .child(
-                                                    img(qr.clone())
-                                                        .size(px(256.))
-                                                        .rounded_xl()
-                                                        .shadow_lg()
-                                                        .border_1()
-                                                        .border_color(cx.theme().element_active),
-                                                )
-                                                .on_click(cx.listener(
-                                                    move |this, _e, window, cx| {
-                                                        this.copy_uri(window, cx)
-                                                    },
-                                                )),
+                                            img(qr.clone())
+                                                .size(px(256.))
+                                                .rounded_xl()
+                                                .shadow_lg()
+                                                .border_1()
+                                                .border_color(cx.theme().element_active),
                                         )
                                     })
                                     .child(

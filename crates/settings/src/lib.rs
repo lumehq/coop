@@ -1,7 +1,6 @@
 use anyhow::anyhow;
-use global::constants::SETTINGS_PATH;
-use global::identiers::settings_identifier;
-use global::nostr_client;
+use global::app_state;
+use global::app_state::AppIdentifierTag;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -122,18 +121,10 @@ impl AppSettings {
 
     pub fn load_settings(&self, cx: &mut Context<Self>) {
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+            let app_state = app_state();
 
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(SETTINGS_PATH)
-                .author(public_key)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                Ok(serde_json::from_str(&event.content).unwrap_or(Settings::default()))
+            if let Ok(content) = app_state.load_from_db(AppIdentifierTag::Setting).await {
+                Ok(serde_json::from_str(&content).unwrap_or(Settings::default()))
             } else {
                 Err(anyhow!("Not found"))
             }
@@ -153,23 +144,15 @@ impl AppSettings {
 
     pub fn set_settings(&self, cx: &mut Context<Self>) {
         if let Ok(content) = serde_json::to_string(&self.setting_values) {
-            let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-                let client = nostr_client();
-                let signer = client.signer().await?;
-                let public_key = signer.get_public_key().await?;
+            cx.background_spawn(async move {
+                let app_state = app_state();
 
-                let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                    .tag(settings_identifier().to_owned())
-                    .build(public_key)
-                    .sign(&Keys::generate())
-                    .await?;
-
-                client.database().save_event(&event).await?;
-
-                Ok(())
-            });
-
-            task.detach();
+                app_state
+                    .write_to_db(&content, AppIdentifierTag::Setting)
+                    .await
+                    .ok()
+            })
+            .detach();
         }
     }
 

@@ -6,15 +6,14 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
-use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
+use global::app_state::{AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use global::constants::{
     ACCOUNT_PATH, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use global::identiers::account_identifier;
-use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
+use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem, Context,
@@ -27,7 +26,6 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
-use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
@@ -40,7 +38,7 @@ use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable};
 
 use crate::actions::{DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
@@ -64,28 +62,27 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
 }
 
 pub struct ChatSpace {
-    // App's Title Bar
+    /// App's Title Bar
     title_bar: Entity<TitleBar>,
 
-    // App's Dock Area
+    /// App's Dock Area
     dock: Entity<DockArea>,
 
-    // All authentication requests
+    /// All authentication requests
     auth_requests: Entity<HashMap<RelayUrl, AuthRequest>>,
 
-    // Local state to determine if the user has set up NIP-17 relays
+    /// Local state to determine if the user has set up NIP-17 relays
     nip17_relays: bool,
 
-    // All subscriptions for observing the app state
+    /// All subscriptions for observing the app state
     _subscriptions: SmallVec<[Subscription; 3]>,
 
-    // All long running tasks
+    /// All long running tasks
     _tasks: SmallVec<[Task<()>; 6]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let client_keys = ClientKeys::global(cx);
         let registry = Registry::global(cx);
         let status = registry.read(cx).unwrapping_status.clone();
 
@@ -100,17 +97,6 @@ impl ChatSpace {
             // Automatically sync theme with system appearance
             window.observe_window_appearance(|window, cx| {
                 Theme::sync_system_appearance(Some(window), cx);
-            }),
-        );
-
-        subscriptions.push(
-            // Observe the client keys and show an alert modal if they fail to initialize
-            cx.observe_in(&client_keys, window, |this, keys, window, cx| {
-                if !keys.read(cx).has_keys() {
-                    this.render_client_keys_modal(window, cx);
-                } else {
-                    this.load_local_account(window, cx);
-                }
             }),
         );
 
@@ -143,6 +129,23 @@ impl ChatSpace {
             // Subscribe to open chat room requests
             cx.subscribe_in(&registry, window, move |this, _e, event, window, cx| {
                 this.process_registry_event(event, window, cx);
+            }),
+        );
+
+        tasks.push(
+            // Get stored account
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok((public_key, secret)) = Self::get_accounts().await {
+                    this.update_in(cx, |this, window, cx| {
+                        this.set_account_layout(public_key, secret, window, cx);
+                    })
+                    .ok();
+                } else {
+                    this.update_in(cx, |this, window, cx| {
+                        this.set_onboarding_layout(window, cx);
+                    })
+                    .ok();
+                }
             }),
         );
 
@@ -196,6 +199,20 @@ impl ChatSpace {
             nip17_relays: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
+        }
+    }
+
+    async fn get_accounts() -> Result<(PublicKey, String), Error> {
+        let client = nostr_client();
+        let filter = Filter::new()
+            .kind(Kind::ApplicationSpecificData)
+            .identifier(ACCOUNT_PATH)
+            .limit(1);
+
+        if let Some(event) = client.database().query(filter).await?.first_owned() {
+            Ok((event.pubkey, event.content))
+        } else {
+            Err(anyhow!("Not found"))
         }
     }
 
@@ -1016,12 +1033,12 @@ impl ChatSpace {
 
     fn set_account_layout(
         &mut self,
+        public_key: PublicKey,
         secret: String,
-        profile: Profile,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(profile, secret, window, cx));
+        let panel = Arc::new(account::init(public_key, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
@@ -1055,44 +1072,6 @@ impl ChatSpace {
     fn set_required_relays(&mut self, cx: &mut Context<Self>) {
         self.nip17_relays = false;
         cx.notify();
-    }
-
-    fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task = cx.background_spawn(async move {
-            let client = nostr_client();
-
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_PATH)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                let metadata = client
-                    .database()
-                    .metadata(event.pubkey)
-                    .await?
-                    .unwrap_or_default();
-
-                Ok((event.content, Profile::new(event.pubkey, metadata)))
-            } else {
-                Err(anyhow!("Empty"))
-            }
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok((secret, profile)) = task.await {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_account_layout(secret, profile, window, cx);
-                })
-                .ok();
-            } else {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_onboarding_layout(window, cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
     }
 
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
@@ -1229,53 +1208,6 @@ impl ChatSpace {
         });
     }
 
-    fn render_client_keys_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .button_props(
-                    ModalButtonProps::default()
-                        .cancel_text(t!("startup.create_new_keys"))
-                        .ok_text(t!("common.allow")),
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .h_40()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .items_center()
-                        .justify_center()
-                        .text_center()
-                        .text_sm()
-                        .child(
-                            div()
-                                .font_semibold()
-                                .text_color(cx.theme().text_muted)
-                                .child(shared_t!("startup.client_keys_warning")),
-                        )
-                        .child(shared_t!("startup.client_keys_desc")),
-                )
-                .on_cancel(|_, _window, cx| {
-                    ClientKeys::global(cx).update(cx, |this, cx| {
-                        this.new_keys(cx);
-                    });
-                    // true: Close modal
-                    true
-                })
-                .on_ok(|_, window, cx| {
-                    ClientKeys::global(cx).update(cx, |this, cx| {
-                        this.load(window, cx);
-                    });
-                    // true: Close modal
-                    true
-                })
-        });
-    }
-
     fn render_titlebar_left_side(
         &mut self,
         _window: &mut Window,
@@ -1387,61 +1319,6 @@ impl ChatSpace {
                             .menu(t!("user.sign_out"), Box::new(Logout))
                     }),
             )
-    }
-
-    pub(crate) fn proxy_signer(window: &mut Window, cx: &mut App) {
-        let Some(Some(root)) = window.root::<Root>() else {
-            return;
-        };
-
-        let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() else {
-            return;
-        };
-
-        chatspace.update(cx, |this, cx| {
-            let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
-            let url = proxy.url();
-
-            this._tasks.push(cx.background_spawn(async move {
-                let client = nostr_client();
-                let app_state = app_state();
-
-                if proxy.start().await.is_ok() {
-                    webbrowser::open(&url).ok();
-
-                    loop {
-                        if proxy.is_session_active() {
-                            // Save the signer to disk for further logins
-                            if let Ok(public_key) = proxy.get_public_key().await {
-                                let keys = Keys::generate();
-                                let tags = vec![account_identifier().to_owned()];
-                                let kind = Kind::ApplicationSpecificData;
-
-                                let builder = EventBuilder::new(kind, "extension")
-                                    .tags(tags)
-                                    .build(public_key)
-                                    .sign(&keys)
-                                    .await;
-
-                                if let Ok(event) = builder {
-                                    if let Err(e) = client.database().save_event(&event).await {
-                                        log::error!("Failed to save event: {e}");
-                                    };
-                                }
-                            }
-
-                            // Set the client's signer with current proxy signer
-                            client.set_signer(proxy.clone()).await;
-
-                            break;
-                        } else {
-                            app_state.signal.send(SignalKind::ProxyDown).await;
-                        }
-                        smol::Timer::after(Duration::from_secs(1)).await;
-                    }
-                }
-            }));
-        });
     }
 
     fn get_all_panel_ids(&self, cx: &App) -> Option<Vec<u64>> {
