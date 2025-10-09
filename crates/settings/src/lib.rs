@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use global::app_state;
-use global::app_state::AppIdentifierTag;
+use global::state::AppIdentifierTag;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};

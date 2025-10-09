@@ -5,11 +5,11 @@ use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use paths::nostr_file;
 
-use crate::app_state::AppState;
+use crate::state::AppState;
 
-pub mod app_state;
 pub mod constants;
 pub mod paths;
+pub mod state;
 
 static APP_STATE: OnceLock<AppState> = OnceLock::new();
 static NOSTR_CLIENT: OnceLock<Client> = OnceLock::new();

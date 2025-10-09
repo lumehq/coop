@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{RenderedTimestamp, TextUtils};
-use global::app_state::UnwrappingStatus;
 use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
+use global::state::UnwrappingStatus;
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{

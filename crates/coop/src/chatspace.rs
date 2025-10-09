@@ -8,11 +8,11 @@ use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
-use global::app_state::{AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use global::constants::{
     ACCOUNT_PATH, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
+use global::state::{AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -107,21 +107,15 @@ impl ChatSpace {
                 let status = status.read(cx);
                 let all_panels = this.get_all_panel_ids(cx);
 
-                match status {
-                    UnwrappingStatus::Processing => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.refresh_rooms(all_panels, cx);
-                        });
-                    }
-                    UnwrappingStatus::Complete => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.refresh_rooms(all_panels, cx);
-                        });
-                    }
-                    _ => {}
-                };
+                if matches!(
+                    status,
+                    UnwrappingStatus::Processing | UnwrappingStatus::Complete
+                ) {
+                    registry.update(cx, |this, cx| {
+                        this.load_rooms(window, cx);
+                        this.refresh_rooms(all_panels, cx);
+                    });
+                }
             }),
         );
 

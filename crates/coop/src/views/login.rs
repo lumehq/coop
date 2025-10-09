@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use global::app_state::AppIdentifierTag;
 use global::constants::{ACCOUNT_PATH, BUNKER_TIMEOUT};
+use global::state::AppIdentifierTag;
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{

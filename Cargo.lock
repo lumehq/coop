@@ -1303,7 +1303,6 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
- "signer_proxy",
  "smallvec",
  "smol",
  "theme",
@@ -2861,12 +2860,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
-name = "httpdate"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
-
-[[package]]
 name = "hyper"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2880,7 +2873,6 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
- "httpdate",
  "itoa",
  "pin-project-lite",
  "pin-utils",
@@ -5926,28 +5918,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "signer_proxy"
-version = "0.2.11"
-dependencies = [
- "anyhow",
- "atomic-destructor",
- "bytes",
- "futures",
- "global",
- "http-body-util",
- "hyper",
- "hyper-util",
- "log",
- "nostr",
- "oneshot",
- "serde",
- "serde_json",
- "smallvec",
- "smol",
- "uuid",
 ]
 
 [[package]]

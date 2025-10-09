@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::display::TextUtils;
-use global::app_state::AppIdentifierTag;
 use global::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use global::state::AppIdentifierTag;
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{

@@ -170,8 +170,6 @@ impl From<AppIdentifierTag> for String {
 
 #[derive(Debug, Clone, Default)]
 pub struct NostrDevice {
-    /// Local keys used for communication with Nostr Connect
-    bunker: Option<Keys>,
     /// Local keys used for communication between devices
     client: Option<Arc<dyn NostrSigner>>,
     /// A signer used for decrypting messages.
@@ -187,10 +185,6 @@ impl NostrDevice {
 
     pub fn client(&self) -> Option<&Arc<dyn NostrSigner>> {
         self.client.as_ref()
-    }
-
-    pub fn bunker(&self) -> Option<&Keys> {
-        self.bunker.as_ref()
     }
 }
 

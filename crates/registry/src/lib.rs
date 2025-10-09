@@ -5,7 +5,7 @@ use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::app_state::UnwrappingStatus;
+use global::state::UnwrappingStatus;
 use global::nostr_client;
 use gpui::{
     App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
@@ -85,7 +85,7 @@ impl Registry {
         tasks.push(
             // Load all user profiles
             cx.spawn(async move |this, cx| {
-                if let Ok(profiles) = Self::get_persons(cx).await {
+                if let Ok(profiles) = Self::load_all_persons(cx).await {
                     this.update(cx, |this, cx| {
                         this.set_persons(profiles, cx);
                     })
@@ -105,7 +105,7 @@ impl Registry {
     }
 
     /// Create a async task to load all user profiles
-    fn get_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
+    fn load_all_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
         cx.background_spawn(async move {
             let client = nostr_client();
             let filter = Filter::new().kind(Kind::Metadata).limit(200);
@@ -131,6 +131,11 @@ impl Registry {
     pub fn set_current_user(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
         self.current_user = Some(public_key);
         cx.notify();
+    }
+
+    /// Returns true if the user has a password set
+    pub fn has_password(&self, cx: &App) -> bool {
+        self.password.read(cx).is_some()
     }
 
     /// Get the password for decryption

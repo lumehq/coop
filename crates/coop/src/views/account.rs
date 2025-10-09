@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use anyhow::Error;
 use common::display::RenderedProfile;
-use global::app_state::{AppIdentifierTag, SignalKind};
 use global::constants::{ACCOUNT_PATH, BUNKER_TIMEOUT};
+use global::state::{AppIdentifierTag, SignalKind};
 use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
