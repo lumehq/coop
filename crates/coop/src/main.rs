@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use app_state::constants::{APP_ID, APP_NAME};
+use app_state::{app_state, nostr_client};
 use assets::Assets;
-use global::constants::{APP_ID, APP_NAME};
-use global::{app_state, nostr_client};
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,

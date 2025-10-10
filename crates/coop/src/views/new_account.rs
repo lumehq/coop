@@ -1,7 +1,7 @@
 use anyhow::anyhow;
+use app_state::constants::{ACCOUNT_IDENTIFIER, NIP17_RELAYS, NIP65_RELAYS};
+use app_state::nostr_client;
 use common::nip96::nip96_upload;
-use global::constants::{ACCOUNT_IDENTIFIER, NIP17_RELAYS, NIP65_RELAYS};
-use global::nostr_client;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
     EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,

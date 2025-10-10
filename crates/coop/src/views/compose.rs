@@ -2,10 +2,10 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use app_state::constants::BOOTSTRAP_RELAYS;
+use app_state::{app_state, nostr_client};
 use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
-use global::constants::BOOTSTRAP_RELAYS;
-use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,

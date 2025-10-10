@@ -1,8 +1,8 @@
 use std::time::Duration;
 
+use app_state::nostr_client;
 use common::display::RenderedProfile;
 use common::nip05::nip05_verify;
-use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, App, AppContext, ClipboardItem, Context, Entity, IntoElement,

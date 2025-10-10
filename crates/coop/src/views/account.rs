@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use anyhow::Error;
+use app_state::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use app_state::state::SignalKind;
+use app_state::{app_state, nostr_client};
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
-use global::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use global::{app_state, nostr_client, SignalKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,

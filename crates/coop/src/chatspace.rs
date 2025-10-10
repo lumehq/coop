@@ -5,15 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
+use app_state::{app_state, nostr_client};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
-use global::constants::{
-    ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
-};
-use global::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem, Context,
@@ -139,23 +137,43 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Subscribe to open chat room requests
-            cx.subscribe_in(&registry, window, move |this, _, event, window, cx| {
-                this.process_registry_event(event, window, cx);
+            // Handle registry events
+            cx.subscribe_in(&registry, window, move |this, _, ev, window, cx| {
+                match ev {
+                    RegistryEvent::Open(room) => {
+                        if let Some(room) = room.upgrade() {
+                            this.dock.update(cx, |this, cx| {
+                                let panel = chat::init(room, window, cx);
+                                this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
+                            });
+                        }
+                    }
+                    RegistryEvent::Close(..) => {
+                        this.dock.update(cx, |this, cx| {
+                            this.focus_tab_panel(window, cx);
+
+                            cx.defer_in(window, |_, window, cx| {
+                                window.dispatch_action(Box::new(ClosePanel), cx);
+                                window.close_all_modals(cx);
+                            });
+                        });
+                    }
+                    _ => {}
+                };
             }),
         );
 
         tasks.push(
-            // Connect to the bootstrap relays
-            // Then handle nostr events in the background
+            // Handle nostr events in the background
             cx.background_spawn(async move {
-                Self::connect()
-                    .await
-                    .expect("Failed connect the bootstrap relays. Please restart the application.");
+                app_state().handle_notifications().await.ok();
+            }),
+        );
 
-                Self::process_nostr_events()
-                    .await
-                    .expect("Failed to handle nostr events. Please restart the application.");
+        tasks.push(
+            // Listen all metadata requests then batch them into single subscription
+            cx.background_spawn(async move {
+                app_state().handle_metadata_batching().await;
             }),
         );
 
@@ -175,16 +193,9 @@ impl ChatSpace {
         );
 
         tasks.push(
-            // Listen all metadata requests then batch them into single subscription
-            cx.background_spawn(async move {
-                Self::process_batching_metadata().await;
-            }),
-        );
-
-        tasks.push(
             // Continuously handle signals from the Nostr channel
             cx.spawn_in(window, async move |this, cx| {
-                Self::process_nostr_signals(this, cx).await
+                Self::handle_signals(this, cx).await
             }),
         );
 
@@ -198,100 +209,26 @@ impl ChatSpace {
         }
     }
 
-    async fn connect() -> Result<(), Error> {
-        let client = nostr_client();
-
-        for relay in BOOTSTRAP_RELAYS.into_iter() {
-            client.add_relay(relay).await?;
-        }
-
-        log::info!("Connected to bootstrap relays");
-
-        for relay in SEARCH_RELAYS.into_iter() {
-            client.add_relay(relay).await?;
-        }
-
-        log::info!("Connected to search relays");
-
-        // Establish connection to relays
-        client.connect().await;
-
-        Ok(())
-    }
-
     async fn observe_signer() {
         let client = nostr_client();
         let app_state = app_state();
-        let stream_timeout = Duration::from_secs(5);
-        let loop_duration = Duration::from_secs(1);
+        let loop_duration = Duration::from_millis(800);
 
         loop {
-            let Ok(signer) = client.signer().await else {
-                smol::Timer::after(loop_duration).await;
-                continue;
-            };
+            if let Ok(signer) = client.signer().await {
+                if let Ok(pk) = signer.get_public_key().await {
+                    // Notify the app that the signer has been set
+                    app_state.signal.send(SignalKind::SignerSet(pk)).await;
 
-            let Ok(public_key) = signer.get_public_key().await else {
-                smol::Timer::after(loop_duration).await;
-                continue;
-            };
+                    // Get user's gossip relays
+                    app_state.gossip.write().await.get_nip65(pk).await.ok();
 
-            // Notify the app that the signer has been set.
-            app_state
-                .signal
-                .send(SignalKind::SignerSet(public_key))
-                .await;
-
-            // Subscribe to the NIP-65 relays for the public key.
-            let filter = Filter::new()
-                .kind(Kind::RelayList)
-                .author(public_key)
-                .limit(1);
-
-            let mut nip65_found = false;
-
-            match client
-                .stream_events_from(BOOTSTRAP_RELAYS, filter, stream_timeout)
-                .await
-            {
-                Ok(mut stream) => {
-                    if stream.next().await.is_some() {
-                        nip65_found = true;
-                    } else {
-                        // Timeout
-                        app_state.signal.send(SignalKind::RelaysNotFound).await;
-                    }
+                    // Exit the current loop
+                    break;
                 }
-                Err(e) => {
-                    log::error!("Error fetching NIP-65 Relay: {e:?}");
-                    app_state.signal.send(SignalKind::RelaysNotFound).await;
-                }
-            };
-
-            if nip65_found {
-                // Subscribe to the NIP-17 relays for the public key.
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(public_key)
-                    .limit(1);
-
-                match client.stream_events(filter, stream_timeout).await {
-                    Ok(mut stream) => {
-                        if stream.next().await.is_some() {
-                            break;
-                        } else {
-                            // Timeout
-                            app_state.signal.send(SignalKind::RelaysNotFound).await;
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Error fetching NIP-17 Relay: {e:?}");
-                        app_state.signal.send(SignalKind::RelaysNotFound).await;
-                    }
-                };
             }
 
-            break;
+            smol::Timer::after(loop_duration).await;
         }
     }
 
@@ -337,189 +274,7 @@ impl ChatSpace {
         }
     }
 
-    async fn process_batching_metadata() {
-        let app_state = app_state();
-        let timeout = Duration::from_millis(METADATA_BATCH_TIMEOUT);
-        let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
-        let mut batch: HashSet<PublicKey> = HashSet::new();
-
-        /// Internal events for the metadata batching system
-        enum BatchEvent {
-            PublicKey(PublicKey),
-            Timeout,
-            Closed,
-        }
-
-        loop {
-            let futs = smol::future::or(
-                async move {
-                    if let Ok(public_key) = app_state.ingester.receiver().recv_async().await {
-                        BatchEvent::PublicKey(public_key)
-                    } else {
-                        BatchEvent::Closed
-                    }
-                },
-                async move {
-                    smol::Timer::after(timeout).await;
-                    BatchEvent::Timeout
-                },
-            );
-
-            match futs.await {
-                BatchEvent::PublicKey(public_key) => {
-                    // Prevent duplicate keys from being processed
-                    if processed_pubkeys.insert(public_key) {
-                        batch.insert(public_key);
-                    }
-
-                    // Process the batch if it's full
-                    if batch.len() >= METADATA_BATCH_LIMIT {
-                        Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
-                    }
-                }
-                BatchEvent::Timeout => {
-                    Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
-                }
-                BatchEvent::Closed => {
-                    Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
-                    break;
-                }
-            }
-        }
-    }
-
-    async fn process_nostr_events() -> Result<(), Error> {
-        let client = nostr_client();
-        let app_state = app_state();
-
-        let mut processed_events: HashSet<EventId> = HashSet::new();
-        let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
-        let mut notifications = client.notifications();
-
-        while let Ok(notification) = notifications.recv().await {
-            let RelayPoolNotification::Message { message, relay_url } = notification else {
-                continue;
-            };
-
-            match message {
-                RelayMessage::Event { event, .. } => {
-                    // Keep track of which relays have seen this event
-                    app_state
-                        .seen_on_relays
-                        .write()
-                        .await
-                        .entry(event.id)
-                        .or_insert_with(HashSet::new)
-                        .insert(relay_url);
-
-                    // Skip events that have already been processed
-                    if !processed_events.insert(event.id) {
-                        continue;
-                    }
-
-                    match event.kind {
-                        Kind::RelayList => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
-                                // Fetch user's metadata event
-                                Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
-
-                                // Fetch user's contact list event
-                                Self::fetch_single_event(Kind::ContactList, event.pubkey).await;
-                            }
-                        }
-                        Kind::InboxRelays => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays = nip17::extract_relay_list(&event).collect_vec();
-
-                                if !relays.is_empty() {
-                                    for relay in relays.clone().into_iter() {
-                                        if client.add_relay(relay).await.is_err() {
-                                            let notice = Notice::RelayFailed(relay.clone());
-                                            app_state.signal.send(SignalKind::Notice(notice)).await;
-                                        }
-                                        if client.connect_relay(relay).await.is_err() {
-                                            let notice = Notice::RelayFailed(relay.clone());
-                                            app_state.signal.send(SignalKind::Notice(notice)).await;
-                                        }
-                                    }
-
-                                    // Subscribe to gift wrap events only in the current user's NIP-17 relays
-                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
-                                } else {
-                                    app_state.signal.send(SignalKind::RelaysNotFound).await;
-                                }
-                            }
-                        }
-                        Kind::ContactList => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
-                                let public_keys = event.tags.public_keys().copied().collect_vec();
-                                let kinds = vec![Kind::Metadata, Kind::ContactList];
-                                let limit = public_keys.len() * kinds.len();
-                                let filter =
-                                    Filter::new().limit(limit).authors(public_keys).kinds(kinds);
-
-                                client
-                                    .subscribe_to(
-                                        BOOTSTRAP_RELAYS,
-                                        filter,
-                                        app_state.auto_close_opts,
-                                    )
-                                    .await
-                                    .ok();
-                            }
-                        }
-                        Kind::Metadata => {
-                            let metadata = Metadata::from_json(&event.content).unwrap_or_default();
-                            let profile = Profile::new(event.pubkey, metadata);
-
-                            app_state.signal.send(SignalKind::NewProfile(profile)).await;
-                        }
-                        Kind::GiftWrap => {
-                            Self::unwrap_gift_wrap(&event).await;
-                        }
-                        _ => {}
-                    }
-                }
-                RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if *subscription_id == app_state.gift_wrap_sub_id {
-                        let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
-                        app_state.signal.send(signal).await;
-                    }
-                }
-                RelayMessage::Auth { challenge } => {
-                    if challenges.insert(challenge.clone()) {
-                        let req = AuthRequest::new(challenge, relay_url);
-                        // Send a signal to the ingester to handle the auth request
-                        app_state.signal.send(SignalKind::Auth(req)).await;
-                    }
-                }
-                RelayMessage::Ok {
-                    event_id, message, ..
-                } => {
-                    // Keep track of events sent by Coop
-                    app_state.sent_ids.write().await.insert(event_id);
-
-                    // Keep track of events that need to be resent
-                    match MachineReadablePrefix::parse(&message) {
-                        Some(MachineReadablePrefix::AuthRequired) => {
-                            app_state
-                                .resend_queue
-                                .write()
-                                .await
-                                .insert(event_id, relay_url);
-                        }
-                        Some(_) => {}
-                        None => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn process_nostr_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
+    async fn handle_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
         let app_state = app_state();
         let mut is_open_proxy_modal = false;
 
@@ -604,190 +359,22 @@ impl ChatSpace {
                             this.event_to_message(gift_wrap_id, event, window, cx);
                         });
                     }
-                    SignalKind::RelaysNotFound => {
+                    SignalKind::GossipRelaysNotFound => {
                         view.update(cx, |this, cx| {
                             this.set_required_relays(cx);
                         })
                         .ok();
                     }
-                    SignalKind::Notice(msg) => {
-                        window.push_notification(msg.as_str(), cx);
+                    SignalKind::MessagingRelaysNotFound => {
+                        view.update(cx, |this, cx| {
+                            this.set_required_relays(cx);
+                        })
+                        .ok();
                     }
                 };
             })
             .ok();
         }
-    }
-
-    /// Checks if an event is belong to the current user
-    async fn is_self_event(event: &Event) -> Result<bool, Error> {
-        let client = nostr_client();
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        Ok(public_key == event.pubkey)
-    }
-
-    /// Fetches a single event by kind and public key
-    pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
-        let client = nostr_client();
-        let app_state = app_state();
-        let filter = Filter::new().kind(kind).author(public_key).limit(1);
-
-        if let Err(e) = client.subscribe(filter, app_state.auto_close_opts).await {
-            log::info!("Failed to subscribe: {e}");
-        }
-    }
-
-    /// Fetches gift wrap events for a given public key and relays
-    pub async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
-        let client = nostr_client();
-        let id = app_state().gift_wrap_sub_id.clone();
-        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-        if client
-            .subscribe_with_id_to(relays.clone(), id, filter, None)
-            .await
-            .is_ok()
-        {
-            log::info!("Subscribed to messages in: {relays:?}");
-        }
-    }
-
-    /// Fetches metadata for a list of public keys
-    async fn fetch_metadata_for_pubkeys(public_keys: HashSet<PublicKey>) {
-        if public_keys.is_empty() {
-            return;
-        }
-
-        let client = nostr_client();
-        let app_state = app_state();
-
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
-        let limit = public_keys.len() * kinds.len() + 20;
-
-        // A filter to fetch metadata
-        let filter = Filter::new().authors(public_keys).kinds(kinds).limit(limit);
-
-        client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
-            .await
-            .ok();
-    }
-
-    /// Stores an unwrapped event in local database with reference to original
-    async fn set_unwrapped_event(gift_wrap: EventId, unwrapped: &Event) -> Result<(), Error> {
-        let client = nostr_client();
-
-        // Save unwrapped event
-        client.database().save_event(unwrapped).await?;
-
-        // Create a reference event pointing to the unwrapped event
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, "")
-            .tags(vec![Tag::identifier(gift_wrap), Tag::event(unwrapped.id)])
-            .sign(&Keys::generate())
-            .await?;
-
-        // Save reference event
-        client.database().save_event(&event).await?;
-
-        Ok(())
-    }
-
-    /// Retrieves a previously unwrapped event from local database
-    async fn get_unwrapped_event(root: EventId) -> Result<Event, Error> {
-        let client = nostr_client();
-        let filter = Filter::new()
-            .kind(Kind::ApplicationSpecificData)
-            .identifier(root)
-            .limit(1);
-
-        if let Some(event) = client.database().query(filter).await?.first_owned() {
-            let target_id = event.tags.event_ids().collect_vec()[0];
-
-            if let Some(event) = client.database().event_by_id(target_id).await? {
-                Ok(event)
-            } else {
-                Err(anyhow!("Event not found."))
-            }
-        } else {
-            Err(anyhow!("Event is not cached yet."))
-        }
-    }
-
-    /// Unwraps a gift-wrapped event and processes its contents.
-    async fn unwrap_gift_wrap(target: &Event) {
-        let client = nostr_client();
-        let app_state = app_state();
-        let mut message: Option<Event> = None;
-
-        if let Ok(event) = Self::get_unwrapped_event(target.id).await {
-            message = Some(event);
-        } else if let Ok(unwrapped) = client.unwrap_gift_wrap(target).await {
-            // Sign the unwrapped event with a RANDOM KEYS
-            if let Ok(event) = unwrapped.rumor.sign_with_keys(&Keys::generate()) {
-                // Save this event to the database for future use.
-                if let Err(e) = Self::set_unwrapped_event(target.id, &event).await {
-                    log::warn!("Failed to cache unwrapped event: {e}")
-                }
-
-                message = Some(event);
-            }
-        }
-
-        if let Some(event) = message {
-            // Send all pubkeys to the metadata batch to sync data
-            for public_key in event.all_pubkeys() {
-                app_state.ingester.send(public_key).await;
-            }
-
-            match event.created_at >= app_state.init_at {
-                // New message: send a signal to notify the UI
-                true => {
-                    app_state
-                        .signal
-                        .send(SignalKind::NewMessage((target.id, event)))
-                        .await;
-                }
-                // Old message: Coop is probably processing the user's messages during initial load
-                false => {
-                    app_state
-                        .gift_wrap_processing
-                        .store(true, Ordering::Release);
-                }
-            }
-        }
-    }
-
-    fn process_registry_event(
-        &mut self,
-        event: &RegistryEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            RegistryEvent::Open(room) => {
-                if let Some(room) = room.upgrade() {
-                    self.dock.update(cx, |this, cx| {
-                        let panel = chat::init(room, window, cx);
-                        this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
-                    });
-                } else {
-                    window.push_notification(t!("common.room_error"), cx);
-                }
-            }
-            RegistryEvent::Close(..) => {
-                self.dock.update(cx, |this, cx| {
-                    this.focus_tab_panel(window, cx);
-
-                    cx.defer_in(window, |_, window, cx| {
-                        window.dispatch_action(Box::new(ClosePanel), cx);
-                        window.close_all_modals(cx);
-                    });
-                });
-            }
-            _ => {}
-        };
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
@@ -835,16 +422,17 @@ impl ChatSpace {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut queue = app_state.resend_queue.write().await;
+                            let mut event_tracker = app_state.event_tracker.write().await;
 
-                            let ids: Vec<EventId> = queue
+                            let ids: Vec<EventId> = event_tracker
+                                .resend_queue
                                 .iter()
                                 .filter(|(_, url)| relay_url == *url)
                                 .map(|(id, _)| *id)
                                 .collect();
 
                             for id in ids.into_iter() {
-                                if let Some(relay_url) = queue.remove(&id) {
+                                if let Some(relay_url) = event_tracker.resend_queue.remove(&id) {
                                     if let Some(event) = client.database().event_by_id(&id).await? {
                                         let event_id = relay.send_event(&event).await?;
 
@@ -854,8 +442,8 @@ impl ChatSpace {
                                             success: HashSet::from([relay_url]),
                                         };
 
-                                        app_state.sent_ids.write().await.insert(event_id);
-                                        app_state.resent_ids.write().await.push(output);
+                                        event_tracker.sent_ids.insert(event_id);
+                                        event_tracker.resent_ids.push(output);
                                     }
                                 }
                             }

@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use global::constants::NIP17_RELAYS;
-use global::{app_state, nostr_client};
+use app_state::constants::NIP17_RELAYS;
+use app_state::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, Context, Entity, InteractiveElement, IntoElement,

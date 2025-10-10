@@ -3,10 +3,11 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use app_state::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
+use app_state::state::UnwrappingStatus;
+use app_state::{app_state, nostr_client};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{RenderedTimestamp, TextUtils};
-use global::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
-use global::{app_state, nostr_client, UnwrappingStatus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
