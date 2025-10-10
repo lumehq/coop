@@ -375,14 +375,28 @@ impl ChatSpace {
 
                     // Process the batch if it's full
                     if batch.len() >= METADATA_BATCH_LIMIT {
-                        Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
+                        let gossip = app_state.gossip.read().await;
+                        gossip
+                            .metadata_subscribes(std::mem::take(&mut batch))
+                            .await
+                            .ok();
                     }
                 }
                 BatchEvent::Timeout => {
-                    Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
+                    let gossip = app_state.gossip.read().await;
+                    gossip
+                        .metadata_subscribes(std::mem::take(&mut batch))
+                        .await
+                        .ok();
                 }
                 BatchEvent::Closed => {
-                    Self::fetch_metadata_for_pubkeys(std::mem::take(&mut batch)).await;
+                    let gossip = app_state.gossip.read().await;
+                    gossip
+                        .metadata_subscribes(std::mem::take(&mut batch))
+                        .await
+                        .ok();
+
+                    // Exit the current loop
                     break;
                 }
             }
@@ -405,14 +419,14 @@ impl ChatSpace {
             match message {
                 RelayMessage::Event { event, .. } => {
                     // Keep track of which relays have seen this event
-                    app_state
-                        .event_tracker
-                        .write()
-                        .await
-                        .seen_on_relays
-                        .entry(event.id)
-                        .or_insert_with(HashSet::new)
-                        .insert(relay_url);
+                    {
+                        let mut event_tracker = app_state.event_tracker.write().await;
+                        event_tracker
+                            .seen_on_relays
+                            .entry(event.id)
+                            .or_default()
+                            .insert(relay_url);
+                    }
 
                     // Skip events that have already been processed
                     if !processed_events.insert(event.id) {
@@ -421,47 +435,45 @@ impl ChatSpace {
 
                     match event.kind {
                         Kind::RelayList => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
+                            // Update NIP-65 relays for event's public key
+                            {
+                                let mut gossip = app_state.gossip.write().await;
+                                gossip.insert(&event);
+                            }
+
+                            if let Ok(true) = Self::from_current_signer(&event).await {
+                                let gossip = app_state.gossip.read().await;
+
                                 // Fetch user's metadata event
-                                Self::fetch_single_event(Kind::Metadata, event.pubkey).await;
+                                gossip.subscribe(event.pubkey, Kind::Metadata).await.ok();
 
                                 // Fetch user's contact list event
-                                Self::fetch_single_event(Kind::ContactList, event.pubkey).await;
+                                gossip.subscribe(event.pubkey, Kind::ContactList).await.ok();
                             }
                         }
                         Kind::InboxRelays => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
-                                let relays = nip17::extract_relay_list(&event).collect_vec();
+                            // Update NIP-17 relays for event's public key
+                            {
+                                let mut gossip = app_state.gossip.write().await;
+                                gossip.insert(&event);
+                            }
 
-                                if !relays.is_empty() {
-                                    for relay in relays.clone().into_iter() {
-                                        client.add_relay(relay).await.ok();
-                                        client.connect_relay(relay).await.ok();
-                                    }
+                            if let Ok(true) = Self::from_current_signer(&event).await {
+                                let gossip = app_state.gossip.read().await;
 
-                                    // Subscribe to gift wrap events only in the current user's NIP-17 relays
-                                    Self::fetch_gift_wrap(relays, event.pubkey).await;
-                                } else {
+                                if let Err(e) = gossip.subscribe_to_inbox(event.pubkey).await {
+                                    log::error!("Failed to subscribe to inbox: {e}");
                                     app_state.signal.send(SignalKind::RelaysNotFound).await;
                                 }
                             }
                         }
                         Kind::ContactList => {
-                            if let Ok(true) = Self::is_self_event(&event).await {
-                                let public_keys = event.tags.public_keys().copied().collect_vec();
-                                let kinds = vec![Kind::Metadata, Kind::ContactList];
-                                let limit = public_keys.len() * kinds.len();
-                                let filter =
-                                    Filter::new().limit(limit).authors(public_keys).kinds(kinds);
+                            if let Ok(true) = Self::from_current_signer(&event).await {
+                                let gossip = app_state.gossip.read().await;
+                                let public_keys: HashSet<PublicKey> =
+                                    event.tags.public_keys().copied().collect();
 
-                                client
-                                    .subscribe_to(
-                                        BOOTSTRAP_RELAYS,
-                                        filter,
-                                        app_state.auto_close_opts,
-                                    )
-                                    .await
-                                    .ok();
+                                gossip.metadata_subscribes(public_keys).await.ok();
                             }
                         }
                         Kind::Metadata => {
@@ -619,59 +631,12 @@ impl ChatSpace {
     }
 
     /// Checks if an event is belong to the current user
-    async fn is_self_event(event: &Event) -> Result<bool, Error> {
+    async fn from_current_signer(event: &Event) -> Result<bool, Error> {
         let client = nostr_client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
         Ok(public_key == event.pubkey)
-    }
-
-    /// Fetches a single event by kind and public key
-    pub async fn fetch_single_event(kind: Kind, public_key: PublicKey) {
-        let client = nostr_client();
-        let app_state = app_state();
-        let filter = Filter::new().kind(kind).author(public_key).limit(1);
-
-        if let Err(e) = client.subscribe(filter, app_state.auto_close_opts).await {
-            log::info!("Failed to subscribe: {e}");
-        }
-    }
-
-    /// Fetches gift wrap events for a given public key and relays
-    pub async fn fetch_gift_wrap(relays: Vec<&RelayUrl>, public_key: PublicKey) {
-        let client = nostr_client();
-        let id = app_state().gift_wrap_sub_id.clone();
-        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-        if client
-            .subscribe_with_id_to(relays.clone(), id, filter, None)
-            .await
-            .is_ok()
-        {
-            log::info!("Subscribed to messages in: {relays:?}");
-        }
-    }
-
-    /// Fetches metadata for a list of public keys
-    async fn fetch_metadata_for_pubkeys(public_keys: HashSet<PublicKey>) {
-        if public_keys.is_empty() {
-            return;
-        }
-
-        let client = nostr_client();
-        let app_state = app_state();
-
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
-        let limit = public_keys.len() * kinds.len() + 20;
-
-        // A filter to fetch metadata
-        let filter = Filter::new().authors(public_keys).kinds(kinds).limit(limit);
-
-        client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
-            .await
-            .ok();
     }
 
     /// Stores an unwrapped event in local database with reference to original
