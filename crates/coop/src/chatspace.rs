@@ -223,76 +223,23 @@ impl ChatSpace {
     async fn observe_signer() {
         let client = nostr_client();
         let app_state = app_state();
-        let stream_timeout = Duration::from_secs(5);
-        let loop_duration = Duration::from_secs(1);
+        let loop_duration = Duration::from_millis(800);
 
         loop {
-            let Ok(signer) = client.signer().await else {
-                smol::Timer::after(loop_duration).await;
-                continue;
-            };
+            if let Ok(signer) = client.signer().await {
+                if let Ok(pk) = signer.get_public_key().await {
+                    // Notify the app that the signer has been set
+                    app_state.signal.send(SignalKind::SignerSet(pk)).await;
 
-            let Ok(public_key) = signer.get_public_key().await else {
-                smol::Timer::after(loop_duration).await;
-                continue;
-            };
+                    // Get user's gossip relays
+                    app_state.gossip.write().await.get_nip65(pk).await.ok();
 
-            // Notify the app that the signer has been set.
-            app_state
-                .signal
-                .send(SignalKind::SignerSet(public_key))
-                .await;
-
-            // Subscribe to the NIP-65 relays for the public key.
-            let filter = Filter::new()
-                .kind(Kind::RelayList)
-                .author(public_key)
-                .limit(1);
-
-            let mut nip65_found = false;
-
-            match client
-                .stream_events_from(BOOTSTRAP_RELAYS, filter, stream_timeout)
-                .await
-            {
-                Ok(mut stream) => {
-                    if stream.next().await.is_some() {
-                        nip65_found = true;
-                    } else {
-                        // Timeout
-                        app_state.signal.send(SignalKind::RelaysNotFound).await;
-                    }
+                    // Exit the current loop
+                    break;
                 }
-                Err(e) => {
-                    log::error!("Error fetching NIP-65 Relay: {e:?}");
-                    app_state.signal.send(SignalKind::RelaysNotFound).await;
-                }
-            };
-
-            if nip65_found {
-                // Subscribe to the NIP-17 relays for the public key.
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(public_key)
-                    .limit(1);
-
-                match client.stream_events(filter, stream_timeout).await {
-                    Ok(mut stream) => {
-                        if stream.next().await.is_some() {
-                            break;
-                        } else {
-                            // Timeout
-                            app_state.signal.send(SignalKind::RelaysNotFound).await;
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Error fetching NIP-17 Relay: {e:?}");
-                        app_state.signal.send(SignalKind::RelaysNotFound).await;
-                    }
-                };
             }
 
-            break;
+            smol::Timer::after(loop_duration).await;
         }
     }
 
@@ -375,26 +322,17 @@ impl ChatSpace {
 
                     // Process the batch if it's full
                     if batch.len() >= METADATA_BATCH_LIMIT {
-                        let gossip = app_state.gossip.read().await;
-                        gossip
-                            .metadata_subscribes(std::mem::take(&mut batch))
-                            .await
-                            .ok();
+                        let mut gossip = app_state.gossip.write().await;
+                        gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
                     }
                 }
                 BatchEvent::Timeout => {
-                    let gossip = app_state.gossip.read().await;
-                    gossip
-                        .metadata_subscribes(std::mem::take(&mut batch))
-                        .await
-                        .ok();
+                    let mut gossip = app_state.gossip.write().await;
+                    gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
                 }
                 BatchEvent::Closed => {
-                    let gossip = app_state.gossip.read().await;
-                    gossip
-                        .metadata_subscribes(std::mem::take(&mut batch))
-                        .await
-                        .ok();
+                    let mut gossip = app_state.gossip.write().await;
+                    gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
 
                     // Exit the current loop
                     break;
@@ -435,45 +373,46 @@ impl ChatSpace {
 
                     match event.kind {
                         Kind::RelayList => {
+                            let mut gossip = app_state.gossip.write().await;
+
                             // Update NIP-65 relays for event's public key
-                            {
-                                let mut gossip = app_state.gossip.write().await;
-                                gossip.insert(&event);
-                            }
+                            gossip.insert(&event);
 
+                            // Get events if relay list belongs to current user
                             if let Ok(true) = Self::from_current_signer(&event).await {
-                                let gossip = app_state.gossip.read().await;
-
                                 // Fetch user's metadata event
                                 gossip.subscribe(event.pubkey, Kind::Metadata).await.ok();
 
                                 // Fetch user's contact list event
                                 gossip.subscribe(event.pubkey, Kind::ContactList).await.ok();
+
+                                // Fetch user's messaging relays event
+                                gossip.get_nip17(event.pubkey).await.ok();
                             }
                         }
                         Kind::InboxRelays => {
+                            let mut gossip = app_state.gossip.write().await;
+
                             // Update NIP-17 relays for event's public key
-                            {
-                                let mut gossip = app_state.gossip.write().await;
-                                gossip.insert(&event);
-                            }
+                            gossip.insert(&event);
 
+                            // Subscribe to gift wrap events if messaging relays belong to the current user
                             if let Ok(true) = Self::from_current_signer(&event).await {
-                                let gossip = app_state.gossip.read().await;
-
-                                if let Err(e) = gossip.subscribe_to_inbox(event.pubkey).await {
-                                    log::error!("Failed to subscribe to inbox: {e}");
-                                    app_state.signal.send(SignalKind::RelaysNotFound).await;
+                                if gossip.subscribe_to_inbox(event.pubkey).await.is_err() {
+                                    app_state
+                                        .signal
+                                        .send(SignalKind::MessagingRelaysNotFound)
+                                        .await;
                                 }
                             }
                         }
                         Kind::ContactList => {
                             if let Ok(true) = Self::from_current_signer(&event).await {
-                                let gossip = app_state.gossip.read().await;
+                                let mut gossip = app_state.gossip.write().await;
                                 let public_keys: HashSet<PublicKey> =
                                     event.tags.public_keys().copied().collect();
 
-                                gossip.metadata_subscribes(public_keys).await.ok();
+                                gossip.bulk_subscribe(public_keys).await.ok();
                             }
                         }
                         Kind::Metadata => {
@@ -512,18 +451,16 @@ impl ChatSpace {
                         .sent_ids
                         .insert(event_id);
 
+                    let msg = MachineReadablePrefix::parse(&message);
+
                     // Keep track of events that need to be resent
-                    match MachineReadablePrefix::parse(&message) {
-                        Some(MachineReadablePrefix::AuthRequired) => {
-                            app_state
-                                .event_tracker
-                                .write()
-                                .await
-                                .resend_queue
-                                .insert(event_id, relay_url);
-                        }
-                        Some(_) => {}
-                        None => {}
+                    if let Some(MachineReadablePrefix::AuthRequired) = msg {
+                        app_state
+                            .event_tracker
+                            .write()
+                            .await
+                            .resend_queue
+                            .insert(event_id, relay_url);
                     }
                 }
                 _ => {}
@@ -618,7 +555,13 @@ impl ChatSpace {
                             this.event_to_message(gift_wrap_id, event, window, cx);
                         });
                     }
-                    SignalKind::RelaysNotFound => {
+                    SignalKind::GossipRelaysNotFound => {
+                        view.update(cx, |this, cx| {
+                            this.set_required_relays(cx);
+                        })
+                        .ok();
+                    }
+                    SignalKind::MessagingRelaysNotFound => {
                         view.update(cx, |this, cx| {
                             this.set_required_relays(cx);
                         })
