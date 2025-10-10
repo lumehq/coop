@@ -1,7 +1,7 @@
 use anyhow::Error;
+use app_state::constants::{APP_PUBKEY, APP_UPDATER_ENDPOINT};
 use cargo_packager_updater::semver::Version;
 use cargo_packager_updater::{check_update, Config, Update};
-use global::constants::{APP_PUBKEY, APP_UPDATER_ENDPOINT};
 use gpui::http_client::Url;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use smallvec::{smallvec, SmallVec};

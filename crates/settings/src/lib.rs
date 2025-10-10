@@ -1,6 +1,6 @@
 use anyhow::anyhow;
-use global::constants::SETTINGS_IDENTIFIER;
-use global::nostr_client;
+use app_state::constants::SETTINGS_IDENTIFIER;
+use app_state::nostr_client;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};

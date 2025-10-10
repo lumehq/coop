@@ -1,8 +1,8 @@
 use std::str::FromStr;
 use std::time::Duration;
 
+use app_state::nostr_client;
 use common::nip96::nip96_upload;
-use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error};
+use app_state::constants::IMAGE_RESIZE_SERVICE;
 use chrono::{Local, TimeZone};
-use global::constants::IMAGE_RESIZE_SERVICE;
 use gpui::{Image, ImageFormat, SharedString, SharedUri};
 use nostr_sdk::prelude::*;
 use qrcode::render::svg;

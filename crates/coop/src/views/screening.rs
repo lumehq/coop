@@ -1,9 +1,9 @@
 use std::time::Duration;
 
+use app_state::constants::BOOTSTRAP_RELAYS;
+use app_state::nostr_client;
 use common::display::{shorten_pubkey, RenderedProfile, RenderedTimestamp};
 use common::nip05::nip05_verify;
-use global::constants::BOOTSTRAP_RELAYS;
-use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Div, Entity,

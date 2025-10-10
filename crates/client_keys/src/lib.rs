@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
-use global::app_state;
-use global::constants::KEYRING_URL;
+use app_state::app_state;
+use app_state::constants::KEYRING_URL;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};

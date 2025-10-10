@@ -2,10 +2,10 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Error;
+use app_state::{nostr_client, UnwrappingStatus};
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use global::{nostr_client, UnwrappingStatus};
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;

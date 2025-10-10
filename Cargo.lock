@@ -92,6 +92,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "app_state"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "dirs 5.0.1",
+ "flume",
+ "log",
+ "nostr-lmdb",
+ "nostr-sdk",
+ "rustls",
+ "smol",
+ "whoami",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -501,9 +516,9 @@ name = "auto_update"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "app_state",
  "cargo-packager-updater",
  "common",
- "global",
  "gpui",
  "log",
  "nostr-sdk",
@@ -1104,7 +1119,7 @@ name = "client_keys"
 version = "0.2.11"
 dependencies = [
  "anyhow",
- "global",
+ "app_state",
  "gpui",
  "log",
  "nostr-sdk",
@@ -1221,9 +1236,9 @@ name = "common"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "app_state",
  "chrono",
  "futures",
- "global",
  "gpui",
  "itertools 0.13.0",
  "log",
@@ -1295,6 +1310,7 @@ name = "coop"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "app_state",
  "assets",
  "auto_update",
  "client_keys",
@@ -1302,7 +1318,6 @@ dependencies = [
  "dirs 5.0.1",
  "flume",
  "futures",
- "global",
  "gpui",
  "gpui_tokio",
  "i18n",
@@ -2436,21 +2451,6 @@ name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
-
-[[package]]
-name = "global"
-version = "0.2.11"
-dependencies = [
- "anyhow",
- "dirs 5.0.1",
- "flume",
- "log",
- "nostr-lmdb",
- "nostr-sdk",
- "rustls",
- "smol",
- "whoami",
-]
 
 [[package]]
 name = "globset"
@@ -5145,9 +5145,9 @@ name = "registry"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "app_state",
  "common",
  "fuzzy-matcher",
- "global",
  "gpui",
  "itertools 0.13.0",
  "log",
@@ -5878,7 +5878,7 @@ name = "settings"
 version = "0.2.11"
 dependencies = [
  "anyhow",
- "global",
+ "app_state",
  "gpui",
  "log",
  "nostr-sdk",
@@ -5945,10 +5945,10 @@ name = "signer_proxy"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "app_state",
  "atomic-destructor",
  "bytes",
  "futures",
- "global",
  "http-body-util",
  "hyper",
  "hyper-util",

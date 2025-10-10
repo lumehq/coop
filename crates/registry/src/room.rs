@@ -4,10 +4,10 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use app_state::constants::SEND_RETRY;
+use app_state::{app_state, nostr_client};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
-use global::constants::SEND_RETRY;
-use global::{app_state, nostr_client};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;

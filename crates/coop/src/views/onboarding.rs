@@ -1,10 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use app_state::constants::{
+    ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
+};
+use app_state::nostr_client;
 use client_keys::ClientKeys;
 use common::display::TextUtils;
-use global::constants::{ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
-use global::nostr_client;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, ClipboardItem, Context, Entity,

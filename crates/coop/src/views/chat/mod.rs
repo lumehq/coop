@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
+use app_state::{app_state, nostr_client};
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
-use global::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
