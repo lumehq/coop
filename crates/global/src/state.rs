@@ -27,23 +27,6 @@ impl AuthRequest {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Notice {
-    RelayFailed(RelayUrl),
-    AuthFailed(RelayUrl),
-    Custom(String),
-}
-
-impl Notice {
-    pub fn as_str(&self) -> String {
-        match self {
-            Notice::AuthFailed(url) => format!("Authenticate failed for relay {url}"),
-            Notice::RelayFailed(url) => format!("Failed to connect the relay {url}"),
-            Notice::Custom(msg) => msg.into(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnwrappingStatus {
     #[default]
@@ -58,7 +41,12 @@ pub enum SignalKind {
     /// A signal to notify UI that the user hasn't set up an encryption key yet
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    EncryptionKeyNotFound,
+    EncryptionKeysNotFound,
+
+    /// A signal to notify UI that the user has set up an encryption key on this or other devices
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    EncryptionKeysSet(PublicKey),
 
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
@@ -83,9 +71,6 @@ pub enum SignalKind {
 
     /// A signal to notify UI that gift wrap status has changed
     GiftWrapStatus(UnwrappingStatus),
-
-    /// A signal to notify UI that there are errors or notices occurred
-    Notice(Notice),
 }
 
 #[derive(Debug)]
@@ -174,28 +159,88 @@ impl From<AppIdentifierTag> for String {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct Gossip {
+    nip17: HashMap<PublicKey, HashSet<RelayUrl>>,
+    nip65: HashMap<PublicKey, HashSet<(RelayUrl, Option<RelayMetadata>)>>,
+}
+
+impl Gossip {
+    /// Get all write relays for a given public key.
+    pub fn write_relays(&self, public_key: PublicKey) -> Vec<RelayUrl> {
+        self.nip65
+            .get(&public_key)
+            .map(|relays| {
+                relays
+                    .iter()
+                    .filter_map(|(url, metadata)| {
+                        if metadata == &Some(RelayMetadata::Write) || metadata.is_none() {
+                            Some(url.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .take(3)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all read relays for a given public key.
+    pub fn read_relays(&self, public_key: PublicKey) -> Vec<RelayUrl> {
+        self.nip65
+            .get(&public_key)
+            .map(|relays| {
+                relays
+                    .iter()
+                    .filter_map(|(url, metadata)| {
+                        if metadata == &Some(RelayMetadata::Read) || metadata.is_none() {
+                            Some(url.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .take(3)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get all messaging relays for a given public key.
+    pub fn messaging_relays(&self, public_key: PublicKey) -> Vec<RelayUrl> {
+        self.nip17
+            .get(&public_key)
+            .map(|relays| relays.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct NostrDevice {
     /// Local keys used for communication between devices
     client: Option<Arc<dyn NostrSigner>>,
     /// A signer used for decrypting messages.
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    master: Option<Arc<dyn NostrSigner>>,
+    encryption: Option<Arc<dyn NostrSigner>>,
 }
 
 impl NostrDevice {
-    pub fn master(&self) -> Option<&Arc<dyn NostrSigner>> {
-        self.master.as_ref()
+    /// Returns the encryption key that used for encryption.
+    pub fn encryption(&self) -> Option<&Arc<dyn NostrSigner>> {
+        self.encryption.as_ref()
     }
 
-    pub fn set_master(&mut self, master: Arc<dyn NostrSigner>) {
-        self.master = Some(master);
+    /// Sets the encryption key that used for encryption.
+    pub fn set_encryption(&mut self, encryption: Arc<dyn NostrSigner>) {
+        self.encryption = Some(encryption);
     }
 
+    /// Returns the client key that used for communication between devices.
     pub fn client(&self) -> Option<&Arc<dyn NostrSigner>> {
         self.client.as_ref()
     }
 
+    /// Sets the client key that used for communication between devices.
     pub fn set_client(&mut self, client: Arc<dyn NostrSigner>) {
         self.client = Some(client);
     }
@@ -209,6 +254,9 @@ pub struct AppState {
 
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub device: RwLock<NostrDevice>,
+
+    /// NIP-65: https://github.com/nostr-protocol/nips/blob/master/65.md
+    pub gossip: RwLock<Gossip>,
 
     /// Subscription ID for listening to gift wrap events from relays.
     pub gift_wrap_sub_id: SubscriptionId,
@@ -259,6 +307,7 @@ impl AppState {
             gift_wrap_processing: AtomicBool::new(false),
             auto_close_opts: Some(opts),
             device: RwLock::new(NostrDevice::default()),
+            gossip: RwLock::new(Gossip::default()),
             sent_ids: RwLock::new(HashSet::new()),
             seen_on_relays: RwLock::new(HashMap::new()),
             resent_ids: RwLock::new(Vec::new()),

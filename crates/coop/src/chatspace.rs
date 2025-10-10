@@ -416,8 +416,8 @@ impl ChatSpace {
 
                                 // NIP-4e
                                 //
-                                // Initialize the client keys
-                                Self::init_client_keys().await.ok();
+                                // Initialize the client keys and encryption keys
+                                Self::init_device().await.ok();
 
                                 // Fetch user's metadata event
                                 Self::fetch_event(&urls, Kind::Metadata, event.pubkey).await;
@@ -430,7 +430,7 @@ impl ChatSpace {
                                     &urls,
                                     event.pubkey,
                                     Kind::Custom(10044),
-                                    SignalKind::EncryptionKeyNotFound,
+                                    SignalKind::EncryptionKeysNotFound,
                                 )
                                 .await;
 
@@ -544,6 +544,18 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
+                    SignalKind::EncryptionKeysNotFound => {
+                        view.update(cx, |this, cx| {
+                            this.setup_encryption_keys(window, cx);
+                        })
+                        .ok();
+                    }
+                    SignalKind::EncryptionKeysSet(_public_key) => {
+                        view.update(cx, |this, cx| {
+                            this.request_for_encryption_keys(window, cx);
+                        })
+                        .ok();
+                    }
                     SignalKind::SignerSet(public_key) => {
                         window.close_modal(cx);
 
@@ -615,10 +627,12 @@ impl ChatSpace {
                         })
                         .ok();
                     }
-                    SignalKind::Notice(msg) => {
-                        window.push_notification(msg.as_str(), cx);
+                    SignalKind::GossipRelayNotFound => {
+                        view.update(cx, |this, cx| {
+                            this.set_required_relays(cx);
+                        })
+                        .ok();
                     }
-                    _ => {}
                 };
             })
             .ok();
@@ -634,18 +648,23 @@ impl ChatSpace {
         Ok(public_key == event.pubkey)
     }
 
-    /// Initializes client keys
+    /// Initialize the client keys and encryption keys
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    async fn init_client_keys() -> Result<(), Error> {
+    async fn init_device() -> Result<(), Error> {
         let app_state = app_state();
 
+        // Get the stored client keys in the database
+        //
+        // Or generate new keys if not found
         if let Ok(content) = app_state.load_from_db(AppIdentifierTag::Client).await {
             let secret = SecretKey::parse(&content)?;
             let keys = Keys::new(secret);
 
             // Update the app state
             app_state.device.write().await.set_client(Arc::new(keys));
+
+            log::info!("Reinitialized the client keys");
         } else {
             // Generate new keys
             let keys = Keys::generate();
@@ -659,9 +678,24 @@ impl ChatSpace {
                 .write_to_db(&secret, AppIdentifierTag::Client)
                 .await
                 .ok();
+
+            log::info!("Generated a new client keys");
         }
 
-        log::info!("Initialized client keys");
+        // Get the stored encryption keys in the database
+        if let Ok(content) = app_state.load_from_db(AppIdentifierTag::Master).await {
+            let secret = SecretKey::parse(&content)?;
+            let keys = Keys::new(secret);
+
+            // Update the app state
+            app_state
+                .device
+                .write()
+                .await
+                .set_encryption(Arc::new(keys));
+
+            log::info!("Reinitialized the encryption keys");
+        }
 
         Ok(())
     }
@@ -853,6 +887,67 @@ impl ChatSpace {
             }
             _ => {}
         };
+    }
+
+    /// Initializes encryption keys
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    fn setup_encryption_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let app_state = app_state();
+            let write_relays = app_state.gossip.read().await.write_relays(public_key);
+
+            let keys = Keys::generate();
+            let pubkey = keys.public_key();
+            let secret = keys.secret_key().to_secret_hex();
+
+            // Update the app state
+            app_state
+                .device
+                .write()
+                .await
+                .set_encryption(Arc::new(keys));
+
+            // Write the secret key to the database
+            app_state
+                .write_to_db(&secret, AppIdentifierTag::Master)
+                .await?;
+
+            // Construct the event for announcing the encryption key
+            let event = EventBuilder::new(Kind::Custom(10044), "")
+                .tag(Tag::custom(TagKind::custom("n"), vec![pubkey]))
+                .sign(&signer)
+                .await?;
+
+            // Announce the encryption key
+            client.send_event_to(write_relays, &event).await?;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            if let Err(e) = task.await {
+                this.update_in(cx, |_this, window, cx| {
+                    window.push_notification(e.to_string(), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Initializes encryption keys
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    fn request_for_encryption_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            //
+            Ok(())
+        });
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
