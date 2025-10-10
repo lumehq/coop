@@ -378,13 +378,14 @@ impl Room {
             let client = nostr_client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
-            let sent_ids = app_state()
-                .sent_ids
+            let sent_ids: Vec<EventId> = app_state()
+                .event_tracker
                 .read()
                 .await
+                .sent_ids()
                 .iter()
                 .copied()
-                .collect_vec();
+                .collect();
 
             // Get seen events from database
             let filter = Filter::new()
@@ -522,7 +523,8 @@ impl Room {
                         if auth_required {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
-                                let ids = app_state.resent_ids.read().await;
+                                let retry_manager = app_state.event_tracker.read().await;
+                                let ids = retry_manager.resent_ids();
 
                                 // Check if event was successfully resent
                                 if let Some(output) = ids.iter().find(|e| e.id() == &id).cloned() {

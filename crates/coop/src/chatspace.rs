@@ -9,7 +9,8 @@ use app_state::constants::{
     ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
     METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use app_state::{app_state, nostr_client, AuthRequest, Notice, SignalKind, UnwrappingStatus};
+use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
+use app_state::{app_state, nostr_client};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
@@ -405,9 +406,10 @@ impl ChatSpace {
                 RelayMessage::Event { event, .. } => {
                     // Keep track of which relays have seen this event
                     app_state
-                        .seen_on_relays
+                        .event_tracker
                         .write()
                         .await
+                        .seen_on_relays
                         .entry(event.id)
                         .or_insert_with(HashSet::new)
                         .insert(relay_url);
@@ -433,14 +435,8 @@ impl ChatSpace {
 
                                 if !relays.is_empty() {
                                     for relay in relays.clone().into_iter() {
-                                        if client.add_relay(relay).await.is_err() {
-                                            let notice = Notice::RelayFailed(relay.clone());
-                                            app_state.signal.send(SignalKind::Notice(notice)).await;
-                                        }
-                                        if client.connect_relay(relay).await.is_err() {
-                                            let notice = Notice::RelayFailed(relay.clone());
-                                            app_state.signal.send(SignalKind::Notice(notice)).await;
-                                        }
+                                        client.add_relay(relay).await.ok();
+                                        client.connect_relay(relay).await.ok();
                                     }
 
                                     // Subscribe to gift wrap events only in the current user's NIP-17 relays
@@ -497,15 +493,21 @@ impl ChatSpace {
                     event_id, message, ..
                 } => {
                     // Keep track of events sent by Coop
-                    app_state.sent_ids.write().await.insert(event_id);
+                    app_state
+                        .event_tracker
+                        .write()
+                        .await
+                        .sent_ids
+                        .insert(event_id);
 
                     // Keep track of events that need to be resent
                     match MachineReadablePrefix::parse(&message) {
                         Some(MachineReadablePrefix::AuthRequired) => {
                             app_state
-                                .resend_queue
+                                .event_tracker
                                 .write()
                                 .await
+                                .resend_queue
                                 .insert(event_id, relay_url);
                         }
                         Some(_) => {}
@@ -609,9 +611,6 @@ impl ChatSpace {
                             this.set_required_relays(cx);
                         })
                         .ok();
-                    }
-                    SignalKind::Notice(msg) => {
-                        window.push_notification(msg.as_str(), cx);
                     }
                 };
             })
@@ -835,16 +834,17 @@ impl ChatSpace {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut queue = app_state.resend_queue.write().await;
+                            let mut event_tracker = app_state.event_tracker.write().await;
 
-                            let ids: Vec<EventId> = queue
+                            let ids: Vec<EventId> = event_tracker
+                                .resend_queue
                                 .iter()
                                 .filter(|(_, url)| relay_url == *url)
                                 .map(|(id, _)| *id)
                                 .collect();
 
                             for id in ids.into_iter() {
-                                if let Some(relay_url) = queue.remove(&id) {
+                                if let Some(relay_url) = event_tracker.resend_queue.remove(&id) {
                                     if let Some(event) = client.database().event_by_id(&id).await? {
                                         let event_id = relay.send_event(&event).await?;
 
@@ -854,8 +854,8 @@ impl ChatSpace {
                                             success: HashSet::from([relay_url]),
                                         };
 
-                                        app_state.sent_ids.write().await.insert(event_id);
-                                        app_state.resent_ids.write().await.push(output);
+                                        event_tracker.sent_ids.insert(event_id);
+                                        event_tracker.resent_ids.push(output);
                                     }
                                 }
                             }

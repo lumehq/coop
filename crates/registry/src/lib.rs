@@ -2,7 +2,8 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Error;
-use app_state::{nostr_client, UnwrappingStatus};
+use app_state::nostr_client;
+use app_state::state::UnwrappingStatus;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;

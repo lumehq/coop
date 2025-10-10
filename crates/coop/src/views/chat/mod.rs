@@ -170,7 +170,8 @@ impl Chat {
 
                         cx.spawn_in(window, async move |this, cx| {
                             let app_state = app_state();
-                            let sent_ids = app_state.sent_ids.read().await;
+                            let event_tracker = app_state.event_tracker.read().await;
+                            let sent_ids = event_tracker.sent_ids();
 
                             this.update_in(cx, |this, _window, cx| {
                                 if !sent_ids.contains(&gift_wrap_id) {
@@ -1240,6 +1241,7 @@ impl Chat {
         let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let app_state = app_state();
+            let event_tracker = app_state.event_tracker.read().await;
             let mut relays: Vec<RelayUrl> = vec![];
 
             let filter = Filter::new()
@@ -1249,7 +1251,7 @@ impl Chat {
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
                 if let Some(Ok(id)) = event.tags.identifier().map(EventId::parse) {
-                    if let Some(urls) = app_state.seen_on_relays.read().await.get(&id).cloned() {
+                    if let Some(urls) = event_tracker.seen_on_relays.get(&id).cloned() {
                         relays.extend(urls);
                     }
                 }
