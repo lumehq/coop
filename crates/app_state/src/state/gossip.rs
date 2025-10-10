@@ -191,7 +191,8 @@ impl Gossip {
         Ok(())
     }
 
-    pub async fn subscribe_to_inbox(&mut self, public_key: PublicKey) -> Result<(), Error> {
+    /// Monitor all gift wrap events in the messaging relays for a given public key
+    pub async fn monitor_inbox(&mut self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let id = SubscriptionId::new("inbox");
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);

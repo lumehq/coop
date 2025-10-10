@@ -5,10 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::{
-    ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, METADATA_BATCH_LIMIT,
-    METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
-};
+use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
 use app_state::{app_state, nostr_client};
 use auto_update::AutoUpdater;
@@ -140,23 +137,43 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Subscribe to open chat room requests
-            cx.subscribe_in(&registry, window, move |this, _, event, window, cx| {
-                this.process_registry_event(event, window, cx);
+            // Handle registry events
+            cx.subscribe_in(&registry, window, move |this, _, ev, window, cx| {
+                match ev {
+                    RegistryEvent::Open(room) => {
+                        if let Some(room) = room.upgrade() {
+                            this.dock.update(cx, |this, cx| {
+                                let panel = chat::init(room, window, cx);
+                                this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
+                            });
+                        }
+                    }
+                    RegistryEvent::Close(..) => {
+                        this.dock.update(cx, |this, cx| {
+                            this.focus_tab_panel(window, cx);
+
+                            cx.defer_in(window, |_, window, cx| {
+                                window.dispatch_action(Box::new(ClosePanel), cx);
+                                window.close_all_modals(cx);
+                            });
+                        });
+                    }
+                    _ => {}
+                };
             }),
         );
 
         tasks.push(
-            // Connect to the bootstrap relays
-            // Then handle nostr events in the background
+            // Handle nostr events in the background
             cx.background_spawn(async move {
-                Self::connect()
-                    .await
-                    .expect("Failed connect the bootstrap relays. Please restart the application.");
+                app_state().handle_notifications().await.ok();
+            }),
+        );
 
-                Self::process_nostr_events()
-                    .await
-                    .expect("Failed to handle nostr events. Please restart the application.");
+        tasks.push(
+            // Listen all metadata requests then batch them into single subscription
+            cx.background_spawn(async move {
+                app_state().handle_metadata_batching().await;
             }),
         );
 
@@ -176,16 +193,9 @@ impl ChatSpace {
         );
 
         tasks.push(
-            // Listen all metadata requests then batch them into single subscription
-            cx.background_spawn(async move {
-                Self::process_batching_metadata().await;
-            }),
-        );
-
-        tasks.push(
             // Continuously handle signals from the Nostr channel
             cx.spawn_in(window, async move |this, cx| {
-                Self::process_nostr_signals(this, cx).await
+                Self::handle_signals(this, cx).await
             }),
         );
 
@@ -197,27 +207,6 @@ impl ChatSpace {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
-    }
-
-    async fn connect() -> Result<(), Error> {
-        let client = nostr_client();
-
-        for relay in BOOTSTRAP_RELAYS.into_iter() {
-            client.add_relay(relay).await?;
-        }
-
-        log::info!("Connected to bootstrap relays");
-
-        for relay in SEARCH_RELAYS.into_iter() {
-            client.add_relay(relay).await?;
-        }
-
-        log::info!("Connected to search relays");
-
-        // Establish connection to relays
-        client.connect().await;
-
-        Ok(())
     }
 
     async fn observe_signer() {
@@ -285,192 +274,7 @@ impl ChatSpace {
         }
     }
 
-    async fn process_batching_metadata() {
-        let app_state = app_state();
-        let timeout = Duration::from_millis(METADATA_BATCH_TIMEOUT);
-        let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
-        let mut batch: HashSet<PublicKey> = HashSet::new();
-
-        /// Internal events for the metadata batching system
-        enum BatchEvent {
-            PublicKey(PublicKey),
-            Timeout,
-            Closed,
-        }
-
-        loop {
-            let futs = smol::future::or(
-                async move {
-                    if let Ok(public_key) = app_state.ingester.receiver().recv_async().await {
-                        BatchEvent::PublicKey(public_key)
-                    } else {
-                        BatchEvent::Closed
-                    }
-                },
-                async move {
-                    smol::Timer::after(timeout).await;
-                    BatchEvent::Timeout
-                },
-            );
-
-            match futs.await {
-                BatchEvent::PublicKey(public_key) => {
-                    // Prevent duplicate keys from being processed
-                    if processed_pubkeys.insert(public_key) {
-                        batch.insert(public_key);
-                    }
-
-                    // Process the batch if it's full
-                    if batch.len() >= METADATA_BATCH_LIMIT {
-                        let mut gossip = app_state.gossip.write().await;
-                        gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
-                    }
-                }
-                BatchEvent::Timeout => {
-                    let mut gossip = app_state.gossip.write().await;
-                    gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
-                }
-                BatchEvent::Closed => {
-                    let mut gossip = app_state.gossip.write().await;
-                    gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
-
-                    // Exit the current loop
-                    break;
-                }
-            }
-        }
-    }
-
-    async fn process_nostr_events() -> Result<(), Error> {
-        let client = nostr_client();
-        let app_state = app_state();
-
-        let mut processed_events: HashSet<EventId> = HashSet::new();
-        let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
-        let mut notifications = client.notifications();
-
-        while let Ok(notification) = notifications.recv().await {
-            let RelayPoolNotification::Message { message, relay_url } = notification else {
-                continue;
-            };
-
-            match message {
-                RelayMessage::Event { event, .. } => {
-                    // Keep track of which relays have seen this event
-                    {
-                        let mut event_tracker = app_state.event_tracker.write().await;
-                        event_tracker
-                            .seen_on_relays
-                            .entry(event.id)
-                            .or_default()
-                            .insert(relay_url);
-                    }
-
-                    // Skip events that have already been processed
-                    if !processed_events.insert(event.id) {
-                        continue;
-                    }
-
-                    match event.kind {
-                        Kind::RelayList => {
-                            let mut gossip = app_state.gossip.write().await;
-
-                            // Update NIP-65 relays for event's public key
-                            gossip.insert(&event);
-
-                            // Get events if relay list belongs to current user
-                            if let Ok(true) = Self::from_current_signer(&event).await {
-                                // Fetch user's metadata event
-                                gossip.subscribe(event.pubkey, Kind::Metadata).await.ok();
-
-                                // Fetch user's contact list event
-                                gossip.subscribe(event.pubkey, Kind::ContactList).await.ok();
-
-                                // Fetch user's messaging relays event
-                                gossip.get_nip17(event.pubkey).await.ok();
-                            }
-                        }
-                        Kind::InboxRelays => {
-                            let mut gossip = app_state.gossip.write().await;
-
-                            // Update NIP-17 relays for event's public key
-                            gossip.insert(&event);
-
-                            // Subscribe to gift wrap events if messaging relays belong to the current user
-                            if let Ok(true) = Self::from_current_signer(&event).await {
-                                if gossip.subscribe_to_inbox(event.pubkey).await.is_err() {
-                                    app_state
-                                        .signal
-                                        .send(SignalKind::MessagingRelaysNotFound)
-                                        .await;
-                                }
-                            }
-                        }
-                        Kind::ContactList => {
-                            if let Ok(true) = Self::from_current_signer(&event).await {
-                                let mut gossip = app_state.gossip.write().await;
-                                let public_keys: HashSet<PublicKey> =
-                                    event.tags.public_keys().copied().collect();
-
-                                gossip.bulk_subscribe(public_keys).await.ok();
-                            }
-                        }
-                        Kind::Metadata => {
-                            let metadata = Metadata::from_json(&event.content).unwrap_or_default();
-                            let profile = Profile::new(event.pubkey, metadata);
-
-                            app_state.signal.send(SignalKind::NewProfile(profile)).await;
-                        }
-                        Kind::GiftWrap => {
-                            Self::unwrap_gift_wrap(&event).await;
-                        }
-                        _ => {}
-                    }
-                }
-                RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if *subscription_id == app_state.gift_wrap_sub_id {
-                        let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
-                        app_state.signal.send(signal).await;
-                    }
-                }
-                RelayMessage::Auth { challenge } => {
-                    if challenges.insert(challenge.clone()) {
-                        let req = AuthRequest::new(challenge, relay_url);
-                        // Send a signal to the ingester to handle the auth request
-                        app_state.signal.send(SignalKind::Auth(req)).await;
-                    }
-                }
-                RelayMessage::Ok {
-                    event_id, message, ..
-                } => {
-                    // Keep track of events sent by Coop
-                    app_state
-                        .event_tracker
-                        .write()
-                        .await
-                        .sent_ids
-                        .insert(event_id);
-
-                    let msg = MachineReadablePrefix::parse(&message);
-
-                    // Keep track of events that need to be resent
-                    if let Some(MachineReadablePrefix::AuthRequired) = msg {
-                        app_state
-                            .event_tracker
-                            .write()
-                            .await
-                            .resend_queue
-                            .insert(event_id, relay_url);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn process_nostr_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
+    async fn handle_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
         let app_state = app_state();
         let mut is_open_proxy_modal = false;
 
@@ -571,130 +375,6 @@ impl ChatSpace {
             })
             .ok();
         }
-    }
-
-    /// Checks if an event is belong to the current user
-    async fn from_current_signer(event: &Event) -> Result<bool, Error> {
-        let client = nostr_client();
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        Ok(public_key == event.pubkey)
-    }
-
-    /// Stores an unwrapped event in local database with reference to original
-    async fn set_unwrapped_event(gift_wrap: EventId, unwrapped: &Event) -> Result<(), Error> {
-        let client = nostr_client();
-
-        // Save unwrapped event
-        client.database().save_event(unwrapped).await?;
-
-        // Create a reference event pointing to the unwrapped event
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, "")
-            .tags(vec![Tag::identifier(gift_wrap), Tag::event(unwrapped.id)])
-            .sign(&Keys::generate())
-            .await?;
-
-        // Save reference event
-        client.database().save_event(&event).await?;
-
-        Ok(())
-    }
-
-    /// Retrieves a previously unwrapped event from local database
-    async fn get_unwrapped_event(root: EventId) -> Result<Event, Error> {
-        let client = nostr_client();
-        let filter = Filter::new()
-            .kind(Kind::ApplicationSpecificData)
-            .identifier(root)
-            .limit(1);
-
-        if let Some(event) = client.database().query(filter).await?.first_owned() {
-            let target_id = event.tags.event_ids().collect_vec()[0];
-
-            if let Some(event) = client.database().event_by_id(target_id).await? {
-                Ok(event)
-            } else {
-                Err(anyhow!("Event not found."))
-            }
-        } else {
-            Err(anyhow!("Event is not cached yet."))
-        }
-    }
-
-    /// Unwraps a gift-wrapped event and processes its contents.
-    async fn unwrap_gift_wrap(target: &Event) {
-        let client = nostr_client();
-        let app_state = app_state();
-        let mut message: Option<Event> = None;
-
-        if let Ok(event) = Self::get_unwrapped_event(target.id).await {
-            message = Some(event);
-        } else if let Ok(unwrapped) = client.unwrap_gift_wrap(target).await {
-            // Sign the unwrapped event with a RANDOM KEYS
-            if let Ok(event) = unwrapped.rumor.sign_with_keys(&Keys::generate()) {
-                // Save this event to the database for future use.
-                if let Err(e) = Self::set_unwrapped_event(target.id, &event).await {
-                    log::warn!("Failed to cache unwrapped event: {e}")
-                }
-
-                message = Some(event);
-            }
-        }
-
-        if let Some(event) = message {
-            // Send all pubkeys to the metadata batch to sync data
-            for public_key in event.all_pubkeys() {
-                app_state.ingester.send(public_key).await;
-            }
-
-            match event.created_at >= app_state.init_at {
-                // New message: send a signal to notify the UI
-                true => {
-                    app_state
-                        .signal
-                        .send(SignalKind::NewMessage((target.id, event)))
-                        .await;
-                }
-                // Old message: Coop is probably processing the user's messages during initial load
-                false => {
-                    app_state
-                        .gift_wrap_processing
-                        .store(true, Ordering::Release);
-                }
-            }
-        }
-    }
-
-    fn process_registry_event(
-        &mut self,
-        event: &RegistryEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            RegistryEvent::Open(room) => {
-                if let Some(room) = room.upgrade() {
-                    self.dock.update(cx, |this, cx| {
-                        let panel = chat::init(room, window, cx);
-                        this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
-                    });
-                } else {
-                    window.push_notification(t!("common.room_error"), cx);
-                }
-            }
-            RegistryEvent::Close(..) => {
-                self.dock.update(cx, |this, cx| {
-                    this.focus_tab_panel(window, cx);
-
-                    cx.defer_in(window, |_, window, cx| {
-                        window.dispatch_action(Box::new(ClosePanel), cx);
-                        window.close_all_modals(cx);
-                    });
-                });
-            }
-            _ => {}
-        };
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
