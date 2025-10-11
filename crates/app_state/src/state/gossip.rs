@@ -113,7 +113,7 @@ impl Gossip {
             .author(public_key)
             .limit(1);
 
-        let urls = self.read_relays(&public_key);
+        let urls = self.write_relays(&public_key);
 
         // Ensure user's have at least one write relay
         if urls.is_empty() {
