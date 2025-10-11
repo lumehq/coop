@@ -43,7 +43,7 @@ impl Gossip {
             .map(|relays| {
                 relays
                     .iter()
-                    .filter(|(_, metadata)| metadata.as_ref() != Some(&RelayMetadata::Write))
+                    .filter(|(_, metadata)| metadata.as_ref() == Some(&RelayMetadata::Write))
                     .map(|(url, _)| url)
                     .take(3)
                     .collect()
@@ -57,7 +57,7 @@ impl Gossip {
             .map(|relays| {
                 relays
                     .iter()
-                    .filter(|(_, metadata)| metadata.as_ref() != Some(&RelayMetadata::Read))
+                    .filter(|(_, metadata)| metadata.as_ref() == Some(&RelayMetadata::Read))
                     .map(|(url, _)| url)
                     .take(3)
                     .collect()
@@ -113,7 +113,7 @@ impl Gossip {
             .author(public_key)
             .limit(1);
 
-        let urls = self.write_relays(&public_key);
+        let urls = self.read_relays(&public_key);
 
         // Ensure user's have at least one write relay
         if urls.is_empty() {
