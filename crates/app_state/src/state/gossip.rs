@@ -72,7 +72,7 @@ impl Gossip {
             .unwrap_or_default()
     }
 
-    pub async fn get_nip65(&mut self, public_key: PublicKey) -> Result<(), Error> {
+    pub async fn get_nip65(&self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let timeout = Duration::from_secs(5);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -103,7 +103,7 @@ impl Gossip {
         Ok(())
     }
 
-    pub async fn get_nip17(&mut self, public_key: PublicKey) -> Result<(), Error> {
+    pub async fn get_nip17(&self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let timeout = Duration::from_secs(5);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -147,7 +147,7 @@ impl Gossip {
         Ok(())
     }
 
-    pub async fn subscribe(&mut self, public_key: PublicKey, kind: Kind) -> Result<(), Error> {
+    pub async fn subscribe(&self, public_key: PublicKey, kind: Kind) -> Result<(), Error> {
         let client = nostr_client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
@@ -171,7 +171,7 @@ impl Gossip {
         Ok(())
     }
 
-    pub async fn bulk_subscribe(&mut self, public_keys: HashSet<PublicKey>) -> Result<(), Error> {
+    pub async fn bulk_subscribe(&self, public_keys: HashSet<PublicKey>) -> Result<(), Error> {
         if public_keys.is_empty() {
             return Err(anyhow!("You need at least one public key"));
         }
@@ -192,7 +192,7 @@ impl Gossip {
     }
 
     /// Monitor all gift wrap events in the messaging relays for a given public key
-    pub async fn monitor_inbox(&mut self, public_key: PublicKey) -> Result<(), Error> {
+    pub async fn monitor_inbox(&self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let id = SubscriptionId::new("inbox");
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
@@ -211,6 +211,28 @@ impl Gossip {
 
         // Subscribe to filters to user's messaging relays
         client.subscribe_with_id_to(urls, id, filter, None).await?;
+
+        Ok(())
+    }
+
+    pub async fn send_event_to_write_relays(&self, event: &Event) -> Result<(), Error> {
+        let client = nostr_client();
+        let public_key = event.pubkey;
+        let urls = self.write_relays(&public_key);
+
+        // Ensure user's have at least one relay
+        if urls.is_empty() {
+            return Err(anyhow!("Relays are empty"));
+        }
+
+        // Ensure connection to relays
+        for url in urls.iter().cloned() {
+            client.add_relay(url).await?;
+            client.connect_relay(url).await?;
+        }
+
+        // Send event to relays
+        client.send_event(event).await?;
 
         Ok(())
     }

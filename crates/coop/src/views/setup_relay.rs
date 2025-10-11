@@ -198,6 +198,9 @@ impl SetupRelay {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
+            let app_state = app_state();
+            let gossip = app_state.gossip.read().await;
+
             let tags: Vec<Tag> = relays
                 .iter()
                 .map(|relay| Tag::relay(relay.clone()))
@@ -205,21 +208,20 @@ impl SetupRelay {
 
             let event = EventBuilder::new(Kind::InboxRelays, "")
                 .tags(tags)
-                .build(public_key)
                 .sign(&signer)
                 .await?;
 
             // Set messaging relays
-            client.send_event(&event).await?;
+            gossip.send_event_to_write_relays(&event).await?;
 
             // Connect to messaging relays
             for relay in relays.iter() {
-                _ = client.add_relay(relay).await;
-                _ = client.connect_relay(relay).await;
+                client.add_relay(relay).await.ok();
+                client.connect_relay(relay).await.ok();
             }
 
             // Fetch gift wrap events
-            let sub_id = app_state().gift_wrap_sub_id.clone();
+            let sub_id = app_state.gift_wrap_sub_id.clone();
             let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
             if client
