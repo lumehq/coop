@@ -505,7 +505,7 @@ impl Room {
                     continue;
                 }
 
-                // Send the event to the relays
+                // Send the event to the messaging relays
                 match client.send_event_to(urls, &event).await {
                     Ok(output) => {
                         let id = output.id().to_owned();
@@ -556,7 +556,7 @@ impl Room {
                 if urls.is_empty() {
                     reports.push(SendReport::new(public_key).not_found());
                 } else {
-                    // Send the event to the relays
+                    // Send the event to the messaging relays
                     match client.send_event_to(urls, &event).await {
                         Ok(output) => {
                             reports.push(SendReport::new(public_key).status(output));
@@ -619,7 +619,7 @@ impl Room {
                     if urls.is_empty() {
                         resend_reports.push(SendReport::new(receiver).not_found());
                     } else {
-                        // Send the event to the relays
+                        // Send the event to the messaging relays
                         match client.send_event_to(urls, &event).await {
                             Ok(output) => {
                                 resend_reports.push(SendReport::new(receiver).status(output));

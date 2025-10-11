@@ -158,11 +158,13 @@ impl Screening {
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let builder = EventBuilder::report(
-                vec![Tag::public_key_report(public_key, Report::Impersonation)],
-                "scam/impersonation",
-            );
-            let _ = client.send_event_builder(builder).await?;
+            let signer = client.signer().await?;
+
+            let tag = Tag::public_key_report(public_key, Report::Impersonation);
+            let event = EventBuilder::report(vec![tag], "").sign(&signer).await?;
+
+            // Send the report to the public relays
+            client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
             Ok(())
         });
