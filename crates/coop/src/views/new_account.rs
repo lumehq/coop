@@ -1,11 +1,11 @@
-use anyhow::anyhow;
-use app_state::constants::{ACCOUNT_IDENTIFIER, NIP17_RELAYS, NIP65_RELAYS};
-use app_state::nostr_client;
+use anyhow::{anyhow, Error};
+use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS};
+use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
 use common::nip96::nip96_upload;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
     EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
-    Render, SharedString, Styled, WeakEntity, Window,
+    Render, SharedString, Styled, Task, WeakEntity, Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -123,48 +123,51 @@ impl NewAccount {
         self.write_keys_to_disk(&keys, password, cx);
 
         // Set the client's signer with the current keys
-        cx.background_spawn(async move {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
+            let app_state = app_state();
+            let gossip = app_state.gossip.read().await;
 
             // Set the client's signer with the current keys
             client.set_signer(keys).await;
 
-            // Set metadata
-            if let Err(e) = client.set_metadata(&metadata).await {
-                log::error!("Failed to set metadata: {e}");
-            }
+            // Verify the signer
+            let signer = client.signer().await?;
+
+            // Construct a NIP-65 event
+            let event = EventBuilder::new(Kind::RelayList, "")
+                .tags(default_nip65_relays().iter().map(|(url, metadata)| {
+                    Tag::relay_metadata(url.to_owned(), metadata.to_owned())
+                }))
+                .sign(&signer)
+                .await?;
 
             // Set NIP-65 relays
-            let builder = EventBuilder::new(Kind::RelayList, "").tags(
-                NIP65_RELAYS.into_iter().filter_map(|url| {
-                    if let Ok(url) = RelayUrl::parse(url) {
-                        Some(Tag::relay_metadata(url, None))
-                    } else {
-                        None
-                    }
-                }),
-            );
+            client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
-            if let Err(e) = client.send_event_builder(builder).await {
-                log::error!("Failed to send NIP-65 relay list event: {e}");
-            }
+            // Construct a NIP-17 event
+            let event = EventBuilder::new(Kind::InboxRelays, "")
+                .tags(
+                    default_nip17_relays()
+                        .iter()
+                        .map(|url| Tag::relay(url.to_owned())),
+                )
+                .sign(&signer)
+                .await?;
 
             // Set NIP-17 relays
-            let builder = EventBuilder::new(Kind::InboxRelays, "").tags(
-                NIP17_RELAYS.into_iter().filter_map(|url| {
-                    if let Ok(url) = RelayUrl::parse(url) {
-                        Some(Tag::relay(url))
-                    } else {
-                        None
-                    }
-                }),
-            );
+            gossip.send_event_to_write_relays(&event).await?;
 
-            if let Err(e) = client.send_event_builder(builder).await {
-                log::error!("Failed to send messaging relay list event: {e}");
-            };
-        })
-        .detach();
+            // Construct a metadata event
+            let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
+
+            // Set metadata
+            gossip.send_event_to_write_relays(&event).await?;
+
+            Ok(())
+        });
+
+        task.detach();
     }
 
     fn write_keys_to_disk(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {

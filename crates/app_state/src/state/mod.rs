@@ -15,7 +15,7 @@ use crate::nostr_client;
 use crate::paths::support_dir;
 use crate::state::gossip::Gossip;
 
-pub mod gossip;
+mod gossip;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
@@ -302,8 +302,7 @@ impl AppState {
                             if is_self_authored {
                                 let gossip = self.gossip.read().await;
 
-                                if let Err(e) = gossip.monitor_inbox(event.pubkey).await {
-                                    log::error!("Error: {e}");
+                                if gossip.monitor_inbox(event.pubkey).await.is_err() {
                                     self.signal.send(SignalKind::MessagingRelaysNotFound).await;
                                 }
                             }

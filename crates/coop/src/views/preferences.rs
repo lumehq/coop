@@ -6,7 +6,6 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::{shared_t, t};
-use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -84,7 +83,7 @@ impl Preferences {
     }
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = setup_relay::init(Kind::InboxRelays, window, cx);
+        let view = setup_relay::init(window, cx);
         let weak_view = view.downgrade();
 
         window.open_modal(cx, move |this, _window, _cx| {

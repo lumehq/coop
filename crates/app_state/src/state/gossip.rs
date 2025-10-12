@@ -85,12 +85,22 @@ impl Gossip {
         let timeout = Duration::from_secs(5);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-        let filter = Filter::new()
+        let latest_filter = Filter::new()
             .kind(Kind::RelayList)
             .author(public_key)
             .limit(1);
 
         // Subscribe to events from the bootstrapping relays
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, latest_filter.clone(), Some(opts))
+            .await?;
+
+        let filter = Filter::new()
+            .kind(Kind::RelayList)
+            .author(public_key)
+            .since(Timestamp::now());
+
+        // Continuously subscribe for new events from the bootstrap relays
         client
             .subscribe_to(BOOTSTRAP_RELAYS, filter.clone(), Some(opts))
             .await?;
@@ -99,7 +109,7 @@ impl Gossip {
         smol::spawn(async move {
             smol::Timer::after(timeout).await;
 
-            if client.database().count(filter).await.unwrap_or(0) < 1 {
+            if client.database().count(latest_filter).await.unwrap_or(0) < 1 {
                 app_state()
                     .signal
                     .send(SignalKind::GossipRelaysNotFound)
@@ -114,14 +124,14 @@ impl Gossip {
     /// Set NIP-65 relays for a current user
     pub async fn set_nip65(
         &mut self,
-        relays: Vec<(RelayUrl, Option<RelayMetadata>)>,
+        relays: &[(RelayUrl, Option<RelayMetadata>)],
     ) -> Result<(), Error> {
         let client = nostr_client();
         let signer = client.signer().await?;
 
         let tags: Vec<Tag> = relays
-            .into_iter()
-            .map(|(url, metadata)| Tag::relay_metadata(url, metadata))
+            .iter()
+            .map(|(url, metadata)| Tag::relay_metadata(url.to_owned(), metadata.to_owned()))
             .collect();
 
         let event = EventBuilder::new(Kind::RelayList, "")
@@ -143,11 +153,6 @@ impl Gossip {
         let timeout = Duration::from_secs(5);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-        let filter = Filter::new()
-            .kind(Kind::InboxRelays)
-            .author(public_key)
-            .limit(1);
-
         let urls = self.write_relays(&public_key);
 
         // Ensure user's have at least one write relay
@@ -161,7 +166,22 @@ impl Gossip {
             client.connect_relay(url).await?;
         }
 
+        let latest_filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
+
         // Subscribe to events from the bootstrapping relays
+        client
+            .subscribe_to(urls.clone(), latest_filter.clone(), Some(opts))
+            .await?;
+
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .since(Timestamp::now());
+
+        // Continuously subscribe for new events from the bootstrap relays
         client
             .subscribe_to(urls, filter.clone(), Some(opts))
             .await?;
@@ -170,7 +190,7 @@ impl Gossip {
         smol::spawn(async move {
             smol::Timer::after(timeout).await;
 
-            if client.database().count(filter).await.unwrap_or(0) < 1 {
+            if client.database().count(latest_filter).await.unwrap_or(0) < 1 {
                 app_state()
                     .signal
                     .send(SignalKind::MessagingRelaysNotFound)
@@ -183,7 +203,7 @@ impl Gossip {
     }
 
     /// Set NIP-17 relays for a current user
-    pub async fn set_nip17(&mut self, relays: Vec<RelayUrl>) -> Result<(), Error> {
+    pub async fn set_nip17(&mut self, relays: &[RelayUrl]) -> Result<(), Error> {
         let client = nostr_client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
@@ -202,7 +222,7 @@ impl Gossip {
         }
 
         let event = EventBuilder::new(Kind::InboxRelays, "")
-            .tags(relays.into_iter().map(Tag::relay))
+            .tags(relays.iter().map(|relay| Tag::relay(relay.to_owned())))
             .sign(&signer)
             .await?;
 

@@ -53,6 +53,8 @@ common:
     en: "Resend"
   seen_on:
     en: "Seen on"
+  default:
+    en: "Default"
 
 auto_update:
   updating:
@@ -175,6 +177,20 @@ login:
     en: "Bunker is not valid"
   logging_in:
     en: "Logging in..."
+
+mailbox:
+  modal:
+    en: "Configure Mailbox Relays to continue"
+  description:
+    en: "By configuring Mailbox Relays, Coop can find where to get or send your events. If you are unsure, use the default option and modify it later."
+  write_label:
+    en: "Outbox Relays are used to publish your events. Other users will also look for your events there."
+  read_label:
+    en: "Inbox Relays are used to find events about you. Other users will publish the events they want you to see there."
+  default_button:
+    en: "Use default"
+  setup_button:
+    en: "Configure"
 
 relays:
   button:
