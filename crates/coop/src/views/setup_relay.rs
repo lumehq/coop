@@ -1,13 +1,13 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::NIP17_RELAYS;
 use app_state::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
-    TextAlign, UniformList, Window,
+    div, px, uniform_list, App, AppContext, AsyncWindowContext, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
+    Task, TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
@@ -15,100 +15,40 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::modal::ModalButtonProps;
-use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, IconName, Sizable};
 
-pub fn init(kind: Kind, window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
-    cx.new(|cx| SetupRelay::new(kind, window, cx))
+pub fn init(window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
+    cx.new(|cx| SetupRelay::new(window, cx))
 }
 
-pub fn setup_nip17_relay<T>(label: T) -> impl IntoElement
-where
-    T: Into<SharedString>,
-{
-    div().child(
-        Button::new("setup-relays")
-            .icon(IconName::Info)
-            .label(label)
-            .warning()
-            .xsmall()
-            .rounded()
-            .on_click(move |_, window, cx| {
-                let view = cx.new(|cx| SetupRelay::new(Kind::InboxRelays, window, cx));
-                let weak_view = view.downgrade();
-
-                window.open_modal(cx, move |modal, _window, _cx| {
-                    let weak_view = weak_view.clone();
-
-                    modal
-                        .confirm()
-                        .title(shared_t!("relays.modal"))
-                        .child(view.clone())
-                        .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
-                        .on_ok(move |_, window, cx| {
-                            weak_view
-                                .update(cx, |this, cx| {
-                                    this.set_relays(window, cx);
-                                })
-                                .ok();
-                            // true to close the modal
-                            false
-                        })
-                })
-            }),
-    )
-}
-
+#[derive(Debug)]
 pub struct SetupRelay {
     input: Entity<InputState>,
-    relays: Vec<RelayUrl>,
     error: Option<SharedString>,
+
+    // All relays
+    relays: HashSet<RelayUrl>,
+
+    // Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
+
+    // Background tasks
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl SetupRelay {
-    pub fn new(kind: Kind, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
-        let load_relay = cx.background_spawn(async move {
-            let client = nostr_client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let filter = Filter::new().kind(kind).author(public_key).limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first() {
-                let relays: Vec<RelayUrl> = event
-                    .tags
-                    .iter()
-                    .filter_map(|tag| tag.as_standardized())
-                    .filter_map(|tag| {
-                        if let TagStandard::RelayMetadata { relay_url, .. } = tag {
-                            Some(relay_url.to_owned())
-                        } else if let TagStandard::Relay(url) = tag {
-                            Some(url.to_owned())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                Ok(relays)
-            } else {
-                Err(anyhow!("Not found."))
-            }
-        });
-
         tasks.push(
             // Load user's relays in the local database
             cx.spawn_in(window, async move |this, cx| {
-                if let Ok(relays) = load_relay.await {
+                if let Ok(relays) = Self::load(cx).await {
                     this.update(cx, |this, cx| {
-                        this.relays = relays;
+                        this.relays.extend(relays);
                         cx.notify();
                     })
                     .ok();
@@ -131,35 +71,55 @@ impl SetupRelay {
 
         Self {
             input,
-            relays: vec![],
+            relays: HashSet::new(),
             error: None,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
     }
 
+    fn load(cx: &AsyncWindowContext) -> Task<Result<Vec<RelayUrl>, Error>> {
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(public_key)
+                .limit(1);
+
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                let urls = nip17::extract_owned_relay_list(event).collect();
+                Ok(urls)
+            } else {
+                Err(anyhow!("Not found."))
+            }
+        })
+    }
+
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let value = self.input.read(cx).value().to_string();
 
         if !value.starts_with("ws") {
+            self.set_error("Relay URl is invalid", window, cx);
             return;
         }
 
         if let Ok(url) = RelayUrl::parse(&value) {
-            if !self.relays.contains(&url) {
-                self.relays.push(url);
+            if !self.relays.insert(url) {
+                self.input.update(cx, |this, cx| {
+                    this.set_value("", window, cx);
+                });
+                cx.notify();
             }
-
-            self.input.update(cx, |this, cx| {
-                this.set_value("", window, cx);
-            });
-
-            cx.notify();
+        } else {
+            self.set_error("Relay URl is invalid", window, cx);
         }
     }
 
-    fn remove(&mut self, ix: usize, _window: &mut Window, cx: &mut Context<Self>) {
-        self.relays.remove(ix);
+    fn remove(&mut self, url: &RelayUrl, cx: &mut Context<Self>) {
+        self.relays.remove(url);
         cx.notify();
     }
 
@@ -173,12 +133,10 @@ impl SetupRelay {
         // Clear the error message after a delay
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(2)).await;
-            cx.update(|_, cx| {
-                this.update(cx, |this, cx| {
-                    this.error = None;
-                    cx.notify();
-                })
-                .ok();
+
+            this.update(cx, |this, cx| {
+                this.error = None;
+                cx.notify();
             })
             .ok();
         })
@@ -198,6 +156,9 @@ impl SetupRelay {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
+            let app_state = app_state();
+            let gossip = app_state.gossip.read().await;
+
             let tags: Vec<Tag> = relays
                 .iter()
                 .map(|relay| Tag::relay(relay.clone()))
@@ -205,21 +166,20 @@ impl SetupRelay {
 
             let event = EventBuilder::new(Kind::InboxRelays, "")
                 .tags(tags)
-                .build(public_key)
                 .sign(&signer)
                 .await?;
 
             // Set messaging relays
-            client.send_event(&event).await?;
+            gossip.send_event_to_write_relays(&event).await?;
 
             // Connect to messaging relays
             for relay in relays.iter() {
-                _ = client.add_relay(relay).await;
-                _ = client.connect_relay(relay).await;
+                client.add_relay(relay).await.ok();
+                client.connect_relay(relay).await.ok();
             }
 
             // Fetch gift wrap events
-            let sub_id = app_state().gift_wrap_sub_id.clone();
+            let sub_id = app_state.gift_wrap_sub_id.clone();
             let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
             if client
@@ -259,38 +219,47 @@ impl SetupRelay {
         uniform_list(
             "relays",
             total,
-            cx.processor(move |_, range, _window, cx| {
+            cx.processor(move |_v, range, _window, cx| {
                 let mut items = Vec::new();
 
                 for ix in range {
-                    let item = relays.get(ix).map(|i: &RelayUrl| i.to_string()).unwrap();
-
-                    items.push(
-                        div().group("").w_full().h_9().py_0p5().child(
+                    if let Some(url) = relays.iter().nth(ix) {
+                        items.push(
                             div()
-                                .px_2()
-                                .h_full()
+                                .id(SharedString::from(url.to_string()))
+                                .group("")
                                 .w_full()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .rounded(cx.theme().radius)
-                                .bg(cx.theme().elevated_surface_background)
-                                .text_xs()
-                                .child(item)
+                                .h_9()
+                                .py_0p5()
                                 .child(
-                                    Button::new("remove_{ix}")
-                                        .icon(IconName::Close)
-                                        .xsmall()
-                                        .ghost()
-                                        .invisible()
-                                        .group_hover("", |this| this.visible())
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.remove(ix, window, cx)
-                                        })),
+                                    div()
+                                        .px_2()
+                                        .h_full()
+                                        .w_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .text_xs()
+                                        .child(SharedString::from(url.to_string()))
+                                        .child(
+                                            Button::new("remove_{ix}")
+                                                .icon(IconName::Close)
+                                                .xsmall()
+                                                .ghost()
+                                                .invisible()
+                                                .group_hover("", |this| this.visible())
+                                                .on_click({
+                                                    let url = url.to_owned();
+                                                    cx.listener(move |this, _ev, _window, cx| {
+                                                        this.remove(&url, cx);
+                                                    })
+                                                }),
+                                        ),
                                 ),
-                        ),
-                    )
+                        )
+                    }
                 }
 
                 items
@@ -338,39 +307,6 @@ impl Render for SetupRelay {
                                         this.add(window, cx);
                                     })),
                             ),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .font_semibold()
-                                    .text_color(cx.theme().text_muted)
-                                    .child(shared_t!("common.recommended")),
-                            )
-                            .child(h_flex().gap_1().children({
-                                NIP17_RELAYS.iter().map(|&relay| {
-                                    div()
-                                        .id(relay)
-                                        .group("")
-                                        .py_0p5()
-                                        .px_1p5()
-                                        .text_xs()
-                                        .text_center()
-                                        .bg(cx.theme().secondary_background)
-                                        .hover(|this| this.bg(cx.theme().secondary_hover))
-                                        .active(|this| this.bg(cx.theme().secondary_active))
-                                        .rounded_full()
-                                        .child(relay)
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.input.update(cx, |this, cx| {
-                                                this.set_value(relay, window, cx);
-                                            });
-                                            this.add(window, cx);
-                                        }))
-                                })
-                            })),
                     )
                     .when_some(self.error.as_ref(), |this, error| {
                         this.child(

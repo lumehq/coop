@@ -15,7 +15,7 @@ use crate::nostr_client;
 use crate::paths::support_dir;
 use crate::state::gossip::Gossip;
 
-pub mod gossip;
+mod gossip;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
@@ -267,14 +267,18 @@ impl AppState {
 
                     match event.kind {
                         Kind::RelayList => {
-                            let mut gossip = self.gossip.write().await;
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
                             // Update NIP-65 relays for event's public key
-                            gossip.insert(&event);
+                            {
+                                let mut gossip = self.gossip.write().await;
+                                gossip.insert(&event);
+                            }
+
+                            let is_self_authored = Self::is_self_authored(&event).await;
 
                             // Get events if relay list belongs to current user
                             if is_self_authored {
+                                let gossip = self.gossip.read().await;
+
                                 // Fetch user's metadata event
                                 gossip.subscribe(event.pubkey, Kind::Metadata).await.ok();
 
@@ -286,16 +290,19 @@ impl AppState {
                             }
                         }
                         Kind::InboxRelays => {
-                            let mut gossip = self.gossip.write().await;
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
                             // Update NIP-17 relays for event's public key
-                            gossip.insert(&event);
+                            {
+                                let mut gossip = self.gossip.write().await;
+                                gossip.insert(&event);
+                            }
+
+                            let is_self_authored = Self::is_self_authored(&event).await;
 
                             // Subscribe to gift wrap events if messaging relays belong to the current user
                             if is_self_authored {
-                                if let Err(e) = gossip.monitor_inbox(event.pubkey).await {
-                                    log::error!("Error: {e}");
+                                let gossip = self.gossip.read().await;
+
+                                if gossip.monitor_inbox(event.pubkey).await.is_err() {
                                     self.signal.send(SignalKind::MessagingRelaysNotFound).await;
                                 }
                             }
@@ -304,11 +311,15 @@ impl AppState {
                             let is_self_authored = Self::is_self_authored(&event).await;
 
                             if is_self_authored {
-                                let mut gossip = self.gossip.write().await;
                                 let public_keys: HashSet<PublicKey> =
                                     event.tags.public_keys().copied().collect();
 
-                                gossip.bulk_subscribe(public_keys).await.ok();
+                                self.gossip
+                                    .read()
+                                    .await
+                                    .bulk_subscribe(public_keys)
+                                    .await
+                                    .ok();
                             }
                         }
                         Kind::Metadata => {
@@ -395,16 +406,16 @@ impl AppState {
 
                     // Process the batch if it's full
                     if batch.len() >= METADATA_BATCH_LIMIT {
-                        let mut gossip = self.gossip.write().await;
+                        let gossip = self.gossip.read().await;
                         gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
                     }
                 }
                 BatchEvent::Timeout => {
-                    let mut gossip = self.gossip.write().await;
+                    let gossip = self.gossip.read().await;
                     gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
                 }
                 BatchEvent::Closed => {
-                    let mut gossip = self.gossip.write().await;
+                    let gossip = self.gossip.read().await;
                     gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
 
                     // Exit the current loop

@@ -6,7 +6,6 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::{shared_t, t};
-use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -54,28 +53,25 @@ impl Preferences {
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
-                            let set_metadata = this.set_metadata(cx);
                             let registry = Registry::global(cx);
+                            let set_metadata = this.set_metadata(cx);
 
-                            cx.spawn_in(window, async move |_, cx| {
-                                match set_metadata.await {
-                                    Ok(profile) => {
-                                        if let Some(profile) = profile {
-                                            cx.update(|_, cx| {
-                                                registry.update(cx, |this, cx| {
-                                                    this.insert_or_update_person(profile, cx);
-                                                });
-                                            })
-                                            .ok();
+                            cx.spawn_in(window, async move |this, cx| {
+                                let result = set_metadata.await;
+
+                                this.update_in(cx, |_, window, cx| {
+                                    match result {
+                                        Ok(profile) => {
+                                            registry.update(cx, |this, cx| {
+                                                this.insert_or_update_person(profile, cx);
+                                            });
                                         }
-                                    }
-                                    Err(e) => {
-                                        cx.update(|window, cx| {
+                                        Err(e) => {
                                             window.push_notification(e.to_string(), cx);
-                                        })
-                                        .ok();
-                                    }
-                                };
+                                        }
+                                    };
+                                })
+                                .ok();
                             })
                             .detach();
                         })
@@ -87,7 +83,7 @@ impl Preferences {
     }
 
     fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = setup_relay::init(Kind::InboxRelays, window, cx);
+        let view = setup_relay::init(window, cx);
         let weak_view = view.downgrade();
 
         window.open_modal(cx, move |this, _window, _cx| {

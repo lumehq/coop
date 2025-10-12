@@ -19,17 +19,6 @@ pub const BOOTSTRAP_RELAYS: [&str; 5] = [
 /// Search Relays.
 pub const SEARCH_RELAYS: [&str; 1] = ["wss://relay.nostr.band"];
 
-/// NIP65 Relays. Used for new account
-pub const NIP65_RELAYS: [&str; 4] = [
-    "wss://relay.damus.io",
-    "wss://relay.primal.net",
-    "wss://relay.nostr.net",
-    "wss://nos.lol",
-];
-
-/// Messaging Relays. Used for new account
-pub const NIP17_RELAYS: [&str; 2] = ["wss://nip17.com", "wss://auth.nostr1.com"];
-
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";
 
