@@ -19,8 +19,7 @@ impl Gossip {
     pub fn insert(&mut self, event: &Event) {
         match event.kind {
             Kind::InboxRelays => {
-                let urls: Vec<RelayUrl> =
-                    nip17::extract_relay_list(event).take(3).cloned().collect();
+                let urls: Vec<RelayUrl> = nip17::extract_relay_list(event).cloned().collect();
 
                 if !urls.is_empty() {
                     self.nip17.entry(event.pubkey).or_default().extend(urls);
@@ -85,22 +84,12 @@ impl Gossip {
         let timeout = Duration::from_secs(5);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-        let latest_filter = Filter::new()
+        let filter = Filter::new()
             .kind(Kind::RelayList)
             .author(public_key)
             .limit(1);
 
         // Subscribe to events from the bootstrapping relays
-        client
-            .subscribe_to(BOOTSTRAP_RELAYS, latest_filter.clone(), Some(opts))
-            .await?;
-
-        let filter = Filter::new()
-            .kind(Kind::RelayList)
-            .author(public_key)
-            .since(Timestamp::now());
-
-        // Continuously subscribe for new events from the bootstrap relays
         client
             .subscribe_to(BOOTSTRAP_RELAYS, filter.clone(), Some(opts))
             .await?;
@@ -109,7 +98,7 @@ impl Gossip {
         smol::spawn(async move {
             smol::Timer::after(timeout).await;
 
-            if client.database().count(latest_filter).await.unwrap_or(0) < 1 {
+            if client.database().count(filter).await.unwrap_or(0) < 1 {
                 app_state()
                     .signal
                     .send(SignalKind::GossipRelaysNotFound)
@@ -168,7 +157,7 @@ impl Gossip {
 
         // Ensure user's have at least one write relay
         if urls.is_empty() {
-            return Err(anyhow!("NIP-17 relays are empty"));
+            return Err(anyhow!("Write relays are empty"));
         }
 
         // Ensure connection to relays
@@ -177,22 +166,12 @@ impl Gossip {
             client.connect_relay(url).await?;
         }
 
-        let latest_filter = Filter::new()
+        let filter = Filter::new()
             .kind(Kind::InboxRelays)
             .author(public_key)
             .limit(1);
 
         // Subscribe to events from the bootstrapping relays
-        client
-            .subscribe_to(urls.clone(), latest_filter.clone(), Some(opts))
-            .await?;
-
-        let filter = Filter::new()
-            .kind(Kind::InboxRelays)
-            .author(public_key)
-            .since(Timestamp::now());
-
-        // Continuously subscribe for new events from the bootstrap relays
         client
             .subscribe_to(urls, filter.clone(), Some(opts))
             .await?;
@@ -201,7 +180,7 @@ impl Gossip {
         smol::spawn(async move {
             smol::Timer::after(timeout).await;
 
-            if client.database().count(latest_filter).await.unwrap_or(0) < 1 {
+            if client.database().count(filter).await.unwrap_or(0) < 1 {
                 app_state()
                     .signal
                     .send(SignalKind::MessagingRelaysNotFound)
@@ -266,7 +245,7 @@ impl Gossip {
 
         // Ensure user's have at least one write relay
         if urls.is_empty() {
-            return Err(anyhow!("NIP-65 relays are empty"));
+            return Err(anyhow!("Write relays are empty"));
         }
 
         // Ensure connection to relays
