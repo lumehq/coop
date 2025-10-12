@@ -2,12 +2,12 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::{app_state, default_nip17_relays, nostr_client};
+use app_state::{app_state, nostr_client};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, AsyncWindowContext, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, TextAlign, UniformList, Window,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
+    Task, TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
@@ -15,48 +15,10 @@ use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::modal::ModalButtonProps;
-use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, IconName, Sizable};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
     cx.new(|cx| SetupRelay::new(window, cx))
-}
-
-pub fn button<T>(label: T) -> impl IntoElement
-where
-    T: Into<SharedString>,
-{
-    div().child(
-        Button::new("setup-relays-button")
-            .icon(IconName::Info)
-            .label(label)
-            .warning()
-            .xsmall()
-            .rounded()
-            .on_click(move |_, window, cx| {
-                let view = cx.new(|cx| SetupRelay::new(window, cx));
-                let weak_view = view.downgrade();
-
-                window.open_modal(cx, move |modal, _window, _cx| {
-                    let weak_view = weak_view.clone();
-
-                    modal
-                        .confirm()
-                        .title(shared_t!("relays.modal"))
-                        .child(view.clone())
-                        .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
-                        .on_ok(move |_, window, cx| {
-                            weak_view
-                                .update(cx, |this, cx| {
-                                    this.set_relays(window, cx);
-                                })
-                                .ok();
-                            // true to close the modal
-                            false
-                        })
-                })
-            }),
-    )
 }
 
 #[derive(Debug)]
@@ -64,6 +26,7 @@ pub struct SetupRelay {
     input: Entity<InputState>,
     error: Option<SharedString>,
 
+    // All relays
     relays: HashSet<RelayUrl>,
 
     // Event subscriptions
@@ -344,39 +307,6 @@ impl Render for SetupRelay {
                                         this.add(window, cx);
                                     })),
                             ),
-                    )
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .font_semibold()
-                                    .text_color(cx.theme().text_muted)
-                                    .child(shared_t!("common.recommended")),
-                            )
-                            .child(h_flex().gap_1().children({
-                                default_nip17_relays().iter().map(|relay| {
-                                    div()
-                                        .id(SharedString::from(relay.to_string()))
-                                        .group("")
-                                        .py_0p5()
-                                        .px_1p5()
-                                        .text_xs()
-                                        .text_center()
-                                        .bg(cx.theme().secondary_background)
-                                        .hover(|this| this.bg(cx.theme().secondary_hover))
-                                        .active(|this| this.bg(cx.theme().secondary_active))
-                                        .rounded_full()
-                                        .child(SharedString::from(relay.to_string()))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.input.update(cx, |this, cx| {
-                                                this.set_value(relay.to_string(), window, cx);
-                                            });
-                                            this.add(window, cx);
-                                        }))
-                                })
-                            })),
                     )
                     .when_some(self.error.as_ref(), |this, error| {
                         this.child(

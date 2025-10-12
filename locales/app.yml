@@ -55,6 +55,10 @@ common:
     en: "Seen on"
   default:
     en: "Default"
+  use_default:
+    en: "Use default"
+  configure:
+    en: "Configure"
 
 auto_update:
   updating:
@@ -180,25 +184,23 @@ login:
 
 mailbox:
   modal:
-    en: "Configure Mailbox Relays to continue"
+    en: "Set Up Mailbox Relays to Continue"
   description:
     en: "By configuring Mailbox Relays, Coop can find where to get or send your events. If you are unsure, use the default option and modify it later."
   write_label:
     en: "Outbox Relays are used to publish your events. Other users will also look for your events there."
   read_label:
     en: "Inbox Relays are used to find events about you. Other users will publish the events they want you to see there."
-  default_button:
-    en: "Use default"
-  setup_button:
-    en: "Configure"
 
-relays:
+messaging:
   button:
     en: "Configure the Messaging Relays to receive messages"
   modal:
     en: "Set Up Messaging Relays"
   description:
     en: "In order to receive messages from others, you need to set up at least one Messaging Relay."
+
+relays:
   help_text:
     en: "Please add some relays."
   empty:

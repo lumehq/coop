@@ -142,6 +142,17 @@ impl Gossip {
         // Send event to the public relays
         client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
+        // Update gossip data
+        for relay in relays {
+            self.nip65
+                .entry(event.pubkey)
+                .or_default()
+                .insert(relay.to_owned());
+        }
+
+        // Get NIP-17 relays
+        self.get_nip17(event.pubkey).await?;
+
         Ok(())
     }
 
@@ -228,6 +239,17 @@ impl Gossip {
 
         // Send event to the public relays
         client.send_event_to(urls, &event).await?;
+
+        // Update gossip data
+        for relay in relays {
+            self.nip17
+                .entry(event.pubkey)
+                .or_default()
+                .insert(relay.to_owned());
+        }
+
+        // Run inbox monitor
+        self.monitor_inbox(event.pubkey).await?;
 
         Ok(())
     }

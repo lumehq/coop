@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
-use app_state::{app_state, default_nip65_relays, nostr_client};
+use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
@@ -41,9 +41,9 @@ use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable, Sty
 
 use crate::actions::{DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
+use crate::views::setup_relay::SetupRelay;
 use crate::views::{
-    account, chat, login, new_account, onboarding, preferences, setup_relay, sidebar, user_profile,
-    welcome,
+    account, chat, login, new_account, onboarding, preferences, sidebar, user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -61,22 +61,25 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
 }
 
 pub struct ChatSpace {
-    // App's Title Bar
+    /// App's Title Bar
     title_bar: Entity<TitleBar>,
 
-    // App's Dock Area
+    /// App's Dock Area
     dock: Entity<DockArea>,
 
-    // All authentication requests
+    /// All authentication requests
     auth_requests: Entity<HashMap<RelayUrl, AuthRequest>>,
 
-    // Local state to determine if the user has set up NIP-17 relays
-    nip17_relays: bool,
+    /// Local state to determine if the user has set up NIP-17 relays
+    nip17_ready: bool,
 
-    // All subscriptions for observing the app state
+    /// Local state to determine if the user has set up NIP-65 relays
+    nip65_ready: bool,
+
+    /// All subscriptions for observing the app state
     _subscriptions: SmallVec<[Subscription; 4]>,
 
-    // All long running tasks
+    /// All long running tasks
     _tasks: SmallVec<[Task<()>; 5]>,
 }
 
@@ -203,7 +206,8 @@ impl ChatSpace {
             dock,
             title_bar,
             auth_requests,
-            nip17_relays: true,
+            nip17_ready: true,
+            nip65_ready: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -361,13 +365,14 @@ impl ChatSpace {
                     }
                     SignalKind::GossipRelaysNotFound => {
                         view.update(cx, |this, cx| {
-                            this.render_setup_relays_modal(window, cx);
+                            this.set_required_gossip_relays(cx);
+                            this.render_setup_gossip_relays_modal(window, cx);
                         })
                         .ok();
                     }
                     SignalKind::MessagingRelaysNotFound => {
                         view.update(cx, |this, cx| {
-                            this.set_required_relays(cx);
+                            this.set_required_dm_relays(cx);
                         })
                         .ok();
                     }
@@ -639,8 +644,13 @@ impl ChatSpace {
         });
     }
 
-    fn set_required_relays(&mut self, cx: &mut Context<Self>) {
-        self.nip17_relays = false;
+    fn set_required_dm_relays(&mut self, cx: &mut Context<Self>) {
+        self.nip17_ready = false;
+        cx.notify();
+    }
+
+    fn set_required_gossip_relays(&mut self, cx: &mut Context<Self>) {
+        self.nip65_ready = false;
         cx.notify();
     }
 
@@ -789,7 +799,7 @@ impl ChatSpace {
         window.push_notification(t!("common.copied"), cx);
     }
 
-    fn render_setup_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
+    fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
         let relays = default_nip65_relays();
 
         window.open_modal(cx, move |this, _window, cx| {
@@ -799,8 +809,8 @@ impl ChatSpace {
                 .confirm()
                 .button_props(
                     ModalButtonProps::default()
-                        .cancel_text(t!("mailbox.setup_button"))
-                        .ok_text(t!("mailbox.default_button")),
+                        .cancel_text(t!("common.configure"))
+                        .ok_text(t!("common.use_default")),
                 )
                 .title(shared_t!("mailbox.modal"))
                 .child(
@@ -859,7 +869,7 @@ impl ChatSpace {
                 )
                 .on_cancel(|_, _window, _cx| {
                     // TODO: add configure relays
-                    // true: Close modal
+                    // true to close the modal
                     true
                 })
                 .on_ok(|_, window, cx| {
@@ -867,14 +877,125 @@ impl ChatSpace {
                         .spawn(cx, async move |cx| {
                             let app_state = app_state();
                             let relays = default_nip65_relays();
-                            let mut gossip = app_state.gossip.write().await;
 
-                            if gossip.set_nip65(relays).await.is_ok() {
-                                cx.update(|window, cx| {
-                                    window.close_modal(cx);
-                                })
-                                .ok();
+                            let mut gossip = app_state.gossip.write().await;
+                            let result = gossip.set_nip65(relays).await;
+
+                            cx.update(|window, cx| {
+                                match result {
+                                    Ok(_) => {
+                                        window.close_modal(cx);
+                                    }
+                                    Err(e) => {
+                                        window.push_notification(e.to_string(), cx);
+                                    }
+                                };
+                            })
+                            .ok();
+                        })
+                        .detach();
+
+                    // false to keep modal open
+                    false
+                })
+        })
+    }
+
+    fn render_setup_dm_relays_modal(window: &mut Window, cx: &mut App) {
+        let relays = default_nip17_relays();
+
+        window.open_modal(cx, move |this, _window, cx| {
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .confirm()
+                .button_props(
+                    ModalButtonProps::default()
+                        .cancel_text(t!("common.configure"))
+                        .ok_text(t!("common.use_default")),
+                )
+                .title(shared_t!("messaging.modal"))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .text_sm()
+                        .child(shared_t!("messaging.description"))
+                        .child(
+                            div()
+                                .font_semibold()
+                                .text_xs()
+                                .child(shared_t!("common.default")),
+                        )
+                        .child(v_flex().gap_1().children({
+                            let mut items = Vec::with_capacity(relays.len());
+
+                            for url in relays {
+                                items.push(
+                                    div()
+                                        .h_7()
+                                        .px_1p5()
+                                        .h_flex()
+                                        .justify_between()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .text_sm()
+                                        .child(
+                                            div()
+                                                .line_height(relative(1.2))
+                                                .child(SharedString::from(url.to_string())),
+                                        ),
+                                );
                             }
+
+                            items
+                        })),
+                )
+                .on_cancel(|_, window, cx| {
+                    let view = cx.new(|cx| SetupRelay::new(window, cx));
+                    let weak_view = view.downgrade();
+
+                    window.open_modal(cx, move |modal, _window, _cx| {
+                        let weak_view = weak_view.clone();
+
+                        modal
+                            .confirm()
+                            .title(shared_t!("relays.modal"))
+                            .child(view.clone())
+                            .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                            .on_ok(move |_, window, cx| {
+                                weak_view
+                                    .update(cx, |this, cx| {
+                                        this.set_relays(window, cx);
+                                    })
+                                    .ok();
+                                // true to close the modal
+                                false
+                            })
+                    });
+
+                    // true to close the modal
+                    true
+                })
+                .on_ok(|_, window, cx| {
+                    window
+                        .spawn(cx, async move |cx| {
+                            let app_state = app_state();
+                            let relays = default_nip17_relays();
+
+                            let mut gossip = app_state.gossip.write().await;
+                            let result = gossip.set_nip17(relays).await;
+
+                            cx.update(|window, cx| {
+                                match result {
+                                    Ok(_) => {
+                                        window.close_modal(cx);
+                                    }
+                                    Err(e) => {
+                                        window.push_notification(e.to_string(), cx);
+                                    }
+                                };
+                            })
+                            .ok();
                         })
                         .detach();
 
@@ -1049,8 +1170,18 @@ impl ChatSpace {
                         })),
                 )
             })
-            .when(!self.nip17_relays, |this| {
-                this.child(setup_relay::button(t!("relays.button")))
+            .when(!self.nip17_ready, |this| {
+                this.child(
+                    Button::new("setup-relays-button")
+                        .icon(IconName::Info)
+                        .label(t!("messaging.button"))
+                        .warning()
+                        .xsmall()
+                        .rounded()
+                        .on_click(move |_ev, window, cx| {
+                            Self::render_setup_dm_relays_modal(window, cx);
+                        }),
+                )
             })
             .child(
                 Button::new("user")
