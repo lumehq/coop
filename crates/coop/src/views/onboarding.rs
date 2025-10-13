@@ -23,7 +23,7 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
-use crate::chatspace::{self, ChatSpace};
+use crate::chatspace::{self};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -161,10 +161,6 @@ impl Onboarding {
                 }
             }),
         )
-    }
-
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
     }
 
     fn write_uri_to_disk(
@@ -352,26 +348,6 @@ impl Render for Onboarding {
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         chatspace::login(window, cx);
                                     })),
-                            )
-                            .child(
-                                v_flex()
-                                    .gap_1()
-                                    .child(
-                                        Button::new("ext")
-                                            .label(t!("onboarding.ext_login"))
-                                            .ghost_alt()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.set_proxy(window, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        div()
-                                            .italic()
-                                            .text_xs()
-                                            .text_center()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("onboarding.ext_login_note")),
-                                    ),
                             ),
                     ),
             )

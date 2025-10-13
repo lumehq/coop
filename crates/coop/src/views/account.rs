@@ -28,7 +28,6 @@ use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
-use crate::chatspace::ChatSpace;
 
 pub fn init(
     profile: Profile,
@@ -92,8 +91,6 @@ impl Account {
             if let Ok(uri) = NostrConnectURI::parse(&self.stored_secret) {
                 self.nostr_connect(uri, window, cx);
             }
-        } else if self.is_extension {
-            self.set_proxy(window, cx);
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
             self.keys(enc, window, cx);
         } else {
@@ -132,10 +129,6 @@ impl Account {
                 }
             }),
         );
-    }
-
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
     }
 
     fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {

@@ -24,7 +24,6 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
-use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
@@ -1201,61 +1200,6 @@ impl ChatSpace {
             )
     }
 
-    pub(crate) fn proxy_signer(window: &mut Window, cx: &mut App) {
-        let Some(Some(root)) = window.root::<Root>() else {
-            return;
-        };
-
-        let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() else {
-            return;
-        };
-
-        chatspace.update(cx, |this, cx| {
-            let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
-            let url = proxy.url();
-
-            this._tasks.push(cx.background_spawn(async move {
-                let client = nostr_client();
-                let app_state = app_state();
-
-                if proxy.start().await.is_ok() {
-                    webbrowser::open(&url).ok();
-
-                    loop {
-                        if proxy.is_session_active() {
-                            // Save the signer to disk for further logins
-                            if let Ok(public_key) = proxy.get_public_key().await {
-                                let keys = Keys::generate();
-                                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                                let kind = Kind::ApplicationSpecificData;
-
-                                let builder = EventBuilder::new(kind, "extension")
-                                    .tags(tags)
-                                    .build(public_key)
-                                    .sign(&keys)
-                                    .await;
-
-                                if let Ok(event) = builder {
-                                    if let Err(e) = client.database().save_event(&event).await {
-                                        log::error!("Failed to save event: {e}");
-                                    };
-                                }
-                            }
-
-                            // Set the client's signer with current proxy signer
-                            client.set_signer(proxy.clone()).await;
-
-                            break;
-                        } else {
-                            app_state.signal.send(SignalKind::ProxyDown).await;
-                        }
-                        smol::Timer::after(Duration::from_secs(1)).await;
-                    }
-                }
-            }));
-        });
-    }
-
     fn get_all_panel_ids(&self, cx: &App) -> Option<Vec<u64>> {
         let ids: Vec<u64> = self
             .dock
@@ -1269,7 +1213,7 @@ impl ChatSpace {
         Some(ids)
     }
 
-    pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
+    fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
     where
         P: PanelView,
     {

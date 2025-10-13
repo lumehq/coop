@@ -37,7 +37,6 @@ registry = { path = "../registry" }
 settings = { path = "../settings" }
 client_keys = { path = "../client_keys" }
 auto_update = { path = "../auto_update" }
-signer_proxy = { path = "../signer_proxy" }
 
 rust-i18n.workspace = true
 i18n.workspace = true
