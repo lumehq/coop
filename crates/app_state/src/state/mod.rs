@@ -164,9 +164,8 @@ impl EventTracker {
     }
 }
 
-/// A simple storage to store all states that using across the application.
 #[derive(Debug)]
-pub struct AppState {
+pub struct AppInnerState {
     /// The timestamp when the application was initialized.
     pub initialized_at: Timestamp,
 
@@ -181,6 +180,40 @@ pub struct AppState {
 
     /// Auto-close options for relay subscriptions
     pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
+}
+
+impl AppInnerState {
+    pub fn new() -> Self {
+        let first_run = Self::first_run();
+        let initialized_at = Timestamp::now();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        Self {
+            initialized_at,
+            is_first_run: AtomicBool::new(first_run),
+            gift_wrap_sub_id: SubscriptionId::new("inbox"),
+            gift_wrap_processing: AtomicBool::new(false),
+            auto_close_opts: Some(opts),
+        }
+    }
+
+    fn first_run() -> bool {
+        let flag = support_dir().join(".first_run");
+        !flag.exists() && std::fs::write(&flag, "").is_ok()
+    }
+}
+
+impl Default for AppInnerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A simple storage to store all states that using across the application.
+#[derive(Debug)]
+pub struct AppState {
+    /// Inner state
+    pub inner: AppInnerState,
 
     /// NIP-65: https://github.com/nostr-protocol/nips/blob/master/65.md
     pub gossip: RwLock<Gossip>,
@@ -203,21 +236,14 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let first_run = Self::first_run();
-        let initialized_at = Timestamp::now();
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
+        let inner = AppInnerState::default();
         let signal = Signal::default();
         let ingester = Ingester::default();
 
         Self {
-            initialized_at,
+            inner,
             signal,
             ingester,
-            is_first_run: AtomicBool::new(first_run),
-            gift_wrap_sub_id: SubscriptionId::new("inbox"),
-            gift_wrap_processing: AtomicBool::new(false),
-            auto_close_opts: Some(opts),
             gossip: RwLock::new(Gossip::default()),
             event_tracker: RwLock::new(EventTracker::default()),
         }
@@ -335,7 +361,7 @@ impl AppState {
                     }
                 }
                 RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if *subscription_id == self.gift_wrap_sub_id {
+                    if *subscription_id == self.inner.gift_wrap_sub_id {
                         self.signal
                             .send(SignalKind::GiftWrapStatus(UnwrappingStatus::Processing))
                             .await;
@@ -505,7 +531,7 @@ impl AppState {
                 self.ingester.send(public_key).await;
             }
 
-            match event.created_at >= self.initialized_at {
+            match event.created_at >= self.inner.initialized_at {
                 // New message: send a signal to notify the UI
                 true => {
                     self.signal
@@ -514,14 +540,11 @@ impl AppState {
                 }
                 // Old message: Coop is probably processing the user's messages during initial load
                 false => {
-                    self.gift_wrap_processing.store(true, Ordering::Release);
+                    self.inner
+                        .gift_wrap_processing
+                        .store(true, Ordering::Release);
                 }
             }
         }
-    }
-
-    fn first_run() -> bool {
-        let flag = support_dir().join(".first_run");
-        !flag.exists() && std::fs::write(&flag, "").is_ok()
     }
 }

@@ -76,7 +76,7 @@ impl ClientKeys {
                     this.set_keys(Some(keys), false, true, cx);
                 })
                 .ok();
-            } else if app_state.is_first_run.load(Ordering::Acquire) {
+            } else if app_state.inner.is_first_run.load(Ordering::Acquire) {
                 // If this is the first run, generate new keys and use them for the client keys
                 this.update(cx, |this, cx| {
                     this.new_keys(cx);

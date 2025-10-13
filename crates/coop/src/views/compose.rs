@@ -201,7 +201,7 @@ impl Compose {
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.inner.auto_close_opts)
             .await?;
 
         Ok(())

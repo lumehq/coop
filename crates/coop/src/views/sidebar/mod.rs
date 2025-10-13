@@ -532,7 +532,7 @@ impl Sidebar {
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
             let client = nostr_client();
             let app_state = app_state();
-            let subscription = client.subscription(&app_state.gift_wrap_sub_id).await;
+            let subscription = client.subscription(&app_state.inner.gift_wrap_sub_id).await;
             let mut relays: Vec<Relay> = vec![];
 
             for (url, _filter) in subscription.into_iter() {

@@ -246,11 +246,11 @@ impl ChatSpace {
             if client.has_signer().await {
                 total_loops += 1;
 
-                if app_state.gift_wrap_processing.load(Ordering::Acquire) {
+                if app_state.inner.gift_wrap_processing.load(Ordering::Acquire) {
                     is_start_processing = true;
 
                     // Reset gift wrap processing flag
-                    let _ = app_state.gift_wrap_processing.compare_exchange(
+                    let _ = app_state.inner.gift_wrap_processing.compare_exchange(
                         true,
                         false,
                         Ordering::Release,
@@ -736,7 +736,7 @@ impl ChatSpace {
                 .authors(pubkeys);
 
             client
-                .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.inner.auto_close_opts)
                 .await?;
 
             Ok(())

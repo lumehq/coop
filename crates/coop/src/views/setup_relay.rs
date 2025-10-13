@@ -179,7 +179,7 @@ impl SetupRelay {
             }
 
             // Fetch gift wrap events
-            let sub_id = app_state.gift_wrap_sub_id.clone();
+            let sub_id = app_state.inner.gift_wrap_sub_id.clone();
             let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
             if client
