@@ -15,7 +15,7 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
-use nostr_sdk::prelude::*;
+use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -30,16 +30,16 @@ use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 use crate::actions::CoopAuthUrlHandler;
 
 pub fn init(
-    profile: Profile,
+    public_key: PublicKey,
     secret: String,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<Account> {
-    cx.new(|cx| Account::new(secret, profile, window, cx))
+    cx.new(|cx| Account::new(public_key, secret, window, cx))
 }
 
 pub struct Account {
-    profile: Profile,
+    public_key: PublicKey,
     stored_secret: String,
     is_bunker: bool,
     is_extension: bool,
@@ -54,7 +54,12 @@ pub struct Account {
 }
 
 impl Account {
-    fn new(secret: String, profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        public_key: PublicKey,
+        secret: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let is_bunker = secret.starts_with("bunker://");
         let is_extension = secret.starts_with("extension");
 
@@ -63,7 +68,6 @@ impl Account {
         subscriptions.push(
             // Clear the local state when user closes the account panel
             cx.on_release_in(window, move |this, window, cx| {
-                this.stored_secret.clear();
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
                 });
@@ -71,7 +75,7 @@ impl Account {
         );
 
         Self {
-            profile,
+            public_key,
             is_bunker,
             is_extension,
             stored_secret: secret,
@@ -314,6 +318,9 @@ impl Focusable for Account {
 
 impl Render for Account {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let registry = Registry::read_global(cx);
+        let profile = registry.get_person(&self.public_key, cx);
+
         v_flex()
             .image_cache(self.image_cache.clone())
             .relative()
@@ -371,8 +378,8 @@ impl Render for Account {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = self.profile.avatar(true);
-                                let name = self.profile.display_name();
+                                let avatar = profile.avatar(true);
+                                let name = profile.display_name();
 
                                 this.child(
                                     h_flex()

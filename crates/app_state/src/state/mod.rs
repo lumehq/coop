@@ -1,9 +1,11 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use base64::Engine as _;
 use flume::{Receiver, Sender};
 use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
@@ -12,7 +14,7 @@ use crate::constants::{
     BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
 use crate::nostr_client;
-use crate::paths::support_dir;
+use crate::paths::config_dir;
 use crate::state::gossip::Gossip;
 
 mod gossip;
@@ -45,6 +47,9 @@ pub enum UnwrappingStatus {
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum SignalKind {
+    /// A signal to notify UI that Coop needs to access the keyring
+    KeyringRequired,
+
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
 
@@ -198,8 +203,8 @@ impl AppInnerState {
     }
 
     fn first_run() -> bool {
-        let flag = support_dir().join(".first_run");
-        !flag.exists() && std::fs::write(&flag, "").is_ok()
+        let path = config_dir().join(".first_run");
+        !path.exists() && std::fs::write(&path, "").is_ok()
     }
 }
 
@@ -209,10 +214,71 @@ impl Default for AppInnerState {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct KeyStore {
+    pub keyring_keys: Option<Arc<dyn NostrSigner>>,
+}
+
+impl KeyStore {
+    pub async fn store(&self, key: &str, value: &str) -> Result<(), Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        let mut content = value.to_string();
+
+        // Encrypt the value if the keyring is available
+        if let Some(keyring) = self.keyring_keys.as_ref() {
+            content = keyring.nip44_encrypt(&public_key, value).await?;
+        }
+
+        // Construct the application data event
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+            .tag(Tag::identifier(key))
+            .build(public_key)
+            .sign(&Keys::generate())
+            .await?;
+
+        // Save the event to the database
+        client.database().save_event(&event).await?;
+
+        Ok(())
+    }
+
+    pub async fn load(&self, key: &str) -> Result<String, Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        let filter = Filter::new()
+            .kind(Kind::ApplicationSpecificData)
+            .identifier(key)
+            .limit(1);
+
+        if let Some(event) = client.database().query(filter).await?.first_owned() {
+            if let Some(keyring) = self.keyring_keys.as_ref() {
+                let content = keyring.nip44_decrypt(&public_key, &event.content).await?;
+                Ok(content)
+            } else if self.is_base64(&event.content) {
+                Err(anyhow!("Keyring is required"))
+            } else {
+                Ok(event.content)
+            }
+        } else {
+            Err(anyhow!("Not found"))
+        }
+    }
+
+    fn is_base64(&self, s: &str) -> bool {
+        use base64::engine::general_purpose;
+        general_purpose::STANDARD.decode(s).is_ok()
+    }
+}
+
 /// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct AppState {
-    /// Inner state
+    /// Collection of reusable states
     pub inner: AppInnerState,
 
     /// NIP-65: https://github.com/nostr-protocol/nips/blob/master/65.md
@@ -220,6 +286,9 @@ pub struct AppState {
 
     /// Tracks activity related to Nostr events
     pub event_tracker: RwLock<EventTracker>,
+
+    /// Key store for managing keys
+    pub key_store: RwLock<KeyStore>,
 
     /// Signal channel for communication between Nostr and GPUI
     pub signal: Signal,
@@ -244,6 +313,7 @@ impl AppState {
             inner,
             signal,
             ingester,
+            key_store: RwLock::new(KeyStore::default()),
             gossip: RwLock::new(Gossip::default()),
             event_tracker: RwLock::new(EventTracker::default()),
         }
@@ -299,10 +369,8 @@ impl AppState {
                                 gossip.insert(&event);
                             }
 
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
                             // Get events if relay list belongs to current user
-                            if is_self_authored {
+                            if let Ok(true) = Self::is_self_authored(&event).await {
                                 let gossip = self.gossip.read().await;
 
                                 // Fetch user's metadata event
@@ -322,10 +390,8 @@ impl AppState {
                                 gossip.insert(&event);
                             }
 
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
                             // Subscribe to gift wrap events if messaging relays belong to the current user
-                            if is_self_authored {
+                            if let Ok(true) = Self::is_self_authored(&event).await {
                                 let gossip = self.gossip.read().await;
 
                                 if gossip.monitor_inbox(event.pubkey).await.is_err() {
@@ -334,9 +400,7 @@ impl AppState {
                             }
                         }
                         Kind::ContactList => {
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
-                            if is_self_authored {
+                            if let Ok(true) = Self::is_self_authored(&event).await {
                                 let public_keys: HashSet<PublicKey> =
                                     event.tags.public_keys().copied().collect();
 
@@ -451,18 +515,12 @@ impl AppState {
         }
     }
 
-    async fn is_self_authored(event: &Event) -> bool {
+    async fn is_self_authored(event: &Event) -> Result<bool, Error> {
         let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
 
-        let Ok(signer) = client.signer().await else {
-            return false;
-        };
-
-        let Ok(public_key) = signer.get_public_key().await else {
-            return false;
-        };
-
-        public_key == event.pubkey
+        Ok(public_key == event.pubkey)
     }
 
     /// Stores an unwrapped event in local database with reference to original

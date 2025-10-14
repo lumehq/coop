@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use app_state::constants::{
+    ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, KEYRING_URL,
+};
 use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
 use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
 use auto_update::AutoUpdater;
-use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
@@ -76,21 +77,21 @@ pub struct ChatSpace {
     nip65_ready: bool,
 
     /// All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 4]>,
+    _subscriptions: SmallVec<[Subscription; 3]>,
 
     /// All long running tasks
-    _tasks: SmallVec<[Task<()>; 5]>,
+    _tasks: SmallVec<[Task<()>; 7]>,
 }
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let client_keys = ClientKeys::global(cx);
         let registry = Registry::global(cx);
         let status = registry.read(cx).unwrapping_status.clone();
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let auth_requests = cx.new(|_| HashMap::new());
+        let read_credential = cx.read_credentials(KEYRING_URL);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -99,17 +100,6 @@ impl ChatSpace {
             // Automatically sync theme with system appearance
             window.observe_window_appearance(|window, cx| {
                 Theme::sync_system_appearance(Some(window), cx);
-            }),
-        );
-
-        subscriptions.push(
-            // Observe the client keys and show an alert modal if they fail to initialize
-            cx.observe_in(&client_keys, window, |this, keys, window, cx| {
-                if !keys.read(cx).has_keys() {
-                    this.render_client_keys_modal(window, cx);
-                } else {
-                    this.load_local_account(window, cx);
-                }
             }),
         );
 
@@ -166,6 +156,40 @@ impl ChatSpace {
         );
 
         tasks.push(
+            // Load local keys in the native keyring
+            cx.spawn_in(window, async move |_this, _cx| {
+                match read_credential.await {
+                    Ok(Some(data)) => {
+                        log::info!("res: {data:?}");
+                    }
+                    Ok(None) => {
+                        log::info!("none");
+                    }
+                    Err(e) => {
+                        log::info!("Error: {e}");
+                    }
+                };
+            }),
+        );
+
+        tasks.push(
+            // Load the stored account
+            cx.spawn_in(window, async move |this, cx| {
+                if let Ok((public_key, secret)) = Self::load_account(cx).await {
+                    this.update_in(cx, |this, window, cx| {
+                        this.set_account_layout(public_key, secret, window, cx);
+                    })
+                    .ok();
+                } else {
+                    this.update_in(cx, |this, window, cx| {
+                        this.set_onboarding_layout(window, cx);
+                    })
+                    .ok();
+                }
+            }),
+        );
+
+        tasks.push(
             // Handle nostr events in the background
             cx.background_spawn(async move {
                 app_state().handle_notifications().await.ok();
@@ -210,6 +234,23 @@ impl ChatSpace {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
+    }
+
+    /// Load the stored account in the database
+    fn load_account(cx: &AsyncWindowContext) -> Task<Result<(PublicKey, String), Error>> {
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifier(ACCOUNT_IDENTIFIER)
+                .limit(1);
+
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                Ok((event.pubkey, event.content))
+            } else {
+                Err(anyhow!("Empty"))
+            }
+        })
     }
 
     async fn observe_signer() {
@@ -374,6 +415,9 @@ impl ChatSpace {
                             this.set_required_dm_relays(cx);
                         })
                         .ok();
+                    }
+                    SignalKind::KeyringRequired => {
+                        //
                     }
                 };
             })
@@ -607,12 +651,12 @@ impl ChatSpace {
 
     fn set_account_layout(
         &mut self,
+        public_key: PublicKey,
         secret: String,
-        profile: Profile,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(profile, secret, window, cx));
+        let panel = Arc::new(account::init(public_key, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
@@ -651,43 +695,6 @@ impl ChatSpace {
     fn set_required_gossip_relays(&mut self, cx: &mut Context<Self>) {
         self.nip65_ready = false;
         cx.notify();
-    }
-
-    fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task = cx.background_spawn(async move {
-            let client = nostr_client();
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                let metadata = client
-                    .database()
-                    .metadata(event.pubkey)
-                    .await?
-                    .unwrap_or_default();
-
-                Ok((event.content, Profile::new(event.pubkey, metadata)))
-            } else {
-                Err(anyhow!("Empty"))
-            }
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok((secret, profile)) = task.await {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_account_layout(secret, profile, window, cx);
-                })
-                .ok();
-            } else {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_onboarding_layout(window, cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
     }
 
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
@@ -1026,53 +1033,6 @@ impl ChatSpace {
                 .on_ok(move |_e, _window, cx| {
                     cx.open_url("http://localhost:7400");
                     false
-                })
-        });
-    }
-
-    fn render_client_keys_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .button_props(
-                    ModalButtonProps::default()
-                        .cancel_text(t!("startup.create_new_keys"))
-                        .ok_text(t!("common.allow")),
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .h_40()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .items_center()
-                        .justify_center()
-                        .text_center()
-                        .text_sm()
-                        .child(
-                            div()
-                                .font_semibold()
-                                .text_color(cx.theme().text_muted)
-                                .child(shared_t!("startup.client_keys_warning")),
-                        )
-                        .child(shared_t!("startup.client_keys_desc")),
-                )
-                .on_cancel(|_, _window, cx| {
-                    ClientKeys::global(cx).update(cx, |this, cx| {
-                        this.new_keys(cx);
-                    });
-                    // true: Close modal
-                    true
-                })
-                .on_ok(|_, window, cx| {
-                    ClientKeys::global(cx).update(cx, |this, cx| {
-                        this.load(window, cx);
-                    });
-                    // true: Close modal
-                    true
                 })
         });
     }

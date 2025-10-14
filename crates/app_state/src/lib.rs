@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
-use paths::nostr_file;
 
+use crate::paths::config_dir;
 use crate::state::AppState;
 
 pub mod constants;
@@ -31,7 +31,8 @@ pub fn nostr_client() -> &'static Client {
             .install_default()
             .ok();
 
-        let lmdb = NostrLMDB::open(nostr_file()).expect("Database is NOT initialized");
+        let lmdb =
+            NostrLMDB::open(config_dir().join("nostr.dat")).expect("Database is NOT initialized");
 
         let opts = ClientOptions::new()
             .gossip(false)

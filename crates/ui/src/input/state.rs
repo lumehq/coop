@@ -14,8 +14,8 @@ use lsp_types::Position;
 use rope::{OffsetUtf16, Rope};
 use serde::Deserialize;
 use smallvec::SmallVec;
+use sum_tree::Bias;
 use unicode_segmentation::*;
-use zed_sum_tree::Bias;
 
 use super::blink_cursor::BlinkCursor;
 use super::change::Change;
