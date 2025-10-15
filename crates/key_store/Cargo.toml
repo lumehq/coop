@@ -1,5 +1,5 @@
 [package]
-name = "client_keys"
+name = "key_store"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

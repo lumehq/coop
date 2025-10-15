@@ -5,9 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::{
-    ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH, KEYRING_URL,
-};
+use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
 use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
 use auto_update::AutoUpdater;
@@ -80,7 +78,7 @@ pub struct ChatSpace {
     _subscriptions: SmallVec<[Subscription; 3]>,
 
     /// All long running tasks
-    _tasks: SmallVec<[Task<()>; 7]>,
+    _tasks: SmallVec<[Task<()>; 6]>,
 }
 
 impl ChatSpace {
@@ -91,7 +89,6 @@ impl ChatSpace {
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let auth_requests = cx.new(|_| HashMap::new());
-        let read_credential = cx.read_credentials(KEYRING_URL);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -156,36 +153,21 @@ impl ChatSpace {
         );
 
         tasks.push(
-            // Load local keys in the native keyring
-            cx.spawn_in(window, async move |_this, _cx| {
-                match read_credential.await {
-                    Ok(Some(data)) => {
-                        log::info!("res: {data:?}");
-                    }
-                    Ok(None) => {
-                        log::info!("none");
-                    }
-                    Err(e) => {
-                        log::info!("Error: {e}");
-                    }
-                };
-            }),
-        );
-
-        tasks.push(
             // Load the stored account
             cx.spawn_in(window, async move |this, cx| {
-                if let Ok((public_key, secret)) = Self::load_account(cx).await {
-                    this.update_in(cx, |this, window, cx| {
-                        this.set_account_layout(public_key, secret, window, cx);
-                    })
-                    .ok();
-                } else {
-                    this.update_in(cx, |this, window, cx| {
-                        this.set_onboarding_layout(window, cx);
-                    })
-                    .ok();
-                }
+                let result = Self::load_account(cx).await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok((public_key, secret)) => {
+                            this.set_account_layout(public_key, secret, window, cx);
+                        }
+                        Err(_) => {
+                            this.set_onboarding_layout(window, cx);
+                        }
+                    };
+                })
+                .ok();
             }),
         );
 

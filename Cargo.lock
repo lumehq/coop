@@ -1115,18 +1115,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "client_keys"
-version = "0.2.11"
-dependencies = [
- "anyhow",
- "app_state",
- "gpui",
- "log",
- "nostr-sdk",
- "smallvec",
-]
-
-[[package]]
 name = "cmake"
 version = "0.1.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1323,7 +1311,6 @@ dependencies = [
  "app_state",
  "assets",
  "auto_update",
- "client_keys",
  "common",
  "dirs 5.0.1",
  "flume",
@@ -1333,6 +1320,7 @@ dependencies = [
  "i18n",
  "indexset",
  "itertools 0.13.0",
+ "key_store",
  "log",
  "nostr",
  "nostr-connect",
@@ -3412,6 +3400,18 @@ checksum = "ec48937a97411dcb524a265206ccd4c90bb711fca92b2792c407f268825b9305"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "key_store"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "app_state",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "smallvec",
 ]
 
 [[package]]

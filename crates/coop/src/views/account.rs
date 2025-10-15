@@ -4,7 +4,6 @@ use anyhow::Error;
 use app_state::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use app_state::state::SignalKind;
 use app_state::{app_state, nostr_client};
-use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -14,6 +13,8 @@ use gpui::{
     WeakEntity, Window,
 };
 use i18n::{shared_t, t};
+use key_store::item::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use registry::Registry;
 use smallvec::{smallvec, SmallVec};
@@ -23,7 +24,6 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::input::{InputState, TextInput};
-use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
@@ -41,15 +41,19 @@ pub fn init(
 pub struct Account {
     public_key: PublicKey,
     stored_secret: String,
+    loading: bool,
     is_bunker: bool,
     is_extension: bool,
-    loading: bool,
 
+    /// Panel
     name: SharedString,
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
+    /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
+
+    /// Background tasks
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
@@ -98,35 +102,45 @@ impl Account {
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
             self.keys(enc, window, cx);
         } else {
-            window.push_notification("Cannot continue with current account", cx);
             self.set_loading(false, cx);
         }
     }
 
     fn nostr_connect(&mut self, uri: NostrConnectURI, window: &mut Window, cx: &mut Context<Self>) {
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
-
-        let timeout = Duration::from_secs(BUNKER_TIMEOUT);
-        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
-
-        // Handle auth url with the default browser
-        signer.auth_url_handler(CoopAuthUrlHandler);
+        let key_store = KeyStore::read_global(cx);
+        let read_bunker = key_store.load(KeyItem::Bunker, cx);
 
         self._tasks.push(
             // Handle connection in the background
             cx.spawn_in(window, async move |this, cx| {
-                let client = nostr_client();
+                match read_bunker.await {
+                    Ok(secret) => {
+                        let secret = SecretKey::parse(&secret).unwrap();
+                        let app_keys = Keys::new(secret);
+                        let timeout = Duration::from_secs(BUNKER_TIMEOUT);
+                        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
 
-                match signer.bunker_uri().await {
-                    Ok(_) => {
-                        // Set the client's signer with the current nostr connect instance
-                        client.set_signer(signer).await;
+                        // Handle auth url with the default browser
+                        signer.auth_url_handler(CoopAuthUrlHandler);
+
+                        match signer.bunker_uri().await {
+                            Ok(_) => {
+                                let client = nostr_client();
+                                client.set_signer(signer).await;
+                            }
+                            Err(e) => {
+                                this.update_in(cx, |this, window, cx| {
+                                    window.push_notification(e.to_string(), cx);
+                                    this.set_loading(false, cx);
+                                })
+                                .ok();
+                            }
+                        }
                     }
                     Err(e) => {
                         this.update_in(cx, |this, window, cx| {
+                            window.push_notification(e.to_string(), cx);
                             this.set_loading(false, cx);
-                            window.push_notification(Notification::error(e.to_string()), cx);
                         })
                         .ok();
                     }

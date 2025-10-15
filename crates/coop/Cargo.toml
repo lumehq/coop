@@ -35,8 +35,8 @@ common = { path = "../common" }
 app_state = { path = "../app_state" }
 registry = { path = "../registry" }
 settings = { path = "../settings" }
-client_keys = { path = "../client_keys" }
 auto_update = { path = "../auto_update" }
+key_store = { path = "../key_store" }
 
 rust-i18n.workspace = true
 i18n.workspace = true
