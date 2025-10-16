@@ -23,10 +23,10 @@ impl Global for GlobalKeyStore {}
 #[derive(Debug)]
 pub struct KeyStore {
     /// Local Keys for storage operations
-    keys: Option<Arc<dyn NostrSigner>>,
+    pub keys: Option<Arc<dyn NostrSigner>>,
 
     /// Indicates whether the secret service is missing
-    secret_service_missing: bool,
+    pub secret_service_missing: bool,
 
     /// Background tasks
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -122,7 +122,7 @@ impl KeyStore {
     ///
     /// Encrypt with the keyring-stored keys if available
     pub fn store(&self, key: KeyItem, value: String, cx: &App) -> Task<Result<(), Error>> {
-        let keys = self.keys.as_ref().cloned();
+        let keyring = self.keys.as_ref().cloned();
 
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -132,7 +132,7 @@ impl KeyStore {
             let mut content = value.to_string();
 
             // Encrypt the value if the keyring is available
-            if let Some(keys) = keys.as_ref() {
+            if let Some(keys) = keyring.as_ref() {
                 content = keys.nip44_encrypt(&public_key, value.as_ref()).await?;
             }
 
@@ -154,7 +154,7 @@ impl KeyStore {
     ///
     /// Decrypt with the keyring-stored keys if available
     pub fn load(&self, key: KeyItem, cx: &App) -> Task<Result<String, Error>> {
-        let keys = self.keys.as_ref().cloned();
+        let keyring = self.keys.as_ref().cloned();
 
         cx.background_spawn(async move {
             let client = nostr_client();
@@ -167,13 +167,48 @@ impl KeyStore {
                 .limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
-                if let Some(keys) = keys {
+                if let Some(keys) = keyring {
                     let content = keys.nip44_decrypt(&public_key, &event.content).await?;
                     Ok(content)
                 } else if Self::is_base64(&event.content) {
                     Err(anyhow!("Keyring is required"))
                 } else {
                     Ok(event.content)
+                }
+            } else {
+                Err(anyhow!("Not found"))
+            }
+        })
+    }
+
+    /// Load the value associated with the given key from the key store
+    ///
+    /// Decrypt with the keyring-stored keys if available
+    pub fn load_key_and_author(
+        &self,
+        key: KeyItem,
+        cx: &App,
+    ) -> Task<Result<(PublicKey, String), Error>> {
+        let keyring = self.keys.as_ref().cloned();
+
+        cx.background_spawn(async move {
+            let client = nostr_client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifier(key)
+                .limit(1);
+
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                if let Some(keys) = keyring {
+                    let content = keys.nip44_decrypt(&public_key, &event.content).await?;
+                    Ok((event.pubkey, content))
+                } else if Self::is_base64(&event.content) {
+                    Err(anyhow!("Keyring is required"))
+                } else {
+                    Ok((event.pubkey, event.content))
                 }
             } else {
                 Err(anyhow!("Not found"))

@@ -8,6 +8,8 @@ use crate::constants::BOOTSTRAP_RELAYS;
 use crate::state::SignalKind;
 use crate::{app_state, nostr_client};
 
+const TIMEOUT: u64 = 5;
+
 #[derive(Debug, Clone, Default)]
 pub struct Gossip {
     pub nip17: HashMap<PublicKey, HashSet<RelayUrl>>,
@@ -81,7 +83,7 @@ impl Gossip {
     /// Only fetch from the public relays
     pub async fn get_nip65(&self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
-        let timeout = Duration::from_secs(5);
+        let timeout = Duration::from_secs(TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let filter = Filter::new()
@@ -150,7 +152,7 @@ impl Gossip {
     /// Only fetch from public key's write relays
     pub async fn get_nip17(&self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
-        let timeout = Duration::from_secs(5);
+        let timeout = Duration::from_secs(TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let urls = self.write_relays(&public_key);
@@ -228,7 +230,7 @@ impl Gossip {
         }
 
         // Run inbox monitor
-        self.monitor_inbox(event.pubkey).await?;
+        self.get_messages(event.pubkey).await?;
 
         Ok(())
     }
@@ -283,8 +285,8 @@ impl Gossip {
         Ok(())
     }
 
-    /// Monitor all gift wrap events in the messaging relays for a given public key
-    pub async fn monitor_inbox(&self, public_key: PublicKey) -> Result<(), Error> {
+    /// Get all gift wrap events in the messaging relays for a given public key
+    pub async fn get_messages(&self, public_key: PublicKey) -> Result<(), Error> {
         let client = nostr_client();
         let id = SubscriptionId::new("inbox");
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
@@ -303,6 +305,49 @@ impl Gossip {
 
         // Subscribe to filters to user's messaging relays
         client.subscribe_with_id_to(urls, id, filter, None).await?;
+
+        Ok(())
+    }
+
+    pub async fn get_device_announcements(&self, public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
+        let timeout = Duration::from_secs(TIMEOUT);
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let filter = Filter::new()
+            .author(public_key)
+            .kind(Kind::Custom(10044))
+            .limit(1);
+
+        let urls = self.write_relays(&public_key);
+
+        // Ensure user's have at least one write relay
+        if urls.is_empty() {
+            return Err(anyhow!("Write relays are empty"));
+        }
+
+        // Ensure connection to relays
+        for url in urls.iter().cloned() {
+            client.add_relay(url).await?;
+            client.connect_relay(url).await?;
+        }
+
+        // Subscribe to device announcements
+        client
+            .subscribe_to(urls, filter.clone(), Some(opts))
+            .await?;
+
+        smol::spawn(async move {
+            smol::Timer::after(timeout).await;
+
+            if client.database().count(filter).await.unwrap_or(0) < 1 {
+                app_state()
+                    .signal
+                    .send(SignalKind::EncryptionKeysUnset)
+                    .await;
+            }
+        })
+        .detach();
 
         Ok(())
     }

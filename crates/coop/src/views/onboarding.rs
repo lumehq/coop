@@ -276,6 +276,7 @@ impl Render for Onboarding {
                             .child(
                                 Button::new("key")
                                     .label(t!("onboarding.key_login"))
+                                    .large()
                                     .ghost_alt()
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         chatspace::login(window, cx);

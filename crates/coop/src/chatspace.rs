@@ -19,6 +19,8 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use itertools::Itertools;
+use key_store::item::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
@@ -75,7 +77,7 @@ pub struct ChatSpace {
     nip65_ready: bool,
 
     /// All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 4]>,
 
     /// All long running tasks
     _tasks: SmallVec<[Task<()>; 6]>,
@@ -83,12 +85,19 @@ pub struct ChatSpace {
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let key_store = KeyStore::global(cx);
         let registry = Registry::global(cx);
         let status = registry.read(cx).unwrapping_status.clone();
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
         let auth_requests = cx.new(|_| HashMap::new());
+
+        // Load the stored account
+        let account_task = key_store.read(cx).load_key_and_author(KeyItem::User, cx);
+
+        // Load the stored client keys
+        let client_task = key_store.read(cx).load(KeyItem::Client, cx);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -97,6 +106,17 @@ impl ChatSpace {
             // Automatically sync theme with system appearance
             window.observe_window_appearance(|window, cx| {
                 Theme::sync_system_appearance(Some(window), cx);
+            }),
+        );
+
+        subscriptions.push(
+            // Observe the key store
+            cx.observe_in(&key_store, window, move |_this, state, _window, cx| {
+                if state.read(cx).secret_service_missing {
+                    // this.render_suggest_keyring(window, cx);
+                } else if state.read(cx).keys.is_none() {
+                    // this.render_require_keyring(window, cx)
+                }
             }),
         );
 
@@ -153,9 +173,30 @@ impl ChatSpace {
         );
 
         tasks.push(
+            // Load the stored client keys
+            cx.spawn_in(window, async move |_this, _cx| {
+                let app_state = app_state();
+                let mut device = app_state.device.write().await;
+
+                match client_task.await {
+                    Ok(content) => {
+                        if let Ok(secret) = SecretKey::parse(&content) {
+                            let keys = Keys::new(secret);
+                            device.client = Some(Arc::new(keys));
+                        }
+                    }
+                    Err(_e) => {
+                        let keys = Keys::generate();
+                        device.client = Some(Arc::new(keys));
+                    }
+                };
+            }),
+        );
+
+        tasks.push(
             // Load the stored account
             cx.spawn_in(window, async move |this, cx| {
-                let result = Self::load_account(cx).await;
+                let result = account_task.await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {
@@ -216,23 +257,6 @@ impl ChatSpace {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
-    }
-
-    /// Load the stored account in the database
-    fn load_account(cx: &AsyncWindowContext) -> Task<Result<(PublicKey, String), Error>> {
-        cx.background_spawn(async move {
-            let client = nostr_client();
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                Ok((event.pubkey, event.content))
-            } else {
-                Err(anyhow!("Empty"))
-            }
-        })
     }
 
     async fn observe_signer() {
@@ -310,6 +334,24 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
+                    SignalKind::EncryptionKeysSet(public_key) => {
+                        view.update(cx, |this, cx| {
+                            this.appoint_device(public_key, window, cx);
+                        })
+                        .ok();
+                    }
+                    SignalKind::EncryptionKeysUnset => {
+                        view.update(cx, |this, cx| {
+                            this.announce_device(window, cx);
+                        })
+                        .ok();
+                    }
+                    SignalKind::RequestEncryptionKeys((public_key, client_name)) => {
+                        //
+                    }
+                    SignalKind::SharingEncryptionKeys(public_key) => {
+                        //
+                    }
                     SignalKind::SignerSet(public_key) => {
                         window.close_modal(cx);
 
@@ -405,6 +447,68 @@ impl ChatSpace {
             })
             .ok();
         }
+    }
+
+    fn appoint_device(&mut self, n: PublicKey, window: &mut Window, cx: &mut Context<Self>) {
+        let key_store = KeyStore::global(cx);
+        let task = key_store.read(cx).load(KeyItem::Encryption, cx);
+
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(content) => {
+                    let secret = SecretKey::parse(&content).unwrap();
+                    let keys = Keys::new(secret);
+
+                    if keys.public_key() == n {
+                        let app_state = app_state();
+                        let mut device = app_state.device.write().await;
+                        device.encryption = Some(Arc::new(keys));
+                    } else {
+                        this.update_in(cx, |this, window, cx| {
+                            this.request_device(window, cx);
+                        })
+                        .ok();
+                    }
+                }
+                Err(_e) => {
+                    this.update_in(cx, |this, window, cx| {
+                        this.request_device(window, cx);
+                    })
+                    .ok();
+                }
+            };
+        })
+        .detach();
+    }
+
+    fn announce_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let key_store = KeyStore::global(cx);
+
+        // Generate a new encryption keys
+        let keys = Keys::generate();
+        let secret = keys.secret_key().to_secret_hex();
+
+        // Write the encryption key to the key store
+        key_store
+            .read(cx)
+            .store(KeyItem::Encryption, secret, cx)
+            .detach();
+
+        cx.spawn_in(window, async move |this, cx| {
+            let app_state = app_state();
+
+            if let Err(e) = app_state.announce_device(&keys).await {
+                this.update_in(cx, |_this, window, cx| {
+                    window.push_notification(e.to_string(), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn request_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        //
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {

@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
@@ -9,11 +10,11 @@ use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
 use crate::constants::{
-    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
+    APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use crate::nostr_client;
 use crate::paths::config_dir;
 use crate::state::gossip::Gossip;
+use crate::{app_state, nostr_client};
 
 mod gossip;
 
@@ -45,6 +46,26 @@ pub enum UnwrappingStatus {
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum SignalKind {
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has not set encryption keys yet
+    EncryptionKeysUnset,
+
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has set encryption keys
+    EncryptionKeysSet(PublicKey),
+
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has requested encryption keys from other devices
+    RequestEncryptionKeys((PublicKey, String)),
+
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has shared encryption keys with other devices
+    SharingEncryptionKeys((PublicKey, PublicKey)),
+
     /// A signal to notify UI that Coop needs to access the keyring
     KeyringRequired,
 
@@ -167,6 +188,12 @@ impl EventTracker {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct Device {
+    pub client: Option<Arc<dyn NostrSigner>>,
+    pub encryption: Option<Arc<dyn NostrSigner>>,
+}
+
 #[derive(Debug)]
 pub struct AppInnerState {
     /// The timestamp when the application was initialized.
@@ -221,6 +248,9 @@ pub struct AppState {
     /// NIP-65: https://github.com/nostr-protocol/nips/blob/master/65.md
     pub gossip: RwLock<Gossip>,
 
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub device: RwLock<Device>,
+
     /// Tracks activity related to Nostr events
     pub event_tracker: RwLock<EventTracker>,
 
@@ -248,12 +278,15 @@ impl AppState {
             signal,
             ingester,
             gossip: RwLock::new(Gossip::default()),
+            device: RwLock::new(Device::default()),
             event_tracker: RwLock::new(EventTracker::default()),
         }
     }
 
+    /// Handle events from the relay pool
     pub async fn handle_notifications(&self) -> Result<(), Error> {
         let client = nostr_client();
+        let app_state = app_state();
 
         // Get all bootstrapping relays
         let mut urls = vec![];
@@ -295,6 +328,52 @@ impl AppState {
                     }
 
                     match event.kind {
+                        // Encryption key announcement
+                        Kind::Custom(10044) => {
+                            if let Ok(true) = Self::is_self_authored(&event).await {
+                                if let Some(tag) = event
+                                    .tags
+                                    .find(TagKind::custom("n"))
+                                    .and_then(|tag| tag.content())
+                                {
+                                    if let Ok(public_key) = PublicKey::parse(tag) {
+                                        self.signal
+                                            .send(SignalKind::EncryptionKeysSet(public_key))
+                                            .await;
+                                    }
+                                }
+                            }
+                        }
+                        // Request to share encryption keys from another device
+                        Kind::Custom(4454) => {
+                            //
+                        }
+                        // Another device's response to share encryption keys request
+                        Kind::Custom(4455) => {
+                            let device = app_state.device.read().await;
+
+                            if let Some(client_keys) = device.client.as_ref() {
+                                if let Some(content) = event
+                                    .tags
+                                    .find(TagKind::custom("P"))
+                                    .and_then(|tag| tag.content())
+                                {
+                                    let public_key = PublicKey::parse(content).unwrap();
+                                    let secret = client_keys
+                                        .nip44_decrypt(&public_key, &event.content)
+                                        .await
+                                        .map(|content| SecretKey::parse(&content).unwrap())
+                                        .unwrap();
+
+                                    drop(device);
+
+                                    let keys = Keys::new(secret);
+
+                                    let mut device = app_state.device.write().await;
+                                    device.encryption = Some(Arc::new(keys));
+                                }
+                            }
+                        }
                         Kind::RelayList => {
                             // Update NIP-65 relays for event's public key
                             {
@@ -314,6 +393,9 @@ impl AppState {
 
                                 // Fetch user's messaging relays event
                                 gossip.get_nip17(event.pubkey).await.ok();
+
+                                // Fetch user's device announcements event
+                                gossip.get_device_announcements(event.pubkey).await.ok();
                             }
                         }
                         Kind::InboxRelays => {
@@ -327,7 +409,7 @@ impl AppState {
                             if let Ok(true) = Self::is_self_authored(&event).await {
                                 let gossip = self.gossip.read().await;
 
-                                if gossip.monitor_inbox(event.pubkey).await.is_err() {
+                                if gossip.get_messages(event.pubkey).await.is_err() {
                                     self.signal.send(SignalKind::MessagingRelaysNotFound).await;
                                 }
                             }
@@ -393,6 +475,7 @@ impl AppState {
         Ok(())
     }
 
+    /// Batch metadata requests
     pub async fn handle_metadata_batching(&self) {
         let timeout = Duration::from_millis(METADATA_BATCH_TIMEOUT);
         let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
@@ -446,6 +529,32 @@ impl AppState {
                 }
             }
         }
+    }
+
+    pub async fn announce_device(&self, keys: &Keys) -> Result<(), Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+        let gossip = self.gossip.read().await;
+
+        let n = keys.public_key();
+
+        // Construct the device announcement event
+        let event = EventBuilder::new(Kind::Custom(10044), "")
+            .tags(vec![
+                Tag::custom(TagKind::custom("n"), vec![n]),
+                Tag::client(APP_NAME),
+            ])
+            .sign(&signer)
+            .await?;
+
+        // Send the event to user's write relays
+        gossip.send_event_to_write_relays(&event).await?;
+
+        // Update the local states
+        let mut device = self.device.write().await;
+        device.encryption = Some(Arc::new(keys.to_owned()));
+
+        Ok(())
     }
 
     async fn is_self_authored(event: &Event) -> Result<bool, Error> {
