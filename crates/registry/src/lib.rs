@@ -2,12 +2,14 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Error;
-use app_state::nostr_client;
+use app_state::app_state;
 use app_state::state::UnwrappingStatus;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
+use gpui::{
+    App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
+};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
@@ -34,7 +36,7 @@ pub enum RegistryEvent {
     NewRequest(RoomKind),
 }
 
-/// Main registry for managing chat rooms and user profiles
+#[derive(Debug)]
 pub struct Registry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
@@ -45,27 +47,27 @@ pub struct Registry {
     /// Status of the unwrapping process
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
-    /// Public key of the currently activated signer
+    /// Public Key of the currently activated signer
     signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _tasks: SmallVec<[Task<()>; 3]>,
 }
 
 impl EventEmitter<RegistryEvent> for Registry {}
 
 impl Registry {
-    /// Retrieve the Global Registry state
+    /// Retrieve the global registry state
     pub fn global(cx: &App) -> Entity<Self> {
         cx.global::<GlobalRegistry>().0.clone()
     }
 
-    /// Retrieve the Registry instance
+    /// Retrieve the registry instance
     pub fn read_global(cx: &App) -> &Self {
         cx.global::<GlobalRegistry>().0.read(cx)
     }
 
-    /// Set the global Registry instance
+    /// Set the global registry instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalRegistry(state));
     }
@@ -75,31 +77,34 @@ impl Registry {
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
         let mut tasks = smallvec![];
 
-        let load_local_persons: Task<Result<Vec<Profile>, Error>> =
+        tasks.push(
+            // Handle events from the nostr client
             cx.background_spawn(async move {
-                let client = nostr_client();
-                let filter = Filter::new().kind(Kind::Metadata).limit(200);
-                let events = client.database().query(filter).await?;
-                let mut profiles = vec![];
-
-                for event in events.into_iter() {
-                    let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                    let profile = Profile::new(event.pubkey, metadata);
-                    profiles.push(profile);
+                if let Err(e) = app_state().handle_notifications().await {
+                    log::error!("Failed to handle notifications: {e}");
                 }
-
-                Ok(profiles)
-            });
+            }),
+        );
 
         tasks.push(
-            // Load all user profiles from the database when the Registry is created
+            // Batch metadata requests into a single subscription
+            cx.background_spawn(async move { app_state().handle_metadata_batching().await }),
+        );
+
+        tasks.push(
+            // Load all user profiles from the database
             cx.spawn(async move |this, cx| {
-                if let Ok(profiles) = load_local_persons.await {
-                    this.update(cx, |this, cx| {
-                        this.set_persons(profiles, cx);
-                    })
-                    .ok();
-                }
+                match Self::load_persons(cx).await {
+                    Ok(profiles) => {
+                        this.update(cx, |this, cx| {
+                            this.set_persons(profiles, cx);
+                        })
+                        .ok();
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load persons: {e}");
+                    }
+                };
             }),
         );
 
@@ -110,6 +115,25 @@ impl Registry {
             signer_pubkey: None,
             _tasks: tasks,
         }
+    }
+
+    /// Create a task to load all user profiles from the database
+    fn load_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let filter = Filter::new().kind(Kind::Metadata).limit(200);
+            let events = client.database().query(filter).await?;
+
+            let mut profiles = vec![];
+
+            for event in events.into_iter() {
+                let metadata = Metadata::from_json(event.content).unwrap_or_default();
+                let profile = Profile::new(event.pubkey, metadata);
+                profiles.push(profile);
+            }
+
+            Ok(profiles)
+        })
     }
 
     /// Returns the public key of the currently activated signer.
@@ -269,7 +293,7 @@ impl Registry {
         let bypass_setting = AppSettings::get_contact_bypass(cx);
 
         let task: Task<Result<HashSet<Room>, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let contacts = client.database().contacts_public_keys(public_key).await?;

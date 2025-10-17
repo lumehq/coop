@@ -1,7 +1,7 @@
 use std::time::Duration;
 
+use app_state::app_state;
 use app_state::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use app_state::nostr_client;
 use client_keys::ClientKeys;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -248,7 +248,7 @@ impl Login {
 
             // Set the client's signer with the current keys
             cx.background_spawn(async move {
-                let client = nostr_client();
+                let client = app_state().client();
                 client.set_signer(keys).await;
             })
             .detach();
@@ -331,7 +331,7 @@ impl Login {
         }
 
         let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
 
             // Update the client's signer
             client.set_signer(signer).await;
@@ -362,7 +362,7 @@ impl Login {
             if let Ok(enc_key) =
                 EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
             {
-                let client = nostr_client();
+                let client = app_state().client();
                 let value = enc_key.to_bech32().unwrap();
                 let keys = Keys::generate();
                 let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];

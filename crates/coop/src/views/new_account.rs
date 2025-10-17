@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Error};
 use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS};
-use app_state::{default_nip17_relays, default_nip65_relays, nostr_client};
+use app_state::{app_state, default_nip17_relays, default_nip65_relays};
 use common::nip96::nip96_upload;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -124,7 +124,7 @@ impl NewAccount {
 
         // Set the client's signer with the current keys
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
 
             // Set the client's signer with the current keys
             client.set_signer(keys).await;
@@ -176,7 +176,7 @@ impl NewAccount {
             if let Ok(enc_key) =
                 EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
             {
-                let client = nostr_client();
+                let client = app_state().client();
                 let value = enc_key.to_bech32().unwrap();
                 let keys = Keys::generate();
                 let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
@@ -217,7 +217,7 @@ impl NewAccount {
                 Ok(Some(mut paths)) => {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
-                        let url = nip96_upload(nostr_client(), &nip96_server, file).await?;
+                        let url = nip96_upload(app_state().client(), &nip96_server, file).await?;
 
                         Ok(url)
                     } else {

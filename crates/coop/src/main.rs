@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use app_state::app_state;
 use app_state::constants::{APP_ID, APP_NAME};
-use app_state::{app_state, nostr_client};
 use assets::Assets;
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
@@ -21,9 +21,6 @@ i18n::init!();
 fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
-
-    // Initialize the Nostr client
-    let _client = nostr_client();
 
     // Initialize the coop simple storage
     let _app_state = app_state();

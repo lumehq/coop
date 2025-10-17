@@ -3,9 +3,9 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use app_state::app_state;
 use app_state::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use app_state::state::UnwrappingStatus;
-use app_state::{app_state, nostr_client};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{RenderedTimestamp, TextUtils};
 use gpui::prelude::FluentBuilder;
@@ -140,7 +140,7 @@ impl Sidebar {
     }
 
     async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
-        let client = nostr_client();
+        let client = app_state().client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
@@ -165,7 +165,7 @@ impl Sidebar {
     }
 
     async fn nip50(query: &str) -> Result<BTreeSet<Room>, Error> {
-        let client = nostr_client();
+        let client = app_state().client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
@@ -530,9 +530,8 @@ impl Sidebar {
 
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-            let app_state = app_state();
-            let subscription = client.subscription(&app_state.gift_wrap_sub_id).await;
+            let client = app_state().client();
+            let subscription = client.subscription(&SubscriptionId::new("inbox")).await;
             let mut relays: Vec<Relay> = vec![];
 
             for (url, _filter) in subscription.into_iter() {

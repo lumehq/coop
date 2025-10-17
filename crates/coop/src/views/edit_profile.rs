@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Error;
-use app_state::nostr_client;
+use app_state::app_state;
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -58,7 +58,7 @@ impl EditProfile {
             };
 
             let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
-                let client = nostr_client();
+                let client = app_state().client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
                 let metadata = client
@@ -125,7 +125,9 @@ impl EditProfile {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         nostr_sdk::async_utility::task::spawn(async move {
-                            if let Ok(url) = nip96_upload(nostr_client(), &nip96, file_data).await {
+                            if let Ok(url) =
+                                nip96_upload(app_state().client(), &nip96, file_data).await
+                            {
                                 _ = tx.send(url);
                             }
                         });
@@ -188,7 +190,7 @@ impl EditProfile {
         }
 
         cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
 
             // Sign the new metadata event

@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
-use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
+use app_state::{app_state, default_nip17_relays, default_nip65_relays};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
@@ -214,15 +214,14 @@ impl ChatSpace {
     }
 
     async fn observe_signer() {
-        let client = nostr_client();
         let app_state = app_state();
         let loop_duration = Duration::from_millis(800);
 
         loop {
-            if let Ok(signer) = client.signer().await {
+            if let Ok(signer) = app_state.client().signer().await {
                 if let Ok(pk) = signer.get_public_key().await {
                     // Notify the app that the signer has been set
-                    app_state.signal.send(SignalKind::SignerSet(pk)).await;
+                    app_state.signal().send(SignalKind::SignerSet(pk)).await;
 
                     // Get user's gossip relays
                     app_state.get_nip65(pk).await.ok();
@@ -237,14 +236,13 @@ impl ChatSpace {
     }
 
     async fn observe_giftwrap() {
-        let client = nostr_client();
         let app_state = app_state();
         let loop_duration = Duration::from_secs(20);
         let mut is_start_processing = false;
         let mut total_loops = 0;
 
         loop {
-            if client.has_signer().await {
+            if app_state.client().has_signer().await {
                 total_loops += 1;
 
                 if app_state.gift_wrap_processing.load(Ordering::Acquire) {
@@ -259,13 +257,13 @@ impl ChatSpace {
                     );
 
                     let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
-                    app_state.signal.send(signal).await;
+                    app_state.signal().send(signal).await;
                 } else {
                     // Only run further if we are already processing
                     // Wait until after 2 loops to prevent exiting early while events are still being processed
                     if is_start_processing && total_loops >= 2 {
                         let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Complete);
-                        app_state.signal.send(signal).await;
+                        app_state.signal().send(signal).await;
 
                         // Reset the counter
                         is_start_processing = false;
@@ -282,7 +280,7 @@ impl ChatSpace {
         let app_state = app_state();
         let mut is_open_proxy_modal = false;
 
-        while let Ok(signal) = app_state.signal.receiver().recv_async().await {
+        while let Ok(signal) = app_state.signal().receiver().recv_async().await {
             cx.update(|window, cx| {
                 let registry = Registry::global(cx);
                 let settings = AppSettings::global(cx);
@@ -395,8 +393,8 @@ impl ChatSpace {
         self.sending_auth_request(&challenge, cx);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
             let app_state = app_state();
+            let client = app_state.client();
             let signer = client.signer().await?;
 
             // Construct event
@@ -427,9 +425,9 @@ impl ChatSpace {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut event_tracker = app_state.event_tracker.write().await;
+                            let mut tracker = app_state.tracker().write().await;
 
-                            let ids: Vec<EventId> = event_tracker
+                            let ids: Vec<EventId> = tracker
                                 .resend_queue
                                 .iter()
                                 .filter(|(_, url)| relay_url == *url)
@@ -437,7 +435,7 @@ impl ChatSpace {
                                 .collect();
 
                             for id in ids.into_iter() {
-                                if let Some(relay_url) = event_tracker.resend_queue.remove(&id) {
+                                if let Some(relay_url) = tracker.resend_queue.remove(&id) {
                                     if let Some(event) = client.database().event_by_id(&id).await? {
                                         let event_id = relay.send_event(&event).await?;
 
@@ -447,8 +445,8 @@ impl ChatSpace {
                                             success: HashSet::from([relay_url]),
                                         };
 
-                                        event_tracker.sent_ids.insert(event_id);
-                                        event_tracker.resent_ids.push(output);
+                                        tracker.sent_ids.insert(event_id);
+                                        tracker.resent_ids.push(output);
                                     }
                                 }
                             }
@@ -656,7 +654,8 @@ impl ChatSpace {
 
     fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_IDENTIFIER)
@@ -717,9 +716,10 @@ impl ChatSpace {
         cx: &mut Context<Self>,
     ) {
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
             let app_state = app_state();
+            let client = app_state.client();
 
+            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
             let filter = Filter::new().kind(Kind::PrivateDirectMessage);
 
             let pubkeys: Vec<PublicKey> = client
@@ -737,7 +737,7 @@ impl ChatSpace {
                 .authors(pubkeys);
 
             client
-                .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
                 .await?;
 
             Ok(())
@@ -756,8 +756,8 @@ impl ChatSpace {
 
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         cx.background_spawn(async move {
-            let client = nostr_client();
             let app_state = app_state();
+            let client = app_state.client();
 
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
@@ -770,7 +770,7 @@ impl ChatSpace {
             client.reset().await;
 
             // Notify the channel about the signer being unset
-            app_state.signal.send(SignalKind::SignerUnset).await;
+            app_state.signal().send(SignalKind::SignerUnset).await;
         })
         .detach();
     }
@@ -1211,8 +1211,8 @@ impl ChatSpace {
             let url = proxy.url();
 
             this._tasks.push(cx.background_spawn(async move {
-                let client = nostr_client();
                 let app_state = app_state();
+                let client = app_state.client();
 
                 if proxy.start().await.is_ok() {
                     webbrowser::open(&url).ok();
@@ -1243,7 +1243,7 @@ impl ChatSpace {
 
                             break;
                         } else {
-                            app_state.signal.send(SignalKind::ProxyDown).await;
+                            app_state.signal().send(SignalKind::ProxyDown).await;
                         }
                         smol::Timer::after(Duration::from_secs(1)).await;
                     }

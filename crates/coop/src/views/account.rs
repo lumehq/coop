@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use anyhow::Error;
+use app_state::app_state;
 use app_state::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use app_state::state::SignalKind;
-use app_state::{app_state, nostr_client};
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use gpui::prelude::FluentBuilder;
@@ -115,7 +115,7 @@ impl Account {
         self._tasks.push(
             // Handle connection in the background
             cx.spawn_in(window, async move |this, cx| {
-                let client = nostr_client();
+                let client = app_state().client();
 
                 match signer.bunker_uri().await {
                     Ok(_) => {
@@ -245,7 +245,7 @@ impl Account {
                     })
                     .ok();
 
-                    let client = nostr_client();
+                    let client = app_state().client();
                     let keys = Keys::new(secret);
 
                     // Set the client's signer with the current keys
@@ -268,8 +268,8 @@ impl Account {
         self._tasks.push(
             // Reset the nostr client in the background
             cx.background_spawn(async move {
-                let client = nostr_client();
                 let app_state = app_state();
+                let client = app_state.client();
 
                 let filter = Filter::new()
                     .kind(Kind::ApplicationSpecificData)
@@ -282,7 +282,7 @@ impl Account {
                 client.unset_signer().await;
 
                 // Notify the channel about the signer being unset
-                app_state.signal.send(SignalKind::SignerUnset).await;
+                app_state.signal().send(SignalKind::SignerUnset).await;
             }),
         );
     }

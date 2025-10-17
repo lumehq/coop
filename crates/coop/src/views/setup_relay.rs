@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::{app_state, nostr_client};
+use app_state::app_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -10,6 +10,7 @@ use gpui::{
     Task, TextAlign, UniformList, Window,
 };
 use i18n::{shared_t, t};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
@@ -80,7 +81,7 @@ impl SetupRelay {
 
     fn load(cx: &AsyncWindowContext) -> Task<Result<Vec<RelayUrl>, Error>> {
         cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -153,7 +154,7 @@ impl SetupRelay {
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let app_state = app_state();
-            let client = nostr_client();
+            let client = app_state.client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -177,16 +178,10 @@ impl SetupRelay {
             }
 
             // Fetch gift wrap events
-            let sub_id = app_state.gift_wrap_sub_id.clone();
-            let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-            if client
-                .subscribe_with_id_to(relays.clone(), sub_id, filter, None)
+            app_state
+                .get_messages(public_key, &relays.into_iter().collect_vec())
                 .await
-                .is_ok()
-            {
-                log::info!("Subscribed to messages in: {relays:?}");
-            };
+                .ok();
 
             Ok(())
         });

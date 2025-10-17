@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use app_state::app_state;
 use app_state::constants::{
     ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
 };
-use app_state::nostr_client;
 use client_keys::ClientKeys;
 use common::display::TextUtils;
 use gpui::prelude::FluentBuilder;
@@ -181,7 +181,7 @@ impl Onboarding {
         }
 
         let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
 
             // Update the client's signer
             client.set_signer(signer).await;
