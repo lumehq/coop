@@ -12,9 +12,9 @@ use smol::lock::RwLock;
 use crate::constants::{
     APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
+use crate::nostr_client;
 use crate::paths::config_dir;
 use crate::state::gossip::Gossip;
-use crate::{app_state, nostr_client};
 
 mod gossip;
 
@@ -49,22 +49,22 @@ pub enum SignalKind {
     /// NIP-4e
     ///
     /// A signal to notify UI that the user has not set encryption keys yet
-    EncryptionKeysUnset,
+    EncryptionNotSet,
 
     /// NIP-4e
     ///
     /// A signal to notify UI that the user has set encryption keys
-    EncryptionKeysSet(PublicKey),
+    EncryptionSet(PublicKey),
 
     /// NIP-4e
     ///
-    /// A signal to notify UI that the user has requested encryption keys from other devices
-    RequestEncryptionKeys((PublicKey, String)),
+    /// A signal to notify UI that Coop has received a request for encryption keys from other devices
+    EncryptionRequest((PublicKey, String)),
 
     /// NIP-4e
     ///
-    /// A signal to notify UI that the user has shared encryption keys with other devices
-    SharingEncryptionKeys((PublicKey, PublicKey)),
+    /// A signal to notify UI that Coop has received an encryption keys response from other devices
+    EncryptionResponse((PublicKey, String)),
 
     /// A signal to notify UI that Coop needs to access the keyring
     KeyringRequired,
@@ -286,7 +286,6 @@ impl AppState {
     /// Handle events from the relay pool
     pub async fn handle_notifications(&self) -> Result<(), Error> {
         let client = nostr_client();
-        let app_state = app_state();
 
         // Get all bootstrapping relays
         let mut urls = vec![];
@@ -331,48 +330,66 @@ impl AppState {
                         // Encryption key announcement
                         Kind::Custom(10044) => {
                             if let Ok(true) = Self::is_self_authored(&event).await {
-                                if let Some(tag) = event
+                                if let Some(public_key) = event
                                     .tags
                                     .find(TagKind::custom("n"))
                                     .and_then(|tag| tag.content())
+                                    .and_then(|c| PublicKey::parse(c).ok())
                                 {
-                                    if let Ok(public_key) = PublicKey::parse(tag) {
-                                        self.signal
-                                            .send(SignalKind::EncryptionKeysSet(public_key))
-                                            .await;
-                                    }
+                                    self.signal
+                                        .send(SignalKind::EncryptionSet(public_key))
+                                        .await;
                                 }
                             }
                         }
                         // Request to share encryption keys from another device
                         Kind::Custom(4454) => {
-                            //
+                            if self.device.read().await.encryption.is_none() {
+                                continue;
+                            };
+
+                            let Some(pubkey) = event
+                                .tags
+                                .find(TagKind::custom("pubkey"))
+                                .and_then(|tag| tag.content())
+                                .and_then(|c| PublicKey::parse(c).ok())
+                            else {
+                                continue;
+                            };
+
+                            let Some(client_name) = event
+                                .tags
+                                .find(TagKind::Client)
+                                .and_then(|tag| tag.content())
+                                .map(|s| s.to_string())
+                            else {
+                                continue;
+                            };
+
+                            self.signal
+                                .send(SignalKind::EncryptionRequest((pubkey, client_name)))
+                                .await;
                         }
                         // Another device's response to share encryption keys request
                         Kind::Custom(4455) => {
-                            let device = app_state.device.read().await;
+                            if self.device.read().await.encryption.is_some() {
+                                continue;
+                            };
 
-                            if let Some(client_keys) = device.client.as_ref() {
-                                if let Some(content) = event
-                                    .tags
-                                    .find(TagKind::custom("P"))
-                                    .and_then(|tag| tag.content())
-                                {
-                                    let public_key = PublicKey::parse(content).unwrap();
-                                    let secret = client_keys
-                                        .nip44_decrypt(&public_key, &event.content)
-                                        .await
-                                        .map(|content| SecretKey::parse(&content).unwrap())
-                                        .unwrap();
+                            let content = event.content.to_owned();
 
-                                    drop(device);
+                            let Some(pubkey) = event
+                                .tags
+                                .find(TagKind::custom("P"))
+                                .and_then(|tag| tag.content())
+                                .and_then(|c| PublicKey::parse(c).ok())
+                            else {
+                                continue;
+                            };
 
-                                    let keys = Keys::new(secret);
-
-                                    let mut device = app_state.device.write().await;
-                                    device.encryption = Some(Arc::new(keys));
-                                }
-                            }
+                            self.signal
+                                .send(SignalKind::EncryptionResponse((pubkey, content)))
+                                .await;
                         }
                         Kind::RelayList => {
                             // Update NIP-65 relays for event's public key
@@ -531,7 +548,7 @@ impl AppState {
         }
     }
 
-    pub async fn announce_device(&self, keys: &Keys) -> Result<(), Error> {
+    pub async fn announce_encryption(&self, keys: &Keys) -> Result<(), Error> {
         let client = nostr_client();
         let signer = client.signer().await?;
         let gossip = self.gossip.read().await;
@@ -553,6 +570,35 @@ impl AppState {
         // Update the local states
         let mut device = self.device.write().await;
         device.encryption = Some(Arc::new(keys.to_owned()));
+
+        Ok(())
+    }
+
+    pub async fn request_encryption(&self) -> Result<(), Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+        let gossip = self.gossip.read().await;
+        let device = self.device.read().await;
+
+        let Some(client_keys) = device.client.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let Ok(public_key) = client_keys.get_public_key().await else {
+            return Err(anyhow!("Public Key is required"));
+        };
+
+        // Construct the device announcement event
+        let event = EventBuilder::new(Kind::Custom(4454), "")
+            .tags(vec![
+                Tag::custom(TagKind::custom("pubkey"), vec![public_key]),
+                Tag::client(APP_NAME),
+            ])
+            .sign(&signer)
+            .await?;
+
+        // Send the event to user's write relays
+        gossip.send_event_to_write_relays(&event).await?;
 
         Ok(())
     }

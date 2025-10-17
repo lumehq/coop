@@ -341,10 +341,7 @@ impl Gossip {
             smol::Timer::after(timeout).await;
 
             if client.database().count(filter).await.unwrap_or(0) < 1 {
-                app_state()
-                    .signal
-                    .send(SignalKind::EncryptionKeysUnset)
-                    .await;
+                app_state().signal.send(SignalKind::EncryptionNotSet).await;
             }
         })
         .detach();

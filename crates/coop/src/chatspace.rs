@@ -334,23 +334,29 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
-                    SignalKind::EncryptionKeysSet(public_key) => {
+                    SignalKind::EncryptionSet(public_key) => {
                         view.update(cx, |this, cx| {
-                            this.appoint_device(public_key, window, cx);
+                            this.set_encryption(public_key, window, cx);
                         })
                         .ok();
                     }
-                    SignalKind::EncryptionKeysUnset => {
+                    SignalKind::EncryptionNotSet => {
                         view.update(cx, |this, cx| {
-                            this.announce_device(window, cx);
+                            this.new_encryption(window, cx);
                         })
                         .ok();
                     }
-                    SignalKind::RequestEncryptionKeys((public_key, client_name)) => {
-                        //
+                    SignalKind::EncryptionRequest((public_key, client_name)) => {
+                        view.update(cx, |this, cx| {
+                            this.handle_request(public_key, client_name, window, cx);
+                        })
+                        .ok();
                     }
-                    SignalKind::SharingEncryptionKeys(public_key) => {
-                        //
+                    SignalKind::EncryptionResponse((public_key, content)) => {
+                        view.update(cx, |this, cx| {
+                            this.handle_response(public_key, content, window, cx);
+                        })
+                        .ok();
                     }
                     SignalKind::SignerSet(public_key) => {
                         window.close_modal(cx);
@@ -449,11 +455,11 @@ impl ChatSpace {
         }
     }
 
-    fn appoint_device(&mut self, n: PublicKey, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_encryption(&mut self, n: PublicKey, window: &mut Window, cx: &mut Context<Self>) {
         let key_store = KeyStore::global(cx);
         let task = key_store.read(cx).load(KeyItem::Encryption, cx);
 
-        cx.spawn_in(window, async move |this, cx| {
+        cx.spawn_in(window, async move |_, cx| {
             match task.await {
                 Ok(content) => {
                     let secret = SecretKey::parse(&content).unwrap();
@@ -464,24 +470,26 @@ impl ChatSpace {
                         let mut device = app_state.device.write().await;
                         device.encryption = Some(Arc::new(keys));
                     } else {
-                        this.update_in(cx, |this, window, cx| {
-                            this.request_device(window, cx);
+                        cx.background_spawn(async move {
+                            let app_state = app_state();
+                            app_state.request_encryption().await.ok();
                         })
-                        .ok();
+                        .detach();
                     }
                 }
                 Err(_e) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.request_device(window, cx);
+                    cx.background_spawn(async move {
+                        let app_state = app_state();
+                        app_state.request_encryption().await.ok();
                     })
-                    .ok();
+                    .detach();
                 }
             };
         })
         .detach();
     }
 
-    fn announce_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn new_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let key_store = KeyStore::global(cx);
 
         // Generate a new encryption keys
@@ -497,7 +505,7 @@ impl ChatSpace {
         cx.spawn_in(window, async move |this, cx| {
             let app_state = app_state();
 
-            if let Err(e) = app_state.announce_device(&keys).await {
+            if let Err(e) = app_state.announce_encryption(&keys).await {
                 this.update_in(cx, |_this, window, cx| {
                     window.push_notification(e.to_string(), cx);
                 })
@@ -507,8 +515,108 @@ impl ChatSpace {
         .detach();
     }
 
-    fn request_device(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        //
+    fn handle_request(
+        &mut self,
+        public_key: PublicKey,
+        _client_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let key_store = KeyStore::global(cx);
+        let read_task = key_store.read(cx).load(KeyItem::Encryption, cx);
+
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let app_state = app_state();
+            let device = app_state.device.read().await;
+
+            let content = read_task.await.unwrap();
+
+            if let Some(client_keys) = device.client.as_ref() {
+                let enc = client_keys.nip44_encrypt(&public_key, &content).await?;
+                let client = nostr_client();
+                let signer = client.signer().await?;
+                let client_pubkey = client_keys.get_public_key().await?;
+                let gossip = app_state.gossip.read().await;
+
+                let event = EventBuilder::new(Kind::Custom(4455), enc)
+                    .tags(vec![
+                        Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
+                        Tag::public_key(public_key),
+                    ])
+                    .sign(&signer)
+                    .await?;
+
+                gossip.send_event_to_write_relays(&event).await?;
+
+                Ok(())
+            } else {
+                Err(anyhow!("Client Keys is required"))
+            }
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(_) => {
+                    this.update_in(cx, |_this, window, cx| {
+                        window.push_notification("Requested encryption keys", cx);
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    this.update_in(cx, |_this, window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                    })
+                    .ok();
+                }
+            };
+        })
+        .detach();
+    }
+
+    fn handle_response(
+        &mut self,
+        public_key: PublicKey,
+        content: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let app_state = app_state();
+            let device = app_state.device.read().await;
+
+            if let Some(client_keys) = device.client.as_ref() {
+                let content = client_keys.nip44_decrypt(&public_key, &content).await?;
+                let secret = SecretKey::parse(&content)?;
+                let keys = Keys::new(secret);
+
+                drop(device);
+
+                let mut device = app_state.device.write().await;
+                device.encryption = Some(Arc::new(keys));
+            } else {
+                return Err(anyhow!("Client Keys is required"));
+            }
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match task.await {
+                Ok(_) => {
+                    this.update_in(cx, |_this, window, cx| {
+                        window.push_notification("Received encryption keys", cx);
+                    })
+                    .ok();
+                }
+                Err(e) => {
+                    this.update_in(cx, |_this, window, cx| {
+                        window.push_notification(e.to_string(), cx);
+                    })
+                    .ok();
+                }
+            };
+        })
+        .detach();
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
