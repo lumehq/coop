@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Error;
-use app_state::{app_state, nostr_client};
+use app_state::nostr_client;
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -188,9 +188,6 @@ impl EditProfile {
         }
 
         cx.background_spawn(async move {
-            let app_state = app_state();
-            let gossip = app_state.gossip.read().await;
-
             let client = nostr_client();
             let signer = client.signer().await?;
 
@@ -198,7 +195,7 @@ impl EditProfile {
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;
 
             // Send event to user's write relayss
-            gossip.send_event_to_write_relays(&event).await?;
+            client.send_event(&event).await?;
 
             // Return the updated profile
             let metadata = Metadata::from_json(&event.content).unwrap_or_default();

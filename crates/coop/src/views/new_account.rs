@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Error};
 use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS};
-use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
+use app_state::{default_nip17_relays, default_nip65_relays, nostr_client};
 use common::nip96::nip96_upload;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -125,8 +125,6 @@ impl NewAccount {
         // Set the client's signer with the current keys
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let client = nostr_client();
-            let app_state = app_state();
-            let gossip = app_state.gossip.read().await;
 
             // Set the client's signer with the current keys
             client.set_signer(keys).await;
@@ -156,13 +154,13 @@ impl NewAccount {
                 .await?;
 
             // Set NIP-17 relays
-            gossip.send_event_to_write_relays(&event).await?;
+            client.send_event(&event).await?;
 
             // Construct a metadata event
             let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
 
             // Set metadata
-            gossip.send_event_to_write_relays(&event).await?;
+            client.send_event(&event).await?;
 
             Ok(())
         });

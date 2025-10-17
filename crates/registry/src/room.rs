@@ -9,6 +9,7 @@ use app_state::{app_state, nostr_client};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 
 use crate::Registry;
@@ -495,9 +496,7 @@ impl Room {
             for receiver in members.into_iter() {
                 let rumor = rumor.clone();
                 let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
-
-                let gossip = app_state.gossip.read().await;
-                let urls = gossip.messaging_relays(&receiver);
+                let urls = Self::messaging_relays(receiver).await;
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -549,8 +548,7 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && backup {
-                let gossip = app_state.gossip.read().await;
-                let urls = gossip.messaging_relays(&public_key);
+                let urls = Self::messaging_relays(public_key).await;
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -582,8 +580,6 @@ impl Room {
     ) -> Task<Result<Vec<SendReport>, Error>> {
         cx.background_spawn(async move {
             let client = nostr_client();
-            let app_state = app_state();
-
             let mut resend_reports = vec![];
 
             for report in reports.into_iter() {
@@ -612,8 +608,7 @@ impl Room {
 
                 // Process the on hold event if it exists
                 if let Some(event) = report.on_hold {
-                    let gossip = app_state.gossip.read().await;
-                    let urls = gossip.messaging_relays(&receiver);
+                    let urls = Self::messaging_relays(receiver).await;
 
                     // Check if there are any relays to send the event to
                     if urls.is_empty() {
@@ -634,5 +629,32 @@ impl Room {
 
             Ok(resend_reports)
         })
+    }
+
+    /// Gets messaging relays for public key
+    async fn messaging_relays(public_key: PublicKey) -> Vec<RelayUrl> {
+        let client = nostr_client();
+        let mut relay_urls = vec![];
+
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
+
+        if let Ok(events) = client.database().query(filter).await {
+            if let Some(event) = events.first_owned() {
+                let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
+
+                // Connect to relays
+                for url in urls.iter() {
+                    client.add_relay(url).await.ok();
+                    client.connect_relay(url).await.ok();
+                }
+
+                relay_urls.extend(urls.into_iter().take(3).unique());
+            }
+        }
+
+        relay_urls
     }
 }

@@ -13,9 +13,6 @@ use crate::constants::{
 };
 use crate::nostr_client;
 use crate::paths::support_dir;
-use crate::state::gossip::Gossip;
-
-mod gossip;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
@@ -93,6 +90,10 @@ impl Signal {
 
     pub fn receiver(&self) -> &Receiver<SignalKind> {
         &self.rx
+    }
+
+    pub fn sender(&self) -> &Sender<SignalKind> {
+        &self.tx
     }
 
     pub async fn send(&self, kind: SignalKind) {
@@ -182,9 +183,6 @@ pub struct AppState {
     /// Auto-close options for relay subscriptions
     pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
 
-    /// NIP-65: https://github.com/nostr-protocol/nips/blob/master/65.md
-    pub gossip: RwLock<Gossip>,
-
     /// Tracks activity related to Nostr events
     pub event_tracker: RwLock<EventTracker>,
 
@@ -218,7 +216,6 @@ impl AppState {
             gift_wrap_sub_id: SubscriptionId::new("inbox"),
             gift_wrap_processing: AtomicBool::new(false),
             auto_close_opts: Some(opts),
-            gossip: RwLock::new(Gossip::default()),
             event_tracker: RwLock::new(EventTracker::default()),
         }
     }
@@ -267,59 +264,45 @@ impl AppState {
 
                     match event.kind {
                         Kind::RelayList => {
-                            // Update NIP-65 relays for event's public key
-                            {
-                                let mut gossip = self.gossip.write().await;
-                                gossip.insert(&event);
-                            }
-
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
                             // Get events if relay list belongs to current user
-                            if is_self_authored {
-                                let gossip = self.gossip.read().await;
+                            if let Ok(true) = Self::is_self_authored(&event).await {
+                                let author = event.pubkey;
 
                                 // Fetch user's metadata event
-                                gossip.subscribe(event.pubkey, Kind::Metadata).await.ok();
+                                if let Err(e) = self.subscribe(author, Kind::Metadata).await {
+                                    log::error!("Failed to subscribe to metadata event: {e}");
+                                }
 
                                 // Fetch user's contact list event
-                                gossip.subscribe(event.pubkey, Kind::ContactList).await.ok();
+                                if let Err(e) = self.subscribe(author, Kind::ContactList).await {
+                                    log::error!("Failed to subscribe to contact list event: {e}");
+                                }
 
                                 // Fetch user's messaging relays event
-                                gossip.get_nip17(event.pubkey).await.ok();
+                                if let Err(e) = self.get_nip17(author).await {
+                                    log::error!("Failed to fetch messaging relays event: {e}");
+                                }
                             }
                         }
                         Kind::InboxRelays => {
-                            // Update NIP-17 relays for event's public key
-                            {
-                                let mut gossip = self.gossip.write().await;
-                                gossip.insert(&event);
-                            }
-
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
                             // Subscribe to gift wrap events if messaging relays belong to the current user
-                            if is_self_authored {
-                                let gossip = self.gossip.read().await;
+                            if let Ok(true) = Self::is_self_authored(&event).await {
+                                let urls: Vec<RelayUrl> =
+                                    nip17::extract_relay_list(event.as_ref()).cloned().collect();
 
-                                if gossip.monitor_inbox(event.pubkey).await.is_err() {
-                                    self.signal.send(SignalKind::MessagingRelaysNotFound).await;
+                                if let Err(e) = self.get_messages(event.pubkey, &urls).await {
+                                    log::error!("Failed to fetch messages: {e}");
                                 }
                             }
                         }
                         Kind::ContactList => {
-                            let is_self_authored = Self::is_self_authored(&event).await;
-
-                            if is_self_authored {
+                            if let Ok(true) = Self::is_self_authored(&event).await {
                                 let public_keys: HashSet<PublicKey> =
                                     event.tags.public_keys().copied().collect();
 
-                                self.gossip
-                                    .read()
-                                    .await
-                                    .bulk_subscribe(public_keys)
-                                    .await
-                                    .ok();
+                                if let Err(e) = self.get_metadata_for_list(public_keys).await {
+                                    log::error!("Failed to get metadata for list: {e}");
+                                }
                             }
                         }
                         Kind::Metadata => {
@@ -406,17 +389,20 @@ impl AppState {
 
                     // Process the batch if it's full
                     if batch.len() >= METADATA_BATCH_LIMIT {
-                        let gossip = self.gossip.read().await;
-                        gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
+                        self.get_metadata_for_list(std::mem::take(&mut batch))
+                            .await
+                            .ok();
                     }
                 }
                 BatchEvent::Timeout => {
-                    let gossip = self.gossip.read().await;
-                    gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
+                    self.get_metadata_for_list(std::mem::take(&mut batch))
+                        .await
+                        .ok();
                 }
                 BatchEvent::Closed => {
-                    let gossip = self.gossip.read().await;
-                    gossip.bulk_subscribe(std::mem::take(&mut batch)).await.ok();
+                    self.get_metadata_for_list(std::mem::take(&mut batch))
+                        .await
+                        .ok();
 
                     // Exit the current loop
                     break;
@@ -425,18 +411,174 @@ impl AppState {
         }
     }
 
-    async fn is_self_authored(event: &Event) -> bool {
+    async fn is_self_authored(event: &Event) -> Result<bool, Error> {
         let client = nostr_client();
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
 
-        let Ok(signer) = client.signer().await else {
-            return false;
-        };
+        Ok(public_key == event.pubkey)
+    }
 
-        let Ok(public_key) = signer.get_public_key().await else {
-            return false;
-        };
+    /// Subscribe for events that match the given kind for a given author
+    async fn subscribe(&self, author: PublicKey, kind: Kind) -> Result<(), Error> {
+        let client = nostr_client();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let filter = Filter::new().author(author).kind(kind).limit(1);
 
-        public_key == event.pubkey
+        // Subscribe to filters from the user's write relays
+        client.subscribe(filter, Some(opts)).await?;
+
+        Ok(())
+    }
+
+    /// Get metadata for a list of public keys
+    async fn get_metadata_for_list(&self, public_keys: HashSet<PublicKey>) -> Result<(), Error> {
+        if public_keys.is_empty() {
+            return Err(anyhow!("You need at least one public key"));
+        }
+
+        let client = nostr_client();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let limit = public_keys.len() * kinds.len() + 20;
+        let filter = Filter::new().authors(public_keys).kinds(kinds).limit(limit);
+
+        // Subscribe to filters to the bootstrap relays
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
+    }
+
+    /// Get and verify NIP-65 relays for a given public key
+    pub async fn get_nip65(&self, public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
+        let tx = self.signal.sender().clone();
+        let timeout = Duration::from_secs(5);
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let filter = Filter::new()
+            .kind(Kind::RelayList)
+            .author(public_key)
+            .limit(1);
+
+        // Subscribe to events from the bootstrapping relays
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter.clone(), Some(opts))
+            .await?;
+
+        // Verify the received data after a timeout
+        smol::spawn(async move {
+            smol::Timer::after(timeout).await;
+
+            if client.database().count(filter).await.unwrap_or(0) < 1 {
+                tx.send_async(SignalKind::GossipRelaysNotFound).await.ok();
+            }
+        })
+        .detach();
+
+        Ok(())
+    }
+
+    /// Set NIP-65 relays for a current user
+    pub async fn set_nip65(
+        &self,
+        relays: &[(RelayUrl, Option<RelayMetadata>)],
+    ) -> Result<(), Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+
+        let tags: Vec<Tag> = relays
+            .iter()
+            .map(|(url, metadata)| Tag::relay_metadata(url.to_owned(), metadata.to_owned()))
+            .collect();
+
+        let event = EventBuilder::new(Kind::RelayList, "")
+            .tags(tags)
+            .sign(&signer)
+            .await?;
+
+        // Send event to the public relays
+        client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
+
+        // Get NIP-17 relays
+        self.get_nip17(event.pubkey).await?;
+
+        Ok(())
+    }
+
+    /// Get and verify NIP-17 relays for a given public key
+    pub async fn get_nip17(&self, public_key: PublicKey) -> Result<(), Error> {
+        let client = nostr_client();
+        let tx = self.signal.sender().clone();
+        let timeout = Duration::from_secs(5);
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
+
+        // Subscribe to events from the bootstrapping relays
+        client.subscribe(filter.clone(), Some(opts)).await?;
+
+        // Verify the received data after a timeout
+        smol::spawn(async move {
+            smol::Timer::after(timeout).await;
+
+            if client.database().count(filter).await.unwrap_or(0) < 1 {
+                tx.send_async(SignalKind::MessagingRelaysNotFound)
+                    .await
+                    .ok();
+            }
+        })
+        .detach();
+
+        Ok(())
+    }
+
+    /// Set NIP-17 relays for a current user
+    pub async fn set_nip17(&self, relays: &[RelayUrl]) -> Result<(), Error> {
+        let client = nostr_client();
+        let signer = client.signer().await?;
+
+        let event = EventBuilder::new(Kind::InboxRelays, "")
+            .tags(relays.iter().map(|relay| Tag::relay(relay.to_owned())))
+            .sign(&signer)
+            .await?;
+
+        // Send event to the public relays
+        client.send_event(&event).await?;
+
+        // Run inbox monitor
+        self.get_messages(event.pubkey, relays).await?;
+
+        Ok(())
+    }
+
+    /// Get all gift wrap events in the messaging relays for a given public key
+    async fn get_messages(&self, public_key: PublicKey, urls: &[RelayUrl]) -> Result<(), Error> {
+        let client = nostr_client();
+        let id = SubscriptionId::new("inbox");
+        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+        // Ensure user's have at least one relay
+        if urls.is_empty() {
+            return Err(anyhow!("Relays are empty"));
+        }
+
+        // Ensure connection to relays
+        for url in urls.iter() {
+            client.add_relay(url).await?;
+            client.connect_relay(url).await?;
+        }
+
+        // Subscribe to filters to user's messaging relays
+        client.subscribe_with_id_to(urls, id, filter, None).await?;
+
+        Ok(())
     }
 
     /// Stores an unwrapped event in local database with reference to original

@@ -225,7 +225,7 @@ impl ChatSpace {
                     app_state.signal.send(SignalKind::SignerSet(pk)).await;
 
                     // Get user's gossip relays
-                    app_state.gossip.write().await.get_nip65(pk).await.ok();
+                    app_state.get_nip65(pk).await.ok();
 
                     // Exit the current loop
                     break;
@@ -877,9 +877,7 @@ impl ChatSpace {
                         .spawn(cx, async move |cx| {
                             let app_state = app_state();
                             let relays = default_nip65_relays();
-
-                            let mut gossip = app_state.gossip.write().await;
-                            let result = gossip.set_nip65(relays).await;
+                            let result = app_state.set_nip65(relays).await;
 
                             cx.update(|window, cx| {
                                 match result {
@@ -981,9 +979,7 @@ impl ChatSpace {
                         .spawn(cx, async move |cx| {
                             let app_state = app_state();
                             let relays = default_nip17_relays();
-
-                            let mut gossip = app_state.gossip.write().await;
-                            let result = gossip.set_nip17(relays).await;
+                            let result = app_state.set_nip17(relays).await;
 
                             cx.update(|window, cx| {
                                 match result {
