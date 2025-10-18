@@ -171,7 +171,7 @@ impl From<&UnsignedEvent> for Room {
 }
 
 impl Room {
-    /// Constructs a new room instance for a private message with the given receiver and tags.
+    /// Constructs a new room with the given receiver and tags.
     pub async fn new(subject: Option<String>, receivers: Vec<PublicKey>) -> Result<Self, Error> {
         let client = app_state().client();
         let signer = client.signer().await?;

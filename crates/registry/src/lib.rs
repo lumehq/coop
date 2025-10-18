@@ -51,7 +51,7 @@ pub struct Registry {
     signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 3]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl EventEmitter<RegistryEvent> for Registry {}
@@ -72,24 +72,10 @@ impl Registry {
         cx.set_global(GlobalRegistry(state));
     }
 
-    /// Create a new Registry instance
+    /// Create a new registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
         let mut tasks = smallvec![];
-
-        tasks.push(
-            // Handle events from the nostr client
-            cx.background_spawn(async move {
-                if let Err(e) = app_state().handle_notifications().await {
-                    log::error!("Failed to handle notifications: {e}");
-                }
-            }),
-        );
-
-        tasks.push(
-            // Batch metadata requests into a single subscription
-            cx.background_spawn(async move { app_state().handle_metadata_batching().await }),
-        );
 
         tasks.push(
             // Load all user profiles from the database
@@ -363,11 +349,9 @@ impl Registry {
         cx.spawn_in(window, async move |this, cx| {
             match task.await {
                 Ok(rooms) => {
-                    this.update_in(cx, move |_, window, cx| {
-                        cx.defer_in(window, move |this, _window, cx| {
-                            this.extend_rooms(rooms, cx);
-                            this.sort(cx);
-                        });
+                    this.update_in(cx, move |this, _window, cx| {
+                        this.extend_rooms(rooms, cx);
+                        this.sort(cx);
                     })
                     .ok();
                 }
