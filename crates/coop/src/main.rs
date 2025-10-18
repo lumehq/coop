@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use app_state::app_state;
-use app_state::constants::{APP_ID, APP_NAME};
 use assets::Assets;
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
+use states::app_state;
+use states::constants::{APP_ID, APP_NAME};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};

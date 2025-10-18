@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::app_state;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, uniform_list, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -13,6 +12,7 @@ use i18n::{shared_t, t};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
@@ -153,8 +153,8 @@ impl SetupRelay {
         let relays = self.relays.clone();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let app_state = app_state();
-            let client = app_state.client();
+            let states = app_state();
+            let client = states.client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -178,7 +178,7 @@ impl SetupRelay {
             }
 
             // Fetch gift wrap events
-            app_state
+            states
                 .get_messages(public_key, &relays.into_iter().collect_vec())
                 .await
                 .ok();

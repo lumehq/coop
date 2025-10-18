@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::IMAGE_RESIZE_SERVICE;
 use chrono::{Local, TimeZone};
 use gpui::{Image, ImageFormat, SharedString, SharedUri};
 use nostr_sdk::prelude::*;
 use qrcode::render::svg;
 use qrcode::QrCode;
+use states::constants::IMAGE_RESIZE_SERVICE;
 
 const NOW: &str = "now";
 const SECONDS_IN_MINUTE: i64 = 60;

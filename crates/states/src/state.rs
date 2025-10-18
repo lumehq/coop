@@ -53,9 +53,6 @@ pub enum SignalKind {
     /// A signal to notify UI that the relay requires authentication
     Auth(AuthRequest),
 
-    /// A signal to notify UI that the browser proxy service is down
-    ProxyDown,
-
     /// A signal to notify UI that a new profile has been received
     NewProfile(Profile),
 
@@ -248,6 +245,71 @@ impl AppState {
     /// Returns a reference to the ingester channel
     pub fn ingester(&'static self) -> &'static Ingester {
         &self.ingester
+    }
+
+    /// Observes the signer and notifies the app when it's set
+    pub async fn observe_signer(&'static self) {
+        let client = self.client();
+        let loop_duration = Duration::from_millis(800);
+
+        loop {
+            if let Ok(signer) = client.signer().await {
+                if let Ok(pk) = signer.get_public_key().await {
+                    // Notify the app that the signer has been set
+                    self.signal().send(SignalKind::SignerSet(pk)).await;
+
+                    // Get user's gossip relays
+                    self.get_nip65(pk).await.ok();
+
+                    // Exit the current loop
+                    break;
+                }
+            }
+
+            smol::Timer::after(loop_duration).await;
+        }
+    }
+
+    /// Observes the gift wrap status and notifies the app when it's set
+    pub async fn observe_giftwrap(&'static self) {
+        let client = self.client();
+        let loop_duration = Duration::from_secs(20);
+        let mut is_start_processing = false;
+        let mut total_loops = 0;
+
+        loop {
+            if client.has_signer().await {
+                total_loops += 1;
+
+                if self.gift_wrap_processing.load(Ordering::Acquire) {
+                    is_start_processing = true;
+
+                    // Reset gift wrap processing flag
+                    let _ = self.gift_wrap_processing.compare_exchange(
+                        true,
+                        false,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    );
+
+                    let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
+                    self.signal().send(signal).await;
+                } else {
+                    // Only run further if we are already processing
+                    // Wait until after 2 loops to prevent exiting early while events are still being processed
+                    if is_start_processing && total_loops >= 2 {
+                        let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Complete);
+                        self.signal().send(signal).await;
+
+                        // Reset the counter
+                        is_start_processing = false;
+                        total_loops = 0;
+                    }
+                }
+            }
+
+            smol::Timer::after(loop_duration).await;
+        }
     }
 
     /// Handles events from the nostr client

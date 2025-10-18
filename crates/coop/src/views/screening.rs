@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use app_state::app_state;
-use app_state::constants::BOOTSTRAP_RELAYS;
 use common::display::{shorten_pubkey, RenderedProfile, RenderedTimestamp};
 use common::nip05::nip05_verify;
 use gpui::prelude::FluentBuilder;
@@ -15,6 +13,8 @@ use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

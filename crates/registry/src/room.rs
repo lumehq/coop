@@ -4,13 +4,13 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::app_state;
-use app_state::constants::SEND_RETRY;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use states::app_state;
+use states::constants::SEND_RETRY;
 
 use crate::Registry;
 
@@ -482,8 +482,8 @@ impl Room {
         let mut members = self.members.clone();
 
         cx.background_spawn(async move {
-            let app_state = app_state();
-            let client = app_state.client();
+            let states = app_state();
+            let client = states.client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -514,7 +514,7 @@ impl Room {
                         if auth_required {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
-                                let retry_manager = app_state.tracker().read().await;
+                                let retry_manager = states.tracker().read().await;
                                 let ids = retry_manager.resent_ids();
 
                                 // Check if event was successfully resent

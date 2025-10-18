@@ -1,6 +1,4 @@
 use anyhow::{anyhow, Error};
-use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS};
-use app_state::{app_state, default_nip17_relays, default_nip65_relays};
 use common::nip96::nip96_upload;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
@@ -12,6 +10,8 @@ use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
+use states::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS};
+use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use app_state::app_state;
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
@@ -24,6 +23,7 @@ use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
+use states::app_state;
 use theme::ActiveTheme;
 use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
@@ -169,8 +169,8 @@ impl Chat {
                         let message = Message::user(event);
 
                         cx.spawn_in(window, async move |this, cx| {
-                            let app_state = app_state();
-                            let event_tracker = app_state.tracker().read().await;
+                            let states = app_state();
+                            let event_tracker = states.tracker().read().await;
                             let sent_ids = event_tracker.sent_ids();
 
                             this.update_in(cx, |this, _window, cx| {
@@ -1239,9 +1239,9 @@ impl Chat {
         let id = ev.0;
 
         let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-            let app_state = app_state();
-            let client = app_state.client();
-            let event_tracker = app_state.tracker().read().await;
+            let states = app_state();
+            let client = states.client();
+            let event_tracker = states.tracker().read().await;
             let mut relays: Vec<RelayUrl> = vec![];
 
             let filter = Filter::new()

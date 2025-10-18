@@ -1,10 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use app_state::app_state;
-use app_state::constants::{
-    ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT,
-};
 use client_keys::ClientKeys;
 use common::display::TextUtils;
 use gpui::prelude::FluentBuilder;
@@ -16,6 +12,8 @@ use gpui::{
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::{ACCOUNT_IDENTIFIER, APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -23,7 +21,7 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
-use crate::chatspace::{self, ChatSpace};
+use crate::chatspace;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
     Onboarding::new(window, cx)
@@ -161,10 +159,6 @@ impl Onboarding {
                 }
             }),
         )
-    }
-
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
     }
 
     fn write_uri_to_disk(
@@ -348,30 +342,11 @@ impl Render for Onboarding {
                             .child(
                                 Button::new("key")
                                     .label(t!("onboarding.key_login"))
+                                    .large()
                                     .ghost_alt()
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         chatspace::login(window, cx);
                                     })),
-                            )
-                            .child(
-                                v_flex()
-                                    .gap_1()
-                                    .child(
-                                        Button::new("ext")
-                                            .label(t!("onboarding.ext_login"))
-                                            .ghost_alt()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.set_proxy(window, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        div()
-                                            .italic()
-                                            .text_xs()
-                                            .text_center()
-                                            .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("onboarding.ext_login_note")),
-                                    ),
                             ),
                     ),
             )

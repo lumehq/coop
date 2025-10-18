@@ -2,7 +2,6 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Error;
-use app_state::app_state;
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -13,6 +12,7 @@ use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
+use states::app_state;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};

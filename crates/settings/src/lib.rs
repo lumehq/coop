@@ -1,10 +1,10 @@
 use anyhow::anyhow;
-use app_state::app_state;
-use app_state::constants::SETTINGS_IDENTIFIER;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::SETTINGS_IDENTIFIER;
 
 pub fn init(cx: &mut App) {
     let state = cx.new(AppSettings::new);

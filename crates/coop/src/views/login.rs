@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use app_state::app_state;
-use app_state::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use client_keys::ClientKeys;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -12,6 +10,8 @@ use gpui::{
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};

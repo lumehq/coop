@@ -2,8 +2,6 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::app_state;
-use app_state::constants::BOOTSTRAP_RELAYS;
 use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
 use gpui::prelude::FluentBuilder;
@@ -19,6 +17,8 @@ use registry::room::Room;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -195,8 +195,8 @@ impl Compose {
     }
 
     async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
-        let app_state = app_state();
-        let client = app_state.client();
+        let states = app_state();
+        let client = states.client();
 
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];

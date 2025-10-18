@@ -2,8 +2,6 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Error;
-use app_state::app_state;
-use app_state::state::UnwrappingStatus;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -15,6 +13,8 @@ use nostr_sdk::prelude::*;
 use room::RoomKind;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::state::UnwrappingStatus;
 
 use crate::room::Room;
 
