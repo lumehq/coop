@@ -4,13 +4,13 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::SEND_RETRY;
-use app_state::{app_state, nostr_client};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use states::app_state;
+use states::constants::SEND_RETRY;
 
 use crate::Registry;
 
@@ -171,9 +171,9 @@ impl From<&UnsignedEvent> for Room {
 }
 
 impl Room {
-    /// Constructs a new room instance for a private message with the given receiver and tags.
+    /// Constructs a new room with the given receiver and tags.
     pub async fn new(subject: Option<String>, receivers: Vec<PublicKey>) -> Result<Self, Error> {
-        let client = nostr_client();
+        let client = app_state().client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
@@ -310,7 +310,7 @@ impl Room {
         let members = self.members.clone();
 
         cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -363,11 +363,11 @@ impl Room {
         let members = self.members.clone();
 
         cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let sent_ids: Vec<EventId> = app_state()
-                .event_tracker
+                .tracker()
                 .read()
                 .await
                 .sent_ids()
@@ -482,8 +482,8 @@ impl Room {
         let mut members = self.members.clone();
 
         cx.background_spawn(async move {
-            let app_state = app_state();
-            let client = nostr_client();
+            let states = app_state();
+            let client = states.client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -514,7 +514,7 @@ impl Room {
                         if auth_required {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
-                                let retry_manager = app_state.event_tracker.read().await;
+                                let retry_manager = states.tracker().read().await;
                                 let ids = retry_manager.resent_ids();
 
                                 // Check if event was successfully resent
@@ -579,7 +579,7 @@ impl Room {
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
         cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let mut resend_reports = vec![];
 
             for report in reports.into_iter() {
@@ -633,7 +633,7 @@ impl Room {
 
     /// Gets messaging relays for public key
     async fn messaging_relays(public_key: PublicKey) -> Vec<RelayUrl> {
-        let client = nostr_client();
+        let client = app_state().client();
         let mut relay_urls = vec![];
 
         let filter = Filter::new()

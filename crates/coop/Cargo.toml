@@ -32,12 +32,11 @@ ui = { path = "../ui" }
 title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
-app_state = { path = "../app_state" }
+states = { path = "../states" }
 registry = { path = "../registry" }
 settings = { path = "../settings" }
 client_keys = { path = "../client_keys" }
 auto_update = { path = "../auto_update" }
-signer_proxy = { path = "../signer_proxy" }
 
 rust-i18n.workspace = true
 i18n.workspace = true

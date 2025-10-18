@@ -5,14 +5,16 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use flume::{Receiver, Sender};
+use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
 use crate::constants::{
     BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
 };
-use crate::nostr_client;
-use crate::paths::support_dir;
+use crate::paths::config_dir;
+
+const TIMEOUT: u64 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
@@ -51,9 +53,6 @@ pub enum SignalKind {
     /// A signal to notify UI that the relay requires authentication
     Auth(AuthRequest),
 
-    /// A signal to notify UI that the browser proxy service is down
-    ProxyDown,
-
     /// A signal to notify UI that a new profile has been received
     NewProfile(Profile),
 
@@ -70,7 +69,7 @@ pub enum SignalKind {
     GiftWrapStatus(UnwrappingStatus),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Signal {
     rx: Receiver<SignalKind>,
     tx: Sender<SignalKind>,
@@ -103,7 +102,7 @@ impl Signal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Ingester {
     rx: Receiver<PublicKey>,
     tx: Sender<PublicKey>,
@@ -165,32 +164,25 @@ impl EventTracker {
     }
 }
 
-/// A simple storage to store all states that using across the application.
 #[derive(Debug)]
 pub struct AppState {
+    /// A client to interact with Nostr
+    client: Client,
+
+    /// Tracks activity related to Nostr events
+    event_tracker: RwLock<EventTracker>,
+
+    /// Signal channel for communication between Nostr and GPUI
+    signal: Signal,
+
+    /// Ingester channel for processing public keys
+    ingester: Ingester,
+
     /// The timestamp when the application was initialized.
     pub initialized_at: Timestamp,
 
-    /// Whether this is the first run of the application.
-    pub is_first_run: AtomicBool,
-
     /// Whether gift wrap processing is in progress.
     pub gift_wrap_processing: AtomicBool,
-
-    /// Subscription ID for listening to gift wrap events from relays.
-    pub gift_wrap_sub_id: SubscriptionId,
-
-    /// Auto-close options for relay subscriptions
-    pub auto_close_opts: Option<SubscribeAutoCloseOptions>,
-
-    /// Tracks activity related to Nostr events
-    pub event_tracker: RwLock<EventTracker>,
-
-    /// Signal channel for communication between Nostr and GPUI
-    pub signal: Signal,
-
-    /// Ingester channel for processing public keys
-    pub ingester: Ingester,
 }
 
 impl Default for AppState {
@@ -201,28 +193,127 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let first_run = Self::first_run();
-        let initialized_at = Timestamp::now();
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        // rustls uses the `aws_lc_rs` provider by default
+        // This only errors if the default provider has already
+        // been installed. We can ignore this `Result`.
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .ok();
+
+        let lmdb =
+            NostrLMDB::open(config_dir().join("nostr")).expect("Database is NOT initialized");
+
+        let opts = ClientOptions::new()
+            .gossip(true)
+            .automatic_authentication(false)
+            .verify_subscriptions(false)
+            .sleep_when_idle(SleepWhenIdle::Enabled {
+                timeout: Duration::from_secs(600),
+            });
+
+        let client = ClientBuilder::default().database(lmdb).opts(opts).build();
+        let event_tracker = RwLock::new(EventTracker::default());
 
         let signal = Signal::default();
         let ingester = Ingester::default();
 
         Self {
-            initialized_at,
+            client,
+            event_tracker,
             signal,
             ingester,
-            is_first_run: AtomicBool::new(first_run),
-            gift_wrap_sub_id: SubscriptionId::new("inbox"),
+            initialized_at: Timestamp::now(),
             gift_wrap_processing: AtomicBool::new(false),
-            auto_close_opts: Some(opts),
-            event_tracker: RwLock::new(EventTracker::default()),
         }
     }
 
-    pub async fn handle_notifications(&self) -> Result<(), Error> {
-        let client = nostr_client();
+    /// Returns a reference to the nostr client
+    pub fn client(&'static self) -> &'static Client {
+        &self.client
+    }
 
+    /// Returns a reference to the event tracker
+    pub fn tracker(&'static self) -> &'static RwLock<EventTracker> {
+        &self.event_tracker
+    }
+
+    /// Returns a reference to the signal channel
+    pub fn signal(&'static self) -> &'static Signal {
+        &self.signal
+    }
+
+    /// Returns a reference to the ingester channel
+    pub fn ingester(&'static self) -> &'static Ingester {
+        &self.ingester
+    }
+
+    /// Observes the signer and notifies the app when it's set
+    pub async fn observe_signer(&'static self) {
+        let client = self.client();
+        let loop_duration = Duration::from_millis(800);
+
+        loop {
+            if let Ok(signer) = client.signer().await {
+                if let Ok(pk) = signer.get_public_key().await {
+                    // Notify the app that the signer has been set
+                    self.signal().send(SignalKind::SignerSet(pk)).await;
+
+                    // Get user's gossip relays
+                    self.get_nip65(pk).await.ok();
+
+                    // Exit the current loop
+                    break;
+                }
+            }
+
+            smol::Timer::after(loop_duration).await;
+        }
+    }
+
+    /// Observes the gift wrap status and notifies the app when it's set
+    pub async fn observe_giftwrap(&'static self) {
+        let client = self.client();
+        let loop_duration = Duration::from_secs(20);
+        let mut is_start_processing = false;
+        let mut total_loops = 0;
+
+        loop {
+            if client.has_signer().await {
+                total_loops += 1;
+
+                if self.gift_wrap_processing.load(Ordering::Acquire) {
+                    is_start_processing = true;
+
+                    // Reset gift wrap processing flag
+                    let _ = self.gift_wrap_processing.compare_exchange(
+                        true,
+                        false,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    );
+
+                    let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
+                    self.signal().send(signal).await;
+                } else {
+                    // Only run further if we are already processing
+                    // Wait until after 2 loops to prevent exiting early while events are still being processed
+                    if is_start_processing && total_loops >= 2 {
+                        let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Complete);
+                        self.signal().send(signal).await;
+
+                        // Reset the counter
+                        is_start_processing = false;
+                        total_loops = 0;
+                    }
+                }
+            }
+
+            smol::Timer::after(loop_duration).await;
+        }
+    }
+
+    /// Handles events from the nostr client
+    pub async fn handle_notifications(&self) -> Result<(), Error> {
         // Get all bootstrapping relays
         let mut urls = vec![];
         urls.extend(BOOTSTRAP_RELAYS);
@@ -230,15 +321,15 @@ impl AppState {
 
         // Add relay to the relay pool
         for url in urls.into_iter() {
-            client.add_relay(url).await?;
+            self.client.add_relay(url).await?;
         }
 
         // Establish connection to relays
-        client.connect().await;
+        self.client.connect().await;
 
         let mut processed_events: HashSet<EventId> = HashSet::new();
         let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
-        let mut notifications = client.notifications();
+        let mut notifications = self.client.notifications();
 
         while let Ok(notification) = notifications.recv().await {
             let RelayPoolNotification::Message { message, relay_url } = notification else {
@@ -265,7 +356,7 @@ impl AppState {
                     match event.kind {
                         Kind::RelayList => {
                             // Get events if relay list belongs to current user
-                            if let Ok(true) = Self::is_self_authored(&event).await {
+                            if let Ok(true) = self.is_self_authored(&event).await {
                                 let author = event.pubkey;
 
                                 // Fetch user's metadata event
@@ -286,7 +377,7 @@ impl AppState {
                         }
                         Kind::InboxRelays => {
                             // Subscribe to gift wrap events if messaging relays belong to the current user
-                            if let Ok(true) = Self::is_self_authored(&event).await {
+                            if let Ok(true) = self.is_self_authored(&event).await {
                                 let urls: Vec<RelayUrl> =
                                     nip17::extract_relay_list(event.as_ref()).cloned().collect();
 
@@ -296,7 +387,7 @@ impl AppState {
                             }
                         }
                         Kind::ContactList => {
-                            if let Ok(true) = Self::is_self_authored(&event).await {
+                            if let Ok(true) = self.is_self_authored(&event).await {
                                 let public_keys: HashSet<PublicKey> =
                                     event.tags.public_keys().copied().collect();
 
@@ -318,7 +409,7 @@ impl AppState {
                     }
                 }
                 RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if *subscription_id == self.gift_wrap_sub_id {
+                    if subscription_id.as_ref() == &SubscriptionId::new("inbox") {
                         self.signal
                             .send(SignalKind::GiftWrapStatus(UnwrappingStatus::Processing))
                             .await;
@@ -353,6 +444,7 @@ impl AppState {
         Ok(())
     }
 
+    /// Batch metadata requests into a single subscription
     pub async fn handle_metadata_batching(&self) {
         let timeout = Duration::from_millis(METADATA_BATCH_TIMEOUT);
         let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
@@ -411,41 +503,46 @@ impl AppState {
         }
     }
 
-    async fn is_self_authored(event: &Event) -> Result<bool, Error> {
-        let client = nostr_client();
-        let signer = client.signer().await?;
+    /// Check if event is published by current user
+    async fn is_self_authored(&self, event: &Event) -> Result<bool, Error> {
+        let signer = self.client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
         Ok(public_key == event.pubkey)
     }
 
     /// Subscribe for events that match the given kind for a given author
-    async fn subscribe(&self, author: PublicKey, kind: Kind) -> Result<(), Error> {
-        let client = nostr_client();
+    pub async fn subscribe(&self, author: PublicKey, kind: Kind) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let filter = Filter::new().author(author).kind(kind).limit(1);
 
         // Subscribe to filters from the user's write relays
-        client.subscribe(filter, Some(opts)).await?;
+        self.client.subscribe(filter, Some(opts)).await?;
 
         Ok(())
     }
 
     /// Get metadata for a list of public keys
-    async fn get_metadata_for_list(&self, public_keys: HashSet<PublicKey>) -> Result<(), Error> {
-        if public_keys.is_empty() {
-            return Err(anyhow!("You need at least one public key"));
+    pub async fn get_metadata_for_list<I>(&self, public_keys: I) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = PublicKey>,
+    {
+        let authors: Vec<PublicKey> = public_keys.into_iter().collect();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+
+        // Return if the list is empty
+        if authors.is_empty() {
+            return Err(anyhow!("You need at least one public key".to_string(),));
         }
 
-        let client = nostr_client();
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
-        let limit = public_keys.len() * kinds.len() + 20;
-        let filter = Filter::new().authors(public_keys).kinds(kinds).limit(limit);
+        let filter = Filter::new()
+            .limit(authors.len() * kinds.len() + 20)
+            .authors(authors)
+            .kinds(kinds);
 
         // Subscribe to filters to the bootstrap relays
-        client
+        self.client
             .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await?;
 
@@ -454,9 +551,7 @@ impl AppState {
 
     /// Get and verify NIP-65 relays for a given public key
     pub async fn get_nip65(&self, public_key: PublicKey) -> Result<(), Error> {
-        let client = nostr_client();
-        let tx = self.signal.sender().clone();
-        let timeout = Duration::from_secs(5);
+        let timeout = Duration::from_secs(TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let filter = Filter::new()
@@ -465,15 +560,18 @@ impl AppState {
             .limit(1);
 
         // Subscribe to events from the bootstrapping relays
-        client
+        self.client
             .subscribe_to(BOOTSTRAP_RELAYS, filter.clone(), Some(opts))
             .await?;
+
+        let tx = self.signal.sender().clone();
+        let database = self.client.database().clone();
 
         // Verify the received data after a timeout
         smol::spawn(async move {
             smol::Timer::after(timeout).await;
 
-            if client.database().count(filter).await.unwrap_or(0) < 1 {
+            if database.count(filter).await.unwrap_or(0) < 1 {
                 tx.send_async(SignalKind::GossipRelaysNotFound).await.ok();
             }
         })
@@ -487,12 +585,12 @@ impl AppState {
         &self,
         relays: &[(RelayUrl, Option<RelayMetadata>)],
     ) -> Result<(), Error> {
-        let client = nostr_client();
-        let signer = client.signer().await?;
+        let signer = self.client.signer().await?;
 
         let tags: Vec<Tag> = relays
             .iter()
-            .map(|(url, metadata)| Tag::relay_metadata(url.to_owned(), metadata.to_owned()))
+            .cloned()
+            .map(|(url, metadata)| Tag::relay_metadata(url, metadata))
             .collect();
 
         let event = EventBuilder::new(Kind::RelayList, "")
@@ -501,7 +599,7 @@ impl AppState {
             .await?;
 
         // Send event to the public relays
-        client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
+        self.client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
         // Get NIP-17 relays
         self.get_nip17(event.pubkey).await?;
@@ -511,9 +609,7 @@ impl AppState {
 
     /// Get and verify NIP-17 relays for a given public key
     pub async fn get_nip17(&self, public_key: PublicKey) -> Result<(), Error> {
-        let client = nostr_client();
-        let tx = self.signal.sender().clone();
-        let timeout = Duration::from_secs(5);
+        let timeout = Duration::from_secs(TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let filter = Filter::new()
@@ -522,13 +618,16 @@ impl AppState {
             .limit(1);
 
         // Subscribe to events from the bootstrapping relays
-        client.subscribe(filter.clone(), Some(opts)).await?;
+        self.client.subscribe(filter.clone(), Some(opts)).await?;
+
+        let tx = self.signal.sender().clone();
+        let database = self.client.database().clone();
 
         // Verify the received data after a timeout
         smol::spawn(async move {
             smol::Timer::after(timeout).await;
 
-            if client.database().count(filter).await.unwrap_or(0) < 1 {
+            if database.count(filter).await.unwrap_or(0) < 1 {
                 tx.send_async(SignalKind::MessagingRelaysNotFound)
                     .await
                     .ok();
@@ -541,26 +640,28 @@ impl AppState {
 
     /// Set NIP-17 relays for a current user
     pub async fn set_nip17(&self, relays: &[RelayUrl]) -> Result<(), Error> {
-        let client = nostr_client();
-        let signer = client.signer().await?;
+        let signer = self.client.signer().await?;
 
         let event = EventBuilder::new(Kind::InboxRelays, "")
-            .tags(relays.iter().map(|relay| Tag::relay(relay.to_owned())))
+            .tags(relays.iter().cloned().map(Tag::relay))
             .sign(&signer)
             .await?;
 
         // Send event to the public relays
-        client.send_event(&event).await?;
+        self.client.send_event(&event).await?;
 
-        // Run inbox monitor
+        // Get all gift wrap events after published event
         self.get_messages(event.pubkey, relays).await?;
 
         Ok(())
     }
 
     /// Get all gift wrap events in the messaging relays for a given public key
-    async fn get_messages(&self, public_key: PublicKey, urls: &[RelayUrl]) -> Result<(), Error> {
-        let client = nostr_client();
+    pub async fn get_messages(
+        &self,
+        public_key: PublicKey,
+        urls: &[RelayUrl],
+    ) -> Result<(), Error> {
         let id = SubscriptionId::new("inbox");
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
@@ -571,22 +672,22 @@ impl AppState {
 
         // Ensure connection to relays
         for url in urls.iter() {
-            client.add_relay(url).await?;
-            client.connect_relay(url).await?;
+            self.client.add_relay(url).await?;
+            self.client.connect_relay(url).await?;
         }
 
         // Subscribe to filters to user's messaging relays
-        client.subscribe_with_id_to(urls, id, filter, None).await?;
+        self.client
+            .subscribe_with_id_to(urls, id, filter, None)
+            .await?;
 
         Ok(())
     }
 
     /// Stores an unwrapped event in local database with reference to original
     async fn set_rumor(&self, id: EventId, rumor: &Event) -> Result<(), Error> {
-        let client = nostr_client();
-
         // Save unwrapped event
-        client.database().save_event(rumor).await?;
+        self.client.database().save_event(rumor).await?;
 
         // Create a reference event pointing to the unwrapped event
         let event = EventBuilder::new(Kind::ApplicationSpecificData, "")
@@ -595,23 +696,22 @@ impl AppState {
             .await?;
 
         // Save reference event
-        client.database().save_event(&event).await?;
+        self.client.database().save_event(&event).await?;
 
         Ok(())
     }
 
     /// Retrieves a previously unwrapped event from local database
     async fn get_rumor(&self, id: EventId) -> Result<Event, Error> {
-        let client = nostr_client();
         let filter = Filter::new()
             .kind(Kind::ApplicationSpecificData)
             .identifier(id)
             .limit(1);
 
-        if let Some(event) = client.database().query(filter).await?.first_owned() {
+        if let Some(event) = self.client.database().query(filter).await?.first_owned() {
             let target_id = event.tags.event_ids().collect::<Vec<_>>()[0];
 
-            if let Some(event) = client.database().event_by_id(target_id).await? {
+            if let Some(event) = self.client.database().event_by_id(target_id).await? {
                 Ok(event)
             } else {
                 Err(anyhow!("Event not found."))
@@ -623,13 +723,11 @@ impl AppState {
 
     // Unwraps a gift-wrapped event and processes its contents.
     async fn extract_rumor(&self, gift_wrap: &Event) {
-        let client = nostr_client();
-
         let mut rumor: Option<Event> = None;
 
         if let Ok(event) = self.get_rumor(gift_wrap.id).await {
             rumor = Some(event);
-        } else if let Ok(unwrapped) = client.unwrap_gift_wrap(gift_wrap).await {
+        } else if let Ok(unwrapped) = self.client.unwrap_gift_wrap(gift_wrap).await {
             // Sign the unwrapped event with a RANDOM KEYS
             if let Ok(event) = unwrapped.rumor.sign_with_keys(&Keys::generate()) {
                 // Save this event to the database for future use.
@@ -660,10 +758,5 @@ impl AppState {
                 }
             }
         }
-    }
-
-    fn first_run() -> bool {
-        let flag = support_dir().join(".first_run");
-        !flag.exists() && std::fs::write(&flag, "").is_ok()
     }
 }

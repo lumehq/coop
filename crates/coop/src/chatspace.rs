@@ -1,13 +1,8 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
-use app_state::state::{AuthRequest, SignalKind, UnwrappingStatus};
-use app_state::{app_state, default_nip17_relays, default_nip65_relays, nostr_client};
 use auto_update::AutoUpdater;
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
@@ -24,8 +19,10 @@ use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
-use signer_proxy::{BrowserSignerProxy, BrowserSignerProxyOptions};
 use smallvec::{smallvec, SmallVec};
+use states::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use states::state::{AuthRequest, SignalKind, UnwrappingStatus};
+use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::actions::{CopyPublicKey, OpenPublicKey};
@@ -121,21 +118,15 @@ impl ChatSpace {
                 let status = status.read(cx);
                 let all_panels = this.get_all_panel_ids(cx);
 
-                match status {
-                    UnwrappingStatus::Processing => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.refresh_rooms(all_panels, cx);
-                        });
-                    }
-                    UnwrappingStatus::Complete => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.refresh_rooms(all_panels, cx);
-                        });
-                    }
-                    _ => {}
-                };
+                if matches!(
+                    status,
+                    UnwrappingStatus::Processing | UnwrappingStatus::Complete
+                ) {
+                    registry.update(cx, |this, cx| {
+                        this.load_rooms(window, cx);
+                        this.refresh_rooms(all_panels, cx);
+                    });
+                }
             }),
         );
 
@@ -184,14 +175,14 @@ impl ChatSpace {
             // Wait for the signer to be set
             // Also verify NIP-65 and NIP-17 relays after the signer is set
             cx.background_spawn(async move {
-                Self::observe_signer().await;
+                app_state().observe_signer().await;
             }),
         );
 
         tasks.push(
             // Observe gift wrap process in the background
             cx.background_spawn(async move {
-                Self::observe_giftwrap().await;
+                app_state().observe_giftwrap().await;
             }),
         );
 
@@ -213,89 +204,18 @@ impl ChatSpace {
         }
     }
 
-    async fn observe_signer() {
-        let client = nostr_client();
-        let app_state = app_state();
-        let loop_duration = Duration::from_millis(800);
-
-        loop {
-            if let Ok(signer) = client.signer().await {
-                if let Ok(pk) = signer.get_public_key().await {
-                    // Notify the app that the signer has been set
-                    app_state.signal.send(SignalKind::SignerSet(pk)).await;
-
-                    // Get user's gossip relays
-                    app_state.get_nip65(pk).await.ok();
-
-                    // Exit the current loop
-                    break;
-                }
-            }
-
-            smol::Timer::after(loop_duration).await;
-        }
-    }
-
-    async fn observe_giftwrap() {
-        let client = nostr_client();
-        let app_state = app_state();
-        let loop_duration = Duration::from_secs(20);
-        let mut is_start_processing = false;
-        let mut total_loops = 0;
-
-        loop {
-            if client.has_signer().await {
-                total_loops += 1;
-
-                if app_state.gift_wrap_processing.load(Ordering::Acquire) {
-                    is_start_processing = true;
-
-                    // Reset gift wrap processing flag
-                    let _ = app_state.gift_wrap_processing.compare_exchange(
-                        true,
-                        false,
-                        Ordering::Release,
-                        Ordering::Relaxed,
-                    );
-
-                    let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Processing);
-                    app_state.signal.send(signal).await;
-                } else {
-                    // Only run further if we are already processing
-                    // Wait until after 2 loops to prevent exiting early while events are still being processed
-                    if is_start_processing && total_loops >= 2 {
-                        let signal = SignalKind::GiftWrapStatus(UnwrappingStatus::Complete);
-                        app_state.signal.send(signal).await;
-
-                        // Reset the counter
-                        is_start_processing = false;
-                        total_loops = 0;
-                    }
-                }
-            }
-
-            smol::Timer::after(loop_duration).await;
-        }
-    }
-
     async fn handle_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
-        let app_state = app_state();
-        let mut is_open_proxy_modal = false;
+        let states = app_state();
 
-        while let Ok(signal) = app_state.signal.receiver().recv_async().await {
-            cx.update(|window, cx| {
+        while let Ok(signal) = states.signal().receiver().recv_async().await {
+            view.update_in(cx, |this, window, cx| {
                 let registry = Registry::global(cx);
                 let settings = AppSettings::global(cx);
 
                 match signal {
                     SignalKind::SignerSet(public_key) => {
+                        // Close the latest modal if it exists
                         window.close_modal(cx);
-
-                        // Setup the default layout for current workspace
-                        view.update(cx, |this, cx| {
-                            this.set_default_layout(window, cx);
-                        })
-                        .ok();
 
                         // Load user's settings
                         settings.update(cx, |this, cx| {
@@ -307,45 +227,33 @@ impl ChatSpace {
                             this.set_signer_pubkey(public_key, cx);
                             this.load_rooms(window, cx);
                         });
+
+                        // Setup the default layout for current workspace
+                        this.set_default_layout(window, cx);
                     }
                     SignalKind::SignerUnset => {
-                        // Setup the onboarding layout for current workspace
-                        view.update(cx, |this, cx| {
-                            this.set_onboarding_layout(window, cx);
-                        })
-                        .ok();
-
                         // Clear all current chat rooms
                         registry.update(cx, |this, cx| {
                             this.reset(cx);
                         });
+
+                        // Setup the onboarding layout for current workspace
+                        this.set_onboarding_layout(window, cx);
                     }
                     SignalKind::Auth(req) => {
                         let url = &req.url;
                         let auto_auth = AppSettings::get_auto_auth(cx);
                         let is_authenticated = AppSettings::read_global(cx).is_authenticated(url);
 
-                        view.update(cx, |this, cx| {
-                            this.push_auth_request(&req, cx);
+                        // Store the auth request in the current view
+                        this.push_auth_request(&req, cx);
 
-                            if auto_auth && is_authenticated {
-                                // Automatically authenticate if the relay is authenticated before
-                                this.auth(req, window, cx);
-                            } else {
-                                // Otherwise open the auth request popup
-                                this.open_auth_request(req, window, cx);
-                            }
-                        })
-                        .ok();
-                    }
-                    SignalKind::ProxyDown => {
-                        if !is_open_proxy_modal {
-                            is_open_proxy_modal = true;
-
-                            view.update(cx, |this, cx| {
-                                this.render_proxy_modal(window, cx);
-                            })
-                            .ok();
+                        if auto_auth && is_authenticated {
+                            // Automatically authenticate if the relay is authenticated before
+                            this.auth(req, window, cx);
+                        } else {
+                            // Otherwise open the auth request popup
+                            this.open_auth_request(req, window, cx);
                         }
                     }
                     SignalKind::GiftWrapStatus(status) => {
@@ -364,17 +272,11 @@ impl ChatSpace {
                         });
                     }
                     SignalKind::GossipRelaysNotFound => {
-                        view.update(cx, |this, cx| {
-                            this.set_required_gossip_relays(cx);
-                            this.render_setup_gossip_relays_modal(window, cx);
-                        })
-                        .ok();
+                        this.set_required_gossip_relays(cx);
+                        this.render_setup_gossip_relays_modal(window, cx);
                     }
                     SignalKind::MessagingRelaysNotFound => {
-                        view.update(cx, |this, cx| {
-                            this.set_required_dm_relays(cx);
-                        })
-                        .ok();
+                        this.set_required_dm_relays(cx);
                     }
                 };
             })
@@ -395,8 +297,8 @@ impl ChatSpace {
         self.sending_auth_request(&challenge, cx);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-            let app_state = app_state();
+            let states = app_state();
+            let client = states.client();
             let signer = client.signer().await?;
 
             // Construct event
@@ -427,9 +329,9 @@ impl ChatSpace {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut event_tracker = app_state.event_tracker.write().await;
+                            let mut tracker = states.tracker().write().await;
 
-                            let ids: Vec<EventId> = event_tracker
+                            let ids: Vec<EventId> = tracker
                                 .resend_queue
                                 .iter()
                                 .filter(|(_, url)| relay_url == *url)
@@ -437,7 +339,7 @@ impl ChatSpace {
                                 .collect();
 
                             for id in ids.into_iter() {
-                                if let Some(relay_url) = event_tracker.resend_queue.remove(&id) {
+                                if let Some(relay_url) = tracker.resend_queue.remove(&id) {
                                     if let Some(event) = client.database().event_by_id(&id).await? {
                                         let event_id = relay.send_event(&event).await?;
 
@@ -447,8 +349,8 @@ impl ChatSpace {
                                             success: HashSet::from([relay_url]),
                                         };
 
-                                        event_tracker.sent_ids.insert(event_id);
-                                        event_tracker.resent_ids.push(output);
+                                        tracker.sent_ids.insert(event_id);
+                                        tracker.resent_ids.push(output);
                                     }
                                 }
                             }
@@ -656,7 +558,8 @@ impl ChatSpace {
 
     fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let task = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
+
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(ACCOUNT_IDENTIFIER)
@@ -717,9 +620,10 @@ impl ChatSpace {
         cx: &mut Context<Self>,
     ) {
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
-            let app_state = app_state();
+            let states = app_state();
+            let client = states.client();
 
+            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
             let filter = Filter::new().kind(Kind::PrivateDirectMessage);
 
             let pubkeys: Vec<PublicKey> = client
@@ -737,7 +641,7 @@ impl ChatSpace {
                 .authors(pubkeys);
 
             client
-                .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
                 .await?;
 
             Ok(())
@@ -756,8 +660,8 @@ impl ChatSpace {
 
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         cx.background_spawn(async move {
-            let client = nostr_client();
-            let app_state = app_state();
+            let states = app_state();
+            let client = states.client();
 
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
@@ -770,7 +674,7 @@ impl ChatSpace {
             client.reset().await;
 
             // Notify the channel about the signer being unset
-            app_state.signal.send(SignalKind::SignerUnset).await;
+            states.signal().send(SignalKind::SignerUnset).await;
         })
         .detach();
     }
@@ -797,6 +701,37 @@ impl ChatSpace {
         let Ok(bech32) = ev.0.to_bech32();
         cx.write_to_clipboard(ClipboardItem::new_string(bech32));
         window.push_notification(t!("common.copied"), cx);
+    }
+
+    fn get_all_panel_ids(&self, cx: &App) -> Option<Vec<u64>> {
+        let ids: Vec<u64> = self
+            .dock
+            .read(cx)
+            .items
+            .panel_ids(cx)
+            .into_iter()
+            .filter_map(|panel| panel.parse::<u64>().ok())
+            .collect();
+
+        Some(ids)
+    }
+
+    fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
+    where
+        P: PanelView,
+    {
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                let panel = Arc::new(panel);
+                let center = DockItem::panel(panel);
+
+                chatspace.update(cx, |this, cx| {
+                    this.dock.update(cx, |this, cx| {
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
     }
 
     fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
@@ -875,9 +810,9 @@ impl ChatSpace {
                 .on_ok(|_, window, cx| {
                     window
                         .spawn(cx, async move |cx| {
-                            let app_state = app_state();
+                            let states = app_state();
                             let relays = default_nip65_relays();
-                            let result = app_state.set_nip65(relays).await;
+                            let result = states.set_nip65(relays).await;
 
                             cx.update(|window, cx| {
                                 match result {
@@ -977,9 +912,9 @@ impl ChatSpace {
                 .on_ok(|_, window, cx| {
                     window
                         .spawn(cx, async move |cx| {
-                            let app_state = app_state();
+                            let states = app_state();
                             let relays = default_nip17_relays();
-                            let result = app_state.set_nip17(relays).await;
+                            let result = states.set_nip17(relays).await;
 
                             cx.update(|window, cx| {
                                 match result {
@@ -999,32 +934,6 @@ impl ChatSpace {
                     false
                 })
         })
-    }
-
-    fn render_proxy_modal(&mut self, window: &mut Window, cx: &mut App) {
-        window.open_modal(cx, |this, _window, _cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .alert()
-                .button_props(ModalButtonProps::default().ok_text(t!("common.open_browser")))
-                .title(shared_t!("proxy.label"))
-                .child(
-                    v_flex()
-                        .p_3()
-                        .gap_1()
-                        .w_full()
-                        .items_center()
-                        .justify_center()
-                        .text_center()
-                        .text_sm()
-                        .child(shared_t!("proxy.description")),
-                )
-                .on_ok(move |_e, _window, cx| {
-                    cx.open_url("http://localhost:7400");
-                    false
-                })
-        });
     }
 
     fn render_client_keys_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1195,92 +1104,6 @@ impl ChatSpace {
                             .menu(t!("user.sign_out"), Box::new(Logout))
                     }),
             )
-    }
-
-    pub(crate) fn proxy_signer(window: &mut Window, cx: &mut App) {
-        let Some(Some(root)) = window.root::<Root>() else {
-            return;
-        };
-
-        let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() else {
-            return;
-        };
-
-        chatspace.update(cx, |this, cx| {
-            let proxy = BrowserSignerProxy::new(BrowserSignerProxyOptions::default());
-            let url = proxy.url();
-
-            this._tasks.push(cx.background_spawn(async move {
-                let client = nostr_client();
-                let app_state = app_state();
-
-                if proxy.start().await.is_ok() {
-                    webbrowser::open(&url).ok();
-
-                    loop {
-                        if proxy.is_session_active() {
-                            // Save the signer to disk for further logins
-                            if let Ok(public_key) = proxy.get_public_key().await {
-                                let keys = Keys::generate();
-                                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                                let kind = Kind::ApplicationSpecificData;
-
-                                let builder = EventBuilder::new(kind, "extension")
-                                    .tags(tags)
-                                    .build(public_key)
-                                    .sign(&keys)
-                                    .await;
-
-                                if let Ok(event) = builder {
-                                    if let Err(e) = client.database().save_event(&event).await {
-                                        log::error!("Failed to save event: {e}");
-                                    };
-                                }
-                            }
-
-                            // Set the client's signer with current proxy signer
-                            client.set_signer(proxy.clone()).await;
-
-                            break;
-                        } else {
-                            app_state.signal.send(SignalKind::ProxyDown).await;
-                        }
-                        smol::Timer::after(Duration::from_secs(1)).await;
-                    }
-                }
-            }));
-        });
-    }
-
-    fn get_all_panel_ids(&self, cx: &App) -> Option<Vec<u64>> {
-        let ids: Vec<u64> = self
-            .dock
-            .read(cx)
-            .items
-            .panel_ids(cx)
-            .into_iter()
-            .filter_map(|panel| panel.parse::<u64>().ok())
-            .collect();
-
-        Some(ids)
-    }
-
-    pub(crate) fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
-    where
-        P: PanelView,
-    {
-        if let Some(Some(root)) = window.root::<Root>() {
-            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
-                let panel = Arc::new(panel);
-                let center = DockItem::panel(panel);
-
-                chatspace.update(cx, |this, cx| {
-                    this.dock.update(cx, |this, cx| {
-                        this.set_center(center, window, cx);
-                    });
-                });
-            }
-        }
     }
 }
 

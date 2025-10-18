@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use app_state::constants::BOOTSTRAP_RELAYS;
-use app_state::nostr_client;
 use common::display::{shorten_pubkey, RenderedProfile, RenderedTimestamp};
 use common::nip05::nip05_verify;
 use gpui::prelude::FluentBuilder;
@@ -15,6 +13,8 @@ use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -43,7 +43,7 @@ impl Screening {
 
         let contact_check: Task<Result<(bool, Vec<Profile>), Error>> =
             cx.background_spawn(async move {
-                let client = nostr_client();
+                let client = app_state().client();
                 let signer = client.signer().await?;
                 let signer_pubkey = signer.get_public_key().await?;
 
@@ -68,7 +68,7 @@ impl Screening {
             });
 
         let activity_check = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let filter = Filter::new().author(public_key).limit(1);
             let mut activity: Option<Timestamp> = None;
 
@@ -157,7 +157,7 @@ impl Screening {
         let public_key = self.profile.public_key();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
 
             let tag = Tag::public_key_report(public_key, Report::Impersonation);

@@ -2,8 +2,6 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use app_state::constants::BOOTSTRAP_RELAYS;
-use app_state::{app_state, nostr_client};
 use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
 use gpui::prelude::FluentBuilder;
@@ -19,6 +17,8 @@ use registry::room::Room;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -129,7 +129,7 @@ impl Compose {
         let mut tasks = smallvec![];
 
         let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
@@ -195,13 +195,15 @@ impl Compose {
     }
 
     async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
-        let client = nostr_client();
-        let app_state = app_state();
+        let states = app_state();
+        let client = states.client();
+
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
 
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, app_state.auto_close_opts)
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await?;
 
         Ok(())

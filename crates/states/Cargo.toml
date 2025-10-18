@@ -1,5 +1,5 @@
 [package]
-name = "app_state"
+name = "states"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

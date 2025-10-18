@@ -1,10 +1,8 @@
-use std::sync::atomic::Ordering;
-
-use app_state::app_state;
-use app_state::constants::KEYRING_URL;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Window};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use states::constants::KEYRING_URL;
+use states::paths::config_dir;
 
 pub fn init(cx: &mut App) {
     ClientKeys::set_global(cx.new(ClientKeys::new), cx);
@@ -61,7 +59,6 @@ impl ClientKeys {
             return;
         }
 
-        let app_state = app_state();
         let read_client_keys = cx.read_credentials(KEYRING_URL);
 
         cx.spawn_in(window, async move |this, cx| {
@@ -76,7 +73,7 @@ impl ClientKeys {
                     this.set_keys(Some(keys), false, true, cx);
                 })
                 .ok();
-            } else if app_state.is_first_run.load(Ordering::Acquire) {
+            } else if Self::first_run() {
                 // If this is the first run, generate new keys and use them for the client keys
                 this.update(cx, |this, cx| {
                     this.new_keys(cx);
@@ -138,5 +135,10 @@ impl ClientKeys {
 
     pub fn has_keys(&self) -> bool {
         self.keys.is_some()
+    }
+
+    fn first_run() -> bool {
+        let flag = config_dir().join(".first_run");
+        !flag.exists() && std::fs::write(&flag, "").is_ok()
     }
 }

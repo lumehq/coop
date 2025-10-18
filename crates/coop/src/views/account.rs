@@ -1,9 +1,6 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use app_state::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use app_state::state::SignalKind;
-use app_state::{app_state, nostr_client};
 use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use gpui::prelude::FluentBuilder;
@@ -17,6 +14,9 @@ use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
+use states::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use states::state::SignalKind;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -28,7 +28,6 @@ use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
-use crate::chatspace::ChatSpace;
 
 pub fn init(
     profile: Profile,
@@ -43,7 +42,6 @@ pub struct Account {
     profile: Profile,
     stored_secret: String,
     is_bunker: bool,
-    is_extension: bool,
     loading: bool,
 
     name: SharedString,
@@ -57,8 +55,6 @@ pub struct Account {
 impl Account {
     fn new(secret: String, profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let is_bunker = secret.starts_with("bunker://");
-        let is_extension = secret.starts_with("extension");
-
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
@@ -74,7 +70,6 @@ impl Account {
         Self {
             profile,
             is_bunker,
-            is_extension,
             stored_secret: secret,
             loading: false,
             name: "Account".into(),
@@ -92,8 +87,6 @@ impl Account {
             if let Ok(uri) = NostrConnectURI::parse(&self.stored_secret) {
                 self.nostr_connect(uri, window, cx);
             }
-        } else if self.is_extension {
-            self.set_proxy(window, cx);
         } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
             self.keys(enc, window, cx);
         } else {
@@ -115,7 +108,7 @@ impl Account {
         self._tasks.push(
             // Handle connection in the background
             cx.spawn_in(window, async move |this, cx| {
-                let client = nostr_client();
+                let client = app_state().client();
 
                 match signer.bunker_uri().await {
                     Ok(_) => {
@@ -132,10 +125,6 @@ impl Account {
                 }
             }),
         );
-    }
-
-    fn set_proxy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        ChatSpace::proxy_signer(window, cx);
     }
 
     fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
@@ -245,7 +234,7 @@ impl Account {
                     })
                     .ok();
 
-                    let client = nostr_client();
+                    let client = app_state().client();
                     let keys = Keys::new(secret);
 
                     // Set the client's signer with the current keys
@@ -268,8 +257,8 @@ impl Account {
         self._tasks.push(
             // Reset the nostr client in the background
             cx.background_spawn(async move {
-                let client = nostr_client();
-                let app_state = app_state();
+                let states = app_state();
+                let client = states.client();
 
                 let filter = Filter::new()
                     .kind(Kind::ApplicationSpecificData)
@@ -282,7 +271,7 @@ impl Account {
                 client.unset_signer().await;
 
                 // Notify the channel about the signer being unset
-                app_state.signal.send(SignalKind::SignerUnset).await;
+                states.signal().send(SignalKind::SignerUnset).await;
             }),
         );
     }
@@ -392,41 +381,20 @@ impl Render for Account {
                                                 .child(Avatar::new(avatar).size(rems(1.5)))
                                                 .child(div().pb_px().font_semibold().child(name)),
                                         )
-                                        .child(
-                                            div()
-                                                .when(self.is_bunker, |this| {
-                                                    let label = SharedString::from("Nostr Connect");
+                                        .child(div().when(self.is_bunker, |this| {
+                                            let label = SharedString::from("Nostr Connect");
 
-                                                    this.child(
-                                                        div()
-                                                            .py_0p5()
-                                                            .px_2()
-                                                            .text_xs()
-                                                            .bg(cx.theme().secondary_active)
-                                                            .text_color(
-                                                                cx.theme().secondary_foreground,
-                                                            )
-                                                            .rounded_full()
-                                                            .child(label),
-                                                    )
-                                                })
-                                                .when(self.is_extension, |this| {
-                                                    let label = SharedString::from("Extension");
-
-                                                    this.child(
-                                                        div()
-                                                            .py_0p5()
-                                                            .px_2()
-                                                            .text_xs()
-                                                            .bg(cx.theme().secondary_active)
-                                                            .text_color(
-                                                                cx.theme().secondary_foreground,
-                                                            )
-                                                            .rounded_full()
-                                                            .child(label),
-                                                    )
-                                                }),
-                                        ),
+                                            this.child(
+                                                div()
+                                                    .py_0p5()
+                                                    .px_2()
+                                                    .text_xs()
+                                                    .bg(cx.theme().secondary_active)
+                                                    .text_color(cx.theme().secondary_foreground)
+                                                    .rounded_full()
+                                                    .child(label),
+                                            )
+                                        })),
                                 )
                             })
                             .active(|this| this.bg(cx.theme().element_active))

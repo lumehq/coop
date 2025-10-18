@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use app_state::nostr_client;
 use common::display::RenderedProfile;
 use common::nip05::nip05_verify;
 use gpui::prelude::FluentBuilder;
@@ -14,6 +13,7 @@ use nostr_sdk::prelude::*;
 use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use states::app_state;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -39,7 +39,7 @@ impl UserProfile {
         let mut tasks = smallvec![];
 
         let check_follow: Task<Result<bool, Error>> = cx.background_spawn(async move {
-            let client = nostr_client();
+            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let contact_list = client.database().contacts_public_keys(public_key).await?;
