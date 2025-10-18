@@ -1,8 +1,6 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
@@ -120,21 +118,15 @@ impl ChatSpace {
                 let status = status.read(cx);
                 let all_panels = this.get_all_panel_ids(cx);
 
-                match status {
-                    UnwrappingStatus::Processing => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.refresh_rooms(all_panels, cx);
-                        });
-                    }
-                    UnwrappingStatus::Complete => {
-                        registry.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
-                            this.refresh_rooms(all_panels, cx);
-                        });
-                    }
-                    _ => {}
-                };
+                if matches!(
+                    status,
+                    UnwrappingStatus::Processing | UnwrappingStatus::Complete
+                ) {
+                    registry.update(cx, |this, cx| {
+                        this.load_rooms(window, cx);
+                        this.refresh_rooms(all_panels, cx);
+                    });
+                }
             }),
         );
 
