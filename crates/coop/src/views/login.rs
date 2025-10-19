@@ -49,12 +49,9 @@ impl Login {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let key_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("nsec... or bunker://...")
-                .masked(true)
-        });
+        let key_input = cx.new(|cx| InputState::new(window, cx));
         let pass_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+
         let error = cx.new(|_| None);
         let countdown = cx.new(|_| None);
 
@@ -190,11 +187,11 @@ impl Login {
         cx.spawn_in(window, async move |this, cx| {
             let user_url = KeyItem::User.to_string();
             let bunker_url = KeyItem::Bunker.to_string();
-            let user_password = clean_uri.as_bytes();
+            let user_password = clean_uri.into_bytes();
 
             // Write bunker uri to keyring for further connection
             if let Err(e) = keystore
-                .write_credentials(&user_url, "bunker", user_password, cx)
+                .write_credentials(&user_url, "bunker", &user_password, cx)
                 .await
             {
                 this.update_in(cx, |_, window, cx| {
@@ -268,7 +265,7 @@ impl Login {
     pub fn login_with_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         let keystore = Registry::global(cx).read(cx).keystore();
         let username = keys.public_key().to_hex();
-        let secret = keys.secret_key().to_secret_bytes();
+        let secret = keys.secret_key().to_secret_hex().into_bytes();
 
         cx.spawn(async move |this, cx| {
             let bunker_url = KeyItem::User.to_string();
@@ -394,9 +391,24 @@ impl Render for Login {
                     .child(
                         v_flex()
                             .gap_3()
-                            .child(TextInput::new(&self.key_input))
+                            .text_sm()
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .text_sm()
+                                    .text_color(cx.theme().text_muted)
+                                    .child("nsec or bunker://")
+                                    .child(TextInput::new(&self.key_input)),
+                            )
                             .when(self.require_password, |this| {
-                                this.child(TextInput::new(&self.pass_input))
+                                this.child(
+                                    v_flex()
+                                        .gap_1()
+                                        .text_sm()
+                                        .text_color(cx.theme().text_muted)
+                                        .child("Password:")
+                                        .child(TextInput::new(&self.pass_input)),
+                                )
                             })
                             .child(
                                 Button::new("login")

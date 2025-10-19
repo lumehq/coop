@@ -139,11 +139,11 @@ impl Onboarding {
         cx.spawn_in(window, async move |this, cx| {
             let user_url = KeyItem::User.to_string();
             let bunker_url = KeyItem::Bunker.to_string();
-            let user_password = clean_uri.as_bytes();
+            let user_password = clean_uri.into_bytes();
 
             // Write bunker uri to keyring for further connection
             if let Err(e) = keystore
-                .write_credentials(&user_url, "bunker", user_password, cx)
+                .write_credentials(&user_url, "bunker", &user_password, cx)
                 .await
             {
                 this.update_in(cx, |_, window, cx| {

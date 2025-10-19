@@ -14,8 +14,7 @@ use registry::keystore::KeyItem;
 use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
-use states::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
-use states::state::SignalKind;
+use states::constants::BUNKER_TIMEOUT;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -24,7 +23,7 @@ use ui::indicator::Indicator;
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
-use crate::actions::CoopAuthUrlHandler;
+use crate::actions::{reset, CoopAuthUrlHandler};
 
 pub fn init(
     public_key: PublicKey,
@@ -183,29 +182,6 @@ impl Account {
         .detach();
     }
 
-    fn logout(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self._tasks.push(
-            // Reset the nostr client in the background
-            cx.background_spawn(async move {
-                let states = app_state();
-                let client = states.client();
-
-                let filter = Filter::new()
-                    .kind(Kind::ApplicationSpecificData)
-                    .identifier(ACCOUNT_IDENTIFIER);
-
-                // Delete account
-                client.database().delete(filter).await.ok();
-
-                // Unset the client's signer
-                client.unset_signer().await;
-
-                // Notify the channel about the signer being unset
-                states.signal().send(SignalKind::SignerUnset).await;
-            }),
-        );
-    }
-
     fn set_loading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.loading = status;
         cx.notify();
@@ -341,9 +317,9 @@ impl Render for Account {
                         Button::new("logout")
                             .label(t!("user.sign_out"))
                             .ghost()
-                            .on_click(cx.listener(move |this, _e, window, cx| {
-                                this.logout(window, cx);
-                            })),
+                            .on_click(|_, _window, cx| {
+                                reset(cx);
+                            }),
                     ),
             )
     }

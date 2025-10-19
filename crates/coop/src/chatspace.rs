@@ -20,7 +20,7 @@ use registry::keystore::KeyItem;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use states::constants::{BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use states::state::{AuthRequest, SignalKind, UnwrappingStatus};
 use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::{ActiveTheme, Theme, ThemeMode};
@@ -36,7 +36,7 @@ use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable, StyledExt};
 
-use crate::actions::{DarkMode, Logout, ReloadMetadata, Settings};
+use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
 use crate::views::setup_relay::SetupRelay;
 use crate::views::{
@@ -102,11 +102,15 @@ impl ChatSpace {
         subscriptions.push(
             // Observe the keystore
             cx.observe_in(&registry, window, |this, registry, window, cx| {
-                if registry.read(cx).is_using_file_keystore() {
+                let has_keyring = registry.read(cx).initialized_keystore;
+                let use_filestore = registry.read(cx).is_using_file_keystore();
+                let not_logged_in = registry.read(cx).signer_pubkey().is_none();
+
+                if use_filestore && not_logged_in {
                     this.render_keyring_installation(window, cx);
                 }
 
-                if registry.read(cx).initialized_keystore {
+                if has_keyring && not_logged_in {
                     let keystore = registry.read(cx).keystore();
 
                     cx.spawn_in(window, async move |this, cx| {
@@ -642,24 +646,7 @@ impl ChatSpace {
     }
 
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
-
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER);
-
-            // Delete account
-            client.database().delete(filter).await.ok();
-
-            // Reset the nostr client
-            client.reset().await;
-
-            // Notify the channel about the signer being unset
-            states.signal().send(SignalKind::SignerUnset).await;
-        })
-        .detach();
+        reset(cx);
     }
 
     fn on_open_pubkey(&mut self, ev: &OpenPublicKey, window: &mut Window, cx: &mut Context<Self>) {
