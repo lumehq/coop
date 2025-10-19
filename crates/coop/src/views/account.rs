@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use anyhow::Error;
 use common::display::RenderedProfile;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
     FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
     RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
-    WeakEntity, Window,
+    Window,
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
@@ -22,7 +21,6 @@ use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
-use ui::input::{InputState, TextInput};
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
@@ -102,9 +100,9 @@ impl Account {
         };
 
         // Fall back to login with keys
-        match EncryptedSecretKey::from_bech32(&self.secret) {
-            Ok(enc) => {
-                self.login_with_keys(enc, window, cx);
+        match SecretKey::parse(&self.secret) {
+            Ok(secret) => {
+                self.login_with_keys(secret, cx);
             }
             Err(e) => {
                 window.push_notification(e.to_string(), cx);
@@ -174,133 +172,13 @@ impl Account {
         .detach();
     }
 
-    fn login_with_keys(
-        &mut self,
-        enc: EncryptedSecretKey,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let pwd_input: Entity<InputState> = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let weak_input = pwd_input.downgrade();
+    fn login_with_keys(&mut self, secret: SecretKey, cx: &mut Context<Self>) {
+        let keys = Keys::new(secret);
 
-        let error: Entity<Option<SharedString>> = cx.new(|_| None);
-        let weak_error = error.downgrade();
-
-        let entity = cx.weak_entity();
-
-        window.open_modal(cx, move |this, _window, cx| {
-            let entity = entity.clone();
-            let entity_clone = entity.clone();
-            let weak_input = weak_input.clone();
-            let weak_error = weak_error.clone();
-
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .on_cancel(move |_, _window, cx| {
-                    entity
-                        .update(cx, |this, cx| {
-                            this.set_loading(false, cx);
-                        })
-                        .ok();
-
-                    // true to close the modal
-                    true
-                })
-                .on_ok(move |_, window, cx| {
-                    let weak_error = weak_error.clone();
-                    let password = weak_input
-                        .read_with(cx, |state, _cx| state.value().to_owned())
-                        .ok();
-
-                    entity_clone
-                        .update(cx, |this, cx| {
-                            this.verify_keys(enc, password, weak_error, window, cx);
-                        })
-                        .ok();
-
-                    // false to keep the modal open
-                    false
-                })
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .text_sm()
-                        .child(shared_t!("login.password_to_decrypt"))
-                        .child(TextInput::new(&pwd_input).small())
-                        .when_some(error.read(cx).as_ref(), |this, error| {
-                            this.child(
-                                div()
-                                    .text_xs()
-                                    .italic()
-                                    .text_color(cx.theme().danger_foreground)
-                                    .child(error.clone()),
-                            )
-                        }),
-                )
-        });
-    }
-
-    fn verify_keys(
-        &mut self,
-        enc: EncryptedSecretKey,
-        password: Option<SharedString>,
-        error: WeakEntity<Option<SharedString>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(password) = password else {
-            error
-                .update(cx, |this, cx| {
-                    *this = Some("Password is required".into());
-                    cx.notify();
-                })
-                .ok();
-            return;
-        };
-
-        if password.is_empty() {
-            error
-                .update(cx, |this, cx| {
-                    *this = Some("Password cannot be empty".into());
-                    cx.notify();
-                })
-                .ok();
-            return;
-        }
-
-        let task: Task<Result<SecretKey, Error>> = cx.background_spawn(async move {
-            let secret = enc.decrypt(&password)?;
-            Ok(secret)
-        });
-
-        cx.spawn_in(window, async move |_this, cx| {
-            match task.await {
-                Ok(secret) => {
-                    cx.update(|window, cx| {
-                        window.close_all_modals(cx);
-                    })
-                    .ok();
-
-                    let client = app_state().client();
-                    let keys = Keys::new(secret);
-
-                    // Set the client's signer with the current keys
-                    client.set_signer(keys).await
-                }
-                Err(e) => {
-                    error
-                        .update(cx, |this, cx| {
-                            *this = Some(e.to_string().into());
-                            cx.notify();
-                        })
-                        .ok();
-                }
-            };
+        // Update the signer
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            client.set_signer(keys).await;
         })
         .detach();
     }

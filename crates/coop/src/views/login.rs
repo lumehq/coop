@@ -271,7 +271,7 @@ impl Login {
         let secret = keys.secret_key().to_secret_bytes();
 
         cx.spawn(async move |this, cx| {
-            let bunker_url = KeyItem::Bunker.to_string();
+            let bunker_url = KeyItem::User.to_string();
 
             // Write the app keys for further connection
             if let Err(e) = keystore
