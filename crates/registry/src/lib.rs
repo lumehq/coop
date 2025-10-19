@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Error;
 use common::event::EventUtils;
@@ -24,6 +24,9 @@ use crate::room::Room;
 pub mod keystore;
 pub mod message;
 pub mod room;
+
+pub static DISABLE_KEYRING: LazyLock<bool> =
+    LazyLock::new(|| std::env::var("DISABLE_KEYRING").is_ok_and(|value| !value.is_empty()));
 
 pub fn init(cx: &mut App) {
     Registry::set_global(cx.new(Registry::new), cx);
@@ -85,28 +88,36 @@ impl Registry {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
         let read_credential = cx.read_credentials(KEYRING_URL);
+        let initialized_keystore = cfg!(debug_assertions) || *DISABLE_KEYRING;
+        let keystore: Arc<dyn KeyStore> = if cfg!(debug_assertions) || *DISABLE_KEYRING {
+            Arc::new(FileProvider::default())
+        } else {
+            Arc::new(KeyringProvider)
+        };
 
         let mut tasks = smallvec![];
 
-        tasks.push(
-            // Verify the keyring access
-            cx.spawn(async move |this, cx| {
-                let result = read_credential.await;
+        if !(cfg!(debug_assertions) || *DISABLE_KEYRING) {
+            tasks.push(
+                // Verify the keyring access
+                cx.spawn(async move |this, cx| {
+                    let result = read_credential.await;
 
-                this.update(cx, |this, cx| {
-                    if let Err(e) = result {
-                        log::error!("Keyring error: {e}");
-                        // For Linux:
-                        // The user has not installed secret service on their system
-                        // Fall back to the file provider
-                        this.keystore = Arc::new(FileProvider::default());
-                    }
-                    this.initialized_keystore = true;
-                    cx.notify();
-                })
-                .ok();
-            }),
-        );
+                    this.update(cx, |this, cx| {
+                        if let Err(e) = result {
+                            log::error!("Keyring error: {e}");
+                            // For Linux:
+                            // The user has not installed secret service on their system
+                            // Fall back to the file provider
+                            this.keystore = Arc::new(FileProvider::default());
+                        }
+                        this.initialized_keystore = true;
+                        cx.notify();
+                    })
+                    .ok();
+                }),
+            );
+        }
 
         tasks.push(
             // Load all user profiles from the database
@@ -127,10 +138,10 @@ impl Registry {
 
         Self {
             unwrapping_status,
+            keystore,
+            initialized_keystore,
             rooms: vec![],
             persons: HashMap::new(),
-            keystore: Arc::new(KeyringProvider),
-            initialized_keystore: false,
             signer_pubkey: None,
             _tasks: tasks,
         }
