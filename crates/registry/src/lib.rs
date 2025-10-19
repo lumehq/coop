@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use anyhow::Error;
 use common::event::EventUtils;
@@ -14,10 +15,13 @@ use room::RoomKind;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
+use states::constants::KEYRING_URL;
 use states::state::UnwrappingStatus;
 
+use crate::keystore::{FileProvider, KeyStore, KeyringProvider};
 use crate::room::Room;
 
+pub mod keystore;
 pub mod message;
 pub mod room;
 
@@ -36,7 +40,6 @@ pub enum RegistryEvent {
     NewRequest(RoomKind),
 }
 
-#[derive(Debug)]
 pub struct Registry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
@@ -47,11 +50,14 @@ pub struct Registry {
     /// Status of the unwrapping process
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
+    /// Key Store for storing credentials
+    pub keystore: Arc<dyn KeyStore>,
+
     /// Public Key of the currently activated signer
     signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl EventEmitter<RegistryEvent> for Registry {}
@@ -75,7 +81,28 @@ impl Registry {
     /// Create a new registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
+        let read_credential = cx.read_credentials(KEYRING_URL);
+
         let mut tasks = smallvec![];
+
+        tasks.push(
+            // Verify the keyring access
+            cx.spawn(async move |this, cx| {
+                let result = read_credential.await;
+
+                this.update(cx, |this, cx| {
+                    if let Err(e) = result {
+                        log::error!("Keyring error: {e}");
+                        // For Linux:
+                        // The user has not installed secret service on their system
+                        // Fall back to the file provider
+                        this.keystore = Arc::new(FileProvider::default());
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }),
+        );
 
         tasks.push(
             // Load all user profiles from the database
@@ -98,6 +125,7 @@ impl Registry {
             unwrapping_status,
             rooms: vec![],
             persons: HashMap::new(),
+            keystore: Arc::new(KeyringProvider),
             signer_pubkey: None,
             _tasks: tasks,
         }
@@ -120,6 +148,16 @@ impl Registry {
 
             Ok(profiles)
         })
+    }
+
+    /// Returns the keystore.
+    pub fn keystore(&self) -> &Arc<dyn KeyStore> {
+        &self.keystore
+    }
+
+    /// Returns true if the keystore is a file keystore.
+    pub fn is_using_file_keystore(&self) -> bool {
+        self.keystore.name() == "file"
     }
 
     /// Returns the public key of the currently activated signer.

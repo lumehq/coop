@@ -50,6 +50,7 @@ setting_accessors! {
     pub contact_bypass: bool,
     pub auto_login: bool,
     pub auto_auth: bool,
+    pub disable_keyring: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -62,6 +63,7 @@ pub struct Settings {
     pub contact_bypass: bool,
     pub auto_login: bool,
     pub auto_auth: bool,
+    pub disable_keyring: bool,
     pub authenticated_relays: Vec<RelayUrl>,
 }
 
@@ -76,6 +78,7 @@ impl Default for Settings {
             contact_bypass: true,
             auto_login: false,
             auto_auth: true,
+            disable_keyring: false,
             authenticated_relays: vec![],
         }
     }
