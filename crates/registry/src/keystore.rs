@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -8,6 +9,31 @@ use anyhow::Result;
 use futures::FutureExt as _;
 use gpui::AsyncApp;
 use states::paths::config_dir;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KeyItem {
+    User,
+    Bunker,
+    Client,
+    Encryption,
+}
+
+impl Display for KeyItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::User => write!(f, "coop-user"),
+            Self::Bunker => write!(f, "coop-bunker"),
+            Self::Client => write!(f, "coop-client"),
+            Self::Encryption => write!(f, "coop-encryption"),
+        }
+    }
+}
+
+impl From<KeyItem> for String {
+    fn from(item: KeyItem) -> Self {
+        item.to_string()
+    }
+}
 
 pub trait KeyStore: Any + Send + Sync {
     fn name(&self) -> &str;

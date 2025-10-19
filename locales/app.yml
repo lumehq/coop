@@ -175,6 +175,8 @@ login:
     en: "Bunker is not valid"
   logging_in:
     en: "Logging in..."
+  keyring_required:
+    en: "You must allow Coop access to the keyring to continue."
 
 mailbox:
   modal:

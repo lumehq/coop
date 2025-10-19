@@ -53,6 +53,9 @@ pub struct Registry {
     /// Key Store for storing credentials
     pub keystore: Arc<dyn KeyStore>,
 
+    /// Whether the keystore has been initialized
+    pub initialized_keystore: bool,
+
     /// Public Key of the currently activated signer
     signer_pubkey: Option<PublicKey>,
 
@@ -97,8 +100,9 @@ impl Registry {
                         // The user has not installed secret service on their system
                         // Fall back to the file provider
                         this.keystore = Arc::new(FileProvider::default());
-                        cx.notify();
                     }
+                    this.initialized_keystore = true;
+                    cx.notify();
                 })
                 .ok();
             }),
@@ -126,6 +130,7 @@ impl Registry {
             rooms: vec![],
             persons: HashMap::new(),
             keystore: Arc::new(KeyringProvider),
+            initialized_keystore: false,
             signer_pubkey: None,
             _tasks: tasks,
         }
@@ -151,8 +156,8 @@ impl Registry {
     }
 
     /// Returns the keystore.
-    pub fn keystore(&self) -> &Arc<dyn KeyStore> {
-        &self.keystore
+    pub fn keystore(&self) -> Arc<dyn KeyStore> {
+        Arc::clone(&self.keystore)
     }
 
     /// Returns true if the keystore is a file keystore.

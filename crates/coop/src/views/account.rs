@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use anyhow::Error;
-use client_keys::ClientKeys;
 use common::display::RenderedProfile;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -12,7 +11,8 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
-use nostr_sdk::prelude::*;
+use registry::keystore::KeyItem;
+use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
 use states::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
@@ -23,44 +23,49 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
 use ui::input::{InputState, TextInput};
-use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
 
 pub fn init(
-    profile: Profile,
+    public_key: PublicKey,
     secret: String,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<Account> {
-    cx.new(|cx| Account::new(secret, profile, window, cx))
+    cx.new(|cx| Account::new(public_key, secret, window, cx))
 }
 
 pub struct Account {
-    profile: Profile,
-    stored_secret: String,
-    is_bunker: bool,
+    public_key: PublicKey,
+    secret: String,
     loading: bool,
 
     name: SharedString,
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
+    /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
+
+    /// Background tasks
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Account {
-    fn new(secret: String, profile: Profile, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let is_bunker = secret.starts_with("bunker://");
+    fn new(
+        public_key: PublicKey,
+        secret: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let tasks = smallvec![];
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
             // Clear the local state when user closes the account panel
             cx.on_release_in(window, move |this, window, cx| {
-                this.stored_secret.clear();
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
                 });
@@ -68,66 +73,113 @@ impl Account {
         );
 
         Self {
-            profile,
-            is_bunker,
-            stored_secret: secret,
+            public_key,
+            secret,
             loading: false,
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             _subscriptions: subscriptions,
-            _tasks: smallvec![],
+            _tasks: tasks,
         }
     }
 
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_loading(true, cx);
 
-        if self.is_bunker {
-            if let Ok(uri) = NostrConnectURI::parse(&self.stored_secret) {
-                self.nostr_connect(uri, window, cx);
+        // Try to login with bunker
+        if self.secret.starts_with("bunker://") {
+            match NostrConnectURI::parse(&self.secret) {
+                Ok(uri) => {
+                    self.login_with_bunker(uri, window, cx);
+                }
+                Err(e) => {
+                    window.push_notification(e.to_string(), cx);
+                    self.set_loading(false, cx);
+                }
             }
-        } else if let Ok(enc) = EncryptedSecretKey::from_bech32(&self.stored_secret) {
-            self.keys(enc, window, cx);
-        } else {
-            window.push_notification("Cannot continue with current account", cx);
-            self.set_loading(false, cx);
+            return;
+        };
+
+        // Fall back to login with keys
+        match EncryptedSecretKey::from_bech32(&self.secret) {
+            Ok(enc) => {
+                self.login_with_keys(enc, window, cx);
+            }
+            Err(e) => {
+                window.push_notification(e.to_string(), cx);
+                self.set_loading(false, cx);
+            }
         }
     }
 
-    fn nostr_connect(&mut self, uri: NostrConnectURI, window: &mut Window, cx: &mut Context<Self>) {
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
+    fn login_with_bunker(
+        &mut self,
+        uri: NostrConnectURI,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let keystore = Registry::global(cx).read(cx).keystore();
 
-        let timeout = Duration::from_secs(BUNKER_TIMEOUT);
-        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+        // Handle connection in the background
+        cx.spawn_in(window, async move |this, cx| {
+            let result = keystore
+                .read_credentials(&KeyItem::Bunker.to_string(), cx)
+                .await;
 
-        // Handle auth url with the default browser
-        signer.auth_url_handler(CoopAuthUrlHandler);
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(Some((_, content))) => {
+                        let secret = SecretKey::from_slice(&content).unwrap();
+                        let keys = Keys::new(secret);
+                        let timeout = Duration::from_secs(BUNKER_TIMEOUT);
+                        let mut signer = NostrConnect::new(uri, keys, timeout, None).unwrap();
 
-        self._tasks.push(
-            // Handle connection in the background
-            cx.spawn_in(window, async move |this, cx| {
-                let client = app_state().client();
+                        // Handle auth url with the default browser
+                        signer.auth_url_handler(CoopAuthUrlHandler);
 
-                match signer.bunker_uri().await {
-                    Ok(_) => {
-                        // Set the client's signer with the current nostr connect instance
-                        client.set_signer(signer).await;
+                        // Connect to the remote signer
+                        this._tasks.push(
+                            // Handle connection in the background
+                            cx.spawn_in(window, async move |this, cx| {
+                                let client = app_state().client();
+
+                                match signer.bunker_uri().await {
+                                    Ok(_) => {
+                                        client.set_signer(signer).await;
+                                    }
+                                    Err(e) => {
+                                        this.update_in(cx, |this, window, cx| {
+                                            window.push_notification(e.to_string(), cx);
+                                            this.set_loading(false, cx);
+                                        })
+                                        .ok();
+                                    }
+                                }
+                            }),
+                        )
+                    }
+                    Ok(None) => {
+                        window.push_notification(t!("login.keyring_required"), cx);
+                        this.set_loading(false, cx);
                     }
                     Err(e) => {
-                        this.update_in(cx, |this, window, cx| {
-                            this.set_loading(false, cx);
-                            window.push_notification(Notification::error(e.to_string()), cx);
-                        })
-                        .ok();
+                        window.push_notification(e.to_string(), cx);
+                        this.set_loading(false, cx);
                     }
-                }
-            }),
-        );
+                };
+            })
+            .ok();
+        })
+        .detach();
     }
 
-    fn keys(&mut self, enc: EncryptedSecretKey, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_keys(
+        &mut self,
+        enc: EncryptedSecretKey,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let pwd_input: Entity<InputState> = cx.new(|cx| InputState::new(window, cx).masked(true));
         let weak_input = pwd_input.downgrade();
 
@@ -310,6 +362,10 @@ impl Focusable for Account {
 
 impl Render for Account {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let registry = Registry::global(cx);
+        let profile = registry.read(cx).get_person(&self.public_key, cx);
+        let bunker = self.secret.starts_with("bunker://");
+
         v_flex()
             .image_cache(self.image_cache.clone())
             .relative()
@@ -367,8 +423,8 @@ impl Render for Account {
                                 )
                             })
                             .when(!self.loading, |this| {
-                                let avatar = self.profile.avatar(true);
-                                let name = self.profile.display_name();
+                                let avatar = profile.avatar(true);
+                                let name = profile.display_name();
 
                                 this.child(
                                     h_flex()
@@ -381,7 +437,7 @@ impl Render for Account {
                                                 .child(Avatar::new(avatar).size(rems(1.5)))
                                                 .child(div().pb_px().font_semibold().child(name)),
                                         )
-                                        .child(div().when(self.is_bunker, |this| {
+                                        .child(div().when(bunker, |this| {
                                             let label = SharedString::from("Nostr Connect");
 
                                             this.child(

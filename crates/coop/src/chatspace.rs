@@ -16,6 +16,7 @@ use i18n::{shared_t, t};
 use itertools::Itertools;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
+use registry::keystore::KeyItem;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -103,6 +104,31 @@ impl ChatSpace {
             cx.observe_in(&registry, window, |this, registry, window, cx| {
                 if registry.read(cx).is_using_file_keystore() {
                     this.render_keyring_installation(window, cx);
+                }
+
+                if registry.read(cx).initialized_keystore {
+                    let keystore = registry.read(cx).keystore();
+
+                    cx.spawn_in(window, async move |this, cx| {
+                        let result = keystore
+                            .read_credentials(&KeyItem::User.to_string(), cx)
+                            .await;
+
+                        this.update_in(cx, |this, window, cx| {
+                            match result {
+                                Ok(Some((user, secret))) => {
+                                    let public_key = PublicKey::parse(&user).unwrap();
+                                    let secret = String::from_utf8(secret).unwrap();
+                                    this.set_account_layout(public_key, secret, window, cx);
+                                }
+                                _ => {
+                                    this.set_onboarding_layout(window, cx);
+                                }
+                            };
+                        })
+                        .ok();
+                    })
+                    .detach();
                 }
             }),
         );
@@ -197,44 +223,6 @@ impl ChatSpace {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
-    }
-
-    fn load_local_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let task = cx.background_spawn(async move {
-            let client = app_state().client();
-
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(ACCOUNT_IDENTIFIER)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                let metadata = client
-                    .database()
-                    .metadata(event.pubkey)
-                    .await?
-                    .unwrap_or_default();
-
-                Ok((event.content, Profile::new(event.pubkey, metadata)))
-            } else {
-                Err(anyhow!("Empty"))
-            }
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok((secret, profile)) = task.await {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_account_layout(secret, profile, window, cx);
-                })
-                .ok();
-            } else {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_onboarding_layout(window, cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
     }
 
     async fn handle_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
@@ -543,12 +531,12 @@ impl ChatSpace {
 
     fn set_account_layout(
         &mut self,
+        public_key: PublicKey,
         secret: String,
-        profile: Profile,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(profile, secret, window, cx));
+        let panel = Arc::new(account::init(public_key, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
