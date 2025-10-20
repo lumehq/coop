@@ -44,11 +44,18 @@ pub enum UnwrappingStatus {
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum SignalKind {
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has not set encryption keys yet
+    EncryptionNotSet,
+
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has set encryption keys
+    EncryptionSet(PublicKey),
+
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
-
-    /// A signal to notify UI that the client's signer has been unset
-    SignerUnset,
 
     /// A signal to notify UI that the relay requires authentication
     Auth(AuthRequest),
@@ -354,6 +361,21 @@ impl AppState {
                     }
 
                     match event.kind {
+                        // Encryption Keys announcement event
+                        Kind::Custom(10044) => {
+                            if let Ok(true) = self.is_self_authored(&event).await {
+                                if let Some(public_key) = event
+                                    .tags
+                                    .find(TagKind::custom("n"))
+                                    .and_then(|tag| tag.content())
+                                    .and_then(|c| PublicKey::parse(c).ok())
+                                {
+                                    self.signal
+                                        .send(SignalKind::EncryptionSet(public_key))
+                                        .await;
+                                }
+                            }
+                        }
                         Kind::RelayList => {
                             // Get events if relay list belongs to current user
                             if let Ok(true) = self.is_self_authored(&event).await {
@@ -367,6 +389,11 @@ impl AppState {
                                 // Fetch user's contact list event
                                 if let Err(e) = self.subscribe(author, Kind::ContactList).await {
                                     log::error!("Failed to subscribe to contact list event: {e}");
+                                }
+
+                                // Fetch user's encryption announcement event
+                                if let Err(e) = self.get_encryption(author).await {
+                                    log::error!("Failed to fetch encryption event: {e}");
                                 }
 
                                 // Fetch user's messaging relays event
@@ -603,6 +630,35 @@ impl AppState {
 
         // Get NIP-17 relays
         self.get_nip17(event.pubkey).await?;
+
+        Ok(())
+    }
+
+    /// Get and verify encryption announcement for a given public key
+    pub async fn get_encryption(&self, public_key: PublicKey) -> Result<(), Error> {
+        let timeout = Duration::from_secs(TIMEOUT);
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let filter = Filter::new()
+            .kind(Kind::Custom(10044))
+            .author(public_key)
+            .limit(1);
+
+        // Subscribe to events from the bootstrapping relays
+        self.client.subscribe(filter.clone(), Some(opts)).await?;
+
+        let tx = self.signal.sender().clone();
+        let database = self.client.database().clone();
+
+        // Verify the received data after a timeout
+        smol::spawn(async move {
+            smol::Timer::after(timeout).await;
+
+            if database.count(filter).await.unwrap_or(0) < 1 {
+                tx.send_async(SignalKind::EncryptionNotSet).await.ok();
+            }
+        })
+        .detach();
 
         Ok(())
     }

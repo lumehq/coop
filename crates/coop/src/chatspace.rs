@@ -238,6 +238,12 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
+                    SignalKind::EncryptionNotSet => {
+                        this.new_encryption(window, cx);
+                    }
+                    SignalKind::EncryptionSet(n) => {
+                        this.reinit_encryption(n, window, cx);
+                    }
                     SignalKind::SignerSet(public_key) => {
                         // Close the latest modal if it exists
                         window.close_modal(cx);
@@ -250,20 +256,12 @@ impl ChatSpace {
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
                             this.set_signer_pubkey(public_key, cx);
+                            this.load_client_keys(cx);
                             this.load_rooms(window, cx);
                         });
 
                         // Setup the default layout for current workspace
                         this.set_default_layout(window, cx);
-                    }
-                    SignalKind::SignerUnset => {
-                        // Clear all current chat rooms
-                        registry.update(cx, |this, cx| {
-                            this.reset(cx);
-                        });
-
-                        // Setup the onboarding layout for current workspace
-                        this.set_onboarding_layout(window, cx);
                     }
                     SignalKind::Auth(req) => {
                         let url = &req.url;
@@ -307,6 +305,151 @@ impl ChatSpace {
             })
             .ok();
         }
+    }
+
+    fn new_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let keys = Keys::generate();
+        let username = keys.public_key().to_hex();
+        let password = keys.secret_key().to_secret_bytes();
+
+        let keystore = Registry::global(cx).read(cx).keystore();
+        let url = KeyItem::Encryption;
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = keystore
+                .write_credentials(&url.to_string(), &username, &password, cx)
+                .await;
+
+            this.update_in(cx, |_this, window, cx| {
+                match result {
+                    Ok(_) => {
+                        Registry::global(cx).update(cx, |this, cx| {
+                            this.set_encryption_keys(keys, cx);
+                        });
+                    }
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn reinit_encryption(&mut self, n: PublicKey, window: &mut Window, cx: &mut Context<Self>) {
+        let keystore = Registry::global(cx).read(cx).keystore();
+        let url = KeyItem::Encryption;
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = keystore.read_credentials(&url.to_string(), cx).await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(Some((username, password))) => {
+                        let public_key = PublicKey::from_hex(&username).unwrap();
+
+                        if n == public_key {
+                            let secret = SecretKey::from_slice(&password).unwrap();
+                            let keys = Keys::new(secret);
+
+                            Registry::global(cx).update(cx, |this, cx| {
+                                this.set_encryption_keys(keys, cx);
+                            });
+                        } else {
+                            this.request_encryption(window, cx);
+                        }
+                    }
+                    Ok(None) => {
+                        //
+                    }
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn request_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = Registry::global(cx).read(cx);
+
+        let Some(client_keys) = registry.client_keys.read(cx).clone() else {
+            window.push_notification("Client Keys is required", cx);
+            return;
+        };
+
+        let get_local_response: Task<Result<Option<Keys>, Error>> =
+            cx.background_spawn(async move {
+                let client = app_state().client();
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+
+                let filter = Filter::new()
+                    .author(public_key)
+                    .kind(Kind::Custom(4455))
+                    .limit(1);
+
+                if let Some(event) = client.database().query(filter).await?.first_owned() {
+                    if let Some(target) = event
+                        .tags
+                        .find(TagKind::custom("P"))
+                        .and_then(|tag| tag.content())
+                        .and_then(|content| PublicKey::parse(content).ok())
+                    {
+                        let decrypted = client_keys.nip44_decrypt(&target, &event.content).await?;
+                        let secret = SecretKey::from_hex(&decrypted)?;
+                        let keys = Keys::new(secret);
+
+                        return Ok(Some(keys));
+                    }
+                }
+
+                Ok(None)
+            });
+
+        let Some(client_keys) = registry.client_keys.read(cx).clone() else {
+            window.push_notification("Client Keys is required", cx);
+            return;
+        };
+
+        let send_new_request: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = app_state().client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let client_pubkey = client_keys.get_public_key().await?;
+
+            let event = EventBuilder::new(Kind::Custom(4454), "")
+                .tags(vec![
+                    Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
+                    Tag::public_key(public_key),
+                ])
+                .sign(&signer)
+                .await?;
+
+            client.send_event(&event).await?;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            match get_local_response.await {
+                Ok(Some(keys)) => {
+                    this.update(cx, |_this, cx| {
+                        Registry::global(cx).update(cx, |this, cx| {
+                            this.set_encryption_keys(keys, cx);
+                        });
+                    })
+                    .ok();
+                }
+                _ => {
+                    send_new_request.await.ok();
+                }
+            };
+        })
+        .detach();
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
