@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Error;
 use common::event::EventUtils;
@@ -14,12 +15,18 @@ use room::RoomKind;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
+use states::constants::KEYRING_URL;
 use states::state::UnwrappingStatus;
 
+use crate::keystore::{FileProvider, KeyStore, KeyringProvider};
 use crate::room::Room;
 
+pub mod keystore;
 pub mod message;
 pub mod room;
+
+pub static DISABLE_KEYRING: LazyLock<bool> =
+    LazyLock::new(|| std::env::var("DISABLE_KEYRING").is_ok_and(|value| !value.is_empty()));
 
 pub fn init(cx: &mut App) {
     Registry::set_global(cx.new(Registry::new), cx);
@@ -36,7 +43,6 @@ pub enum RegistryEvent {
     NewRequest(RoomKind),
 }
 
-#[derive(Debug)]
 pub struct Registry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
@@ -47,11 +53,17 @@ pub struct Registry {
     /// Status of the unwrapping process
     pub unwrapping_status: Entity<UnwrappingStatus>,
 
+    /// Key Store for storing credentials
+    pub keystore: Arc<dyn KeyStore>,
+
+    /// Whether the keystore has been initialized
+    pub initialized_keystore: bool,
+
     /// Public Key of the currently activated signer
     signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl EventEmitter<RegistryEvent> for Registry {}
@@ -75,7 +87,37 @@ impl Registry {
     /// Create a new registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
+        let read_credential = cx.read_credentials(KEYRING_URL);
+        let initialized_keystore = cfg!(debug_assertions) || *DISABLE_KEYRING;
+        let keystore: Arc<dyn KeyStore> = if cfg!(debug_assertions) || *DISABLE_KEYRING {
+            Arc::new(FileProvider::default())
+        } else {
+            Arc::new(KeyringProvider)
+        };
+
         let mut tasks = smallvec![];
+
+        if !(cfg!(debug_assertions) || *DISABLE_KEYRING) {
+            tasks.push(
+                // Verify the keyring access
+                cx.spawn(async move |this, cx| {
+                    let result = read_credential.await;
+
+                    this.update(cx, |this, cx| {
+                        if let Err(e) = result {
+                            log::error!("Keyring error: {e}");
+                            // For Linux:
+                            // The user has not installed secret service on their system
+                            // Fall back to the file provider
+                            this.keystore = Arc::new(FileProvider::default());
+                        }
+                        this.initialized_keystore = true;
+                        cx.notify();
+                    })
+                    .ok();
+                }),
+            );
+        }
 
         tasks.push(
             // Load all user profiles from the database
@@ -96,6 +138,8 @@ impl Registry {
 
         Self {
             unwrapping_status,
+            keystore,
+            initialized_keystore,
             rooms: vec![],
             persons: HashMap::new(),
             signer_pubkey: None,
@@ -120,6 +164,16 @@ impl Registry {
 
             Ok(profiles)
         })
+    }
+
+    /// Returns the keystore.
+    pub fn keystore(&self) -> Arc<dyn KeyStore> {
+        Arc::clone(&self.keystore)
+    }
+
+    /// Returns true if the keystore is a file keystore.
+    pub fn is_using_file_keystore(&self) -> bool {
+        self.keystore.name() == "file"
     }
 
     /// Returns the public key of the currently activated signer.

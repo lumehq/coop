@@ -60,6 +60,20 @@ common:
   configure:
     en: "Configure"
 
+keyring_disable:
+  label:
+    en: "Keyring is disabled"
+  body_1:
+    en: "Coop cannot access the Keyring Service on your system."
+  body_2:
+    en: "By design, Coop uses Keyring to store your credentials."
+  body_3:
+    en: "Without access to Keyring, Coop will store your credentials as plain text."
+  body_4:
+    en: "If you want to store your credentials in the Keyring, please enable Keyring and allow Coop to access it."
+  body_5:
+    en: "By clicking continue, you agree to store your credentials as plain text."
+
 auto_update:
   updating:
     en: "Installing the new update..."
@@ -102,12 +116,6 @@ onboarding:
   ext_login_note:
     en: "You will need to keep your default browser open."
 
-proxy:
-  label:
-    en: "Waiting for approval"
-  description:
-    en: "Open your default browser and approve the connection request in your Nostr Signer extension"
-
 auth:
   label:
     en: "Authentication Required"
@@ -115,20 +123,6 @@ auth:
     en: "Approve the authentication request to allow Coop to continue sending or receiving events."
   requests:
     en: "You have %{u} pending authentication requests"
-
-startup:
-  client_keys_warning:
-    en: "Warning"
-  client_keys_desc:
-    en: "Allow Coop to read the client keys stored in Keychain to continue"
-  create_new_keys:
-    en: "Create New Keys"
-  auto_login_in_progress:
-    en: "Auto login in progress"
-  stuck:
-    en: "Stuck?"
-  reset:
-    en: "Reset"
 
 new_account:
   title:
@@ -181,6 +175,8 @@ login:
     en: "Bunker is not valid"
   logging_in:
     en: "Logging in..."
+  keyring_required:
+    en: "You must allow Coop access to the keyring to continue."
 
 mailbox:
   modal:

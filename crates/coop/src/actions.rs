@@ -1,7 +1,10 @@
 use std::sync::Mutex;
 
-use gpui::{actions, App};
+use gpui::{actions, App, AppContext};
 use nostr_connect::prelude::*;
+use registry::keystore::KeyItem;
+use registry::Registry;
+use states::app_state;
 
 actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
 actions!(sidebar, [Reload, RelayStatus]);
@@ -41,6 +44,36 @@ pub fn load_embedded_fonts(cx: &App) {
     cx.text_system()
         .add_fonts(embedded_fonts.into_inner().unwrap())
         .unwrap();
+}
+
+pub fn reset(cx: &mut App) {
+    let registry = Registry::global(cx);
+    let keystore = registry.read(cx).keystore();
+
+    cx.spawn(async move |cx| {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            client.unset_signer().await;
+        })
+        .await;
+
+        keystore
+            .delete_credentials(&KeyItem::User.to_string(), cx)
+            .await
+            .ok();
+
+        keystore
+            .delete_credentials(&KeyItem::Bunker.to_string(), cx)
+            .await
+            .ok();
+
+        registry
+            .update(cx, |this, cx| {
+                this.reset(cx);
+            })
+            .ok();
+    })
+    .detach();
 }
 
 pub fn quit(_: &Quit, cx: &mut App) {

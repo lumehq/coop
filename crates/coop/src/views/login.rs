@@ -1,23 +1,25 @@
 use std::time::Duration;
 
-use client_keys::ClientKeys;
+use anyhow::anyhow;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Task,
-    Window,
+    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
+use registry::keystore::KeyItem;
+use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
-use states::constants::{ACCOUNT_IDENTIFIER, BUNKER_TIMEOUT};
+use states::constants::BUNKER_TIMEOUT;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
+use ui::notification::Notification;
 use ui::popup_menu::PopupMenu;
-use ui::{v_flex, ContextModal, Disableable, Sizable, StyledExt};
+use ui::{v_flex, ContextModal, Disableable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
 
@@ -26,15 +28,19 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
 }
 
 pub struct Login {
-    input: Entity<InputState>,
+    key_input: Entity<InputState>,
+    pass_input: Entity<InputState>,
     error: Entity<Option<SharedString>>,
     countdown: Entity<Option<u64>>,
+    require_password: bool,
     logging_in: bool,
-    // Panel
+
+    /// Panel
     name: SharedString,
     focus_handle: FocusHandle,
-    #[allow(unused)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+
+    /// Event subscriptions
+    _subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl Login {
@@ -43,29 +49,42 @@ impl Login {
     }
 
     fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("nsec... or bunker://..."));
+        let key_input = cx.new(|cx| InputState::new(window, cx));
+        let pass_input = cx.new(|cx| InputState::new(window, cx).masked(true));
+
         let error = cx.new(|_| None);
         let countdown = cx.new(|_| None);
 
         let mut subscriptions = smallvec![];
 
-        // Subscribe to key input events and process login when the user presses enter
         subscriptions.push(
-            cx.subscribe_in(&input, window, |this, _e, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.login(window, cx);
-                }
+            // Subscribe to key input events and process login when the user presses enter
+            cx.subscribe_in(&key_input, window, |this, input, event, window, cx| {
+                match event {
+                    InputEvent::PressEnter { .. } => {
+                        this.login(window, cx);
+                    }
+                    InputEvent::Change => {
+                        if input.read(cx).value().starts_with("ncryptsec1") {
+                            this.require_password = true;
+                            cx.notify();
+                        }
+                    }
+                    _ => {}
+                };
             }),
         );
 
         Self {
-            input,
+            key_input,
+            pass_input,
             error,
             countdown,
-            subscriptions,
             name: "Login".into(),
             focus_handle: cx.focus_handle(),
             logging_in: false,
+            require_password: false,
+            _subscriptions: subscriptions,
         }
     }
 
@@ -77,197 +96,34 @@ impl Login {
         // Prevent duplicate login requests
         self.set_logging_in(true, cx);
 
-        // Disable the input
-        self.input.update(cx, |this, cx| {
-            this.set_loading(true, cx);
-            this.set_disabled(true, cx);
-        });
+        let value = self.key_input.read(cx).value();
+        let password = self.pass_input.read(cx).value();
 
-        // Content can be secret key or bunker://
-        match self.input.read(cx).value().to_string() {
-            s if s.starts_with("nsec1") => self.ask_for_password(s, window, cx),
-            s if s.starts_with("ncryptsec1") => self.ask_for_password(s, window, cx),
-            s if s.starts_with("bunker://") => self.login_with_bunker(s, window, cx),
-            _ => self.set_error(t!("login.invalid_key"), window, cx),
-        };
-    }
-
-    fn ask_for_password(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
-        let current_view = cx.entity().downgrade();
-        let is_ncryptsec = content.starts_with("ncryptsec1");
-
-        let pwd_input = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let weak_pwd_input = pwd_input.downgrade();
-
-        let confirm_input = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let weak_confirm_input = confirm_input.downgrade();
-
-        window.open_modal(cx, move |this, _window, cx| {
-            let weak_pwd_input = weak_pwd_input.clone();
-            let weak_confirm_input = weak_confirm_input.clone();
-
-            let view_cancel = current_view.clone();
-            let view_ok = current_view.clone();
-
-            let label: SharedString = if !is_ncryptsec {
-                t!("login.set_password").into()
-            } else {
-                t!("login.password_to_decrypt").into()
-            };
-
-            let description: SharedString = if is_ncryptsec {
-                t!("login.password_description").into()
-            } else {
-                t!("login.password_description_full").into()
-            };
-
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .on_cancel(move |_, window, cx| {
-                    view_cancel
-                        .update(cx, |this, cx| {
-                            this.set_error(t!("login.password_is_required"), window, cx);
-                        })
-                        .ok();
-                    true
-                })
-                .on_ok(move |_, window, cx| {
-                    let value = weak_pwd_input
-                        .read_with(cx, |state, _cx| state.value().to_owned())
-                        .ok();
-
-                    let confirm = weak_confirm_input
-                        .read_with(cx, |state, _cx| state.value().to_owned())
-                        .ok();
-
-                    view_ok
-                        .update(cx, |this, cx| {
-                            this.verify_password(value, confirm, is_ncryptsec, window, cx);
-                        })
-                        .ok();
-                    true
-                })
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .text_sm()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(label)
-                                .child(TextInput::new(&pwd_input).small()),
-                        )
-                        .when(content.starts_with("nsec1"), |this| {
-                            this.child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .child(SharedString::new(t!("login.confirm_password")))
-                                    .child(TextInput::new(&confirm_input).small()),
-                            )
-                        })
-                        .child(
-                            div()
-                                .text_xs()
-                                .italic()
-                                .text_color(cx.theme().text_placeholder)
-                                .child(description),
-                        ),
-                )
-        });
-    }
-
-    fn verify_password(
-        &mut self,
-        password: Option<SharedString>,
-        confirm: Option<SharedString>,
-        is_ncryptsec: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(password) = password else {
-            self.set_error(t!("login.password_is_required"), window, cx);
-            return;
-        };
-
-        if password.is_empty() {
-            self.set_error(t!("login.password_is_required"), window, cx);
-            return;
-        }
-
-        // Skip verification if key is ncryptsec
-        if is_ncryptsec {
-            self.login_with_keys(password.to_string(), window, cx);
-            return;
-        }
-
-        let Some(confirm) = confirm else {
-            self.set_error(t!("login.must_confirm_password"), window, cx);
-            return;
-        };
-
-        if confirm.is_empty() {
-            self.set_error(t!("login.must_confirm_password"), window, cx);
-            return;
-        }
-
-        if password != confirm {
-            self.set_error(t!("login.password_not_match"), window, cx);
-            return;
-        }
-
-        self.login_with_keys(password.to_string(), window, cx);
-    }
-
-    fn login_with_keys(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self.input.read(cx).value().to_string();
-
-        let secret_key = if value.starts_with("nsec1") {
-            SecretKey::parse(&value).ok()
+        if value.starts_with("bunker://") {
+            self.login_with_bunker(&value, window, cx);
         } else if value.starts_with("ncryptsec1") {
-            EncryptedSecretKey::from_bech32(&value)
-                .map(|enc| enc.decrypt(&password).ok())
-                .unwrap_or_default()
+            self.login_with_password(&value, &password, cx);
+        } else if value.starts_with("nsec1") {
+            if let Ok(secret) = SecretKey::parse(&value) {
+                let keys = Keys::new(secret);
+                self.login_with_keys(keys, cx);
+            } else {
+                self.set_error("Invalid", cx);
+            }
         } else {
-            None
-        };
-
-        if let Some(secret_key) = secret_key {
-            let keys = Keys::new(secret_key);
-
-            // Encrypt and save user secret key to disk
-            self.write_keys_to_disk(&keys, password, cx);
-
-            // Set the client's signer with the current keys
-            cx.background_spawn(async move {
-                let client = app_state().client();
-                client.set_signer(keys).await;
-            })
-            .detach();
-        } else {
-            self.set_error(t!("login.key_invalid"), window, cx);
+            self.set_error("Invalid", cx);
         }
     }
 
-    fn login_with_bunker(&mut self, content: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn login_with_bunker(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(uri) = NostrConnectURI::parse(content) else {
-            self.set_error(t!("login.bunker_invalid"), window, cx);
+            self.set_error(t!("login.bunker_invalid"), cx);
             return;
         };
 
-        let client_keys = ClientKeys::global(cx);
-        let app_keys = client_keys.read(cx).keys();
-
+        let app_keys = Keys::generate();
         let timeout = Duration::from_secs(BUNKER_TIMEOUT);
-        let mut signer = NostrConnect::new(uri, app_keys, timeout, None).unwrap();
+        let mut signer = NostrConnect::new(uri, app_keys.clone(), timeout, None).unwrap();
 
         // Handle auth url with the default browser
         signer.auth_url_handler(CoopAuthUrlHandler);
@@ -293,103 +149,152 @@ impl Login {
 
         // Handle connection
         cx.spawn_in(window, async move |this, cx| {
-            match signer.bunker_uri().await {
-                Ok(uri) => {
-                    this.update(cx, |this, cx| {
-                        this.write_uri_to_disk(signer, uri, cx);
-                    })
-                    .ok();
-                }
-                Err(error) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.set_error(error.to_string(), window, cx);
-                        // Force reset the client keys
-                        //
-                        // This step is necessary to ensure that user can retry the connection
-                        client_keys.update(cx, |this, cx| {
-                            this.force_new_keys(cx);
-                        });
-                    })
-                    .ok();
-                }
-            }
+            let result = signer.bunker_uri().await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(uri) => {
+                        this.save_connection(&app_keys, &uri, window, cx);
+                        this.connect(signer, cx);
+                    }
+                    Err(e) => {
+                        window.push_notification(Notification::error(e.to_string()), cx);
+                    }
+                };
+            })
+            .ok();
         })
         .detach();
     }
 
-    fn write_uri_to_disk(
+    fn save_connection(
         &mut self,
-        signer: NostrConnect,
-        uri: NostrConnectURI,
-        cx: &mut Context<Self>,
-    ) {
-        let mut uri_without_secret = uri.to_string();
-
-        // Clear the secret parameter in the URI if it exists
-        if let Some(secret) = uri.secret() {
-            uri_without_secret = uri_without_secret.replace(secret, "");
-        }
-
-        let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
-
-            // Update the client's signer
-            client.set_signer(signer).await;
-
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let event = EventBuilder::new(Kind::ApplicationSpecificData, uri_without_secret)
-                .tags(vec![Tag::identifier(ACCOUNT_IDENTIFIER)])
-                .build(public_key)
-                .sign(&Keys::generate())
-                .await?;
-
-            // Save the event to the database
-            client.database().save_event(&event).await?;
-
-            Ok(())
-        });
-
-        task.detach();
-    }
-
-    pub fn write_keys_to_disk(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {
-        let keys = keys.to_owned();
-        let public_key = keys.public_key();
-
-        cx.background_spawn(async move {
-            if let Ok(enc_key) =
-                EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
-            {
-                let client = app_state().client();
-                let value = enc_key.to_bech32().unwrap();
-                let keys = Keys::generate();
-                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                let kind = Kind::ApplicationSpecificData;
-
-                let builder = EventBuilder::new(kind, value)
-                    .tags(tags)
-                    .build(public_key)
-                    .sign(&keys)
-                    .await;
-
-                if let Ok(event) = builder {
-                    if let Err(e) = client.database().save_event(&event).await {
-                        log::error!("Failed to save event: {e}");
-                    };
-                }
-            }
-        })
-        .detach();
-    }
-
-    fn set_error(
-        &mut self,
-        message: impl Into<SharedString>,
+        keys: &Keys,
+        uri: &NostrConnectURI,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let keystore = Registry::global(cx).read(cx).keystore();
+        let username = keys.public_key().to_hex();
+        let secret = keys.secret_key().to_secret_bytes();
+        let mut clean_uri = uri.to_string();
+
+        // Clear the secret parameter in the URI if it exists
+        if let Some(s) = uri.secret() {
+            clean_uri = clean_uri.replace(s, "");
+        }
+
+        cx.spawn_in(window, async move |this, cx| {
+            let user_url = KeyItem::User.to_string();
+            let bunker_url = KeyItem::Bunker.to_string();
+            let user_password = clean_uri.into_bytes();
+
+            // Write bunker uri to keyring for further connection
+            if let Err(e) = keystore
+                .write_credentials(&user_url, "bunker", &user_password, cx)
+                .await
+            {
+                this.update_in(cx, |_, window, cx| {
+                    window.push_notification(e.to_string(), cx);
+                })
+                .ok();
+            }
+
+            // Write the app keys for further connection
+            if let Err(e) = keystore
+                .write_credentials(&bunker_url, &username, &secret, cx)
+                .await
+            {
+                this.update_in(cx, |_, window, cx| {
+                    window.push_notification(e.to_string(), cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            client.set_signer(signer).await;
+        })
+        .detach();
+    }
+
+    pub fn login_with_password(&mut self, content: &str, pwd: &str, cx: &mut Context<Self>) {
+        if pwd.is_empty() {
+            self.set_error("Password is required", cx);
+            return;
+        }
+
+        let Ok(enc) = EncryptedSecretKey::from_bech32(content) else {
+            self.set_error("Secret Key is invalid", cx);
+            return;
+        };
+
+        let password = pwd.to_owned();
+
+        // Decrypt in the background to ensure it doesn't block the UI
+        let task = cx.background_spawn(async move {
+            if let Ok(content) = enc.decrypt(&password) {
+                Ok(Keys::new(content))
+            } else {
+                Err(anyhow!("Invalid password"))
+            }
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+
+            this.update(cx, |this, cx| {
+                match result {
+                    Ok(keys) => {
+                        this.login_with_keys(keys, cx);
+                    }
+                    Err(e) => {
+                        this.set_error(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub fn login_with_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
+        let keystore = Registry::global(cx).read(cx).keystore();
+        let username = keys.public_key().to_hex();
+        let secret = keys.secret_key().to_secret_hex().into_bytes();
+
+        cx.spawn(async move |this, cx| {
+            let bunker_url = KeyItem::User.to_string();
+
+            // Write the app keys for further connection
+            if let Err(e) = keystore
+                .write_credentials(&bunker_url, &username, &secret, cx)
+                .await
+            {
+                this.update(cx, |this, cx| {
+                    this.set_error(e.to_string(), cx);
+                })
+                .ok();
+            }
+
+            // Update the signer
+            cx.background_spawn(async move {
+                let client = app_state().client();
+                client.set_signer(keys).await;
+            })
+            .detach();
+        })
+        .detach();
+    }
+
+    fn set_error<S>(&mut self, message: S, cx: &mut Context<Self>)
+    where
+        S: Into<SharedString>,
+    {
         // Reset the log in state
         self.set_logging_in(false, cx);
 
@@ -400,13 +305,6 @@ impl Login {
         self.error.update(cx, |this, cx| {
             *this = Some(message.into());
             cx.notify();
-        });
-
-        // Re enable the input
-        self.input.update(cx, |this, cx| {
-            this.set_value("", window, cx);
-            this.set_loading(false, cx);
-            this.set_disabled(false, cx);
         });
 
         // Clear the error message after 3 secs
@@ -493,7 +391,25 @@ impl Render for Login {
                     .child(
                         v_flex()
                             .gap_3()
-                            .child(TextInput::new(&self.input))
+                            .text_sm()
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .text_sm()
+                                    .text_color(cx.theme().text_muted)
+                                    .child("nsec or bunker://")
+                                    .child(TextInput::new(&self.key_input)),
+                            )
+                            .when(self.require_password, |this| {
+                                this.child(
+                                    v_flex()
+                                        .gap_1()
+                                        .text_sm()
+                                        .text_color(cx.theme().text_muted)
+                                        .child("Password:")
+                                        .child(TextInput::new(&self.pass_input)),
+                                )
+                            })
                             .child(
                                 Button::new("login")
                                     .label(t!("common.continue"))
@@ -513,13 +429,13 @@ impl Render for Login {
                                         .child(shared_t!("login.approve_message", i = i)),
                                 )
                             })
-                            .when_some(self.error.read(cx).clone(), |this, error| {
+                            .when_some(self.error.read(cx).as_ref(), |this, error| {
                                 this.child(
                                     div()
                                         .text_xs()
                                         .text_center()
                                         .text_color(cx.theme().danger_foreground)
-                                        .child(error),
+                                        .child(error.clone()),
                                 )
                             }),
                     ),

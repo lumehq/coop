@@ -8,9 +8,11 @@ use gpui::{
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
+use registry::keystore::KeyItem;
+use registry::Registry;
 use settings::AppSettings;
 use smol::fs;
-use states::constants::{ACCOUNT_IDENTIFIER, BOOTSTRAP_RELAYS};
+use states::constants::BOOTSTRAP_RELAYS;
 use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -81,21 +83,17 @@ impl NewAccount {
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
-                            let password = this.password(cx);
                             let current_view = current_view.clone();
 
                             if let Some(task) = this.backup(window, cx) {
                                 cx.spawn_in(window, async move |_, cx| {
                                     task.await;
 
-                                    cx.update(|window, cx| {
-                                        current_view
-                                            .update(cx, |this, cx| {
-                                                this.set_signer(password, window, cx);
-                                            })
-                                            .ok();
-                                    })
-                                    .ok()
+                                    current_view
+                                        .update(cx, |this, cx| {
+                                            this.set_signer(cx);
+                                        })
+                                        .ok();
                                 })
                                 .detach();
                             }
@@ -107,10 +105,13 @@ impl NewAccount {
         })
     }
 
-    fn set_signer(&mut self, password: String, window: &mut Window, cx: &mut Context<Self>) {
-        window.close_modal(cx);
+    pub fn set_signer(&mut self, cx: &mut Context<Self>) {
+        let keystore = Registry::global(cx).read(cx).keystore();
 
         let keys = self.temp_keys.read(cx).clone();
+        let username = keys.public_key().to_hex();
+        let secret = keys.secret_key().to_secret_hex().into_bytes();
+
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let mut metadata = Metadata::new().display_name(name.clone()).name(name);
@@ -119,81 +120,59 @@ impl NewAccount {
             metadata = metadata.picture(url);
         };
 
-        // Encrypt and save user secret key to disk
-        self.write_keys_to_disk(&keys, password, cx);
+        cx.spawn(async move |_, cx| {
+            let url = KeyItem::User.to_string();
 
-        // Set the client's signer with the current keys
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
+            // Write the app keys for further connection
+            keystore
+                .write_credentials(&url, &username, &secret, cx)
+                .await
+                .ok();
 
+            // Update the signer
             // Set the client's signer with the current keys
-            client.set_signer(keys).await;
-
-            // Verify the signer
-            let signer = client.signer().await?;
-
-            // Construct a NIP-65 event
-            let event = EventBuilder::new(Kind::RelayList, "")
-                .tags(default_nip65_relays().iter().map(|(url, metadata)| {
-                    Tag::relay_metadata(url.to_owned(), metadata.to_owned())
-                }))
-                .sign(&signer)
-                .await?;
-
-            // Set NIP-65 relays
-            client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
-
-            // Construct a NIP-17 event
-            let event = EventBuilder::new(Kind::InboxRelays, "")
-                .tags(
-                    default_nip17_relays()
-                        .iter()
-                        .map(|url| Tag::relay(url.to_owned())),
-                )
-                .sign(&signer)
-                .await?;
-
-            // Set NIP-17 relays
-            client.send_event(&event).await?;
-
-            // Construct a metadata event
-            let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
-
-            // Set metadata
-            client.send_event(&event).await?;
-
-            Ok(())
-        });
-
-        task.detach();
-    }
-
-    fn write_keys_to_disk(&self, keys: &Keys, password: String, cx: &mut Context<Self>) {
-        let keys = keys.to_owned();
-        let public_key = keys.public_key();
-
-        cx.background_spawn(async move {
-            if let Ok(enc_key) =
-                EncryptedSecretKey::new(keys.secret_key(), &password, 8, KeySecurity::Unknown)
-            {
+            let task: Task<Result<(), Error>> = cx.background_spawn(async move {
                 let client = app_state().client();
-                let value = enc_key.to_bech32().unwrap();
-                let keys = Keys::generate();
-                let tags = vec![Tag::identifier(ACCOUNT_IDENTIFIER)];
-                let kind = Kind::ApplicationSpecificData;
 
-                let builder = EventBuilder::new(kind, value)
-                    .tags(tags)
-                    .build(public_key)
-                    .sign(&keys)
-                    .await;
+                // Set the client's signer with the current keys
+                client.set_signer(keys).await;
 
-                if let Ok(event) = builder {
-                    if let Err(e) = client.database().save_event(&event).await {
-                        log::error!("Failed to save event: {e}");
-                    };
-                }
-            }
+                // Verify the signer
+                let signer = client.signer().await?;
+
+                // Construct a NIP-65 event
+                let event = EventBuilder::new(Kind::RelayList, "")
+                    .tags(
+                        default_nip65_relays()
+                            .iter()
+                            .cloned()
+                            .map(|(url, metadata)| Tag::relay_metadata(url, metadata)),
+                    )
+                    .sign(&signer)
+                    .await?;
+
+                // Set NIP-65 relays
+                client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
+
+                // Construct a NIP-17 event
+                let event = EventBuilder::new(Kind::InboxRelays, "")
+                    .tags(default_nip17_relays().iter().cloned().map(Tag::relay))
+                    .sign(&signer)
+                    .await?;
+
+                // Set NIP-17 relays
+                client.send_event(&event).await?;
+
+                // Construct a metadata event
+                let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
+
+                // Set metadata
+                client.send_event(&event).await?;
+
+                Ok(())
+            });
+
+            task.detach();
         })
         .detach();
     }

@@ -83,9 +83,6 @@ fn main() {
                 // Initialize components
                 ui::init(cx);
 
-                // Initialize client keys
-                client_keys::init(cx);
-
                 // Initialize app registry
                 registry::init(cx);
 
