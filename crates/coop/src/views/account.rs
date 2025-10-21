@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use common::display::RenderedProfile;
+use device::keystore::KeyItem;
+use device::Device;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -10,7 +12,6 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
-use registry::keystore::KeyItem;
 use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
@@ -116,7 +117,7 @@ impl Account {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+        let keystore = Device::global(cx).read(cx).keystore();
 
         // Handle connection in the background
         cx.spawn_in(window, async move |this, cx| {

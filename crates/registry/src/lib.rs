@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, LazyLock};
 
 use anyhow::Error;
 use common::event::EventUtils;
@@ -15,18 +14,11 @@ use room::RoomKind;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
-use states::paths::config_dir;
-use states::state::UnwrappingStatus;
 
-use crate::keystore::{FileProvider, KeyItem, KeyStore, KeyringProvider};
 use crate::room::Room;
 
-pub mod keystore;
 pub mod message;
 pub mod room;
-
-static DISABLE_KEYRING: LazyLock<bool> =
-    LazyLock::new(|| std::env::var("DISABLE_KEYRING").is_ok_and(|value| !value.is_empty()));
 
 pub fn init(cx: &mut App) {
     Registry::set_global(cx.new(Registry::new), cx);
@@ -50,24 +42,8 @@ pub struct Registry {
     /// Collection of all persons (user profiles)
     pub persons: HashMap<PublicKey, Entity<Profile>>,
 
-    /// Status of the unwrapping process
-    pub unwrapping_status: Entity<UnwrappingStatus>,
-
-    /// Key Store for storing credentials
-    pub keystore: Arc<dyn KeyStore>,
-
-    /// Whether the keystore has been initialized
-    pub initialized_keystore: bool,
-
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Client keys entity, used for communication between devices
-    pub client_keys: Entity<Option<Arc<dyn NostrSigner>>>,
-
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Encryption keys entity, used for encryption and decryption
-    pub encryption_keys: Entity<Option<Arc<dyn NostrSigner>>>,
+    /// Loading status of the registry
+    pub loading: bool,
 
     /// Public Key of the currently activated signer
     signer_pubkey: Option<PublicKey>,
@@ -96,46 +72,7 @@ impl Registry {
 
     /// Create a new registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let client_keys = cx.new(|_| None);
-        let encryption_keys = cx.new(|_| None);
-        let unwrapping_status = cx.new(|_| UnwrappingStatus::default());
-
-        // Use the file system for keystore in development or when the user specifies it
-        let use_file_keystore = cfg!(debug_assertions) || *DISABLE_KEYRING;
-
-        // Construct the keystore
-        let keystore: Arc<dyn KeyStore> = if use_file_keystore {
-            Arc::new(FileProvider::default())
-        } else {
-            Arc::new(KeyringProvider)
-        };
-
         let mut tasks = smallvec![];
-
-        if !use_file_keystore {
-            // Only used for testing keyring availability on the user's system
-            let read_credential = cx.read_credentials("Coop");
-
-            tasks.push(
-                // Verify the keyring availability
-                cx.spawn(async move |this, cx| {
-                    let result = read_credential.await;
-
-                    this.update(cx, |this, cx| {
-                        if let Err(e) = result {
-                            log::error!("Keyring error: {e}");
-                            // For Linux:
-                            // The user has not installed secret service on their system
-                            // Fall back to the file provider
-                            this.keystore = Arc::new(FileProvider::default());
-                        }
-                        this.initialized_keystore = true;
-                        cx.notify();
-                    })
-                    .ok();
-                }),
-            );
-        }
 
         tasks.push(
             // Load all user profiles from the database
@@ -155,14 +92,10 @@ impl Registry {
         );
 
         Self {
-            unwrapping_status,
-            client_keys,
-            encryption_keys,
-            keystore,
-            initialized_keystore: use_file_keystore,
             rooms: vec![],
             persons: HashMap::new(),
             signer_pubkey: None,
+            loading: true,
             _tasks: tasks,
         }
     }
@@ -186,16 +119,6 @@ impl Registry {
         })
     }
 
-    /// Returns the keystore.
-    pub fn keystore(&self) -> Arc<dyn KeyStore> {
-        Arc::clone(&self.keystore)
-    }
-
-    /// Returns true if the keystore is a file keystore.
-    pub fn is_using_file_keystore(&self) -> bool {
-        self.keystore.name() == "file"
-    }
-
     /// Returns the public key of the currently activated signer.
     pub fn signer_pubkey(&self) -> Option<PublicKey> {
         self.signer_pubkey
@@ -205,63 +128,6 @@ impl Registry {
     pub fn set_signer_pubkey(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
         self.signer_pubkey = Some(public_key);
         cx.notify();
-    }
-
-    /// Load the dedicated keys for the current device (client)
-    pub fn load_client_keys(&mut self, cx: &mut Context<Self>) {
-        let keystore = self.keystore();
-        let url = KeyItem::Client;
-
-        cx.spawn(async move |this, cx| {
-            let result = keystore.read_credentials(&url.to_string(), cx).await;
-
-            this.update(cx, |this, cx| {
-                match result {
-                    Ok(Some((_, secret))) => {
-                        let secret = SecretKey::from_slice(&secret).unwrap();
-                        let keys = Keys::new(secret);
-
-                        this.set_client_keys(keys, cx);
-                    }
-                    Ok(None) => {
-                        if first_run() {
-                            this.set_client_keys(Keys::generate(), cx);
-                        } else {
-                            this.client_keys.update(cx, |this, cx| {
-                                *this = None;
-                                cx.notify();
-                            });
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load client keys: {e}");
-
-                        this.client_keys.update(cx, |this, cx| {
-                            *this = None;
-                            cx.notify();
-                        });
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Set the client keys
-    pub fn set_client_keys(&mut self, keys: impl NostrSigner, cx: &mut Context<Self>) {
-        self.client_keys.update(cx, |this, cx| {
-            *this = Some(Arc::new(keys));
-            cx.notify();
-        });
-    }
-
-    /// Set the encryption keys
-    pub fn set_encryption_keys(&mut self, keys: impl NostrSigner, cx: &mut Context<Self>) {
-        self.encryption_keys.update(cx, |this, cx| {
-            *this = Some(Arc::new(keys));
-            cx.notify();
-        });
     }
 
     /// Insert batch of persons
@@ -309,6 +175,11 @@ impl Registry {
                 self.persons.insert(public_key, cx.new(|_| profile));
             }
         }
+    }
+
+    pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
+        self.loading = loading;
+        cx.notify();
     }
 
     /// Get a room by its ID.
@@ -380,19 +251,8 @@ impl Registry {
             .collect()
     }
 
-    /// Set the loading status of the registry.
-    pub fn set_unwrapping_status(&mut self, status: UnwrappingStatus, cx: &mut Context<Self>) {
-        self.unwrapping_status.update(cx, |this, cx| {
-            *this = status;
-            cx.notify();
-        });
-    }
-
     /// Reset the registry.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        // Reset the unwrapping status
-        self.set_unwrapping_status(UnwrappingStatus::default(), cx);
-
         // Clear the current identity
         self.signer_pubkey = None;
 
@@ -606,9 +466,4 @@ impl Registry {
             });
         }
     }
-}
-
-fn first_run() -> bool {
-    let flag = config_dir().join(".first_run");
-    !flag.exists() && std::fs::write(&flag, "").is_ok()
 }

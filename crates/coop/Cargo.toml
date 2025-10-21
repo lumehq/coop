@@ -33,6 +33,7 @@ title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
 states = { path = "../states" }
+device = { path = "../device" }
 registry = { path = "../registry" }
 settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }

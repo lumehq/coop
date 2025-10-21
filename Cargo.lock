@@ -1271,6 +1271,7 @@ dependencies = [
  "assets",
  "auto_update",
  "common",
+ "device",
  "dirs 5.0.1",
  "flume",
  "futures",
@@ -1601,6 +1602,27 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.107",
+]
+
+[[package]]
+name = "device"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "common",
+ "futures",
+ "gpui",
+ "itertools 0.13.0",
+ "log",
+ "nostr",
+ "nostr-sdk",
+ "serde",
+ "serde_json",
+ "settings",
+ "smallvec",
+ "smol",
+ "states",
+ "ui",
 ]
 
 [[package]]
@@ -5136,16 +5158,13 @@ version = "0.2.11"
 dependencies = [
  "anyhow",
  "common",
- "flume",
  "futures",
  "fuzzy-matcher",
  "gpui",
  "itertools 0.13.0",
  "log",
  "nostr",
- "nostr-lmdb",
  "nostr-sdk",
- "rustls",
  "serde",
  "serde_json",
  "settings",

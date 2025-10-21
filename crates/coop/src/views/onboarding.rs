@@ -2,6 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::display::TextUtils;
+use device::keystore::KeyItem;
+use device::Device;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -10,8 +12,6 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use nostr_connect::prelude::*;
-use registry::keystore::KeyItem;
-use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
 use states::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
@@ -126,7 +126,7 @@ impl Onboarding {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+        let keystore = Device::global(cx).read(cx).keystore();
         let username = self.app_keys.public_key().to_hex();
         let secret = self.app_keys.secret_key().to_secret_bytes();
         let mut clean_uri = uri.to_string();

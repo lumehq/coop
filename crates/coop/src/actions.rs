@@ -1,8 +1,9 @@
 use std::sync::Mutex;
 
+use device::keystore::KeyItem;
+use device::Device;
 use gpui::{actions, App, AppContext};
 use nostr_connect::prelude::*;
-use registry::keystore::KeyItem;
 use registry::Registry;
 use states::app_state;
 
@@ -48,7 +49,8 @@ pub fn load_embedded_fonts(cx: &App) {
 
 pub fn reset(cx: &mut App) {
     let registry = Registry::global(cx);
-    let keystore = registry.read(cx).keystore();
+    let device = Device::global(cx);
+    let keystore = device.read(cx).keystore();
 
     cx.spawn(async move |cx| {
         cx.background_spawn(async move {

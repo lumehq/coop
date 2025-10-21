@@ -6,6 +6,8 @@ use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
+use device::keystore::KeyItem;
+use device::Device;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, relative, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem,
@@ -16,11 +18,10 @@ use i18n::{shared_t, t};
 use itertools::Itertools;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
-use registry::keystore::KeyItem;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::constants::{APP_NAME, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use states::constants::{BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use states::state::{AuthRequest, SignalKind, UnwrappingStatus};
 use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::{ActiveTheme, Theme, ThemeMode};
@@ -74,7 +75,7 @@ pub struct ChatSpace {
     nip65_ready: bool,
 
     /// All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 4]>,
+    _subscriptions: SmallVec<[Subscription; 3]>,
 
     /// All long running tasks
     _tasks: SmallVec<[Task<()>; 5]>,
@@ -83,7 +84,7 @@ pub struct ChatSpace {
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let registry = Registry::global(cx);
-        let status = registry.read(cx).unwrapping_status.clone();
+        let device = Device::global(cx);
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
@@ -100,57 +101,38 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Observe the keystore
-            cx.observe_in(&registry, window, |this, registry, window, cx| {
-                let has_keyring = registry.read(cx).initialized_keystore;
-                let use_filestore = registry.read(cx).is_using_file_keystore();
-                let not_logged_in = registry.read(cx).signer_pubkey().is_none();
+            // Observe device changes
+            cx.observe_in(&device, window, move |this, state, window, cx| {
+                if state.read(cx).initialized {
+                    let keystore = state.read(cx).keystore();
 
-                if use_filestore && not_logged_in {
-                    this.render_keyring_installation(window, cx);
-                }
+                    if state.read(cx).initialized {
+                        if state.read(cx).is_using_file_keystore() {
+                            this.render_keyring_installation(window, cx);
+                        }
 
-                if has_keyring && not_logged_in {
-                    let keystore = registry.read(cx).keystore();
+                        cx.spawn_in(window, async move |this, cx| {
+                            let result = keystore
+                                .read_credentials(&KeyItem::User.to_string(), cx)
+                                .await;
 
-                    cx.spawn_in(window, async move |this, cx| {
-                        let result = keystore
-                            .read_credentials(&KeyItem::User.to_string(), cx)
-                            .await;
+                            this.update_in(cx, |this, window, cx| {
+                                match result {
+                                    Ok(Some((user, secret))) => {
+                                        let public_key = PublicKey::parse(&user).unwrap();
+                                        let secret = String::from_utf8(secret).unwrap();
 
-                        this.update_in(cx, |this, window, cx| {
-                            match result {
-                                Ok(Some((user, secret))) => {
-                                    let public_key = PublicKey::parse(&user).unwrap();
-                                    let secret = String::from_utf8(secret).unwrap();
-                                    this.set_account_layout(public_key, secret, window, cx);
-                                }
-                                _ => {
-                                    this.set_onboarding_layout(window, cx);
-                                }
-                            };
+                                        this.set_account_layout(public_key, secret, window, cx);
+                                    }
+                                    _ => {
+                                        this.set_onboarding_layout(window, cx);
+                                    }
+                                };
+                            })
+                            .ok();
                         })
-                        .ok();
-                    })
-                    .detach();
-                }
-            }),
-        );
-
-        subscriptions.push(
-            // Observe the global registry's events
-            cx.observe_in(&status, window, move |this, status, window, cx| {
-                let status = status.read(cx);
-                let all_panels = this.get_all_panel_ids(cx);
-
-                if matches!(
-                    status,
-                    UnwrappingStatus::Processing | UnwrappingStatus::Complete
-                ) {
-                    Registry::global(cx).update(cx, |this, cx| {
-                        this.load_rooms(window, cx);
-                        this.refresh_rooms(all_panels, cx);
-                    });
+                        .detach();
+                    }
                 }
             }),
         );
@@ -235,15 +217,10 @@ impl ChatSpace {
         while let Ok(signal) = states.signal().receiver().recv_async().await {
             view.update_in(cx, |this, window, cx| {
                 let registry = Registry::global(cx);
+                let device = Device::global(cx);
                 let settings = AppSettings::global(cx);
 
                 match signal {
-                    SignalKind::EncryptionNotSet => {
-                        this.new_encryption(window, cx);
-                    }
-                    SignalKind::EncryptionSet((n, client_name)) => {
-                        this.reinit_encryption(n, client_name, window, cx);
-                    }
                     SignalKind::SignerSet(public_key) => {
                         // Close all opened modals
                         window.close_all_modals(cx);
@@ -256,8 +233,12 @@ impl ChatSpace {
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
                             this.set_signer_pubkey(public_key, cx);
-                            this.load_client_keys(cx);
                             this.load_rooms(window, cx);
+                        });
+
+                        // Load the client keys
+                        device.update(cx, |this, cx| {
+                            this.load_client_keys(cx);
                         });
 
                         // Setup the default layout for current workspace
@@ -279,10 +260,19 @@ impl ChatSpace {
                             this.open_auth_request(req, window, cx);
                         }
                     }
-                    SignalKind::GiftWrapStatus(status) => {
-                        registry.update(cx, |this, cx| {
-                            this.set_unwrapping_status(status, cx);
-                        });
+                    SignalKind::GiftWrapStatus(s) => {
+                        if matches!(s, UnwrappingStatus::Processing | UnwrappingStatus::Complete) {
+                            let all_panels = this.get_all_panel_ids(cx);
+
+                            registry.update(cx, |this, cx| {
+                                this.load_rooms(window, cx);
+                                this.refresh_rooms(all_panels, cx);
+
+                                if s == UnwrappingStatus::Complete {
+                                    this.set_loading(false, cx);
+                                }
+                            });
+                        }
                     }
                     SignalKind::NewProfile(profile) => {
                         registry.update(cx, |this, cx| {
@@ -301,162 +291,11 @@ impl ChatSpace {
                     SignalKind::MessagingRelaysNotFound => {
                         this.set_required_dm_relays(cx);
                     }
+                    _ => {}
                 };
             })
             .ok();
         }
-    }
-
-    fn new_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let keys = Keys::generate();
-        let username = keys.public_key().to_hex();
-        let password = keys.secret_key().to_secret_bytes();
-
-        let keystore = Registry::global(cx).read(cx).keystore();
-        let url = KeyItem::Encryption;
-
-        cx.spawn_in(window, async move |this, cx| {
-            let result = keystore
-                .write_credentials(&url.to_string(), &username, &password, cx)
-                .await;
-
-            this.update_in(cx, |_this, window, cx| {
-                match result {
-                    Ok(_) => {
-                        Registry::global(cx).update(cx, |this, cx| {
-                            this.set_encryption_keys(keys, cx);
-                        });
-                    }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn reinit_encryption(
-        &mut self,
-        n: PublicKey,
-        _client_name: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let registry = Registry::global(cx);
-        let keystore = registry.read(cx).keystore();
-        let url = KeyItem::Encryption;
-
-        cx.spawn_in(window, async move |this, cx| {
-            let result = keystore.read_credentials(&url.to_string(), cx).await;
-
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(Some((username, password))) => {
-                        let public_key = PublicKey::from_hex(&username).unwrap();
-
-                        if n == public_key {
-                            let secret = SecretKey::from_slice(&password).unwrap();
-                            let keys = Keys::new(secret);
-
-                            registry.update(cx, |this, cx| {
-                                this.set_encryption_keys(keys, cx);
-                            });
-                        } else {
-                            this.request_encryption(window, cx);
-                        }
-                    }
-                    Ok(None) => {
-                        window.push_notification("Cancelled", cx);
-                    }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn request_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx);
-
-        // Client Keys must be known at this point
-        let Some(client_keys) = registry.read(cx).client_keys.read(cx).clone() else {
-            window.push_notification("Client Keys is required", cx);
-            return;
-        };
-
-        let task: Task<Result<Option<Keys>, Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let client_pubkey = client_keys.get_public_key().await?;
-
-            let filter = Filter::new()
-                .author(public_key)
-                .kind(Kind::Custom(4455))
-                .limit(1);
-
-            match client.database().query(filter).await?.first_owned() {
-                Some(event) => {
-                    // Found encryption keys shared by other devices
-                    if let Some(target) = event
-                        .tags
-                        .find(TagKind::custom("P"))
-                        .and_then(|tag| tag.content())
-                        .and_then(|content| PublicKey::parse(content).ok())
-                        .as_ref()
-                    {
-                        let payload = event.content.as_str();
-                        let decrypted = client_keys.nip44_decrypt(target, payload).await?;
-
-                        let secret = SecretKey::from_hex(&decrypted)?;
-                        let keys = Keys::new(secret);
-
-                        return Ok(Some(keys));
-                    } else {
-                        return Err(anyhow!("Invalid event"));
-                    }
-                }
-                None => {
-                    // Construct encryption keys request event
-                    let event = EventBuilder::new(Kind::Custom(4454), "")
-                        .tags(vec![Tag::client(APP_NAME), Tag::public_key(client_pubkey)])
-                        .sign(&signer)
-                        .await?;
-
-                    // Send a request for encryption keys from other devices
-                    client.send_event(&event).await?;
-                }
-            }
-
-            Ok(None)
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-
-            this.update_in(cx, |_this, window, cx| {
-                match result {
-                    Ok(Some(keys)) => {
-                        registry.update(cx, |this, cx| {
-                            this.set_encryption_keys(keys, cx);
-                        });
-                    }
-                    Ok(None) => {
-                        window.push_notification(t!("encryption.request"), cx);
-                    }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
@@ -1087,15 +926,15 @@ impl ChatSpace {
         _window: &mut Window,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let registry = Registry::read_global(cx);
-        let status = registry.unwrapping_status.read(cx);
+        let registry = Registry::global(cx);
+        let status = registry.read(cx).loading;
 
         h_flex()
             .gap_2()
             .h_6()
             .w_full()
             .child(compose_button())
-            .when(status != &UnwrappingStatus::Complete, |this| {
+            .when(status, |this| {
                 this.child(deferred(
                     h_flex()
                         .px_2()
