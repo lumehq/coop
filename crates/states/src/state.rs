@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Context, Error};
 use flume::{Receiver, Sender};
 use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
@@ -52,7 +52,7 @@ pub enum SignalKind {
     /// NIP-4e
     ///
     /// A signal to notify UI that the user has set encryption keys
-    EncryptionSet(PublicKey),
+    EncryptionSet((PublicKey, String)),
 
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
@@ -364,14 +364,11 @@ impl AppState {
                         // Encryption Keys announcement event
                         Kind::Custom(10044) => {
                             if let Ok(true) = self.is_self_authored(&event).await {
-                                if let Some(public_key) = event
-                                    .tags
-                                    .find(TagKind::custom("n"))
-                                    .and_then(|tag| tag.content())
-                                    .and_then(|c| PublicKey::parse(c).ok())
+                                if let Ok((public_key, client_name)) =
+                                    self.extract_announcement(&event)
                                 {
                                     self.signal
-                                        .send(SignalKind::EncryptionSet(public_key))
+                                        .send(SignalKind::EncryptionSet((public_key, client_name)))
                                         .await;
                                 }
                             }
@@ -814,5 +811,23 @@ impl AppState {
                 }
             }
         }
+    }
+
+    fn extract_announcement(&self, event: &Event) -> Result<(PublicKey, String), Error> {
+        let public_key = event
+            .tags
+            .find(TagKind::custom("n"))
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        let client_name = event
+            .tags
+            .find(TagKind::Client)
+            .and_then(|tag| tag.content())
+            .map(|c| c.to_string())
+            .context("Cannot parse client name from the event's tags")?;
+
+        Ok((public_key, client_name))
     }
 }

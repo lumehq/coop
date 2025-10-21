@@ -241,12 +241,12 @@ impl ChatSpace {
                     SignalKind::EncryptionNotSet => {
                         this.new_encryption(window, cx);
                     }
-                    SignalKind::EncryptionSet(n) => {
-                        this.reinit_encryption(n, window, cx);
+                    SignalKind::EncryptionSet((n, client_name)) => {
+                        this.reinit_encryption(n, client_name, window, cx);
                     }
                     SignalKind::SignerSet(public_key) => {
-                        // Close the latest modal if it exists
-                        window.close_modal(cx);
+                        // Close all opened modals
+                        window.close_all_modals(cx);
 
                         // Load user's settings
                         settings.update(cx, |this, cx| {
@@ -337,8 +337,15 @@ impl ChatSpace {
         .detach();
     }
 
-    fn reinit_encryption(&mut self, n: PublicKey, window: &mut Window, cx: &mut Context<Self>) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+    fn reinit_encryption(
+        &mut self,
+        n: PublicKey,
+        _client_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let registry = Registry::global(cx);
+        let keystore = registry.read(cx).keystore();
         let url = KeyItem::Encryption;
 
         cx.spawn_in(window, async move |this, cx| {
@@ -353,7 +360,7 @@ impl ChatSpace {
                             let secret = SecretKey::from_slice(&password).unwrap();
                             let keys = Keys::new(secret);
 
-                            Registry::global(cx).update(cx, |this, cx| {
+                            registry.update(cx, |this, cx| {
                                 this.set_encryption_keys(keys, cx);
                             });
                         } else {
