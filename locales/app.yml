@@ -74,6 +74,10 @@ keyring_disable:
   body_5:
     en: "By clicking continue, you agree to store your credentials as plain text."
 
+encryption:
+  request:
+    en: "Sending a request for encryption keys"
+
 auto_update:
   updating:
     en: "Installing the new update..."

@@ -20,7 +20,7 @@ use registry::keystore::KeyItem;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::constants::{BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use states::constants::{APP_NAME, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use states::state::{AuthRequest, SignalKind, UnwrappingStatus};
 use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::{ActiveTheme, Theme, ThemeMode};
@@ -361,7 +361,7 @@ impl ChatSpace {
                         }
                     }
                     Ok(None) => {
-                        //
+                        window.push_notification("Cancelled", cx);
                     }
                     Err(e) => {
                         window.push_notification(e.to_string(), cx);
@@ -374,80 +374,80 @@ impl ChatSpace {
     }
 
     fn request_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx).read(cx);
+        let registry = Registry::global(cx);
 
-        let Some(client_keys) = registry.client_keys.read(cx).clone() else {
+        // Client Keys must be known at this point
+        let Some(client_keys) = registry.read(cx).client_keys.read(cx).clone() else {
             window.push_notification("Client Keys is required", cx);
             return;
         };
 
-        let get_local_response: Task<Result<Option<Keys>, Error>> =
-            cx.background_spawn(async move {
-                let client = app_state().client();
-                let signer = client.signer().await?;
-                let public_key = signer.get_public_key().await?;
-
-                let filter = Filter::new()
-                    .author(public_key)
-                    .kind(Kind::Custom(4455))
-                    .limit(1);
-
-                if let Some(event) = client.database().query(filter).await?.first_owned() {
-                    if let Some(target) = event
-                        .tags
-                        .find(TagKind::custom("P"))
-                        .and_then(|tag| tag.content())
-                        .and_then(|content| PublicKey::parse(content).ok())
-                    {
-                        let decrypted = client_keys.nip44_decrypt(&target, &event.content).await?;
-                        let secret = SecretKey::from_hex(&decrypted)?;
-                        let keys = Keys::new(secret);
-
-                        return Ok(Some(keys));
-                    }
-                }
-
-                Ok(None)
-            });
-
-        let Some(client_keys) = registry.client_keys.read(cx).clone() else {
-            window.push_notification("Client Keys is required", cx);
-            return;
-        };
-
-        let send_new_request: Task<Result<(), Error>> = cx.background_spawn(async move {
+        let task: Task<Result<Option<Keys>, Error>> = cx.background_spawn(async move {
             let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let client_pubkey = client_keys.get_public_key().await?;
 
-            let event = EventBuilder::new(Kind::Custom(4454), "")
-                .tags(vec![
-                    Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
-                    Tag::public_key(public_key),
-                ])
-                .sign(&signer)
-                .await?;
+            let filter = Filter::new()
+                .author(public_key)
+                .kind(Kind::Custom(4455))
+                .limit(1);
 
-            client.send_event(&event).await?;
+            match client.database().query(filter).await?.first_owned() {
+                Some(event) => {
+                    // Found encryption keys shared by other devices
+                    if let Some(target) = event
+                        .tags
+                        .find(TagKind::custom("P"))
+                        .and_then(|tag| tag.content())
+                        .and_then(|content| PublicKey::parse(content).ok())
+                        .as_ref()
+                    {
+                        let payload = event.content.as_str();
+                        let decrypted = client_keys.nip44_decrypt(target, payload).await?;
 
-            Ok(())
+                        let secret = SecretKey::from_hex(&decrypted)?;
+                        let keys = Keys::new(secret);
+
+                        return Ok(Some(keys));
+                    } else {
+                        return Err(anyhow!("Invalid event"));
+                    }
+                }
+                None => {
+                    // Construct encryption keys request event
+                    let event = EventBuilder::new(Kind::Custom(4454), "")
+                        .tags(vec![Tag::client(APP_NAME), Tag::public_key(client_pubkey)])
+                        .sign(&signer)
+                        .await?;
+
+                    // Send a request for encryption keys from other devices
+                    client.send_event(&event).await?;
+                }
+            }
+
+            Ok(None)
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            match get_local_response.await {
-                Ok(Some(keys)) => {
-                    this.update(cx, |_this, cx| {
-                        Registry::global(cx).update(cx, |this, cx| {
+            let result = task.await;
+
+            this.update_in(cx, |_this, window, cx| {
+                match result {
+                    Ok(Some(keys)) => {
+                        registry.update(cx, |this, cx| {
                             this.set_encryption_keys(keys, cx);
                         });
-                    })
-                    .ok();
-                }
-                _ => {
-                    send_new_request.await.ok();
-                }
-            };
+                    }
+                    Ok(None) => {
+                        window.push_notification(t!("encryption.request"), cx);
+                    }
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
         })
         .detach();
     }
