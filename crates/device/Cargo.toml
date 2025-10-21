@@ -8,6 +8,7 @@ publish.workspace = true
 common = { path = "../common" }
 states = { path = "../states" }
 ui = { path = "../ui" }
+theme = { path = "../theme" }
 settings = { path = "../settings" }
 
 gpui.workspace = true

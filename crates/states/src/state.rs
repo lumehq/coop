@@ -41,6 +41,29 @@ pub enum UnwrappingStatus {
     Complete,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Announcement {
+    client: String,
+    public_key: PublicKey,
+}
+
+impl Announcement {
+    pub fn new(client_name: String, public_key: PublicKey) -> Self {
+        Self {
+            client: client_name,
+            public_key,
+        }
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.public_key
+    }
+
+    pub fn client(&self) -> &str {
+        self.client.as_str()
+    }
+}
+
 /// Signals sent through the global event channel to notify UI
 #[derive(Debug)]
 pub enum SignalKind {
@@ -52,7 +75,7 @@ pub enum SignalKind {
     /// NIP-4e
     ///
     /// A signal to notify UI that the user has set encryption keys
-    EncryptionSet((PublicKey, String)),
+    EncryptionSet(Announcement),
 
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
@@ -364,11 +387,9 @@ impl AppState {
                         // Encryption Keys announcement event
                         Kind::Custom(10044) => {
                             if let Ok(true) = self.is_self_authored(&event).await {
-                                if let Ok((public_key, client_name)) =
-                                    self.extract_announcement(&event)
-                                {
+                                if let Ok(announcement) = self.extract_announcement(&event) {
                                     self.signal
-                                        .send(SignalKind::EncryptionSet((public_key, client_name)))
+                                        .send(SignalKind::EncryptionSet(announcement))
                                         .await;
                                 }
                             }
@@ -813,7 +834,7 @@ impl AppState {
         }
     }
 
-    fn extract_announcement(&self, event: &Event) -> Result<(PublicKey, String), Error> {
+    fn extract_announcement(&self, event: &Event) -> Result<Announcement, Error> {
         let public_key = event
             .tags
             .find(TagKind::custom("n"))
@@ -828,6 +849,6 @@ impl AppState {
             .map(|c| c.to_string())
             .context("Cannot parse client name from the event's tags")?;
 
-        Ok((public_key, client_name))
+        Ok(Announcement::new(client_name, public_key))
     }
 }

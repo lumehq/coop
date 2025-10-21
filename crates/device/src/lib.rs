@@ -2,15 +2,17 @@ use std::sync::{Arc, LazyLock};
 
 use anyhow::{anyhow, Error};
 use gpui::{
-    App, AppContext, AsyncWindowContext, Context, Entity, Global, Task, WeakEntity, Window,
+    App, AppContext, AsyncWindowContext, Context, Entity, Global, ParentElement, SharedString,
+    Styled, Task, WeakEntity, Window,
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
 use states::constants::APP_NAME;
-use states::paths::config_dir;
-use states::state::SignalKind;
-use ui::ContextModal;
+use states::state::{Announcement, SignalKind};
+use theme::ActiveTheme;
+use ui::modal::ModalButtonProps;
+use ui::{h_flex, v_flex, ContextModal};
 
 use crate::keystore::{FileProvider, KeyItem, KeyStore, KeyringProvider};
 
@@ -125,8 +127,8 @@ impl Device {
                     SignalKind::EncryptionNotSet => {
                         this.new_encryption(window, cx);
                     }
-                    SignalKind::EncryptionSet((n, client_name)) => {
-                        this.reinit_encryption(n, client_name, window, cx);
+                    SignalKind::EncryptionSet(announcement) => {
+                        this.load_encryption(announcement, window, cx);
                     }
                     _ => {}
                 };
@@ -145,124 +147,107 @@ impl Device {
         self.keystore.name() == "file"
     }
 
-    /// Load the dedicated keys for the current device (client)
-    pub fn load_client_keys(&mut self, cx: &mut Context<Self>) {
-        let keystore = self.keystore();
-        let url = KeyItem::Client;
+    /// Encrypt and store a key in the local database.
+    pub fn set_local_key(&self, kind: KeyItem, value: String, cx: &App) -> Task<Result<(), Error>> {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
 
-        cx.spawn(async move |this, cx| {
-            let result = keystore.read_credentials(&url.to_string(), cx).await;
+            // Encrypt the value
+            let content = signer.nip44_encrypt(&public_key, value.as_ref()).await?;
 
-            this.update(cx, |this, cx| {
-                match result {
-                    Ok(Some((_, secret))) => {
-                        let secret = SecretKey::from_slice(&secret).unwrap();
-                        let keys = Keys::new(secret);
+            // Construct the application data event
+            let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+                .tag(Tag::identifier(kind))
+                .build(public_key)
+                .sign(&Keys::generate())
+                .await?;
 
-                        this.set_client_keys(keys, cx);
-                    }
-                    Ok(None) => {
-                        if first_run() {
-                            this.set_client_keys(Keys::generate(), cx);
-                        } else {
-                            this.client_keys.update(cx, |this, cx| {
-                                *this = None;
-                                cx.notify();
-                            });
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load client keys: {e}");
+            // Save the event to the database
+            client.database().save_event(&event).await?;
 
-                        this.client_keys.update(cx, |this, cx| {
-                            *this = None;
-                            cx.notify();
-                        });
-                    }
-                };
-            })
-            .ok();
+            Ok(())
         })
-        .detach();
+    }
+
+    /// Get and decrypt a key from the local database.
+    pub fn load_local_key(&self, kind: KeyItem, cx: &App) -> Task<Result<Keys, Error>> {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifier(kind)
+                .limit(1);
+
+            if let Some(event) = client.database().query(filter).await?.first() {
+                let content = signer.nip44_decrypt(&public_key, &event.content).await?;
+                let secret = SecretKey::parse(&content)?;
+                let keys = Keys::new(secret);
+
+                Ok(keys)
+            } else {
+                Err(anyhow!("Not found"))
+            }
+        })
     }
 
     /// Set the client keys
     pub fn set_client_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
-        let keystore = self.keystore();
-        let url = KeyItem::Client;
-        let username = keys.public_key().to_hex();
-        let password = keys.secret_key().to_secret_bytes();
-
-        // Update the client keys
         self.client_keys.update(cx, |this, cx| {
             *this = Some(Arc::new(keys));
             cx.notify();
         });
-
-        // Write the client keys to the keystore
-        cx.spawn(async move |_this, cx| {
-            if let Err(e) = keystore
-                .write_credentials(&url.to_string(), &username, &password, cx)
-                .await
-            {
-                log::error!("Keystore error: {e}")
-            }
-        })
-        .detach();
     }
 
     /// Set the encryption keys
-    pub fn set_encryption_keys(&mut self, keys: Keys, window: &mut Window, cx: &mut Context<Self>) {
-        let keystore = self.keystore();
-        let url = KeyItem::Encryption;
-        let username = keys.public_key().to_hex();
-        let password = keys.secret_key().to_secret_bytes();
-
-        // Update the client keys
+    pub fn set_encryption_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         self.encryption_keys.update(cx, |this, cx| {
             *this = Some(Arc::new(keys));
             cx.notify();
         });
+    }
 
-        // Write the client keys to the keystore
-        cx.spawn_in(window, async move |this, cx| {
-            if let Err(e) = keystore
-                .write_credentials(&url.to_string(), &username, &password, cx)
-                .await
-            {
-                log::error!("Keystore error: {e}")
-            } else {
-                this.update_in(cx, |_, window, cx| {
-                    window.push_notification("Encryption keys have been set successfully", cx);
-                })
-                .ok();
-            };
+    /// Load the dedicated keys for the current device (client)
+    pub fn load_client_keys(&mut self, cx: &mut Context<Self>) {
+        let task = self.load_local_key(KeyItem::Client, cx);
+
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+
+            this.update(cx, |this, cx| {
+                match result {
+                    Ok(keys) => {
+                        this.set_client_keys(keys, cx);
+                    }
+                    Err(_) => {
+                        this.set_client_keys(Keys::generate(), cx);
+                    }
+                };
+            })
+            .ok();
         })
         .detach();
     }
 
     fn new_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let keys = Keys::generate();
-        let username = keys.public_key().to_hex();
-        let password = keys.secret_key().to_secret_bytes();
-
-        let device = Device::global(cx);
-        let keystore = device.read(cx).keystore();
-        let url = KeyItem::Encryption;
+        let secret = keys.secret_key().to_secret_hex();
+        let task = self.set_local_key(KeyItem::Encryption, secret, cx);
 
         cx.spawn_in(window, async move |this, cx| {
-            let result = keystore
-                .write_credentials(&url.to_string(), &username, &password, cx)
-                .await;
+            let result = task.await;
 
-            this.update_in(cx, |_this, window, cx| {
+            this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(_) => {
-                        device.update(cx, |this, cx| {
-                            this.set_encryption_keys(keys, window, cx);
-                        });
+                        this.set_encryption_keys(keys, cx);
                     }
                     Err(e) => {
+                        // TODO: handle error
                         window.push_notification(e.to_string(), cx);
                     }
                 };
@@ -272,41 +257,23 @@ impl Device {
         .detach();
     }
 
-    fn reinit_encryption(
-        &mut self,
-        n: PublicKey,
-        client_name: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let device = Device::global(cx);
-        let keystore = device.read(cx).keystore();
-        let url = KeyItem::Encryption;
+    fn load_encryption(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
+        let task = self.load_local_key(KeyItem::Encryption, cx);
 
         cx.spawn_in(window, async move |this, cx| {
-            let result = keystore.read_credentials(&url.to_string(), cx).await;
+            let result = task.await;
 
             this.update_in(cx, |this, window, cx| {
                 match result {
-                    Ok(Some((username, password))) => {
-                        let public_key = PublicKey::from_hex(&username).unwrap();
-
-                        if n == public_key {
-                            let secret = SecretKey::from_slice(&password).unwrap();
-                            let keys = Keys::new(secret);
-
-                            device.update(cx, |this, cx| {
-                                this.set_encryption_keys(keys, window, cx);
-                            });
+                    Ok(keys) => {
+                        if ann.public_key() == keys.public_key() {
+                            this.set_encryption_keys(keys, cx);
                         } else {
-                            this.request_encryption(client_name, window, cx);
+                            this.request_encryption(ann, window, cx);
                         }
                     }
-                    Ok(None) => {
-                        this.render_request_encryption(client_name, window, cx);
-                    }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
+                    Err(_) => {
+                        this.request_encryption(ann, window, cx);
                     }
                 };
             })
@@ -317,14 +284,12 @@ impl Device {
 
     fn request_encryption(
         &mut self,
-        _client_name: String,
+        ann: Announcement,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let device = Device::global(cx);
-
         // Client Keys must be known at this point
-        let Some(client_keys) = device.read(cx).client_keys.read(cx).clone() else {
+        let Some(client_keys) = self.client_keys.read(cx).clone() else {
             window.push_notification("Client Keys is required", cx);
             return;
         };
@@ -336,14 +301,15 @@ impl Device {
             let client_pubkey = client_keys.get_public_key().await?;
 
             let filter = Filter::new()
-                .author(public_key)
                 .kind(Kind::Custom(4455))
+                .author(public_key)
+                .pubkey(client_pubkey)
                 .limit(1);
 
             match client.database().query(filter).await?.first_owned() {
                 Some(event) => {
                     // Found encryption keys shared by other devices
-                    if let Some(target) = event
+                    if let Some(root_device) = event
                         .tags
                         .find(TagKind::custom("P"))
                         .and_then(|tag| tag.content())
@@ -351,7 +317,7 @@ impl Device {
                         .as_ref()
                     {
                         let payload = event.content.as_str();
-                        let decrypted = client_keys.nip44_decrypt(target, payload).await?;
+                        let decrypted = client_keys.nip44_decrypt(root_device, payload).await?;
 
                         let secret = SecretKey::from_hex(&decrypted)?;
                         let keys = Keys::new(secret);
@@ -382,12 +348,10 @@ impl Device {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(Some(keys)) => {
-                        device.update(cx, |this, cx| {
-                            this.set_encryption_keys(keys, window, cx);
-                        });
+                        this.set_encryption_keys(keys, cx);
                     }
                     Ok(None) => {
-                        this.render_wait_for_approval(window, cx);
+                        this.render_wait_for_approval(ann, window, cx);
                     }
                     Err(e) => {
                         window.push_notification(e.to_string(), cx);
@@ -399,21 +363,43 @@ impl Device {
         .detach();
     }
 
-    fn render_request_encryption(
-        &mut self,
-        _client_name: String,
-        _window: &mut Window,
-        _cx: &mut App,
-    ) {
-        //
-    }
+    fn render_wait_for_approval(&mut self, ann: Announcement, window: &mut Window, cx: &mut App) {
+        let client_name = SharedString::from(ann.client().to_string());
+        let Ok(public_key) = ann.public_key().to_bech32();
 
-    fn render_wait_for_approval(&mut self, _window: &mut Window, _cx: &mut App) {
-        //
+        window.open_modal(cx, move |this, _window, cx| {
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .alert()
+                .button_props(ModalButtonProps::default().ok_text("Hide"))
+                .title("Wait for Approval")
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .text_sm()
+                        .child("Please open the other client and approve the request.")
+                        .child("Encryption keys is stored in:")
+                        .child(
+                            v_flex()
+                                .justify_center()
+                                .items_center()
+                                .h_16()
+                                .w_full()
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().elevated_surface_background)
+                                .child(client_name.clone()),
+                        )
+                        .child(
+                            h_flex()
+                                .h_7()
+                                .w_full()
+                                .px_1p5()
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().elevated_surface_background)
+                                .child(SharedString::from(&public_key)),
+                        ),
+                )
+        });
     }
-}
-
-fn first_run() -> bool {
-    let flag = config_dir().join(".first_run");
-    !flag.exists() && std::fs::write(&flag, "").is_ok()
 }
