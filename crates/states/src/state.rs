@@ -43,16 +43,22 @@ pub enum UnwrappingStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Announcement {
+    id: EventId,
     client: String,
     public_key: PublicKey,
 }
 
 impl Announcement {
-    pub fn new(client_name: String, public_key: PublicKey) -> Self {
+    pub fn new(id: EventId, client_name: String, public_key: PublicKey) -> Self {
         Self {
+            id,
             client: client_name,
             public_key,
         }
+    }
+
+    pub fn id(&self) -> EventId {
+        self.id
     }
 
     pub fn public_key(&self) -> PublicKey {
@@ -61,6 +67,29 @@ impl Announcement {
 
     pub fn client(&self) -> &str {
         self.client.as_str()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Response {
+    payload: String,
+    public_key: PublicKey,
+}
+
+impl Response {
+    pub fn new(payload: String, public_key: PublicKey) -> Self {
+        Self {
+            payload,
+            public_key,
+        }
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.public_key
+    }
+
+    pub fn payload(&self) -> &str {
+        self.payload.as_str()
     }
 }
 
@@ -76,6 +105,16 @@ pub enum SignalKind {
     ///
     /// A signal to notify UI that the user has set encryption keys
     EncryptionSet(Announcement),
+
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has responded to an encryption request
+    EncryptionResponse(Response),
+
+    /// NIP-4e
+    ///
+    /// A signal to notify UI that the user has requested encryption keys from other devices
+    EncryptionRequest(Announcement),
 
     /// A signal to notify UI that the client's signer has been set
     SignerSet(PublicKey),
@@ -390,6 +429,26 @@ impl AppState {
                                 if let Ok(announcement) = self.extract_announcement(&event) {
                                     self.signal
                                         .send(SignalKind::EncryptionSet(announcement))
+                                        .await;
+                                }
+                            }
+                        }
+                        // Encryption Keys request event
+                        Kind::Custom(4454) => {
+                            if let Ok(true) = self.is_self_authored(&event).await {
+                                if let Ok(announcement) = self.extract_announcement(&event) {
+                                    self.signal
+                                        .send(SignalKind::EncryptionRequest(announcement))
+                                        .await;
+                                }
+                            }
+                        }
+                        // Encryption Keys response event
+                        Kind::Custom(4455) => {
+                            if let Ok(true) = self.is_self_authored(&event).await {
+                                if let Ok(response) = self.extract_response(&event) {
+                                    self.signal
+                                        .send(SignalKind::EncryptionResponse(response))
                                         .await;
                                 }
                             }
@@ -837,7 +896,8 @@ impl AppState {
     fn extract_announcement(&self, event: &Event) -> Result<Announcement, Error> {
         let public_key = event
             .tags
-            .find(TagKind::custom("n"))
+            .iter()
+            .find(|tag| tag.kind().as_str() == "n" || tag.kind().as_str() == "pubkey")
             .and_then(|tag| tag.content())
             .and_then(|c| PublicKey::parse(c).ok())
             .context("Cannot parse public key from the event's tags")?;
@@ -849,6 +909,18 @@ impl AppState {
             .map(|c| c.to_string())
             .context("Cannot parse client name from the event's tags")?;
 
-        Ok(Announcement::new(client_name, public_key))
+        Ok(Announcement::new(event.id, client_name, public_key))
+    }
+
+    fn extract_response(&self, event: &Event) -> Result<Response, Error> {
+        let payload = event.content.clone();
+        let root_device = event
+            .tags
+            .find(TagKind::custom("P"))
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        Ok(Response::new(payload, root_device))
     }
 }

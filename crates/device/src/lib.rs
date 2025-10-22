@@ -2,17 +2,19 @@ use std::sync::{Arc, LazyLock};
 
 use anyhow::{anyhow, Error};
 use gpui::{
-    App, AppContext, AsyncWindowContext, Context, Entity, Global, ParentElement, SharedString,
-    Styled, Task, WeakEntity, Window,
+    div, App, AppContext, AsyncWindowContext, Context, Entity, Global, IntoElement, ParentElement,
+    SharedString, Styled, Task, WeakEntity, Window,
 };
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
 use states::constants::APP_NAME;
-use states::state::{Announcement, SignalKind};
+use states::state::{Announcement, Response, SignalKind};
 use theme::ActiveTheme;
+use ui::button::{Button, ButtonVariants};
 use ui::modal::ModalButtonProps;
-use ui::{h_flex, v_flex, ContextModal};
+use ui::notification::Notification;
+use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
 
 use crate::keystore::{FileProvider, KeyItem, KeyStore, KeyringProvider};
 
@@ -129,6 +131,12 @@ impl Device {
                     }
                     SignalKind::EncryptionSet(announcement) => {
                         this.load_encryption(announcement, window, cx);
+                    }
+                    SignalKind::EncryptionResponse(response) => {
+                        this.receive_encryption(response, window, cx);
+                    }
+                    SignalKind::EncryptionRequest(announcement) => {
+                        this.render_request(announcement, window, cx);
                     }
                     _ => {}
                 };
@@ -330,12 +338,29 @@ impl Device {
                 None => {
                     // Construct encryption keys request event
                     let event = EventBuilder::new(Kind::Custom(4454), "")
-                        .tags(vec![Tag::client(APP_NAME), Tag::public_key(client_pubkey)])
+                        .tags(vec![
+                            Tag::client(APP_NAME),
+                            Tag::custom(TagKind::custom("pubkey"), vec![client_pubkey]),
+                        ])
                         .sign(&signer)
                         .await?;
 
                     // Send a request for encryption keys from other devices
                     client.send_event(&event).await?;
+
+                    // Create a unique ID to control the subscription later
+                    let subscription_id = SubscriptionId::new("request");
+
+                    let filter = Filter::new()
+                        .kind(Kind::Custom(4455))
+                        .author(public_key)
+                        .pubkey(client_pubkey)
+                        .since(Timestamp::now());
+
+                    // Subscribe to the approval response event
+                    client
+                        .subscribe_with_id(subscription_id, filter, None)
+                        .await?;
                 }
             }
 
@@ -363,9 +388,129 @@ impl Device {
         .detach();
     }
 
+    fn response_encryption(
+        &mut self,
+        target: PublicKey,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Client Keys must be known at this point
+        let Some(client_keys) = self.client_keys.read(cx).clone() else {
+            window.push_notification("Client Keys is required", cx);
+            return;
+        };
+
+        // Get the encryption keys
+        let get_encryption = self.load_local_key(KeyItem::Encryption, cx);
+
+        // Send a response to the request
+        let response: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = app_state().client();
+            let client_pubkey = client_keys.get_public_key().await?;
+            let encryption = get_encryption.await?;
+
+            // Encrypt the encryption keys with the client's signer
+            let payload = client_keys
+                .nip44_encrypt(&target, &encryption.secret_key().to_secret_hex())
+                .await?;
+
+            // Construct the response event
+            //
+            // P tag: the current client's public key
+            // p tag: the requester's public key
+            let event = EventBuilder::new(Kind::Custom(4455), payload)
+                .tags(vec![
+                    Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
+                    Tag::public_key(target),
+                ])
+                .sign(&client_keys)
+                .await?;
+
+            // Get the current user's signer and public key
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            // Get the current user's relay list
+            let urls: Vec<RelayUrl> = client
+                .database()
+                .relay_list(public_key)
+                .await?
+                .into_iter()
+                .filter_map(|(url, metadata)| {
+                    if metadata.is_none() || metadata == Some(RelayMetadata::Read) {
+                        Some(url)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Send the response event to the user's relay list
+            client.send_event_to(urls, &event).await?;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = response.await;
+
+            this.update_in(cx, |_this, window, cx| {
+                match result {
+                    Ok(_) => {
+                        window.clear_notifications(cx);
+                    }
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn receive_encryption(&mut self, res: Response, window: &mut Window, cx: &mut Context<Self>) {
+        // Client Keys must be known at this point
+        let Some(client_keys) = self.client_keys.read(cx).clone() else {
+            window.push_notification("Client Keys is required", cx);
+            return;
+        };
+
+        let task: Task<Result<Keys, Error>> = cx.background_spawn(async move {
+            let public_key = res.public_key();
+            let payload = res.payload();
+
+            // Decrypt the payload using the client keys
+            let decrypted = client_keys.nip44_decrypt(&public_key, payload).await?;
+
+            // Construct the newly received encryption keys
+            let secret = SecretKey::parse(&decrypted)?;
+            let keys = Keys::new(secret);
+
+            Ok(keys)
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(keys) => {
+                        this.set_encryption_keys(keys, cx);
+                    }
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn render_wait_for_approval(&mut self, ann: Announcement, window: &mut Window, cx: &mut App) {
         let client_name = SharedString::from(ann.client().to_string());
-        let Ok(public_key) = ann.public_key().to_bech32();
+        let public_key = ann.public_key().to_bech32().unwrap();
 
         window.open_modal(cx, move |this, _window, cx| {
             this.overlay_closable(false)
@@ -378,8 +523,7 @@ impl Device {
                     v_flex()
                         .gap_2()
                         .text_sm()
-                        .child("Please open the other client and approve the request.")
-                        .child("Encryption keys is stored in:")
+                        .child("Encryption Keys is currently handled by:")
                         .child(
                             v_flex()
                                 .justify_center()
@@ -388,6 +532,7 @@ impl Device {
                                 .w_full()
                                 .rounded(cx.theme().radius)
                                 .bg(cx.theme().elevated_surface_background)
+                                .font_semibold()
                                 .child(client_name.clone()),
                         )
                         .child(
@@ -398,8 +543,61 @@ impl Device {
                                 .rounded(cx.theme().radius)
                                 .bg(cx.theme().elevated_surface_background)
                                 .child(SharedString::from(&public_key)),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child("Please open the other client and approve the request."),
                         ),
                 )
         });
+    }
+
+    fn render_request(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
+        let client_name = SharedString::from(ann.client().to_string());
+        let target = ann.public_key();
+        let view = cx.entity().downgrade();
+
+        let note = Notification::new()
+            .custom_id(SharedString::from(ann.id().to_hex()))
+            .autohide(false)
+            .icon(IconName::Info)
+            .title("Encryption Keys Request")
+            .content(move |_window, cx| {
+                v_flex()
+                    .gap_2()
+                    .text_sm()
+                    .child("You've requested encryption keys from:")
+                    .child(
+                        v_flex()
+                            .py_1()
+                            .px_1p5()
+                            .rounded_sm()
+                            .text_xs()
+                            .bg(cx.theme().warning_background)
+                            .text_color(cx.theme().warning_foreground)
+                            .child(client_name.clone()),
+                    )
+                    .into_any_element()
+            })
+            .action(move |_window, _cx| {
+                let view = view.clone();
+
+                Button::new("approve")
+                    .label("Approve")
+                    .small()
+                    .primary()
+                    .loading(false)
+                    .disabled(false)
+                    .on_click(move |_ev, window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.response_encryption(target, window, cx);
+                        })
+                        .ok();
+                    })
+            });
+
+        window.push_notification(note, cx);
     }
 }
