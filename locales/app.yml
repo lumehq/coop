@@ -59,6 +59,8 @@ common:
     en: "Use default"
   configure:
     en: "Configure"
+  hide:
+    en: "Hide"
 
 keyring_disable:
   label:
@@ -73,6 +75,20 @@ keyring_disable:
     en: "If you want to store your credentials in the Keyring, please enable Keyring and allow Coop to access it."
   body_5:
     en: "By clicking continue, you agree to store your credentials as plain text."
+
+pending_encryption:
+  label:
+    en: "Wait for Approval"
+  body_1:
+    en: "Encryption Keys is currently handled by:"
+  body_2:
+    en: "Please open the other client and approve the request."
+
+request_encryption:
+  label:
+    en: "Encryption Keys Request"
+  body:
+    en: "You've requested for the encryption keys from:"
 
 auto_update:
   updating:

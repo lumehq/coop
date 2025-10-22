@@ -5,6 +5,7 @@ use gpui::{
     div, App, AppContext, AsyncWindowContext, Context, Entity, Global, IntoElement, ParentElement,
     SharedString, Styled, Task, WeakEntity, Window,
 };
+use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
@@ -19,6 +20,8 @@ use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt
 use crate::keystore::{FileProvider, KeyItem, KeyStore, KeyringProvider};
 
 pub mod keystore;
+
+i18n::init!();
 
 static DISABLE_KEYRING: LazyLock<bool> =
     LazyLock::new(|| std::env::var("DISABLE_KEYRING").is_ok_and(|value| !value.is_empty()));
@@ -517,13 +520,13 @@ impl Device {
                 .show_close(false)
                 .keyboard(false)
                 .alert()
-                .button_props(ModalButtonProps::default().ok_text("Hide"))
-                .title("Wait for Approval")
+                .button_props(ModalButtonProps::default().ok_text(t!("common.hide")))
+                .title(shared_t!("pending_encryption.label"))
                 .child(
                     v_flex()
                         .gap_2()
                         .text_sm()
-                        .child("Encryption Keys is currently handled by:")
+                        .child(shared_t!("pending_encryption.body_1"))
                         .child(
                             v_flex()
                                 .justify_center()
@@ -548,7 +551,7 @@ impl Device {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().text_muted)
-                                .child("Please open the other client and approve the request."),
+                                .child(shared_t!("pending_encryption.body_2")),
                         ),
                 )
         });
@@ -563,12 +566,12 @@ impl Device {
             .custom_id(SharedString::from(ann.id().to_hex()))
             .autohide(false)
             .icon(IconName::Info)
-            .title("Encryption Keys Request")
+            .title(shared_t!("request_encryption.label"))
             .content(move |_window, cx| {
                 v_flex()
                     .gap_2()
                     .text_sm()
-                    .child("You've requested encryption keys from:")
+                    .child(shared_t!("request_encryption.body"))
                     .child(
                         v_flex()
                             .py_1()
@@ -585,7 +588,7 @@ impl Device {
                 let view = view.clone();
 
                 Button::new("approve")
-                    .label("Approve")
+                    .label(t!("common.approve"))
                     .small()
                     .primary()
                     .loading(false)

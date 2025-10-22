@@ -395,20 +395,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-tar"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a42f905d4f623faf634bbd1e001e84e0efc24694afa64be9ad239bf6ca49e1f8"
-dependencies = [
- "async-std",
- "filetime",
- "libc",
- "pin-project",
- "redox_syscall 0.2.16",
- "xattr 0.2.3",
-]
-
-[[package]]
 name = "async-task"
 version = "4.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1157,7 +1143,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1597,7 +1583,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1612,10 +1598,12 @@ dependencies = [
  "common",
  "futures",
  "gpui",
+ "i18n",
  "itertools 0.13.0",
  "log",
  "nostr",
  "nostr-sdk",
+ "rust-i18n",
  "serde",
  "serde_json",
  "settings",
@@ -2129,7 +2117,7 @@ checksum = "b0299020c3ef3f60f526a4f64ab4a3d4ce116b1acbf24cdd22da0068e5d81dc3"
 dependencies = [
  "fontconfig-parser",
  "log",
- "memmap2 0.9.8",
+ "memmap2 0.9.9",
  "slotmap",
  "tinyvec",
  "ttf-parser 0.20.0",
@@ -2143,7 +2131,7 @@ checksum = "457e789b3d1202543297a350643cf459f836cade38934e7a4cf6a39e7cde2905"
 dependencies = [
  "fontconfig-parser",
  "log",
- "memmap2 0.9.8",
+ "memmap2 0.9.9",
  "slotmap",
  "tinyvec",
  "ttf-parser 0.25.1",
@@ -2515,8 +2503,8 @@ dependencies = [
 
 [[package]]
 name = "gpui"
-version = "0.2.1"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+version = "0.2.2"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2611,7 +2599,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2622,7 +2610,7 @@ dependencies = [
 [[package]]
 name = "gpui_tokio"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "gpui",
@@ -2851,12 +2839,11 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "async-compression",
  "async-fs",
- "async-tar",
  "bytes",
  "derive_more",
  "futures",
@@ -2870,13 +2857,14 @@ dependencies = [
  "tempfile",
  "url",
  "util",
+ "zed-async-tar",
  "zed-reqwest",
 ]
 
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -3670,7 +3658,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3699,9 +3687,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.9.8"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843a98750cd611cc2965a8213b53b43e715f13c37a9e096c6408e69990961db7"
+checksum = "744133e4a0e0a658e1374cf3bf8e415c4052a15a111acd372764c55b4177d490"
 dependencies = [
  "libc",
 ]
@@ -4503,7 +4491,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "perf"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "collections",
  "serde",
@@ -5119,7 +5107,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "derive_refineable",
 ]
@@ -5226,7 +5214,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5280,7 +5268,7 @@ dependencies = [
 [[package]]
 name = "rope"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "arrayvec",
  "log",
@@ -5747,7 +5735,7 @@ checksum = "0f7d95a54511e0c7be3f51e8867aa8cf35148d7b9445d44de2f943e2b206e749"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "serde",
@@ -6191,7 +6179,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "arrayvec",
  "log",
@@ -7102,9 +7090,9 @@ checksum = "ce61d488bcdc9bc8b5d1772c404828b17fc481c0a582b5581e95fb233aef503e"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.19"
+version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
+checksum = "462eeb75aeb73aea900253ce739c8e18a67423fadf006037cd3ff27e82748a06"
 
 [[package]]
 name = "unicode-linebreak"
@@ -7227,7 +7215,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7262,7 +7250,7 @@ dependencies = [
 [[package]]
 name = "util_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#267052f891a8c5f4c5ef9b8b70130983ed05589f"
+source = "git+https://github.com/zed-industries/zed#fd9c2e32f33599fd234c810ec27f9bd0b383cec0"
 dependencies = [
  "perf",
  "quote",
@@ -8422,7 +8410,7 @@ checksum = "8d66ca9352cbd4eecbbc40871d8a11b4ac8107cfc528a6e14d7c19c69d0e1ac9"
 dependencies = [
  "as-raw-xcb-connection",
  "libc",
- "memmap2 0.9.8",
+ "memmap2 0.9.9",
  "xkeysym",
 ]
 
@@ -8538,6 +8526,19 @@ dependencies = [
  "static_assertions",
  "winnow",
  "zvariant",
+]
+
+[[package]]
+name = "zed-async-tar"
+version = "0.5.0-zed"
+source = "git+https://github.com/zed-industries/async-tar?rev=a307f6bf3e4219c3a457bea0cab198b6d7c36e25#a307f6bf3e4219c3a457bea0cab198b6d7c36e25"
+dependencies = [
+ "async-std",
+ "filetime",
+ "libc",
+ "pin-project",
+ "redox_syscall 0.2.16",
+ "xattr 0.2.3",
 ]
 
 [[package]]
