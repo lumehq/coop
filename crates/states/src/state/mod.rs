@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Error};
@@ -9,7 +10,8 @@ use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
 use crate::constants::{
-    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT, SEARCH_RELAYS,
+    APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT,
+    SEARCH_RELAYS,
 };
 use crate::paths::config_dir;
 use crate::state::device::Device;
@@ -29,7 +31,7 @@ pub struct AppState {
     client: Client,
 
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    device: Device,
+    device: RwLock<Device>,
 
     /// Tracks activity related to Nostr events
     event_tracker: RwLock<EventTracker>,
@@ -74,7 +76,7 @@ impl AppState {
             });
 
         let client = ClientBuilder::default().database(lmdb).opts(opts).build();
-        let device = Device::default();
+        let device = RwLock::new(Device::default());
         let event_tracker = RwLock::new(EventTracker::default());
 
         let signal = Signal::default();
@@ -97,7 +99,7 @@ impl AppState {
     }
 
     /// Returns a reference to the device
-    pub fn device(&'static self) -> &'static Device {
+    pub fn device(&'static self) -> &'static RwLock<Device> {
         &self.device
     }
 
@@ -130,7 +132,10 @@ impl AppState {
                     // Get user's gossip relays
                     self.get_nip65(pk).await.ok();
 
-                    // Exit the current loop
+                    // Initialize client keys
+                    self.init_client_keys().await.ok();
+
+                    // Exit the loop
                     break;
                 }
             }
@@ -331,14 +336,14 @@ impl AppState {
                     event_id, message, ..
                 } => {
                     let msg = MachineReadablePrefix::parse(&message);
-                    let mut event_tracker = self.event_tracker.write().await;
+                    let mut tracker = self.event_tracker.write().await;
 
                     // Keep track of events sent by Coop
-                    event_tracker.sent_ids.insert(event_id);
+                    tracker.sent_ids.insert(event_id);
 
                     // Keep track of events that need to be resend after auth
                     if let Some(MachineReadablePrefix::AuthRequired) = msg {
-                        event_tracker.resend_queue.insert(event_id, relay_url);
+                        tracker.resend_queue.insert(event_id, relay_url);
                     }
                 }
                 _ => {}
@@ -553,7 +558,26 @@ impl AppState {
         Ok(())
     }
 
+    /// Initialize the client keys to communicate between clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn init_client_keys(&self) -> Result<(), Error> {
+        // Get the keys from the database or generate new ones
+        let keys = self
+            .get_keys("client")
+            .await
+            .unwrap_or_else(|_| Keys::generate());
+
+        // Initialize the client keys
+        let mut device = self.device.write().await;
+        device.client_keys = Some(Arc::new(keys));
+
+        Ok(())
+    }
+
     /// Get and verify encryption announcement for a given public key
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub async fn get_announcement(&self, public_key: PublicKey) -> Result<(), Error> {
         let timeout = Duration::from_secs(QUERY_TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -578,6 +602,205 @@ impl AppState {
             }
         })
         .detach();
+
+        Ok(())
+    }
+
+    /// User has not set up encryption keys before,
+    /// generate new keys and store them for future use.
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn init_encryption_keys(&self) -> Result<(), Error> {
+        let keys = Keys::generate();
+        let secret = keys.secret_key().to_secret_hex();
+
+        // Initialize the encryption keys
+        let mut device = self.device.write().await;
+        device.encryption_keys = Some(Arc::new(keys));
+
+        // Store the encryption keys for future use
+        self.set_keys("encryption", secret).await?;
+
+        Ok(())
+    }
+
+    /// User has previously set encryption keys, load them from storage
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn load_encryption_keys(&self, announcement: Announcement) -> Result<(), Error> {
+        let keys = self.get_keys("encryption").await?;
+
+        // Check if the encryption keys match the announcement
+        if announcement.public_key() == keys.public_key() {
+            let mut device = self.device.write().await;
+            device.encryption_keys = Some(Arc::new(keys));
+
+            return Ok(());
+        }
+
+        Err(anyhow!("Not found"))
+    }
+
+    /// Request encryption keys from other clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn request_encryption_keys(&self) -> Result<bool, Error> {
+        let mut wait_for_approval = false;
+        let device = self.device.read().await;
+
+        // Client Keys are always known at this point
+        let Some(client_keys) = device.client_keys.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let client_pubkey = client_keys.get_public_key().await?;
+
+        // Get the encryption keys response from the database first
+        let filter = Filter::new()
+            .kind(Kind::Custom(4455))
+            .author(public_key)
+            .pubkey(client_pubkey)
+            .limit(1);
+
+        match self.client.database().query(filter).await?.first_owned() {
+            // Found encryption keys that shared by other clients
+            Some(event) => {
+                let root_device = event
+                    .tags
+                    .find(TagKind::custom("P"))
+                    .and_then(|tag| tag.content())
+                    .and_then(|content| PublicKey::parse(content).ok())
+                    .context("Invalid event's tags")?;
+
+                let payload = event.content.as_str();
+                let decrypted = client_keys.nip44_decrypt(&root_device, payload).await?;
+
+                let secret = SecretKey::from_hex(&decrypted)?;
+                let keys = Keys::new(secret);
+
+                // No longer need to hold the reader for device
+                drop(device);
+
+                let mut device = self.device.write().await;
+                device.encryption_keys = Some(Arc::new(keys));
+            }
+            None => {
+                // Construct encryption keys request event
+                let event = EventBuilder::new(Kind::Custom(4454), "")
+                    .tags(vec![
+                        Tag::client(APP_NAME),
+                        Tag::custom(TagKind::custom("pubkey"), vec![client_pubkey]),
+                    ])
+                    .sign(&signer)
+                    .await?;
+
+                // Send a request for encryption keys from other devices
+                self.client.send_event(&event).await?;
+
+                // Create a unique ID to control the subscription later
+                let subscription_id = SubscriptionId::new("request");
+
+                let filter = Filter::new()
+                    .kind(Kind::Custom(4455))
+                    .author(public_key)
+                    .pubkey(client_pubkey)
+                    .since(Timestamp::now());
+
+                // Subscribe to the approval response event
+                self.client
+                    .subscribe_with_id(subscription_id, filter, None)
+                    .await?;
+
+                wait_for_approval = true;
+            }
+        }
+
+        Ok(wait_for_approval)
+    }
+
+    /// Receive the encryption keys from other clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn receive_encryption_keys(&self, res: Response) -> Result<(), Error> {
+        let device = self.device.read().await;
+
+        // Client Keys are always known at this point
+        let Some(client_keys) = device.client_keys.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let public_key = res.public_key();
+        let payload = res.payload();
+
+        // Decrypt the payload using the client keys
+        let decrypted = client_keys.nip44_decrypt(&public_key, payload).await?;
+        let secret = SecretKey::parse(&decrypted)?;
+        let keys = Keys::new(secret);
+
+        // No longer need to hold the reader for device
+        drop(device);
+
+        let mut device = self.device.write().await;
+        device.encryption_keys = Some(Arc::new(keys));
+
+        Ok(())
+    }
+
+    /// Response the encryption keys request from other clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn response_encryption_keys(&self, target: PublicKey) -> Result<(), Error> {
+        let device = self.device.read().await;
+
+        // Client Keys are always known at this point
+        let Some(client_keys) = device.client_keys.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let encryption = self.get_keys("encryption").await?;
+        let client_pubkey = client_keys.get_public_key().await?;
+
+        // Encrypt the encryption keys with the client's signer
+        let payload = client_keys
+            .nip44_encrypt(&target, &encryption.secret_key().to_secret_hex())
+            .await?;
+
+        // Construct the response event
+        //
+        // P tag: the current client's public key
+        // p tag: the requester's public key
+        let event = EventBuilder::new(Kind::Custom(4455), payload)
+            .tags(vec![
+                Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
+                Tag::public_key(target),
+            ])
+            .sign(client_keys)
+            .await?;
+
+        // Get the current user's signer and public key
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        // Get the current user's relay list
+        let urls: Vec<RelayUrl> = self
+            .client
+            .database()
+            .relay_list(public_key)
+            .await?
+            .into_iter()
+            .filter_map(|(url, metadata)| {
+                if metadata.is_none() || metadata == Some(RelayMetadata::Read) {
+                    Some(url)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Send the response event to the user's relay list
+        self.client.send_event_to(urls, &event).await?;
 
         Ok(())
     }
@@ -708,7 +931,7 @@ impl AppState {
         // Try to unwrap with the device's encryption keys
         //
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-        if let Some(signer) = self.device.encryption_keys.as_ref() {
+        if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
             if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
                 let event = unwrapped.rumor.sign_with_keys(&Keys::generate())?;
                 self.set_rumor(gift_wrap.id, &event).await?;

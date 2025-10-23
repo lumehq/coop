@@ -90,6 +90,14 @@ request_encryption:
   body:
     en: "You've requested for the encryption keys from:"
 
+encryption:
+  notice:
+    en: "Encryption keys are being generated"
+  success:
+    en: "Encryption keys have been successfully set up"
+  reinit:
+    en: "Encryption keys are being reinitialized"
+
 auto_update:
   updating:
     en: "Installing the new update..."

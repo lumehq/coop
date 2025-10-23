@@ -1,7 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use gpui::{App, AppContext, Context, Entity, Global, Task};
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 
 use crate::backend::{FileProvider, KeyBackend, KeyringProvider};
 

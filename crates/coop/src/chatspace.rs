@@ -22,7 +22,7 @@ use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::constants::{BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
-use states::state::{AuthRequest, SignalKind, UnwrappingStatus};
+use states::state::{Announcement, AuthRequest, Response, SignalKind, UnwrappingStatus};
 use states::{app_state, default_nip17_relays, default_nip65_relays};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
@@ -220,6 +220,18 @@ impl ChatSpace {
                 let settings = AppSettings::global(cx);
 
                 match signal {
+                    SignalKind::EncryptionNotSet => {
+                        this.init_encryption(window, cx);
+                    }
+                    SignalKind::EncryptionSet(announcement) => {
+                        this.load_encryption(announcement, window, cx);
+                    }
+                    SignalKind::EncryptionRequest(announcement) => {
+                        this.render_request(announcement, window, cx);
+                    }
+                    SignalKind::EncryptionResponse(response) => {
+                        this.receive_encryption(response, window, cx);
+                    }
                     SignalKind::SignerSet(public_key) => {
                         // Close all opened modals
                         window.close_all_modals(cx);
@@ -285,11 +297,93 @@ impl ChatSpace {
                     SignalKind::MessagingRelaysNotFound => {
                         this.set_required_dm_relays(cx);
                     }
-                    _ => {}
                 };
             })
             .ok();
         }
+    }
+
+    fn init_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let result = app_state().init_encryption_keys().await;
+
+            this.update_in(cx, |_, window, cx| {
+                match result {
+                    Ok(_) => {
+                        window.push_notification(t!("encryption.notice"), cx);
+                    }
+                    Err(e) => {
+                        // TODO: ask user to confirm re-running if failed
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn load_encryption(&self, ann: Announcement, window: &Window, cx: &Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let result = app_state().load_encryption_keys(ann.clone()).await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(_) => {
+                        window.push_notification(t!("encryption.reinit"), cx);
+                    }
+                    Err(_) => {
+                        this.request_encryption(ann, window, cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn request_encryption(&self, ann: Announcement, window: &Window, cx: &Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let result = app_state().request_encryption_keys().await;
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(wait_for_approval) => {
+                        if wait_for_approval {
+                            this.render_request_approval(ann, window, cx);
+                        } else {
+                            window.push_notification(t!("encryption.success"), cx);
+                        }
+                    }
+                    Err(e) => {
+                        // TODO: ask user to confirm re-running if failed
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn receive_encryption(&self, res: Response, window: &Window, cx: &Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let result = app_state().receive_encryption_keys(res).await;
+
+            this.update_in(cx, |_, window, cx| {
+                match result {
+                    Ok(_) => {
+                        window.push_notification(t!("encryption.success"), cx);
+                    }
+                    Err(e) => {
+                        // TODO: ask user to confirm re-running if failed
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
@@ -708,6 +802,97 @@ impl ChatSpace {
                                 .text_xs()
                                 .text_color(cx.theme().danger_foreground)
                                 .child(shared_t!("keyring_disable.body_5")),
+                        ),
+                )
+        });
+    }
+
+    fn render_request(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
+        let client_name = SharedString::from(ann.client().to_string());
+        let target = ann.public_key();
+
+        let note = Notification::new()
+            .custom_id(SharedString::from(ann.id().to_hex()))
+            .autohide(false)
+            .icon(IconName::Info)
+            .title(shared_t!("request_encryption.label"))
+            .content(move |_window, cx| {
+                v_flex()
+                    .gap_2()
+                    .text_sm()
+                    .child(shared_t!("request_encryption.body"))
+                    .child(
+                        v_flex()
+                            .py_1()
+                            .px_1p5()
+                            .rounded_sm()
+                            .text_xs()
+                            .bg(cx.theme().warning_background)
+                            .text_color(cx.theme().warning_foreground)
+                            .child(client_name.clone()),
+                    )
+                    .into_any_element()
+            })
+            .action(move |_window, _cx| {
+                Button::new("approve")
+                    .label(t!("common.approve"))
+                    .small()
+                    .primary()
+                    .loading(false)
+                    .disabled(false)
+                    .on_click(move |_ev, _window, cx| {
+                        cx.background_spawn(async move {
+                            let state = app_state();
+                            state.response_encryption_keys(target).await.ok();
+                        })
+                        .detach();
+                    })
+            });
+
+        window.push_notification(note, cx);
+    }
+
+    fn render_request_approval(&mut self, ann: Announcement, window: &mut Window, cx: &mut App) {
+        let client_name = SharedString::from(ann.client().to_string());
+        let public_key = ann.public_key().to_bech32().unwrap();
+
+        window.open_modal(cx, move |this, _window, cx| {
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .alert()
+                .button_props(ModalButtonProps::default().ok_text(t!("common.hide")))
+                .title(shared_t!("pending_encryption.label"))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .text_sm()
+                        .child(shared_t!("pending_encryption.body_1"))
+                        .child(
+                            v_flex()
+                                .justify_center()
+                                .items_center()
+                                .h_16()
+                                .w_full()
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().elevated_surface_background)
+                                .font_semibold()
+                                .child(client_name.clone()),
+                        )
+                        .child(
+                            h_flex()
+                                .h_7()
+                                .w_full()
+                                .px_1p5()
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().elevated_surface_background)
+                                .child(SharedString::from(&public_key)),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child(shared_t!("pending_encryption.body_2")),
                         ),
                 )
         });
