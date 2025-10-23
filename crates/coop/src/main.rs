@@ -86,10 +86,8 @@ fn main() {
                 // Initialize app registry
                 registry::init(cx);
 
-                // Initialize device
-                //
-                // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-                device::init(window, cx);
+                // Initialize backend for credentials storage
+                key_store::init(cx);
 
                 // Initialize settings
                 settings::init(cx);

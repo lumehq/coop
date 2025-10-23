@@ -1,81 +1,52 @@
 use std::sync::{Arc, LazyLock};
 
-use anyhow::{anyhow, Error};
-use gpui::{
-    div, App, AppContext, AsyncWindowContext, Context, Entity, Global, IntoElement, ParentElement,
-    SharedString, Styled, Task, WeakEntity, Window,
-};
-use i18n::{shared_t, t};
-use nostr_sdk::prelude::*;
-use smallvec::{smallvec, SmallVec};
-use states::app_state;
-use states::constants::APP_NAME;
-use states::state::{Announcement, Response, SignalKind};
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::modal::ModalButtonProps;
-use ui::notification::Notification;
-use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
+use gpui::{App, AppContext, Context, Entity, Global, Task};
+use smallvec::{SmallVec, smallvec};
 
-use crate::keystore::{FileProvider, KeyItem, KeyStore, KeyringProvider};
+use crate::backend::{FileProvider, KeyBackend, KeyringProvider};
 
-pub mod keystore;
-
-i18n::init!();
+pub mod backend;
 
 static DISABLE_KEYRING: LazyLock<bool> =
     LazyLock::new(|| std::env::var("DISABLE_KEYRING").is_ok_and(|value| !value.is_empty()));
 
-pub fn init(window: &mut Window, cx: &mut App) {
-    Device::set_global(cx.new(|cx| Device::new(window, cx)), cx);
+pub fn init(cx: &mut App) {
+    KeyStore::set_global(cx.new(KeyStore::new), cx);
 }
 
-struct GlobalDevice(Entity<Device>);
+struct GlobalKeyStore(Entity<KeyStore>);
 
-impl Global for GlobalDevice {}
+impl Global for GlobalKeyStore {}
 
-pub struct Device {
+pub struct KeyStore {
     /// Key Store for storing credentials
-    pub keystore: Arc<dyn KeyStore>,
+    pub backend: Arc<dyn KeyBackend>,
 
     /// Whether the keystore has been initialized
     pub initialized: bool,
 
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Client keys entity, used for communication between devices
-    pub client_keys: Entity<Option<Arc<dyn NostrSigner>>>,
-
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Encryption keys entity, used for encryption and decryption
-    pub encryption_keys: Entity<Option<Arc<dyn NostrSigner>>>,
-
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 2]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
-impl Device {
+impl KeyStore {
     /// Retrieve the global keys state
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalDevice>().0.clone()
+        cx.global::<GlobalKeyStore>().0.clone()
     }
 
     /// Set the global keys instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalDevice(state));
+        cx.set_global(GlobalKeyStore(state));
     }
 
     /// Create a new keys instance
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let client_keys = cx.new(|_| None);
-        let encryption_keys = cx.new(|_| None);
-
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         // Use the file system for keystore in development or when the user specifies it
         let use_file_keystore = cfg!(debug_assertions) || *DISABLE_KEYRING;
 
-        // Construct the keystore
-        let keystore: Arc<dyn KeyStore> = if use_file_keystore {
+        // Construct the key backend
+        let backend: Arc<dyn KeyBackend> = if use_file_keystore {
             Arc::new(FileProvider::default())
         } else {
             Arc::new(KeyringProvider)
@@ -97,7 +68,7 @@ impl Device {
                         // For Linux:
                         // The user has not installed secret service on their system
                         // Fall back to the file provider
-                        this.keystore = Arc::new(FileProvider::default());
+                        this.backend = Arc::new(FileProvider::default());
                     }
                     this.initialized = true;
                     cx.notify();
@@ -106,144 +77,24 @@ impl Device {
             }),
         );
 
-        tasks.push(
-            // Continuously handle signals from the application state
-            cx.spawn_in(window, async move |this, cx| {
-                Self::handle_signals(this, cx).await
-            }),
-        );
-
         Self {
-            client_keys,
-            encryption_keys,
-            keystore,
+            backend,
             initialized: false,
             _tasks: tasks,
         }
     }
 
-    /// Handle signals from the application state
-    async fn handle_signals(view: WeakEntity<Device>, cx: &mut AsyncWindowContext) {
-        let states = app_state();
-
-        while let Ok(signal) = states.signal().receiver().recv_async().await {
-            view.update_in(cx, |this, window, cx| {
-                match signal {
-                    SignalKind::EncryptionNotSet => {
-                        this.new_encryption(window, cx);
-                    }
-                    SignalKind::EncryptionSet(announcement) => {
-                        this.load_encryption(announcement, window, cx);
-                    }
-                    SignalKind::EncryptionResponse(response) => {
-                        this.receive_encryption(response, window, cx);
-                    }
-                    SignalKind::EncryptionRequest(announcement) => {
-                        this.render_request(announcement, window, cx);
-                    }
-                    _ => {}
-                };
-            })
-            .ok();
-        }
+    /// Returns the key backend.
+    pub fn backend(&self) -> Arc<dyn KeyBackend> {
+        Arc::clone(&self.backend)
     }
 
-    /// Returns the keystore.
-    pub fn keystore(&self) -> Arc<dyn KeyStore> {
-        Arc::clone(&self.keystore)
-    }
-
-    /// Returns true if the keystore is a file keystore.
+    /// Returns true if the keystore is a file key backend.
     pub fn is_using_file_keystore(&self) -> bool {
-        self.keystore.name() == "file"
+        self.backend.name() == "file"
     }
 
-    /// Encrypt and store a key in the local database.
-    pub fn set_local_key(&self, kind: KeyItem, value: String, cx: &App) -> Task<Result<(), Error>> {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            // Encrypt the value
-            let content = signer.nip44_encrypt(&public_key, value.as_ref()).await?;
-
-            // Construct the application data event
-            let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
-                .tag(Tag::identifier(kind))
-                .build(public_key)
-                .sign(&Keys::generate())
-                .await?;
-
-            // Save the event to the database
-            client.database().save_event(&event).await?;
-
-            Ok(())
-        })
-    }
-
-    /// Get and decrypt a key from the local database.
-    pub fn load_local_key(&self, kind: KeyItem, cx: &App) -> Task<Result<Keys, Error>> {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifier(kind)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first() {
-                let content = signer.nip44_decrypt(&public_key, &event.content).await?;
-                let secret = SecretKey::parse(&content)?;
-                let keys = Keys::new(secret);
-
-                Ok(keys)
-            } else {
-                Err(anyhow!("Not found"))
-            }
-        })
-    }
-
-    /// Set the client keys
-    pub fn set_client_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
-        self.client_keys.update(cx, |this, cx| {
-            *this = Some(Arc::new(keys));
-            cx.notify();
-        });
-    }
-
-    /// Set the encryption keys
-    pub fn set_encryption_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
-        self.encryption_keys.update(cx, |this, cx| {
-            *this = Some(Arc::new(keys));
-            cx.notify();
-        });
-    }
-
-    /// Load the dedicated keys for the current device (client)
-    pub fn load_client_keys(&mut self, cx: &mut Context<Self>) {
-        let task = self.load_local_key(KeyItem::Client, cx);
-
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-
-            this.update(cx, |this, cx| {
-                match result {
-                    Ok(keys) => {
-                        this.set_client_keys(keys, cx);
-                    }
-                    Err(_) => {
-                        this.set_client_keys(Keys::generate(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
+    /*
     fn new_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let keys = Keys::generate();
         let secret = keys.secret_key().to_secret_hex();
@@ -603,4 +454,5 @@ impl Device {
 
         window.push_notification(note, cx);
     }
+    */
 }

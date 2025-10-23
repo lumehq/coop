@@ -1,14 +1,14 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
-use device::keystore::KeyItem;
-use device::Device;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
     Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
@@ -174,7 +174,7 @@ impl Login {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keystore = Device::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_bytes();
         let mut clean_uri = uri.to_string();
@@ -263,7 +263,7 @@ impl Login {
     }
 
     pub fn login_with_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
-        let keystore = Device::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_hex().into_bytes();
 

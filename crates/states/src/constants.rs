@@ -32,6 +32,9 @@ pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 /// Default timeout (in seconds) for Nostr Connect (Bunker)
 pub const BUNKER_TIMEOUT: u64 = 30;
 
+/// Default timeout (in seconds) for fetching events
+pub const QUERY_TIMEOUT: u64 = 5;
+
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 100;
 

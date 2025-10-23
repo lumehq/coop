@@ -6,8 +6,6 @@ use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use common::display::RenderedProfile;
 use common::event::EventUtils;
-use device::keystore::KeyItem;
-use device::Device;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, relative, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem,
@@ -16,6 +14,8 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use itertools::Itertools;
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
@@ -84,7 +84,7 @@ pub struct ChatSpace {
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let registry = Registry::global(cx);
-        let device = Device::global(cx);
+        let keystore = KeyStore::global(cx);
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
@@ -102,9 +102,9 @@ impl ChatSpace {
 
         subscriptions.push(
             // Observe device changes
-            cx.observe_in(&device, window, move |this, state, window, cx| {
+            cx.observe_in(&keystore, window, move |this, state, window, cx| {
                 if state.read(cx).initialized {
-                    let keystore = state.read(cx).keystore();
+                    let backend = state.read(cx).backend();
 
                     if state.read(cx).initialized {
                         if state.read(cx).is_using_file_keystore() {
@@ -112,7 +112,7 @@ impl ChatSpace {
                         }
 
                         cx.spawn_in(window, async move |this, cx| {
-                            let result = keystore
+                            let result = backend
                                 .read_credentials(&KeyItem::User.to_string(), cx)
                                 .await;
 
@@ -217,7 +217,6 @@ impl ChatSpace {
         while let Ok(signal) = states.signal().receiver().recv_async().await {
             view.update_in(cx, |this, window, cx| {
                 let registry = Registry::global(cx);
-                let device = Device::global(cx);
                 let settings = AppSettings::global(cx);
 
                 match signal {
@@ -234,11 +233,6 @@ impl ChatSpace {
                         registry.update(cx, |this, cx| {
                             this.set_signer_pubkey(public_key, cx);
                             this.load_rooms(window, cx);
-                        });
-
-                        // Load the client keys
-                        device.update(cx, |this, cx| {
-                            this.load_client_keys(cx);
                         });
 
                         // Setup the default layout for current workspace

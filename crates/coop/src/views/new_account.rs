@@ -1,7 +1,5 @@
 use anyhow::{anyhow, Error};
 use common::nip96::nip96_upload;
-use device::keystore::KeyItem;
-use device::Device;
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
     EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
@@ -9,6 +7,8 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
@@ -106,7 +106,7 @@ impl NewAccount {
     }
 
     pub fn set_signer(&mut self, cx: &mut Context<Self>) {
-        let keystore = Device::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
 
         let keys = self.temp_keys.read(cx).clone();
         let username = keys.public_key().to_hex();
