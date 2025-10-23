@@ -30,9 +30,6 @@ pub struct AppState {
     /// A client to interact with Nostr
     client: Client,
 
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    device: RwLock<Device>,
-
     /// Tracks activity related to Nostr events
     event_tracker: RwLock<EventTracker>,
 
@@ -41,6 +38,9 @@ pub struct AppState {
 
     /// Ingester channel for processing public keys
     ingester: Ingester,
+
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub device: RwLock<Device>,
 
     /// The timestamp when the application was initialized.
     pub initialized_at: Timestamp,
@@ -635,6 +635,9 @@ impl AppState {
             let mut device = self.device.write().await;
             device.encryption_keys = Some(Arc::new(keys));
 
+            // Re-subscribe to gift wrap events
+            self.resubscribe_messages().await.ok();
+
             return Ok(());
         }
 
@@ -744,6 +747,9 @@ impl AppState {
 
         let mut device = self.device.write().await;
         device.encryption_keys = Some(Arc::new(keys));
+
+        // Re-subscribe to gift wrap events
+        self.resubscribe_messages().await.ok();
 
         Ok(())
     }
@@ -875,6 +881,52 @@ impl AppState {
         }
 
         // Subscribe to filters to user's messaging relays
+        self.client
+            .subscribe_with_id_to(urls, id, filter, None)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Gets messaging relays for public key
+    pub async fn messaging_relays(&self, public_key: PublicKey) -> Vec<RelayUrl> {
+        let mut relay_urls = vec![];
+
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
+
+        if let Ok(events) = self.client.database().query(filter).await {
+            if let Some(event) = events.first_owned() {
+                let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
+
+                // Connect to relays
+                for url in urls.iter() {
+                    self.client.add_relay(url).await.ok();
+                    self.client.connect_relay(url).await.ok();
+                }
+
+                relay_urls.extend(urls.into_iter().take(3));
+            }
+        }
+
+        relay_urls
+    }
+
+    /// Re-subscribes to gift wrap events
+    pub async fn resubscribe_messages(&self) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let urls = self.messaging_relays(public_key).await;
+
+        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+        let id = SubscriptionId::new("inbox");
+
+        // Unsubscribe the previous subscription
+        self.client.unsubscribe(&id).await;
+
+        // Subscribe to gift wrap events
         self.client
             .subscribe_with_id_to(urls, id, filter, None)
             .await?;

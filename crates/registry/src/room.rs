@@ -7,12 +7,31 @@ use anyhow::{anyhow, Error};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use states::app_state;
 use states::constants::SEND_RETRY;
 
 use crate::Registry;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum SignerKind {
+    Encryption,
+    User,
+    #[default]
+    Auto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct SendOptions {
+    pub backup: bool,
+    pub signer_kind: SignerKind,
+}
+
+impl SendOptions {
+    pub fn backup(&self) -> bool {
+        self.backup
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SendReport {
@@ -476,7 +495,7 @@ impl Room {
     pub fn send_message(
         &self,
         rumor: UnsignedEvent,
-        backup: bool,
+        opts: SendOptions,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
         let mut members = self.members.clone();
@@ -484,19 +503,32 @@ impl Room {
         cx.background_spawn(async move {
             let states = app_state();
             let client = states.client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+            let device = states.device.read().await;
+
+            let user_signer = client.signer().await?;
+            let public_key = user_signer.get_public_key().await?;
 
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
             members.retain(|&pk| pk != public_key);
 
+            // Determine the signer will be used based on the provided options
+            let signer = match opts.signer_kind {
+                SignerKind::Encryption => device
+                    .encryption_keys
+                    .clone()
+                    .ok_or_else(|| anyhow!("No encryption keys found"))?,
+                SignerKind::User => user_signer,
+                SignerKind::Auto => device.encryption_keys.clone().unwrap_or(user_signer),
+            };
+
+            // Collect the send reports
             let mut reports: Vec<SendReport> = vec![];
 
             for receiver in members.into_iter() {
                 let rumor = rumor.clone();
                 let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
-                let urls = Self::messaging_relays(receiver).await;
+                let urls = states.messaging_relays(receiver).await;
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -547,8 +579,8 @@ impl Room {
             let event = EventBuilder::gift_wrap(&signer, &public_key, rumor, vec![]).await?;
 
             // Only send a backup message to current user if sent successfully to others
-            if reports.iter().all(|r| r.is_sent_success()) && backup {
-                let urls = Self::messaging_relays(public_key).await;
+            if reports.iter().all(|r| r.is_sent_success()) && opts.backup() {
+                let urls = states.messaging_relays(public_key).await;
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -579,7 +611,8 @@ impl Room {
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
         cx.background_spawn(async move {
-            let client = app_state().client();
+            let states = app_state();
+            let client = states.client();
             let mut resend_reports = vec![];
 
             for report in reports.into_iter() {
@@ -608,7 +641,7 @@ impl Room {
 
                 // Process the on hold event if it exists
                 if let Some(event) = report.on_hold {
-                    let urls = Self::messaging_relays(receiver).await;
+                    let urls = states.messaging_relays(receiver).await;
 
                     // Check if there are any relays to send the event to
                     if urls.is_empty() {
@@ -629,32 +662,5 @@ impl Room {
 
             Ok(resend_reports)
         })
-    }
-
-    /// Gets messaging relays for public key
-    async fn messaging_relays(public_key: PublicKey) -> Vec<RelayUrl> {
-        let client = app_state().client();
-        let mut relay_urls = vec![];
-
-        let filter = Filter::new()
-            .kind(Kind::InboxRelays)
-            .author(public_key)
-            .limit(1);
-
-        if let Ok(events) = client.database().query(filter).await {
-            if let Some(event) = events.first_owned() {
-                let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
-
-                // Connect to relays
-                for url in urls.iter() {
-                    client.add_relay(url).await.ok();
-                    client.connect_relay(url).await.ok();
-                }
-
-                relay_urls.extend(urls.into_iter().take(3).unique());
-            }
-        }
-
-        relay_urls
     }
 }

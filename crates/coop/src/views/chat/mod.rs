@@ -17,7 +17,7 @@ use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::{Message, RenderedMessage};
-use registry::room::{Room, RoomKind, RoomSignal, SendReport};
+use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
@@ -303,9 +303,6 @@ impl Chat {
             this.set_value("", window, cx);
         });
 
-        // Get the backup setting
-        let backup = AppSettings::get_backup_messages(cx);
-
         // Get replies_to if it's present
         let replies: Vec<EventId> = self.replies_to.read(cx).iter().copied().collect();
 
@@ -317,7 +314,8 @@ impl Chat {
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let send_message = room.send_message(rumor.clone(), backup, cx);
+        let opts = SendOptions::default();
+        let send_message = room.send_message(rumor.clone(), opts, cx);
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
