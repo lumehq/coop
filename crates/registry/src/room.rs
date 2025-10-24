@@ -703,3 +703,9 @@ impl Room {
         relay_urls
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+}
+
