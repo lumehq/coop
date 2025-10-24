@@ -91,11 +91,11 @@ impl Chat {
                 .clean_on_escape()
         });
 
-        let members = room.read(cx).members();
-        let members_clone = members.clone();
         let messages = BTreeSet::from([Message::system()]);
-
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
+
+        let connect = room.read(cx).connect(cx);
+        let get_messages = room.read(cx).get_messages(cx);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -103,8 +103,7 @@ impl Chat {
         tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
-                let states = app_state();
-                let result = states.load_messages(&members).await;
+                let result = get_messages.await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {
@@ -123,9 +122,7 @@ impl Chat {
         tasks.push(
             // Get messaging relays and encryption keys announcement for all members
             cx.background_spawn(async move {
-                let states = app_state();
-
-                if let Err(e) = states.init_room(&members_clone).await {
+                if let Err(e) = connect.await {
                     log::error!("Failed to initialize room: {e}");
                 }
             }),
@@ -205,13 +202,12 @@ impl Chat {
 
     /// Load all messages belonging to this room
     fn load_messages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let members = self.room.read(cx).members();
+        let get_messages = self.room.read(cx).get_messages(cx);
 
         self._tasks.push(
             // Run the task in the background
             cx.spawn_in(window, async move |this, cx| {
-                let states = app_state();
-                let result = states.load_messages(&members).await;
+                let result = get_messages.await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {

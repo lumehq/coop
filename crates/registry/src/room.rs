@@ -352,6 +352,100 @@ impl Room {
         cx.emit(RoomSignal::Refresh);
     }
 
+    /// Get messaging relays and encryption keys announcement for each member
+    pub fn connect(&self, cx: &App) -> Task<Result<(), Error>> {
+        let members = self.members();
+
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+            for member in members.into_iter() {
+                if member == public_key {
+                    continue;
+                };
+
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(member)
+                    .limit(1);
+
+                // Subscribe to get members messaging relays
+                client.subscribe(filter, Some(opts)).await?;
+
+                let filter = Filter::new()
+                    .kind(Kind::Custom(10044))
+                    .author(member)
+                    .limit(1);
+
+                // Subscribe to get members encryption keys announcement
+                client.subscribe(filter, Some(opts)).await?;
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Get all messages belonging to the room
+    pub fn get_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
+        let members = self.members();
+
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let sent_ids: Vec<EventId> = app_state()
+                .tracker()
+                .read()
+                .await
+                .sent_ids()
+                .iter()
+                .copied()
+                .collect();
+
+            // Get seen events from database
+            let filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .identifiers(sent_ids);
+
+            let seen_events = client.database().query(filter).await?;
+
+            // Extract seen event IDs
+            let seen_ids: Vec<EventId> = seen_events
+                .into_iter()
+                .filter_map(|event| event.tags.event_ids().next().copied())
+                .collect();
+
+            // Get events that sent by current user
+            let filter = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .author(public_key)
+                .pubkeys(members.clone());
+
+            let sent_events = client.database().query(filter).await?;
+
+            // Get events that received by current user
+            let filter = Filter::new()
+                .kind(Kind::PrivateDirectMessage)
+                .authors(members)
+                .pubkey(public_key);
+
+            let recv_events = client.database().query(filter).await?;
+
+            // Merge events
+            let events: Vec<Event> = sent_events
+                .merge(recv_events)
+                .into_iter()
+                .filter(|event| !seen_ids.contains(&event.id))
+                .collect();
+
+            Ok(events)
+        })
+    }
+
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
         let registry = Registry::global(cx);
