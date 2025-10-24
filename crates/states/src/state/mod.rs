@@ -606,12 +606,13 @@ impl AppState {
         Ok(())
     }
 
-    /// User has not set up encryption keys before,
-    /// generate new keys and store them for future use.
+    /// Generate encryption keys and announce them
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub async fn init_encryption_keys(&self) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
         let keys = Keys::generate();
+        let public_key = keys.public_key();
         let secret = keys.secret_key().to_secret_hex();
 
         // Initialize the encryption keys
@@ -620,6 +621,18 @@ impl AppState {
 
         // Store the encryption keys for future use
         self.set_keys("encryption", secret).await?;
+
+        // Construct the announcement event
+        let event = EventBuilder::new(Kind::Custom(10044), "")
+            .tags(vec![
+                Tag::client(APP_NAME),
+                Tag::custom(TagKind::custom("n"), vec![public_key]),
+            ])
+            .sign(&signer)
+            .await?;
+
+        // Send the announcement event to the relays
+        self.client.send_event(&event).await?;
 
         Ok(())
     }

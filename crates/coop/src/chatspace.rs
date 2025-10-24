@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
-use common::display::RenderedProfile;
+use common::display::{shorten_pubkey, RenderedProfile};
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -350,7 +350,7 @@ impl ChatSpace {
                 match result {
                     Ok(wait_for_approval) => {
                         if wait_for_approval {
-                            this.render_request_approval(ann, window, cx);
+                            this.render_pending(ann, window, cx);
                         } else {
                             window.push_notification(t!("encryption.success"), cx);
                         }
@@ -852,50 +852,84 @@ impl ChatSpace {
         window.push_notification(note, cx);
     }
 
-    fn render_request_approval(&mut self, ann: Announcement, window: &mut Window, cx: &mut App) {
+    fn render_pending(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
         let client_name = SharedString::from(ann.client().to_string());
-        let public_key = ann.public_key().to_bech32().unwrap();
+        let public_key = shorten_pubkey(ann.public_key(), 8);
+        let view = cx.entity().downgrade();
 
         window.open_modal(cx, move |this, _window, cx| {
+            let view = view.clone();
+
             this.overlay_closable(false)
                 .show_close(false)
                 .keyboard(false)
-                .alert()
-                .button_props(ModalButtonProps::default().ok_text(t!("common.hide")))
+                .confirm()
+                .width(px(460.))
+                .button_props(
+                    ModalButtonProps::default()
+                        .cancel_text(t!("common.reset"))
+                        .ok_text(t!("common.hide")),
+                )
                 .title(shared_t!("pending_encryption.label"))
                 .child(
                     v_flex()
                         .gap_2()
                         .text_sm()
-                        .child(shared_t!("pending_encryption.body_1"))
                         .child(
                             v_flex()
                                 .justify_center()
                                 .items_center()
+                                .text_center()
                                 .h_16()
                                 .w_full()
                                 .rounded(cx.theme().radius)
                                 .bg(cx.theme().elevated_surface_background)
                                 .font_semibold()
-                                .child(client_name.clone()),
+                                .child(client_name.clone())
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().text_muted)
+                                        .child(SharedString::from(&public_key)),
+                                ),
                         )
-                        .child(
-                            h_flex()
-                                .h_7()
-                                .w_full()
-                                .px_1p5()
-                                .rounded(cx.theme().radius)
-                                .bg(cx.theme().elevated_surface_background)
-                                .child(SharedString::from(&public_key)),
-                        )
+                        .child(shared_t!("pending_encryption.body_1", c = client_name))
+                        .child(shared_t!("pending_encryption.body_2"))
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(cx.theme().text_muted)
-                                .child(shared_t!("pending_encryption.body_2")),
+                                .text_color(cx.theme().warning_foreground)
+                                .child(shared_t!("pending_encryption.body_3")),
                         ),
                 )
+                .on_cancel(move |_ev, window, cx| {
+                    _ = view.update(cx, |this, cx| {
+                        this.render_reset(window, cx);
+                    });
+                    // false to keep modal open
+                    false
+                })
         });
+    }
+
+    fn render_reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let result = app_state().init_client_keys().await;
+
+            this.update_in(cx, |_, window, cx| {
+                match result {
+                    Ok(_) => {
+                        window.push_notification(t!("encryption.success"), cx);
+                        window.close_all_modals(cx);
+                    }
+                    Err(e) => {
+                        window.push_notification(e.to_string(), cx);
+                    }
+                };
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {

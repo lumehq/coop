@@ -61,6 +61,8 @@ common:
     en: "Configure"
   hide:
     en: "Hide"
+  reset:
+    en: "Reset"
 
 keyring_disable:
   label:
@@ -80,9 +82,11 @@ pending_encryption:
   label:
     en: "Wait for Approval"
   body_1:
-    en: "Encryption Keys is currently handled by:"
+    en: "Please open %{c} and approve the request for sharing encryption keys. Without access to them, Coop cannot decrypt your messages that are encrypted with encryption keys."
   body_2:
-    en: "Please open the other client and approve the request."
+    en: "Or you can click the 'Reset' button to reset the encryption keys."
+  body_3:
+    en: "By resetting the encryption keys, you will not be able to view your messages that were encrypted with the old encryption keys."
 
 request_encryption:
   label:
