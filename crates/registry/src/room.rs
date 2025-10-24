@@ -487,6 +487,51 @@ impl Room {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
+            // Collect relay hints for all participants (including current user)
+            let mut participants = members.clone();
+            if !participants.contains(&public_key) {
+                participants.push(public_key);
+            }
+
+            let mut relay_cache: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
+            for participant in participants.iter().cloned() {
+                let urls = Self::messaging_relays(participant).await;
+                relay_cache.insert(participant, urls);
+            }
+
+            // Update rumor with relay hints for each receiver
+            let mut rumor = rumor;
+            let mut tags_with_hints = Vec::new();
+            for tag in rumor.tags.to_vec() {
+                if let Some(standard) = tag.as_standardized().cloned() {
+                    match standard {
+                        TagStandard::PublicKey {
+                            public_key,
+                            alias,
+                            uppercase,
+                            ..
+                        } => {
+                            let relay_url =
+                                relay_cache
+                                    .get(&public_key)
+                                    .and_then(|urls| urls.first().cloned());
+                            let updated = TagStandard::PublicKey {
+                                public_key,
+                                relay_url,
+                                alias,
+                                uppercase,
+                            };
+                            tags_with_hints
+                                .push(Tag::from_standardized_without_cell(updated));
+                        }
+                        _ => tags_with_hints.push(tag),
+                    }
+                } else {
+                    tags_with_hints.push(tag);
+                }
+            }
+            rumor.tags = Tags::from_list(tags_with_hints);
+
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
             members.retain(|&pk| pk != public_key);
@@ -496,7 +541,7 @@ impl Room {
             for receiver in members.into_iter() {
                 let rumor = rumor.clone();
                 let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
-                let urls = Self::messaging_relays(receiver).await;
+                let urls = relay_cache.get(&receiver).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -548,7 +593,7 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && backup {
-                let urls = Self::messaging_relays(public_key).await;
+                let urls = relay_cache.get(&public_key).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
