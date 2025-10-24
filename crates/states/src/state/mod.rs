@@ -947,6 +947,91 @@ impl AppState {
         Ok(())
     }
 
+    /// Setup the initial connection to the chat room
+    pub async fn init_room(&self, public_keys: &[PublicKey]) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        for member in public_keys.iter().cloned() {
+            if member == public_key {
+                continue;
+            };
+
+            let filter = Filter::new()
+                .kind(Kind::InboxRelays)
+                .author(member)
+                .limit(1);
+
+            // Subscribe to get members messaging relays
+            self.client.subscribe(filter, Some(opts)).await?;
+
+            let filter = Filter::new()
+                .kind(Kind::Custom(10044))
+                .author(member)
+                .limit(1);
+
+            // Subscribe to get members encryption keys announcement
+            self.client.subscribe(filter, Some(opts)).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Loads all messages belonging to public keys
+    pub async fn load_messages(&self, public_keys: &[PublicKey]) -> Result<Vec<Event>, Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let members = public_keys.to_vec();
+
+        let sent_ids: Vec<EventId> = self
+            .event_tracker
+            .read()
+            .await
+            .sent_ids()
+            .iter()
+            .copied()
+            .collect();
+
+        // Get seen events from database
+        let filter = Filter::new()
+            .kind(Kind::ApplicationSpecificData)
+            .identifiers(sent_ids);
+
+        let seen_events = self.client.database().query(filter).await?;
+
+        // Extract seen event IDs
+        let seen_ids: Vec<EventId> = seen_events
+            .into_iter()
+            .filter_map(|event| event.tags.event_ids().next().copied())
+            .collect();
+
+        // Get events that sent by current user
+        let filter = Filter::new()
+            .kind(Kind::PrivateDirectMessage)
+            .author(public_key)
+            .pubkeys(members.clone());
+
+        let sent_events = self.client.database().query(filter).await?;
+
+        // Get events that received by current user
+        let filter = Filter::new()
+            .kind(Kind::PrivateDirectMessage)
+            .authors(members)
+            .pubkey(public_key);
+
+        let recv_events = self.client.database().query(filter).await?;
+
+        // Merge events
+        let events: Vec<Event> = sent_events
+            .merge(recv_events)
+            .into_iter()
+            .filter(|event| !seen_ids.contains(&event.id))
+            .collect();
+
+        Ok(events)
+    }
+
     /// Stores an unwrapped event in local database with reference to original
     async fn set_rumor(&self, id: EventId, rumor: &Event) -> Result<(), Error> {
         // Save unwrapped event

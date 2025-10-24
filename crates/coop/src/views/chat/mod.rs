@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use common::display::{RenderedProfile, RenderedTimestamp};
@@ -54,7 +54,6 @@ pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Cha
 pub struct Chat {
     // Chat Room
     room: Entity<Room>,
-    relays: Entity<HashMap<PublicKey, Vec<RelayUrl>>>,
 
     // Messages
     list_state: ListState,
@@ -75,7 +74,7 @@ pub struct Chat {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
-    _subscriptions: SmallVec<[Subscription; 4]>,
+    _subscriptions: SmallVec<[Subscription; 3]>,
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
@@ -83,11 +82,6 @@ impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| HashSet::new());
-
-        let relays = cx.new(|_| {
-            let this: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
-            this
-        });
 
         let input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -97,11 +91,11 @@ impl Chat {
                 .clean_on_escape()
         });
 
+        let members = room.read(cx).members();
+        let members_clone = members.clone();
         let messages = BTreeSet::from([Message::system()]);
-        let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
-        let connect = room.read(cx).connect(cx);
-        let load_messages = room.read(cx).load_messages(cx);
+        let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -109,7 +103,8 @@ impl Chat {
         tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
-                let result = load_messages.await;
+                let states = app_state();
+                let result = states.load_messages(&members).await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {
@@ -126,24 +121,13 @@ impl Chat {
         );
 
         tasks.push(
-            // Get messaging relays for all members
-            cx.spawn_in(window, async move |this, cx| {
-                let result = connect.await;
+            // Get messaging relays and encryption keys announcement for all members
+            cx.background_spawn(async move {
+                let states = app_state();
 
-                this.update_in(cx, |this, _window, cx| {
-                    match result {
-                        Ok(relays) => {
-                            this.relays.update(cx, |this, cx| {
-                                this.extend(relays);
-                                cx.notify();
-                            });
-                        }
-                        Err(e) => {
-                            this.insert_warning(e.to_string(), cx);
-                        }
-                    };
-                })
-                .ok();
+                if let Err(e) = states.init_room(&members_clone).await {
+                    log::error!("Failed to initialize room: {e}");
+                }
             }),
         );
 
@@ -190,23 +174,6 @@ impl Chat {
         );
 
         subscriptions.push(
-            // Observe the messaging relays of the room's members
-            cx.observe_in(&relays, window, |this, entity, _window, cx| {
-                let registry = Registry::global(cx);
-                let relays = entity.read(cx).clone();
-
-                for (public_key, urls) in relays.iter() {
-                    if urls.is_empty() {
-                        let profile = registry.read(cx).get_person(public_key, cx);
-                        let content = t!("chat.nip17_not_found", u = profile.name());
-
-                        this.insert_warning(content, cx);
-                    }
-                }
-            }),
-        );
-
-        subscriptions.push(
             // Observe when user close chat panel
             cx.on_release_in(window, move |this, window, cx| {
                 this.messages.clear();
@@ -224,7 +191,6 @@ impl Chat {
             focus_handle: cx.focus_handle(),
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
-            relays,
             messages,
             room,
             list_state,
@@ -239,12 +205,13 @@ impl Chat {
 
     /// Load all messages belonging to this room
     fn load_messages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let load_messages = self.room.read(cx).load_messages(cx);
+        let members = self.room.read(cx).members();
 
         self._tasks.push(
             // Run the task in the background
             cx.spawn_in(window, async move |this, cx| {
-                let result = load_messages.await;
+                let states = app_state();
+                let result = states.load_messages(&members).await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {
@@ -430,6 +397,7 @@ impl Chat {
     }
 
     /// Insert a warning message into the chat panel
+    #[allow(dead_code)]
     fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
         let m = Message::warning(content.into());
         self.insert_message(m, true, cx);

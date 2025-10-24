@@ -36,10 +36,14 @@ impl SendOptions {
 #[derive(Debug, Clone)]
 pub struct SendReport {
     pub receiver: PublicKey,
+
     pub status: Option<Output<EventId>>,
     pub error: Option<SharedString>,
-    pub on_hold: Option<Event>,
+
     pub relays_not_found: bool,
+    pub device_not_found: bool,
+
+    pub on_hold: Option<Event>,
 }
 
 impl SendReport {
@@ -50,18 +54,17 @@ impl SendReport {
             error: None,
             on_hold: None,
             relays_not_found: false,
+            device_not_found: false,
         }
     }
 
     pub fn status(mut self, output: Output<EventId>) -> Self {
         self.status = Some(output);
-        self.relays_not_found = false;
         self
     }
 
     pub fn error(mut self, error: impl Into<SharedString>) -> Self {
         self.error = Some(error.into());
-        self.relays_not_found = false;
         self
     }
 
@@ -70,8 +73,13 @@ impl SendReport {
         self
     }
 
-    pub fn not_found(mut self) -> Self {
+    pub fn relays_not_found(mut self) -> Self {
         self.relays_not_found = true;
+        self
+    }
+
+    pub fn device_not_found(mut self) -> Self {
+        self.device_not_found = true;
         self
     }
 
@@ -101,6 +109,8 @@ pub enum RoomKind {
     Request,
 }
 
+type DevicePublicKey = PublicKey;
+
 #[derive(Debug)]
 pub struct Room {
     pub id: u64,
@@ -108,7 +118,7 @@ pub struct Room {
     /// Subject of the room
     pub subject: Option<String>,
     /// All members of the room
-    pub members: Vec<PublicKey>,
+    pub members: HashMap<PublicKey, Option<DevicePublicKey>>,
     /// Kind
     pub kind: RoomKind,
 }
@@ -147,7 +157,11 @@ impl From<&Event> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys();
+        let members: HashMap<PublicKey, Option<DevicePublicKey>> = val
+            .all_pubkeys()
+            .into_iter()
+            .map(|public_key| (public_key, None))
+            .collect();
 
         // Get subject from tags
         let subject = val
@@ -171,7 +185,11 @@ impl From<&UnsignedEvent> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys();
+        let members: HashMap<PublicKey, Option<DevicePublicKey>> = val
+            .all_pubkeys()
+            .into_iter()
+            .map(|public_key| (public_key, None))
+            .collect();
 
         // Get subject from tags
         let subject = val
@@ -252,8 +270,8 @@ impl Room {
     }
 
     /// Returns the members of the room
-    pub fn members(&self) -> &Vec<PublicKey> {
-        &self.members
+    pub fn members(&self) -> Vec<PublicKey> {
+        self.members.keys().cloned().collect()
     }
 
     /// Checks if the room has more than two members (group)
@@ -283,17 +301,17 @@ impl Room {
     ///
     /// This member is always different from the current user.
     fn display_member(&self, cx: &App) -> Profile {
-        let registry = Registry::read_global(cx);
+        let registry = Registry::global(cx);
+        let signer_pubkey = registry.read(cx).signer_pubkey();
 
-        if let Some(public_key) = registry.signer_pubkey() {
-            for member in self.members() {
-                if member != &public_key {
-                    return registry.get_person(member, cx);
-                }
-            }
-        }
+        let target_member = self
+            .members
+            .keys()
+            .find(|&member| Some(member) != signer_pubkey.as_ref())
+            .or_else(|| self.members.keys().next())
+            .expect("Room should have at least one member");
 
-        registry.get_person(&self.members[0], cx)
+        registry.read(cx).get_person(target_member, cx)
     }
 
     /// Merge the names of the first two members of the room.
@@ -303,7 +321,7 @@ impl Room {
         if self.is_group() {
             let profiles: Vec<Profile> = self
                 .members
-                .iter()
+                .keys()
                 .map(|public_key| registry.get_person(public_key, cx))
                 .collect();
 
@@ -324,116 +342,6 @@ impl Room {
         }
     }
 
-    /// Connects to all members's messaging relays
-    pub fn connect(&self, cx: &App) -> Task<Result<HashMap<PublicKey, Vec<RelayUrl>>, Error>> {
-        let members = self.members.clone();
-
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let mut relays = HashMap::new();
-            let mut processed = HashSet::new();
-
-            for member in members.into_iter() {
-                if member == public_key {
-                    continue;
-                };
-
-                relays.insert(member, vec![]);
-
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(member)
-                    .limit(1);
-
-                let mut stream = client
-                    .stream_events(filter, Duration::from_secs(10))
-                    .await?;
-
-                if let Some(event) = stream.next().await {
-                    if processed.insert(event.id) {
-                        let public_key = event.pubkey;
-                        let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
-
-                        // Check if at least one URL exists
-                        if urls.is_empty() {
-                            continue;
-                        }
-
-                        // Connect to relays
-                        for url in urls.iter() {
-                            client.add_relay(url).await?;
-                            client.connect_relay(url).await?;
-                        }
-
-                        relays.entry(public_key).and_modify(|v| v.extend(urls));
-                    }
-                }
-            }
-
-            Ok(relays)
-        })
-    }
-
-    /// Loads all messages for this room from the database
-    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
-        let members = self.members.clone();
-
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let sent_ids: Vec<EventId> = app_state()
-                .tracker()
-                .read()
-                .await
-                .sent_ids()
-                .iter()
-                .copied()
-                .collect();
-
-            // Get seen events from database
-            let filter = Filter::new()
-                .kind(Kind::ApplicationSpecificData)
-                .identifiers(sent_ids);
-
-            let seen_events = client.database().query(filter).await?;
-
-            // Extract seen event IDs
-            let seen_ids: Vec<EventId> = seen_events
-                .into_iter()
-                .filter_map(|event| event.tags.event_ids().next().copied())
-                .collect();
-
-            // Get events that sent by current user
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .author(public_key)
-                .pubkeys(members.clone());
-
-            let sent_events = client.database().query(filter).await?;
-
-            // Get events that received by current user
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .authors(members)
-                .pubkey(public_key);
-
-            let recv_events = client.database().query(filter).await?;
-
-            // Merge events
-            let events: Vec<Event> = sent_events
-                .merge(recv_events)
-                .into_iter()
-                .filter(|event| !seen_ids.contains(&event.id))
-                .collect();
-
-            Ok(events)
-        })
-    }
-
     /// Emits a new message signal to the current room
     pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
         cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
@@ -446,7 +354,8 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
-        let public_key = Registry::read_global(cx).signer_pubkey().unwrap();
+        let registry = Registry::global(cx);
+        let public_key = registry.read(cx).signer_pubkey().unwrap();
         let subject = self.subject.clone();
 
         let mut tags = vec![];
@@ -454,7 +363,7 @@ impl Room {
         // Add receivers
         //
         // NOTE: current user will be removed from the list of receivers
-        for member in self.members.iter() {
+        for (member, _) in self.members.iter() {
             tags.push(Tag::public_key(member.to_owned()));
         }
 
@@ -503,44 +412,49 @@ impl Room {
         cx.background_spawn(async move {
             let states = app_state();
             let client = states.client();
-            let device = states.device.read().await;
+            let device = states.device.read().await.encryption_keys.clone();
 
             let user_signer = client.signer().await?;
-            let public_key = user_signer.get_public_key().await?;
+            let user_pubkey = user_signer.get_public_key().await?;
 
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
-            members.retain(|&pk| pk != public_key);
+            let (public_key, device_pubkey) = members.remove_entry(&user_pubkey).unwrap();
 
             // Determine the signer will be used based on the provided options
-            let signer = match opts.signer_kind {
-                SignerKind::Encryption => device
-                    .encryption_keys
-                    .clone()
-                    .ok_or_else(|| anyhow!("No encryption keys found"))?,
-                SignerKind::User => user_signer,
-                SignerKind::Auto => device.encryption_keys.clone().unwrap_or(user_signer),
-            };
+            let signer = Self::select_signer(&opts.signer_kind, device, user_signer)?;
 
             // Collect the send reports
             let mut reports: Vec<SendReport> = vec![];
 
-            for receiver in members.into_iter() {
-                let rumor = rumor.clone();
-                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
+            for (receiver, device_pubkey) in members.into_iter() {
                 let urls = states.messaging_relays(receiver).await;
 
-                // Check if there are any relays to send the event to
+                // Check if there are any relays to send the message to
                 if urls.is_empty() {
-                    reports.push(SendReport::new(receiver).not_found());
+                    reports.push(SendReport::new(receiver).relays_not_found());
                     continue;
                 }
+
+                // Skip sending if using encryption keys but device not found
+                if device_pubkey.is_none()
+                    && matches!(opts.signer_kind, SignerKind::Auto | SignerKind::Encryption)
+                {
+                    reports.push(SendReport::new(receiver).device_not_found());
+                    continue;
+                }
+
+                // Determine the receiver based on the signer kind
+                let rumor = rumor.clone();
+                let target = Self::select_receiver(&opts.signer_kind, receiver, device_pubkey);
+                let event = EventBuilder::gift_wrap(&signer, &target, rumor, vec![]).await?;
 
                 // Send the event to the messaging relays
                 match client.send_event_to(urls, &event).await {
                     Ok(output) => {
                         let id = output.id().to_owned();
-                        let auth_required = output.failed.iter().any(|m| m.1.starts_with("auth-"));
+                        let auth_required =
+                            output.failed.iter().any(|(_, s)| s.starts_with("auth-"));
                         let report = SendReport::new(receiver).status(output);
 
                         if auth_required {
@@ -576,7 +490,8 @@ impl Room {
 
             // Construct a gift wrap to back up to current user's owned messaging relays
             let rumor = rumor.clone();
-            let event = EventBuilder::gift_wrap(&signer, &public_key, rumor, vec![]).await?;
+            let receiver = device_pubkey.unwrap_or(public_key);
+            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
 
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && opts.backup() {
@@ -584,7 +499,7 @@ impl Room {
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
-                    reports.push(SendReport::new(public_key).not_found());
+                    reports.push(SendReport::new(public_key).relays_not_found());
                 } else {
                     // Send the event to the messaging relays
                     match client.send_event_to(urls, &event).await {
@@ -645,7 +560,7 @@ impl Room {
 
                     // Check if there are any relays to send the event to
                     if urls.is_empty() {
-                        resend_reports.push(SendReport::new(receiver).not_found());
+                        resend_reports.push(SendReport::new(receiver).relays_not_found());
                     } else {
                         // Send the event to the messaging relays
                         match client.send_event_to(urls, &event).await {
@@ -662,5 +577,26 @@ impl Room {
 
             Ok(resend_reports)
         })
+    }
+
+    fn select_signer<T>(kind: &SignerKind, device: Option<T>, user: T) -> Result<T, Error>
+    where
+        T: NostrSigner,
+    {
+        match kind {
+            SignerKind::Encryption => {
+                Ok(device.ok_or_else(|| anyhow!("No encryption keys found"))?)
+            }
+            SignerKind::User => Ok(user),
+            SignerKind::Auto => Ok(device.unwrap_or(user)),
+        }
+    }
+
+    fn select_receiver(kind: &SignerKind, user: PublicKey, device: Option<PublicKey>) -> PublicKey {
+        match kind {
+            SignerKind::Encryption => device.unwrap(),
+            SignerKind::User => user,
+            SignerKind::Auto => device.unwrap_or(user),
+        }
     }
 }
