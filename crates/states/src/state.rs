@@ -731,7 +731,7 @@ impl AppState {
             let sender = unwrapped.sender;
             let rumor_unsigned = unwrapped.rumor;
 
-            if rumor_unsigned.pubkey != sender {
+            if !Self::verify_rumor_sender(sender, &rumor_unsigned) {
                 log::warn!(
                     "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
                     gift_wrap.id,
@@ -767,5 +767,33 @@ impl AppState {
                 }
             }
         }
+    }
+
+    fn verify_rumor_sender(sender: PublicKey, rumor: &UnsignedEvent) -> bool {
+        rumor.pubkey == sender
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_rumor_sender_accepts_matching_sender() {
+        let keys = Keys::generate();
+        let public_key = keys.public_key();
+        let rumor = EventBuilder::text_note("hello").build(public_key);
+        assert!(AppState::verify_rumor_sender(public_key, &rumor));
+    }
+
+    #[test]
+    fn verify_rumor_sender_rejects_mismatched_sender() {
+        let sender_keys = Keys::generate();
+        let rumor_keys = Keys::generate();
+        let rumor = EventBuilder::text_note("spoof").build(rumor_keys.public_key());
+        assert!(!AppState::verify_rumor_sender(
+            sender_keys.public_key(),
+            &rumor
+        ));
     }
 }
