@@ -1083,6 +1083,16 @@ impl AppState {
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
         if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
             if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
+                if !self.verify_rumor_sender(unwrapped.sender, &unwrapped.rumor) {
+                    log::warn!(
+                        "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
+                        gift_wrap.id,
+                        unwrapped.sender,
+                        unwrapped.rumor.pubkey
+                    );
+                    return Err(anyhow!("Invalid rumor"));
+                };
+
                 let event = unwrapped.rumor.sign_with_keys(&Keys::generate())?;
                 self.set_rumor(gift_wrap.id, &event).await?;
                 self.process_rumor(gift_wrap.id, event).await?;
@@ -1091,10 +1101,21 @@ impl AppState {
             }
         }
 
-        // Try to unwrap with the user's signer
+        // Get user's signer
         let signer = self.client.signer().await?;
 
+        // Try to unwrap with the user's signer
         if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
+            if !self.verify_rumor_sender(unwrapped.sender, &unwrapped.rumor) {
+                log::warn!(
+                    "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
+                    gift_wrap.id,
+                    unwrapped.sender,
+                    unwrapped.rumor.pubkey
+                );
+                return Err(anyhow!("Invalid rumor"));
+            };
+
             let event = unwrapped.rumor.sign_with_keys(&Keys::generate())?;
             self.set_rumor(gift_wrap.id, &event).await?;
             self.process_rumor(gift_wrap.id, event).await?;
@@ -1126,6 +1147,11 @@ impl AppState {
         Ok(())
     }
 
+    /// Verify that the sender of a rumor is the same as the sender of the event.
+    fn verify_rumor_sender(&self, sender: PublicKey, rumor: &UnsignedEvent) -> bool {
+        rumor.pubkey == sender
+    }
+
     fn extract_announcement(&self, event: &Event) -> Result<Announcement, Error> {
         let public_key = event
             .tags
@@ -1155,5 +1181,33 @@ impl AppState {
             .context("Cannot parse public key from the event's tags")?;
 
         Ok(Response::new(payload, root_device))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_state;
+
+    #[test]
+    fn verify_rumor_sender_accepts_matching_sender() {
+        let state = app_state();
+
+        let keys = Keys::generate();
+        let public_key = keys.public_key();
+        let rumor = EventBuilder::text_note("hello").build(public_key);
+
+        assert!(state.verify_rumor_sender(public_key, &rumor));
+    }
+
+    #[test]
+    fn verify_rumor_sender_rejects_mismatched_sender() {
+        let state = app_state();
+
+        let sender_keys = Keys::generate();
+        let rumor_keys = Keys::generate();
+        let rumor = EventBuilder::text_note("spoof").build(rumor_keys.public_key());
+
+        assert!(!state.verify_rumor_sender(sender_keys.public_key(), &rumor));
     }
 }
