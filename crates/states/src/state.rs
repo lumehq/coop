@@ -728,8 +728,17 @@ impl AppState {
         if let Ok(event) = self.get_rumor(gift_wrap.id).await {
             rumor = Some(event);
         } else if let Ok(unwrapped) = self.client.unwrap_gift_wrap(gift_wrap).await {
-            // Sign the unwrapped event with a RANDOM KEYS
-            if let Ok(event) = unwrapped.rumor.sign_with_keys(&Keys::generate()) {
+            let sender = unwrapped.sender;
+            let rumor_unsigned = unwrapped.rumor;
+
+            if rumor_unsigned.pubkey != sender {
+                log::warn!(
+                    "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
+                    gift_wrap.id,
+                    sender,
+                    rumor_unsigned.pubkey
+                );
+            } else if let Ok(event) = rumor_unsigned.clone().sign_with_keys(&Keys::generate()) {
                 // Save this event to the database for future use.
                 if let Err(e) = self.set_rumor(gift_wrap.id, &event).await {
                     log::warn!("Failed to cache unwrapped event: {e}")
