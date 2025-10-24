@@ -728,8 +728,17 @@ impl AppState {
         if let Ok(event) = self.get_rumor(gift_wrap.id).await {
             rumor = Some(event);
         } else if let Ok(unwrapped) = self.client.unwrap_gift_wrap(gift_wrap).await {
-            // Sign the unwrapped event with a RANDOM KEYS
-            if let Ok(event) = unwrapped.rumor.sign_with_keys(&Keys::generate()) {
+            let sender = unwrapped.sender;
+            let rumor_unsigned = unwrapped.rumor;
+
+            if !Self::verify_rumor_sender(sender, &rumor_unsigned) {
+                log::warn!(
+                    "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
+                    gift_wrap.id,
+                    sender,
+                    rumor_unsigned.pubkey
+                );
+            } else if let Ok(event) = rumor_unsigned.clone().sign_with_keys(&Keys::generate()) {
                 // Save this event to the database for future use.
                 if let Err(e) = self.set_rumor(gift_wrap.id, &event).await {
                     log::warn!("Failed to cache unwrapped event: {e}")
@@ -758,5 +767,33 @@ impl AppState {
                 }
             }
         }
+    }
+
+    fn verify_rumor_sender(sender: PublicKey, rumor: &UnsignedEvent) -> bool {
+        rumor.pubkey == sender
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_rumor_sender_accepts_matching_sender() {
+        let keys = Keys::generate();
+        let public_key = keys.public_key();
+        let rumor = EventBuilder::text_note("hello").build(public_key);
+        assert!(AppState::verify_rumor_sender(public_key, &rumor));
+    }
+
+    #[test]
+    fn verify_rumor_sender_rejects_mismatched_sender() {
+        let sender_keys = Keys::generate();
+        let rumor_keys = Keys::generate();
+        let rumor = EventBuilder::text_note("spoof").build(rumor_keys.public_key());
+        assert!(!AppState::verify_rumor_sender(
+            sender_keys.public_key(),
+            &rumor
+        ));
     }
 }
