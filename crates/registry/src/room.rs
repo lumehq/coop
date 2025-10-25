@@ -7,6 +7,7 @@ use anyhow::{anyhow, Error};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use states::app_state;
 use states::constants::SEND_RETRY;
@@ -98,7 +99,7 @@ impl SendReport {
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
-    NewMessage((EventId, Box<Event>)),
+    NewMessage((EventId, UnsignedEvent)),
     Refresh,
 }
 
@@ -343,8 +344,8 @@ impl Room {
     }
 
     /// Emits a new message signal to the current room
-    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
+    pub fn emit_message(&self, id: EventId, event: UnsignedEvent, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage((id, event)));
     }
 
     /// Emits a signal to refresh the current room's messages.
@@ -389,60 +390,29 @@ impl Room {
     }
 
     /// Get all messages belonging to the room
-    pub fn get_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
-        let members = self.members();
+    pub fn get_messages(&self, cx: &App) -> Task<Result<Vec<UnsignedEvent>, Error>> {
+        let conversation_id = self.id.to_string();
 
         cx.background_spawn(async move {
             let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let sent_ids: Vec<EventId> = app_state()
-                .tracker()
-                .read()
-                .await
-                .sent_ids()
-                .iter()
-                .copied()
-                .collect();
-
-            // Get seen events from database
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifiers(sent_ids);
+                .custom_tag(SingleLetterTag::lowercase(Alphabet::C), conversation_id);
 
-            let seen_events = client.database().query(filter).await?;
+            let stored = client.database().query(filter).await?;
 
-            // Extract seen event IDs
-            let seen_ids: Vec<EventId> = seen_events
+            let mut messages: Vec<UnsignedEvent> = stored
                 .into_iter()
-                .filter_map(|event| event.tags.event_ids().next().copied())
+                .filter_map(|event| {
+                    UnsignedEvent::from_json(&event.content)
+                        .map_err(|e| log::warn!("Failed to parse stored rumor: {e}"))
+                        .ok()
+                })
                 .collect();
 
-            // Get events that sent by current user
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .author(public_key)
-                .pubkeys(members.clone());
+            messages.sort_by_key(|message| message.created_at);
 
-            let sent_events = client.database().query(filter).await?;
-
-            // Get events that received by current user
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .authors(members)
-                .pubkey(public_key);
-
-            let recv_events = client.database().query(filter).await?;
-
-            // Merge events
-            let events: Vec<Event> = sent_events
-                .merge(recv_events)
-                .into_iter()
-                .filter(|event| !seen_ids.contains(&event.id))
-                .collect();
-
-            Ok(events)
+            Ok(messages)
         })
     }
 
@@ -511,6 +481,53 @@ impl Room {
             let user_signer = client.signer().await?;
             let user_pubkey = user_signer.get_public_key().await?;
 
+            // Collect relay hints for all participants (including current user)
+            let mut participants = members.keys().cloned().collect_vec();
+
+            if !participants.contains(&user_pubkey) {
+                participants.push(user_pubkey);
+            }
+
+            // Initialize relay cache
+            let mut relay_cache: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
+
+            for participant in participants.iter().cloned() {
+                let urls = states.messaging_relays(participant).await;
+                relay_cache.insert(participant, urls);
+            }
+
+            // Update rumor with relay hints for each receiver
+            let mut rumor = rumor;
+            let mut tags_with_hints = Vec::new();
+
+            for tag in rumor.tags.to_vec() {
+                if let Some(standard) = tag.as_standardized().cloned() {
+                    match standard {
+                        TagStandard::PublicKey {
+                            public_key,
+                            alias,
+                            uppercase,
+                            ..
+                        } => {
+                            let relay_url = relay_cache
+                                .get(&public_key)
+                                .and_then(|urls| urls.first().cloned());
+                            let updated = TagStandard::PublicKey {
+                                public_key,
+                                relay_url,
+                                alias,
+                                uppercase,
+                            };
+                            tags_with_hints.push(Tag::from_standardized_without_cell(updated));
+                        }
+                        _ => tags_with_hints.push(tag),
+                    }
+                } else {
+                    tags_with_hints.push(tag);
+                }
+            }
+            rumor.tags = Tags::from_list(tags_with_hints);
+
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
             let (public_key, device_pubkey) = members.remove_entry(&user_pubkey).unwrap();
@@ -522,7 +539,7 @@ impl Room {
             let mut reports: Vec<SendReport> = vec![];
 
             for (receiver, device_pubkey) in members.into_iter() {
-                let urls = states.messaging_relays(receiver).await;
+                let urls = relay_cache.get(&receiver).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the message to
                 if urls.is_empty() {
@@ -589,7 +606,7 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if reports.iter().all(|r| r.is_sent_success()) && opts.backup() {
-                let urls = states.messaging_relays(public_key).await;
+                let urls = relay_cache.get(&public_key).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {

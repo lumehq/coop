@@ -111,7 +111,7 @@ pub enum SignalKind {
     NewProfile(Profile),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    NewMessage((EventId, Event)),
+    NewMessage((EventId, UnsignedEvent)),
 
     /// A signal to notify UI that no messaging relays for current user was found
     MessagingRelaysNotFound,

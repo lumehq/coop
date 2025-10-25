@@ -8,7 +8,6 @@ use fuzzy_matcher::FuzzyMatcher;
 use gpui::{
     App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
 };
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use settings::AppSettings;
@@ -246,7 +245,7 @@ impl Registry {
     pub fn search_by_public_key(&self, public_key: PublicKey, cx: &App) -> Vec<Entity<Room>> {
         self.rooms
             .iter()
-            .filter(|room| room.read(cx).members.keys().contains(&public_key))
+            .filter(|room| room.read(cx).members.contains_key(&public_key))
             .cloned()
             .collect()
     }
@@ -275,63 +274,61 @@ impl Registry {
             let public_key = signer.get_public_key().await?;
             let contacts = client.database().contacts_public_keys(public_key).await?;
 
-            // Get messages sent by the user
-            let sent = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .author(public_key);
+            let authored_filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .custom_tag(SingleLetterTag::lowercase(Alphabet::A), public_key);
 
-            // Get messages received by the user
-            let recv = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .pubkey(public_key);
+            let addressed_filter = Filter::new()
+                .kind(Kind::ApplicationSpecificData)
+                .custom_tag(SingleLetterTag::lowercase(Alphabet::P), public_key);
 
-            let sent_events = client.database().query(sent).await?;
-            let recv_events = client.database().query(recv).await?;
-            let events = sent_events.merge(recv_events);
+            let authored = client.database().query(authored_filter).await?;
+            let addressed = client.database().query(addressed_filter).await?;
+            let events = authored.merge(addressed);
 
             let mut rooms: HashSet<Room> = HashSet::new();
+            let mut grouped: HashMap<u64, Vec<UnsignedEvent>> = HashMap::new();
 
             // Process each event and group by room hash
-            for event in events
-                .into_iter()
-                .sorted_by_key(|event| Reverse(event.created_at))
-                .filter(|ev| ev.tags.public_keys().peekable().peek().is_some())
-            {
-                // Parse the room from the nostr event
-                let room = Room::from(&event);
+            for raw in events.into_iter() {
+                match UnsignedEvent::from_json(&raw.content) {
+                    Ok(rumor) => {
+                        if rumor.tags.public_keys().peekable().peek().is_some() {
+                            grouped.entry(rumor.uniq_id()).or_default().push(rumor);
+                        }
+                    }
+                    Err(e) => log::warn!("Failed to parse stored rumor: {e}"),
+                }
+            }
 
-                // Skip if the room is already in the set
+            for (_room_id, mut messages) in grouped.into_iter() {
+                messages.sort_by_key(|m| Reverse(m.created_at));
+
+                let Some(latest) = messages.first() else {
+                    continue;
+                };
+
+                let mut room = Room::from(latest);
+
                 if rooms.iter().any(|r| r.id == room.id) {
                     continue;
                 }
 
-                // Get all public keys from the event's tags
                 let mut public_keys: Vec<PublicKey> = room.members().to_vec();
                 public_keys.retain(|pk| pk != &public_key);
 
-                // Bypass screening flag
-                let mut bypassed = false;
+                let user_sent = messages.iter().any(|m| m.pubkey == public_key);
 
-                // If the user has enabled bypass screening in settings,
-                // check if any of the room's members are contacts of the current user
+                let mut bypassed = false;
                 if bypass_setting {
                     bypassed = public_keys.iter().any(|k| contacts.contains(k));
                 }
 
-                // Check if the current user has sent at least one message to this room
-                let filter = Filter::new()
-                    .kind(Kind::PrivateDirectMessage)
-                    .author(public_key)
-                    .pubkeys(public_keys);
-
-                // If current user has sent a message at least once, mark as ongoing
-                let is_ongoing = client.database().count(filter).await.unwrap_or(1) >= 1;
-
-                if is_ongoing || bypassed {
-                    rooms.insert(room.kind(RoomKind::Ongoing));
-                } else {
-                    rooms.insert(room);
+                if user_sent || bypassed {
+                    room = room.kind(RoomKind::Ongoing);
                 }
+
+                rooms.insert(room);
             }
 
             Ok(rooms)
@@ -419,7 +416,7 @@ impl Registry {
     pub fn event_to_message(
         &mut self,
         gift_wrap: EventId,
-        event: Event,
+        event: UnsignedEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -432,11 +429,13 @@ impl Registry {
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             let is_new_event = event.created_at > room.read(cx).created_at;
+            let created_at = event.created_at;
+            let event_for_emit = event.clone();
 
             // Update room
             room.update(cx, |this, cx| {
                 if is_new_event {
-                    this.set_created_at(event.created_at, cx);
+                    this.set_created_at(created_at, cx);
                 }
 
                 // Set this room is ongoing if the new message is from current user
@@ -445,8 +444,9 @@ impl Registry {
                 }
 
                 // Emit the new message to the room
+                let event_to_emit = event_for_emit.clone();
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(gift_wrap, event, cx);
+                    this.emit_message(gift_wrap, event_to_emit, cx);
                 });
             });
 

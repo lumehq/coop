@@ -148,7 +148,7 @@ impl Chat {
                 match signal {
                     RoomSignal::NewMessage((gift_wrap_id, event)) => {
                         let gift_wrap_id = gift_wrap_id.to_owned();
-                        let message = Message::user(event);
+                        let message = Message::user(event.clone());
 
                         cx.spawn_in(window, async move |this, cx| {
                             let states = app_state();
@@ -389,8 +389,8 @@ impl Chat {
     }
 
     /// Convert and insert a vector of nostr events into the chat panel
-    fn insert_messages(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
-        for event in events.into_iter() {
+    fn insert_messages(&mut self, events: Vec<UnsignedEvent>, cx: &mut Context<Self>) {
+        for event in events {
             let m = Message::user(event);
             // Bulk inserting messages, so no need to scroll to the latest message
             self.insert_message(m, false, cx);
