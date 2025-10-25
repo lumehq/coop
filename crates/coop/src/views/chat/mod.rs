@@ -80,9 +80,6 @@ pub struct Chat {
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let attachments = cx.new(|_| vec![]);
-        let replies_to = cx.new(|_| HashSet::new());
-
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
@@ -91,6 +88,10 @@ impl Chat {
                 .clean_on_escape()
         });
 
+        let attachments = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| HashSet::new());
+
+        let id = room.read(cx).id.to_string().into();
         let messages = BTreeSet::from([Message::system()]);
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
@@ -183,18 +184,18 @@ impl Chat {
         );
 
         Self {
-            id: room.read(cx).id.to_string().into(),
-            image_cache: RetainAllImageCache::new(cx),
-            focus_handle: cx.focus_handle(),
-            rendered_texts_by_id: BTreeMap::new(),
-            reports_by_id: BTreeMap::new(),
+            id,
             messages,
             room,
             list_state,
             input,
             replies_to,
             attachments,
+            rendered_texts_by_id: BTreeMap::new(),
+            reports_by_id: BTreeMap::new(),
             uploading: false,
+            image_cache: RetainAllImageCache::new(cx),
+            focus_handle: cx.focus_handle(),
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -282,10 +283,12 @@ impl Chat {
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(100))
-                .await;
+            let delay = Duration::from_millis(100);
 
+            // Wait for the delay
+            cx.background_executor().timer(delay).await;
+
+            // Update the message list and reset the states
             this.update_in(cx, |this, window, cx| {
                 this.insert_message(Message::user(rumor), true, cx);
                 this.remove_all_replies(cx);
@@ -300,37 +303,39 @@ impl Chat {
         })
         .detach();
 
-        // Continue sending the message in the background
-        cx.spawn_in(window, async move |this, cx| {
-            let result = send_message.await;
+        self._tasks.push(
+            // Continue sending the message in the background
+            cx.spawn_in(window, async move |this, cx| {
+                let result = send_message.await;
 
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(reports) => {
-                        this.room.update(cx, |this, cx| {
-                            if this.kind != RoomKind::Ongoing {
-                                // Update the room kind to ongoing
-                                // But keep the room kind if send failed
-                                if reports.iter().all(|r| !r.is_sent_success()) {
-                                    this.kind = RoomKind::Ongoing;
-                                    cx.notify();
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(reports) => {
+                            // Update room's status
+                            this.room.update(cx, |this, cx| {
+                                if this.kind != RoomKind::Ongoing {
+                                    // Update the room kind to ongoing,
+                                    // but keep the room kind if send failed
+                                    if reports.iter().all(|r| !r.is_sent_success()) {
+                                        this.kind = RoomKind::Ongoing;
+                                        cx.notify();
+                                    }
                                 }
-                            }
-                        });
+                            });
 
-                        // Insert the sent reports
-                        this.reports_by_id.insert(rumor_id, reports);
+                            // Insert the sent reports
+                            this.reports_by_id.insert(rumor_id, reports);
 
-                        cx.notify();
+                            cx.notify();
+                        }
+                        Err(e) => {
+                            window.push_notification(e.to_string(), cx);
+                        }
                     }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                }
-            })
-            .ok();
-        })
-        .detach();
+                })
+                .ok();
+            }),
+        );
     }
 
     /// Resend a failed message
