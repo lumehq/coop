@@ -9,8 +9,9 @@ use gpui::{
     Window,
 };
 use i18n::{shared_t, t};
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
-use registry::keystore::KeyItem;
 use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
@@ -116,7 +117,7 @@ impl Account {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
 
         // Handle connection in the background
         cx.spawn_in(window, async move |this, cx| {

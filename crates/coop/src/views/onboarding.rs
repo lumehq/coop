@@ -9,9 +9,9 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use i18n::{shared_t, t};
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
-use registry::keystore::KeyItem;
-use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
 use states::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
@@ -126,7 +126,7 @@ impl Onboarding {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
         let username = self.app_keys.public_key().to_hex();
         let secret = self.app_keys.secret_key().to_secret_bytes();
         let mut clean_uri = uri.to_string();

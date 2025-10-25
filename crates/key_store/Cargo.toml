@@ -1,0 +1,28 @@
+[package]
+name = "key_store"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+common = { path = "../common" }
+states = { path = "../states" }
+ui = { path = "../ui" }
+theme = { path = "../theme" }
+settings = { path = "../settings" }
+
+rust-i18n.workspace = true
+i18n.workspace = true
+gpui.workspace = true
+
+nostr.workspace = true
+nostr-sdk.workspace = true
+
+anyhow.workspace = true
+itertools.workspace = true
+smallvec.workspace = true
+smol.workspace = true
+log.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
