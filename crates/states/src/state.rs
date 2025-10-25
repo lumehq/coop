@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -57,7 +58,7 @@ pub enum SignalKind {
     NewProfile(Profile),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    NewMessage((EventId, Event)),
+    NewMessage((EventId, UnsignedEvent)),
 
     /// A signal to notify UI that no messaging relays for current user was found
     MessagingRelaysNotFound,
@@ -685,37 +686,53 @@ impl AppState {
     }
 
     /// Stores an unwrapped event in local database with reference to original
-    async fn set_rumor(&self, id: EventId, rumor: &Event) -> Result<(), Error> {
-        // Save unwrapped event
-        self.client.database().save_event(rumor).await?;
+    async fn set_rumor(&self, id: EventId, rumor: &UnsignedEvent) -> Result<(), Error> {
+        let rumor_id = rumor
+            .id
+            .ok_or_else(|| anyhow!("Rumor is missing an event id"))?;
+        let author_hex = rumor.pubkey.to_hex();
+        let conversation = Self::conversation_id(rumor).to_string();
 
-        // Create a reference event pointing to the unwrapped event
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, "")
-            .tags(vec![Tag::identifier(id), Tag::event(rumor.id)])
+        let mut tags = rumor.tags.clone().to_vec();
+        tags.push(Tag::identifier(id));
+        tags.push(Tag::custom(
+            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::A)),
+            [author_hex],
+        ));
+        tags.push(Tag::custom(
+            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::C)),
+            [conversation],
+        ));
+        tags.push(Tag::event(rumor_id));
+
+        for receiver in rumor.tags.public_keys().copied() {
+            tags.push(Tag::custom(
+                TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::P)),
+                [receiver.to_hex()],
+            ));
+        }
+
+        let content = rumor.as_json();
+
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+            .tags(tags)
             .sign(&Keys::generate())
             .await?;
 
-        // Save reference event
         self.client.database().save_event(&event).await?;
 
         Ok(())
     }
 
     /// Retrieves a previously unwrapped event from local database
-    async fn get_rumor(&self, id: EventId) -> Result<Event, Error> {
+    async fn get_rumor(&self, id: EventId) -> Result<UnsignedEvent, Error> {
         let filter = Filter::new()
             .kind(Kind::ApplicationSpecificData)
             .identifier(id)
             .limit(1);
 
         if let Some(event) = self.client.database().query(filter).await?.first_owned() {
-            let target_id = event.tags.event_ids().collect::<Vec<_>>()[0];
-
-            if let Some(event) = self.client.database().event_by_id(target_id).await? {
-                Ok(event)
-            } else {
-                Err(anyhow!("Event not found."))
-            }
+            UnsignedEvent::from_json(event.content).map_err(|e| anyhow!(e))
         } else {
             Err(anyhow!("Event is not cached yet."))
         }
@@ -723,13 +740,13 @@ impl AppState {
 
     // Unwraps a gift-wrapped event and processes its contents.
     async fn extract_rumor(&self, gift_wrap: &Event) {
-        let mut rumor: Option<Event> = None;
+        let mut rumor: Option<UnsignedEvent> = None;
 
         if let Ok(event) = self.get_rumor(gift_wrap.id).await {
             rumor = Some(event);
         } else if let Ok(unwrapped) = self.client.unwrap_gift_wrap(gift_wrap).await {
             let sender = unwrapped.sender;
-            let rumor_unsigned = unwrapped.rumor;
+            let mut rumor_unsigned = unwrapped.rumor;
 
             if !Self::verify_rumor_sender(sender, &rumor_unsigned) {
                 log::warn!(
@@ -738,13 +755,14 @@ impl AppState {
                     sender,
                     rumor_unsigned.pubkey
                 );
-            } else if let Ok(event) = rumor_unsigned.clone().sign_with_keys(&Keys::generate()) {
-                // Save this event to the database for future use.
-                if let Err(e) = self.set_rumor(gift_wrap.id, &event).await {
-                    log::warn!("Failed to cache unwrapped event: {e}")
-                }
+            } else {
+                rumor_unsigned.ensure_id();
 
-                rumor = Some(event);
+                if let Err(e) = self.set_rumor(gift_wrap.id, &rumor_unsigned).await {
+                    log::warn!("Failed to cache unwrapped event: {e}")
+                } else {
+                    rumor = Some(rumor_unsigned);
+                }
             }
         }
 
@@ -767,6 +785,16 @@ impl AppState {
                 }
             }
         }
+    }
+
+    fn conversation_id(rumor: &UnsignedEvent) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        let mut pubkeys: Vec<PublicKey> = rumor.tags.public_keys().copied().collect();
+        pubkeys.push(rumor.pubkey);
+        pubkeys.sort();
+        pubkeys.dedup();
+        pubkeys.hash(&mut hasher);
+        hasher.finish()
     }
 
     fn verify_rumor_sender(sender: PublicKey, rumor: &UnsignedEvent) -> bool {

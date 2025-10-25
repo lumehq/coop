@@ -71,7 +71,7 @@ impl SendReport {
 
 #[derive(Debug, Clone)]
 pub enum RoomSignal {
-    NewMessage((EventId, Box<Event>)),
+    NewMessage((EventId, UnsignedEvent)),
     Refresh,
 }
 
@@ -359,65 +359,37 @@ impl Room {
     }
 
     /// Loads all messages for this room from the database
-    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<Event>, Error>> {
-        let members = self.members.clone();
+    pub fn load_messages(&self, cx: &App) -> Task<Result<Vec<UnsignedEvent>, Error>> {
+        let conversation_id = self.id.to_string();
 
         cx.background_spawn(async move {
             let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let sent_ids: Vec<EventId> = app_state()
-                .tracker()
-                .read()
-                .await
-                .sent_ids()
-                .iter()
-                .copied()
-                .collect();
-
-            // Get seen events from database
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
-                .identifiers(sent_ids);
+                .custom_tag(
+                    SingleLetterTag::lowercase(Alphabet::C),
+                    conversation_id.as_str(),
+                );
 
-            let seen_events = client.database().query(filter).await?;
+            let stored = client.database().query(filter).await?;
+            let mut messages = Vec::with_capacity(stored.len());
 
-            // Extract seen event IDs
-            let seen_ids: Vec<EventId> = seen_events
-                .into_iter()
-                .filter_map(|event| event.tags.event_ids().next().copied())
-                .collect();
+            for event in stored {
+                match UnsignedEvent::from_json(&event.content) {
+                    Ok(rumor) => messages.push(rumor),
+                    Err(e) => log::warn!("Failed to parse stored rumor: {e}"),
+                }
+            }
 
-            // Get events that sent by current user
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .author(public_key)
-                .pubkeys(members.clone());
+            messages.sort_by_key(|message| message.created_at);
 
-            let sent_events = client.database().query(filter).await?;
-
-            // Get events that received by current user
-            let filter = Filter::new()
-                .kind(Kind::PrivateDirectMessage)
-                .authors(members)
-                .pubkey(public_key);
-
-            let recv_events = client.database().query(filter).await?;
-
-            // Merge events
-            let events: Vec<Event> = sent_events
-                .merge(recv_events)
-                .into_iter()
-                .filter(|event| !seen_ids.contains(&event.id))
-                .collect();
-
-            Ok(events)
+            Ok(messages)
         })
     }
 
     /// Emits a new message signal to the current room
-    pub fn emit_message(&self, gift_wrap_id: EventId, event: Event, cx: &mut Context<Self>) {
-        cx.emit(RoomSignal::NewMessage((gift_wrap_id, Box::new(event))));
+    pub fn emit_message(&self, gift_wrap_id: EventId, event: UnsignedEvent, cx: &mut Context<Self>) {
+        cx.emit(RoomSignal::NewMessage((gift_wrap_id, event)));
     }
 
     /// Emits a signal to refresh the current room's messages.
