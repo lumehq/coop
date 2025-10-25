@@ -7,14 +7,14 @@ use anyhow::{anyhow, Error};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use serde::{Deserialize, Serialize};
 use states::app_state;
 use states::constants::SEND_RETRY;
 
 use crate::Registry;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Deserialize, Serialize)]
 pub enum SignerKind {
     Encryption,
     User,
@@ -403,11 +403,7 @@ impl Room {
 
             let mut messages: Vec<UnsignedEvent> = stored
                 .into_iter()
-                .filter_map(|event| {
-                    UnsignedEvent::from_json(&event.content)
-                        .map_err(|e| log::warn!("Failed to parse stored rumor: {e}"))
-                        .ok()
-                })
+                .filter_map(|event| UnsignedEvent::from_json(&event.content).ok())
                 .collect();
 
             messages.sort_by_key(|message| message.created_at);
@@ -467,11 +463,13 @@ impl Room {
     /// Create a task to send a message to all room members
     pub fn send_message(
         &self,
-        rumor: UnsignedEvent,
-        opts: SendOptions,
+        rumor: &UnsignedEvent,
+        opts: &SendOptions,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
         let mut members = self.members.clone();
+        let rumor = rumor.to_owned();
+        let opts = opts.to_owned();
 
         cx.background_spawn(async move {
             let states = app_state();
@@ -482,7 +480,7 @@ impl Room {
             let user_pubkey = user_signer.get_public_key().await?;
 
             // Collect relay hints for all participants (including current user)
-            let mut participants = members.keys().cloned().collect_vec();
+            let mut participants: Vec<PublicKey> = members.keys().cloned().collect();
 
             if !participants.contains(&user_pubkey) {
                 participants.push(user_pubkey);
@@ -500,7 +498,7 @@ impl Room {
             let mut rumor = rumor;
             let mut tags_with_hints = Vec::new();
 
-            for tag in rumor.tags.to_vec() {
+            for tag in rumor.tags.into_iter() {
                 if let Some(standard) = tag.as_standardized().cloned() {
                     match standard {
                         TagStandard::PublicKey {
@@ -512,12 +510,14 @@ impl Room {
                             let relay_url = relay_cache
                                 .get(&public_key)
                                 .and_then(|urls| urls.first().cloned());
+
                             let updated = TagStandard::PublicKey {
                                 public_key,
                                 relay_url,
                                 alias,
                                 uppercase,
                             };
+
                             tags_with_hints.push(Tag::from_standardized_without_cell(updated));
                         }
                         _ => tags_with_hints.push(tag),
@@ -564,11 +564,10 @@ impl Room {
                 match client.send_event_to(urls, &event).await {
                     Ok(output) => {
                         let id = output.id().to_owned();
-                        let auth_required =
-                            output.failed.iter().any(|(_, s)| s.starts_with("auth-"));
+                        let auth = output.failed.iter().any(|(_, s)| s.starts_with("auth-"));
                         let report = SendReport::new(receiver).status(output);
 
-                        if auth_required {
+                        if auth {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
                                 let retry_manager = states.tracker().read().await;
@@ -601,11 +600,11 @@ impl Room {
 
             // Construct a gift wrap to back up to current user's owned messaging relays
             let rumor = rumor.clone();
-            let receiver = device_pubkey.unwrap_or(public_key);
-            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, vec![]).await?;
+            let target = Self::select_receiver(&opts.signer_kind, public_key, device_pubkey);
+            let event = EventBuilder::gift_wrap(&signer, &target, rumor, vec![]).await?;
 
             // Only send a backup message to current user if sent successfully to others
-            if reports.iter().all(|r| r.is_sent_success()) && opts.backup() {
+            if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
                 let urls = relay_cache.get(&public_key).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the event to

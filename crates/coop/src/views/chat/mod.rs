@@ -17,7 +17,7 @@ use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::{Message, RenderedMessage};
-use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
+use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport, SignerKind};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
@@ -47,6 +47,10 @@ mod subject;
 #[action(namespace = chat, no_json)]
 pub struct SeenOn(pub EventId);
 
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = chat, no_json)]
+pub struct SetEncryption(pub SignerKind);
+
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
     cx.new(|cx| Chat::new(room, window, cx))
 }
@@ -63,6 +67,7 @@ pub struct Chat {
 
     // New Message
     input: Entity<InputState>,
+    options: Entity<SendOptions>,
     replies_to: Entity<HashSet<EventId>>,
 
     // Media Attachment
@@ -90,6 +95,7 @@ impl Chat {
 
         let attachments = cx.new(|_| vec![]);
         let replies_to = cx.new(|_| HashSet::new());
+        let options = cx.new(|_| SendOptions::default());
 
         let id = room.read(cx).id.to_string().into();
         let messages = BTreeSet::from([Message::system()]);
@@ -191,6 +197,7 @@ impl Chat {
             input,
             replies_to,
             attachments,
+            options,
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
             uploading: false,
@@ -278,8 +285,8 @@ impl Chat {
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let opts = SendOptions::default();
-        let send_message = room.send_message(rumor.clone(), opts, cx);
+        let opts = self.options.read(cx);
+        let send_message = room.send_message(&rumor, opts, cx);
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
@@ -440,6 +447,10 @@ impl Chat {
         registry.get_person(public_key, cx)
     }
 
+    fn signer_kind(&self, cx: &App) -> SignerKind {
+        self.options.read(cx).signer_kind
+    }
+
     fn scroll_to(&self, id: EventId) {
         if let Some(ix) = self.messages.iter().position(|m| {
             if let Message::User(msg) = m {
@@ -510,29 +521,24 @@ impl Chat {
                 })
                 .ok();
 
-                match Flatten::flatten(task.await.map_err(|e| e.into())) {
-                    Ok(Some(url)) => {
-                        this.update(cx, |this, cx| {
+                let result = Flatten::flatten(task.await.map_err(|e| e.into()));
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(Some(url)) => {
                             this.add_attachment(url, cx);
                             this.set_uploading(false, cx);
-                        })
-                        .ok();
-                    }
-                    Ok(None) => {
-                        this.update_in(cx, |this, window, cx| {
-                            window.push_notification("Failed to upload file", cx);
+                        }
+                        Ok(None) => {
                             this.set_uploading(false, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        this.update_in(cx, |this, window, cx| {
+                        }
+                        Err(e) => {
                             window.push_notification(Notification::error(e.to_string()), cx);
                             this.set_uploading(false, cx);
-                        })
-                        .ok();
-                    }
-                }
+                        }
+                    };
+                })
+                .ok();
             }
 
             Some(())
@@ -1258,6 +1264,13 @@ impl Chat {
         })
         .detach();
     }
+
+    fn on_set_encryption(&mut self, ev: &SetEncryption, _: &mut Window, cx: &mut Context<Self>) {
+        self.options.update(cx, move |this, cx| {
+            this.signer_kind = ev.0;
+            cx.notify();
+        });
+    }
 }
 
 impl Panel for Chat {
@@ -1301,8 +1314,11 @@ impl Focusable for Chat {
 
 impl Render for Chat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let signer_kind = self.signer_kind(cx);
+
         v_flex()
             .on_action(cx.listener(Self::on_open_seen_on))
+            .on_action(cx.listener(Self::on_set_encryption))
             .image_cache(self.image_cache.clone())
             .size_full()
             .child(
@@ -1373,6 +1389,39 @@ impl Render for Chat {
                                                 EmojiPicker::new(self.input.downgrade())
                                                     .icon(IconName::EmojiFill)
                                                     .large(),
+                                            )
+                                            .child(
+                                                Button::new("options")
+                                                    .icon(IconName::Settings)
+                                                    .ghost()
+                                                    .large()
+                                                    .popup_menu(move |this, _window, _cx| {
+                                                        this.title("Encrypt by:")
+                                                            .menu_with_check(
+                                                                "Encryption Key",
+                                                                signer_kind
+                                                                    == SignerKind::Encryption,
+                                                                Box::new(SetEncryption(
+                                                                    SignerKind::Encryption,
+                                                                )),
+                                                            )
+                                                            .menu_with_check(
+                                                                "User's Identity",
+                                                                signer_kind
+                                                                    == SignerKind::Encryption,
+                                                                Box::new(SetEncryption(
+                                                                    SignerKind::User,
+                                                                )),
+                                                            )
+                                                            .menu_with_check(
+                                                                "Auto",
+                                                                signer_kind
+                                                                    == SignerKind::Encryption,
+                                                                Box::new(SetEncryption(
+                                                                    SignerKind::Auto,
+                                                                )),
+                                                            )
+                                                    }),
                                             ),
                                     )
                                     .child(TextInput::new(&self.input)),

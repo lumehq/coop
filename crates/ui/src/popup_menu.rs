@@ -76,6 +76,7 @@ pub trait PopupMenuExt: Styled + Selectable + InteractiveElement + IntoElement +
 impl PopupMenuExt for Button {}
 
 enum PopupMenuItem {
+    Title(SharedString),
     Separator,
     Item {
         icon: Option<Icon>,
@@ -311,6 +312,20 @@ impl PopupMenu {
             action: Some(action.boxed_clone()),
             handler: self.wrap_handler(action),
         });
+        self
+    }
+
+    /// Add a title menu item
+    pub fn title(mut self, label: impl Into<SharedString>) -> Self {
+        if self.menu_items.is_empty() {
+            return self;
+        }
+
+        if let Some(PopupMenuItem::Title(_)) = self.menu_items.last() {
+            return self;
+        }
+
+        self.menu_items.push(PopupMenuItem::Title(label.into()));
         self
     }
 
@@ -588,6 +603,15 @@ impl Render for PopupMenu {
                                             }));
 
                                         match item {
+                                            PopupMenuItem::Title(label) => {
+                                                this.child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_semibold()
+                                                        .text_color(cx.theme().text_muted)
+                                                        .child(label.clone())
+                                                )
+                                            },
                                             PopupMenuItem::Separator => this.h_auto().p_0().disabled(true).child(
                                                 div()
                                                     .rounded_none()

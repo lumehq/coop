@@ -954,7 +954,7 @@ impl AppState {
     /// Stores an unwrapped event in local database with reference to original
     async fn set_rumor(&self, id: EventId, rumor: &UnsignedEvent) -> Result<(), Error> {
         let rumor_id = rumor.id.context("Rumor is missing an event id")?;
-        let author_hex = rumor.pubkey.to_hex();
+        let author = rumor.pubkey;
         let conversation = self.conversation_id(rumor).to_string();
 
         let mut tags = rumor.tags.clone().to_vec();
@@ -965,7 +965,7 @@ impl AppState {
         // Add a reference to the rumor's author
         tags.push(Tag::custom(
             TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::A)),
-            [author_hex],
+            [author],
         ));
 
         // Add a conversation id
@@ -1020,49 +1020,12 @@ impl AppState {
             return Ok(());
         }
 
-        // Try to unwrap with the device's encryption keys
-        //
-        // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-        if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
-            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
-                let sender = unwrapped.sender;
-                let mut rumor_unsigned = unwrapped.rumor;
-
-                if !self.verify_rumor_sender(sender, &rumor_unsigned) {
-                    log::warn!(
-                        "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
-                        gift_wrap.id,
-                        sender,
-                        rumor_unsigned.pubkey
-                    );
-                    return Err(anyhow!("Invalid rumor"));
-                };
-
-                // Generate event id for the rumor if it doesn't have one
-                rumor_unsigned.ensure_id();
-
-                self.set_rumor(gift_wrap.id, &rumor_unsigned).await?;
-                self.process_rumor(gift_wrap.id, rumor_unsigned).await?;
-
-                return Ok(());
-            }
-        }
-
-        // Get user's signer
-        let signer = self.client.signer().await?;
-
-        // Try to unwrap with the user's signer
-        if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
+        // Try to unwrap with the available signer
+        if let Ok(unwrapped) = self.try_unwrap_gift(gift_wrap).await {
             let sender = unwrapped.sender;
             let mut rumor_unsigned = unwrapped.rumor;
 
             if !self.verify_rumor_sender(sender, &rumor_unsigned) {
-                log::warn!(
-                    "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
-                    gift_wrap.id,
-                    sender,
-                    rumor_unsigned.pubkey
-                );
                 return Err(anyhow!("Invalid rumor"));
             };
 
@@ -1076,6 +1039,25 @@ impl AppState {
         }
 
         Ok(())
+    }
+
+    // Helper method to try unwrapping with different signers
+    async fn try_unwrap_gift(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+        // Try to unwrap with the device's encryption keys first
+        // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+        if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
+            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
+                return Ok(unwrapped);
+            }
+        }
+
+        // Try to unwrap with the user's signer
+        let signer = self.client.signer().await?;
+        if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
+            return Ok(unwrapped);
+        }
+
+        Err(anyhow!("No signer available"))
     }
 
     /// Process a rumor event.
