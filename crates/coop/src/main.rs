@@ -7,7 +7,7 @@ use gpui::{
     WindowOptions,
 };
 use states::app_state;
-use states::constants::{APP_ID, APP_NAME};
+use states::constants::{APP_ID, CLIENT_NAME};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
@@ -63,7 +63,7 @@ fn main() {
             kind: WindowKind::Normal,
             app_id: Some(APP_ID.to_owned()),
             titlebar: Some(TitlebarOptions {
-                title: Some(SharedString::new_static(APP_NAME)),
+                title: Some(SharedString::new_static(CLIENT_NAME)),
                 traffic_light_position: Some(point(px(9.0), px(9.0))),
                 appears_transparent: true,
             }),

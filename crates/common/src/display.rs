@@ -64,7 +64,7 @@ pub trait RenderedTimestamp {
 
 impl RenderedTimestamp for Timestamp {
     fn to_human_time(&self) -> SharedString {
-        let input_time = match Local.timestamp_opt(self.as_u64() as i64, 0) {
+        let input_time = match Local.timestamp_opt(self.as_secs() as i64, 0) {
             chrono::LocalResult::Single(time) => time,
             _ => return SharedString::from("9999"),
         };
@@ -85,7 +85,7 @@ impl RenderedTimestamp for Timestamp {
     }
 
     fn to_ago(&self) -> SharedString {
-        let input_time = match Local.timestamp_opt(self.as_u64() as i64, 0) {
+        let input_time = match Local.timestamp_opt(self.as_secs() as i64, 0) {
             chrono::LocalResult::Single(time) => time,
             _ => return SharedString::from("1m"),
         };

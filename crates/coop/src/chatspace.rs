@@ -324,8 +324,11 @@ impl ChatSpace {
     }
 
     fn load_encryption(&self, ann: Announcement, window: &Window, cx: &Context<Self>) {
+        log::info!("Loading encryption keys: {ann:?}");
+
         cx.spawn_in(window, async move |this, cx| {
-            let result = app_state().load_encryption_keys(ann.clone()).await;
+            let state = app_state();
+            let result = state.load_encryption_keys(&ann).await;
 
             this.update_in(cx, |this, window, cx| {
                 match result {
@@ -914,7 +917,8 @@ impl ChatSpace {
 
     fn render_reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         cx.spawn_in(window, async move |this, cx| {
-            let result = app_state().init_client_keys().await;
+            let state = app_state();
+            let result = state.init_encryption_keys().await;
 
             this.update_in(cx, |_, window, cx| {
                 match result {

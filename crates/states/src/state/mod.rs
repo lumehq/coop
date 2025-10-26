@@ -11,9 +11,9 @@ use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
+use crate::app_name;
 use crate::constants::{
-    APP_NAME, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT,
-    SEARCH_RELAYS,
+    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT, SEARCH_RELAYS,
 };
 use crate::paths::config_dir;
 use crate::state::device::Device;
@@ -426,7 +426,7 @@ impl AppState {
 
         // Construct the application data event
         let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
-            .tag(Tag::identifier(kind))
+            .tag(Tag::identifier(format!("coop:{}", kind.into())))
             .build(public_key)
             .sign(&Keys::generate())
             .await?;
@@ -444,8 +444,7 @@ impl AppState {
 
         let filter = Filter::new()
             .kind(Kind::ApplicationSpecificData)
-            .identifier(kind)
-            .limit(1);
+            .identifier(format!("coop:{}", kind.into()));
 
         if let Some(event) = self.client.database().query(filter).await?.first() {
             let content = signer.nip44_decrypt(&public_key, &event.content).await?;
@@ -454,7 +453,7 @@ impl AppState {
 
             Ok(keys)
         } else {
-            Err(anyhow!("Not found"))
+            Err(anyhow!("Key not found"))
         }
     }
 
@@ -591,7 +590,7 @@ impl AppState {
             .author(public_key)
             .limit(1);
 
-        // Subscribe to events from the bootstrapping relays
+        // Subscribe to events from user's nip65 relays
         self.client.subscribe(filter.clone(), Some(opts)).await?;
 
         let tx = self.signal.sender().clone();
@@ -629,7 +628,7 @@ impl AppState {
         // Construct the announcement event
         let event = EventBuilder::new(Kind::Custom(10044), "")
             .tags(vec![
-                Tag::client(APP_NAME),
+                Tag::client(app_name()),
                 Tag::custom(TagKind::custom("n"), vec![public_key]),
             ])
             .sign(&signer)
@@ -644,7 +643,7 @@ impl AppState {
     /// User has previously set encryption keys, load them from storage
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    pub async fn load_encryption_keys(&self, announcement: Announcement) -> Result<(), Error> {
+    pub async fn load_encryption_keys(&self, announcement: &Announcement) -> Result<(), Error> {
         let keys = self.get_keys("encryption").await?;
 
         // Check if the encryption keys match the announcement
@@ -655,10 +654,10 @@ impl AppState {
             // Re-subscribe to gift wrap events
             self.resubscribe_messages().await.ok();
 
-            return Ok(());
+            Ok(())
+        } else {
+            Err(anyhow!("Not found"))
         }
-
-        Err(anyhow!("Not found"))
     }
 
     /// Request encryption keys from other clients
@@ -710,7 +709,7 @@ impl AppState {
                 // Construct encryption keys request event
                 let event = EventBuilder::new(Kind::Custom(4454), "")
                     .tags(vec![
-                        Tag::client(APP_NAME),
+                        Tag::client(app_name()),
                         Tag::custom(TagKind::custom("pubkey"), vec![client_pubkey]),
                     ])
                     .sign(&signer)

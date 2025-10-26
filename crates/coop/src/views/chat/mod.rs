@@ -49,7 +49,7 @@ pub struct SeenOn(pub EventId);
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
-pub struct SetEncryption(pub SignerKind);
+pub struct SetSigner(pub SignerKind);
 
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
     cx.new(|cx| Chat::new(room, window, cx))
@@ -1265,7 +1265,7 @@ impl Chat {
         .detach();
     }
 
-    fn on_set_encryption(&mut self, ev: &SetEncryption, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_set_encryption(&mut self, ev: &SetSigner, _: &mut Window, cx: &mut Context<Self>) {
         self.options.update(cx, move |this, cx| {
             this.signer_kind = ev.0;
             cx.notify();
@@ -1314,7 +1314,7 @@ impl Focusable for Chat {
 
 impl Render for Chat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let signer_kind = self.signer_kind(cx);
+        let kind = self.signer_kind(cx);
 
         v_flex()
             .on_action(cx.listener(Self::on_open_seen_on))
@@ -1367,9 +1367,7 @@ impl Render for Chat {
                                     .items_end()
                                     .gap_2p5()
                                     .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
+                                        h_flex()
                                             .gap_1()
                                             .text_color(cx.theme().text_muted)
                                             .child(
@@ -1389,42 +1387,33 @@ impl Render for Chat {
                                                 EmojiPicker::new(self.input.downgrade())
                                                     .icon(IconName::EmojiFill)
                                                     .large(),
-                                            )
-                                            .child(
-                                                Button::new("options")
-                                                    .icon(IconName::Settings)
-                                                    .ghost()
-                                                    .large()
-                                                    .popup_menu(move |this, _window, _cx| {
-                                                        this.title("Encrypt by:")
-                                                            .menu_with_check(
-                                                                "Encryption Key",
-                                                                signer_kind
-                                                                    == SignerKind::Encryption,
-                                                                Box::new(SetEncryption(
-                                                                    SignerKind::Encryption,
-                                                                )),
-                                                            )
-                                                            .menu_with_check(
-                                                                "User's Identity",
-                                                                signer_kind
-                                                                    == SignerKind::Encryption,
-                                                                Box::new(SetEncryption(
-                                                                    SignerKind::User,
-                                                                )),
-                                                            )
-                                                            .menu_with_check(
-                                                                "Auto",
-                                                                signer_kind
-                                                                    == SignerKind::Encryption,
-                                                                Box::new(SetEncryption(
-                                                                    SignerKind::Auto,
-                                                                )),
-                                                            )
-                                                    }),
                                             ),
                                     )
-                                    .child(TextInput::new(&self.input)),
+                                    .child(TextInput::new(&self.input))
+                                    .child(
+                                        Button::new("options")
+                                            .icon(IconName::Settings)
+                                            .ghost()
+                                            .large()
+                                            .popup_menu(move |this, _window, _cx| {
+                                                this.title("Encrypt by:")
+                                                    .menu_with_check(
+                                                        "Encryption Key",
+                                                        matches!(kind, SignerKind::Encryption),
+                                                        Box::new(SetSigner(SignerKind::Encryption)),
+                                                    )
+                                                    .menu_with_check(
+                                                        "User's Identity",
+                                                        matches!(kind, SignerKind::User),
+                                                        Box::new(SetSigner(SignerKind::User)),
+                                                    )
+                                                    .menu_with_check(
+                                                        "Auto",
+                                                        matches!(kind, SignerKind::Auto),
+                                                        Box::new(SetSigner(SignerKind::Auto)),
+                                                    )
+                                            }),
+                                    ),
                             ),
                     ),
             )

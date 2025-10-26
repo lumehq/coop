@@ -14,5 +14,5 @@ flume.workspace = true
 log.workspace = true
 anyhow.workspace = true
 
-whoami = "1.5.2"
+whoami = "1.6.1"
 rustls = "0.23.23"

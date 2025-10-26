@@ -1,4 +1,4 @@
-pub const APP_NAME: &str = "Coop";
+pub const CLIENT_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 pub const APP_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc4MkNFRkQ2RkVGQURGNzUKUldSMTMvcisxdThzZUZraHc4Vno3NVNJek81VkJFUEV3MkJweGFxQXhpekdSU1JIekpqMG4yemMK";
 pub const APP_UPDATER_ENDPOINT: &str = "https://coop-updater.reya.su/";
