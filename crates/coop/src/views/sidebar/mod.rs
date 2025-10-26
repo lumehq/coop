@@ -22,7 +22,6 @@ use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
 use states::constants::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
-use states::state::UnwrappingStatus;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -627,7 +626,7 @@ impl Sidebar {
                         .name(this.display_name(cx))
                         .avatar(this.display_image(proxy, cx))
                         .created_at(this.created_at.to_ago())
-                        .public_key(this.members[0])
+                        .public_key(this.members.iter().nth(0).unwrap().0)
                         .kind(this.kind)
                         .on_click(handler),
                 )
@@ -669,7 +668,7 @@ impl Focusable for Sidebar {
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let registry = Registry::read_global(cx);
-        let loading = registry.unwrapping_status.read(cx) != &UnwrappingStatus::Complete;
+        let loading = registry.loading;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {

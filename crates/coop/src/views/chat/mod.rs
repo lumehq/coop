@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
 use common::display::{RenderedProfile, RenderedTimestamp};
@@ -17,7 +17,7 @@ use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::{Message, RenderedMessage};
-use registry::room::{Room, RoomKind, RoomSignal, SendReport};
+use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport, SignerKind};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
@@ -47,6 +47,10 @@ mod subject;
 #[action(namespace = chat, no_json)]
 pub struct SeenOn(pub EventId);
 
+#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
+#[action(namespace = chat, no_json)]
+pub struct SetSigner(pub SignerKind);
+
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
     cx.new(|cx| Chat::new(room, window, cx))
 }
@@ -54,7 +58,6 @@ pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Cha
 pub struct Chat {
     // Chat Room
     room: Entity<Room>,
-    relays: Entity<HashMap<PublicKey, Vec<RelayUrl>>>,
 
     // Messages
     list_state: ListState,
@@ -64,6 +67,7 @@ pub struct Chat {
 
     // New Message
     input: Entity<InputState>,
+    options: Entity<SendOptions>,
     replies_to: Entity<HashSet<EventId>>,
 
     // Media Attachment
@@ -75,20 +79,12 @@ pub struct Chat {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
-    _subscriptions: SmallVec<[Subscription; 4]>,
+    _subscriptions: SmallVec<[Subscription; 3]>,
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl Chat {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let attachments = cx.new(|_| vec![]);
-        let replies_to = cx.new(|_| HashSet::new());
-
-        let relays = cx.new(|_| {
-            let this: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
-            this
-        });
-
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(t!("chat.placeholder"))
@@ -97,11 +93,16 @@ impl Chat {
                 .clean_on_escape()
         });
 
+        let attachments = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| HashSet::new());
+        let options = cx.new(|_| SendOptions::default());
+
+        let id = room.read(cx).id.to_string().into();
         let messages = BTreeSet::from([Message::system()]);
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
         let connect = room.read(cx).connect(cx);
-        let load_messages = room.read(cx).load_messages(cx);
+        let get_messages = room.read(cx).get_messages(cx);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -109,7 +110,7 @@ impl Chat {
         tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
-                let result = load_messages.await;
+                let result = get_messages.await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {
@@ -126,24 +127,11 @@ impl Chat {
         );
 
         tasks.push(
-            // Get messaging relays for all members
-            cx.spawn_in(window, async move |this, cx| {
-                let result = connect.await;
-
-                this.update_in(cx, |this, _window, cx| {
-                    match result {
-                        Ok(relays) => {
-                            this.relays.update(cx, |this, cx| {
-                                this.extend(relays);
-                                cx.notify();
-                            });
-                        }
-                        Err(e) => {
-                            this.insert_warning(e.to_string(), cx);
-                        }
-                    };
-                })
-                .ok();
+            // Get messaging relays and encryption keys announcement for all members
+            cx.background_spawn(async move {
+                if let Err(e) = connect.await {
+                    log::error!("Failed to initialize room: {e}");
+                }
             }),
         );
 
@@ -190,23 +178,6 @@ impl Chat {
         );
 
         subscriptions.push(
-            // Observe the messaging relays of the room's members
-            cx.observe_in(&relays, window, |this, entity, _window, cx| {
-                let registry = Registry::global(cx);
-                let relays = entity.read(cx).clone();
-
-                for (public_key, urls) in relays.iter() {
-                    if urls.is_empty() {
-                        let profile = registry.read(cx).get_person(public_key, cx);
-                        let content = t!("chat.nip17_not_found", u = profile.name());
-
-                        this.insert_warning(content, cx);
-                    }
-                }
-            }),
-        );
-
-        subscriptions.push(
             // Observe when user close chat panel
             cx.on_release_in(window, move |this, window, cx| {
                 this.messages.clear();
@@ -219,19 +190,19 @@ impl Chat {
         );
 
         Self {
-            id: room.read(cx).id.to_string().into(),
-            image_cache: RetainAllImageCache::new(cx),
-            focus_handle: cx.focus_handle(),
-            rendered_texts_by_id: BTreeMap::new(),
-            reports_by_id: BTreeMap::new(),
-            relays,
+            id,
             messages,
             room,
             list_state,
             input,
             replies_to,
             attachments,
+            options,
+            rendered_texts_by_id: BTreeMap::new(),
+            reports_by_id: BTreeMap::new(),
             uploading: false,
+            image_cache: RetainAllImageCache::new(cx),
+            focus_handle: cx.focus_handle(),
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -239,12 +210,12 @@ impl Chat {
 
     /// Load all messages belonging to this room
     fn load_messages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let load_messages = self.room.read(cx).load_messages(cx);
+        let get_messages = self.room.read(cx).get_messages(cx);
 
         self._tasks.push(
             // Run the task in the background
             cx.spawn_in(window, async move |this, cx| {
-                let result = load_messages.await;
+                let result = get_messages.await;
 
                 this.update_in(cx, |this, window, cx| {
                     match result {
@@ -303,9 +274,6 @@ impl Chat {
             this.set_value("", window, cx);
         });
 
-        // Get the backup setting
-        let backup = AppSettings::get_backup_messages(cx);
-
         // Get replies_to if it's present
         let replies: Vec<EventId> = self.replies_to.read(cx).iter().copied().collect();
 
@@ -317,14 +285,17 @@ impl Chat {
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let send_message = room.send_message(rumor.clone(), backup, cx);
+        let opts = self.options.read(cx);
+        let send_message = room.send_message(&rumor, opts, cx);
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(100))
-                .await;
+            let delay = Duration::from_millis(100);
 
+            // Wait for the delay
+            cx.background_executor().timer(delay).await;
+
+            // Update the message list and reset the states
             this.update_in(cx, |this, window, cx| {
                 this.insert_message(Message::user(rumor), true, cx);
                 this.remove_all_replies(cx);
@@ -339,37 +310,39 @@ impl Chat {
         })
         .detach();
 
-        // Continue sending the message in the background
-        cx.spawn_in(window, async move |this, cx| {
-            let result = send_message.await;
+        self._tasks.push(
+            // Continue sending the message in the background
+            cx.spawn_in(window, async move |this, cx| {
+                let result = send_message.await;
 
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(reports) => {
-                        this.room.update(cx, |this, cx| {
-                            if this.kind != RoomKind::Ongoing {
-                                // Update the room kind to ongoing
-                                // But keep the room kind if send failed
-                                if reports.iter().all(|r| !r.is_sent_success()) {
-                                    this.kind = RoomKind::Ongoing;
-                                    cx.notify();
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(reports) => {
+                            // Update room's status
+                            this.room.update(cx, |this, cx| {
+                                if this.kind != RoomKind::Ongoing {
+                                    // Update the room kind to ongoing,
+                                    // but keep the room kind if send failed
+                                    if reports.iter().all(|r| !r.is_sent_success()) {
+                                        this.kind = RoomKind::Ongoing;
+                                        cx.notify();
+                                    }
                                 }
-                            }
-                        });
+                            });
 
-                        // Insert the sent reports
-                        this.reports_by_id.insert(rumor_id, reports);
+                            // Insert the sent reports
+                            this.reports_by_id.insert(rumor_id, reports);
 
-                        cx.notify();
+                            cx.notify();
+                        }
+                        Err(e) => {
+                            window.push_notification(e.to_string(), cx);
+                        }
                     }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                }
-            })
-            .ok();
-        })
-        .detach();
+                })
+                .ok();
+            }),
+        );
     }
 
     /// Resend a failed message
@@ -432,6 +405,7 @@ impl Chat {
     }
 
     /// Insert a warning message into the chat panel
+    #[allow(dead_code)]
     fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
         let m = Message::warning(content.into());
         self.insert_message(m, true, cx);
@@ -471,6 +445,10 @@ impl Chat {
     fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
         let registry = Registry::read_global(cx);
         registry.get_person(public_key, cx)
+    }
+
+    fn signer_kind(&self, cx: &App) -> SignerKind {
+        self.options.read(cx).signer_kind
     }
 
     fn scroll_to(&self, id: EventId) {
@@ -543,29 +521,24 @@ impl Chat {
                 })
                 .ok();
 
-                match Flatten::flatten(task.await.map_err(|e| e.into())) {
-                    Ok(Some(url)) => {
-                        this.update(cx, |this, cx| {
+                let result = Flatten::flatten(task.await.map_err(|e| e.into()));
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(Some(url)) => {
                             this.add_attachment(url, cx);
                             this.set_uploading(false, cx);
-                        })
-                        .ok();
-                    }
-                    Ok(None) => {
-                        this.update_in(cx, |this, window, cx| {
-                            window.push_notification("Failed to upload file", cx);
+                        }
+                        Ok(None) => {
                             this.set_uploading(false, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        this.update_in(cx, |this, window, cx| {
+                        }
+                        Err(e) => {
                             window.push_notification(Notification::error(e.to_string()), cx);
                             this.set_uploading(false, cx);
-                        })
-                        .ok();
-                    }
-                }
+                        }
+                    };
+                })
+                .ok();
             }
 
             Some(())
@@ -908,6 +881,27 @@ impl Chat {
                                 .w_full()
                                 .text_center()
                                 .child(shared_t!("chat.nip17_not_found", u = name)),
+                        ),
+                )
+            })
+            .when(report.device_not_found, |this| {
+                this.child(
+                    h_flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .p_2()
+                        .h_20()
+                        .w_full()
+                        .text_sm()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().danger_background)
+                        .text_color(cx.theme().danger_foreground)
+                        .child(
+                            div()
+                                .flex_1()
+                                .w_full()
+                                .text_center()
+                                .child(shared_t!("chat.device_not_found", u = name)),
                         ),
                 )
             })
@@ -1291,6 +1285,13 @@ impl Chat {
         })
         .detach();
     }
+
+    fn on_set_encryption(&mut self, ev: &SetSigner, _: &mut Window, cx: &mut Context<Self>) {
+        self.options.update(cx, move |this, cx| {
+            this.signer_kind = ev.0;
+            cx.notify();
+        });
+    }
 }
 
 impl Panel for Chat {
@@ -1334,8 +1335,11 @@ impl Focusable for Chat {
 
 impl Render for Chat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let kind = self.signer_kind(cx);
+
         v_flex()
             .on_action(cx.listener(Self::on_open_seen_on))
+            .on_action(cx.listener(Self::on_set_encryption))
             .image_cache(self.image_cache.clone())
             .size_full()
             .child(
@@ -1384,9 +1388,7 @@ impl Render for Chat {
                                     .items_end()
                                     .gap_2p5()
                                     .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
+                                        h_flex()
                                             .gap_1()
                                             .text_color(cx.theme().text_muted)
                                             .child(
@@ -1408,7 +1410,31 @@ impl Render for Chat {
                                                     .large(),
                                             ),
                                     )
-                                    .child(TextInput::new(&self.input)),
+                                    .child(TextInput::new(&self.input))
+                                    .child(
+                                        Button::new("options")
+                                            .icon(IconName::Settings)
+                                            .ghost()
+                                            .large()
+                                            .popup_menu(move |this, _window, _cx| {
+                                                this.title("Encrypt by:")
+                                                    .menu_with_check(
+                                                        "Encryption Key",
+                                                        matches!(kind, SignerKind::Encryption),
+                                                        Box::new(SetSigner(SignerKind::Encryption)),
+                                                    )
+                                                    .menu_with_check(
+                                                        "User's Identity",
+                                                        matches!(kind, SignerKind::User),
+                                                        Box::new(SetSigner(SignerKind::User)),
+                                                    )
+                                                    .menu_with_check(
+                                                        "Auto",
+                                                        matches!(kind, SignerKind::Auto),
+                                                        Box::new(SetSigner(SignerKind::Auto)),
+                                                    )
+                                            }),
+                                    ),
                             ),
                     ),
             )

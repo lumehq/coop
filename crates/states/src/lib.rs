@@ -1,7 +1,9 @@
 use std::sync::OnceLock;
 
 use nostr_sdk::prelude::*;
+use whoami::{devicename, platform};
 
+use crate::constants::CLIENT_NAME;
 use crate::state::AppState;
 
 pub mod constants;
@@ -9,12 +11,22 @@ pub mod paths;
 pub mod state;
 
 static APP_STATE: OnceLock<AppState> = OnceLock::new();
+static APP_NAME: OnceLock<String> = OnceLock::new();
 static NIP65_RELAYS: OnceLock<Vec<(RelayUrl, Option<RelayMetadata>)>> = OnceLock::new();
 static NIP17_RELAYS: OnceLock<Vec<RelayUrl>> = OnceLock::new();
 
 /// Initialize the application state.
 pub fn app_state() -> &'static AppState {
     APP_STATE.get_or_init(AppState::new)
+}
+
+pub fn app_name() -> &'static String {
+    APP_NAME.get_or_init(|| {
+        let devicename = devicename();
+        let platform = platform();
+
+        format!("{CLIENT_NAME} on {platform} ({devicename})")
+    })
 }
 
 /// Default NIP-65 Relays. Used for new account

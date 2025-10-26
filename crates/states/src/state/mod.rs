@@ -1,169 +1,31 @@
 use std::borrow::Cow;
-use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Error};
-use flume::{Receiver, Sender};
+use anyhow::{anyhow, Context, Error};
 use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
+use crate::app_name;
 use crate::constants::{
-    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, SEARCH_RELAYS,
+    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT, SEARCH_RELAYS,
 };
 use crate::paths::config_dir;
+use crate::state::device::Device;
+use crate::state::ingester::Ingester;
+use crate::state::tracker::EventTracker;
 
-const TIMEOUT: u64 = 5;
+mod device;
+mod ingester;
+mod signal;
+mod tracker;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct AuthRequest {
-    pub url: RelayUrl,
-    pub challenge: String,
-    pub sending: bool,
-}
-
-impl AuthRequest {
-    pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
-        Self {
-            challenge: challenge.into(),
-            sending: false,
-            url,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub enum UnwrappingStatus {
-    #[default]
-    Initialized,
-    Processing,
-    Complete,
-}
-
-/// Signals sent through the global event channel to notify UI
-#[derive(Debug)]
-pub enum SignalKind {
-    /// A signal to notify UI that the client's signer has been set
-    SignerSet(PublicKey),
-
-    /// A signal to notify UI that the client's signer has been unset
-    SignerUnset,
-
-    /// A signal to notify UI that the relay requires authentication
-    Auth(AuthRequest),
-
-    /// A signal to notify UI that a new profile has been received
-    NewProfile(Profile),
-
-    /// A signal to notify UI that a new gift wrap event has been received
-    NewMessage((EventId, UnsignedEvent)),
-
-    /// A signal to notify UI that no messaging relays for current user was found
-    MessagingRelaysNotFound,
-
-    /// A signal to notify UI that no gossip relays for current user was found
-    GossipRelaysNotFound,
-
-    /// A signal to notify UI that gift wrap status has changed
-    GiftWrapStatus(UnwrappingStatus),
-}
-
-#[derive(Debug, Clone)]
-pub struct Signal {
-    rx: Receiver<SignalKind>,
-    tx: Sender<SignalKind>,
-}
-
-impl Default for Signal {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Signal {
-    pub fn new() -> Self {
-        let (tx, rx) = flume::bounded::<SignalKind>(2048);
-        Self { rx, tx }
-    }
-
-    pub fn receiver(&self) -> &Receiver<SignalKind> {
-        &self.rx
-    }
-
-    pub fn sender(&self) -> &Sender<SignalKind> {
-        &self.tx
-    }
-
-    pub async fn send(&self, kind: SignalKind) {
-        if let Err(e) = self.tx.send_async(kind).await {
-            log::error!("Failed to send signal: {e}");
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Ingester {
-    rx: Receiver<PublicKey>,
-    tx: Sender<PublicKey>,
-}
-
-impl Default for Ingester {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Ingester {
-    pub fn new() -> Self {
-        let (tx, rx) = flume::bounded::<PublicKey>(1024);
-        Self { rx, tx }
-    }
-
-    pub fn receiver(&self) -> &Receiver<PublicKey> {
-        &self.rx
-    }
-
-    pub async fn send(&self, public_key: PublicKey) {
-        if let Err(e) = self.tx.send_async(public_key).await {
-            log::error!("Failed to send public key: {e}");
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct EventTracker {
-    /// Tracking events that have been resent by Coop in the current session
-    pub resent_ids: Vec<Output<EventId>>,
-
-    /// Temporarily store events that need to be resent later
-    pub resend_queue: HashMap<EventId, RelayUrl>,
-
-    /// Tracking events sent by Coop in the current session
-    pub sent_ids: HashSet<EventId>,
-
-    /// Tracking events seen on which relays in the current session
-    pub seen_on_relays: HashMap<EventId, HashSet<RelayUrl>>,
-}
-
-impl EventTracker {
-    pub fn resent_ids(&self) -> &Vec<Output<EventId>> {
-        &self.resent_ids
-    }
-
-    pub fn resend_queue(&self) -> &HashMap<EventId, RelayUrl> {
-        &self.resend_queue
-    }
-
-    pub fn sent_ids(&self) -> &HashSet<EventId> {
-        &self.sent_ids
-    }
-
-    pub fn seen_on_relays(&self) -> &HashMap<EventId, HashSet<RelayUrl>> {
-        &self.seen_on_relays
-    }
-}
+pub use signal::*;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -178,6 +40,9 @@ pub struct AppState {
 
     /// Ingester channel for processing public keys
     ingester: Ingester,
+
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub device: RwLock<Device>,
 
     /// The timestamp when the application was initialized.
     pub initialized_at: Timestamp,
@@ -213,6 +78,7 @@ impl AppState {
             });
 
         let client = ClientBuilder::default().database(lmdb).opts(opts).build();
+        let device = RwLock::new(Device::default());
         let event_tracker = RwLock::new(EventTracker::default());
 
         let signal = Signal::default();
@@ -220,6 +86,7 @@ impl AppState {
 
         Self {
             client,
+            device,
             event_tracker,
             signal,
             ingester,
@@ -231,6 +98,11 @@ impl AppState {
     /// Returns a reference to the nostr client
     pub fn client(&'static self) -> &'static Client {
         &self.client
+    }
+
+    /// Returns a reference to the device
+    pub fn device(&'static self) -> &'static RwLock<Device> {
+        &self.device
     }
 
     /// Returns a reference to the event tracker
@@ -262,7 +134,10 @@ impl AppState {
                     // Get user's gossip relays
                     self.get_nip65(pk).await.ok();
 
-                    // Exit the current loop
+                    // Initialize client keys
+                    self.init_client_keys().await.ok();
+
+                    // Exit the loop
                     break;
                 }
             }
@@ -355,6 +230,36 @@ impl AppState {
                     }
 
                     match event.kind {
+                        // Encryption Keys announcement event
+                        Kind::Custom(10044) => {
+                            if let Ok(true) = self.is_self_authored(&event).await {
+                                if let Ok(announcement) = self.extract_announcement(&event) {
+                                    self.signal
+                                        .send(SignalKind::EncryptionSet(announcement))
+                                        .await;
+                                }
+                            }
+                        }
+                        // Encryption Keys request event
+                        Kind::Custom(4454) => {
+                            if let Ok(true) = self.is_self_authored(&event).await {
+                                if let Ok(announcement) = self.extract_announcement(&event) {
+                                    self.signal
+                                        .send(SignalKind::EncryptionRequest(announcement))
+                                        .await;
+                                }
+                            }
+                        }
+                        // Encryption Keys response event
+                        Kind::Custom(4455) => {
+                            if let Ok(true) = self.is_self_authored(&event).await {
+                                if let Ok(response) = self.extract_response(&event) {
+                                    self.signal
+                                        .send(SignalKind::EncryptionResponse(response))
+                                        .await;
+                                }
+                            }
+                        }
                         Kind::RelayList => {
                             // Get events if relay list belongs to current user
                             if let Ok(true) = self.is_self_authored(&event).await {
@@ -368,6 +273,11 @@ impl AppState {
                                 // Fetch user's contact list event
                                 if let Err(e) = self.subscribe(author, Kind::ContactList).await {
                                     log::error!("Failed to subscribe to contact list event: {e}");
+                                }
+
+                                // Fetch user's encryption announcement event
+                                if let Err(e) = self.get_announcement(author).await {
+                                    log::error!("Failed to fetch encryption event: {e}");
                                 }
 
                                 // Fetch user's messaging relays event
@@ -404,7 +314,9 @@ impl AppState {
                             self.signal.send(SignalKind::NewProfile(profile)).await;
                         }
                         Kind::GiftWrap => {
-                            self.extract_rumor(&event).await;
+                            if let Err(e) = self.extract_rumor(&event).await {
+                                log::error!("Failed to extract rumor: {e}");
+                            }
                         }
                         _ => {}
                     }
@@ -428,14 +340,14 @@ impl AppState {
                     event_id, message, ..
                 } => {
                     let msg = MachineReadablePrefix::parse(&message);
-                    let mut event_tracker = self.event_tracker.write().await;
+                    let mut tracker = self.event_tracker.write().await;
 
                     // Keep track of events sent by Coop
-                    event_tracker.sent_ids.insert(event_id);
+                    tracker.sent_ids.insert(event_id);
 
                     // Keep track of events that need to be resend after auth
                     if let Some(MachineReadablePrefix::AuthRequired) = msg {
-                        event_tracker.resend_queue.insert(event_id, relay_url);
+                        tracker.resend_queue.insert(event_id, relay_url);
                     }
                 }
                 _ => {}
@@ -504,6 +416,47 @@ impl AppState {
         }
     }
 
+    /// Encrypt and store a key in the local database.
+    pub async fn set_keys(&self, kind: impl Into<String>, value: String) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        // Encrypt the value
+        let content = signer.nip44_encrypt(&public_key, value.as_ref()).await?;
+
+        // Construct the application data event
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+            .tag(Tag::identifier(format!("coop:{}", kind.into())))
+            .build(public_key)
+            .sign(&Keys::generate())
+            .await?;
+
+        // Save the event to the database
+        self.client.database().save_event(&event).await?;
+
+        Ok(())
+    }
+
+    /// Get and decrypt a key from the local database.
+    pub async fn get_keys(&self, kind: impl Into<String>) -> Result<Keys, Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        let filter = Filter::new()
+            .kind(Kind::ApplicationSpecificData)
+            .identifier(format!("coop:{}", kind.into()));
+
+        if let Some(event) = self.client.database().query(filter).await?.first() {
+            let content = signer.nip44_decrypt(&public_key, &event.content).await?;
+            let secret = SecretKey::parse(&content)?;
+            let keys = Keys::new(secret);
+
+            Ok(keys)
+        } else {
+            Err(anyhow!("Key not found"))
+        }
+    }
+
     /// Check if event is published by current user
     async fn is_self_authored(&self, event: &Event) -> Result<bool, Error> {
         let signer = self.client.signer().await?;
@@ -552,7 +505,7 @@ impl AppState {
 
     /// Get and verify NIP-65 relays for a given public key
     pub async fn get_nip65(&self, public_key: PublicKey) -> Result<(), Error> {
-        let timeout = Duration::from_secs(TIMEOUT);
+        let timeout = Duration::from_secs(QUERY_TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let filter = Filter::new()
@@ -608,9 +561,269 @@ impl AppState {
         Ok(())
     }
 
+    /// Initialize the client keys to communicate between clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn init_client_keys(&self) -> Result<(), Error> {
+        // Get the keys from the database or generate new ones
+        let keys = self
+            .get_keys("client")
+            .await
+            .unwrap_or_else(|_| Keys::generate());
+
+        // Initialize the client keys
+        let mut device = self.device.write().await;
+        device.client_keys = Some(Arc::new(keys));
+
+        Ok(())
+    }
+
+    /// Get and verify encryption announcement for a given public key
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn get_announcement(&self, public_key: PublicKey) -> Result<(), Error> {
+        let timeout = Duration::from_secs(QUERY_TIMEOUT);
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+
+        let filter = Filter::new()
+            .kind(Kind::Custom(10044))
+            .author(public_key)
+            .limit(1);
+
+        // Subscribe to events from user's nip65 relays
+        self.client.subscribe(filter.clone(), Some(opts)).await?;
+
+        let tx = self.signal.sender().clone();
+        let database = self.client.database().clone();
+
+        // Verify the received data after a timeout
+        smol::spawn(async move {
+            smol::Timer::after(timeout).await;
+
+            if database.count(filter).await.unwrap_or(0) < 1 {
+                tx.send_async(SignalKind::EncryptionNotSet).await.ok();
+            }
+        })
+        .detach();
+
+        Ok(())
+    }
+
+    /// Generate encryption keys and announce them
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn init_encryption_keys(&self) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
+        let keys = Keys::generate();
+        let public_key = keys.public_key();
+        let secret = keys.secret_key().to_secret_hex();
+
+        // Initialize the encryption keys
+        let mut device = self.device.write().await;
+        device.encryption_keys = Some(Arc::new(keys));
+
+        // Store the encryption keys for future use
+        self.set_keys("encryption", secret).await?;
+
+        // Construct the announcement event
+        let event = EventBuilder::new(Kind::Custom(10044), "")
+            .tags(vec![
+                Tag::client(app_name()),
+                Tag::custom(TagKind::custom("n"), vec![public_key]),
+            ])
+            .sign(&signer)
+            .await?;
+
+        // Send the announcement event to the relays
+        self.client.send_event(&event).await?;
+
+        Ok(())
+    }
+
+    /// User has previously set encryption keys, load them from storage
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn load_encryption_keys(&self, announcement: &Announcement) -> Result<(), Error> {
+        let keys = self.get_keys("encryption").await?;
+
+        // Check if the encryption keys match the announcement
+        if announcement.public_key() == keys.public_key() {
+            let mut device = self.device.write().await;
+            device.encryption_keys = Some(Arc::new(keys));
+
+            Ok(())
+        } else {
+            Err(anyhow!("Not found"))
+        }
+    }
+
+    /// Request encryption keys from other clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn request_encryption_keys(&self) -> Result<bool, Error> {
+        let mut wait_for_approval = false;
+        let device = self.device.read().await;
+
+        // Client Keys are always known at this point
+        let Some(client_keys) = device.client_keys.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let client_pubkey = client_keys.get_public_key().await?;
+
+        // Get the encryption keys response from the database first
+        let filter = Filter::new()
+            .kind(Kind::Custom(4455))
+            .author(public_key)
+            .pubkey(client_pubkey)
+            .limit(1);
+
+        match self.client.database().query(filter).await?.first_owned() {
+            // Found encryption keys that shared by other clients
+            Some(event) => {
+                let root_device = event
+                    .tags
+                    .find(TagKind::custom("P"))
+                    .and_then(|tag| tag.content())
+                    .and_then(|content| PublicKey::parse(content).ok())
+                    .context("Invalid event's tags")?;
+
+                let payload = event.content.as_str();
+                let decrypted = client_keys.nip44_decrypt(&root_device, payload).await?;
+
+                let secret = SecretKey::from_hex(&decrypted)?;
+                let keys = Keys::new(secret);
+
+                // No longer need to hold the reader for device
+                drop(device);
+
+                let mut device = self.device.write().await;
+                device.encryption_keys = Some(Arc::new(keys));
+            }
+            None => {
+                // Construct encryption keys request event
+                let event = EventBuilder::new(Kind::Custom(4454), "")
+                    .tags(vec![
+                        Tag::client(app_name()),
+                        Tag::custom(TagKind::custom("pubkey"), vec![client_pubkey]),
+                    ])
+                    .sign(&signer)
+                    .await?;
+
+                // Send a request for encryption keys from other devices
+                self.client.send_event(&event).await?;
+
+                // Create a unique ID to control the subscription later
+                let subscription_id = SubscriptionId::new("request");
+
+                let filter = Filter::new()
+                    .kind(Kind::Custom(4455))
+                    .author(public_key)
+                    .pubkey(client_pubkey)
+                    .since(Timestamp::now());
+
+                // Subscribe to the approval response event
+                self.client
+                    .subscribe_with_id(subscription_id, filter, None)
+                    .await?;
+
+                wait_for_approval = true;
+            }
+        }
+
+        Ok(wait_for_approval)
+    }
+
+    /// Receive the encryption keys from other clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn receive_encryption_keys(&self, res: Response) -> Result<(), Error> {
+        let device = self.device.read().await;
+
+        // Client Keys are always known at this point
+        let Some(client_keys) = device.client_keys.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let public_key = res.public_key();
+        let payload = res.payload();
+
+        // Decrypt the payload using the client keys
+        let decrypted = client_keys.nip44_decrypt(&public_key, payload).await?;
+        let secret = SecretKey::parse(&decrypted)?;
+        let keys = Keys::new(secret);
+
+        // No longer need to hold the reader for device
+        drop(device);
+
+        let mut device = self.device.write().await;
+        device.encryption_keys = Some(Arc::new(keys));
+
+        Ok(())
+    }
+
+    /// Response the encryption keys request from other clients
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub async fn response_encryption_keys(&self, target: PublicKey) -> Result<(), Error> {
+        let device = self.device.read().await;
+
+        // Client Keys are always known at this point
+        let Some(client_keys) = device.client_keys.as_ref() else {
+            return Err(anyhow!("Client Keys is required"));
+        };
+
+        let encryption = self.get_keys("encryption").await?;
+        let client_pubkey = client_keys.get_public_key().await?;
+
+        // Encrypt the encryption keys with the client's signer
+        let payload = client_keys
+            .nip44_encrypt(&target, &encryption.secret_key().to_secret_hex())
+            .await?;
+
+        // Construct the response event
+        //
+        // P tag: the current client's public key
+        // p tag: the requester's public key
+        let event = EventBuilder::new(Kind::Custom(4455), payload)
+            .tags(vec![
+                Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
+                Tag::public_key(target),
+            ])
+            .sign(client_keys)
+            .await?;
+
+        // Get the current user's signer and public key
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        // Get the current user's relay list
+        let urls: Vec<RelayUrl> = self
+            .client
+            .database()
+            .relay_list(public_key)
+            .await?
+            .into_iter()
+            .filter_map(|(url, metadata)| {
+                if metadata.is_none() || metadata == Some(RelayMetadata::Read) {
+                    Some(url)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Send the response event to the user's relay list
+        self.client.send_event_to(urls, &event).await?;
+
+        Ok(())
+    }
+
     /// Get and verify NIP-17 relays for a given public key
     pub async fn get_nip17(&self, public_key: PublicKey) -> Result<(), Error> {
-        let timeout = Duration::from_secs(TIMEOUT);
+        let timeout = Duration::from_secs(QUERY_TIMEOUT);
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
         let filter = Filter::new()
@@ -685,33 +898,87 @@ impl AppState {
         Ok(())
     }
 
+    /// Gets messaging relays for public key
+    pub async fn messaging_relays(&self, public_key: PublicKey) -> Vec<RelayUrl> {
+        let mut relay_urls = vec![];
+
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
+
+        if let Ok(events) = self.client.database().query(filter).await {
+            if let Some(event) = events.first_owned() {
+                let urls: Vec<RelayUrl> = nip17::extract_owned_relay_list(event).collect();
+
+                // Connect to relays
+                for url in urls.iter() {
+                    self.client.add_relay(url).await.ok();
+                    self.client.connect_relay(url).await.ok();
+                }
+
+                relay_urls.extend(urls.into_iter().take(3));
+            }
+        }
+
+        relay_urls
+    }
+
+    /// Re-subscribes to gift wrap events
+    pub async fn resubscribe_messages(&self) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let urls = self.messaging_relays(public_key).await;
+
+        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+        let id = SubscriptionId::new("inbox");
+
+        // Unsubscribe the previous subscription
+        self.client.unsubscribe(&id).await;
+
+        // Subscribe to gift wrap events
+        self.client
+            .subscribe_with_id_to(urls, id, filter, None)
+            .await?;
+
+        Ok(())
+    }
+
     /// Stores an unwrapped event in local database with reference to original
     async fn set_rumor(&self, id: EventId, rumor: &UnsignedEvent) -> Result<(), Error> {
-        let rumor_id = rumor
-            .id
-            .ok_or_else(|| anyhow!("Rumor is missing an event id"))?;
-        let author_hex = rumor.pubkey.to_hex();
-        let conversation = Self::conversation_id(rumor).to_string();
+        let rumor_id = rumor.id.context("Rumor is missing an event id")?;
+        let author = rumor.pubkey;
+        let conversation = self.conversation_id(rumor).to_string();
 
         let mut tags = rumor.tags.clone().to_vec();
+
+        // Add a unique identifier
         tags.push(Tag::identifier(id));
+
+        // Add a reference to the rumor's author
         tags.push(Tag::custom(
             TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::A)),
-            [author_hex],
+            [author],
         ));
+
+        // Add a conversation id
         tags.push(Tag::custom(
             TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::C)),
             [conversation],
         ));
+
+        // Add a reference to the rumor's id
         tags.push(Tag::event(rumor_id));
 
+        // Add references to the rumor's participants
         for receiver in rumor.tags.public_keys().copied() {
             tags.push(Tag::custom(
                 TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::P)),
-                [receiver.to_hex()],
+                [receiver],
             ));
         }
 
+        // Convert rumor to json
         let content = rumor.as_json();
 
         let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
@@ -739,89 +1006,149 @@ impl AppState {
     }
 
     // Unwraps a gift-wrapped event and processes its contents.
-    async fn extract_rumor(&self, gift_wrap: &Event) {
-        let mut rumor: Option<UnsignedEvent> = None;
-
+    async fn extract_rumor(&self, gift_wrap: &Event) -> Result<(), Error> {
+        // Try to get cached rumor first
         if let Ok(event) = self.get_rumor(gift_wrap.id).await {
-            rumor = Some(event);
-        } else if let Ok(unwrapped) = self.client.unwrap_gift_wrap(gift_wrap).await {
+            self.process_rumor(gift_wrap.id, event).await?;
+            return Ok(());
+        }
+
+        // Try to unwrap with the available signer
+        if let Ok(unwrapped) = self.try_unwrap_gift(gift_wrap).await {
             let sender = unwrapped.sender;
             let mut rumor_unsigned = unwrapped.rumor;
 
-            if !Self::verify_rumor_sender(sender, &rumor_unsigned) {
-                log::warn!(
-                    "Ignoring gift wrap {}: seal pubkey {} mismatches rumor pubkey {}",
-                    gift_wrap.id,
-                    sender,
-                    rumor_unsigned.pubkey
-                );
-            } else {
-                rumor_unsigned.ensure_id();
+            if !self.verify_rumor_sender(sender, &rumor_unsigned) {
+                return Err(anyhow!("Invalid rumor"));
+            };
 
-                if let Err(e) = self.set_rumor(gift_wrap.id, &rumor_unsigned).await {
-                    log::warn!("Failed to cache unwrapped event: {e}")
-                } else {
-                    rumor = Some(rumor_unsigned);
-                }
-            }
+            // Generate event id for the rumor if it doesn't have one
+            rumor_unsigned.ensure_id();
+
+            self.set_rumor(gift_wrap.id, &rumor_unsigned).await?;
+            self.process_rumor(gift_wrap.id, rumor_unsigned).await?;
+
+            return Ok(());
         }
 
-        if let Some(event) = rumor {
-            // Send all pubkeys to the metadata batch to sync data
-            for public_key in event.tags.public_keys().copied() {
-                self.ingester.send(public_key).await;
-            }
-
-            match event.created_at >= self.initialized_at {
-                // New message: send a signal to notify the UI
-                true => {
-                    self.signal
-                        .send(SignalKind::NewMessage((gift_wrap.id, event)))
-                        .await;
-                }
-                // Old message: Coop is probably processing the user's messages during initial load
-                false => {
-                    self.gift_wrap_processing.store(true, Ordering::Release);
-                }
-            }
-        }
+        Ok(())
     }
 
-    fn conversation_id(rumor: &UnsignedEvent) -> u64 {
+    // Helper method to try unwrapping with different signers
+    async fn try_unwrap_gift(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+        // Try to unwrap with the device's encryption keys first
+        // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+        if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
+            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
+                return Ok(unwrapped);
+            }
+        }
+
+        // Try to unwrap with the user's signer
+        let signer = self.client.signer().await?;
+        if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
+            return Ok(unwrapped);
+        }
+
+        Err(anyhow!("No signer available"))
+    }
+
+    /// Process a rumor event.
+    async fn process_rumor(&self, id: EventId, event: UnsignedEvent) -> Result<(), Error> {
+        // Send all pubkeys to the metadata batch to sync data
+        for public_key in event.tags.public_keys().copied() {
+            self.ingester.send(public_key).await;
+        }
+
+        match event.created_at >= self.initialized_at {
+            // New message: send a signal to notify the UI
+            true => {
+                self.signal.send(SignalKind::NewMessage((id, event))).await;
+            }
+            // Old message: Coop is probably processing the user's messages during initial load
+            false => {
+                self.gift_wrap_processing.store(true, Ordering::Release);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get the conversation ID for a given rumor (message).
+    fn conversation_id(&self, rumor: &UnsignedEvent) -> u64 {
         let mut hasher = DefaultHasher::new();
         let mut pubkeys: Vec<PublicKey> = rumor.tags.public_keys().copied().collect();
         pubkeys.push(rumor.pubkey);
         pubkeys.sort();
         pubkeys.dedup();
         pubkeys.hash(&mut hasher);
+
         hasher.finish()
     }
 
-    fn verify_rumor_sender(sender: PublicKey, rumor: &UnsignedEvent) -> bool {
+    /// Verify that the sender of a rumor is the same as the sender of the event.
+    fn verify_rumor_sender(&self, sender: PublicKey, rumor: &UnsignedEvent) -> bool {
         rumor.pubkey == sender
+    }
+
+    /// Extract an encryption keys announcement from an event.
+    fn extract_announcement(&self, event: &Event) -> Result<Announcement, Error> {
+        let public_key = event
+            .tags
+            .iter()
+            .find(|tag| tag.kind().as_str() == "n" || tag.kind().as_str() == "pubkey")
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        let client_name = event
+            .tags
+            .find(TagKind::Client)
+            .and_then(|tag| tag.content())
+            .map(|c| c.to_string())
+            .context("Cannot parse client name from the event's tags")?;
+
+        Ok(Announcement::new(event.id, client_name, public_key))
+    }
+
+    /// Extract an encryption keys response from an event.
+    fn extract_response(&self, event: &Event) -> Result<Response, Error> {
+        let payload = event.content.clone();
+        let root_device = event
+            .tags
+            .find(TagKind::custom("P"))
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        Ok(Response::new(payload, root_device))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_state;
 
     #[test]
     fn verify_rumor_sender_accepts_matching_sender() {
+        let state = app_state();
+
         let keys = Keys::generate();
         let public_key = keys.public_key();
         let rumor = EventBuilder::text_note("hello").build(public_key);
-        assert!(AppState::verify_rumor_sender(public_key, &rumor));
+
+        assert!(state.verify_rumor_sender(public_key, &rumor));
     }
 
     #[test]
     fn verify_rumor_sender_rejects_mismatched_sender() {
+        let state = app_state();
+
         let sender_keys = Keys::generate();
         let rumor_keys = Keys::generate();
         let rumor = EventBuilder::text_note("spoof").build(rumor_keys.public_key());
-        assert!(!AppState::verify_rumor_sender(
-            sender_keys.public_key(),
-            &rumor
-        ));
+
+        assert!(!state.verify_rumor_sender(sender_keys.public_key(), &rumor));
     }
 }

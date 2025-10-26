@@ -14,8 +14,6 @@ use states::paths::config_dir;
 pub enum KeyItem {
     User,
     Bunker,
-    Client,
-    Encryption,
 }
 
 impl Display for KeyItem {
@@ -23,8 +21,6 @@ impl Display for KeyItem {
         match self {
             Self::User => write!(f, "coop-user"),
             Self::Bunker => write!(f, "coop-bunker"),
-            Self::Client => write!(f, "coop-client"),
-            Self::Encryption => write!(f, "coop-encryption"),
         }
     }
 }
@@ -35,7 +31,7 @@ impl From<KeyItem> for String {
     }
 }
 
-pub trait KeyStore: Any + Send + Sync {
+pub trait KeyBackend: Any + Send + Sync {
     fn name(&self) -> &str;
 
     /// Reads the credentials from the provider.
@@ -66,7 +62,7 @@ pub trait KeyStore: Any + Send + Sync {
 /// A credentials provider that stores credentials in the system keychain.
 pub struct KeyringProvider;
 
-impl KeyStore for KeyringProvider {
+impl KeyBackend for KeyringProvider {
     fn name(&self) -> &str {
         "keyring"
     }
@@ -139,7 +135,7 @@ impl Default for FileProvider {
     }
 }
 
-impl KeyStore for FileProvider {
+impl KeyBackend for FileProvider {
     fn name(&self) -> &str {
         "file"
     }

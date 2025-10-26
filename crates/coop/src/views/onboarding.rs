@@ -9,12 +9,12 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use i18n::{shared_t, t};
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_connect::prelude::*;
-use registry::keystore::KeyItem;
-use registry::Registry;
 use smallvec::{smallvec, SmallVec};
 use states::app_state;
-use states::constants::{APP_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use states::constants::{CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -81,7 +81,7 @@ impl Onboarding {
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
 
         let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-        let uri = NostrConnectURI::client(app_keys.public_key(), vec![relay], APP_NAME);
+        let uri = NostrConnectURI::client(app_keys.public_key(), vec![relay], CLIENT_NAME);
         let qr_code = uri.to_string().to_qr();
 
         // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
@@ -126,7 +126,7 @@ impl Onboarding {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
         let username = self.app_keys.public_key().to_hex();
         let secret = self.app_keys.secret_key().to_secret_bytes();
         let mut clean_uri = uri.to_string();

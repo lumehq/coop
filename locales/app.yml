@@ -59,6 +59,10 @@ common:
     en: "Use default"
   configure:
     en: "Configure"
+  hide:
+    en: "Hide"
+  reset:
+    en: "Reset"
 
 keyring_disable:
   label:
@@ -73,6 +77,30 @@ keyring_disable:
     en: "If you want to store your credentials in the Keyring, please enable Keyring and allow Coop to access it."
   body_5:
     en: "By clicking continue, you agree to store your credentials as plain text."
+
+pending_encryption:
+  label:
+    en: "Wait for Approval"
+  body_1:
+    en: "Please open %{c} and approve the request for sharing encryption keys. Without access to them, Coop cannot decrypt your messages that are encrypted with encryption keys."
+  body_2:
+    en: "Or you can click the 'Reset' button to reset the encryption keys."
+  body_3:
+    en: "By resetting the encryption keys, you will not be able to view your messages that were encrypted with the old encryption keys."
+
+request_encryption:
+  label:
+    en: "Encryption Keys Request"
+  body:
+    en: "You've requested for the encryption keys from:"
+
+encryption:
+  notice:
+    en: "Encryption keys are being generated"
+  success:
+    en: "Encryption keys have been successfully set up"
+  reinit:
+    en: "Encryption keys are being reinitialized"
 
 auto_update:
   updating:
@@ -381,6 +409,8 @@ chat:
     en: "Sent Reports"
   nip17_not_found:
     en: "%{u} has not set up Messaging Relays, so they won't receive your message."
+  device_not_found:
+    en: "You're sending with an encryption key, but %{u} has not set up an encryption key yet. Try sending with your identity instead."
 
 sidebar:
   reload_menu:

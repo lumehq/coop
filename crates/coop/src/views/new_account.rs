@@ -7,9 +7,9 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
+use key_store::backend::KeyItem;
+use key_store::KeyStore;
 use nostr_sdk::prelude::*;
-use registry::keystore::KeyItem;
-use registry::Registry;
 use settings::AppSettings;
 use smol::fs;
 use states::constants::BOOTSTRAP_RELAYS;
@@ -106,7 +106,7 @@ impl NewAccount {
     }
 
     pub fn set_signer(&mut self, cx: &mut Context<Self>) {
-        let keystore = Registry::global(cx).read(cx).keystore();
+        let keystore = KeyStore::global(cx).read(cx).backend();
 
         let keys = self.temp_keys.read(cx).clone();
         let username = keys.public_key().to_hex();
