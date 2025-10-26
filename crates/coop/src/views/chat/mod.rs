@@ -884,6 +884,27 @@ impl Chat {
                         ),
                 )
             })
+            .when(report.device_not_found, |this| {
+                this.child(
+                    h_flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .p_2()
+                        .h_20()
+                        .w_full()
+                        .text_sm()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().danger_background)
+                        .text_color(cx.theme().danger_foreground)
+                        .child(
+                            div()
+                                .flex_1()
+                                .w_full()
+                                .text_center()
+                                .child(shared_t!("chat.device_not_found", u = name)),
+                        ),
+                )
+            })
             .when_some(report.error.clone(), |this, error| {
                 this.child(
                     h_flex()
