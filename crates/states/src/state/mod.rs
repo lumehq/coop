@@ -651,9 +651,6 @@ impl AppState {
             let mut device = self.device.write().await;
             device.encryption_keys = Some(Arc::new(keys));
 
-            // Re-subscribe to gift wrap events
-            self.resubscribe_messages().await.ok();
-
             Ok(())
         } else {
             Err(anyhow!("Not found"))
@@ -763,9 +760,6 @@ impl AppState {
 
         let mut device = self.device.write().await;
         device.encryption_keys = Some(Arc::new(keys));
-
-        // Re-subscribe to gift wrap events
-        self.resubscribe_messages().await.ok();
 
         Ok(())
     }

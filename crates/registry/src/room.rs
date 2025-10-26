@@ -22,15 +22,28 @@ pub enum SignerKind {
     Auto,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SendOptions {
     pub backup: bool,
     pub signer_kind: SignerKind,
 }
 
 impl SendOptions {
+    pub fn new() -> Self {
+        Self {
+            backup: true,
+            signer_kind: SignerKind::default(),
+        }
+    }
+
     pub fn backup(&self) -> bool {
         self.backup
+    }
+}
+
+impl Default for SendOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -548,9 +561,7 @@ impl Room {
                 }
 
                 // Skip sending if using encryption keys but device not found
-                if device_pubkey.is_none()
-                    && matches!(opts.signer_kind, SignerKind::Auto | SignerKind::Encryption)
-                {
+                if device_pubkey.is_none() && matches!(opts.signer_kind, SignerKind::Encryption) {
                     reports.push(SendReport::new(receiver).device_not_found());
                     continue;
                 }
