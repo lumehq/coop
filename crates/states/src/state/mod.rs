@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -31,14 +31,17 @@ pub struct AppState {
     /// A client to interact with Nostr
     client: Client,
 
-    /// Tracks activity related to Nostr events
-    event_tracker: RwLock<EventTracker>,
-
     /// Signal channel for communication between Nostr and GPUI
     signal: Signal,
 
     /// Ingester channel for processing public keys
     ingester: Ingester,
+
+    /// Tracks activity related to Nostr events
+    event_tracker: RwLock<EventTracker>,
+
+    /// Cache of messaging relays for each public key
+    pub relay_cache: RwLock<HashMap<PublicKey, HashSet<RelayUrl>>>,
 
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub device: RwLock<Device>,
@@ -79,6 +82,7 @@ impl AppState {
         let client = ClientBuilder::default().database(lmdb).opts(opts).build();
         let device = RwLock::new(Device::default());
         let event_tracker = RwLock::new(EventTracker::default());
+        let relay_cache = RwLock::new(HashMap::default());
 
         let signal = Signal::default();
         let ingester = Ingester::default();
@@ -87,6 +91,7 @@ impl AppState {
             client,
             device,
             event_tracker,
+            relay_cache,
             signal,
             ingester,
             initialized_at: Timestamp::now(),
@@ -286,15 +291,22 @@ impl AppState {
                             }
                         }
                         Kind::InboxRelays => {
+                            // Only get up to 3 relays
+                            let urls: Vec<RelayUrl> = nip17::extract_relay_list(event.as_ref())
+                                .take(3)
+                                .cloned()
+                                .collect();
+
                             // Subscribe to gift wrap events if messaging relays belong to the current user
                             if let Ok(true) = self.is_self_authored(&event).await {
-                                let urls: Vec<RelayUrl> =
-                                    nip17::extract_relay_list(event.as_ref()).cloned().collect();
-
                                 if let Err(e) = self.get_messages(event.pubkey, &urls).await {
                                     log::error!("Failed to fetch messages: {e}");
                                 }
                             }
+
+                            // Cache the relay list for further queries
+                            let mut relay_cache = self.relay_cache.write().await;
+                            relay_cache.entry(event.pubkey).or_default().extend(urls);
                         }
                         Kind::ContactList => {
                             if let Ok(true) = self.is_self_authored(&event).await {
