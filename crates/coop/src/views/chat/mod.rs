@@ -1408,8 +1408,8 @@ impl Render for Chat {
                                     )
                                     .child(TextInput::new(&self.input))
                                     .child(
-                                        Button::new("options")
-                                            .icon(IconName::Settings)
+                                        Button::new("encryptions")
+                                            .icon(IconName::Encryption)
                                             .ghost()
                                             .large()
                                             .popup_menu(move |this, _window, _cx| {

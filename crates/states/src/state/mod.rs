@@ -1014,7 +1014,7 @@ impl AppState {
         }
 
         // Try to unwrap with the available signer
-        if let Ok(unwrapped) = self.try_unwrap_gift(gift_wrap).await {
+        if let Ok(unwrapped) = self.try_unwrap_gift_wrap(gift_wrap).await {
             let sender = unwrapped.sender;
             let mut rumor_unsigned = unwrapped.rumor;
 
@@ -1035,7 +1035,7 @@ impl AppState {
     }
 
     // Helper method to try unwrapping with different signers
-    async fn try_unwrap_gift(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+    async fn try_unwrap_gift_wrap(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
         // Try to unwrap with the device's encryption keys first
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
         if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
@@ -1044,8 +1044,10 @@ impl AppState {
             }
         }
 
-        // Try to unwrap with the user's signer
+        // Get user's signer
         let signer = self.client.signer().await?;
+
+        // Try to unwrap with the user's signer
         if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
             return Ok(unwrapped);
         }
