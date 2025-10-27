@@ -82,25 +82,25 @@ pending_encryption:
   label:
     en: "Wait for Approval"
   body_1:
-    en: "Please open %{c} and approve the request for sharing encryption keys. Without access to them, Coop cannot decrypt your messages that are encrypted with encryption keys."
+    en: "Please open %{c} and approve the request for sharing Encryption Key. Without access to them, Coop cannot decrypt your messages that are encrypted with Encryption Key."
   body_2:
-    en: "Or you can click the 'Reset' button to reset the encryption keys."
+    en: "Or you can click the 'Reset' button to reset the Encryption Key."
   body_3:
-    en: "By resetting the encryption keys, you will not be able to view your messages that were encrypted with the old encryption keys."
+    en: "By resetting the Encryption Key, you will not be able to view your messages that were encrypted with the old Encryption Key."
 
 request_encryption:
   label:
-    en: "Encryption Keys Request"
+    en: "Encryption Key Request"
   body:
-    en: "You've requested for the encryption keys from:"
+    en: "You've requested for the encryption Key from:"
 
 encryption:
   notice:
-    en: "Encryption keys are being generated"
+    en: "Encryption Key are being generated"
   success:
-    en: "Encryption keys have been successfully set up"
+    en: "Encryption Key have been successfully set up"
   reinit:
-    en: "Encryption keys are being reinitialized"
+    en: "Encryption Key are being reinitialized"
 
 auto_update:
   updating:

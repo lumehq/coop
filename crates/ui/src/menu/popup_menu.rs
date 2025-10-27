@@ -909,10 +909,11 @@ impl PopupMenu {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let has_icon = self.has_icon;
-        let selected = self.selected_index == Some(ix);
         const EDGE_PADDING: Pixels = px(4.);
         const INNER_PADDING: Pixels = px(8.);
+
+        let has_icon = self.has_icon;
+        let selected = self.selected_index == Some(ix);
 
         let is_submenu = matches!(item, PopupMenuItem::Submenu { .. });
         let group_name = format!("popup-menu-item-{ix}");
@@ -954,9 +955,8 @@ impl PopupMenu {
                 h_flex()
                     .cursor_default()
                     .items_center()
-                    .gap_x_1()
                     .font_semibold()
-                    .children(Self::render_icon(has_icon, None, window, cx))
+                    .text_xs()
                     .child(label.clone()),
             ),
             PopupMenuItem::ElementItem {

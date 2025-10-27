@@ -50,14 +50,12 @@ impl Default for SendOptions {
 #[derive(Debug, Clone)]
 pub struct SendReport {
     pub receiver: PublicKey,
-
     pub status: Option<Output<EventId>>,
     pub error: Option<SharedString>,
-
+    pub on_hold: Option<Event>,
+    pub encryption: bool,
     pub relays_not_found: bool,
     pub device_not_found: bool,
-
-    pub on_hold: Option<Event>,
 }
 
 impl SendReport {
@@ -67,6 +65,7 @@ impl SendReport {
             status: None,
             error: None,
             on_hold: None,
+            encryption: false,
             relays_not_found: false,
             device_not_found: false,
         }
@@ -84,6 +83,11 @@ impl SendReport {
 
     pub fn on_hold(mut self, event: Event) -> Self {
         self.on_hold = Some(event);
+        self
+    }
+
+    pub fn encryption(mut self) -> Self {
+        self.encryption = true;
         self
     }
 
@@ -427,8 +431,15 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
+        // Get the app state
+        let state = app_state();
+        let relay_cache = state.relay_cache.read_blocking();
+
+        // Get current user
         let registry = Registry::global(cx);
         let public_key = registry.read(cx).signer_pubkey().unwrap();
+
+        // Get room's subject
         let subject = self.subject.clone();
 
         let mut tags = vec![];
@@ -437,7 +448,20 @@ impl Room {
         //
         // NOTE: current user will be removed from the list of receivers
         for (member, _) in self.members.iter() {
-            tags.push(Tag::public_key(member.to_owned()));
+            // Get relay hint if available
+            let relay_url = relay_cache
+                .get(member)
+                .and_then(|urls| urls.iter().nth(0).cloned());
+
+            // Construct a public key tag with relay hint
+            let tag = TagStandard::PublicKey {
+                public_key: member.to_owned(),
+                relay_url,
+                alias: None,
+                uppercase: false,
+            };
+
+            tags.push(Tag::from_standardized_without_cell(tag));
         }
 
         // Add subject tag if it's present
@@ -452,11 +476,12 @@ impl Room {
             tags.push(Tag::event(replies[0]))
         } else {
             for id in replies {
-                tags.push(Tag::from_standardized_without_cell(TagStandard::Quote {
+                let tag = TagStandard::Quote {
                     event_id: id.to_owned(),
                     relay_url: None,
                     public_key: None,
-                }))
+                };
+                tags.push(Tag::from_standardized_without_cell(tag))
             }
         }
 
@@ -485,91 +510,47 @@ impl Room {
         let opts = opts.to_owned();
 
         cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
-            let device = states.device.read().await.encryption_keys.clone();
+            let state = app_state();
+
+            let client = state.client();
+            let relay_cache = state.relay_cache.read().await;
+            let device = state.device.read().await.encryption.clone();
 
             let user_signer = client.signer().await?;
             let user_pubkey = user_signer.get_public_key().await?;
-
-            // Collect relay hints for all participants (including current user)
-            let mut participants: Vec<PublicKey> = members.keys().cloned().collect();
-
-            if !participants.contains(&user_pubkey) {
-                participants.push(user_pubkey);
-            }
-
-            // Initialize relay cache
-            let mut relay_cache: HashMap<PublicKey, Vec<RelayUrl>> = HashMap::new();
-
-            for participant in participants.iter().cloned() {
-                let urls = states.messaging_relays(participant).await;
-                relay_cache.insert(participant, urls);
-            }
-
-            // Update rumor with relay hints for each receiver
-            let mut rumor = rumor;
-            let mut tags_with_hints = Vec::new();
-
-            for tag in rumor.tags.into_iter() {
-                if let Some(standard) = tag.as_standardized().cloned() {
-                    match standard {
-                        TagStandard::PublicKey {
-                            public_key,
-                            alias,
-                            uppercase,
-                            ..
-                        } => {
-                            let relay_url = relay_cache
-                                .get(&public_key)
-                                .and_then(|urls| urls.first().cloned());
-
-                            let updated = TagStandard::PublicKey {
-                                public_key,
-                                relay_url,
-                                alias,
-                                uppercase,
-                            };
-
-                            tags_with_hints.push(Tag::from_standardized_without_cell(updated));
-                        }
-                        _ => tags_with_hints.push(tag),
-                    }
-                } else {
-                    tags_with_hints.push(tag);
-                }
-            }
-            rumor.tags = Tags::from_list(tags_with_hints);
 
             // Remove the current user's public key from the list of receivers
             // Current user will be handled separately
             let (public_key, device_pubkey) = members.remove_entry(&user_pubkey).unwrap();
 
             // Determine the signer will be used based on the provided options
-            let signer = Self::select_signer(&opts.signer_kind, device, user_signer)?;
+            let (signer, signer_kind) =
+                Self::select_signer(&opts.signer_kind, device, user_signer)?;
 
             // Collect the send reports
             let mut reports: Vec<SendReport> = vec![];
 
-            for (receiver, device_pubkey) in members.into_iter() {
-                let urls = relay_cache.get(&receiver).cloned().unwrap_or_default();
+            for (user, device_pubkey) in members.into_iter() {
+                let urls = relay_cache.get(&user).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the message to
                 if urls.is_empty() {
-                    reports.push(SendReport::new(receiver).relays_not_found());
+                    reports.push(SendReport::new(user).relays_not_found());
                     continue;
                 }
 
                 // Skip sending if using encryption keys but device not found
                 if device_pubkey.is_none() && matches!(opts.signer_kind, SignerKind::Encryption) {
-                    reports.push(SendReport::new(receiver).device_not_found());
+                    reports.push(SendReport::new(user).device_not_found());
                     continue;
                 }
 
                 // Determine the receiver based on the signer kind
+                let receiver = Self::select_receiver(&opts.signer_kind, user, device_pubkey)?;
+
+                // Construct the gift wrap event
                 let rumor = rumor.clone();
-                let target = Self::select_receiver(&opts.signer_kind, receiver, device_pubkey);
-                let event = EventBuilder::gift_wrap(&signer, &target, rumor, vec![]).await?;
+                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
 
                 // Send the event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -581,7 +562,7 @@ impl Room {
                         if auth {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
-                                let retry_manager = states.tracker().read().await;
+                                let retry_manager = state.tracker().read().await;
                                 let ids = retry_manager.resent_ids();
 
                                 // Check if event was successfully resent
@@ -609,10 +590,12 @@ impl Room {
                 }
             }
 
+            // Select a signer based on previous usage, not from the options
+            let receiver = Self::select_receiver(&signer_kind, public_key, device_pubkey)?;
+
             // Construct a gift wrap to back up to current user's owned messaging relays
             let rumor = rumor.clone();
-            let target = Self::select_receiver(&opts.signer_kind, public_key, device_pubkey);
-            let event = EventBuilder::gift_wrap(&signer, &target, rumor, vec![]).await?;
+            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
@@ -700,24 +683,37 @@ impl Room {
         })
     }
 
-    fn select_signer<T>(kind: &SignerKind, device: Option<T>, user: T) -> Result<T, Error>
+    fn select_signer<T>(
+        kind: &SignerKind,
+        device: Option<T>,
+        user: T,
+    ) -> Result<(T, SignerKind), Error>
     where
         T: NostrSigner,
     {
         match kind {
-            SignerKind::Encryption => {
-                Ok(device.ok_or_else(|| anyhow!("No encryption keys found"))?)
-            }
-            SignerKind::User => Ok(user),
-            SignerKind::Auto => Ok(device.unwrap_or(user)),
+            SignerKind::Auto => device
+                .map(|d| (d, SignerKind::Encryption))
+                .or(Some((user, SignerKind::User)))
+                .ok_or_else(|| anyhow!("No signer available")),
+            SignerKind::Encryption => device
+                .map(|d| (d, SignerKind::Encryption))
+                .ok_or_else(|| anyhow!("No encryption key found")),
+            SignerKind::User => Ok((user, SignerKind::User)),
         }
     }
 
-    fn select_receiver(kind: &SignerKind, user: PublicKey, device: Option<PublicKey>) -> PublicKey {
+    fn select_receiver(
+        kind: &SignerKind,
+        user: PublicKey,
+        device: Option<PublicKey>,
+    ) -> Result<PublicKey, Error> {
         match kind {
-            SignerKind::Encryption => device.unwrap(),
-            SignerKind::User => user,
-            SignerKind::Auto => device.unwrap_or(user),
+            SignerKind::Encryption => {
+                Ok(device.ok_or_else(|| anyhow!("Receiver's encryption key not found"))?)
+            }
+            SignerKind::User => Ok(user),
+            SignerKind::Auto => Ok(device.unwrap_or(user)),
         }
     }
 }

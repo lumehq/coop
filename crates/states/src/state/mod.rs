@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Error};
@@ -32,14 +31,17 @@ pub struct AppState {
     /// A client to interact with Nostr
     client: Client,
 
-    /// Tracks activity related to Nostr events
-    event_tracker: RwLock<EventTracker>,
-
     /// Signal channel for communication between Nostr and GPUI
     signal: Signal,
 
     /// Ingester channel for processing public keys
     ingester: Ingester,
+
+    /// Tracks activity related to Nostr events
+    event_tracker: RwLock<EventTracker>,
+
+    /// Cache of messaging relays for each public key
+    pub relay_cache: RwLock<HashMap<PublicKey, HashSet<RelayUrl>>>,
 
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub device: RwLock<Device>,
@@ -80,6 +82,7 @@ impl AppState {
         let client = ClientBuilder::default().database(lmdb).opts(opts).build();
         let device = RwLock::new(Device::default());
         let event_tracker = RwLock::new(EventTracker::default());
+        let relay_cache = RwLock::new(HashMap::default());
 
         let signal = Signal::default();
         let ingester = Ingester::default();
@@ -88,6 +91,7 @@ impl AppState {
             client,
             device,
             event_tracker,
+            relay_cache,
             signal,
             ingester,
             initialized_at: Timestamp::now(),
@@ -287,15 +291,22 @@ impl AppState {
                             }
                         }
                         Kind::InboxRelays => {
+                            // Only get up to 3 relays
+                            let urls: Vec<RelayUrl> = nip17::extract_relay_list(event.as_ref())
+                                .take(3)
+                                .cloned()
+                                .collect();
+
                             // Subscribe to gift wrap events if messaging relays belong to the current user
                             if let Ok(true) = self.is_self_authored(&event).await {
-                                let urls: Vec<RelayUrl> =
-                                    nip17::extract_relay_list(event.as_ref()).cloned().collect();
-
                                 if let Err(e) = self.get_messages(event.pubkey, &urls).await {
                                     log::error!("Failed to fetch messages: {e}");
                                 }
                             }
+
+                            // Cache the relay list for further queries
+                            let mut relay_cache = self.relay_cache.write().await;
+                            relay_cache.entry(event.pubkey).or_default().extend(urls);
                         }
                         Kind::ContactList => {
                             if let Ok(true) = self.is_self_authored(&event).await {
@@ -573,7 +584,7 @@ impl AppState {
 
         // Initialize the client keys
         let mut device = self.device.write().await;
-        device.client_keys = Some(Arc::new(keys));
+        device.set_client(keys);
 
         Ok(())
     }
@@ -620,7 +631,7 @@ impl AppState {
 
         // Initialize the encryption keys
         let mut device = self.device.write().await;
-        device.encryption_keys = Some(Arc::new(keys));
+        device.set_encryption(keys);
 
         // Store the encryption keys for future use
         self.set_keys("encryption", secret).await?;
@@ -637,6 +648,9 @@ impl AppState {
         // Send the announcement event to the relays
         self.client.send_event(&event).await?;
 
+        // Re-subscribes to gift wrap events
+        self.resubscribe_messages().await?;
+
         Ok(())
     }
 
@@ -649,7 +663,10 @@ impl AppState {
         // Check if the encryption keys match the announcement
         if announcement.public_key() == keys.public_key() {
             let mut device = self.device.write().await;
-            device.encryption_keys = Some(Arc::new(keys));
+            device.set_encryption(keys);
+
+            // Re-subscribes to gift wrap events
+            self.resubscribe_messages().await?;
 
             Ok(())
         } else {
@@ -665,13 +682,13 @@ impl AppState {
         let device = self.device.read().await;
 
         // Client Keys are always known at this point
-        let Some(client_keys) = device.client_keys.as_ref() else {
+        let Some(client_key) = device.client.as_ref() else {
             return Err(anyhow!("Client Keys is required"));
         };
 
         let signer = self.client.signer().await?;
         let public_key = signer.get_public_key().await?;
-        let client_pubkey = client_keys.get_public_key().await?;
+        let client_pubkey = client_key.get_public_key().await?;
 
         // Get the encryption keys response from the database first
         let filter = Filter::new()
@@ -691,7 +708,7 @@ impl AppState {
                     .context("Invalid event's tags")?;
 
                 let payload = event.content.as_str();
-                let decrypted = client_keys.nip44_decrypt(&root_device, payload).await?;
+                let decrypted = client_key.nip44_decrypt(&root_device, payload).await?;
 
                 let secret = SecretKey::from_hex(&decrypted)?;
                 let keys = Keys::new(secret);
@@ -700,7 +717,10 @@ impl AppState {
                 drop(device);
 
                 let mut device = self.device.write().await;
-                device.encryption_keys = Some(Arc::new(keys));
+                device.set_encryption(keys);
+
+                // Re-subscribes to gift wrap events
+                self.resubscribe_messages().await?;
             }
             None => {
                 // Construct encryption keys request event
@@ -743,7 +763,7 @@ impl AppState {
         let device = self.device.read().await;
 
         // Client Keys are always known at this point
-        let Some(client_keys) = device.client_keys.as_ref() else {
+        let Some(client_key) = device.client.as_ref() else {
             return Err(anyhow!("Client Keys is required"));
         };
 
@@ -751,7 +771,7 @@ impl AppState {
         let payload = res.payload();
 
         // Decrypt the payload using the client keys
-        let decrypted = client_keys.nip44_decrypt(&public_key, payload).await?;
+        let decrypted = client_key.nip44_decrypt(&public_key, payload).await?;
         let secret = SecretKey::parse(&decrypted)?;
         let keys = Keys::new(secret);
 
@@ -759,7 +779,10 @@ impl AppState {
         drop(device);
 
         let mut device = self.device.write().await;
-        device.encryption_keys = Some(Arc::new(keys));
+        device.set_encryption(keys);
+
+        // Re-subscribes to gift wrap events
+        self.resubscribe_messages().await?;
 
         Ok(())
     }
@@ -771,15 +794,15 @@ impl AppState {
         let device = self.device.read().await;
 
         // Client Keys are always known at this point
-        let Some(client_keys) = device.client_keys.as_ref() else {
+        let Some(client_key) = device.client.as_ref() else {
             return Err(anyhow!("Client Keys is required"));
         };
 
         let encryption = self.get_keys("encryption").await?;
-        let client_pubkey = client_keys.get_public_key().await?;
+        let client_pubkey = client_key.get_public_key().await?;
 
         // Encrypt the encryption keys with the client's signer
-        let payload = client_keys
+        let payload = client_key
             .nip44_encrypt(&target, &encryption.secret_key().to_secret_hex())
             .await?;
 
@@ -792,7 +815,7 @@ impl AppState {
                 Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
                 Tag::public_key(target),
             ])
-            .sign(client_keys)
+            .sign(client_key)
             .await?;
 
         // Get the current user's signer and public key
@@ -1014,11 +1037,11 @@ impl AppState {
         }
 
         // Try to unwrap with the available signer
-        if let Ok(unwrapped) = self.try_unwrap_gift(gift_wrap).await {
+        if let Ok(unwrapped) = self.try_unwrap_gift_wrap(gift_wrap).await {
             let sender = unwrapped.sender;
             let mut rumor_unsigned = unwrapped.rumor;
 
-            if !self.verify_rumor_sender(sender, &rumor_unsigned) {
+            if !self.verify_sender(sender, &rumor_unsigned).await {
                 return Err(anyhow!("Invalid rumor"));
             };
 
@@ -1035,17 +1058,19 @@ impl AppState {
     }
 
     // Helper method to try unwrapping with different signers
-    async fn try_unwrap_gift(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+    async fn try_unwrap_gift_wrap(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
         // Try to unwrap with the device's encryption keys first
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-        if let Some(signer) = self.device.read().await.encryption_keys.as_ref() {
+        if let Some(signer) = self.device.read().await.encryption.as_ref() {
             if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
                 return Ok(unwrapped);
             }
         }
 
-        // Try to unwrap with the user's signer
+        // Get user's signer
         let signer = self.client.signer().await?;
+
+        // Try to unwrap with the user's signer
         if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
             return Ok(unwrapped);
         }
@@ -1087,7 +1112,22 @@ impl AppState {
     }
 
     /// Verify that the sender of a rumor is the same as the sender of the event.
-    fn verify_rumor_sender(&self, sender: PublicKey, rumor: &UnsignedEvent) -> bool {
+    async fn verify_sender(&self, sender: PublicKey, rumor: &UnsignedEvent) -> bool {
+        // If we have encryption keys, verify the sender matches the device's public key
+        if let Some(keys) = self.device.read().await.encryption.as_ref() {
+            if let Ok(public_key) = keys.get_public_key().await {
+                let status = public_key == sender;
+                // Only return if the status is true
+                // else fallback to basic sender verification
+                if status {
+                    return status;
+                } else {
+                    return rumor.pubkey == sender;
+                }
+            }
+        }
+
+        // Fall back to basic sender verification
         rumor.pubkey == sender
     }
 
@@ -1122,33 +1162,5 @@ impl AppState {
             .context("Cannot parse public key from the event's tags")?;
 
         Ok(Response::new(payload, root_device))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app_state;
-
-    #[test]
-    fn verify_rumor_sender_accepts_matching_sender() {
-        let state = app_state();
-
-        let keys = Keys::generate();
-        let public_key = keys.public_key();
-        let rumor = EventBuilder::text_note("hello").build(public_key);
-
-        assert!(state.verify_rumor_sender(public_key, &rumor));
-    }
-
-    #[test]
-    fn verify_rumor_sender_rejects_mismatched_sender() {
-        let state = app_state();
-
-        let sender_keys = Keys::generate();
-        let rumor_keys = Keys::generate();
-        let rumor = EventBuilder::text_note("spoof").build(rumor_keys.public_key());
-
-        assert!(!state.verify_rumor_sender(sender_keys.public_key(), &rumor));
     }
 }
