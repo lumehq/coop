@@ -43,6 +43,9 @@ pub struct AppState {
     /// Cache of messaging relays for each public key
     pub relay_cache: RwLock<HashMap<PublicKey, HashSet<RelayUrl>>>,
 
+    /// Cache of device announcement for each public key
+    pub announcement_cache: RwLock<HashMap<PublicKey, Option<Announcement>>>,
+
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub device: RwLock<Device>,
 
@@ -83,6 +86,7 @@ impl AppState {
         let device = RwLock::new(Device::default());
         let event_tracker = RwLock::new(EventTracker::default());
         let relay_cache = RwLock::new(HashMap::default());
+        let announcement_cache = RwLock::new(HashMap::default());
 
         let signal = Signal::default();
         let ingester = Ingester::default();
@@ -92,6 +96,7 @@ impl AppState {
             device,
             event_tracker,
             relay_cache,
+            announcement_cache,
             signal,
             ingester,
             initialized_at: Timestamp::now(),
@@ -137,6 +142,9 @@ impl AppState {
 
                     // Get user's gossip relays
                     self.get_nip65(pk).await.ok();
+
+                    // Initialize the relay and announcement caches
+                    self.init_cache().await.ok();
 
                     // Initialize client keys
                     self.init_client_keys().await.ok();
@@ -236,12 +244,16 @@ impl AppState {
                     match event.kind {
                         // Encryption Keys announcement event
                         Kind::Custom(10044) => {
-                            if let Ok(true) = self.is_self_authored(&event).await {
-                                if let Ok(announcement) = self.extract_announcement(&event) {
+                            if let Ok(announcement) = self.extract_announcement(&event) {
+                                if let Ok(true) = self.is_self_authored(&event).await {
                                     self.signal
-                                        .send(SignalKind::EncryptionSet(announcement))
+                                        .send(SignalKind::EncryptionSet(announcement.clone()))
                                         .await;
                                 }
+
+                                // Cache the announcement for further queries
+                                let mut announcement_cache = self.announcement_cache.write().await;
+                                announcement_cache.insert(event.pubkey, Some(announcement));
                             }
                         }
                         // Encryption Keys request event
@@ -568,6 +580,33 @@ impl AppState {
 
         // Get NIP-17 relays
         self.get_nip17(event.pubkey).await?;
+
+        Ok(())
+    }
+
+    /// Initialize the relay and announcement caches with events from the local database
+    pub async fn init_cache(&self) -> Result<(), Error> {
+        let filter = Filter::new().kind(Kind::InboxRelays);
+        let events = self.client.database().query(filter).await?;
+        let mut relay_cache = self.relay_cache.write().await;
+
+        for event in events.into_iter() {
+            let relays: Vec<RelayUrl> =
+                nip17::extract_relay_list(&event).take(3).cloned().collect();
+
+            // Push all relays to the relay cache
+            relay_cache.entry(event.pubkey).or_default().extend(relays);
+        }
+
+        let filter = Filter::new().kind(Kind::Custom(10044));
+        let events = self.client.database().query(filter).await?;
+        let mut announcement_cache = self.announcement_cache.write().await;
+
+        for event in events.into_iter() {
+            if let Ok(announcement) = self.extract_announcement(&event) {
+                announcement_cache.insert(event.pubkey, Some(announcement));
+            }
+        }
 
         Ok(())
     }
