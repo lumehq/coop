@@ -3,10 +3,10 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    anchored, deferred, div, px, relative, AnyElement, App, Context, Corner, DismissEvent,
-    DispatchPhase, Element, ElementId, Entity, Focusable, GlobalElementId, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Position, Size,
-    Stateful, Style, Window,
+    anchored, deferred, div, px, relative, AnyElement, App, Context, Corner, DismissEvent, Element,
+    ElementId, Entity, Focusable, GlobalElementId, InspectorElementId, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Position, Stateful,
+    Style, Subscription, Window,
 };
 
 use crate::popup_menu::PopupMenu;
@@ -22,13 +22,12 @@ pub trait ContextMenuExt: ParentElement + Sized {
 
 impl<E> ContextMenuExt for Stateful<E> where E: ParentElement {}
 
-type Menu =
-    Option<Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>>;
-
 /// A context menu that can be shown on right-click.
+#[allow(clippy::type_complexity)]
 pub struct ContextMenu {
     id: ElementId,
-    menu: Menu,
+    menu:
+        Option<Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>>,
     anchor: Corner,
 }
 
@@ -76,20 +75,28 @@ impl IntoElement for ContextMenu {
     }
 }
 
+struct ContextMenuSharedState {
+    menu_view: Option<Entity<PopupMenu>>,
+    open: bool,
+    position: Point<Pixels>,
+    _subscription: Option<Subscription>,
+}
+
 pub struct ContextMenuState {
-    menu_view: Rc<RefCell<Option<Entity<PopupMenu>>>>,
     menu_element: Option<AnyElement>,
-    open: Rc<RefCell<bool>>,
-    position: Rc<RefCell<Point<Pixels>>>,
+    shared_state: Rc<RefCell<ContextMenuSharedState>>,
 }
 
 impl Default for ContextMenuState {
     fn default() -> Self {
         Self {
-            menu_view: Rc::new(RefCell::new(None)),
             menu_element: None,
-            open: Rc::new(RefCell::new(false)),
-            position: Default::default(),
+            shared_state: Rc::new(RefCell::new(ContextMenuSharedState {
+                menu_view: None,
+                open: false,
+                position: Default::default(),
+                _subscription: None,
+            })),
         }
     }
 }
@@ -106,6 +113,7 @@ impl Element for ContextMenu {
         None
     }
 
+    #[allow(clippy::field_reassign_with_default)]
     fn request_layout(
         &mut self,
         id: Option<&gpui::GlobalElementId>,
@@ -113,29 +121,27 @@ impl Element for ContextMenu {
         window: &mut Window,
         cx: &mut App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
+        let mut style = Style::default();
+        // Set the layout style relative to the table view to get same size.
+        style.position = Position::Absolute;
+        style.flex_grow = 1.0;
+        style.flex_shrink = 1.0;
+        style.size.width = relative(1.).into();
+        style.size.height = relative(1.).into();
+
         let anchor = self.anchor;
-        let style = Style {
-            position: Position::Absolute,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            size: Size {
-                width: relative(1.).into(),
-                height: relative(1.).into(),
-            },
-            ..Default::default()
-        };
 
         self.with_element_state(
             id.unwrap(),
             window,
             cx,
             |_, state: &mut ContextMenuState, window, cx| {
-                let position = state.position.clone();
-                let position = position.borrow();
-                let open = state.open.clone();
-                let menu_view = state.menu_view.borrow().clone();
-
-                let (menu_element, menu_layout_id) = if *open.borrow() {
+                let (position, open) = {
+                    let shared_state = state.shared_state.borrow();
+                    (shared_state.position, shared_state.open)
+                };
+                let menu_view = state.shared_state.borrow().menu_view.clone();
+                let (menu_element, menu_layout_id) = if open {
                     let has_menu_item = menu_view
                         .as_ref()
                         .map(|menu| !menu.read(cx).is_empty())
@@ -144,12 +150,14 @@ impl Element for ContextMenu {
                     if has_menu_item {
                         let mut menu_element = deferred(
                             anchored()
-                                .position(*position)
+                                .position(position)
                                 .snap_to_window_with_margin(px(8.))
                                 .anchor(anchor)
                                 .when_some(menu_view, |this, menu| {
                                     // Focus the menu, so that can be handle the action.
-                                    menu.focus_handle(cx).focus(window);
+                                    if !menu.focus_handle(cx).contains_focused(window, cx) {
+                                        menu.focus_handle(cx).focus(window);
+                                    }
 
                                     this.child(div().occlude().child(menu.clone()))
                                 }),
@@ -188,7 +196,7 @@ impl Element for ContextMenu {
     fn prepaint(
         &mut self,
         _: Option<&gpui::GlobalElementId>,
-        _: Option<&gpui::InspectorElementId>,
+        _: Option<&InspectorElementId>,
         _: gpui::Bounds<gpui::Pixels>,
         request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
@@ -202,7 +210,7 @@ impl Element for ContextMenu {
     fn paint(
         &mut self,
         id: Option<&gpui::GlobalElementId>,
-        _: Option<&gpui::InspectorElementId>,
+        _: Option<&InspectorElementId>,
         bounds: gpui::Bounds<gpui::Pixels>,
         request_layout: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
@@ -222,34 +230,35 @@ impl Element for ContextMenu {
             window,
             cx,
             |_view, state: &mut ContextMenuState, window, _| {
-                let position = state.position.clone();
-                let open = state.open.clone();
-                let menu_view = state.menu_view.clone();
+                let shared_state = state.shared_state.clone();
 
                 // When right mouse click, to build content menu, and show it at the mouse position.
                 window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-                    if phase == DispatchPhase::Bubble
+                    if phase.bubble()
                         && event.button == MouseButton::Right
                         && bounds.contains(&event.position)
                     {
-                        *position.borrow_mut() = event.position;
-                        *open.borrow_mut() = true;
+                        {
+                            let mut shared_state = shared_state.borrow_mut();
+                            shared_state.position = event.position;
+                            shared_state.open = true;
+                        }
 
                         let menu = PopupMenu::build(window, cx, |menu, window, cx| {
                             (builder)(menu, window, cx)
                         })
                         .into_element();
 
-                        let open = open.clone();
-                        window
-                            .subscribe(&menu, cx, move |_, _: &DismissEvent, window, _| {
-                                *open.borrow_mut() = false;
+                        let _subscription = window.subscribe(&menu, cx, {
+                            let shared_state = shared_state.clone();
+                            move |_, _: &DismissEvent, window, _| {
+                                shared_state.borrow_mut().open = false;
                                 window.refresh();
-                            })
-                            .detach();
+                            }
+                        });
 
-                        *menu_view.borrow_mut() = Some(menu);
-
+                        shared_state.borrow_mut().menu_view = Some(menu.clone());
+                        shared_state.borrow_mut()._subscription = Some(_subscription);
                         window.refresh();
                     }
                 });

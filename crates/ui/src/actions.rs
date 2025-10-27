@@ -20,14 +20,4 @@ pub struct Confirm {
     pub secondary: bool,
 }
 
-actions!(
-    list,
-    [
-        /// Close current list
-        Cancel,
-        /// Select the next item in lists
-        SelectPrev,
-        /// Select the previous item in list
-        SelectNext
-    ]
-);
+actions!(ui, [Cancel, SelectUp, SelectDown, SelectLeft, SelectRight]);

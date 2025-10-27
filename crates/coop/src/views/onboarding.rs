@@ -19,7 +19,6 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::notification::Notification;
-use ui::popup_menu::PopupMenu;
 use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 use crate::chatspace::{self};
@@ -213,10 +212,6 @@ impl Panel for Onboarding {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
     }
 }
 

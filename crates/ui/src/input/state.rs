@@ -1411,7 +1411,11 @@ impl InputState {
         self.update_scroll_offset(Some(self.scroll_handle.offset() + delta), cx);
     }
 
-    fn update_scroll_offset(&mut self, offset: Option<Point<Pixels>>, cx: &mut Context<Self>) {
+    pub(super) fn update_scroll_offset(
+        &mut self,
+        offset: Option<Point<Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
         let mut offset = offset.unwrap_or(self.scroll_handle.offset());
 
         let safe_y_range =
@@ -1472,13 +1476,12 @@ impl InputState {
 
         // Check if row_offset_y is out of the viewport
         // If row offset is not in the viewport, scroll to make it visible
-        let edge_height = 3 * line_height;
-        if row_offset_y - edge_height < -scroll_offset.y {
+        if row_offset_y - line_height < -scroll_offset.y {
             // Scroll up
-            scroll_offset.y = -row_offset_y + edge_height;
-        } else if row_offset_y + edge_height > -scroll_offset.y + bounds.size.height {
+            scroll_offset.y = -row_offset_y + line_height;
+        } else if row_offset_y + line_height > -scroll_offset.y + bounds.size.height {
             // Scroll down
-            scroll_offset.y = -(row_offset_y - bounds.size.height + edge_height);
+            scroll_offset.y = -(row_offset_y - bounds.size.height + line_height);
         }
 
         scroll_offset.x = scroll_offset.x.min(px(0.));

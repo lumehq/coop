@@ -12,7 +12,7 @@ use smol::Timer;
 use theme::ActiveTheme;
 
 use super::loading::Loading;
-use crate::actions::{Cancel, Confirm, SelectNext, SelectPrev};
+use crate::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use crate::input::{InputEvent, InputState, TextInput};
 use crate::scroll::{Scrollbar, ScrollbarState};
 use crate::{v_flex, Icon, IconName, Sizable as _, Size};
@@ -23,8 +23,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("escape", Cancel, context),
         KeyBinding::new("enter", Confirm { secondary: false }, context),
         KeyBinding::new("secondary-enter", Confirm { secondary: true }, context),
-        KeyBinding::new("up", SelectPrev, context),
-        KeyBinding::new("down", SelectNext, context),
+        KeyBinding::new("up", SelectUp, context),
+        KeyBinding::new("down", SelectDown, context),
     ]);
 }
 
@@ -428,12 +428,7 @@ where
         cx.notify();
     }
 
-    fn on_action_select_prev(
-        &mut self,
-        _: &SelectPrev,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_select_prev(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
         let items_count = self.delegate.items_count(cx);
         if items_count == 0 {
             return;
@@ -448,12 +443,7 @@ where
         self.select_item(selected_index, window, cx);
     }
 
-    fn on_action_select_next(
-        &mut self,
-        _: &SelectNext,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_select_next(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
         let items_count = self.delegate.items_count(cx);
         if items_count == 0 {
             return;
@@ -598,8 +588,8 @@ where
             .when(!loading, |this| {
                 this.on_action(cx.listener(Self::on_action_cancel))
                     .on_action(cx.listener(Self::on_action_confirm))
-                    .on_action(cx.listener(Self::on_action_select_next))
-                    .on_action(cx.listener(Self::on_action_select_prev))
+                    .on_action(cx.listener(Self::on_select_next))
+                    .on_action(cx.listener(Self::on_select_prev))
                     .map(|this| {
                         if let Some(view) = initial_view {
                             this.child(view)

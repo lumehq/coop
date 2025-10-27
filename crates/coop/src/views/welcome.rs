@@ -4,9 +4,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 use theme::ActiveTheme;
-use ui::button::Button;
 use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::popup_menu::PopupMenu;
 use ui::{v_flex, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
@@ -49,14 +47,6 @@ impl Panel for Welcome {
                     .text_color(cx.theme().element_background),
             )
             .into_any_element()
-    }
-
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-    }
-
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
     }
 }
 

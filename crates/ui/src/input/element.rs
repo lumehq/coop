@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use gpui::{
     fill, point, px, relative, size, App, Bounds, Corners, Element, ElementId, ElementInputHandler,
-    Entity, GlobalElementId, Half, Hitbox, IntoElement, LayoutId, MouseButton, MouseMoveEvent,
-    Path, Pixels, Point, ShapedLine, SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle,
+    Entity, GlobalElementId, Hitbox, IntoElement, LayoutId, MouseButton, MouseMoveEvent, Path,
+    Pixels, Point, ShapedLine, SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle,
     Window,
 };
 use rope::Rope;
@@ -642,11 +642,8 @@ impl Element for TextElement {
         }
 
         let total_wrapped_lines = state.text_wrapper.len();
-        let empty_bottom_height = bounds
-            .size
-            .height
-            .half()
-            .max(BOTTOM_MARGIN_ROWS * line_height);
+        let empty_bottom_height = px(0.);
+
         let scroll_size = size(
             if longest_line_width + line_number_width + RIGHT_MARGIN > bounds.size.width {
                 longest_line_width + line_number_width + RIGHT_MARGIN
@@ -872,9 +869,7 @@ impl Element for TextElement {
             state.set_input_bounds(input_bounds, cx);
             state.last_selected_range = Some(selected_range);
             state.scroll_size = prepaint.scroll_size;
-            state
-                .scroll_handle
-                .set_offset(prepaint.cursor_scroll_offset);
+            state.update_scroll_offset(Some(prepaint.cursor_scroll_offset), cx);
             state.deferred_scroll_offset = None;
 
             cx.notify();

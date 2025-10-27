@@ -7,7 +7,7 @@ use gpui::{
 };
 use theme::ActiveTheme;
 
-use crate::actions::{Cancel, Confirm, SelectNext, SelectPrev};
+use crate::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use crate::input::clear_button::clear_button;
 use crate::list::{List, ListDelegate, ListItem};
 use crate::{h_flex, v_flex, Disableable as _, Icon, IconName, Sizable, Size, StyleSized};
@@ -26,8 +26,8 @@ pub enum ListEvent {
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new("up", SelectPrev, Some(CONTEXT)),
-        KeyBinding::new("down", SelectNext, Some(CONTEXT)),
+        KeyBinding::new("up", SelectUp, Some(CONTEXT)),
+        KeyBinding::new("down", SelectDown, Some(CONTEXT)),
         KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
         KeyBinding::new(
             "secondary-enter",
@@ -440,7 +440,7 @@ where
         cx.notify();
     }
 
-    fn up(&mut self, _: &SelectPrev, window: &mut Window, cx: &mut Context<Self>) {
+    fn up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
         if !self.open {
             return;
         }
@@ -449,7 +449,7 @@ where
         cx.propagate();
     }
 
-    fn down(&mut self, _: &SelectNext, window: &mut Window, cx: &mut Context<Self>) {
+    fn down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
         if !self.open {
             self.open = true;
         }

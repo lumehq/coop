@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, relative, AnyElement, App, ClickEvent, Div, ElementId, Hsla, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString, Stateful,
+    IntoElement, ParentElement, RenderOnce, SharedString, Stateful,
     StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
 };
 use theme::ActiveTheme;
@@ -111,11 +113,11 @@ impl Default for ButtonVariant {
     }
 }
 
-type OnClick = Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>;
-
 /// A Button element.
 #[derive(IntoElement)]
+#[allow(clippy::type_complexity)]
 pub struct Button {
+    id: ElementId,
     base: Stateful<Div>,
     style: StyleRefinement,
 
@@ -136,10 +138,13 @@ pub struct Button {
     loading: bool,
     loading_icon: Option<Icon>,
 
-    on_click: OnClick,
+    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
+
+    tab_index: isize,
+    tab_stop: bool,
 
     pub(crate) selected: bool,
-    pub(crate) stop_propagation: bool,
 }
 
 impl From<Button> for AnyElement {
@@ -150,8 +155,11 @@ impl From<Button> for AnyElement {
 
 impl Button {
     pub fn new(id: impl Into<ElementId>) -> Self {
+        let id = id.into();
+
         Self {
-            base: div().id(id.into()).flex_shrink_0(),
+            id: id.clone(),
+            base: div().flex_shrink_0().id(id),
             style: StyleRefinement::default(),
             icon: None,
             label: None,
@@ -162,13 +170,15 @@ impl Button {
             size: Size::Medium,
             tooltip: None,
             on_click: None,
-            stop_propagation: true,
+            on_hover: None,
             loading: false,
             reverse: false,
             bold: false,
             cta: false,
             children: Vec::new(),
             loading_icon: None,
+            tab_index: 0,
+            tab_stop: true,
         }
     }
 
@@ -220,25 +230,51 @@ impl Button {
         self
     }
 
-    /// Set the stop propagation of the button.
-    pub fn stop_propagation(mut self, val: bool) -> Self {
-        self.stop_propagation = val;
-        self
-    }
-
     /// Set the loading icon of the button.
     pub fn loading_icon(mut self, icon: impl Into<Icon>) -> Self {
         self.loading_icon = Some(icon.into());
         self
     }
 
-    /// Set the click handler of the button.
-    pub fn on_click<C>(mut self, handler: C) -> Self
-    where
-        C: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    {
-        self.on_click = Some(Box::new(handler));
+    /// Add click handler.
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_click = Some(Rc::new(handler));
         self
+    }
+
+    /// Add hover handler, the bool parameter indicates whether the mouse is hovering.
+    pub fn on_hover(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_hover = Some(Rc::new(handler));
+        self
+    }
+
+    /// Set the tab index of the button, it will be used to focus the button by tab key.
+    ///
+    /// Default is 0.
+    pub fn tab_index(mut self, tab_index: isize) -> Self {
+        self.tab_index = tab_index;
+        self
+    }
+
+    /// Set the tab stop of the button, if true, the button will be focusable by tab key.
+    ///
+    /// Default is true.
+    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
+        self.tab_stop = tab_stop;
+        self
+    }
+
+    #[inline]
+    fn clickable(&self) -> bool {
+        !(self.disabled || self.loading) && self.on_click.is_some()
+    }
+
+    #[inline]
+    fn hoverable(&self) -> bool {
+        !(self.disabled || self.loading) && self.on_hover.is_some()
     }
 }
 
@@ -295,14 +331,28 @@ impl InteractiveElement for Button {
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let style: ButtonVariant = self.variant;
-        let normal_style = style.normal(window, cx);
+        let clickable = self.clickable();
+        let hoverable = self.hoverable();
+        let normal_style = style.normal(cx);
         let icon_size = match self.size {
             Size::Size(v) => Size::Size(v * 0.75),
             Size::Large => Size::Medium,
             _ => self.size,
         };
 
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+
         self.base
+            .when(!self.disabled, |this| {
+                this.track_focus(
+                    &focus_handle
+                        .tab_index(self.tab_index)
+                        .tab_stop(self.tab_stop),
+                )
+            })
             .flex_shrink_0()
             .flex()
             .items_center()
@@ -390,26 +440,39 @@ impl RenderOnce for Button {
             .when(!self.disabled && !self.selected, |this| {
                 this.bg(normal_style.bg)
                     .hover(|this| {
-                        let hover_style = style.hovered(window, cx);
+                        let hover_style = style.hovered(cx);
                         this.bg(hover_style.bg).text_color(hover_style.fg)
                     })
                     .active(|this| {
-                        let active_style = style.active(window, cx);
+                        let active_style = style.active(cx);
                         this.bg(active_style.bg).text_color(active_style.fg)
                     })
             })
             .when(self.selected, |this| {
-                let selected_style = style.selected(window, cx);
+                let selected_style = style.selected(cx);
                 this.bg(selected_style.bg).text_color(selected_style.fg)
             })
             .when(self.disabled, |this| {
-                let disabled_style = style.disabled(window, cx);
+                let disabled_style = style.disabled(cx);
                 this.cursor_not_allowed()
                     .bg(disabled_style.bg)
                     .text_color(disabled_style.fg)
-                    .shadow_none()
             })
             .refine_style(&self.style)
+            .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
+                // Avoid focus on mouse down.
+                window.prevent_default();
+            })
+            .when_some(self.on_click.filter(|_| clickable), |this, on_click| {
+                this.on_click(move |event, window, cx| {
+                    (on_click)(event, window, cx);
+                })
+            })
+            .when_some(self.on_hover.filter(|_| hoverable), |this, on_hover| {
+                this.on_hover(move |hovered, window, cx| {
+                    (on_hover)(hovered, window, cx);
+                })
+            })
             .child({
                 h_flex()
                     .id("label")
@@ -442,25 +505,13 @@ impl RenderOnce for Button {
                     })
                     .children(self.children)
             })
-            .when(self.loading, |this| this.bg(normal_style.bg.opacity(0.8)))
+            .when(self.loading && !self.disabled, |this| {
+                this.bg(normal_style.bg.opacity(0.8))
+                    .text_color(normal_style.fg.opacity(0.8))
+            })
             .when_some(self.tooltip.clone(), |this, tooltip| {
                 this.tooltip(move |window, cx| Tooltip::new(tooltip.clone(), window, cx).into())
             })
-            .when_some(
-                self.on_click.filter(|_| !self.disabled && !self.loading),
-                |this, on_click| {
-                    let stop_propagation = self.stop_propagation;
-                    this.on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                        window.prevent_default();
-                        if stop_propagation {
-                            cx.stop_propagation();
-                        }
-                    })
-                    .on_click(move |event, window, cx| {
-                        (on_click)(event, window, cx);
-                    })
-                },
-            )
     }
 }
 
@@ -470,14 +521,14 @@ struct ButtonVariantStyle {
 }
 
 impl ButtonVariant {
-    fn normal(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
-        let bg = self.bg_color(window, cx);
-        let fg = self.text_color(window, cx);
+    fn normal(&self, cx: &App) -> ButtonVariantStyle {
+        let bg = self.bg_color(cx);
+        let fg = self.text_color(cx);
 
         ButtonVariantStyle { bg, fg }
     }
 
-    fn bg_color(&self, _window: &Window, cx: &App) -> Hsla {
+    fn bg_color(&self, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_background,
             ButtonVariant::Secondary => cx.theme().elevated_surface_background,
@@ -495,7 +546,7 @@ impl ButtonVariant {
         }
     }
 
-    fn text_color(&self, _window: &Window, cx: &App) -> Hsla {
+    fn text_color(&self, cx: &App) -> Hsla {
         match self {
             ButtonVariant::Primary => cx.theme().element_foreground,
             ButtonVariant::Secondary => cx.theme().text_muted,
@@ -513,7 +564,7 @@ impl ButtonVariant {
         }
     }
 
-    fn hovered(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
+    fn hovered(&self, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_hover,
             ButtonVariant::Secondary => cx.theme().secondary_hover,
@@ -528,13 +579,13 @@ impl ButtonVariant {
             ButtonVariant::Secondary => cx.theme().secondary_foreground,
             ButtonVariant::Ghost { .. } => cx.theme().text,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            _ => self.text_color(window, cx),
+            _ => self.text_color(cx),
         };
 
         ButtonVariantStyle { bg, fg }
     }
 
-    fn active(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
+    fn active(&self, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_active,
             ButtonVariant::Secondary => cx.theme().secondary_active,
@@ -548,13 +599,13 @@ impl ButtonVariant {
         let fg = match self {
             ButtonVariant::Secondary => cx.theme().secondary_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            _ => self.text_color(window, cx),
+            _ => self.text_color(cx),
         };
 
         ButtonVariantStyle { bg, fg }
     }
 
-    fn selected(&self, window: &Window, cx: &App) -> ButtonVariantStyle {
+    fn selected(&self, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Primary => cx.theme().element_selected,
             ButtonVariant::Secondary => cx.theme().secondary_selected,
@@ -568,13 +619,13 @@ impl ButtonVariant {
         let fg = match self {
             ButtonVariant::Secondary => cx.theme().secondary_foreground,
             ButtonVariant::Transparent => cx.theme().text_placeholder,
-            _ => self.text_color(window, cx),
+            _ => self.text_color(cx),
         };
 
         ButtonVariantStyle { bg, fg }
     }
 
-    fn disabled(&self, _window: &Window, cx: &App) -> ButtonVariantStyle {
+    fn disabled(&self, cx: &App) -> ButtonVariantStyle {
         let bg = match self {
             ButtonVariant::Danger => cx.theme().danger_disabled,
             ButtonVariant::Warning => cx.theme().warning_disabled,

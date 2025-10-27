@@ -21,7 +21,6 @@ use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::indicator::Indicator;
-use ui::popup_menu::PopupMenu;
 use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::{reset, CoopAuthUrlHandler};
@@ -197,14 +196,6 @@ impl Panel for Account {
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
     }
-
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-    }
-
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
-    }
 }
 
 impl EventEmitter<PanelEvent> for Account {}
@@ -308,8 +299,15 @@ impl Render for Account {
                                         })),
                                 )
                             })
-                            .active(|this| this.bg(cx.theme().element_active))
-                            .hover(|this| this.bg(cx.theme().element_hover))
+                            .text_color(cx.theme().text)
+                            .active(|this| {
+                                this.text_color(cx.theme().element_foreground)
+                                    .bg(cx.theme().element_active)
+                            })
+                            .hover(|this| {
+                                this.text_color(cx.theme().element_foreground)
+                                    .bg(cx.theme().element_hover)
+                            })
                             .on_click(cx.listener(move |this, _e, window, cx| {
                                 this.login(window, cx);
                             })),

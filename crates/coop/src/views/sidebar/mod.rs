@@ -26,7 +26,7 @@ use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
-use ui::popup_menu::{PopupMenu, PopupMenuExt};
+use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Selectable, Sizable, StyledExt};
 
 use crate::actions::{RelayStatus, Reload};
@@ -646,14 +646,6 @@ impl Panel for Sidebar {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-    }
-
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
     }
 }
 

@@ -317,6 +317,10 @@ impl Side {
     pub(crate) fn is_left(&self) -> bool {
         matches!(self, Self::Left)
     }
+
+    pub(crate) fn is_right(&self) -> bool {
+        matches!(self, Self::Right)
+    }
 }
 
 /// A trait for defining element that can be collapsed.

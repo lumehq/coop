@@ -20,7 +20,6 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
 use ui::modal::ModalButtonProps;
-use ui::popup_menu::PopupMenu;
 use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
 
 use crate::views::backup_keys::BackupKeys;
@@ -260,14 +259,6 @@ impl Panel for NewAccount {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-    }
-
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
     }
 }
 

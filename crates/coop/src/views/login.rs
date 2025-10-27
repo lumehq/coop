@@ -18,7 +18,6 @@ use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::notification::Notification;
-use ui::popup_menu::PopupMenu;
 use ui::{v_flex, ContextModal, Disableable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
@@ -342,14 +341,6 @@ impl Panel for Login {
 
     fn title(&self, _cx: &App) -> AnyElement {
         self.name.clone().into_any_element()
-    }
-
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-    }
-
-    fn toolbar_buttons(&self, _window: &Window, _cx: &App) -> Vec<Button> {
-        vec![]
     }
 }
 

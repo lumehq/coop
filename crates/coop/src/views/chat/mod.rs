@@ -34,7 +34,7 @@ use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
-use ui::popup_menu::{PopupMenu, PopupMenuExt};
+use ui::popup_menu::PopupMenuExt;
 use ui::text::RenderedText;
 use ui::{
     h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
@@ -1313,10 +1313,6 @@ impl Panel for Chat {
         })
     }
 
-    fn popup_menu(&self, menu: PopupMenu, _cx: &App) -> PopupMenu {
-        menu.track_focus(&self.focus_handle)
-    }
-
     fn toolbar_buttons(&self, _window: &Window, cx: &App) -> Vec<Button> {
         let subject_button = self.subject_button(cx);
         let reload_button = self.reload_button(cx);
@@ -1417,7 +1413,7 @@ impl Render for Chat {
                                             .ghost()
                                             .large()
                                             .popup_menu(move |this, _window, _cx| {
-                                                this.title("Encrypt by:")
+                                                this.label("Encrypt by:")
                                                     .menu_with_check(
                                                         "Encryption Key",
                                                         matches!(kind, SignerKind::Encryption),
