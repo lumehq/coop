@@ -50,14 +50,12 @@ impl Default for SendOptions {
 #[derive(Debug, Clone)]
 pub struct SendReport {
     pub receiver: PublicKey,
-
     pub status: Option<Output<EventId>>,
     pub error: Option<SharedString>,
-
+    pub on_hold: Option<Event>,
+    pub encryption: bool,
     pub relays_not_found: bool,
     pub device_not_found: bool,
-
-    pub on_hold: Option<Event>,
 }
 
 impl SendReport {
@@ -67,6 +65,7 @@ impl SendReport {
             status: None,
             error: None,
             on_hold: None,
+            encryption: false,
             relays_not_found: false,
             device_not_found: false,
         }
@@ -84,6 +83,11 @@ impl SendReport {
 
     pub fn on_hold(mut self, event: Event) -> Self {
         self.on_hold = Some(event);
+        self
+    }
+
+    pub fn encryption(mut self) -> Self {
+        self.encryption = true;
         self
     }
 
@@ -487,7 +491,7 @@ impl Room {
         cx.background_spawn(async move {
             let states = app_state();
             let client = states.client();
-            let device = states.device.read().await.encryption_keys.clone();
+            let device = states.device.read().await.encryption.clone();
 
             let user_signer = client.signer().await?;
             let user_pubkey = user_signer.get_public_key().await?;
