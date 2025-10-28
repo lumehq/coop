@@ -516,14 +516,8 @@ impl Room {
 
             let client = state.client();
             let relay_cache = state.relay_cache.read().await;
-            let ann_cache = state.announcement_cache.read().await;
-
+            let announcement_cache = state.announcement_cache.read().await;
             let encryption = state.device.read().await.encryption.clone();
-            let encryption_pubkey = if let Some(signer) = encryption.as_ref() {
-                Some(signer.get_public_key().await?)
-            } else {
-                None
-            };
 
             let user_signer = client.signer().await?;
             let user_pubkey = user_signer.get_public_key().await?;
@@ -538,13 +532,13 @@ impl Room {
             // Collect the send reports
             let mut reports: Vec<SendReport> = vec![];
 
-            for member in members.into_iter() {
+            for receiver in members.into_iter() {
                 // Get user's messaging relays
-                let urls = relay_cache.get(&member).cloned().unwrap_or_default();
+                let urls = relay_cache.get(&receiver).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the message to
                 if urls.is_empty() {
-                    reports.push(SendReport::new(member).relays_not_found());
+                    reports.push(SendReport::new(receiver).relays_not_found());
                     continue;
                 }
 
@@ -555,18 +549,15 @@ impl Room {
                 }
 
                 // Get user's encryption public key if available
-                let encryption = ann_cache
-                    .get(&member)
+                let encryption = announcement_cache
+                    .get(&receiver)
                     .and_then(|a| a.to_owned().map(|a| a.public_key()));
 
                 // Skip sending if using encryption signer but receiver's encryption keys not found
                 if encryption.is_none() && matches!(opts.signer_kind, SignerKind::Encryption) {
-                    reports.push(SendReport::new(member).device_not_found());
+                    reports.push(SendReport::new(receiver).device_not_found());
                     continue;
                 }
-
-                // Determine the receiver based on the signer kind
-                let receiver = Self::select_receiver(&opts.signer_kind, member, encryption)?;
 
                 // Construct the gift wrap event
                 let rumor = rumor.clone();
@@ -610,13 +601,9 @@ impl Room {
                 }
             }
 
-            // Select a signer based on previous usage, not from the options
-            let receiver =
-                Self::select_receiver(&opts.signer_kind, user_pubkey, encryption_pubkey)?;
-
             // Construct a gift wrap to back up to current user's owned messaging relays
             let rumor = rumor.clone();
-            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
+            let event = EventBuilder::gift_wrap(&signer, &user_pubkey, rumor, []).await?;
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
@@ -711,20 +698,6 @@ impl Room {
         match kind {
             SignerKind::User => Ok(user),
             SignerKind::Encryption => Ok(device.ok_or_else(|| anyhow!("No encryption key found"))?),
-            SignerKind::Auto => Ok(device.unwrap_or(user)),
-        }
-    }
-
-    fn select_receiver(
-        kind: &SignerKind,
-        user: PublicKey,
-        device: Option<PublicKey>,
-    ) -> Result<PublicKey, Error> {
-        match kind {
-            SignerKind::Encryption => {
-                Ok(device.ok_or_else(|| anyhow!("Receiver's encryption key not found"))?)
-            }
-            SignerKind::User => Ok(user),
             SignerKind::Auto => Ok(device.unwrap_or(user)),
         }
     }

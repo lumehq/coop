@@ -346,6 +346,7 @@ impl Chat {
     }
 
     /// Resend a failed message
+    #[allow(dead_code)]
     fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(reports) = self.reports_by_id.get(id).cloned() {
             let id_clone = id.to_owned();
@@ -705,23 +706,7 @@ impl Chat {
                             })
                             .child(text)
                             .when(is_sent_failed, |this| {
-                                this.child(
-                                    h_flex()
-                                        .gap_1()
-                                        .child(self.render_message_reports(&id, cx))
-                                        .child(
-                                            Button::new(SharedString::from(id.to_hex()))
-                                                .label(t!("common.resend"))
-                                                .danger()
-                                                .xsmall()
-                                                .rounded()
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.resend_message(&id, window, cx);
-                                                    },
-                                                )),
-                                        ),
-                                )
+                                this.child(self.render_message_reports(&id, cx))
                             }),
                     ),
             )
