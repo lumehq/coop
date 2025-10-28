@@ -4,6 +4,7 @@ pub const APP_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZX
 pub const APP_UPDATER_ENDPOINT: &str = "https://coop-updater.reya.su/";
 
 pub const SETTINGS_IDENTIFIER: &str = "coop:settings";
+pub const INBOX_SUB_ID: &str = "inbox";
 
 /// Bootstrap Relays.
 pub const BOOTSTRAP_RELAYS: [&str; 5] = [
