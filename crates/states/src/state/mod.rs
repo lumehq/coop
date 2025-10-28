@@ -1087,12 +1087,12 @@ impl AppState {
 
         // Try to unwrap with the available signer
         let unwrapped = self.try_unwrap_gift_wrap(gift_wrap).await?;
-        let sender = unwrapped.sender;
+        //let sender = unwrapped.sender;
         let mut rumor_unsigned = unwrapped.rumor;
 
-        if !self.verify_sender(sender, &rumor_unsigned).await {
-            return Err(anyhow!("Cannot verify the sender"));
-        };
+        //if !self.verify_rumor_sender(sender, &rumor_unsigned) {
+        //    return Err(anyhow!("Cannot verify the sender"));
+        //};
 
         // Generate event id for the rumor if it doesn't have one
         rumor_unsigned.ensure_id();
@@ -1162,26 +1162,8 @@ impl AppState {
     }
 
     /// Verify that the sender of a rumor is the same as the sender of the event.
-    async fn verify_sender(&self, sender: PublicKey, rumor: &UnsignedEvent) -> bool {
-        log::info!("sender: {sender}");
-        log::info!("rumor: {}", rumor.pubkey);
-
-        // If we have encryption keys, verify the sender matches the device's public key
-        if let Some(keys) = self.device.read().await.encryption.as_ref() {
-            if let Ok(public_key) = keys.get_public_key().await {
-                log::info!("encryption public key: {public_key}");
-                let status = public_key == sender;
-                // Only return if the status is true
-                // else fallback to basic sender verification
-                if status {
-                    return status;
-                } else {
-                    return rumor.pubkey == sender;
-                }
-            }
-        }
-
-        // Fall back to basic sender verification
+    #[allow(dead_code)]
+    fn verify_rumor_sender(&self, sender: PublicKey, rumor: &UnsignedEvent) -> bool {
         rumor.pubkey == sender
     }
 
