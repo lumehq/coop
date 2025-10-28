@@ -4,7 +4,7 @@ use cargo_packager_updater::{check_update, Config, Update};
 use gpui::http_client::Url;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
 use smallvec::{smallvec, SmallVec};
-use states::constants::{APP_PUBKEY, APP_UPDATER_ENDPOINT};
+use states::{APP_PUBKEY, APP_UPDATER_ENDPOINT};
 
 pub fn init(cx: &mut App) {
     AutoUpdater::set_global(cx.new(AutoUpdater::new), cx);

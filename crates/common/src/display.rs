@@ -6,7 +6,7 @@ use gpui::{Image, ImageFormat, SharedString, SharedUri};
 use nostr_sdk::prelude::*;
 use qrcode::render::svg;
 use qrcode::QrCode;
-use states::constants::IMAGE_RESIZE_SERVICE;
+use states::IMAGE_RESIZE_SERVICE;
 
 const NOW: &str = "now";
 const SECONDS_IN_MINUTE: i64 = 60;

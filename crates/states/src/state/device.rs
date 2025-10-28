@@ -1,6 +1,15 @@
 use std::sync::Arc;
 
 use nostr_sdk::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Deserialize, Serialize)]
+pub enum SignerKind {
+    Encryption,
+    #[default]
+    User,
+    Auto,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Device {

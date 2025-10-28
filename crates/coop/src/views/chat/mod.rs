@@ -17,13 +17,13 @@ use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use registry::message::{Message, RenderedMessage};
-use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport, SignerKind};
+use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use states::app_state;
+use states::{app_state, SignerKind};
 use theme::ActiveTheme;
 use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
@@ -108,6 +108,15 @@ impl Chat {
         let mut tasks = smallvec![];
 
         tasks.push(
+            // Get messaging relays and encryption keys announcement for all members
+            cx.background_spawn(async move {
+                if let Err(e) = connect.await {
+                    log::error!("Failed to initialize room: {e}");
+                }
+            }),
+        );
+
+        tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
                 let result = get_messages.await;
@@ -123,15 +132,6 @@ impl Chat {
                     };
                 })
                 .ok();
-            }),
-        );
-
-        tasks.push(
-            // Get messaging relays and encryption keys announcement for all members
-            cx.background_spawn(async move {
-                if let Err(e) = connect.await {
-                    log::error!("Failed to initialize room: {e}");
-                }
             }),
         );
 
@@ -346,6 +346,7 @@ impl Chat {
     }
 
     /// Resend a failed message
+    #[allow(dead_code)]
     fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(reports) = self.reports_by_id.get(id).cloned() {
             let id_clone = id.to_owned();
@@ -705,23 +706,7 @@ impl Chat {
                             })
                             .child(text)
                             .when(is_sent_failed, |this| {
-                                this.child(
-                                    h_flex()
-                                        .gap_1()
-                                        .child(self.render_message_reports(&id, cx))
-                                        .child(
-                                            Button::new(SharedString::from(id.to_hex()))
-                                                .label(t!("common.resend"))
-                                                .danger()
-                                                .xsmall()
-                                                .rounded()
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.resend_message(&id, window, cx);
-                                                    },
-                                                )),
-                                        ),
-                                )
+                                this.child(self.render_message_reports(&id, cx))
                             }),
                     ),
             )
