@@ -494,6 +494,7 @@ impl Room {
         cx.background_spawn(async move {
             let state = app_state();
             let client = state.client();
+            let signer_kind = opts.signer_kind;
 
             let relay_cache = state.relay_cache.read().await;
             let announcement_cache = state.announcement_cache.read().await;
@@ -541,18 +542,24 @@ impl Room {
                     .and_then(|a| a.to_owned().map(|a| a.public_key()));
 
                 // Skip sending if using encryption signer but receiver's encryption keys not found
-                if encryption.is_none() && matches!(opts.signer_kind, SignerKind::Encryption) {
+                if encryption.is_none() && matches!(signer_kind, SignerKind::Encryption) {
                     reports.push(SendReport::new(member).device_not_found());
                     continue;
                 }
 
-                let receiver = Self::select_receiver(&opts.signer_kind, member, encryption)?;
-
-                // Construct the gift-wrapped event
+                let receiver = Self::select_receiver(&signer_kind, member, encryption)?;
                 let rumor = rumor.clone();
-                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
 
-                // Send the event to the messaging relays
+                // Construct the gift wrap event
+                let event = EventBuilder::gift_wrap(
+                    &signer,
+                    &receiver,
+                    rumor,
+                    vec![Tag::public_key(member)],
+                )
+                .await?;
+
+                // Send the gift wrap event to the messaging relays
                 match client.send_event_to(urls, &event).await {
                     Ok(output) => {
                         let id = output.id().to_owned();
@@ -590,12 +597,17 @@ impl Room {
                 }
             }
 
-            let receiver =
-                Self::select_receiver(&opts.signer_kind, user_pubkey, encryption_pubkey)?;
+            let receiver = Self::select_receiver(&signer_kind, user_pubkey, encryption_pubkey)?;
+            let rumor = rumor.clone();
 
             // Construct the gift-wrapped event
-            let rumor = rumor.clone();
-            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
+            let event = EventBuilder::gift_wrap(
+                &signer,
+                &receiver,
+                rumor,
+                vec![Tag::public_key(user_pubkey)],
+            )
+            .await?;
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
