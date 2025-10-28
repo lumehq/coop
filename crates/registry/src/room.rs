@@ -539,9 +539,20 @@ impl Room {
                     continue;
                 }
 
-                // Construct the gift wrap event
+                // Construct a gift wrap event for the receiver
                 let rumor = rumor.clone();
-                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
+
+                // Construct the sealed event
+                let seal = EventBuilder::seal(&signer, &receiver, rumor)
+                    .await?
+                    .build(user_pubkey)
+                    .sign(&signer)
+                    .await?;
+
+                // Construct the gift-wrapped event
+                //
+                // NEVER SIGN
+                let event = EventBuilder::gift_wrap_from_seal(&receiver, &seal, [])?;
 
                 // Send the event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -583,7 +594,18 @@ impl Room {
 
             // Construct a gift wrap to back up to current user's owned messaging relays
             let rumor = rumor.clone();
-            let event = EventBuilder::gift_wrap(&signer, &user_pubkey, rumor, []).await?;
+
+            // Construct the sealled event
+            let seal = EventBuilder::seal(&signer, &user_pubkey, rumor)
+                .await?
+                .build(user_pubkey)
+                .sign(&signer)
+                .await?;
+
+            // Construct the gift-wrapped event
+            //
+            // NEVER SIGN
+            let event = EventBuilder::gift_wrap_from_seal(&user_pubkey, &seal, [])?;
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
