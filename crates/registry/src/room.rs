@@ -502,7 +502,7 @@ impl Room {
             let encryption = state.device.read().await.encryption.clone();
             // Get the encryption public key
             let encryption_pubkey = if let Some(signer) = encryption.as_ref() {
-                Some(signer.get_public_key().await?)
+                signer.get_public_key().await.ok()
             } else {
                 None
             };
@@ -532,8 +532,8 @@ impl Room {
 
                 // Ensure connection to the relays
                 for url in urls.iter() {
-                    client.add_relay(url).await?;
-                    client.connect_relay(url).await?;
+                    client.add_relay(url).await.ok();
+                    client.connect_relay(url).await.ok();
                 }
 
                 // Get user's encryption public key if available
@@ -551,13 +551,7 @@ impl Room {
                 let rumor = rumor.clone();
 
                 // Construct the gift wrap event
-                let event = EventBuilder::gift_wrap(
-                    &signer,
-                    &receiver,
-                    rumor,
-                    vec![Tag::public_key(member)],
-                )
-                .await?;
+                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
 
                 // Send the gift wrap event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -601,13 +595,7 @@ impl Room {
             let rumor = rumor.clone();
 
             // Construct the gift-wrapped event
-            let event = EventBuilder::gift_wrap(
-                &signer,
-                &receiver,
-                rumor,
-                vec![Tag::public_key(user_pubkey)],
-            )
-            .await?;
+            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {

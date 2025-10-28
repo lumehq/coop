@@ -1000,7 +1000,7 @@ impl AppState {
 
         // Subscribe to gift wrap events
         self.client
-            .subscribe_with_id_to(urls, id, filter, None)
+            .subscribe_with_id_to(&urls, id, filter, None)
             .await?;
 
         Ok(())

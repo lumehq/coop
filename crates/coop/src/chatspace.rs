@@ -325,7 +325,7 @@ impl ChatSpace {
     }
 
     fn load_encryption(&self, ann: Announcement, window: &Window, cx: &Context<Self>) {
-        log::info!("Loading encryption keys: {ann:?}");
+        log::info!("Found encryption announcement: {ann:?}");
 
         cx.spawn_in(window, async move |this, cx| {
             let state = app_state();
