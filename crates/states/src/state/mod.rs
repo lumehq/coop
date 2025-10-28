@@ -1076,22 +1076,22 @@ impl AppState {
         }
 
         // Try to unwrap with the available signer
-        if let Ok(unwrapped) = self.try_unwrap_gift_wrap(gift_wrap).await {
-            let sender = unwrapped.sender;
-            let mut rumor_unsigned = unwrapped.rumor;
+        let unwrapped = self.try_unwrap_gift_wrap(gift_wrap).await?;
+        let sender = unwrapped.sender;
+        let mut rumor_unsigned = unwrapped.rumor;
 
-            if !self.verify_sender(sender, &rumor_unsigned).await {
-                return Err(anyhow!("Invalid rumor"));
-            };
+        if !self.verify_sender(sender, &rumor_unsigned).await {
+            return Err(anyhow!("Invalid rumor"));
+        };
 
-            // Generate event id for the rumor if it doesn't have one
-            rumor_unsigned.ensure_id();
+        // Generate event id for the rumor if it doesn't have one
+        rumor_unsigned.ensure_id();
 
-            self.set_rumor(gift_wrap.id, &rumor_unsigned).await?;
-            self.process_rumor(gift_wrap.id, rumor_unsigned).await?;
+        // Cache the rumor
+        self.set_rumor(gift_wrap.id, &rumor_unsigned).await?;
 
-            return Ok(());
-        }
+        // Process the rumor
+        self.process_rumor(gift_wrap.id, rumor_unsigned).await?;
 
         Ok(())
     }
@@ -1101,20 +1101,21 @@ impl AppState {
         // Try to unwrap with the device's encryption keys first
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
         if let Some(signer) = self.device.read().await.encryption.as_ref() {
-            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
-                return Ok(unwrapped);
+            match UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
+                Ok(unwrapped) => {
+                    return Ok(unwrapped);
+                }
+                Err(e) => {
+                    log::error!("Failed to unwrap with the encryption key: {e}")
+                }
             }
         }
 
-        // Get user's signer
-        let signer = self.client.signer().await?;
-
         // Try to unwrap with the user's signer
-        if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await {
-            return Ok(unwrapped);
-        }
+        let signer = self.client.signer().await?;
+        let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
 
-        Err(anyhow!("No signer available"))
+        Ok(unwrapped)
     }
 
     /// Process a rumor event.
