@@ -10,13 +10,13 @@ use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
-use crate::app_name;
 use crate::constants::{
     BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT, SEARCH_RELAYS,
 };
 use crate::paths::config_dir;
 use crate::state::ingester::Ingester;
 use crate::state::tracker::EventTracker;
+use crate::{app_name, INBOX_SUB_ID};
 
 mod device;
 mod ingester;
@@ -345,7 +345,7 @@ impl AppState {
                     }
                 }
                 RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if subscription_id.as_ref() == &SubscriptionId::new("inbox") {
+                    if subscription_id.as_ref() == &SubscriptionId::new(INBOX_SUB_ID) {
                         self.signal
                             .send(SignalKind::GiftWrapStatus(UnwrappingStatus::Processing))
                             .await;
@@ -687,8 +687,8 @@ impl AppState {
         // Send the announcement event to the relays
         self.client.send_event(&event).await?;
 
-        // Re-subscribes to gift wrap events
-        self.resubscribe_messages().await?;
+        // Resubscribe to gift wrap events that include the encryption public key
+        self.get_messages_with_encryption(public_key).await?;
 
         Ok(())
     }
@@ -698,14 +698,16 @@ impl AppState {
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     pub async fn load_encryption_keys(&self, announcement: &Announcement) -> Result<(), Error> {
         let keys = self.get_keys("encryption").await?;
+        let public_key = announcement.public_key();
 
         // Check if the encryption keys match the announcement
-        if announcement.public_key() == keys.public_key() {
+        if public_key == keys.public_key() {
+            // Update encryption keys
             let mut device = self.device.write().await;
             device.set_encryption(keys);
 
-            // Re-subscribes to gift wrap events
-            self.resubscribe_messages().await?;
+            // Resubscribe to gift wrap events that include the encryption public key
+            self.get_messages_with_encryption(public_key).await?;
 
             Ok(())
         } else {
@@ -751,15 +753,17 @@ impl AppState {
 
                 let secret = SecretKey::from_hex(&decrypted)?;
                 let keys = Keys::new(secret);
+                let public_key = keys.public_key();
 
                 // No longer need to hold the reader for device
                 drop(device);
 
+                // Update encryption keys
                 let mut device = self.device.write().await;
                 device.set_encryption(keys);
 
-                // Re-subscribes to gift wrap events
-                self.resubscribe_messages().await?;
+                // Resubscribe to gift wrap events that include the encryption public key
+                self.get_messages_with_encryption(public_key).await?;
             }
             None => {
                 // Construct encryption keys request event
@@ -812,16 +816,19 @@ impl AppState {
         // Decrypt the payload using the client keys
         let decrypted = client_key.nip44_decrypt(&public_key, payload).await?;
         let secret = SecretKey::parse(&decrypted)?;
+
         let keys = Keys::new(secret);
+        let public_key = keys.public_key();
 
         // No longer need to hold the reader for device
         drop(device);
 
+        // Update encryption keys
         let mut device = self.device.write().await;
         device.set_encryption(keys);
 
-        // Re-subscribes to gift wrap events
-        self.resubscribe_messages().await?;
+        // Resubscribe to gift wrap events that include the encryption public key
+        self.get_messages_with_encryption(public_key).await?;
 
         Ok(())
     }
@@ -938,7 +945,7 @@ impl AppState {
         public_key: PublicKey,
         urls: &[RelayUrl],
     ) -> Result<(), Error> {
-        let id = SubscriptionId::new("inbox");
+        let id = SubscriptionId::new(INBOX_SUB_ID);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         // Ensure user's have at least one relay
@@ -955,6 +962,29 @@ impl AppState {
         // Subscribe to filters to user's messaging relays
         self.client
             .subscribe_with_id_to(urls, id, filter, None)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Resubscribes to gift wrap events that include the encryption public key
+    pub async fn get_messages_with_encryption(&self, encryption: PublicKey) -> Result<(), Error> {
+        let signer = self.client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+        let urls = self.messaging_relays(public_key).await;
+
+        let id = SubscriptionId::new(INBOX_SUB_ID);
+
+        let filter = Filter::new()
+            .kind(Kind::GiftWrap)
+            .pubkeys(vec![public_key, encryption]);
+
+        // Unsubscribe the previous subscription
+        self.client.unsubscribe(&id).await;
+
+        // Subscribe to gift wrap events
+        self.client
+            .subscribe_with_id_to(&urls, id, filter, None)
             .await?;
 
         Ok(())
@@ -984,26 +1014,6 @@ impl AppState {
         }
 
         relay_urls
-    }
-
-    /// Re-subscribes to gift wrap events
-    pub async fn resubscribe_messages(&self) -> Result<(), Error> {
-        let signer = self.client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-        let urls = self.messaging_relays(public_key).await;
-
-        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-        let id = SubscriptionId::new("inbox");
-
-        // Unsubscribe the previous subscription
-        self.client.unsubscribe(&id).await;
-
-        // Subscribe to gift wrap events
-        self.client
-            .subscribe_with_id_to(&urls, id, filter, None)
-            .await?;
-
-        Ok(())
     }
 
     /// Stores an unwrapped event in local database with reference to original
@@ -1098,7 +1108,7 @@ impl AppState {
 
     // Helper method to try unwrapping with different signers
     async fn try_unwrap_gift_wrap(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
-        // Try to unwrap with the device's encryption keys first
+        // Try to unwrap with the encryption key first
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
         if let Some(signer) = self.device.read().await.encryption.as_ref() {
             match UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {

@@ -549,9 +549,10 @@ impl Room {
 
                 let receiver = Self::select_receiver(&signer_kind, member, encryption)?;
                 let rumor = rumor.clone();
+                let tags = vec![Tag::public_key(member)];
 
                 // Construct the gift wrap event
-                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
+                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, tags).await?;
 
                 // Send the gift wrap event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -593,9 +594,10 @@ impl Room {
 
             let receiver = Self::select_receiver(&signer_kind, user_pubkey, encryption_pubkey)?;
             let rumor = rumor.clone();
+            let tags = vec![Tag::public_key(user_pubkey)];
 
             // Construct the gift-wrapped event
-            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, []).await?;
+            let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, tags).await?;
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
