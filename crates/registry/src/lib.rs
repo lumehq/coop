@@ -245,7 +245,7 @@ impl Registry {
     pub fn search_by_public_key(&self, public_key: PublicKey, cx: &App) -> Vec<Entity<Room>> {
         self.rooms
             .iter()
-            .filter(|room| room.read(cx).members.contains_key(&public_key))
+            .filter(|room| room.read(cx).members.contains(&public_key))
             .cloned()
             .collect()
     }

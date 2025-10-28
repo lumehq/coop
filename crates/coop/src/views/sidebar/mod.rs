@@ -625,7 +625,7 @@ impl Sidebar {
                         .name(this.display_name(cx))
                         .avatar(this.display_image(proxy, cx))
                         .created_at(this.created_at.to_ago())
-                        .public_key(this.members.iter().nth(0).unwrap().0)
+                        .public_key(&this.members[0])
                         .kind(this.kind)
                         .on_click(handler),
                 )

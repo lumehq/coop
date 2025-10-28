@@ -117,8 +117,6 @@ pub enum RoomKind {
     Request,
 }
 
-type DevicePublicKey = PublicKey;
-
 #[derive(Debug)]
 pub struct Room {
     pub id: u64,
@@ -126,7 +124,7 @@ pub struct Room {
     /// Subject of the room
     pub subject: Option<String>,
     /// All members of the room
-    pub members: HashMap<PublicKey, Option<DevicePublicKey>>,
+    pub members: Vec<PublicKey>,
     /// Kind
     pub kind: RoomKind,
 }
@@ -165,11 +163,7 @@ impl From<&Event> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members: HashMap<PublicKey, Option<DevicePublicKey>> = val
-            .all_pubkeys()
-            .into_iter()
-            .map(|public_key| (public_key, None))
-            .collect();
+        let members = val.all_pubkeys();
 
         // Get subject from tags
         let subject = val
@@ -193,11 +187,7 @@ impl From<&UnsignedEvent> for Room {
         let created_at = val.created_at;
 
         // Get the members from the event's tags and event's pubkey
-        let members: HashMap<PublicKey, Option<DevicePublicKey>> = val
-            .all_pubkeys()
-            .into_iter()
-            .map(|public_key| (public_key, None))
-            .collect();
+        let members = val.all_pubkeys();
 
         // Get subject from tags
         let subject = val
@@ -279,7 +269,7 @@ impl Room {
 
     /// Returns the members of the room
     pub fn members(&self) -> Vec<PublicKey> {
-        self.members.keys().cloned().collect()
+        self.members.clone()
     }
 
     /// Checks if the room has more than two members (group)
@@ -314,9 +304,9 @@ impl Room {
 
         let target_member = self
             .members
-            .keys()
+            .iter()
             .find(|&member| Some(member) != signer_pubkey.as_ref())
-            .or_else(|| self.members.keys().next())
+            .or_else(|| self.members.first())
             .expect("Room should have at least one member");
 
         registry.read(cx).get_person(target_member, cx)
@@ -329,7 +319,7 @@ impl Room {
         if self.is_group() {
             let profiles: Vec<Profile> = self
                 .members
-                .keys()
+                .iter()
                 .map(|public_key| registry.get_person(public_key, cx))
                 .collect();
 
@@ -437,7 +427,7 @@ impl Room {
         // Add receivers
         //
         // NOTE: current user will be removed from the list of receivers
-        for (member, _) in self.members.iter() {
+        for member in self.members.iter() {
             // Get relay hint if available
             let relay_url = relay_cache
                 .get(member)
