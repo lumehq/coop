@@ -21,9 +21,10 @@ use nostr_sdk::prelude::*;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::constants::{BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
-use states::state::{Announcement, AuthRequest, Response, SignalKind, UnwrappingStatus};
-use states::{app_state, default_nip17_relays, default_nip65_relays};
+use states::{
+    app_state, default_nip17_relays, default_nip65_relays, Announcement, AuthRequest, Response,
+    SignalKind, UnwrappingStatus, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH,
+};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::actions::{CopyPublicKey, OpenPublicKey};

@@ -6131,6 +6131,8 @@ dependencies = [
  "nostr-lmdb",
  "nostr-sdk",
  "rustls",
+ "serde",
+ "serde_json",
  "smol",
  "whoami",
 ]

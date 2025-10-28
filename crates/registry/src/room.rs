@@ -8,19 +8,9 @@ use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use nostr_sdk::prelude::*;
-use serde::{Deserialize, Serialize};
-use states::app_state;
-use states::constants::SEND_RETRY;
+use states::{app_state, SignerKind, SEND_RETRY};
 
 use crate::Registry;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Deserialize, Serialize)]
-pub enum SignerKind {
-    Encryption,
-    User,
-    #[default]
-    Auto,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SendOptions {

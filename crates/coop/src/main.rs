@@ -6,8 +6,7 @@ use gpui::{
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
-use states::app_state;
-use states::constants::{APP_ID, CLIENT_NAME};
+use states::{app_state, APP_ID, CLIENT_NAME};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};

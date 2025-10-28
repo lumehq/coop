@@ -15,7 +15,6 @@ use crate::constants::{
     BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT, SEARCH_RELAYS,
 };
 use crate::paths::config_dir;
-use crate::state::device::Device;
 use crate::state::ingester::Ingester;
 use crate::state::tracker::EventTracker;
 
@@ -24,6 +23,7 @@ mod ingester;
 mod signal;
 mod tracker;
 
+pub use device::*;
 pub use signal::*;
 
 #[derive(Debug)]

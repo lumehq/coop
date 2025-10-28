@@ -3,12 +3,13 @@ use std::sync::OnceLock;
 use nostr_sdk::prelude::*;
 use whoami::{devicename, platform};
 
-use crate::constants::CLIENT_NAME;
-use crate::state::AppState;
+mod constants;
+mod paths;
+mod state;
 
-pub mod constants;
-pub mod paths;
-pub mod state;
+pub use constants::*;
+pub use paths::*;
+pub use state::*;
 
 static APP_STATE: OnceLock<AppState> = OnceLock::new();
 static APP_NAME: OnceLock<String> = OnceLock::new();

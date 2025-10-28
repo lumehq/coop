@@ -8,7 +8,7 @@ use std::pin::Pin;
 use anyhow::Result;
 use futures::FutureExt as _;
 use gpui::AsyncApp;
-use states::paths::config_dir;
+use states::config_dir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyItem {
