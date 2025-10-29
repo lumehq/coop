@@ -295,10 +295,10 @@ impl Room {
         }
     }
 
-    /// Get a single member to represent the room
+    /// Get a member to represent the room
     ///
-    /// This member is always different from the current user.
-    fn display_member(&self, cx: &App) -> Profile {
+    /// Display member is always different from the current user.
+    pub fn display_member(&self, cx: &App) -> Profile {
         let registry = Registry::global(cx);
         let signer_pubkey = registry.read(cx).signer_pubkey();
 
@@ -383,6 +383,42 @@ impl Room {
             }
 
             Ok(())
+        })
+    }
+
+    pub fn verify_connections(&self, cx: &App) -> Task<Result<HashMap<PublicKey, bool>, Error>> {
+        let members = self.members();
+
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let mut result = HashMap::default();
+
+            for member in members.into_iter() {
+                let filter = Filter::new()
+                    .kind(Kind::InboxRelays)
+                    .author(member)
+                    .limit(1);
+
+                if let Some(event) = client.database().query(filter).await?.first() {
+                    let urls: Vec<&RelayUrl> = nip17::extract_relay_list(event).collect();
+
+                    if urls.is_empty() {
+                        result.insert(member, false);
+                        continue;
+                    }
+
+                    for url in urls {
+                        client.add_relay(url).await.ok();
+                        client.connect_relay(url).await.ok();
+                    }
+
+                    result.insert(member, true);
+                } else {
+                    result.insert(member, false);
+                }
+            }
+
+            Ok(result)
         })
     }
 

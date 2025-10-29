@@ -52,8 +52,8 @@ impl RoomListItem {
         self
     }
 
-    pub fn public_key(mut self, public_key: &PublicKey) -> Self {
-        self.public_key = Some(public_key.to_owned());
+    pub fn public_key(mut self, public_key: PublicKey) -> Self {
+        self.public_key = Some(public_key);
         self
     }
 
