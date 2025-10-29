@@ -80,7 +80,7 @@ pub struct Chat {
     image_cache: Entity<RetainAllImageCache>,
 
     _subscriptions: SmallVec<[Subscription; 3]>,
-    _tasks: SmallVec<[Task<()>; 2]>,
+    _tasks: SmallVec<[Task<()>; 3]>,
 }
 
 impl Chat {
@@ -102,6 +102,7 @@ impl Chat {
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
         let connect = room.read(cx).connect(cx);
+        let verify_connections = room.read(cx).verify_connections(cx);
         let get_messages = room.read(cx).get_messages(cx);
 
         let mut subscriptions = smallvec![];
@@ -125,6 +126,37 @@ impl Chat {
                     match result {
                         Ok(events) => {
                             this.insert_messages(events, cx);
+                        }
+                        Err(e) => {
+                            window.push_notification(e.to_string(), cx);
+                        }
+                    };
+                })
+                .ok();
+            }),
+        );
+
+        tasks.push(
+            // Connect and verify all members messaging relays
+            cx.spawn_in(window, async move |this, cx| {
+                // Wait for 5 seconds before connecting and verifying
+                cx.background_executor().timer(Duration::from_secs(5)).await;
+
+                let result = verify_connections.await;
+
+                this.update_in(cx, |this, window, cx| {
+                    match result {
+                        Ok(data) => {
+                            let registry = Registry::global(cx);
+
+                            for (public_key, status) in data.into_iter() {
+                                if !status {
+                                    let profile = registry.read(cx).get_person(&public_key, cx);
+                                    let content = t!("chat.nip17_warn", u = profile.display_name());
+
+                                    this.insert_warning(content, cx);
+                                }
+                            }
                         }
                         Err(e) => {
                             window.push_notification(e.to_string(), cx);
@@ -865,7 +897,7 @@ impl Chat {
                                 .flex_1()
                                 .w_full()
                                 .text_center()
-                                .child(shared_t!("chat.nip17_not_found", u = name)),
+                                .child(shared_t!("chat.nip17_warn", u = name)),
                         ),
                 )
             })
@@ -886,7 +918,7 @@ impl Chat {
                                 .flex_1()
                                 .w_full()
                                 .text_center()
-                                .child(shared_t!("chat.device_not_found", u = name)),
+                                .child(shared_t!("chat.device_error", u = name)),
                         ),
                 )
             })

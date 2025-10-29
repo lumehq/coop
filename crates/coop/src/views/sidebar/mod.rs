@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::debounced_delay::DebouncedDelay;
-use common::display::{RenderedTimestamp, TextUtils};
+use common::display::{RenderedProfile, RenderedTimestamp, TextUtils};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
@@ -610,28 +610,31 @@ impl Sidebar {
         let mut items = Vec::with_capacity(range.end - range.start);
 
         for ix in range {
-            if let Some(room) = rooms.get(ix) {
-                let this = room.read(cx);
-                let room_id = this.id;
-                let handler = cx.listener({
-                    move |this, _, window, cx| {
-                        this.open_room(room_id, window, cx);
-                    }
-                });
-
-                items.push(
-                    RoomListItem::new(ix)
-                        .room_id(room_id)
-                        .name(this.display_name(cx))
-                        .avatar(this.display_image(proxy, cx))
-                        .created_at(this.created_at.to_ago())
-                        .public_key(&this.members[0])
-                        .kind(this.kind)
-                        .on_click(handler),
-                )
-            } else {
+            let Some(room) = rooms.get(ix) else {
                 items.push(RoomListItem::new(ix));
-            }
+                continue;
+            };
+
+            let this = room.read(cx);
+            let room_id = this.id;
+            let member = this.display_member(cx);
+
+            let handler = cx.listener({
+                move |this, _, window, cx| {
+                    this.open_room(room_id, window, cx);
+                }
+            });
+
+            items.push(
+                RoomListItem::new(ix)
+                    .room_id(room_id)
+                    .name(member.display_name())
+                    .avatar(member.avatar(proxy))
+                    .public_key(member.public_key())
+                    .kind(this.kind)
+                    .created_at(this.created_at.to_ago())
+                    .on_click(handler),
+            )
         }
 
         items

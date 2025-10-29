@@ -407,9 +407,9 @@ chat:
     en: "Successfully"
   reports:
     en: "Sent Reports"
-  nip17_not_found:
-    en: "%{u} has not set up Messaging Relays, so they won't receive your message."
-  device_not_found:
+  nip17_warn:
+    en: "%{u} has not set up Messaging Relays, they cannot receive your message."
+  device_error:
     en: "You're sending with an encryption key, but %{u} has not set up an encryption key yet. Try sending with your identity instead."
 
 sidebar:
