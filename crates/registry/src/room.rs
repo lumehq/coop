@@ -566,12 +566,6 @@ impl Room {
                     continue;
                 }
 
-                // Ensure connection to the relays
-                for url in urls.iter() {
-                    client.add_relay(url).await.ok();
-                    client.connect_relay(url).await.ok();
-                }
-
                 // Get user's encryption public key if available
                 let encryption = announcement_cache
                     .get(&member)

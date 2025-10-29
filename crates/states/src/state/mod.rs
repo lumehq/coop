@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Error};
+use nostr_gossip_memory::prelude::*;
 use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
@@ -71,18 +72,25 @@ impl AppState {
             .install_default()
             .ok();
 
-        let lmdb =
-            NostrLMDB::open(config_dir().join("nostr")).expect("Database is NOT initialized");
+        let path = config_dir().join("nostr");
+        let lmdb = NostrLMDB::open(path).expect("Failed to initialize database");
+        let gossip = NostrGossipMemory::unbounded();
 
+        // Nostr client options
         let opts = ClientOptions::new()
-            .gossip(true)
             .automatic_authentication(false)
             .verify_subscriptions(false)
             .sleep_when_idle(SleepWhenIdle::Enabled {
                 timeout: Duration::from_secs(600),
             });
 
-        let client = ClientBuilder::default().database(lmdb).opts(opts).build();
+        // Construct the nostr client
+        let client = ClientBuilder::default()
+            .gossip(gossip)
+            .database(lmdb)
+            .opts(opts)
+            .build();
+
         let device = RwLock::new(Device::default());
         let event_tracker = RwLock::new(EventTracker::default());
         let relay_cache = RwLock::new(HashMap::default());
@@ -136,18 +144,18 @@ impl AppState {
 
         loop {
             if let Ok(signer) = client.signer().await {
-                if let Ok(pk) = signer.get_public_key().await {
+                if let Ok(public_key) = signer.get_public_key().await {
                     // Notify the app that the signer has been set
-                    self.signal().send(SignalKind::SignerSet(pk)).await;
+                    self.signal().send(SignalKind::SignerSet(public_key)).await;
 
                     // Get user's gossip relays
-                    self.get_nip65(pk).await.ok();
+                    self.get_nip65(public_key).await.ok();
 
                     // Initialize the relay and announcement caches
                     self.init_cache().await.ok();
 
-                    // Initialize client keys
-                    self.init_client_keys().await.ok();
+                    // Initialize client key
+                    self.init_client_key().await.ok();
 
                     // Exit the loop
                     break;
@@ -242,10 +250,10 @@ impl AppState {
                     }
 
                     match event.kind {
-                        // Encryption Keys announcement event
+                        // Encryption Key announcement event
                         Kind::Custom(10044) => {
                             if let Ok(announcement) = self.extract_announcement(&event) {
-                                if let Ok(true) = self.is_self_authored(&event).await {
+                                if self.is_self_authored(&event).await {
                                     self.signal
                                         .send(SignalKind::EncryptionSet(announcement.clone()))
                                         .await;
@@ -256,9 +264,9 @@ impl AppState {
                                 announcement_cache.insert(event.pubkey, Some(announcement));
                             }
                         }
-                        // Encryption Keys request event
+                        // Encryption Key request event
                         Kind::Custom(4454) => {
-                            if let Ok(true) = self.is_self_authored(&event).await {
+                            if self.is_self_authored(&event).await {
                                 if let Ok(announcement) = self.extract_announcement(&event) {
                                     self.signal
                                         .send(SignalKind::EncryptionRequest(announcement))
@@ -268,7 +276,7 @@ impl AppState {
                         }
                         // Encryption Keys response event
                         Kind::Custom(4455) => {
-                            if let Ok(true) = self.is_self_authored(&event).await {
+                            if self.is_self_authored(&event).await {
                                 if let Ok(response) = self.extract_response(&event) {
                                     self.signal
                                         .send(SignalKind::EncryptionResponse(response))
@@ -278,7 +286,7 @@ impl AppState {
                         }
                         Kind::RelayList => {
                             // Get events if relay list belongs to current user
-                            if let Ok(true) = self.is_self_authored(&event).await {
+                            if self.is_self_authored(&event).await {
                                 let author = event.pubkey;
 
                                 // Fetch user's metadata event
@@ -310,7 +318,7 @@ impl AppState {
                                 .collect();
 
                             // Subscribe to gift wrap events if messaging relays belong to the current user
-                            if let Ok(true) = self.is_self_authored(&event).await {
+                            if self.is_self_authored(&event).await {
                                 if let Err(e) = self.get_messages(event.pubkey, &urls).await {
                                     log::error!("Failed to fetch messages: {e}");
                                 }
@@ -321,7 +329,7 @@ impl AppState {
                             relay_cache.entry(event.pubkey).or_default().extend(urls);
                         }
                         Kind::ContactList => {
-                            if let Ok(true) = self.is_self_authored(&event).await {
+                            if self.is_self_authored(&event).await {
                                 let public_keys: HashSet<PublicKey> =
                                     event.tags.public_keys().copied().collect();
 
@@ -481,11 +489,13 @@ impl AppState {
     }
 
     /// Check if event is published by current user
-    async fn is_self_authored(&self, event: &Event) -> Result<bool, Error> {
-        let signer = self.client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        Ok(public_key == event.pubkey)
+    async fn is_self_authored(&self, event: &Event) -> bool {
+        if let Ok(signer) = self.client.signer().await {
+            if let Ok(public_key) = signer.get_public_key().await {
+                return public_key == event.pubkey;
+            }
+        }
+        false
     }
 
     /// Subscribe for events that match the given kind for a given author
@@ -514,7 +524,7 @@ impl AppState {
         }
 
         let filter = Filter::new()
-            .limit(authors.len() * kinds.len() + 20)
+            .limit(authors.len() * kinds.len() + 10)
             .authors(authors)
             .kinds(kinds);
 
@@ -614,7 +624,7 @@ impl AppState {
     /// Initialize the client keys to communicate between clients
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    pub async fn init_client_keys(&self) -> Result<(), Error> {
+    pub async fn init_client_key(&self) -> Result<(), Error> {
         // Get the keys from the database or generate new ones
         let keys = self
             .get_keys("client")
