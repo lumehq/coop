@@ -6,7 +6,7 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::{shared_t, t};
-use registry::Registry;
+use person::PersonRegistry;
 use settings::AppSettings;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
@@ -53,7 +53,7 @@ impl Preferences {
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
-                            let registry = Registry::global(cx);
+                            let persons = PersonRegistry::global(cx);
                             let set_metadata = this.set_metadata(cx);
 
                             cx.spawn_in(window, async move |this, cx| {
@@ -62,7 +62,7 @@ impl Preferences {
                                 this.update_in(cx, |_, window, cx| {
                                     match result {
                                         Ok(profile) => {
-                                            registry.update(cx, |this, cx| {
+                                            persons.update(cx, |this, cx| {
                                                 this.insert_or_update_person(profile, cx);
                                             });
                                         }
@@ -115,12 +115,12 @@ impl Render for Preferences {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide = AppSettings::get_hide_user_avatars(cx);
 
-        let registry = Registry::read_global(cx);
-        let input_state = self.media_input.downgrade();
-
+        let persons = PersonRegistry::global(cx);
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
-        let profile = registry.get_person(&public_key, cx);
+        let profile = persons.read(cx).get_person(&public_key, cx);
+
+        let input_state = self.media_input.downgrade();
 
         v_flex()
             .child(

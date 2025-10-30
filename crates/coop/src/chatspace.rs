@@ -19,6 +19,7 @@ use key_store::backend::KeyItem;
 use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
+use person::PersonRegistry;
 use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -217,6 +218,7 @@ impl ChatSpace {
         while let Ok(signal) = states.signal().receiver().recv_async().await {
             view.update_in(cx, |this, window, cx| {
                 let registry = Registry::global(cx);
+                let persons = PersonRegistry::global(cx);
                 let settings = AppSettings::global(cx);
 
                 match signal {
@@ -283,7 +285,7 @@ impl ChatSpace {
                         }
                     }
                     SignalKind::NewProfile(profile) => {
-                        registry.update(cx, |this, cx| {
+                        persons.update(cx, |this, cx| {
                             this.insert_or_update_person(profile, cx);
                         });
                     }
@@ -1233,10 +1235,10 @@ impl ChatSpace {
                 )
             })
             .when(Account::has_global(cx), |this| {
-                let registry = Registry::global(cx);
+                let persons = PersonRegistry::global(cx);
                 let account = Account::global(cx);
                 let public_key = account.read(cx).public_key();
-                let profile = registry.read(cx).get_person(&public_key, cx);
+                let profile = persons.read(cx).get_person(&public_key, cx);
 
                 this.child(
                     Button::new("user")

@@ -9,8 +9,8 @@ use gpui::{
 use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
+use person::PersonRegistry;
 use regex::Regex;
-use registry::Registry;
 use theme::ActiveTheme;
 
 use crate::actions::OpenPublicKey;
@@ -315,8 +315,8 @@ fn render_plain_text_mut(
         link_urls: &mut Vec<String>,
         cx: &App,
     ) {
-        let registry = Registry::read_global(cx);
-        let profile = registry.get_person(&public_key, cx);
+        let persons = PersonRegistry::global(cx);
+        let profile = persons.read(cx).get_person(&public_key, cx);
         let display_name = format!("@{}", profile.display_name());
 
         // Replace token with display name

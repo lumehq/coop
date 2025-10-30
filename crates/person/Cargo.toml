@@ -1,0 +1,18 @@
+[package]
+name = "person"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+common = { path = "../common" }
+states = { path = "../states" }
+
+gpui.workspace = true
+nostr.workspace = true
+nostr-sdk.workspace = true
+anyhow.workspace = true
+itertools.workspace = true
+smallvec.workspace = true
+smol.workspace = true
+log.workspace = true

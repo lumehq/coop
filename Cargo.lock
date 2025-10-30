@@ -1309,6 +1309,7 @@ dependencies = [
  "nostr-connect",
  "nostr-sdk",
  "oneshot",
+ "person",
  "registry",
  "reqwest_client",
  "rust-i18n",
@@ -4566,6 +4567,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "person"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "common",
+ "gpui",
+ "itertools 0.13.0",
+ "log",
+ "nostr",
+ "nostr-sdk",
+ "smallvec",
+ "smol",
+ "states",
+]
+
+[[package]]
 name = "phf"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5223,6 +5240,7 @@ dependencies = [
  "log",
  "nostr",
  "nostr-sdk",
+ "person",
  "serde",
  "serde_json",
  "settings",
@@ -7109,8 +7127,8 @@ dependencies = [
  "lsp-types",
  "nostr-sdk",
  "once_cell",
+ "person",
  "regex",
- "registry",
  "rope",
  "rust-i18n",
  "serde",

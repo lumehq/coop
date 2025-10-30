@@ -12,7 +12,7 @@ use i18n::{shared_t, t};
 use key_store::backend::KeyItem;
 use key_store::KeyStore;
 use nostr_connect::prelude::*;
-use registry::Registry;
+use person::PersonRegistry;
 use smallvec::{smallvec, SmallVec};
 use states::{app_state, BUNKER_TIMEOUT};
 use theme::ActiveTheme;
@@ -207,8 +207,8 @@ impl Focusable for Account {
 
 impl Render for Account {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let registry = Registry::global(cx);
-        let profile = registry.read(cx).get_person(&self.public_key, cx);
+        let persons = PersonRegistry::global(cx);
+        let profile = persons.read(cx).get_person(&self.public_key, cx);
         let bunker = self.secret.starts_with("bunker://");
 
         v_flex()

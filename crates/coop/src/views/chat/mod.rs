@@ -16,9 +16,9 @@ use i18n::{shared_t, t};
 use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
+use person::PersonRegistry;
 use registry::message::{Message, RenderedMessage};
 use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
-use registry::Registry;
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -147,11 +147,11 @@ impl Chat {
                 this.update_in(cx, |this, window, cx| {
                     match result {
                         Ok(data) => {
-                            let registry = Registry::global(cx);
+                            let persons = PersonRegistry::global(cx);
 
                             for (public_key, status) in data.into_iter() {
                                 if !status {
-                                    let profile = registry.read(cx).get_person(&public_key, cx);
+                                    let profile = persons.read(cx).get_person(&public_key, cx);
                                     let content = t!("chat.nip17_warn", u = profile.display_name());
 
                                     this.insert_warning(content, cx);
@@ -476,8 +476,8 @@ impl Chat {
     }
 
     fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
-        let registry = Registry::read_global(cx);
-        registry.get_person(public_key, cx)
+        let persons = PersonRegistry::global(cx);
+        persons.read(cx).get_person(public_key, cx)
     }
 
     fn signer_kind(&self, cx: &App) -> SignerKind {
@@ -859,8 +859,8 @@ impl Chat {
     }
 
     fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
-        let registry = Registry::read_global(cx);
-        let profile = registry.get_person(&report.receiver, cx);
+        let persons = PersonRegistry::global(cx);
+        let profile = persons.read(cx).get_person(&report.receiver, cx);
         let name = profile.display_name();
         let avatar = profile.avatar(true);
 
@@ -1123,8 +1123,8 @@ impl Chat {
 
     fn render_reply(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         if let Some(text) = self.message(id) {
-            let registry = Registry::read_global(cx);
-            let profile = registry.get_person(&text.author, cx);
+            let persons = PersonRegistry::global(cx);
+            let profile = persons.read(cx).get_person(&text.author, cx);
 
             div()
                 .w_full()

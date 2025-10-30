@@ -9,9 +9,8 @@ use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use nostr_sdk::prelude::*;
+use person::PersonRegistry;
 use states::{app_state, SignerKind, SEND_RETRY};
-
-use crate::Registry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SendOptions {
@@ -300,7 +299,7 @@ impl Room {
     ///
     /// Display member is always different from the current user.
     pub fn display_member(&self, cx: &App) -> Profile {
-        let registry = Registry::global(cx);
+        let persons = PersonRegistry::global(cx);
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
 
@@ -311,18 +310,18 @@ impl Room {
             .or_else(|| self.members.first())
             .expect("Room should have at least one member");
 
-        registry.read(cx).get_person(target_member, cx)
+        persons.read(cx).get_person(target_member, cx)
     }
 
     /// Merge the names of the first two members of the room.
     fn merged_name(&self, cx: &App) -> SharedString {
-        let registry = Registry::read_global(cx);
+        let persons = PersonRegistry::global(cx);
 
         if self.is_group() {
             let profiles: Vec<Profile> = self
                 .members
                 .iter()
-                .map(|public_key| registry.get_person(public_key, cx))
+                .map(|public_key| persons.read(cx).get_person(public_key, cx))
                 .collect();
 
             let mut name = profiles

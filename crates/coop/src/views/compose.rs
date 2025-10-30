@@ -13,6 +13,7 @@ use gpui::{
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
+use person::PersonRegistry;
 use registry::room::Room;
 use registry::Registry;
 use settings::AppSettings;
@@ -372,7 +373,7 @@ impl Compose {
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let registry = Registry::read_global(cx);
+        let persons = PersonRegistry::global(cx);
         let mut items = Vec::with_capacity(self.contacts.read(cx).len());
 
         for ix in range {
@@ -381,7 +382,7 @@ impl Compose {
             };
 
             let public_key = contact.public_key;
-            let profile = registry.get_person(&public_key, cx);
+            let profile = persons.read(cx).get_person(&public_key, cx);
 
             items.push(
                 h_flex()

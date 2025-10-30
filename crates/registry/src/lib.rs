@@ -6,9 +6,7 @@ use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{
-    App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
-};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use settings::AppSettings;
@@ -39,9 +37,6 @@ pub struct Registry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
 
-    /// Collection of all persons (user profiles)
-    pub persons: HashMap<PublicKey, Entity<Profile>>,
-
     /// Loading status of the registry
     pub loading: bool,
 
@@ -68,97 +63,11 @@ impl Registry {
     }
 
     /// Create a new registry instance
-    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let mut tasks = smallvec![];
-
-        tasks.push(
-            // Load all user profiles from the database
-            cx.spawn(async move |this, cx| {
-                match Self::load_persons(cx).await {
-                    Ok(profiles) => {
-                        this.update(cx, |this, cx| {
-                            this.set_persons(profiles, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load persons: {e}");
-                    }
-                };
-            }),
-        );
-
+    pub(crate) fn new(_cx: &mut Context<Self>) -> Self {
         Self {
             rooms: vec![],
-            persons: HashMap::new(),
             loading: true,
-            _tasks: tasks,
-        }
-    }
-
-    /// Create a task to load all user profiles from the database
-    fn load_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let filter = Filter::new().kind(Kind::Metadata).limit(200);
-            let events = client.database().query(filter).await?;
-
-            let mut profiles = vec![];
-
-            for event in events.into_iter() {
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                let profile = Profile::new(event.pubkey, metadata);
-                profiles.push(profile);
-            }
-
-            Ok(profiles)
-        })
-    }
-
-    /// Insert batch of persons
-    pub fn set_persons(&mut self, profiles: Vec<Profile>, cx: &mut Context<Self>) {
-        for profile in profiles.into_iter() {
-            self.persons
-                .insert(profile.public_key(), cx.new(|_| profile));
-        }
-        cx.notify();
-    }
-
-    /// Get single person
-    pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
-        self.persons
-            .get(public_key)
-            .map(|e| e.read(cx))
-            .cloned()
-            .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
-    }
-
-    /// Get group of persons
-    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Profile> {
-        let mut profiles = vec![];
-
-        for public_key in public_keys.iter() {
-            let profile = self.get_person(public_key, cx);
-            profiles.push(profile);
-        }
-
-        profiles
-    }
-
-    /// Insert or update a person
-    pub fn insert_or_update_person(&mut self, profile: Profile, cx: &mut App) {
-        let public_key = profile.public_key();
-
-        match self.persons.get(&public_key) {
-            Some(person) => {
-                person.update(cx, |this, cx| {
-                    *this = profile;
-                    cx.notify();
-                });
-            }
-            None => {
-                self.persons.insert(public_key, cx.new(|_| profile));
-            }
+            _tasks: smallvec![],
         }
     }
 
