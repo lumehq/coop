@@ -85,7 +85,7 @@ fn main() {
                 // Initialize app registry
                 registry::init(cx);
 
-                // Initialize backend for credentials storage
+                // Initialize backend for keys storage
                 key_store::init(cx);
 
                 // Initialize settings

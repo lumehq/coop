@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
+use account::Account;
 use anyhow::{anyhow, Error};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
@@ -300,12 +301,13 @@ impl Room {
     /// Display member is always different from the current user.
     pub fn display_member(&self, cx: &App) -> Profile {
         let registry = Registry::global(cx);
-        let signer_pubkey = registry.read(cx).signer_pubkey();
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
 
         let target_member = self
             .members
             .iter()
-            .find(|&member| Some(member) != signer_pubkey.as_ref())
+            .find(|&member| member != &public_key)
             .or_else(|| self.members.first())
             .expect("Room should have at least one member");
 
@@ -452,8 +454,8 @@ impl Room {
         let relay_cache = state.relay_cache.read_blocking();
 
         // Get current user
-        let registry = Registry::global(cx);
-        let public_key = registry.read(cx).signer_pubkey().unwrap();
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
 
         // Get room's subject
         let subject = self.subject.clone();

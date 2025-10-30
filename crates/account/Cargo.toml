@@ -1,5 +1,5 @@
 [package]
-name = "key_store"
+name = "account"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -16,6 +16,3 @@ anyhow.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 log.workspace = true
-futures.workspace = true
-serde.workspace = true
-serde_json.workspace = true

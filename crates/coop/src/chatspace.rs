@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use account::Account;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use common::display::{shorten_pubkey, RenderedProfile};
@@ -42,7 +43,8 @@ use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
 use crate::views::setup_relay::SetupRelay;
 use crate::views::{
-    account, chat, login, new_account, onboarding, preferences, sidebar, user_profile, welcome,
+    account as account_view, chat, login, new_account, onboarding, preferences, sidebar,
+    user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -231,8 +233,8 @@ impl ChatSpace {
                         this.receive_encryption(response, window, cx);
                     }
                     SignalKind::SignerSet(public_key) => {
-                        // Close all opened modals
-                        window.close_all_modals(cx);
+                        // Set the global account state
+                        account::init(public_key, cx);
 
                         // Load user's settings
                         settings.update(cx, |this, cx| {
@@ -241,9 +243,11 @@ impl ChatSpace {
 
                         // Load all chat rooms
                         registry.update(cx, |this, cx| {
-                            this.set_signer_pubkey(public_key, cx);
                             this.load_rooms(window, cx);
                         });
+
+                        // Close all opened modals
+                        window.close_all_modals(cx);
 
                         // Setup the default layout for current workspace
                         this.set_default_layout(window, cx);
@@ -618,7 +622,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(public_key, secret, window, cx));
+        let panel = Arc::new(account_view::init(public_key, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
@@ -1159,10 +1163,6 @@ impl ChatSpace {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
-
-        let registry = Registry::global(cx);
-        let signer_pubkey = registry.read(cx).signer_pubkey();
-
         let auth_requests = self.auth_requests.read(cx).len();
 
         h_flex()
@@ -1232,7 +1232,10 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when_some(signer_pubkey, |this, public_key| {
+            .when(Account::has_global(cx), |this| {
+                let registry = Registry::global(cx);
+                let account = Account::global(cx);
+                let public_key = account.read(cx).public_key();
                 let profile = registry.read(cx).get_person(&public_key, cx);
 
                 this.child(

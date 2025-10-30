@@ -3,6 +3,20 @@
 version = 4
 
 [[package]]
+name = "account"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "log",
+ "nostr",
+ "nostr-sdk",
+ "smallvec",
+ "smol",
+ "states",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1276,6 +1290,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 name = "coop"
 version = "0.2.11"
 dependencies = [
+ "account",
  "anyhow",
  "assets",
  "auto_update",
@@ -3352,23 +3367,16 @@ name = "key_store"
 version = "0.2.11"
 dependencies = [
  "anyhow",
- "common",
  "futures",
  "gpui",
- "i18n",
- "itertools 0.13.0",
  "log",
  "nostr",
  "nostr-sdk",
- "rust-i18n",
  "serde",
  "serde_json",
- "settings",
  "smallvec",
  "smol",
  "states",
- "theme",
- "ui",
 ]
 
 [[package]]
@@ -5205,6 +5213,7 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 name = "registry"
 version = "0.2.11"
 dependencies = [
+ "account",
  "anyhow",
  "common",
  "futures",

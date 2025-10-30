@@ -54,7 +54,6 @@ impl KeyStore {
 
         // Only used for testing keyring availability on the user's system
         let read_credential = cx.read_credentials("Coop");
-
         let mut tasks = smallvec![];
 
         tasks.push(

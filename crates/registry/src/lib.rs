@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
+use account::Account;
 use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -43,9 +44,6 @@ pub struct Registry {
 
     /// Loading status of the registry
     pub loading: bool,
-
-    /// Public Key of the currently activated signer
-    signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 2]>,
@@ -93,7 +91,6 @@ impl Registry {
         Self {
             rooms: vec![],
             persons: HashMap::new(),
-            signer_pubkey: None,
             loading: true,
             _tasks: tasks,
         }
@@ -116,17 +113,6 @@ impl Registry {
 
             Ok(profiles)
         })
-    }
-
-    /// Returns the public key of the currently activated signer.
-    pub fn signer_pubkey(&self) -> Option<PublicKey> {
-        self.signer_pubkey
-    }
-
-    /// Update the public key of the currently activated signer.
-    pub fn set_signer_pubkey(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
-        self.signer_pubkey = Some(public_key);
-        cx.notify();
     }
 
     /// Insert batch of persons
@@ -252,12 +238,7 @@ impl Registry {
 
     /// Reset the registry.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        // Clear the current identity
-        self.signer_pubkey = None;
-
-        // Clear all current rooms
         self.rooms.clear();
-
         cx.notify();
     }
 
@@ -422,10 +403,7 @@ impl Registry {
     ) {
         let id = event.uniq_id();
         let author = event.pubkey;
-
-        let Some(public_key) = self.signer_pubkey else {
-            return;
-        };
+        let account = Account::global(cx);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
             let is_new_event = event.created_at > room.read(cx).created_at;
@@ -439,7 +417,7 @@ impl Registry {
                 }
 
                 // Set this room is ongoing if the new message is from current user
-                if author == public_key {
+                if author == account.read(cx).public_key() {
                     this.set_ongoing(cx);
                 }
 

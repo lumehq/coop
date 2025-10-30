@@ -37,6 +37,7 @@ key_store = { path = "../key_store" }
 registry = { path = "../registry" }
 settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }
+account = { path = "../account" }
 
 rust-i18n.workspace = true
 i18n.workspace = true
