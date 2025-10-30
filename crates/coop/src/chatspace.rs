@@ -59,6 +59,7 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
     ChatSpace::set_center_panel(panel, window, cx);
 }
 
+#[derive(Debug)]
 pub struct ChatSpace {
     /// App's Title Bar
     title_bar: Entity<TitleBar>,
@@ -103,15 +104,11 @@ impl ChatSpace {
 
         subscriptions.push(
             // Observe device changes
-            cx.observe_in(&keystore, window, move |this, state, window, cx| {
+            cx.observe_in(&keystore, window, move |_this, state, window, cx| {
                 if state.read(cx).initialized {
                     let backend = state.read(cx).backend();
 
                     if state.read(cx).initialized {
-                        if state.read(cx).is_using_file_keystore() {
-                            this.render_keyring_installation(window, cx);
-                        }
-
                         cx.spawn_in(window, async move |this, cx| {
                             let result = backend
                                 .read_credentials(&KeyItem::User.to_string(), cx)
@@ -785,7 +782,7 @@ impl ChatSpace {
         }
     }
 
-    fn render_keyring_installation(&mut self, window: &mut Window, cx: &mut App) {
+    fn render_keyring_warning(&mut self, window: &mut Window, cx: &mut App) {
         window.open_modal(cx, move |this, _window, cx| {
             this.overlay_closable(false)
                 .show_close(false)
@@ -907,34 +904,30 @@ impl ChatSpace {
                         ),
                 )
                 .on_cancel(move |_ev, window, cx| {
-                    _ = view.update(cx, |this, cx| {
-                        this.render_reset(window, cx);
+                    _ = view.update(cx, |_, cx| {
+                        cx.spawn_in(window, async move |this, cx| {
+                            let state = app_state();
+                            let result = state.init_encryption_keys().await;
+
+                            this.update_in(cx, |_, window, cx| {
+                                match result {
+                                    Ok(_) => {
+                                        window.push_notification(t!("encryption.success"), cx);
+                                        window.close_all_modals(cx);
+                                    }
+                                    Err(e) => {
+                                        window.push_notification(e.to_string(), cx);
+                                    }
+                                };
+                            })
+                            .ok();
+                        })
+                        .detach();
                     });
                     // false to keep modal open
                     false
                 })
         });
-    }
-
-    fn render_reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.spawn_in(window, async move |this, cx| {
-            let state = app_state();
-            let result = state.init_encryption_keys().await;
-
-            this.update_in(cx, |_, window, cx| {
-                match result {
-                    Ok(_) => {
-                        window.push_notification(t!("encryption.success"), cx);
-                        window.close_all_modals(cx);
-                    }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
     }
 
     fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
@@ -1139,11 +1132,7 @@ impl ChatSpace {
         })
     }
 
-    fn render_titlebar_left_side(
-        &mut self,
-        _window: &mut Window,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
         let registry = Registry::global(cx);
         let status = registry.read(cx).loading;
 
@@ -1166,15 +1155,14 @@ impl ChatSpace {
             })
     }
 
-    fn render_titlebar_right_side(
-        &mut self,
-        profile: &Profile,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
+
+        let registry = Registry::global(cx);
+        let signer_pubkey = registry.read(cx).signer_pubkey();
+
         let auth_requests = self.auth_requests.read(cx).len();
 
         h_flex()
@@ -1244,22 +1232,26 @@ impl ChatSpace {
                         }),
                 )
             })
-            .child(
-                Button::new("user")
-                    .small()
-                    .reverse()
-                    .transparent()
-                    .icon(IconName::CaretDown)
-                    .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
-                    .popup_menu(|this, _window, _cx| {
-                        this.menu(t!("user.dark_mode"), Box::new(DarkMode))
-                            .menu(t!("user.settings"), Box::new(Settings))
-                            .separator()
-                            .menu(t!("user.reload_metadata"), Box::new(ReloadMetadata))
-                            .separator()
-                            .menu(t!("user.sign_out"), Box::new(Logout))
-                    }),
-            )
+            .when_some(signer_pubkey, |this, public_key| {
+                let profile = registry.read(cx).get_person(&public_key, cx);
+
+                this.child(
+                    Button::new("user")
+                        .small()
+                        .reverse()
+                        .transparent()
+                        .icon(IconName::CaretDown)
+                        .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
+                        .popup_menu(|this, _window, _cx| {
+                            this.menu(t!("user.dark_mode"), Box::new(DarkMode))
+                                .menu(t!("user.settings"), Box::new(Settings))
+                                .separator()
+                                .menu(t!("user.reload_metadata"), Box::new(ReloadMetadata))
+                                .separator()
+                                .menu(t!("user.sign_out"), Box::new(Logout))
+                        }),
+                )
+            })
     }
 }
 
@@ -1267,24 +1259,14 @@ impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
-        let registry = Registry::read_global(cx);
 
-        // Only render titlebar child elements if user is logged in
-        if let Some(public_key) = registry.signer_pubkey() {
-            let profile = registry.get_person(&public_key, cx);
+        let left = self.titlebar_left(window, cx).into_any_element();
+        let right = self.titlebar_right(window, cx).into_any_element();
 
-            let left_side = self
-                .render_titlebar_left_side(window, cx)
-                .into_any_element();
-
-            let right_side = self
-                .render_titlebar_right_side(&profile, window, cx)
-                .into_any_element();
-
-            self.title_bar.update(cx, |this, _cx| {
-                this.set_children(vec![left_side, right_side]);
-            })
-        }
+        // Update title bar children
+        self.title_bar.update(cx, |this, _cx| {
+            this.set_children(vec![left, right]);
+        });
 
         div()
             .id(SharedString::from("chatspace"))
