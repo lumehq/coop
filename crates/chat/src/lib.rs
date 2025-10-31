@@ -6,7 +6,7 @@ use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, Window};
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use settings::AppSettings;
@@ -23,10 +23,10 @@ pub fn init(cx: &mut App) {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ChatRegistryEvent {
-    Open(WeakEntity<Room>),
-    Close(u64),
-    NewRequest(RoomKind),
+pub enum ChatEvent {
+    OpenRoom(u64),
+    CloseRoom(u64),
+    NewChatRequest(RoomKind),
 }
 
 struct GlobalChatRegistry(Entity<ChatRegistry>);
@@ -44,7 +44,7 @@ pub struct ChatRegistry {
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
-impl EventEmitter<ChatRegistryEvent> for ChatRegistry {}
+impl EventEmitter<ChatEvent> for ChatRegistry {}
 
 impl ChatRegistry {
     /// Retrieve the global registry state
@@ -107,7 +107,7 @@ impl ChatRegistry {
     /// Close a room.
     pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
         if self.rooms.iter().any(|r| r.read(cx).id == id) {
-            cx.emit(ChatRegistryEvent::Close(id));
+            cx.emit(ChatEvent::CloseRoom(id));
         }
     }
 
@@ -264,22 +264,15 @@ impl ChatRegistry {
         }
     }
 
-    /// Push a new Room to the global registry
+    /// Push a new room to the chat registry
     pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
-        let other_id = room.read(cx).id;
-        let find_room = self.rooms.iter().find(|this| this.read(cx).id == other_id);
+        let id = room.read(cx).id;
 
-        let weak_room = if let Some(room) = find_room {
-            room.downgrade()
-        } else {
-            let weak_room = room.downgrade();
-            // Add this room to the registry
+        if !self.rooms.iter().any(|r| r.read(cx).id == id) {
             self.add_room(room, cx);
+        }
 
-            weak_room
-        };
-
-        cx.emit(ChatRegistryEvent::Open(weak_room));
+        cx.emit(ChatEvent::OpenRoom(id));
     }
 
     /// Refresh messages for a room in the global registry
@@ -339,7 +332,7 @@ impl ChatRegistry {
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(ChatRegistryEvent::NewRequest(RoomKind::default()));
+                cx.emit(ChatEvent::NewChatRequest(RoomKind::default()));
             });
         }
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use account::Account;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
-use chat::{ChatRegistry, ChatRegistryEvent};
+use chat::{ChatEvent, ChatRegistry};
 use common::display::{shorten_pubkey, RenderedProfile};
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
@@ -140,17 +140,17 @@ impl ChatSpace {
 
         subscriptions.push(
             // Handle registry events
-            cx.subscribe_in(&chat, window, move |this, _, ev, window, cx| {
+            cx.subscribe_in(&chat, window, move |this, chat, ev, window, cx| {
                 match ev {
-                    ChatRegistryEvent::Open(room) => {
-                        if let Some(room) = room.upgrade() {
+                    ChatEvent::OpenRoom(id) => {
+                        if let Some(room) = chat.read(cx).room(id, cx) {
                             this.dock.update(cx, |this, cx| {
                                 let panel = chat_ui::init(room, window, cx);
                                 this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
                             });
                         }
                     }
-                    ChatRegistryEvent::Close(..) => {
+                    ChatEvent::CloseRoom(..) => {
                         this.dock.update(cx, |this, cx| {
                             this.focus_tab_panel(window, cx);
 

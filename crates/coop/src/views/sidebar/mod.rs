@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use chat::room::{Room, RoomKind};
-use chat::{ChatRegistry, ChatRegistryEvent};
+use chat::{ChatEvent, ChatRegistry};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{RenderedProfile, RenderedTimestamp, TextUtils};
 use gpui::prelude::FluentBuilder;
@@ -88,7 +88,7 @@ impl Sidebar {
         subscriptions.push(
             // Subscribe for registry new events
             cx.subscribe_in(&chat, window, move |this, _, event, _window, cx| {
-                if let ChatRegistryEvent::NewRequest(kind) = event {
+                if let ChatEvent::NewChatRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();
