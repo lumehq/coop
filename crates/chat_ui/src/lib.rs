@@ -321,10 +321,10 @@ impl ChatPanel {
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
-            let delay = Duration::from_millis(100);
-
             // Wait for the delay
-            cx.background_executor().timer(delay).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(100))
+                .await;
 
             // Update the message list and reset the states
             this.update_in(cx, |this, window, cx| {

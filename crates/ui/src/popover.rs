@@ -14,13 +14,7 @@ use crate::{Selectable, StyledExt as _};
 
 const CONTEXT: &str = "Popover";
 
-actions!(
-    popover,
-    [
-        /// Action when user presses escape button
-        Escape
-    ]
-);
+actions!(popover, [Escape]);
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("escape", Escape, Some(CONTEXT))])

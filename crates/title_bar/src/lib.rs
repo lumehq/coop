@@ -89,11 +89,11 @@ impl Render for TitleBar {
             .h(height)
             .map(|this| {
                 if window.is_fullscreen() {
-                    this.pl_2()
+                    this.px_2()
                 } else if cx.theme().platform_kind.is_mac() {
-                    this.pl(px(platforms::mac::TRAFFIC_LIGHT_PADDING))
+                    this.pl(px(platforms::mac::TRAFFIC_LIGHT_PADDING)).pr_2()
                 } else {
-                    this.pl_2()
+                    this.px_2()
                 }
             })
             .map(|this| match decorations {

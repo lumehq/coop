@@ -788,32 +788,6 @@ impl ChatSpace {
         }
     }
 
-    fn render_keyring_warning(&mut self, window: &mut Window, cx: &mut App) {
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .alert()
-                .button_props(ModalButtonProps::default().ok_text(t!("common.continue")))
-                .title(shared_t!("keyring_disable.label"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .text_sm()
-                        .child(shared_t!("keyring_disable.body_1"))
-                        .child(shared_t!("keyring_disable.body_2"))
-                        .child(shared_t!("keyring_disable.body_3"))
-                        .child(shared_t!("keyring_disable.body_4"))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().danger_foreground)
-                                .child(shared_t!("keyring_disable.body_5")),
-                        ),
-                )
-        });
-    }
-
     fn render_request(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
         let client_name = SharedString::from(ann.client().to_string());
         let target = ann.public_key();
@@ -1138,9 +1112,39 @@ impl ChatSpace {
         })
     }
 
+    fn render_keyring_warning(window: &mut Window, cx: &mut App) {
+        window.open_modal(cx, move |this, _window, cx| {
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .alert()
+                .button_props(ModalButtonProps::default().ok_text(t!("common.continue")))
+                .title(shared_t!("keyring_disable.label"))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .text_sm()
+                        .child(shared_t!("keyring_disable.body_1"))
+                        .child(shared_t!("keyring_disable.body_2"))
+                        .child(shared_t!("keyring_disable.body_3"))
+                        .child(shared_t!("keyring_disable.body_4"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().danger_foreground)
+                                .child(shared_t!("keyring_disable.body_5")),
+                        ),
+                )
+        });
+    }
+
     fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
         let chat = ChatRegistry::global(cx);
         let status = chat.read(cx).loading;
+
+        if !Account::has_global(cx) {
+            return div();
+        }
 
         h_flex()
             .gap_2()
@@ -1162,6 +1166,7 @@ impl ChatSpace {
     }
 
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
@@ -1169,6 +1174,19 @@ impl ChatSpace {
 
         h_flex()
             .gap_1()
+            .when(file_keystore, |this| {
+                this.child(
+                    Button::new("keystore-warning")
+                        .icon(IconName::Warning)
+                        .label("Keyring Disabled")
+                        .ghost()
+                        .xsmall()
+                        .rounded()
+                        .on_click(move |_ev, window, cx| {
+                            Self::render_keyring_warning(window, cx);
+                        }),
+                )
+            })
             .when(updating, |this| {
                 this.child(
                     h_flex()
@@ -1226,7 +1244,7 @@ impl ChatSpace {
                     Button::new("setup-relays-button")
                         .icon(IconName::Info)
                         .label(t!("messaging.button"))
-                        .warning()
+                        .ghost()
                         .xsmall()
                         .rounded()
                         .on_click(move |_ev, window, cx| {
