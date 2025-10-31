@@ -1148,7 +1148,8 @@ impl AppState {
         match event.created_at >= self.initialized_at {
             // New message: send a signal to notify the UI
             true => {
-                self.signal.send(SignalKind::NewMessage((id, event))).await;
+                let new_message = NewMessage::new(id, event);
+                self.signal.send(SignalKind::NewMessage(new_message)).await;
             }
             // Old message: Coop is probably processing the user's messages during initial load
             false => {

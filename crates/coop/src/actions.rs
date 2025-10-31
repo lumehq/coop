@@ -1,10 +1,10 @@
 use std::sync::Mutex;
 
+use chat::ChatRegistry;
 use gpui::{actions, App, AppContext};
 use key_store::backend::KeyItem;
 use key_store::KeyStore;
 use nostr_connect::prelude::*;
-use registry::Registry;
 use states::app_state;
 
 actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
@@ -48,7 +48,7 @@ pub fn load_embedded_fonts(cx: &App) {
 }
 
 pub fn reset(cx: &mut App) {
-    let registry = Registry::global(cx);
+    let chat = ChatRegistry::global(cx);
     let backend = KeyStore::global(cx).read(cx).backend();
 
     cx.spawn(async move |cx| {
@@ -68,11 +68,10 @@ pub fn reset(cx: &mut App) {
             .await
             .ok();
 
-        registry
-            .update(cx, |this, cx| {
-                this.reset(cx);
-            })
-            .ok();
+        chat.update(cx, |this, cx| {
+            this.reset(cx);
+        })
+        .ok();
     })
     .detach();
 }

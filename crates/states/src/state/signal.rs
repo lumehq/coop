@@ -2,6 +2,18 @@ use flume::{Receiver, Sender};
 use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NewMessage {
+    pub gift_wrap: EventId,
+    pub rumor: UnsignedEvent,
+}
+
+impl NewMessage {
+    pub fn new(gift_wrap: EventId, rumor: UnsignedEvent) -> Self {
+        Self { gift_wrap, rumor }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuthRequest {
     pub url: RelayUrl,
     pub challenge: String,
@@ -111,7 +123,7 @@ pub enum SignalKind {
     NewProfile(Profile),
 
     /// A signal to notify UI that a new gift wrap event has been received
-    NewMessage((EventId, UnsignedEvent)),
+    NewMessage(NewMessage),
 
     /// A signal to notify UI that no messaging relays for current user was found
     MessagingRelaysNotFound,

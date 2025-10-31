@@ -2,6 +2,8 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use chat::room::Room;
+use chat::ChatRegistry;
 use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
 use gpui::prelude::FluentBuilder;
@@ -14,8 +16,6 @@ use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use registry::room::Room;
-use registry::Registry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::{app_state, BOOTSTRAP_RELAYS};
@@ -312,7 +312,7 @@ impl Compose {
     }
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx);
+        let chat = ChatRegistry::global(cx);
         let receivers: Vec<PublicKey> = self.selected(cx);
         let subject_input = self.title_input.read(cx).value();
         let subject = (!subject_input.is_empty()).then(|| subject_input.to_string());
@@ -328,10 +328,9 @@ impl Compose {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(room) => {
-                        registry.update(cx, |this, cx| {
+                        chat.update(cx, |this, cx| {
                             this.push_room(cx.new(|_| room), cx);
                         });
-
                         window.close_modal(cx);
                     }
                     Err(e) => {

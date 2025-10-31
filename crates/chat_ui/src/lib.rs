@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use chat::message::{Message, RenderedMessage};
+use chat::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
@@ -12,18 +14,15 @@ use gpui::{
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::{shared_t, t};
 use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use registry::message::{Message, RenderedMessage};
-use registry::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use states::{app_state, SignerKind};
+use states::{app_state, SignerKind, QUERY_TIMEOUT};
 use theme::ActiveTheme;
 use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
@@ -43,6 +42,9 @@ use ui::{
 
 mod subject;
 
+const NIP17_WARN: &str = "has not set up Messaging Relays, they cannot receive your message.";
+const EMPTY_WARN: &str = "Something is wrong. Coop cannot display this message";
+
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]
 pub struct SeenOn(pub EventId);
@@ -51,11 +53,11 @@ pub struct SeenOn(pub EventId);
 #[action(namespace = chat, no_json)]
 pub struct SetSigner(pub SignerKind);
 
-pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<Chat> {
-    cx.new(|cx| Chat::new(room, window, cx))
+pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
+    cx.new(|cx| ChatPanel::new(room, window, cx))
 }
 
-pub struct Chat {
+pub struct ChatPanel {
     // Chat Room
     room: Entity<Room>,
 
@@ -83,11 +85,11 @@ pub struct Chat {
     _tasks: SmallVec<[Task<()>; 3]>,
 }
 
-impl Chat {
+impl ChatPanel {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder(t!("chat.placeholder"))
+                .placeholder("Message...")
                 .auto_grow(1, 20)
                 .prevent_new_line_on_enter()
                 .clean_on_escape()
@@ -140,7 +142,9 @@ impl Chat {
             // Connect and verify all members messaging relays
             cx.spawn_in(window, async move |this, cx| {
                 // Wait for 5 seconds before connecting and verifying
-                cx.background_executor().timer(Duration::from_secs(5)).await;
+                cx.background_executor()
+                    .timer(Duration::from_secs(QUERY_TIMEOUT))
+                    .await;
 
                 let result = verify_connections.await;
 
@@ -152,9 +156,9 @@ impl Chat {
                             for (public_key, status) in data.into_iter() {
                                 if !status {
                                     let profile = persons.read(cx).get_person(&public_key, cx);
-                                    let content = t!("chat.nip17_warn", u = profile.display_name());
+                                    let name = profile.display_name();
 
-                                    this.insert_warning(content, cx);
+                                    this.insert_warning(format!("{NIP17_WARN} {name}"), cx);
                                 }
                             }
                         }
@@ -295,7 +299,7 @@ impl Chat {
 
         // Return if message is empty
         if content.trim().is_empty() {
-            window.push_notification(t!("chat.empty_message_error"), cx);
+            window.push_notification("Cannot send an empty message", cx);
             return;
         }
 
@@ -629,7 +633,9 @@ impl Chat {
                     .size_10()
                     .text_color(cx.theme().elevated_surface_background),
             )
-            .child(shared_t!("chat.notice"))
+            .child(SharedString::from(
+                "This conversation is private. Only members can see each other's messages.",
+            ))
             .into_any_element()
     }
 
@@ -704,8 +710,8 @@ impl Chat {
                                     let view = Box::new(OpenPublicKey(public_key));
                                     let copy = Box::new(CopyPublicKey(public_key));
 
-                                    this.menu(t!("profile.view"), view)
-                                        .menu(t!("profile.copy"), copy)
+                                    this.menu("View Profile", view)
+                                        .menu("Copy Public Key", copy)
                                 }),
                         )
                     })
@@ -806,14 +812,14 @@ impl Chat {
     fn render_message_sent(&self, id: &EventId, _cx: &Context<Self>) -> impl IntoElement {
         div()
             .id(SharedString::from(id.to_hex()))
-            .child(shared_t!("chat.sent"))
+            .child(SharedString::from("• Sent"))
             .when_some(self.sent_reports(id).cloned(), |this, reports| {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
                     window.open_modal(cx, move |this, _window, cx| {
                         this.show_close(true)
-                            .title(shared_t!("chat.reports"))
+                            .title(SharedString::from("Sent Reports"))
                             .child(v_flex().pb_4().gap_4().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
@@ -836,14 +842,16 @@ impl Chat {
             .text_xs()
             .italic()
             .child(Icon::new(IconName::Info).xsmall())
-            .child(shared_t!("chat.sent_failed"))
+            .child(SharedString::from(
+                "Failed to send message. Click to see details.",
+            ))
             .when_some(self.sent_reports(id).cloned(), |this, reports| {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
                     window.open_modal(cx, move |this, _window, cx| {
                         this.show_close(true)
-                            .title(shared_t!("chat.reports"))
+                            .title(SharedString::from("Sent Reports"))
                             .child(v_flex().gap_4().pb_4().w_full().children({
                                 let mut items = Vec::with_capacity(reports.len());
 
@@ -871,7 +879,7 @@ impl Chat {
                 h_flex()
                     .gap_2()
                     .text_sm()
-                    .child(shared_t!("chat.sent_to"))
+                    .child(SharedString::from("Sent to:"))
                     .child(
                         h_flex()
                             .gap_1()
@@ -897,7 +905,7 @@ impl Chat {
                                 .flex_1()
                                 .w_full()
                                 .text_center()
-                                .child(shared_t!("chat.nip17_warn", u = name)),
+                                .child(SharedString::from("Messaging Relays not found")),
                         ),
                 )
             })
@@ -918,7 +926,7 @@ impl Chat {
                                 .flex_1()
                                 .w_full()
                                 .text_center()
-                                .child(shared_t!("chat.device_error", u = name)),
+                                .child(SharedString::from("Encryption Key not found")),
                         ),
                 )
             })
@@ -997,7 +1005,7 @@ impl Chat {
                                                 .text_sm()
                                                 .text_color(cx.theme().secondary_foreground)
                                                 .line_height(relative(1.25))
-                                                .child(shared_t!("chat.sent_success")),
+                                                .child(SharedString::from("Successfully")),
                                         ),
                                 )
                             }
@@ -1035,7 +1043,7 @@ impl Chat {
             .child(
                 Button::new("reply")
                     .icon(IconName::Reply)
-                    .tooltip(t!("chat.reply_button"))
+                    .tooltip("Reply")
                     .small()
                     .ghost()
                     .on_click({
@@ -1048,7 +1056,7 @@ impl Chat {
             .child(
                 Button::new("copy")
                     .icon(IconName::Copy)
-                    .tooltip(t!("chat.copy_message_button"))
+                    .tooltip("Copy")
                     .small()
                     .ghost()
                     .on_click({
@@ -1066,9 +1074,7 @@ impl Chat {
                     .ghost()
                     .popup_menu({
                         let id = id.to_owned();
-                        move |this, _window, _cx| {
-                            this.menu(t!("common.seen_on"), Box::new(SeenOn(id)))
-                        }
+                        move |this, _, _| this.menu("Seen on", Box::new(SeenOn(id)))
                     }),
             )
             .group_hover("", |this| this.visible())
@@ -1143,7 +1149,7 @@ impl Chat {
                                 .gap_1()
                                 .text_xs()
                                 .text_color(cx.theme().text_muted)
-                                .child(SharedString::new(t!("chat.replying_to_label")))
+                                .child(SharedString::from("Replying to:"))
                                 .child(
                                     div()
                                         .text_color(cx.theme().text_accent)
@@ -1201,7 +1207,7 @@ impl Chat {
 
         Button::new("subject")
             .icon(IconName::Edit)
-            .tooltip(t!("chat.subject_tooltip"))
+            .tooltip("Change the subject of the conversation")
             .on_click(move |_, window, cx| {
                 let view = subject::init(subject.clone(), window, cx);
                 let room = room.clone();
@@ -1212,9 +1218,9 @@ impl Chat {
                     let weak_view = weak_view.clone();
 
                     this.confirm()
-                        .title(shared_t!("chat.subject_tooltip"))
+                        .title("Change the subject of the conversation")
                         .child(view.clone())
-                        .button_props(ModalButtonProps::default().ok_text(t!("common.change")))
+                        .button_props(ModalButtonProps::default().ok_text("Change"))
                         .on_ok(move |_, _window, cx| {
                             if let Ok(subject) =
                                 weak_view.read_with(cx, |this, cx| this.new_subject(cx))
@@ -1236,13 +1242,12 @@ impl Chat {
 
         Button::new("reload")
             .icon(IconName::Refresh)
-            .tooltip(t!("chat.reload_tooltip"))
-            .on_click(move |_, window, cx| {
-                window.push_notification(t!("common.refreshed"), cx);
-                room.update(cx, |this, cx| {
+            .tooltip("Reload")
+            .on_click(move |_ev, window, cx| {
+                _ = room.update(cx, |this, cx| {
                     this.emit_refresh(cx);
-                })
-                .ok();
+                    window.push_notification("Reloaded", cx);
+                });
             })
     }
 
@@ -1275,8 +1280,9 @@ impl Chat {
             if let Ok(urls) = task.await {
                 cx.update(|window, cx| {
                     window.open_modal(cx, move |this, _window, cx| {
-                        this.title(shared_t!("common.seen_on")).child(
-                            v_flex().pb_4().gap_2().children({
+                        this.show_close(true)
+                            .title(SharedString::from("Seen on"))
+                            .child(v_flex().pb_4().gap_2().children({
                                 let mut items = Vec::with_capacity(urls.len());
 
                                 for url in urls.clone().into_iter() {
@@ -1288,13 +1294,12 @@ impl Chat {
                                             .rounded(cx.theme().radius)
                                             .font_semibold()
                                             .text_xs()
-                                            .child(url.to_string()),
+                                            .child(SharedString::from(url.to_string())),
                                     )
                                 }
 
                                 items
-                            }),
-                        )
+                            }))
                     });
                 })
                 .ok();
@@ -1311,7 +1316,7 @@ impl Chat {
     }
 }
 
-impl Panel for Chat {
+impl Panel for ChatPanel {
     fn panel_id(&self) -> SharedString {
         self.id.clone()
     }
@@ -1338,15 +1343,15 @@ impl Panel for Chat {
     }
 }
 
-impl EventEmitter<PanelEvent> for Chat {}
+impl EventEmitter<PanelEvent> for ChatPanel {}
 
-impl Focusable for Chat {
+impl Focusable for ChatPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for Chat {
+impl Render for ChatPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let kind = self.signer_kind(cx);
 
@@ -1376,7 +1381,7 @@ impl Render for Chat {
                                 Message::System(_timestamp) => this.render_announcement(ix, cx),
                             }
                         } else {
-                            this.render_warning(ix, shared_t!("chat.not_found"), cx)
+                            this.render_warning(ix, SharedString::from(EMPTY_WARN), cx)
                         }
                     }),
                 )

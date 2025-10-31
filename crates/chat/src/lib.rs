@@ -11,7 +11,7 @@ use nostr_sdk::prelude::*;
 use room::RoomKind;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::app_state;
+use states::{app_state, NewMessage};
 
 use crate::room::Room;
 
@@ -19,21 +19,21 @@ pub mod message;
 pub mod room;
 
 pub fn init(cx: &mut App) {
-    Registry::set_global(cx.new(Registry::new), cx);
+    ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
 }
 
-struct GlobalRegistry(Entity<Registry>);
-
-impl Global for GlobalRegistry {}
-
-#[derive(Debug)]
-pub enum RegistryEvent {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChatRegistryEvent {
     Open(WeakEntity<Room>),
     Close(u64),
     NewRequest(RoomKind),
 }
 
-pub struct Registry {
+struct GlobalChatRegistry(Entity<ChatRegistry>);
+
+impl Global for GlobalChatRegistry {}
+
+pub struct ChatRegistry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
 
@@ -44,22 +44,17 @@ pub struct Registry {
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
-impl EventEmitter<RegistryEvent> for Registry {}
+impl EventEmitter<ChatRegistryEvent> for ChatRegistry {}
 
-impl Registry {
+impl ChatRegistry {
     /// Retrieve the global registry state
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalRegistry>().0.clone()
-    }
-
-    /// Retrieve the registry instance
-    pub fn read_global(cx: &App) -> &Self {
-        cx.global::<GlobalRegistry>().0.read(cx)
+        cx.global::<GlobalChatRegistry>().0.clone()
     }
 
     /// Set the global registry instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalRegistry(state));
+        cx.set_global(GlobalChatRegistry(state));
     }
 
     /// Create a new registry instance
@@ -71,6 +66,7 @@ impl Registry {
         }
     }
 
+    /// Set the loading status of the chat registry
     pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
         self.loading = loading;
         cx.notify();
@@ -111,7 +107,7 @@ impl Registry {
     /// Close a room.
     pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
         if self.rooms.iter().any(|r| r.read(cx).id == id) {
-            cx.emit(RegistryEvent::Close(id));
+            cx.emit(ChatRegistryEvent::Close(id));
         }
     }
 
@@ -283,7 +279,7 @@ impl Registry {
             weak_room
         };
 
-        cx.emit(RegistryEvent::Open(weak_room));
+        cx.emit(ChatRegistryEvent::Open(weak_room));
     }
 
     /// Refresh messages for a room in the global registry
@@ -303,21 +299,15 @@ impl Registry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn event_to_message(
-        &mut self,
-        gift_wrap: EventId,
-        event: UnsignedEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let id = event.uniq_id();
-        let author = event.pubkey;
+    pub fn new_message(&mut self, msg: NewMessage, window: &mut Window, cx: &mut Context<Self>) {
+        let id = msg.rumor.uniq_id();
+        let author = msg.rumor.pubkey;
         let account = Account::global(cx);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
-            let is_new_event = event.created_at > room.read(cx).created_at;
-            let created_at = event.created_at;
-            let event_for_emit = event.clone();
+            let is_new_event = msg.rumor.created_at > room.read(cx).created_at;
+            let created_at = msg.rumor.created_at;
+            let event_for_emit = msg.rumor.clone();
 
             // Update room
             room.update(cx, |this, cx| {
@@ -333,7 +323,7 @@ impl Registry {
                 // Emit the new message to the room
                 let event_to_emit = event_for_emit.clone();
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(gift_wrap, event_to_emit, cx);
+                    this.emit_message(msg.gift_wrap, event_to_emit, cx);
                 });
             });
 
@@ -345,11 +335,11 @@ impl Registry {
             }
         } else {
             // Push the new room to the front of the list
-            self.add_room(cx.new(|_| Room::from(&event)), cx);
+            self.add_room(cx.new(|_| Room::from(&msg.rumor)), cx);
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RegistryEvent::NewRequest(RoomKind::default()));
+                cx.emit(ChatRegistryEvent::NewRequest(RoomKind::default()));
             });
         }
     }

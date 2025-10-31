@@ -119,10 +119,12 @@ pub enum RoomKind {
 
 #[derive(Debug)]
 pub struct Room {
+    /// Conversation ID
     pub id: u64,
+    /// The timestamp of the last message in the room
     pub created_at: Timestamp,
     /// Subject of the room
-    pub subject: Option<String>,
+    pub subject: Option<SharedString>,
     /// All members of the room
     pub members: Vec<PublicKey>,
     /// Kind
@@ -169,7 +171,7 @@ impl From<&Event> for Room {
         let subject = val
             .tags
             .find(TagKind::Subject)
-            .and_then(|tag| tag.content().map(|s| s.to_owned()));
+            .and_then(|tag| tag.content().map(|s| s.to_owned().into()));
 
         Room {
             id,
@@ -193,7 +195,7 @@ impl From<&UnsignedEvent> for Room {
         let subject = val
             .tags
             .find(TagKind::Subject)
-            .and_then(|tag| tag.content().map(|s| s.to_owned()));
+            .and_then(|tag| tag.content().map(|s| s.to_owned().into()));
 
         Room {
             id,
@@ -262,8 +264,11 @@ impl Room {
     }
 
     /// Updates the subject of the room
-    pub fn set_subject(&mut self, subject: String, cx: &mut Context<Self>) {
-        self.subject = Some(subject);
+    pub fn set_subject<T>(&mut self, subject: T, cx: &mut Context<Self>)
+    where
+        T: Into<SharedString>,
+    {
+        self.subject = Some(subject.into());
         cx.notify();
     }
 
@@ -279,8 +284,8 @@ impl Room {
 
     /// Gets the display name for the room
     pub fn display_name(&self, cx: &App) -> SharedString {
-        if let Some(subject) = self.subject.clone() {
-            SharedString::from(subject)
+        if let Some(value) = self.subject.clone() {
+            value
         } else {
             self.merged_name(cx)
         }
@@ -482,9 +487,9 @@ impl Room {
         }
 
         // Add subject tag if it's present
-        if let Some(subject) = subject {
+        if let Some(value) = subject {
             tags.push(Tag::from_standardized_without_cell(TagStandard::Subject(
-                subject,
+                value.to_string(),
             )));
         }
 

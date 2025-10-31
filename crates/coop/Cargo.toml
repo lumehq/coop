@@ -34,7 +34,8 @@ theme = { path = "../theme" }
 common = { path = "../common" }
 states = { path = "../states" }
 key_store = { path = "../key_store" }
-registry = { path = "../registry" }
+chat = { path = "../chat" }
+chat_ui = { path = "../chat_ui" }
 settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }
 account = { path = "../account" }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use account::Account;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
+use chat::{ChatRegistry, ChatRegistryEvent};
 use common::display::{shorten_pubkey, RenderedProfile};
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
@@ -20,7 +21,6 @@ use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::{
@@ -44,8 +44,8 @@ use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
 use crate::views::setup_relay::SetupRelay;
 use crate::views::{
-    account as account_view, chat, login, new_account, onboarding, preferences, sidebar,
-    user_profile, welcome,
+    account as account_view, login, new_account, onboarding, preferences, sidebar, user_profile,
+    welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -88,7 +88,7 @@ pub struct ChatSpace {
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let registry = Registry::global(cx);
+        let chat = ChatRegistry::global(cx);
         let keystore = KeyStore::global(cx);
 
         let title_bar = cx.new(|_| TitleBar::new());
@@ -140,17 +140,17 @@ impl ChatSpace {
 
         subscriptions.push(
             // Handle registry events
-            cx.subscribe_in(&registry, window, move |this, _, ev, window, cx| {
+            cx.subscribe_in(&chat, window, move |this, _, ev, window, cx| {
                 match ev {
-                    RegistryEvent::Open(room) => {
+                    ChatRegistryEvent::Open(room) => {
                         if let Some(room) = room.upgrade() {
                             this.dock.update(cx, |this, cx| {
-                                let panel = chat::init(room, window, cx);
+                                let panel = chat_ui::init(room, window, cx);
                                 this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
                             });
                         }
                     }
-                    RegistryEvent::Close(..) => {
+                    ChatRegistryEvent::Close(..) => {
                         this.dock.update(cx, |this, cx| {
                             this.focus_tab_panel(window, cx);
 
@@ -217,7 +217,7 @@ impl ChatSpace {
 
         while let Ok(signal) = states.signal().receiver().recv_async().await {
             view.update_in(cx, |this, window, cx| {
-                let registry = Registry::global(cx);
+                let chat = ChatRegistry::global(cx);
                 let persons = PersonRegistry::global(cx);
                 let settings = AppSettings::global(cx);
 
@@ -244,7 +244,7 @@ impl ChatSpace {
                         });
 
                         // Load all chat rooms
-                        registry.update(cx, |this, cx| {
+                        chat.update(cx, |this, cx| {
                             this.load_rooms(window, cx);
                         });
 
@@ -274,7 +274,7 @@ impl ChatSpace {
                         if matches!(s, UnwrappingStatus::Processing | UnwrappingStatus::Complete) {
                             let all_panels = this.get_all_panel_ids(cx);
 
-                            registry.update(cx, |this, cx| {
+                            chat.update(cx, |this, cx| {
                                 this.load_rooms(window, cx);
                                 this.refresh_rooms(all_panels, cx);
 
@@ -289,9 +289,9 @@ impl ChatSpace {
                             this.insert_or_update_person(profile, cx);
                         });
                     }
-                    SignalKind::NewMessage((gift_wrap_id, event)) => {
-                        registry.update(cx, |this, cx| {
-                            this.event_to_message(gift_wrap_id, event, window, cx);
+                    SignalKind::NewMessage(msg) => {
+                        chat.update(cx, |this, cx| {
+                            this.new_message(msg, window, cx);
                         });
                     }
                     SignalKind::GossipRelaysNotFound => {
@@ -1139,8 +1139,8 @@ impl ChatSpace {
     }
 
     fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
-        let registry = Registry::global(cx);
-        let status = registry.read(cx).loading;
+        let chat = ChatRegistry::global(cx);
+        let status = chat.read(cx).loading;
 
         h_flex()
             .gap_2()

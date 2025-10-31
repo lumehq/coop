@@ -83,7 +83,7 @@ fn main() {
                 ui::init(cx);
 
                 // Initialize app registry
-                registry::init(cx);
+                chat::init(cx);
 
                 // Initialize person registry
                 person::init(cx);
