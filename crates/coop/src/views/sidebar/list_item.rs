@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use chat::room::RoomKind;
 use chat::ChatRegistry;
+use chat_ui::{CopyPublicKey, OpenPublicKey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
@@ -11,7 +12,6 @@ use i18n::t;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
 use ui::modal::ModalButtonProps;

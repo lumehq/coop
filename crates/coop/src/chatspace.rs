@@ -6,6 +6,7 @@ use account::Account;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
 use chat::{ChatEvent, ChatRegistry};
+use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::display::{shorten_pubkey, RenderedProfile};
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
@@ -29,7 +30,6 @@ use states::{
 };
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
-use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;

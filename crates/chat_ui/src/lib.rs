@@ -1,13 +1,14 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+pub use actions::*;
 use chat::message::{Message, RenderedMessage};
 use chat::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, list, px, red, relative, rems, svg, white, Action, AnyElement, App, AppContext,
+    div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
     ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
     ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString, SharedUri,
@@ -18,40 +19,34 @@ use indexset::{BTreeMap, BTreeSet};
 use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use serde::Deserialize;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use states::{app_state, SignerKind, QUERY_TIMEOUT};
 use theme::ActiveTheme;
-use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::context_menu::ContextMenuExt;
 use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::emoji_picker::EmojiPicker;
 use ui::input::{InputEvent, InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
-use ui::text::RenderedText;
 use ui::{
     h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
     StyledExt,
 };
 
+use crate::emoji::EmojiPicker;
+use crate::text::RenderedText;
+
+mod actions;
+mod emoji;
 mod subject;
+mod text;
 
 const NIP17_WARN: &str = "has not set up Messaging Relays, they cannot receive your message.";
 const EMPTY_WARN: &str = "Something is wrong. Coop cannot display this message";
-
-#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
-#[action(namespace = chat, no_json)]
-pub struct SeenOn(pub EventId);
-
-#[derive(Action, Clone, PartialEq, Eq, Deserialize)]
-#[action(namespace = chat, no_json)]
-pub struct SetSigner(pub SignerKind);
 
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
     cx.new(|cx| ChatPanel::new(room, window, cx))
@@ -1423,7 +1418,8 @@ impl Render for ChatPanel {
                                                     )),
                                             )
                                             .child(
-                                                EmojiPicker::new(self.input.downgrade())
+                                                EmojiPicker::new()
+                                                    .target(self.input.downgrade())
                                                     .icon(IconName::EmojiFill)
                                                     .large(),
                                             ),

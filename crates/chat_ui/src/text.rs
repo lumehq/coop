@@ -91,6 +91,7 @@ impl RenderedText {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_tooltip_builder_for_custom_ranges<F>(&mut self, f: F)
     where
         F: Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView> + 'static,
