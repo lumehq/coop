@@ -378,7 +378,11 @@ impl AutoUpdater {
     }
 }
 
-async fn download(url: &str, target_path: &Path, client: Arc<dyn HttpClient>) -> Result<(), Error> {
+async fn download(
+    url: &str,
+    target_path: &std::path::Path,
+    client: Arc<dyn HttpClient>,
+) -> Result<(), Error> {
     let body = AsyncBody::default();
     let mut target_file = File::create(&target_path).await?;
     let mut response = client.get(url, body, true).await?;
