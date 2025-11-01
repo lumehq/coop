@@ -47,6 +47,7 @@ pub trait RopeExt {
     fn offset_to_position(&self, offset: usize) -> Position;
 
     /// Get the word byte range at the given offset (byte).
+    #[allow(dead_code)]
     fn word_range(&self, offset: usize) -> Option<Range<usize>>;
 
     /// Get word at the given offset (byte).

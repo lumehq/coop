@@ -9,10 +9,13 @@ common = { path = "../common" }
 states = { path = "../states" }
 
 gpui.workspace = true
+gpui_tokio.workspace = true
+reqwest.workspace = true
 nostr-sdk.workspace = true
 anyhow.workspace = true
 smol.workspace = true
 log.workspace = true
 smallvec.workspace = true
 
-cargo-packager-updater = "0.2.3"
+semver = "1.0.27"
+tempfile = "3.23.0"

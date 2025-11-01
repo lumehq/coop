@@ -13,6 +13,7 @@ actions!(sidebar, [Reload, RelayStatus]);
 pub struct CoopAuthUrlHandler;
 
 impl AuthUrlHandler for CoopAuthUrlHandler {
+    #[allow(mismatched_lifetime_syntaxes)]
     fn on_auth_url(&self, auth_url: Url) -> BoxedFuture<Result<()>> {
         Box::pin(async move {
             log::info!("Received Auth URL: {auth_url}");
