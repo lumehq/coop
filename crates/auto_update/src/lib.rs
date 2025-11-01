@@ -1,10 +1,12 @@
 use anyhow::Error;
 use cargo_packager_updater::semver::Version;
-use cargo_packager_updater::{check_update, Config, Update};
-use gpui::http_client::Url;
-use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task, Window};
+use cargo_packager_updater::Update;
+use gpui::{App, AppContext, Context, Entity, Global, Task, Window};
+use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::{APP_PUBKEY, APP_UPDATER_ENDPOINT};
+use states::{app_state, BOOTSTRAP_RELAYS};
+
+const APP_PUBKEY: &str = "npub1y9jvl5vznq49eh9f2gj7679v4042kj80lp7p8fte3ql2cr7hty7qsyca8q";
 
 pub fn init(cx: &mut App) {
     AutoUpdater::set_global(cx.new(AutoUpdater::new), cx);
@@ -44,83 +46,77 @@ impl AutoUpdateStatus {
     }
 }
 
+#[derive(Debug)]
 pub struct AutoUpdater {
+    /// Current status of the auto updater
     pub status: AutoUpdateStatus,
-    config: Config,
-    version: Version,
-    #[allow(dead_code)]
-    subscriptions: SmallVec<[Subscription; 1]>,
+
+    /// Current version of the application
+    pub version: Version,
+
+    /// Background tasks
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl AutoUpdater {
-    /// Retrieve the Global Auto Updater instance
+    /// Retrieve the global auto updater instance
     pub fn global(cx: &App) -> Entity<Self> {
         cx.global::<GlobalAutoUpdater>().0.clone()
     }
 
-    /// Retrieve the Auto Updater instance
-    pub fn read_global(cx: &App) -> &Self {
-        cx.global::<GlobalAutoUpdater>().0.read(cx)
-    }
-
-    /// Set the Global Auto Updater instance
-    pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
+    /// Set the global auto updater instance
+    fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalAutoUpdater(state));
     }
 
-    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let config = cargo_packager_updater::Config {
-            endpoints: vec![Url::parse(APP_UPDATER_ENDPOINT).expect("Endpoint is not valid")],
-            pubkey: String::from(APP_PUBKEY),
-            ..Default::default()
-        };
-        let version = Version::parse(env!("CARGO_PKG_VERSION")).expect("Failed to parse version");
-        let mut subscriptions = smallvec![];
+    fn new(cx: &mut Context<Self>) -> Self {
+        let version = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+        let mut tasks = smallvec![];
 
-        subscriptions.push(cx.observe_new::<Self>(|this, window, cx| {
-            if let Some(window) = window {
-                this.check_for_updates(window, cx);
-            }
-        }));
+        tasks.push(
+            // Subscribe to get the new update event in the bootstrap relays
+            Self::subscribe_to_updates(cx),
+        );
 
         Self {
-            status: AutoUpdateStatus::Idle,
             version,
-            config,
-            subscriptions,
+            status: AutoUpdateStatus::Idle,
+            _tasks: tasks,
         }
     }
 
-    pub fn check_for_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let config = self.config.clone();
-        let current_version = self.version.clone();
+    fn subscribe_to_updates(cx: &App) -> Task<()> {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+            let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
 
-        log::info!("Checking for updates...");
-        self.set_status(AutoUpdateStatus::Checking, cx);
+            let filter = Filter::new()
+                .kind(Kind::ReleaseArtifactSet)
+                .author(app_pubkey)
+                .limit(1);
 
-        let checking: Task<Result<Option<Update>, Error>> = cx.background_spawn(async move {
-            if let Some(update) = check_update(current_version, config)? {
-                Ok(Some(update))
-            } else {
-                Ok(None)
-            }
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Some(update)) = checking.await {
-                this.update_in(cx, |this, window, cx| {
-                    this.set_status(AutoUpdateStatus::checked(update), cx);
-                    this.install_update(window, cx);
-                })
-                .ok();
-            } else {
-                this.update(cx, |this, cx| {
-                    this.set_status(AutoUpdateStatus::Idle, cx);
-                })
-                .ok();
-            }
+            if let Err(e) = client
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                .await
+            {
+                log::error!("Failed to subscribe to updates: {e}");
+            };
         })
-        .detach();
+    }
+
+    fn check_for_updates(cx: &App) -> Task<Result<Option<Update>, Error>> {
+        cx.background_spawn(async move {
+            let client = app_state().client();
+            let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
+
+            let filter = Filter::new()
+                .kind(Kind::ReleaseArtifactSet)
+                .author(app_pubkey)
+                .limit(1);
+
+            Ok(None)
+        })
     }
 
     pub(crate) fn install_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
