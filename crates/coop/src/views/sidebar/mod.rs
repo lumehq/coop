@@ -3,6 +3,8 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use chat::room::{Room, RoomKind};
+use chat::{ChatEvent, ChatRegistry};
 use common::debounced_delay::DebouncedDelay;
 use common::display::{RenderedProfile, RenderedTimestamp, TextUtils};
 use gpui::prelude::FluentBuilder;
@@ -16,8 +18,6 @@ use i18n::{shared_t, t};
 use itertools::Itertools;
 use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
-use registry::room::{Room, RoomKind};
-use registry::{Registry, RegistryEvent};
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::{app_state, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
@@ -73,7 +73,7 @@ impl Sidebar {
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("sidebar.search_label")));
 
-        let registry = Registry::global(cx);
+        let chat = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
@@ -87,8 +87,8 @@ impl Sidebar {
 
         subscriptions.push(
             // Subscribe for registry new events
-            cx.subscribe_in(&registry, window, move |this, _, event, _window, cx| {
-                if let RegistryEvent::NewRequest(kind) = event {
+            cx.subscribe_in(&chat, window, move |this, _, event, _window, cx| {
+                if let ChatEvent::NewChatRequest(kind) = event {
                     this.indicator.update(cx, |this, cx| {
                         *this = Some(kind.to_owned());
                         cx.notify();
@@ -326,8 +326,8 @@ impl Sidebar {
                 Ok(room) => {
                     cx.update(|window, cx| {
                         this.update(cx, |this, cx| {
-                            let registry = Registry::read_global(cx);
-                            let result = registry.search_by_public_key(public_key, cx);
+                            let chat = ChatRegistry::global(cx);
+                            let result = chat.read(cx).search_by_public_key(public_key, cx);
 
                             if !result.is_empty() {
                                 this.results(result, false, window, cx);
@@ -394,9 +394,9 @@ impl Sidebar {
             }
         }
 
-        let chats = Registry::read_global(cx);
+        let chat = ChatRegistry::global(cx);
         // Get all local results with current query
-        let local_results = chats.search(&query, cx);
+        let local_results = chat.read(cx).search(&query, cx);
 
         if !local_results.is_empty() {
             // Try to update with local results first
@@ -495,7 +495,7 @@ impl Sidebar {
     }
 
     fn open_room(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let room = if let Some(room) = Registry::read_global(cx).room(&id, cx) {
+        let room = if let Some(room) = ChatRegistry::global(cx).read(cx).room(&id, cx) {
             room
         } else {
             let Some(result) = self.global_result.read(cx).as_ref() else {
@@ -514,13 +514,13 @@ impl Sidebar {
             room
         };
 
-        Registry::global(cx).update(cx, |this, cx| {
+        ChatRegistry::global(cx).update(cx, |this, cx| {
             this.push_room(room, cx);
         });
     }
 
     fn on_reload(&mut self, _ev: &Reload, window: &mut Window, cx: &mut Context<Self>) {
-        Registry::global(cx).update(cx, |this, cx| {
+        ChatRegistry::global(cx).update(cx, |this, cx| {
             this.load_rooms(window, cx);
         });
         window.push_notification(t!("common.refreshed"), cx);
@@ -661,8 +661,8 @@ impl Focusable for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let registry = Registry::read_global(cx);
-        let loading = registry.loading;
+        let chat = ChatRegistry::global(cx);
+        let loading = chat.read(cx).loading;
 
         // Get rooms from either search results or the chat registry
         let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
@@ -672,9 +672,9 @@ impl Render for Sidebar {
         } else {
             #[allow(clippy::collapsible_else_if)]
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
-                registry.ongoing_rooms(cx)
+                chat.read(cx).ongoing_rooms(cx)
             } else {
-                registry.request_rooms(cx)
+                chat.read(cx).request_rooms(cx)
             }
         };
 
@@ -738,9 +738,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.all_conversations_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
-                                            this.child(deferred(
+                                            this.child(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            ))
+                                            )
                                         })
                                     })
                                     .small()
@@ -759,9 +759,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.requests_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
-                                            this.child(deferred(
+                                            this.child(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            ))
+                                            )
                                         })
                                     })
                                     .small()

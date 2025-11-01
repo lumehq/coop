@@ -236,16 +236,6 @@ manage_relays:
   time:
     en: "Last activity: %{t}"
 
-subject:
-  title:
-    en: "Subject:"
-  placeholder:
-    en: "Exciting Project..."
-  room_not_found:
-    en: "Room not found"
-  help_text:
-    en: "Subject will be updated when you send a message."
-
 screening:
   ignore:
     en: "Ignore"
@@ -377,40 +367,6 @@ compose:
     en: "Start a conversation with someone using their npub or NIP-05 (like foo@bar.com)."
   subject_label:
     en: "Subject:"
-
-chat:
-  notice:
-    en: "This conversation is private. Only members can see each other's messages."
-  placeholder:
-    en: "Message..."
-  not_found:
-    en: "Something is wrong. Coop cannot display this message"
-  empty_message_error:
-    en: "Cannot send an empty message"
-  copy_message_button:
-    en: "Copy Message"
-  reply_button:
-    en: "Reply"
-  reload_tooltip:
-    en: "Refresh messages"
-  subject_tooltip:
-    en: "Change the subject of the conversation"
-  replying_to_label:
-    en: "Replying to:"
-  sent_to:
-    en: "Sent to:"
-  sent:
-    en: "• Sent"
-  sent_failed:
-    en: "Failed to send message. Click to see details."
-  sent_success:
-    en: "Successfully"
-  reports:
-    en: "Sent Reports"
-  nip17_warn:
-    en: "%{u} has not set up Messaging Relays, they cannot receive your message."
-  device_error:
-    en: "You're sending with an encryption key, but %{u} has not set up an encryption key yet. Try sending with your identity instead."
 
 sidebar:
   reload_menu:

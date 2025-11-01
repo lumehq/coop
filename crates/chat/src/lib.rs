@@ -1,18 +1,17 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
+use account::Account;
 use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{
-    App, AppContext, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity, Window,
-};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, Window};
 use nostr_sdk::prelude::*;
 use room::RoomKind;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::app_state;
+use states::{app_state, NewMessage};
 
 use crate::room::Room;
 
@@ -20,162 +19,54 @@ pub mod message;
 pub mod room;
 
 pub fn init(cx: &mut App) {
-    Registry::set_global(cx.new(Registry::new), cx);
+    ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
 }
 
-struct GlobalRegistry(Entity<Registry>);
-
-impl Global for GlobalRegistry {}
-
-#[derive(Debug)]
-pub enum RegistryEvent {
-    Open(WeakEntity<Room>),
-    Close(u64),
-    NewRequest(RoomKind),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChatEvent {
+    OpenRoom(u64),
+    CloseRoom(u64),
+    NewChatRequest(RoomKind),
 }
 
-pub struct Registry {
+struct GlobalChatRegistry(Entity<ChatRegistry>);
+
+impl Global for GlobalChatRegistry {}
+
+pub struct ChatRegistry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
 
-    /// Collection of all persons (user profiles)
-    pub persons: HashMap<PublicKey, Entity<Profile>>,
-
     /// Loading status of the registry
     pub loading: bool,
-
-    /// Public Key of the currently activated signer
-    signer_pubkey: Option<PublicKey>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
-impl EventEmitter<RegistryEvent> for Registry {}
+impl EventEmitter<ChatEvent> for ChatRegistry {}
 
-impl Registry {
+impl ChatRegistry {
     /// Retrieve the global registry state
     pub fn global(cx: &App) -> Entity<Self> {
-        cx.global::<GlobalRegistry>().0.clone()
-    }
-
-    /// Retrieve the registry instance
-    pub fn read_global(cx: &App) -> &Self {
-        cx.global::<GlobalRegistry>().0.read(cx)
+        cx.global::<GlobalChatRegistry>().0.clone()
     }
 
     /// Set the global registry instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
-        cx.set_global(GlobalRegistry(state));
+        cx.set_global(GlobalChatRegistry(state));
     }
 
     /// Create a new registry instance
-    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
-        let mut tasks = smallvec![];
-
-        tasks.push(
-            // Load all user profiles from the database
-            cx.spawn(async move |this, cx| {
-                match Self::load_persons(cx).await {
-                    Ok(profiles) => {
-                        this.update(cx, |this, cx| {
-                            this.set_persons(profiles, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load persons: {e}");
-                    }
-                };
-            }),
-        );
-
+    pub(crate) fn new(_cx: &mut Context<Self>) -> Self {
         Self {
             rooms: vec![],
-            persons: HashMap::new(),
-            signer_pubkey: None,
             loading: true,
-            _tasks: tasks,
+            _tasks: smallvec![],
         }
     }
 
-    /// Create a task to load all user profiles from the database
-    fn load_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let filter = Filter::new().kind(Kind::Metadata).limit(200);
-            let events = client.database().query(filter).await?;
-
-            let mut profiles = vec![];
-
-            for event in events.into_iter() {
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                let profile = Profile::new(event.pubkey, metadata);
-                profiles.push(profile);
-            }
-
-            Ok(profiles)
-        })
-    }
-
-    /// Returns the public key of the currently activated signer.
-    pub fn signer_pubkey(&self) -> Option<PublicKey> {
-        self.signer_pubkey
-    }
-
-    /// Update the public key of the currently activated signer.
-    pub fn set_signer_pubkey(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
-        self.signer_pubkey = Some(public_key);
-        cx.notify();
-    }
-
-    /// Insert batch of persons
-    pub fn set_persons(&mut self, profiles: Vec<Profile>, cx: &mut Context<Self>) {
-        for profile in profiles.into_iter() {
-            self.persons
-                .insert(profile.public_key(), cx.new(|_| profile));
-        }
-        cx.notify();
-    }
-
-    /// Get single person
-    pub fn get_person(&self, public_key: &PublicKey, cx: &App) -> Profile {
-        self.persons
-            .get(public_key)
-            .map(|e| e.read(cx))
-            .cloned()
-            .unwrap_or(Profile::new(public_key.to_owned(), Metadata::default()))
-    }
-
-    /// Get group of persons
-    pub fn get_group_person(&self, public_keys: &[PublicKey], cx: &App) -> Vec<Profile> {
-        let mut profiles = vec![];
-
-        for public_key in public_keys.iter() {
-            let profile = self.get_person(public_key, cx);
-            profiles.push(profile);
-        }
-
-        profiles
-    }
-
-    /// Insert or update a person
-    pub fn insert_or_update_person(&mut self, profile: Profile, cx: &mut App) {
-        let public_key = profile.public_key();
-
-        match self.persons.get(&public_key) {
-            Some(person) => {
-                person.update(cx, |this, cx| {
-                    *this = profile;
-                    cx.notify();
-                });
-            }
-            None => {
-                self.persons.insert(public_key, cx.new(|_| profile));
-            }
-        }
-    }
-
+    /// Set the loading status of the chat registry
     pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
         self.loading = loading;
         cx.notify();
@@ -216,7 +107,7 @@ impl Registry {
     /// Close a room.
     pub fn close_room(&mut self, id: u64, cx: &mut Context<Self>) {
         if self.rooms.iter().any(|r| r.read(cx).id == id) {
-            cx.emit(RegistryEvent::Close(id));
+            cx.emit(ChatEvent::CloseRoom(id));
         }
     }
 
@@ -252,12 +143,7 @@ impl Registry {
 
     /// Reset the registry.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        // Clear the current identity
-        self.signer_pubkey = None;
-
-        // Clear all current rooms
         self.rooms.clear();
-
         cx.notify();
     }
 
@@ -378,22 +264,15 @@ impl Registry {
         }
     }
 
-    /// Push a new Room to the global registry
+    /// Push a new room to the chat registry
     pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
-        let other_id = room.read(cx).id;
-        let find_room = self.rooms.iter().find(|this| this.read(cx).id == other_id);
+        let id = room.read(cx).id;
 
-        let weak_room = if let Some(room) = find_room {
-            room.downgrade()
-        } else {
-            let weak_room = room.downgrade();
-            // Add this room to the registry
+        if !self.rooms.iter().any(|r| r.read(cx).id == id) {
             self.add_room(room, cx);
+        }
 
-            weak_room
-        };
-
-        cx.emit(RegistryEvent::Open(weak_room));
+        cx.emit(ChatEvent::OpenRoom(id));
     }
 
     /// Refresh messages for a room in the global registry
@@ -413,24 +292,15 @@ impl Registry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn event_to_message(
-        &mut self,
-        gift_wrap: EventId,
-        event: UnsignedEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let id = event.uniq_id();
-        let author = event.pubkey;
-
-        let Some(public_key) = self.signer_pubkey else {
-            return;
-        };
+    pub fn new_message(&mut self, msg: NewMessage, window: &mut Window, cx: &mut Context<Self>) {
+        let id = msg.rumor.uniq_id();
+        let author = msg.rumor.pubkey;
+        let account = Account::global(cx);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
-            let is_new_event = event.created_at > room.read(cx).created_at;
-            let created_at = event.created_at;
-            let event_for_emit = event.clone();
+            let is_new_event = msg.rumor.created_at > room.read(cx).created_at;
+            let created_at = msg.rumor.created_at;
+            let event_for_emit = msg.rumor.clone();
 
             // Update room
             room.update(cx, |this, cx| {
@@ -439,14 +309,14 @@ impl Registry {
                 }
 
                 // Set this room is ongoing if the new message is from current user
-                if author == public_key {
+                if author == account.read(cx).public_key() {
                     this.set_ongoing(cx);
                 }
 
                 // Emit the new message to the room
                 let event_to_emit = event_for_emit.clone();
                 cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(gift_wrap, event_to_emit, cx);
+                    this.emit_message(msg.gift_wrap, event_to_emit, cx);
                 });
             });
 
@@ -458,11 +328,11 @@ impl Registry {
             }
         } else {
             // Push the new room to the front of the list
-            self.add_room(cx.new(|_| Room::from(&event)), cx);
+            self.add_room(cx.new(|_| Room::from(&msg.rumor)), cx);
 
             // Notify the UI about the new room
             cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(RegistryEvent::NewRequest(RoomKind::default()));
+                cx.emit(ChatEvent::NewChatRequest(RoomKind::default()));
             });
         }
     }

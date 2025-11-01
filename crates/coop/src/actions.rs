@@ -1,10 +1,9 @@
 use std::sync::Mutex;
 
-use gpui::{actions, App, AppContext};
+use gpui::{actions, App};
 use key_store::backend::KeyItem;
 use key_store::KeyStore;
 use nostr_connect::prelude::*;
-use registry::Registry;
 use states::app_state;
 
 actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
@@ -48,31 +47,30 @@ pub fn load_embedded_fonts(cx: &App) {
 }
 
 pub fn reset(cx: &mut App) {
-    let registry = Registry::global(cx);
     let backend = KeyStore::global(cx).read(cx).backend();
 
     cx.spawn(async move |cx| {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            client.unset_signer().await;
-        })
-        .await;
+        let client = app_state().client();
 
+        // Remove the signer
+        client.unset_signer().await;
+
+        // Delete user's credentials
         backend
             .delete_credentials(&KeyItem::User.to_string(), cx)
             .await
             .ok();
 
+        // Remove bunker's credentials if available
         backend
             .delete_credentials(&KeyItem::Bunker.to_string(), cx)
             .await
             .ok();
 
-        registry
-            .update(cx, |this, cx| {
-                this.reset(cx);
-            })
-            .ok();
+        cx.update(|cx| {
+            cx.restart();
+        })
+        .ok();
     })
     .detach();
 }

@@ -2,8 +2,11 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use account::Account;
 use anyhow::{anyhow, Error};
 use auto_update::AutoUpdater;
+use chat::{ChatEvent, ChatRegistry};
+use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::display::{shorten_pubkey, RenderedProfile};
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
@@ -18,7 +21,7 @@ use key_store::backend::KeyItem;
 use key_store::KeyStore;
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
-use registry::{Registry, RegistryEvent};
+use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::{
@@ -27,7 +30,6 @@ use states::{
 };
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
-use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::dock::DockPlacement;
@@ -42,7 +44,8 @@ use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
 use crate::views::setup_relay::SetupRelay;
 use crate::views::{
-    account, chat, login, new_account, onboarding, preferences, sidebar, user_profile, welcome,
+    account as account_view, login, new_account, onboarding, preferences, sidebar, user_profile,
+    welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -59,6 +62,7 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
     ChatSpace::set_center_panel(panel, window, cx);
 }
 
+#[derive(Debug)]
 pub struct ChatSpace {
     /// App's Title Bar
     title_bar: Entity<TitleBar>,
@@ -84,7 +88,7 @@ pub struct ChatSpace {
 
 impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let registry = Registry::global(cx);
+        let chat = ChatRegistry::global(cx);
         let keystore = KeyStore::global(cx);
 
         let title_bar = cx.new(|_| TitleBar::new());
@@ -102,55 +106,49 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Observe device changes
-            cx.observe_in(&keystore, window, move |this, state, window, cx| {
+            // Observe keystore changes
+            cx.observe_in(&keystore, window, move |_this, state, window, cx| {
                 if state.read(cx).initialized {
                     let backend = state.read(cx).backend();
 
-                    if state.read(cx).initialized {
-                        if state.read(cx).is_using_file_keystore() {
-                            this.render_keyring_installation(window, cx);
-                        }
+                    cx.spawn_in(window, async move |this, cx| {
+                        let result = backend
+                            .read_credentials(&KeyItem::User.to_string(), cx)
+                            .await;
 
-                        cx.spawn_in(window, async move |this, cx| {
-                            let result = backend
-                                .read_credentials(&KeyItem::User.to_string(), cx)
-                                .await;
+                        this.update_in(cx, |this, window, cx| {
+                            match result {
+                                Ok(Some((user, secret))) => {
+                                    let public_key = PublicKey::parse(&user).unwrap();
+                                    let secret = String::from_utf8(secret).unwrap();
 
-                            this.update_in(cx, |this, window, cx| {
-                                match result {
-                                    Ok(Some((user, secret))) => {
-                                        let public_key = PublicKey::parse(&user).unwrap();
-                                        let secret = String::from_utf8(secret).unwrap();
-
-                                        this.set_account_layout(public_key, secret, window, cx);
-                                    }
-                                    _ => {
-                                        this.set_onboarding_layout(window, cx);
-                                    }
-                                };
-                            })
-                            .ok();
+                                    this.set_account_layout(public_key, secret, window, cx);
+                                }
+                                _ => {
+                                    this.set_onboarding_layout(window, cx);
+                                }
+                            };
                         })
-                        .detach();
-                    }
+                        .ok();
+                    })
+                    .detach();
                 }
             }),
         );
 
         subscriptions.push(
             // Handle registry events
-            cx.subscribe_in(&registry, window, move |this, _, ev, window, cx| {
+            cx.subscribe_in(&chat, window, move |this, chat, ev, window, cx| {
                 match ev {
-                    RegistryEvent::Open(room) => {
-                        if let Some(room) = room.upgrade() {
+                    ChatEvent::OpenRoom(id) => {
+                        if let Some(room) = chat.read(cx).room(id, cx) {
                             this.dock.update(cx, |this, cx| {
-                                let panel = chat::init(room, window, cx);
+                                let panel = chat_ui::init(room, window, cx);
                                 this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
                             });
                         }
                     }
-                    RegistryEvent::Close(..) => {
+                    ChatEvent::CloseRoom(..) => {
                         this.dock.update(cx, |this, cx| {
                             this.focus_tab_panel(window, cx);
 
@@ -217,7 +215,8 @@ impl ChatSpace {
 
         while let Ok(signal) = states.signal().receiver().recv_async().await {
             view.update_in(cx, |this, window, cx| {
-                let registry = Registry::global(cx);
+                let chat = ChatRegistry::global(cx);
+                let persons = PersonRegistry::global(cx);
                 let settings = AppSettings::global(cx);
 
                 match signal {
@@ -234,8 +233,8 @@ impl ChatSpace {
                         this.receive_encryption(response, window, cx);
                     }
                     SignalKind::SignerSet(public_key) => {
-                        // Close all opened modals
-                        window.close_all_modals(cx);
+                        // Set the global account state
+                        account::init(public_key, cx);
 
                         // Load user's settings
                         settings.update(cx, |this, cx| {
@@ -243,10 +242,12 @@ impl ChatSpace {
                         });
 
                         // Load all chat rooms
-                        registry.update(cx, |this, cx| {
-                            this.set_signer_pubkey(public_key, cx);
+                        chat.update(cx, |this, cx| {
                             this.load_rooms(window, cx);
                         });
+
+                        // Close all opened modals
+                        window.close_all_modals(cx);
 
                         // Setup the default layout for current workspace
                         this.set_default_layout(window, cx);
@@ -271,7 +272,7 @@ impl ChatSpace {
                         if matches!(s, UnwrappingStatus::Processing | UnwrappingStatus::Complete) {
                             let all_panels = this.get_all_panel_ids(cx);
 
-                            registry.update(cx, |this, cx| {
+                            chat.update(cx, |this, cx| {
                                 this.load_rooms(window, cx);
                                 this.refresh_rooms(all_panels, cx);
 
@@ -282,13 +283,13 @@ impl ChatSpace {
                         }
                     }
                     SignalKind::NewProfile(profile) => {
-                        registry.update(cx, |this, cx| {
+                        persons.update(cx, |this, cx| {
                             this.insert_or_update_person(profile, cx);
                         });
                     }
-                    SignalKind::NewMessage((gift_wrap_id, event)) => {
-                        registry.update(cx, |this, cx| {
-                            this.event_to_message(gift_wrap_id, event, window, cx);
+                    SignalKind::NewMessage(msg) => {
+                        chat.update(cx, |this, cx| {
+                            this.new_message(msg, window, cx);
                         });
                     }
                     SignalKind::GossipRelaysNotFound => {
@@ -621,7 +622,7 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let panel = Arc::new(account::init(public_key, secret, window, cx));
+        let panel = Arc::new(account_view::init(public_key, secret, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
@@ -785,32 +786,6 @@ impl ChatSpace {
         }
     }
 
-    fn render_keyring_installation(&mut self, window: &mut Window, cx: &mut App) {
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .alert()
-                .button_props(ModalButtonProps::default().ok_text(t!("common.continue")))
-                .title(shared_t!("keyring_disable.label"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .text_sm()
-                        .child(shared_t!("keyring_disable.body_1"))
-                        .child(shared_t!("keyring_disable.body_2"))
-                        .child(shared_t!("keyring_disable.body_3"))
-                        .child(shared_t!("keyring_disable.body_4"))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().danger_foreground)
-                                .child(shared_t!("keyring_disable.body_5")),
-                        ),
-                )
-        });
-    }
-
     fn render_request(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
         let client_name = SharedString::from(ann.client().to_string());
         let target = ann.public_key();
@@ -907,34 +882,30 @@ impl ChatSpace {
                         ),
                 )
                 .on_cancel(move |_ev, window, cx| {
-                    _ = view.update(cx, |this, cx| {
-                        this.render_reset(window, cx);
+                    _ = view.update(cx, |_, cx| {
+                        cx.spawn_in(window, async move |this, cx| {
+                            let state = app_state();
+                            let result = state.init_encryption_keys().await;
+
+                            this.update_in(cx, |_, window, cx| {
+                                match result {
+                                    Ok(_) => {
+                                        window.push_notification(t!("encryption.success"), cx);
+                                        window.close_all_modals(cx);
+                                    }
+                                    Err(e) => {
+                                        window.push_notification(e.to_string(), cx);
+                                    }
+                                };
+                            })
+                            .ok();
+                        })
+                        .detach();
                     });
                     // false to keep modal open
                     false
                 })
         });
-    }
-
-    fn render_reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.spawn_in(window, async move |this, cx| {
-            let state = app_state();
-            let result = state.init_encryption_keys().await;
-
-            this.update_in(cx, |_, window, cx| {
-                match result {
-                    Ok(_) => {
-                        window.push_notification(t!("encryption.success"), cx);
-                        window.close_all_modals(cx);
-                    }
-                    Err(e) => {
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
     }
 
     fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
@@ -1139,13 +1110,39 @@ impl ChatSpace {
         })
     }
 
-    fn render_titlebar_left_side(
-        &mut self,
-        _window: &mut Window,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let registry = Registry::global(cx);
-        let status = registry.read(cx).loading;
+    fn render_keyring_warning(window: &mut Window, cx: &mut App) {
+        window.open_modal(cx, move |this, _window, cx| {
+            this.overlay_closable(false)
+                .show_close(false)
+                .keyboard(false)
+                .alert()
+                .button_props(ModalButtonProps::default().ok_text(t!("common.continue")))
+                .title(shared_t!("keyring_disable.label"))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .text_sm()
+                        .child(shared_t!("keyring_disable.body_1"))
+                        .child(shared_t!("keyring_disable.body_2"))
+                        .child(shared_t!("keyring_disable.body_3"))
+                        .child(shared_t!("keyring_disable.body_4"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().danger_foreground)
+                                .child(shared_t!("keyring_disable.body_5")),
+                        ),
+                )
+        });
+    }
+
+    fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
+        let chat = ChatRegistry::global(cx);
+        let status = chat.read(cx).loading;
+
+        if !Account::has_global(cx) {
+            return div();
+        }
 
         h_flex()
             .gap_2()
@@ -1166,12 +1163,8 @@ impl ChatSpace {
             })
     }
 
-    fn render_titlebar_right_side(
-        &mut self,
-        profile: &Profile,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let updating = AutoUpdater::read_global(cx).status.is_updating();
         let updated = AutoUpdater::read_global(cx).status.is_updated();
@@ -1179,6 +1172,19 @@ impl ChatSpace {
 
         h_flex()
             .gap_1()
+            .when(file_keystore, |this| {
+                this.child(
+                    Button::new("keystore-warning")
+                        .icon(IconName::Warning)
+                        .label("Keyring Disabled")
+                        .ghost()
+                        .xsmall()
+                        .rounded()
+                        .on_click(move |_ev, window, cx| {
+                            Self::render_keyring_warning(window, cx);
+                        }),
+                )
+            })
             .when(updating, |this| {
                 this.child(
                     h_flex()
@@ -1236,7 +1242,7 @@ impl ChatSpace {
                     Button::new("setup-relays-button")
                         .icon(IconName::Info)
                         .label(t!("messaging.button"))
-                        .warning()
+                        .ghost()
                         .xsmall()
                         .rounded()
                         .on_click(move |_ev, window, cx| {
@@ -1244,22 +1250,29 @@ impl ChatSpace {
                         }),
                 )
             })
-            .child(
-                Button::new("user")
-                    .small()
-                    .reverse()
-                    .transparent()
-                    .icon(IconName::CaretDown)
-                    .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
-                    .popup_menu(|this, _window, _cx| {
-                        this.menu(t!("user.dark_mode"), Box::new(DarkMode))
-                            .menu(t!("user.settings"), Box::new(Settings))
-                            .separator()
-                            .menu(t!("user.reload_metadata"), Box::new(ReloadMetadata))
-                            .separator()
-                            .menu(t!("user.sign_out"), Box::new(Logout))
-                    }),
-            )
+            .when(Account::has_global(cx), |this| {
+                let persons = PersonRegistry::global(cx);
+                let account = Account::global(cx);
+                let public_key = account.read(cx).public_key();
+                let profile = persons.read(cx).get_person(&public_key, cx);
+
+                this.child(
+                    Button::new("user")
+                        .small()
+                        .reverse()
+                        .transparent()
+                        .icon(IconName::CaretDown)
+                        .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
+                        .popup_menu(|this, _window, _cx| {
+                            this.menu(t!("user.dark_mode"), Box::new(DarkMode))
+                                .menu(t!("user.settings"), Box::new(Settings))
+                                .separator()
+                                .menu(t!("user.reload_metadata"), Box::new(ReloadMetadata))
+                                .separator()
+                                .menu(t!("user.sign_out"), Box::new(Logout))
+                        }),
+                )
+            })
     }
 }
 
@@ -1267,24 +1280,14 @@ impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_modal_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
-        let registry = Registry::read_global(cx);
 
-        // Only render titlebar child elements if user is logged in
-        if let Some(public_key) = registry.signer_pubkey() {
-            let profile = registry.get_person(&public_key, cx);
+        let left = self.titlebar_left(window, cx).into_any_element();
+        let right = self.titlebar_right(window, cx).into_any_element();
 
-            let left_side = self
-                .render_titlebar_left_side(window, cx)
-                .into_any_element();
-
-            let right_side = self
-                .render_titlebar_right_side(&profile, window, cx)
-                .into_any_element();
-
-            self.title_bar.update(cx, |this, _cx| {
-                this.set_children(vec![left_side, right_side]);
-            })
-        }
+        // Update title bar children
+        self.title_bar.update(cx, |this, _cx| {
+            this.set_children(vec![left, right]);
+        });
 
         div()
             .id(SharedString::from("chatspace"))

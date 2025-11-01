@@ -17,7 +17,6 @@ pub mod checkbox;
 pub mod divider;
 pub mod dock_area;
 pub mod dropdown;
-pub mod emoji_picker;
 pub mod history;
 pub mod indicator;
 pub mod input;
@@ -31,7 +30,6 @@ pub mod scroll;
 pub mod skeleton;
 pub mod switch;
 pub mod tab;
-pub mod text;
 pub mod tooltip;
 
 mod event;
@@ -41,8 +39,6 @@ mod kbd;
 mod root;
 mod styled;
 mod window_border;
-
-i18n::init!();
 
 /// Initialize the UI module.
 ///

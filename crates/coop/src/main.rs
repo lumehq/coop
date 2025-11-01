@@ -83,9 +83,12 @@ fn main() {
                 ui::init(cx);
 
                 // Initialize app registry
-                registry::init(cx);
+                chat::init(cx);
 
-                // Initialize backend for credentials storage
+                // Initialize person registry
+                person::init(cx);
+
+                // Initialize backend for keys storage
                 key_store::init(cx);
 
                 // Initialize settings

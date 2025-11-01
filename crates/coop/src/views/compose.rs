@@ -2,6 +2,8 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use chat::room::Room;
+use chat::ChatRegistry;
 use common::display::{RenderedProfile, TextUtils};
 use common::nip05::nip05_profile;
 use gpui::prelude::FluentBuilder;
@@ -13,8 +15,7 @@ use gpui::{
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
-use registry::room::Room;
-use registry::Registry;
+use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use states::{app_state, BOOTSTRAP_RELAYS};
@@ -311,7 +312,7 @@ impl Compose {
     }
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = Registry::global(cx);
+        let chat = ChatRegistry::global(cx);
         let receivers: Vec<PublicKey> = self.selected(cx);
         let subject_input = self.title_input.read(cx).value();
         let subject = (!subject_input.is_empty()).then(|| subject_input.to_string());
@@ -327,10 +328,9 @@ impl Compose {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(room) => {
-                        registry.update(cx, |this, cx| {
+                        chat.update(cx, |this, cx| {
                             this.push_room(cx.new(|_| room), cx);
                         });
-
                         window.close_modal(cx);
                     }
                     Err(e) => {
@@ -372,7 +372,7 @@ impl Compose {
 
     fn list_items(&self, range: Range<usize>, cx: &Context<Self>) -> Vec<impl IntoElement> {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let registry = Registry::read_global(cx);
+        let persons = PersonRegistry::global(cx);
         let mut items = Vec::with_capacity(self.contacts.read(cx).len());
 
         for ix in range {
@@ -381,7 +381,7 @@ impl Compose {
             };
 
             let public_key = contact.public_key;
-            let profile = registry.get_person(&public_key, cx);
+            let profile = persons.read(cx).get_person(&public_key, cx);
 
             items.push(
                 h_flex()

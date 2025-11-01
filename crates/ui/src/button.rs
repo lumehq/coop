@@ -359,6 +359,7 @@ impl RenderOnce for Button {
             .justify_center()
             .cursor_default()
             .overflow_hidden()
+            .refine_style(&self.style)
             .map(|this| match self.rounded {
                 false => this.rounded(cx.theme().radius),
                 true => this.rounded_full(),
@@ -436,29 +437,6 @@ impl RenderOnce for Button {
                     }
                 }
             })
-            .text_color(normal_style.fg)
-            .when(!self.disabled && !self.selected, |this| {
-                this.bg(normal_style.bg)
-                    .hover(|this| {
-                        let hover_style = style.hovered(cx);
-                        this.bg(hover_style.bg).text_color(hover_style.fg)
-                    })
-                    .active(|this| {
-                        let active_style = style.active(cx);
-                        this.bg(active_style.bg).text_color(active_style.fg)
-                    })
-            })
-            .when(self.selected, |this| {
-                let selected_style = style.selected(cx);
-                this.bg(selected_style.bg).text_color(selected_style.fg)
-            })
-            .when(self.disabled, |this| {
-                let disabled_style = style.disabled(cx);
-                this.cursor_not_allowed()
-                    .bg(disabled_style.bg)
-                    .text_color(disabled_style.fg)
-            })
-            .refine_style(&self.style)
             .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
                 // Avoid focus on mouse down.
                 window.prevent_default();
@@ -504,6 +482,28 @@ impl RenderOnce for Button {
                         )
                     })
                     .children(self.children)
+            })
+            .text_color(normal_style.fg)
+            .when(!self.disabled && !self.selected, |this| {
+                this.bg(normal_style.bg)
+                    .hover(|this| {
+                        let hover_style = style.hovered(cx);
+                        this.bg(hover_style.bg).text_color(hover_style.fg)
+                    })
+                    .active(|this| {
+                        let active_style = style.active(cx);
+                        this.bg(active_style.bg).text_color(active_style.fg)
+                    })
+            })
+            .when(self.selected, |this| {
+                let selected_style = style.selected(cx);
+                this.bg(selected_style.bg).text_color(selected_style.fg)
+            })
+            .when(self.disabled, |this| {
+                let disabled_style = style.disabled(cx);
+                this.cursor_not_allowed()
+                    .bg(disabled_style.bg)
+                    .text_color(disabled_style.fg)
             })
             .when(self.loading && !self.disabled, |this| {
                 this.bg(normal_style.bg.opacity(0.8))

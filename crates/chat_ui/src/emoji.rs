@@ -6,11 +6,10 @@ use gpui::{
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use theme::ActiveTheme;
-
-use crate::button::{Button, ButtonVariants};
-use crate::input::InputState;
-use crate::popover::{Popover, PopoverContent};
-use crate::{Icon, Sizable, Size};
+use ui::button::{Button, ButtonVariants};
+use ui::input::InputState;
+use ui::popover::{Popover, PopoverContent};
+use ui::{Icon, Sizable, Size};
 
 static EMOJIS: OnceLock<Vec<SharedString>> = OnceLock::new();
 
@@ -31,20 +30,25 @@ fn get_emojis() -> &'static Vec<SharedString> {
 
 #[derive(IntoElement)]
 pub struct EmojiPicker {
+    target: Option<WeakEntity<InputState>>,
     icon: Option<Icon>,
-    size: Size,
     anchor: Option<Corner>,
-    target_input: WeakEntity<InputState>,
+    size: Size,
 }
 
 impl EmojiPicker {
-    pub fn new(target_input: WeakEntity<InputState>) -> Self {
+    pub fn new() -> Self {
         Self {
-            target_input,
             size: Size::default(),
+            target: None,
             anchor: None,
             icon: None,
         }
+    }
+
+    pub fn target(mut self, target: WeakEntity<InputState>) -> Self {
+        self.target = Some(target);
+        self
     }
 
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
@@ -52,6 +56,7 @@ impl EmojiPicker {
         self
     }
 
+    #[allow(dead_code)]
     pub fn anchor(mut self, corner: Corner) -> Self {
         self.anchor = Some(corner);
         self
@@ -67,7 +72,7 @@ impl Sizable for EmojiPicker {
 
 impl RenderOnce for EmojiPicker {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        Popover::new("emoji-picker")
+        Popover::new("emojis")
             .map(|this| {
                 if let Some(corner) = self.anchor {
                     this.anchor(corner)
@@ -76,13 +81,13 @@ impl RenderOnce for EmojiPicker {
                 }
             })
             .trigger(
-                Button::new("emoji-trigger")
+                Button::new("emojis-trigger")
                     .when_some(self.icon, |this, icon| this.icon(icon))
                     .ghost()
                     .with_size(self.size),
             )
             .content(move |window, cx| {
-                let input = self.target_input.clone();
+                let input = self.target.clone();
 
                 cx.new(|cx| {
                     PopoverContent::new(window, cx, move |_window, cx| {
@@ -104,18 +109,18 @@ impl RenderOnce for EmojiPicker {
                                     .hover(|this| this.bg(cx.theme().ghost_element_hover))
                                     .on_click({
                                         let item = e.clone();
-                                        let input = input.upgrade();
+                                        let input = input.clone();
 
                                         move |_, window, cx| {
                                             if let Some(input) = input.as_ref() {
-                                                input.update(cx, |this, cx| {
-                                                    let current = this.value();
-                                                    let new_text = if current.is_empty() {
+                                                _ = input.update(cx, |this, cx| {
+                                                    let value = this.value();
+                                                    let new_text = if value.is_empty() {
                                                         format!("{item}")
-                                                    } else if current.ends_with(" ") {
-                                                        format!("{current}{item}")
+                                                    } else if value.ends_with(" ") {
+                                                        format!("{value}{item}")
                                                     } else {
-                                                        format!("{current} {item}")
+                                                        format!("{value} {item}")
                                                     };
                                                     this.set_value(new_text, window, cx);
                                                 });

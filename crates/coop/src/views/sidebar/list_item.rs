@@ -1,5 +1,8 @@
 use std::rc::Rc;
 
+use chat::room::RoomKind;
+use chat::ChatRegistry;
+use chat_ui::{CopyPublicKey, OpenPublicKey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
@@ -7,11 +10,8 @@ use gpui::{
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
-use registry::room::RoomKind;
-use registry::Registry;
 use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::actions::{CopyPublicKey, OpenPublicKey};
 use ui::avatar::Avatar;
 use ui::context_menu::ContextMenuExt;
 use ui::modal::ModalButtonProps;
@@ -187,7 +187,7 @@ impl RenderOnce for RoomListItem {
                                     .ok_text(t!("screening.response")),
                             )
                             .on_cancel(move |_event, _window, cx| {
-                                Registry::global(cx).update(cx, |this, cx| {
+                                ChatRegistry::global(cx).update(cx, |this, cx| {
                                     this.close_room(room_id, cx);
                                 });
                                 // false to prevent closing the modal

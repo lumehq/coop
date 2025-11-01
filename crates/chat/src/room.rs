@@ -3,14 +3,14 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
+use account::Account;
 use anyhow::{anyhow, Error};
 use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use nostr_sdk::prelude::*;
+use person::PersonRegistry;
 use states::{app_state, SignerKind, SEND_RETRY};
-
-use crate::Registry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SendOptions {
@@ -119,10 +119,12 @@ pub enum RoomKind {
 
 #[derive(Debug)]
 pub struct Room {
+    /// Conversation ID
     pub id: u64,
+    /// The timestamp of the last message in the room
     pub created_at: Timestamp,
     /// Subject of the room
-    pub subject: Option<String>,
+    pub subject: Option<SharedString>,
     /// All members of the room
     pub members: Vec<PublicKey>,
     /// Kind
@@ -169,7 +171,7 @@ impl From<&Event> for Room {
         let subject = val
             .tags
             .find(TagKind::Subject)
-            .and_then(|tag| tag.content().map(|s| s.to_owned()));
+            .and_then(|tag| tag.content().map(|s| s.to_owned().into()));
 
         Room {
             id,
@@ -193,7 +195,7 @@ impl From<&UnsignedEvent> for Room {
         let subject = val
             .tags
             .find(TagKind::Subject)
-            .and_then(|tag| tag.content().map(|s| s.to_owned()));
+            .and_then(|tag| tag.content().map(|s| s.to_owned().into()));
 
         Room {
             id,
@@ -262,8 +264,11 @@ impl Room {
     }
 
     /// Updates the subject of the room
-    pub fn set_subject(&mut self, subject: String, cx: &mut Context<Self>) {
-        self.subject = Some(subject);
+    pub fn set_subject<T>(&mut self, subject: T, cx: &mut Context<Self>)
+    where
+        T: Into<SharedString>,
+    {
+        self.subject = Some(subject.into());
         cx.notify();
     }
 
@@ -279,8 +284,8 @@ impl Room {
 
     /// Gets the display name for the room
     pub fn display_name(&self, cx: &App) -> SharedString {
-        if let Some(subject) = self.subject.clone() {
-            SharedString::from(subject)
+        if let Some(value) = self.subject.clone() {
+            value
         } else {
             self.merged_name(cx)
         }
@@ -299,28 +304,29 @@ impl Room {
     ///
     /// Display member is always different from the current user.
     pub fn display_member(&self, cx: &App) -> Profile {
-        let registry = Registry::global(cx);
-        let signer_pubkey = registry.read(cx).signer_pubkey();
+        let persons = PersonRegistry::global(cx);
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
 
         let target_member = self
             .members
             .iter()
-            .find(|&member| Some(member) != signer_pubkey.as_ref())
+            .find(|&member| member != &public_key)
             .or_else(|| self.members.first())
             .expect("Room should have at least one member");
 
-        registry.read(cx).get_person(target_member, cx)
+        persons.read(cx).get_person(target_member, cx)
     }
 
     /// Merge the names of the first two members of the room.
     fn merged_name(&self, cx: &App) -> SharedString {
-        let registry = Registry::read_global(cx);
+        let persons = PersonRegistry::global(cx);
 
         if self.is_group() {
             let profiles: Vec<Profile> = self
                 .members
                 .iter()
-                .map(|public_key| registry.get_person(public_key, cx))
+                .map(|public_key| persons.read(cx).get_person(public_key, cx))
                 .collect();
 
             let mut name = profiles
@@ -452,8 +458,8 @@ impl Room {
         let relay_cache = state.relay_cache.read_blocking();
 
         // Get current user
-        let registry = Registry::global(cx);
-        let public_key = registry.read(cx).signer_pubkey().unwrap();
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
 
         // Get room's subject
         let subject = self.subject.clone();
@@ -481,9 +487,9 @@ impl Room {
         }
 
         // Add subject tag if it's present
-        if let Some(subject) = subject {
+        if let Some(value) = subject {
             tags.push(Tag::from_standardized_without_cell(TagStandard::Subject(
-                subject,
+                value.to_string(),
             )));
         }
 
