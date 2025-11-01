@@ -35,7 +35,7 @@ impl InstallerDir {
     async fn new() -> Result<Self, Error> {
         Ok(Self(
             tempfile::Builder::new()
-                .prefix("zed-auto-update")
+                .prefix("coop-auto-update")
                 .tempdir()?,
         ))
     }
@@ -50,15 +50,18 @@ struct InstallerDir(PathBuf);
 
 #[cfg(target_os = "windows")]
 impl InstallerDir {
-    async fn new() -> Result<Self> {
+    async fn new() -> Result<Self, Error> {
         let installer_dir = std::env::current_exe()?
             .parent()
-            .context("No parent dir for Zed.exe")?
+            .context("No parent dir for Coop.exe")?
             .join("updates");
+
         if smol::fs::metadata(&installer_dir).await.is_ok() {
             smol::fs::remove_dir_all(&installer_dir).await?;
         }
+
         smol::fs::create_dir(&installer_dir).await?;
+
         Ok(Self(installer_dir))
     }
 
@@ -75,6 +78,7 @@ struct MacOsUnmounter<'a> {
 impl Drop for MacOsUnmounter<'_> {
     fn drop(&mut self) {
         let mount_path = std::mem::take(&mut self.mount_path);
+
         self.background_executor
             .spawn(async move {
                 let unmount_output = Command::new("hdiutil")
@@ -261,6 +265,7 @@ impl AutoUpdater {
                     .context("Failed to parse version")?;
 
                 if new_version > version {
+                    // Get all file metadata event ids
                     let ids: Vec<EventId> = event.tags.event_ids().copied().collect();
 
                     let filter = Filter::new()
