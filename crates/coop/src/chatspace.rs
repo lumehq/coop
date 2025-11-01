@@ -106,34 +106,32 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Observe device changes
+            // Observe keystore changes
             cx.observe_in(&keystore, window, move |_this, state, window, cx| {
                 if state.read(cx).initialized {
                     let backend = state.read(cx).backend();
 
-                    if state.read(cx).initialized {
-                        cx.spawn_in(window, async move |this, cx| {
-                            let result = backend
-                                .read_credentials(&KeyItem::User.to_string(), cx)
-                                .await;
+                    cx.spawn_in(window, async move |this, cx| {
+                        let result = backend
+                            .read_credentials(&KeyItem::User.to_string(), cx)
+                            .await;
 
-                            this.update_in(cx, |this, window, cx| {
-                                match result {
-                                    Ok(Some((user, secret))) => {
-                                        let public_key = PublicKey::parse(&user).unwrap();
-                                        let secret = String::from_utf8(secret).unwrap();
+                        this.update_in(cx, |this, window, cx| {
+                            match result {
+                                Ok(Some((user, secret))) => {
+                                    let public_key = PublicKey::parse(&user).unwrap();
+                                    let secret = String::from_utf8(secret).unwrap();
 
-                                        this.set_account_layout(public_key, secret, window, cx);
-                                    }
-                                    _ => {
-                                        this.set_onboarding_layout(window, cx);
-                                    }
-                                };
-                            })
-                            .ok();
+                                    this.set_account_layout(public_key, secret, window, cx);
+                                }
+                                _ => {
+                                    this.set_onboarding_layout(window, cx);
+                                }
+                            };
                         })
-                        .detach();
-                    }
+                        .ok();
+                    })
+                    .detach();
                 }
             }),
         );

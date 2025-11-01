@@ -29,6 +29,11 @@ impl Account {
         cx.has_global::<GlobalAccount>()
     }
 
+    /// Remove the global account state
+    pub fn remove_global(cx: &mut App) {
+        cx.remove_global::<GlobalAccount>();
+    }
+
     /// Set the global account instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalAccount(state));

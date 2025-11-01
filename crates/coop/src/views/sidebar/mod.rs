@@ -738,9 +738,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.all_conversations_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
-                                            this.child(deferred(
+                                            this.child(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            ))
+                                            )
                                         })
                                     })
                                     .small()
@@ -759,9 +759,9 @@ impl Render for Sidebar {
                                     .tooltip(t!("sidebar.requests_tooltip"))
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
-                                            this.child(deferred(
+                                            this.child(
                                                 div().size_1().rounded_full().bg(cx.theme().cursor),
-                                            ))
+                                            )
                                         })
                                     })
                                     .small()
