@@ -1,7 +1,5 @@
 use std::ffi::OsString;
-#[cfg(not(target_os = "windows"))]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -193,10 +191,7 @@ impl AutoUpdater {
                         });
                     }
                     Err(e) => {
-                        // Update the status to error including the error message
-                        _ = this.update(cx, |this, cx| {
-                            this.set_status(AutoUpdateStatus::error(e.to_string()), cx);
-                        });
+                        log::warn!("{e}")
                     }
                 }
             }),
@@ -205,8 +200,8 @@ impl AutoUpdater {
         subscriptions.push(
             // Observe the status
             cx.observe_self(|this, cx| {
-                if let AutoUpdateStatus::Checked { files } = &this.status {
-                    this.get_latest_release(files, cx);
+                if let AutoUpdateStatus::Checked { files } = this.status.clone() {
+                    this.get_latest_release(&files, cx);
                 }
             }),
         );
@@ -288,7 +283,7 @@ impl AutoUpdater {
         })
     }
 
-    fn get_latest_release(&self, ids: &[EventId], cx: &Context<Self>) {
+    fn get_latest_release(&mut self, ids: &[EventId], cx: &mut Context<Self>) {
         let http_client = cx.http_client();
         let ids = ids.to_vec();
 
@@ -331,28 +326,35 @@ impl AutoUpdater {
             Err(anyhow!("Failed to get latest release"))
         });
 
-        cx.spawn(async move |this, cx| {
-            match task.await {
-                Ok((installer_dir, target_path)) => {
-                    if let Ok(Some(path)) = Self::install(installer_dir, target_path, cx).await {
-                        // Set the new binary path for the next restart
-                        _ = cx.update(|cx| cx.set_restart_path(path));
+        self._tasks.push(
+            // Install the new release
+            cx.spawn(async move |this, cx| {
+                _ = this.update(cx, |this, cx| {
+                    this.set_status(AutoUpdateStatus::Installing, cx);
+                });
 
-                        // Update the status to updated
+                match task.await {
+                    Ok((installer_dir, target_path)) => {
+                        if let Ok(Some(path)) = Self::install(installer_dir, target_path, cx).await
+                        {
+                            // Set the new binary path for the next restart
+                            _ = cx.update(|cx| cx.set_restart_path(path));
+
+                            // Update the status to updated
+                            _ = this.update(cx, |this, cx| {
+                                this.set_status(AutoUpdateStatus::Updated, cx);
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        // Update the status to error including the error message
                         _ = this.update(cx, |this, cx| {
-                            this.set_status(AutoUpdateStatus::Updated, cx);
+                            this.set_status(AutoUpdateStatus::error(e.to_string()), cx);
                         });
                     }
                 }
-                Err(e) => {
-                    // Update the status to error including the error message
-                    _ = this.update(cx, |this, cx| {
-                        this.set_status(AutoUpdateStatus::error(e.to_string()), cx);
-                    });
-                }
-            }
-        })
-        .detach();
+            }),
+        );
     }
 
     async fn target_path(installer_dir: &InstallerDir) -> Result<PathBuf, Error> {
@@ -407,6 +409,7 @@ async fn install_release_macos(
     let mut mounted_app_path: OsString = mount_path.join(running_app_filename).into();
 
     mounted_app_path.push("/");
+
     let output = Command::new("hdiutil")
         .args(["attach", "-nobrowse"])
         .arg(&downloaded_dmg)
