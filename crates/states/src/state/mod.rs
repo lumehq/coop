@@ -1126,7 +1126,7 @@ impl AppState {
                     return Ok(unwrapped);
                 }
                 Err(e) => {
-                    log::error!("Failed to unwrap with the encryption key: {e}")
+                    log::warn!("Failed to unwrap with the encryption key: {e}")
                 }
             }
         }
