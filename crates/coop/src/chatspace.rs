@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use account::Account;
 use anyhow::{anyhow, Error};
-use auto_update::AutoUpdater;
+use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::display::{shorten_pubkey, RenderedProfile};
@@ -1166,12 +1166,43 @@ impl ChatSpace {
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let updating = AutoUpdater::read_global(cx).status.is_updating();
-        let updated = AutoUpdater::read_global(cx).status.is_updated();
         let auth_requests = self.auth_requests.read(cx).len();
 
         h_flex()
             .gap_1()
+            .map(
+                |this| match AutoUpdater::global(cx).read(cx).status.as_ref() {
+                    AutoUpdateStatus::Checking => this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from("Checking for Coop updates...")),
+                    ),
+                    AutoUpdateStatus::Installing => this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from("Installing updates...")),
+                    ),
+                    AutoUpdateStatus::Errored { msg } => this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from(msg.as_ref())),
+                    ),
+                    AutoUpdateStatus::Updated => this.child(
+                        div()
+                            .id("restart")
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from("Updated. Click to restart"))
+                            .on_click(|_ev, _window, cx| {
+                                cx.restart();
+                            }),
+                    ),
+                    _ => this.child(div()),
+                },
+            )
             .when(file_keystore, |this| {
                 this.child(
                     Button::new("keystore-warning")
@@ -1182,38 +1213,6 @@ impl ChatSpace {
                         .rounded()
                         .on_click(move |_ev, window, cx| {
                             Self::render_keyring_warning(window, cx);
-                        }),
-                )
-            })
-            .when(updating, |this| {
-                this.child(
-                    h_flex()
-                        .h_6()
-                        .px_2()
-                        .items_center()
-                        .justify_center()
-                        .text_xs()
-                        .rounded_full()
-                        .bg(cx.theme().ghost_element_background_alt)
-                        .child(shared_t!("auto_update.updating")),
-                )
-            })
-            .when(updated, |this| {
-                this.child(
-                    h_flex()
-                        .id("updated")
-                        .h_6()
-                        .px_2()
-                        .items_center()
-                        .justify_center()
-                        .text_xs()
-                        .rounded_full()
-                        .bg(cx.theme().ghost_element_background_alt)
-                        .hover(|this| this.bg(cx.theme().ghost_element_hover))
-                        .active(|this| this.bg(cx.theme().ghost_element_active))
-                        .child(shared_t!("auto_update.updated"))
-                        .on_click(|_, _window, cx| {
-                            cx.restart();
                         }),
                 )
             })
