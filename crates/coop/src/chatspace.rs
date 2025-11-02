@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use account::Account;
 use anyhow::{anyhow, Error};
+use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::display::{shorten_pubkey, RenderedProfile};
@@ -1169,6 +1170,39 @@ impl ChatSpace {
 
         h_flex()
             .gap_1()
+            .map(
+                |this| match AutoUpdater::global(cx).read(cx).status.as_ref() {
+                    AutoUpdateStatus::Checking => this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from("Checking for Coop updates...")),
+                    ),
+                    AutoUpdateStatus::Installing => this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from("Installing updates...")),
+                    ),
+                    AutoUpdateStatus::Errored { msg } => this.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from(msg.as_ref())),
+                    ),
+                    AutoUpdateStatus::Updated => this.child(
+                        div()
+                            .id("restart")
+                            .text_xs()
+                            .text_color(cx.theme().text_muted)
+                            .child(SharedString::from("Updated. Click to restart"))
+                            .on_click(|_ev, _window, cx| {
+                                cx.restart();
+                            }),
+                    ),
+                    _ => this.child(div()),
+                },
+            )
             .when(file_keystore, |this| {
                 this.child(
                     Button::new("keystore-warning")

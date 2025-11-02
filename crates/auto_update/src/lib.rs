@@ -114,6 +114,12 @@ pub enum AutoUpdateStatus {
     Errored { msg: Box<String> },
 }
 
+impl AsRef<AutoUpdateStatus> for AutoUpdateStatus {
+    fn as_ref(&self) -> &AutoUpdateStatus {
+        self
+    }
+}
+
 impl AutoUpdateStatus {
     pub fn is_updating(&self) -> bool {
         matches!(self, Self::Checked { .. } | Self::Installing)
@@ -335,11 +341,7 @@ impl AutoUpdater {
 
                 match task.await {
                     Ok((installer_dir, target_path)) => {
-                        if let Ok(Some(path)) = Self::install(installer_dir, target_path, cx).await
-                        {
-                            // Set the new binary path for the next restart
-                            _ = cx.update(|cx| cx.set_restart_path(path));
-
+                        if Self::install(installer_dir, target_path, cx).await.is_ok() {
                             // Update the status to updated
                             _ = this.update(cx, |this, cx| {
                                 this.set_status(AutoUpdateStatus::Updated, cx);
@@ -371,7 +373,7 @@ impl AutoUpdater {
         installer_dir: InstallerDir,
         target_path: PathBuf,
         cx: &AsyncApp,
-    ) -> Result<Option<PathBuf>, Error> {
+    ) -> Result<(), Error> {
         match std::env::consts::OS {
             "macos" => install_release_macos(&installer_dir, target_path, cx).await,
             "windows" => install_release_windows(target_path).await,
@@ -399,7 +401,7 @@ async fn install_release_macos(
     temp_dir: &InstallerDir,
     downloaded_dmg: PathBuf,
     cx: &AsyncApp,
-) -> Result<Option<PathBuf>, Error> {
+) -> Result<(), Error> {
     let running_app_path = cx.update(|cx| cx.app_path())??;
     let running_app_filename = running_app_path
         .file_name()
@@ -443,15 +445,30 @@ async fn install_release_macos(
         String::from_utf8_lossy(&output.stderr)
     );
 
-    Ok(None)
+    Ok(())
 }
 
-async fn install_release_windows(downloaded_installer: PathBuf) -> Result<Option<PathBuf>, Error> {
-    let output = Command::new(downloaded_installer)
-        .arg("/verysilent")
-        .arg("/update=true")
-        .arg("!desktopicon")
-        .arg("!quicklaunchicon")
+async fn install_release_windows(downloaded_installer: PathBuf) -> Result<(), Error> {
+    //const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let system_root = std::env::var("SYSTEMROOT");
+    let powershell_path = system_root.as_ref().map_or_else(
+        |_| "powershell.exe".to_string(),
+        |p| format!("{p}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"),
+    );
+
+    let mut installer_path = std::ffi::OsString::new();
+    installer_path.push("\"");
+    installer_path.push(&downloaded_installer);
+    installer_path.push("\"");
+
+    let output = Command::new(powershell_path)
+        //.creation_flags(CREATE_NO_WINDOW)
+        .args(["-NoProfile", "-WindowStyle", "Hidden"])
+        .args(["Start-Process"])
+        .arg(installer_path)
+        .arg("-ArgumentList")
+        .args(["/P", "/R"])
         .output()
         .await?;
 
@@ -461,14 +478,5 @@ async fn install_release_windows(downloaded_installer: PathBuf) -> Result<Option
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // We return the path to the update helper program, because it will
-    // perform the final steps of the update process, copying the new binary,
-    // deleting the old one, and launching the new binary.
-    let helper_path = std::env::current_exe()?
-        .parent()
-        .context("No parent dir for Coop.exe")?
-        .join("tools")
-        .join("auto_update_helper.exe");
-
-    Ok(Some(helper_path))
+    Ok(())
 }
