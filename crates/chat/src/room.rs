@@ -399,29 +399,30 @@ impl Room {
             let client = app_state().client();
             let mut result = HashMap::default();
 
-            for member in members.into_iter() {
+            for member in members {
                 let filter = Filter::new()
                     .kind(Kind::InboxRelays)
                     .author(member)
                     .limit(1);
 
-                if let Some(event) = client.database().query(filter).await?.first() {
+                let has_relays = if let Some(event) = client.database().query(filter).await?.first()
+                {
                     let urls: Vec<&RelayUrl> = nip17::extract_relay_list(event).collect();
 
-                    if urls.is_empty() {
-                        result.insert(member, false);
-                        continue;
+                    if !urls.is_empty() {
+                        for url in urls {
+                            client.add_relay(url).await.ok();
+                            client.connect_relay(url).await.ok();
+                        }
+                        true
+                    } else {
+                        false
                     }
-
-                    for url in urls {
-                        client.add_relay(url).await.ok();
-                        client.connect_relay(url).await.ok();
-                    }
-
-                    result.insert(member, true);
                 } else {
-                    result.insert(member, false);
-                }
+                    false
+                };
+
+                result.insert(member, has_relays);
             }
 
             Ok(result)

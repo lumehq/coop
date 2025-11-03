@@ -332,9 +332,7 @@ impl AppState {
                             self.signal.send(SignalKind::NewProfile(profile)).await;
                         }
                         Kind::GiftWrap => {
-                            if let Err(e) = self.extract_rumor(&event).await {
-                                log::error!("Failed to extract rumor: {e}");
-                            }
+                            self.extract_rumor(&event).await.ok();
                         }
                         _ => {}
                     }
@@ -984,6 +982,8 @@ impl AppState {
             .subscribe_with_id_to(&urls, id, filter, None)
             .await?;
 
+        log::info!("Subscribed to gift wrap events");
+
         Ok(())
     }
 
@@ -1014,15 +1014,15 @@ impl AppState {
     }
 
     /// Stores an unwrapped event in local database with reference to original
-    async fn set_rumor(&self, id: EventId, rumor: &UnsignedEvent) -> Result<(), Error> {
+    async fn set_rumor(&self, gift_wrap: EventId, rumor: &UnsignedEvent) -> Result<(), Error> {
         let rumor_id = rumor.id.context("Rumor is missing an event id")?;
         let author = rumor.pubkey;
-        let conversation = self.conversation_id(rumor).to_string();
+        let conversation = self.conversation_id(rumor);
 
         let mut tags = rumor.tags.clone().to_vec();
 
         // Add a unique identifier
-        tags.push(Tag::identifier(id));
+        tags.push(Tag::identifier(gift_wrap));
 
         // Add a reference to the rumor's author
         tags.push(Tag::custom(
@@ -1033,7 +1033,7 @@ impl AppState {
         // Add a conversation id
         tags.push(Tag::custom(
             TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::C)),
-            [conversation],
+            [conversation.to_string()],
         ));
 
         // Add a reference to the rumor's id
@@ -1050,21 +1050,23 @@ impl AppState {
         // Convert rumor to json
         let content = rumor.as_json();
 
+        // Construct the event
         let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
             .tags(tags)
             .sign(&Keys::generate())
             .await?;
 
+        // Save the event to the database
         self.client.database().save_event(&event).await?;
 
         Ok(())
     }
 
     /// Retrieves a previously unwrapped event from local database
-    async fn get_rumor(&self, id: EventId) -> Result<UnsignedEvent, Error> {
+    async fn get_rumor(&self, gift_wrap: EventId) -> Result<UnsignedEvent, Error> {
         let filter = Filter::new()
             .kind(Kind::ApplicationSpecificData)
-            .identifier(id)
+            .identifier(gift_wrap)
             .limit(1);
 
         if let Some(event) = self.client.database().query(filter).await?.first_owned() {
@@ -1113,7 +1115,7 @@ impl AppState {
             }
         }
 
-        // Try to unwrap with the user's signer
+        // Fallback to unwrap with the user's signer
         let signer = self.client.signer().await?;
         let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
 

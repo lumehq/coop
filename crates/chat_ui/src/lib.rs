@@ -77,7 +77,7 @@ pub struct ChatPanel {
     image_cache: Entity<RetainAllImageCache>,
 
     _subscriptions: SmallVec<[Subscription; 3]>,
-    _tasks: SmallVec<[Task<()>; 3]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl ChatPanel {
@@ -106,15 +106,6 @@ impl ChatPanel {
         let mut tasks = smallvec![];
 
         tasks.push(
-            // Get messaging relays and encryption keys announcement for all members
-            cx.background_spawn(async move {
-                if let Err(e) = connect.await {
-                    log::error!("Failed to initialize room: {e}");
-                }
-            }),
-        );
-
-        tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
                 let result = get_messages.await;
@@ -136,33 +127,31 @@ impl ChatPanel {
         tasks.push(
             // Connect and verify all members messaging relays
             cx.spawn_in(window, async move |this, cx| {
-                // Wait for 5 seconds before connecting and verifying
+                // Get messaging relays and encryption keys announcement for all members
+                if connect.await.is_err() {
+                    return;
+                };
+
+                // Wait for 10 seconds before connecting and verifying
                 cx.background_executor()
                     .timer(Duration::from_secs(QUERY_TIMEOUT))
                     .await;
 
-                let result = verify_connections.await;
+                if let Ok(result) = verify_connections.await {
+                    this.update(cx, |this, cx| {
+                        let persons = PersonRegistry::global(cx);
 
-                this.update_in(cx, |this, window, cx| {
-                    match result {
-                        Ok(data) => {
-                            let persons = PersonRegistry::global(cx);
+                        for (public_key, has_relays) in result.into_iter() {
+                            if !has_relays {
+                                let profile = persons.read(cx).get_person(&public_key, cx);
+                                let name = profile.display_name();
 
-                            for (public_key, status) in data.into_iter() {
-                                if !status {
-                                    let profile = persons.read(cx).get_person(&public_key, cx);
-                                    let name = profile.display_name();
-
-                                    this.insert_warning(format!("{NIP17_WARN} {name}"), cx);
-                                }
+                                this.insert_warning(format!("{name} {NIP17_WARN}"), cx);
                             }
                         }
-                        Err(e) => {
-                            window.push_notification(e.to_string(), cx);
-                        }
-                    };
-                })
-                .ok();
+                    })
+                    .ok();
+                }
             }),
         );
 
