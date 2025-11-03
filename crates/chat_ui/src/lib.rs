@@ -22,7 +22,7 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use states::{app_state, SignerKind, QUERY_TIMEOUT};
+use states::{app_state, SignerKind};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -44,9 +44,6 @@ mod actions;
 mod emoji;
 mod subject;
 mod text;
-
-const NIP17_WARN: &str = "has not set up Messaging Relays, they cannot receive your message.";
-const EMPTY_WARN: &str = "Something is wrong. Coop cannot display this message";
 
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
     cx.new(|cx| ChatPanel::new(room, window, cx))
@@ -99,7 +96,6 @@ impl ChatPanel {
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
         let connect = room.read(cx).connect(cx);
-        let verify_connections = room.read(cx).verify_connections(cx);
         let get_messages = room.read(cx).get_messages(cx);
 
         let mut subscriptions = smallvec![];
@@ -125,32 +121,10 @@ impl ChatPanel {
         );
 
         tasks.push(
-            // Connect and verify all members messaging relays
-            cx.spawn_in(window, async move |this, cx| {
-                // Get messaging relays and encryption keys announcement for all members
-                if connect.await.is_err() {
-                    return;
-                };
-
-                // Wait for 10 seconds before connecting and verifying
-                cx.background_executor()
-                    .timer(Duration::from_secs(QUERY_TIMEOUT))
-                    .await;
-
-                if let Ok(result) = verify_connections.await {
-                    this.update(cx, |this, cx| {
-                        let persons = PersonRegistry::global(cx);
-
-                        for (public_key, has_relays) in result.into_iter() {
-                            if !has_relays {
-                                let profile = persons.read(cx).get_person(&public_key, cx);
-                                let name = profile.display_name();
-
-                                this.insert_warning(format!("{name} {NIP17_WARN}"), cx);
-                            }
-                        }
-                    })
-                    .ok();
+            // Get messaging relays and encryption keys announcement for each member
+            cx.background_spawn(async move {
+                if let Err(e) = connect.await {
+                    log::error!("Failed to initialize room: {}", e);
                 }
             }),
         );
@@ -652,6 +626,33 @@ impl ChatPanel {
     }
 
     fn render_message(
+        &mut self,
+        ix: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if let Some(message) = self.messages.get_index(ix) {
+            match message {
+                Message::User(rendered) => {
+                    let text = self
+                        .rendered_texts_by_id
+                        .entry(rendered.id)
+                        .or_insert_with(|| RenderedText::new(&rendered.content, cx))
+                        .element(ix.into(), window, cx);
+
+                    self.render_text_message(ix, rendered, text, cx)
+                }
+                Message::Warning(content, _timestamp) => {
+                    self.render_warning(ix, SharedString::from(content), cx)
+                }
+                Message::System(_timestamp) => self.render_announcement(ix, cx),
+            }
+        } else {
+            self.render_warning(ix, SharedString::from("Message not found"), cx)
+        }
+    }
+
+    fn render_text_message(
         &self,
         ix: usize,
         message: &RenderedMessage,
@@ -1347,26 +1348,9 @@ impl Render for ChatPanel {
             .child(
                 list(
                     self.list_state.clone(),
-                    cx.processor(move |this, ix: usize, window, cx| {
-                        if let Some(message) = this.messages.get_index(ix) {
-                            match message {
-                                Message::User(rendered) => {
-                                    let text = this
-                                        .rendered_texts_by_id
-                                        .entry(rendered.id)
-                                        .or_insert_with(|| RenderedText::new(&rendered.content, cx))
-                                        .element(ix.into(), window, cx);
-
-                                    this.render_message(ix, rendered, text, cx)
-                                }
-                                Message::Warning(content, _timestamp) => {
-                                    this.render_warning(ix, SharedString::from(content), cx)
-                                }
-                                Message::System(_timestamp) => this.render_announcement(ix, cx),
-                            }
-                        } else {
-                            this.render_warning(ix, SharedString::from(EMPTY_WARN), cx)
-                        }
+                    cx.processor(|this, ix, window, cx| {
+                        // Get and render message by index
+                        this.render_message(ix, window, cx)
                     }),
                 )
                 .flex_1(),
