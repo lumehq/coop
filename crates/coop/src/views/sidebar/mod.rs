@@ -6,7 +6,7 @@ use anyhow::{anyhow, Error};
 use chat::room::{Room, RoomKind};
 use chat::{ChatEvent, ChatRegistry};
 use common::debounced_delay::DebouncedDelay;
-use common::display::{RenderedProfile, RenderedTimestamp, TextUtils};
+use common::display::{RenderedTimestamp, TextUtils};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
@@ -628,8 +628,8 @@ impl Sidebar {
             items.push(
                 RoomListItem::new(ix)
                     .room_id(room_id)
-                    .name(member.display_name())
-                    .avatar(member.avatar(proxy))
+                    .name(this.display_name(cx))
+                    .avatar(this.display_image(proxy, cx))
                     .public_key(member.public_key())
                     .kind(this.kind)
                     .created_at(this.created_at.to_ago())

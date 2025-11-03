@@ -6,7 +6,6 @@ use gpui::{Image, ImageFormat, SharedString, SharedUri};
 use nostr_sdk::prelude::*;
 use qrcode::render::svg;
 use qrcode::QrCode;
-use states::IMAGE_RESIZE_SERVICE;
 
 const NOW: &str = "now";
 const SECONDS_IN_MINUTE: i64 = 60;
@@ -14,6 +13,7 @@ const MINUTES_IN_HOUR: i64 = 60;
 const HOURS_IN_DAY: i64 = 24;
 const DAYS_IN_MONTH: i64 = 30;
 const FALLBACK_IMG: &str = "https://image.nostr.build/c30703b48f511c293a9003be8100cdad37b8798b77a1dc3ec6eb8a20443d5dea.png";
+const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 
 pub trait RenderedProfile {
     fn avatar(&self, proxy: bool) -> SharedUri;

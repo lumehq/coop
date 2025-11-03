@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use common::display::RenderedProfile;
 use gpui::{
-    AnyElement, AnyView, App, ElementId, HighlightStyle, InteractiveText, IntoElement,
-    SharedString, StyledText, UnderlineStyle, Window,
+    AnyElement, App, ElementId, HighlightStyle, InteractiveText, IntoElement, SharedString,
+    StyledText, UnderlineStyle, Window,
 };
-use linkify::{LinkFinder, LinkKind};
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use person::PersonRegistry;
@@ -16,7 +15,7 @@ use theme::ActiveTheme;
 use crate::actions::OpenPublicKey;
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(?:[a-zA-Z]+://)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(/.*)?$").unwrap()
+    Regex::new(r"(?i)(?:^|\s)(?:https?://)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:/[^\s]*)?(?:\s|$)").unwrap()
 });
 
 static NOSTR_URI_REGEX: Lazy<Regex> =
@@ -24,34 +23,9 @@ static NOSTR_URI_REGEX: Lazy<Regex> =
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Highlight {
-    Link(HighlightStyle),
+    Link,
     Nostr,
 }
-
-impl Highlight {
-    fn link() -> Self {
-        Self::Link(HighlightStyle {
-            underline: Some(UnderlineStyle {
-                thickness: 1.0.into(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        })
-    }
-
-    fn nostr() -> Self {
-        Self::Nostr
-    }
-}
-
-impl From<HighlightStyle> for Highlight {
-    fn from(style: HighlightStyle) -> Self {
-        Self::Link(style)
-    }
-}
-
-type CustomRangeTooltipFn =
-    Option<Arc<dyn Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView>>>;
 
 #[derive(Default)]
 pub struct RenderedText {
@@ -59,8 +33,6 @@ pub struct RenderedText {
     pub highlights: Vec<(Range<usize>, Highlight)>,
     pub link_ranges: Vec<Range<usize>>,
     pub link_urls: Arc<[String]>,
-    pub custom_ranges: Vec<Range<usize>>,
-    custom_ranges_tooltip_fn: CustomRangeTooltipFn,
 }
 
 impl RenderedText {
@@ -86,17 +58,7 @@ impl RenderedText {
             link_urls: link_urls.into(),
             link_ranges,
             highlights,
-            custom_ranges: Vec::new(),
-            custom_ranges_tooltip_fn: None,
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_tooltip_builder_for_custom_ranges<F>(&mut self, f: F)
-    where
-        F: Fn(usize, Range<usize>, &mut Window, &mut App) -> Option<AnyView> + 'static,
-    {
-        self.custom_ranges_tooltip_fn = Some(Arc::new(f));
     }
 
     pub fn element(&self, id: ElementId, window: &Window, cx: &App) -> AnyElement {
@@ -110,17 +72,11 @@ impl RenderedText {
                     (
                         range.clone(),
                         match highlight {
-                            Highlight::Link(highlight) => {
-                                // Check if this is a link highlight by seeing if it has an underline
-                                if highlight.underline.is_some() {
-                                    // It's a link, so apply the link color
-                                    let mut link_style = *highlight;
-                                    link_style.color = Some(link_color);
-                                    link_style
-                                } else {
-                                    *highlight
-                                }
-                            }
+                            Highlight::Link => HighlightStyle {
+                                color: Some(link_color),
+                                underline: Some(UnderlineStyle::default()),
+                                ..Default::default()
+                            },
                             Highlight::Nostr => HighlightStyle {
                                 color: Some(link_color),
                                 ..Default::default()
@@ -135,47 +91,20 @@ impl RenderedText {
             move |ix, window, cx| {
                 let token = link_urls[ix].as_str();
 
-                if token.starts_with("nostr:") {
-                    let clean_url = token.replace("nostr:", "");
-                    let Ok(public_key) = PublicKey::parse(&clean_url) else {
-                        log::error!("Failed to parse public key from: {clean_url}");
-                        return;
-                    };
-                    window.dispatch_action(Box::new(OpenPublicKey(public_key)), cx);
-                } else if is_url(token) {
-                    if !token.starts_with("http") {
-                        cx.open_url(&format!("https://{token}"));
-                    } else {
-                        cx.open_url(token);
+                if let Some(clean_url) = token.strip_prefix("nostr:") {
+                    if let Ok(public_key) = PublicKey::parse(clean_url) {
+                        window.dispatch_action(Box::new(OpenPublicKey(public_key)), cx);
                     }
+                } else if is_url(token) {
+                    let url = if token.starts_with("http") {
+                        token.to_string()
+                    } else {
+                        format!("https://{token}")
+                    };
+                    cx.open_url(&url);
                 } else {
                     log::warn!("Unrecognized token {token}")
                 }
-            }
-        })
-        .tooltip({
-            let link_ranges = self.link_ranges.clone();
-            let link_urls = self.link_urls.clone();
-            let custom_tooltip_ranges = self.custom_ranges.clone();
-            let custom_tooltip_fn = self.custom_ranges_tooltip_fn.clone();
-            move |idx, window, cx| {
-                for (ix, range) in link_ranges.iter().enumerate() {
-                    if range.contains(&idx) {
-                        let url = &link_urls[ix];
-                        if url.starts_with("http") {
-                            // return Some(LinkPreview::new(url, cx));
-                        }
-                        // You can add custom tooltip handling for mentions here
-                    }
-                }
-                for range in &custom_tooltip_ranges {
-                    if range.contains(&idx) {
-                        if let Some(f) = &custom_tooltip_fn {
-                            return f(idx, range.clone(), window, cx);
-                        }
-                    }
-                }
-                None
             }
         })
         .into_any_element()
@@ -193,19 +122,14 @@ fn render_plain_text_mut(
     // Copy the content directly
     text.push_str(content);
 
-    // Initialize the link finder
-    let mut finder = LinkFinder::new();
-    finder.url_must_have_scheme(false);
-    finder.kinds(&[LinkKind::Url]);
-
     // Collect all URLs
     let mut url_matches: Vec<(Range<usize>, String)> = Vec::new();
 
-    for link in finder.links(content) {
-        let start = link.start();
-        let end = link.end();
-        let range = start..end;
+    for link in URL_REGEX.find_iter(content) {
+        let range = link.start()..link.end();
         let url = link.as_str().to_string();
+
+        log::info!("Found URL: {}", url);
 
         url_matches.push((range, url));
     }
@@ -214,9 +138,7 @@ fn render_plain_text_mut(
     let mut nostr_matches: Vec<(Range<usize>, String)> = Vec::new();
 
     for nostr_match in NOSTR_URI_REGEX.find_iter(content) {
-        let start = nostr_match.start();
-        let end = nostr_match.end();
-        let range = start..end;
+        let range = nostr_match.start()..nostr_match.end();
         let nostr_uri = nostr_match.as_str().to_string();
 
         // Check if this nostr URI overlaps with any already processed URL
@@ -240,12 +162,9 @@ fn render_plain_text_mut(
     for (range, entity) in all_matches {
         // Handle URL token
         if is_url(&entity) {
-            // Add underline highlight
-            highlights.push((range.clone(), Highlight::link()));
-            // Make it clickable
+            highlights.push((range.clone(), Highlight::Link));
             link_ranges.push(range);
             link_urls.push(entity);
-
             continue;
         };
 
@@ -306,75 +225,6 @@ fn render_plain_text_mut(
             }
         }
     }
-
-    fn render_pubkey(
-        public_key: PublicKey,
-        text: &mut String,
-        range: &Range<usize>,
-        highlights: &mut Vec<(Range<usize>, Highlight)>,
-        link_ranges: &mut Vec<Range<usize>>,
-        link_urls: &mut Vec<String>,
-        cx: &App,
-    ) {
-        let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&public_key, cx);
-        let display_name = format!("@{}", profile.display_name());
-
-        // Replace token with display name
-        text.replace_range(range.clone(), &display_name);
-
-        // Adjust ranges
-        let new_length = display_name.len();
-        let length_diff = new_length as isize - (range.end - range.start) as isize;
-        // New range for the replacement
-        let new_range = range.start..(range.start + new_length);
-
-        // Add highlight for the profile name
-        highlights.push((new_range.clone(), Highlight::nostr()));
-        // Make it clickable
-        link_ranges.push(new_range);
-        link_urls.push(format!("nostr:{}", profile.public_key().to_hex()));
-
-        // Adjust subsequent ranges if needed
-        if length_diff != 0 {
-            adjust_ranges(highlights, link_ranges, range.end, length_diff);
-        }
-    }
-
-    fn render_bech32(
-        bech32: String,
-        text: &mut String,
-        range: &Range<usize>,
-        highlights: &mut Vec<(Range<usize>, Highlight)>,
-        link_ranges: &mut Vec<Range<usize>>,
-        link_urls: &mut Vec<String>,
-    ) {
-        let njump_url = format!("https://njump.me/{bech32}");
-
-        // Create a shortened display format for the URL
-        let shortened_entity = format_shortened_entity(&bech32);
-        let display_text = format!("https://njump.me/{shortened_entity}");
-
-        // Replace the original entity with the shortened display version
-        text.replace_range(range.clone(), &display_text);
-
-        // Adjust the ranges
-        let new_length = display_text.len();
-        let length_diff = new_length as isize - (range.end - range.start) as isize;
-        // New range for the replacement
-        let new_range = range.start..(range.start + new_length);
-
-        // Add underline highlight
-        highlights.push((new_range.clone(), Highlight::link()));
-        // Make it clickable
-        link_ranges.push(new_range);
-        link_urls.push(njump_url);
-
-        // Adjust subsequent ranges if needed
-        if length_diff != 0 {
-            adjust_ranges(highlights, link_ranges, range.end, length_diff);
-        }
-    }
 }
 
 /// Check if a string is a URL
@@ -393,6 +243,61 @@ fn format_shortened_entity(entity: &str) -> String {
         format!("{prefix}...{suffix}")
     } else {
         entity.to_string()
+    }
+}
+
+fn render_pubkey(
+    public_key: PublicKey,
+    text: &mut String,
+    range: &Range<usize>,
+    highlights: &mut Vec<(Range<usize>, Highlight)>,
+    link_ranges: &mut Vec<Range<usize>>,
+    link_urls: &mut Vec<String>,
+    cx: &App,
+) {
+    let persons = PersonRegistry::global(cx);
+    let profile = persons.read(cx).get_person(&public_key, cx);
+    let display_name = format!("@{}", profile.display_name());
+
+    text.replace_range(range.clone(), &display_name);
+
+    let new_length = display_name.len();
+    let length_diff = new_length as isize - (range.end - range.start) as isize;
+    let new_range = range.start..(range.start + new_length);
+
+    highlights.push((new_range.clone(), Highlight::Nostr));
+    link_ranges.push(new_range);
+    link_urls.push(format!("nostr:{}", profile.public_key().to_hex()));
+
+    if length_diff != 0 {
+        adjust_ranges(highlights, link_ranges, range.end, length_diff);
+    }
+}
+
+fn render_bech32(
+    bech32: String,
+    text: &mut String,
+    range: &Range<usize>,
+    highlights: &mut Vec<(Range<usize>, Highlight)>,
+    link_ranges: &mut Vec<Range<usize>>,
+    link_urls: &mut Vec<String>,
+) {
+    let njump_url = format!("https://njump.me/{bech32}");
+    let shortened_entity = format_shortened_entity(&bech32);
+    let display_text = format!("https://njump.me/{shortened_entity}");
+
+    text.replace_range(range.clone(), &display_text);
+
+    let new_length = display_text.len();
+    let length_diff = new_length as isize - (range.end - range.start) as isize;
+    let new_range = range.start..(range.start + new_length);
+
+    highlights.push((new_range.clone(), Highlight::Link));
+    link_ranges.push(new_range);
+    link_urls.push(njump_url);
+
+    if length_diff != 0 {
+        adjust_ranges(highlights, link_ranges, range.end, length_diff);
     }
 }
 

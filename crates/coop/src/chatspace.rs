@@ -1167,42 +1167,41 @@ impl ChatSpace {
         let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auth_requests = self.auth_requests.read(cx).len();
+        let auto_update = AutoUpdater::global(cx);
 
         h_flex()
             .gap_1()
-            .map(
-                |this| match AutoUpdater::global(cx).read(cx).status.as_ref() {
-                    AutoUpdateStatus::Checking => this.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::from("Checking for Coop updates...")),
-                    ),
-                    AutoUpdateStatus::Installing => this.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::from("Installing updates...")),
-                    ),
-                    AutoUpdateStatus::Errored { msg } => this.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::from(msg.as_ref())),
-                    ),
-                    AutoUpdateStatus::Updated => this.child(
-                        div()
-                            .id("restart")
-                            .text_xs()
-                            .text_color(cx.theme().text_muted)
-                            .child(SharedString::from("Updated. Click to restart"))
-                            .on_click(|_ev, _window, cx| {
-                                cx.restart();
-                            }),
-                    ),
-                    _ => this.child(div()),
-                },
-            )
+            .map(|this| match auto_update.read(cx).status.as_ref() {
+                AutoUpdateStatus::Checking => this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().text_muted)
+                        .child(SharedString::from("Checking for Coop updates...")),
+                ),
+                AutoUpdateStatus::Installing => this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().text_muted)
+                        .child(SharedString::from("Installing updates...")),
+                ),
+                AutoUpdateStatus::Errored { msg } => this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().text_muted)
+                        .child(SharedString::from(msg.as_ref())),
+                ),
+                AutoUpdateStatus::Updated => this.child(
+                    div()
+                        .id("restart")
+                        .text_xs()
+                        .text_color(cx.theme().text_muted)
+                        .child(SharedString::from("Updated. Click to restart"))
+                        .on_click(|_ev, _window, cx| {
+                            cx.restart();
+                        }),
+                ),
+                _ => this.child(div()),
+            })
             .when(file_keystore, |this| {
                 this.child(
                     Button::new("keystore-warning")

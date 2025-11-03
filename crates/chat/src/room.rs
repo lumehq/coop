@@ -371,6 +371,7 @@ impl Room {
                     continue;
                 };
 
+                // Construct a filter for messaging relays
                 let filter = Filter::new()
                     .kind(Kind::InboxRelays)
                     .author(member)
@@ -379,6 +380,7 @@ impl Room {
                 // Subscribe to get members messaging relays
                 client.subscribe(filter, Some(opts)).await?;
 
+                // Construct a filter for encryption keys announcement
                 let filter = Filter::new()
                     .kind(Kind::Custom(10044))
                     .author(member)
@@ -389,42 +391,6 @@ impl Room {
             }
 
             Ok(())
-        })
-    }
-
-    pub fn verify_connections(&self, cx: &App) -> Task<Result<HashMap<PublicKey, bool>, Error>> {
-        let members = self.members();
-
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let mut result = HashMap::default();
-
-            for member in members.into_iter() {
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(member)
-                    .limit(1);
-
-                if let Some(event) = client.database().query(filter).await?.first() {
-                    let urls: Vec<&RelayUrl> = nip17::extract_relay_list(event).collect();
-
-                    if urls.is_empty() {
-                        result.insert(member, false);
-                        continue;
-                    }
-
-                    for url in urls {
-                        client.add_relay(url).await.ok();
-                        client.connect_relay(url).await.ok();
-                    }
-
-                    result.insert(member, true);
-                } else {
-                    result.insert(member, false);
-                }
-            }
-
-            Ok(result)
         })
     }
 

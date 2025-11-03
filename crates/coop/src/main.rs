@@ -6,7 +6,7 @@ use gpui::{
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
-use states::{app_state, APP_ID, CLIENT_NAME};
+use states::{app_state, APP_ID, BOOTSTRAP_RELAYS, CLIENT_NAME, SEARCH_RELAYS};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
@@ -21,13 +21,33 @@ fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    // Initialize the coop simple storage
-    let _app_state = app_state();
-
     // Initialize the Application
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
+
+    // Initialize app state
+    let app_state = app_state();
+
+    // Connect to relays
+    app.background_executor()
+        .spawn(async move {
+            let client = app_state.client();
+
+            // Get all bootstrapping relays
+            let mut urls = vec![];
+            urls.extend(BOOTSTRAP_RELAYS);
+            urls.extend(SEARCH_RELAYS);
+
+            // Add relay to the relay pool
+            for url in urls.into_iter() {
+                client.add_relay(url).await.ok();
+            }
+
+            // Establish connection to relays
+            client.connect().await;
+        })
+        .detach();
 
     // Run application
     app.run(move |cx| {

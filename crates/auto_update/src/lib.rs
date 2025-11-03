@@ -197,7 +197,11 @@ impl AutoUpdater {
                         });
                     }
                     Err(e) => {
-                        log::warn!("{e}")
+                        _ = this.update(cx, |this, cx| {
+                            this.set_status(AutoUpdateStatus::Idle, cx);
+                        });
+
+                        log::warn!("{e}");
                     }
                 }
             }),
