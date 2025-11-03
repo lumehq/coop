@@ -12,7 +12,7 @@ use nostr_sdk::prelude::*;
 use smol::lock::RwLock;
 
 use crate::constants::{
-    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT, SEARCH_RELAYS,
+    BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT, QUERY_TIMEOUT,
 };
 use crate::paths::config_dir;
 use crate::state::ingester::Ingester;
@@ -210,19 +210,6 @@ impl AppState {
 
     /// Handles events from the nostr client
     pub async fn handle_notifications(&self) -> Result<(), Error> {
-        // Get all bootstrapping relays
-        let mut urls = vec![];
-        urls.extend(BOOTSTRAP_RELAYS);
-        urls.extend(SEARCH_RELAYS);
-
-        // Add relay to the relay pool
-        for url in urls.into_iter() {
-            self.client.add_relay(url).await?;
-        }
-
-        // Establish connection to relays
-        self.client.connect().await;
-
         let mut processed_events: HashSet<EventId> = HashSet::new();
         let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
         let mut notifications = self.client.notifications();
@@ -1118,16 +1105,11 @@ impl AppState {
 
     // Helper method to try unwrapping with different signers
     async fn try_unwrap_gift_wrap(&self, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
-        // Try to unwrap with the encryption key first
+        // Try to unwrap with the encryption key if available
         // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
         if let Some(signer) = self.device.read().await.encryption.as_ref() {
-            match UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
-                Ok(unwrapped) => {
-                    return Ok(unwrapped);
-                }
-                Err(e) => {
-                    log::warn!("Failed to unwrap with the encryption key: {e}")
-                }
+            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await {
+                return Ok(unwrapped);
             }
         }
 
