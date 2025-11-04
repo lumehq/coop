@@ -11,9 +11,10 @@ use gpui::{
 use i18n::{shared_t, t};
 use key_store::backend::KeyItem;
 use key_store::KeyStore;
+use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use states::{CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -165,8 +166,10 @@ impl Onboarding {
     }
 
     fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         cx.background_spawn(async move {
-            let client = app_state().client();
             client.set_signer(signer).await;
         })
         .detach();

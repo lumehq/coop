@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
-use chat::room::RoomKind;
-use chat::ChatRegistry;
+use chat::{ChatRegistry, RoomKind};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use gpui::prelude::FluentBuilder;
 use gpui::{

@@ -1,18 +1,21 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
-use ::nostr::NostrRegistry;
+use ::nostr::{initialized_at, NostrRegistry};
 use account::Account;
-use anyhow::Error;
+use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, Window};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
 pub use message::*;
 use nostr_sdk::prelude::*;
 pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use smol::channel::Sender;
 
 mod message;
 mod room;
@@ -23,17 +26,12 @@ pub fn init(cx: &mut App) {
     ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ChatEvent {
-    OpenRoom(u64),
-    CloseRoom(u64),
-    NewChatRequest(RoomKind),
-}
-
 struct GlobalChatRegistry(Entity<ChatRegistry>);
 
 impl Global for GlobalChatRegistry {}
 
+/// Chat Registry
+#[derive(Debug)]
 pub struct ChatRegistry {
     /// Collection of all chat rooms
     pub rooms: Vec<Entity<Room>>,
@@ -42,7 +40,14 @@ pub struct ChatRegistry {
     pub loading: bool,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 2]>,
+    _tasks: SmallVec<[Task<()>; 3]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChatEvent {
+    OpenRoom(u64),
+    CloseRoom(u64),
+    NewChatRequest(RoomKind),
 }
 
 impl EventEmitter<ChatEvent> for ChatRegistry {}
@@ -62,10 +67,35 @@ impl ChatRegistry {
     fn new(cx: &mut Context<Self>) -> Self {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+
+        let (tx, rx) = smol::channel::unbounded::<NewMessage>();
         let mut tasks = smallvec![];
 
         tasks.push(
-            // Handle notifications
+            // Handle gift wrap events
+            cx.background_spawn({
+                let client = Arc::clone(&client);
+
+                async move {
+                    let mut notifications = client.notifications();
+
+                    while let Ok(notification) = notifications.recv().await {
+                        let RelayPoolNotification::Message { message, .. } = notification else {
+                            continue;
+                        };
+
+                        if let RelayMessage::Event { event, .. } = message {
+                            if event.kind == Kind::GiftWrap {
+                                Self::extract_rumor(&client, &tx, &event).await.ok();
+                            }
+                        }
+                    }
+                }
+            }),
+        );
+
+        tasks.push(
+            // Handle end of stored event messages
             cx.spawn(async move |this, cx| {
                 let mut notifications = client.notifications();
                 let sub_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
@@ -87,6 +117,18 @@ impl ChatRegistry {
                             break;
                         }
                     }
+                }
+            }),
+        );
+
+        tasks.push(
+            // Handle new messages
+            cx.spawn(async move |this, cx| {
+                while let Ok(message) = rx.recv().await {
+                    this.update(cx, |this, cx| {
+                        this.new_message(message, cx);
+                    })
+                    .expect("Entity has been released");
                 }
             }),
         );
@@ -179,6 +221,45 @@ impl ChatRegistry {
         cx.notify();
     }
 
+    /// Push a new room to the chat registry
+    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
+        let id = room.read(cx).id;
+
+        if !self.rooms.iter().any(|r| r.read(cx).id == id) {
+            self.add_room(room, cx);
+        }
+
+        cx.emit(ChatEvent::OpenRoom(id));
+    }
+
+    /// Extend the registry with new rooms.
+    fn extend_rooms(&mut self, rooms: HashSet<Room>, cx: &mut Context<Self>) {
+        let mut room_map: HashMap<u64, usize> = self
+            .rooms
+            .iter()
+            .enumerate()
+            .map(|(idx, room)| (room.read(cx).id, idx))
+            .collect();
+
+        for new_room in rooms.into_iter() {
+            // Check if we already have a room with this ID
+            if let Some(&index) = room_map.get(&new_room.id) {
+                self.rooms[index].update(cx, |this, cx| {
+                    if new_room.created_at > this.created_at {
+                        *this = new_room;
+                        cx.notify();
+                    }
+                });
+            } else {
+                let new_room_id = new_room.id;
+                self.rooms.push(cx.new(|_| new_room));
+
+                let new_index = self.rooms.len();
+                room_map.insert(new_room_id, new_index);
+            }
+        }
+    }
+
     /// Load all rooms from the database.
     pub fn load_rooms(&mut self, cx: &mut Context<Self>) {
         let nostr = NostrRegistry::global(cx);
@@ -268,45 +349,7 @@ impl ChatRegistry {
         .detach();
     }
 
-    pub(crate) fn extend_rooms(&mut self, rooms: HashSet<Room>, cx: &mut Context<Self>) {
-        let mut room_map: HashMap<u64, usize> = self
-            .rooms
-            .iter()
-            .enumerate()
-            .map(|(idx, room)| (room.read(cx).id, idx))
-            .collect();
-
-        for new_room in rooms.into_iter() {
-            // Check if we already have a room with this ID
-            if let Some(&index) = room_map.get(&new_room.id) {
-                self.rooms[index].update(cx, |this, cx| {
-                    if new_room.created_at > this.created_at {
-                        *this = new_room;
-                        cx.notify();
-                    }
-                });
-            } else {
-                let new_room_id = new_room.id;
-                self.rooms.push(cx.new(|_| new_room));
-
-                let new_index = self.rooms.len();
-                room_map.insert(new_room_id, new_index);
-            }
-        }
-    }
-
-    /// Push a new room to the chat registry
-    pub fn push_room(&mut self, room: Entity<Room>, cx: &mut Context<Self>) {
-        let id = room.read(cx).id;
-
-        if !self.rooms.iter().any(|r| r.read(cx).id == id) {
-            self.add_room(room, cx);
-        }
-
-        cx.emit(ChatEvent::OpenRoom(id));
-    }
-
-    /// Refresh messages for a room in the global registry
+    /// Trigger a refresh of the opened chat rooms by their IDs
     pub fn refresh_rooms(&mut self, ids: Option<Vec<u64>>, cx: &mut Context<Self>) {
         if let Some(ids) = ids {
             for room in self.rooms.iter() {
@@ -323,15 +366,15 @@ impl ChatRegistry {
     ///
     /// If the room doesn't exist, it will be created.
     /// Updates room ordering based on the most recent messages.
-    pub fn new_message(&mut self, msg: NewMessage, window: &mut Window, cx: &mut Context<Self>) {
-        let id = msg.rumor.uniq_id();
-        let author = msg.rumor.pubkey;
+    pub fn new_message(&mut self, message: NewMessage, cx: &mut Context<Self>) {
+        let id = message.rumor.uniq_id();
+        let author = message.rumor.pubkey;
         let account = Account::global(cx);
 
         if let Some(room) = self.rooms.iter().find(|room| room.read(cx).id == id) {
-            let is_new_event = msg.rumor.created_at > room.read(cx).created_at;
-            let created_at = msg.rumor.created_at;
-            let event_for_emit = msg.rumor.clone();
+            let is_new_event = message.rumor.created_at > room.read(cx).created_at;
+            let created_at = message.rumor.created_at;
+            let event_for_emit = message.rumor.clone();
 
             // Update room
             room.update(cx, |this, cx| {
@@ -345,26 +388,161 @@ impl ChatRegistry {
                 }
 
                 // Emit the new message to the room
-                let event_to_emit = event_for_emit.clone();
-                cx.defer_in(window, move |this, _window, cx| {
-                    this.emit_message(msg.gift_wrap, event_to_emit, cx);
-                });
+                this.emit_message(message.gift_wrap, event_for_emit.clone(), cx);
             });
 
             // Resort all rooms in the registry by their created at (after updated)
             if is_new_event {
-                cx.defer_in(window, |this, _window, cx| {
-                    this.sort(cx);
-                });
+                self.sort(cx);
             }
         } else {
             // Push the new room to the front of the list
-            self.add_room(cx.new(|_| Room::from(&msg.rumor)), cx);
+            self.add_room(cx.new(|_| Room::from(&message.rumor)), cx);
 
             // Notify the UI about the new room
-            cx.defer_in(window, move |_this, _window, cx| {
-                cx.emit(ChatEvent::NewChatRequest(RoomKind::default()));
-            });
+            cx.emit(ChatEvent::NewChatRequest(RoomKind::default()));
         }
+    }
+
+    // Unwraps a gift-wrapped event and processes its contents.
+    async fn extract_rumor(
+        client: &Client,
+        tx: &Sender<NewMessage>,
+        gift_wrap: &Event,
+    ) -> Result<(), Error> {
+        // Try to get cached rumor first
+        if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
+            Self::process_rumor(tx, gift_wrap.id, event).await?;
+            return Ok(());
+        }
+
+        // Try to unwrap with the available signer
+        let unwrapped = Self::try_unwrap(client, gift_wrap).await?;
+        //let sender = unwrapped.sender;
+        let mut rumor_unsigned = unwrapped.rumor;
+
+        //if !self.verify_rumor_sender(sender, &rumor_unsigned) {
+        //    return Err(anyhow!("Cannot verify the sender"));
+        //};
+
+        // Generate event id for the rumor if it doesn't have one
+        rumor_unsigned.ensure_id();
+
+        // Cache the rumor
+        Self::set_rumor(client, gift_wrap.id, &rumor_unsigned).await?;
+
+        // Process the rumor
+        Self::process_rumor(tx, gift_wrap.id, rumor_unsigned).await?;
+
+        Ok(())
+    }
+
+    /// Process a rumor event.
+    async fn process_rumor(
+        tx: &Sender<NewMessage>,
+        id: EventId,
+        event: UnsignedEvent,
+    ) -> Result<(), Error> {
+        match initialized_at() <= &event.created_at {
+            // New message: send a signal to notify the UI
+            true => {
+                let new_message = NewMessage::new(id, event);
+                tx.send(new_message).await;
+            }
+            // Old message: Coop is probably processing the user's messages during initial load
+            false => {
+                // TODO
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Stores an unwrapped event in local database with reference to original
+    async fn set_rumor(client: &Client, id: EventId, rumor: &UnsignedEvent) -> Result<(), Error> {
+        let rumor_id = rumor.id.context("Rumor is missing an event id")?;
+        let author = rumor.pubkey;
+        let conversation = Self::conversation_id(rumor);
+
+        let mut tags = rumor.tags.clone().to_vec();
+
+        // Add a unique identifier
+        tags.push(Tag::identifier(id));
+
+        // Add a reference to the rumor's author
+        tags.push(Tag::custom(
+            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::A)),
+            [author],
+        ));
+
+        // Add a conversation id
+        tags.push(Tag::custom(
+            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::C)),
+            [conversation.to_string()],
+        ));
+
+        // Add a reference to the rumor's id
+        tags.push(Tag::event(rumor_id));
+
+        // Add references to the rumor's participants
+        for receiver in rumor.tags.public_keys().copied() {
+            tags.push(Tag::custom(
+                TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::P)),
+                [receiver],
+            ));
+        }
+
+        // Convert rumor to json
+        let content = rumor.as_json();
+
+        // Construct the event
+        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
+            .tags(tags)
+            .sign(&Keys::generate())
+            .await?;
+
+        // Save the event to the database
+        client.database().save_event(&event).await?;
+
+        Ok(())
+    }
+
+    /// Retrieves a previously unwrapped event from local database
+    async fn get_rumor(client: &Client, gift_wrap: EventId) -> Result<UnsignedEvent, Error> {
+        let filter = Filter::new()
+            .kind(Kind::ApplicationSpecificData)
+            .identifier(gift_wrap)
+            .limit(1);
+
+        if let Some(event) = client.database().query(filter).await?.first_owned() {
+            UnsignedEvent::from_json(event.content).map_err(|e| anyhow!(e))
+        } else {
+            Err(anyhow!("Event is not cached yet."))
+        }
+    }
+
+    // Helper method to try unwrapping with different signers
+    async fn try_unwrap(client: &Client, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+        // Try to unwrap with the encryption key if available
+        // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+        // TODO
+
+        // Fallback to unwrap with the user's signer
+        let signer = client.signer().await?;
+        let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
+
+        Ok(unwrapped)
+    }
+
+    /// Get the conversation ID for a given rumor (message).
+    fn conversation_id(rumor: &UnsignedEvent) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        let mut pubkeys: Vec<PublicKey> = rumor.tags.public_keys().copied().collect();
+        pubkeys.push(rumor.pubkey);
+        pubkeys.sort();
+        pubkeys.dedup();
+        pubkeys.hash(&mut hasher);
+
+        hasher.finish()
     }
 }

@@ -4,7 +4,12 @@ use std::sync::OnceLock;
 use nostr_sdk::prelude::*;
 use smol::lock::Mutex;
 
+static INITIALIZED_AT: OnceLock<Timestamp> = OnceLock::new();
 static PROCESSED_EVENTS: OnceLock<Mutex<HashSet<EventId>>> = OnceLock::new();
+
+pub fn initialized_at() -> &'static Timestamp {
+    INITIALIZED_AT.get_or_init(Timestamp::now)
+}
 
 pub fn processed_events() -> &'static Mutex<HashSet<EventId>> {
     PROCESSED_EVENTS.get_or_init(|| Mutex::new(HashSet::new()))

@@ -5,7 +5,6 @@ use whoami::{devicename, platform};
 
 mod constants;
 mod paths;
-mod state;
 
 pub use constants::*;
 pub use paths::*;

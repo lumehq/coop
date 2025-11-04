@@ -96,8 +96,14 @@ impl NostrRegistry {
                 let cache_manager = Arc::clone(&cache_manager);
                 let tracker = Arc::clone(&tracker);
 
+                let _ = processed_events();
+                let _ = initialized_at();
+
                 async move {
+                    // Connect to the bootstrap relays
                     Self::connect(&client).await;
+
+                    // Handle notifications from the relay pool
                     Self::handle_notifications(&client, &cache_manager, &tracker).await;
                 }
             }),

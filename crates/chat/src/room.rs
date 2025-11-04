@@ -162,30 +162,6 @@ impl Eq for Room {}
 
 impl EventEmitter<RoomSignal> for Room {}
 
-impl From<&Event> for Room {
-    fn from(val: &Event) -> Self {
-        let id = val.uniq_id();
-        let created_at = val.created_at;
-
-        // Get the members from the event's tags and event's pubkey
-        let members = val.all_pubkeys();
-
-        // Get subject from tags
-        let subject = val
-            .tags
-            .find(TagKind::Subject)
-            .and_then(|tag| tag.content().map(|s| s.to_owned().into()));
-
-        Room {
-            id,
-            created_at,
-            subject,
-            members,
-            kind: RoomKind::default(),
-        }
-    }
-}
-
 impl From<&UnsignedEvent> for Room {
     fn from(val: &UnsignedEvent) -> Self {
         let id = val.uniq_id();

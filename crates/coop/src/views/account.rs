@@ -11,10 +11,11 @@ use gpui::{
 use i18n::{shared_t, t};
 use key_store::backend::KeyItem;
 use key_store::KeyStore;
+use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, BUNKER_TIMEOUT};
+use states::BUNKER_TIMEOUT;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -115,6 +116,8 @@ impl Account {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let keystore = KeyStore::global(cx).read(cx).backend();
 
         // Handle connection in the background
@@ -138,8 +141,6 @@ impl Account {
                         this._tasks.push(
                             // Handle connection in the background
                             cx.spawn_in(window, async move |this, cx| {
-                                let client = app_state().client();
-
                                 match signer.bunker_uri().await {
                                     Ok(_) => {
                                         client.set_signer(signer).await;
@@ -171,11 +172,12 @@ impl Account {
     }
 
     fn login_with_keys(&mut self, secret: SecretKey, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let keys = Keys::new(secret);
 
         // Update the signer
         cx.background_spawn(async move {
-            let client = app_state().client();
             client.set_signer(keys).await;
         })
         .detach();

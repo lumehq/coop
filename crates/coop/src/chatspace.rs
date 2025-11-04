@@ -1,19 +1,18 @@
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use ::nostr::NostrRegistry;
 use account::Account;
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
-use common::display::{shorten_pubkey, RenderedProfile};
+use common::display::RenderedProfile;
 use common::event::EventUtils;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, relative, rems, App, AppContext, AsyncWindowContext, Axis, ClipboardItem,
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
+    deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use i18n::{shared_t, t};
 use itertools::Itertools;
@@ -24,10 +23,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{
-    app_state, default_nip17_relays, default_nip65_relays, Announcement, AuthRequest, Response,
-    SignalKind, UnwrappingStatus, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH,
-};
+use states::{default_nip17_relays, default_nip65_relays, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
@@ -36,9 +32,8 @@ use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
-use ui::notification::Notification;
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Root, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
@@ -70,9 +65,6 @@ pub struct ChatSpace {
     /// App's Dock Area
     dock: Entity<DockArea>,
 
-    /// All authentication requests
-    auth_requests: Entity<HashMap<RelayUrl, AuthRequest>>,
-
     /// Local state to determine if the user has set up NIP-17 relays
     nip17_ready: bool,
 
@@ -93,10 +85,9 @@ impl ChatSpace {
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
-        let auth_requests = cx.new(|_| HashMap::new());
 
         let mut subscriptions = smallvec![];
-        let mut tasks = smallvec![];
+        let tasks = smallvec![];
 
         subscriptions.push(
             // Automatically sync theme with system appearance
@@ -166,395 +157,11 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
-            auth_requests,
             nip17_ready: true,
             nip65_ready: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
-    }
-
-    async fn handle_signals(view: WeakEntity<ChatSpace>, cx: &mut AsyncWindowContext) {
-        let states = app_state();
-
-        while let Ok(signal) = states.signal().receiver().recv_async().await {
-            view.update_in(cx, |this, window, cx| {
-                let chat = ChatRegistry::global(cx);
-                let persons = PersonRegistry::global(cx);
-                let settings = AppSettings::global(cx);
-
-                match signal {
-                    SignalKind::EncryptionNotSet => {
-                        this.init_encryption(window, cx);
-                    }
-                    SignalKind::EncryptionSet(announcement) => {
-                        this.load_encryption(announcement, window, cx);
-                    }
-                    SignalKind::EncryptionRequest(announcement) => {
-                        this.render_request(announcement, window, cx);
-                    }
-                    SignalKind::EncryptionResponse(response) => {
-                        this.receive_encryption(response, window, cx);
-                    }
-                    SignalKind::SignerSet(public_key) => {
-                        // Load user's settings
-                        settings.update(cx, |this, cx| {
-                            this.load_settings(cx);
-                        });
-
-                        // Close all opened modals
-                        window.close_all_modals(cx);
-
-                        // Setup the default layout for current workspace
-                        this.set_default_layout(window, cx);
-                    }
-                    SignalKind::Auth(req) => {
-                        let url = &req.url;
-                        let auto_auth = AppSettings::get_auto_auth(cx);
-                        let is_authenticated = AppSettings::read_global(cx).is_authenticated(url);
-
-                        // Store the auth request in the current view
-                        this.push_auth_request(&req, cx);
-
-                        if auto_auth && is_authenticated {
-                            // Automatically authenticate if the relay is authenticated before
-                            this.auth(req, window, cx);
-                        } else {
-                            // Otherwise open the auth request popup
-                            this.open_auth_request(req, window, cx);
-                        }
-                    }
-                    SignalKind::GiftWrapStatus(s) => {
-                        if matches!(s, UnwrappingStatus::Processing | UnwrappingStatus::Complete) {
-                            let all_panels = this.get_all_panel_ids(cx);
-
-                            chat.update(cx, |this, cx| {
-                                this.load_rooms(cx);
-                                this.refresh_rooms(all_panels, cx);
-
-                                if s == UnwrappingStatus::Complete {
-                                    this.set_loading(false, cx);
-                                }
-                            });
-                        }
-                    }
-                    SignalKind::NewMessage(msg) => {
-                        chat.update(cx, |this, cx| {
-                            this.new_message(msg, window, cx);
-                        });
-                    }
-                    SignalKind::GossipRelaysNotFound => {
-                        this.set_required_gossip_relays(cx);
-                        this.render_setup_gossip_relays_modal(window, cx);
-                    }
-                    SignalKind::MessagingRelaysNotFound => {
-                        this.set_required_dm_relays(cx);
-                    }
-                    _ => {}
-                };
-            })
-            .ok();
-        }
-    }
-
-    fn init_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        cx.spawn_in(window, async move |this, cx| {
-            let result = app_state().init_encryption_keys().await;
-
-            this.update_in(cx, |_, window, cx| {
-                match result {
-                    Ok(_) => {
-                        window.push_notification(t!("encryption.notice"), cx);
-                    }
-                    Err(e) => {
-                        // TODO: ask user to confirm re-running if failed
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn load_encryption(&self, ann: Announcement, window: &Window, cx: &Context<Self>) {
-        log::info!("Found encryption announcement: {ann:?}");
-
-        cx.spawn_in(window, async move |this, cx| {
-            let state = app_state();
-            let result = state.load_encryption_keys(&ann).await;
-
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(_) => {
-                        window.push_notification(t!("encryption.reinit"), cx);
-                    }
-                    Err(_) => {
-                        this.request_encryption(ann, window, cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn request_encryption(&self, ann: Announcement, window: &Window, cx: &Context<Self>) {
-        cx.spawn_in(window, async move |this, cx| {
-            let result = app_state().request_encryption_keys().await;
-
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(wait_for_approval) => {
-                        if wait_for_approval {
-                            this.render_pending(ann, window, cx);
-                        } else {
-                            window.push_notification(t!("encryption.success"), cx);
-                        }
-                    }
-                    Err(e) => {
-                        // TODO: ask user to confirm re-running if failed
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn receive_encryption(&self, res: Response, window: &Window, cx: &Context<Self>) {
-        cx.spawn_in(window, async move |this, cx| {
-            let result = app_state().receive_encryption_keys(res).await;
-
-            this.update_in(cx, |_, window, cx| {
-                match result {
-                    Ok(_) => {
-                        window.push_notification(t!("encryption.success"), cx);
-                    }
-                    Err(e) => {
-                        // TODO: ask user to confirm re-running if failed
-                        window.push_notification(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn auth(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
-        let settings = AppSettings::global(cx);
-
-        let challenge = req.challenge.to_owned();
-        let url = req.url.to_owned();
-
-        let challenge_clone = challenge.clone();
-        let url_clone = url.clone();
-
-        // Set Coop is sending auth for this request
-        self.sending_auth_request(&challenge, cx);
-
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
-            let signer = client.signer().await?;
-
-            // Construct event
-            let event: Event = EventBuilder::auth(challenge_clone, url_clone.clone())
-                .sign(&signer)
-                .await?;
-
-            // Get the event ID
-            let id = event.id;
-
-            // Get the relay
-            let relay = client.pool().relay(url_clone).await?;
-            let relay_url = relay.url();
-
-            // Subscribe to notifications
-            let mut notifications = relay.notifications();
-
-            // Send the AUTH message
-            relay.send_msg(ClientMessage::Auth(Cow::Borrowed(&event)))?;
-
-            while let Ok(notification) = notifications.recv().await {
-                match notification {
-                    RelayNotification::Message {
-                        message: RelayMessage::Ok { event_id, .. },
-                    } => {
-                        if id == event_id {
-                            // Re-subscribe to previous subscription
-                            relay.resubscribe().await?;
-
-                            // Get all failed events that need to be resent
-                            let mut tracker = states.tracker().write().await;
-
-                            let ids: Vec<EventId> = tracker
-                                .resend_queue
-                                .iter()
-                                .filter(|(_, url)| relay_url == *url)
-                                .map(|(id, _)| *id)
-                                .collect();
-
-                            for id in ids.into_iter() {
-                                if let Some(relay_url) = tracker.resend_queue.remove(&id) {
-                                    if let Some(event) = client.database().event_by_id(&id).await? {
-                                        let event_id = relay.send_event(&event).await?;
-
-                                        let output = Output {
-                                            val: event_id,
-                                            failed: HashMap::new(),
-                                            success: HashSet::from([relay_url]),
-                                        };
-
-                                        tracker.sent_ids.insert(event_id);
-                                        tracker.resent_ids.push(output);
-                                    }
-                                }
-                            }
-
-                            return Ok(());
-                        }
-                    }
-                    RelayNotification::AuthenticationFailed => break,
-                    RelayNotification::Shutdown => break,
-                    _ => {}
-                }
-            }
-
-            Err(anyhow!("Authentication failed"))
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            match task.await {
-                Ok(_) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.remove_auth_request(&challenge, cx);
-
-                        // Save the authenticated relay to automatically authenticate future requests
-                        settings.update(cx, |this, cx| {
-                            this.push_relay(&url, cx);
-                        });
-
-                        // Clear the current notification
-                        window.clear_notification_by_id(SharedString::from(challenge), cx);
-
-                        // Push a new notification after current cycle
-                        cx.defer_in(window, move |_, window, cx| {
-                            window.push_notification(format!("{url} has been authenticated"), cx);
-                        });
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    this.update_in(cx, |_, window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx);
-                    })
-                    .ok();
-                }
-            };
-        })
-        .detach();
-    }
-
-    fn open_auth_request(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
-        let weak_view = cx.entity().downgrade();
-        let challenge = req.challenge.to_owned();
-        let relay_url = req.url.to_owned();
-        let url_as_string = SharedString::from(relay_url.to_string());
-
-        let note = Notification::new()
-            .custom_id(SharedString::from(challenge.clone()))
-            .autohide(false)
-            .icon(IconName::Info)
-            .title(t!("auth.label"))
-            .content(move |_window, cx| {
-                v_flex()
-                    .gap_2()
-                    .text_sm()
-                    .child(shared_t!("auth.message"))
-                    .child(
-                        v_flex()
-                            .py_1()
-                            .px_1p5()
-                            .rounded_sm()
-                            .text_xs()
-                            .bg(cx.theme().warning_background)
-                            .text_color(cx.theme().warning_foreground)
-                            .child(url_as_string.clone()),
-                    )
-                    .into_any_element()
-            })
-            .action(move |_window, cx| {
-                let weak_view = weak_view.clone();
-                let req = req.clone();
-                let loading = weak_view
-                    .read_with(cx, |this, cx| {
-                        this.is_sending_auth_request(&req.challenge, cx)
-                    })
-                    .unwrap_or_default();
-
-                Button::new("approve")
-                    .label(t!("common.approve"))
-                    .small()
-                    .primary()
-                    .loading(loading)
-                    .disabled(loading)
-                    .on_click(move |_e, window, cx| {
-                        weak_view
-                            .update(cx, |this, cx| {
-                                this.auth(req.clone(), window, cx);
-                            })
-                            .ok();
-                    })
-            });
-
-        window.push_notification(note, cx);
-    }
-
-    fn reopen_auth_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for (_, request) in self.auth_requests.read(cx).clone() {
-            self.open_auth_request(request, window, cx);
-        }
-    }
-
-    fn push_auth_request(&mut self, req: &AuthRequest, cx: &mut Context<Self>) {
-        self.auth_requests.update(cx, |this, cx| {
-            this.insert(req.url.clone(), req.to_owned());
-            cx.notify();
-        });
-    }
-
-    fn sending_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        self.auth_requests.update(cx, |this, cx| {
-            for (_, req) in this.iter_mut() {
-                if req.challenge == challenge {
-                    req.sending = true;
-                    cx.notify();
-                }
-            }
-        });
-    }
-
-    fn is_sending_auth_request(&self, challenge: &str, cx: &App) -> bool {
-        if let Some(req) = self
-            .auth_requests
-            .read(cx)
-            .iter()
-            .find(|(_, req)| req.challenge == challenge)
-        {
-            req.1.sending
-        } else {
-            false
-        }
-    }
-
-    fn remove_auth_request(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        self.auth_requests.update(cx, |this, cx| {
-            this.retain(|_, r| r.challenge != challenge);
-            cx.notify();
-        });
     }
 
     fn set_onboarding_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -640,10 +247,10 @@ impl ChatSpace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
 
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
             let filter = Filter::new().kind(Kind::PrivateDirectMessage);
 
@@ -738,128 +345,6 @@ impl ChatSpace {
         }
     }
 
-    fn render_request(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
-        let client_name = SharedString::from(ann.client().to_string());
-        let target = ann.public_key();
-
-        let note = Notification::new()
-            .custom_id(SharedString::from(ann.id().to_hex()))
-            .autohide(false)
-            .icon(IconName::Info)
-            .title(shared_t!("request_encryption.label"))
-            .content(move |_window, cx| {
-                v_flex()
-                    .gap_2()
-                    .text_sm()
-                    .child(shared_t!("request_encryption.body"))
-                    .child(
-                        v_flex()
-                            .py_1()
-                            .px_1p5()
-                            .rounded_sm()
-                            .text_xs()
-                            .bg(cx.theme().warning_background)
-                            .text_color(cx.theme().warning_foreground)
-                            .child(client_name.clone()),
-                    )
-                    .into_any_element()
-            })
-            .action(move |_window, _cx| {
-                Button::new("approve")
-                    .label(t!("common.approve"))
-                    .small()
-                    .primary()
-                    .loading(false)
-                    .disabled(false)
-                    .on_click(move |_ev, _window, cx| {
-                        cx.background_spawn(async move {
-                            let state = app_state();
-                            state.response_encryption_keys(target).await.ok();
-                        })
-                        .detach();
-                    })
-            });
-
-        window.push_notification(note, cx);
-    }
-
-    fn render_pending(&mut self, ann: Announcement, window: &mut Window, cx: &mut Context<Self>) {
-        let client_name = SharedString::from(ann.client().to_string());
-        let public_key = shorten_pubkey(ann.public_key(), 8);
-        let view = cx.entity().downgrade();
-
-        window.open_modal(cx, move |this, _window, cx| {
-            let view = view.clone();
-
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .width(px(460.))
-                .button_props(
-                    ModalButtonProps::default()
-                        .cancel_text(t!("common.reset"))
-                        .ok_text(t!("common.hide")),
-                )
-                .title(shared_t!("pending_encryption.label"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .text_sm()
-                        .child(
-                            v_flex()
-                                .justify_center()
-                                .items_center()
-                                .text_center()
-                                .h_16()
-                                .w_full()
-                                .rounded(cx.theme().radius)
-                                .bg(cx.theme().elevated_surface_background)
-                                .font_semibold()
-                                .child(client_name.clone())
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().text_muted)
-                                        .child(SharedString::from(&public_key)),
-                                ),
-                        )
-                        .child(shared_t!("pending_encryption.body_1", c = client_name))
-                        .child(shared_t!("pending_encryption.body_2"))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().warning_foreground)
-                                .child(shared_t!("pending_encryption.body_3")),
-                        ),
-                )
-                .on_cancel(move |_ev, window, cx| {
-                    _ = view.update(cx, |_, cx| {
-                        cx.spawn_in(window, async move |this, cx| {
-                            let state = app_state();
-                            let result = state.init_encryption_keys().await;
-
-                            this.update_in(cx, |_, window, cx| {
-                                match result {
-                                    Ok(_) => {
-                                        window.push_notification(t!("encryption.success"), cx);
-                                        window.close_all_modals(cx);
-                                    }
-                                    Err(e) => {
-                                        window.push_notification(e.to_string(), cx);
-                                    }
-                                };
-                            })
-                            .ok();
-                        })
-                        .detach();
-                    });
-                    // false to keep modal open
-                    false
-                })
-        });
-    }
-
     fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
         let relays = default_nip65_relays();
 
@@ -934,26 +419,7 @@ impl ChatSpace {
                     true
                 })
                 .on_ok(|_, window, cx| {
-                    window
-                        .spawn(cx, async move |cx| {
-                            let states = app_state();
-                            let relays = default_nip65_relays();
-                            let result = states.set_nip65(relays).await;
-
-                            cx.update(|window, cx| {
-                                match result {
-                                    Ok(_) => {
-                                        window.close_modal(cx);
-                                    }
-                                    Err(e) => {
-                                        window.push_notification(e.to_string(), cx);
-                                    }
-                                };
-                            })
-                            .ok();
-                        })
-                        .detach();
-
+                    // TODO: set nip65 relays
                     // false to keep modal open
                     false
                 })
@@ -1036,26 +502,7 @@ impl ChatSpace {
                     true
                 })
                 .on_ok(|_, window, cx| {
-                    window
-                        .spawn(cx, async move |cx| {
-                            let states = app_state();
-                            let relays = default_nip17_relays();
-                            let result = states.set_nip17(relays).await;
-
-                            cx.update(|window, cx| {
-                                match result {
-                                    Ok(_) => {
-                                        window.close_modal(cx);
-                                    }
-                                    Err(e) => {
-                                        window.push_notification(e.to_string(), cx);
-                                    }
-                                };
-                            })
-                            .ok();
-                        })
-                        .detach();
-
+                    // TODO: set nip17 relays
                     // false to keep modal open
                     false
                 })
@@ -1118,7 +565,6 @@ impl ChatSpace {
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
-        let auth_requests = self.auth_requests.read(cx).len();
         let auto_update = AutoUpdater::global(cx);
 
         h_flex()
@@ -1165,26 +611,6 @@ impl ChatSpace {
                         .on_click(move |_ev, window, cx| {
                             Self::render_keyring_warning(window, cx);
                         }),
-                )
-            })
-            .when(auth_requests > 0, |this| {
-                this.child(
-                    h_flex()
-                        .id("requests")
-                        .h_6()
-                        .px_2()
-                        .items_center()
-                        .justify_center()
-                        .text_xs()
-                        .rounded_full()
-                        .bg(cx.theme().warning_background)
-                        .text_color(cx.theme().warning_foreground)
-                        .hover(|this| this.bg(cx.theme().warning_hover))
-                        .active(|this| this.bg(cx.theme().warning_active))
-                        .child(shared_t!("auth.requests", u = auth_requests))
-                        .on_click(cx.listener(move |this, _e, window, cx| {
-                            this.reopen_auth_request(window, cx);
-                        })),
                 )
             })
             .when(!self.nip17_ready, |this| {

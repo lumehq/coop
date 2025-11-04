@@ -3,8 +3,8 @@ use std::sync::Mutex;
 use gpui::{actions, App};
 use key_store::backend::KeyItem;
 use key_store::KeyStore;
+use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
-use states::app_state;
 
 actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
 actions!(sidebar, [Reload, RelayStatus]);
@@ -49,10 +49,9 @@ pub fn load_embedded_fonts(cx: &App) {
 
 pub fn reset(cx: &mut App) {
     let backend = KeyStore::global(cx).read(cx).backend();
+    let client = NostrRegistry::global(cx).read(cx).client();
 
     cx.spawn(async move |cx| {
-        let client = app_state().client();
-
         // Remove the signer
         client.unset_signer().await;
 

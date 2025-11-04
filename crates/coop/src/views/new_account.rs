@@ -1,3 +1,4 @@
+use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Error};
 use common::nip96::nip96_upload;
 use gpui::{
@@ -12,7 +13,7 @@ use key_store::KeyStore;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
-use states::{app_state, default_nip17_relays, default_nip65_relays, BOOTSTRAP_RELAYS};
+use states::{default_nip17_relays, default_nip65_relays, BOOTSTRAP_RELAYS};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -106,6 +107,9 @@ impl NewAccount {
     pub fn set_signer(&mut self, cx: &mut Context<Self>) {
         let keystore = KeyStore::global(cx).read(cx).backend();
 
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let keys = self.temp_keys.read(cx).clone();
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_hex().into_bytes();
@@ -130,8 +134,6 @@ impl NewAccount {
             // Update the signer
             // Set the client's signer with the current keys
             let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-                let client = app_state().client();
-
                 // Set the client's signer with the current keys
                 client.set_signer(keys).await;
 
@@ -178,6 +180,9 @@ impl NewAccount {
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.uploading(true, cx);
 
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
@@ -194,7 +199,7 @@ impl NewAccount {
                 Ok(Some(mut paths)) => {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
-                        let url = nip96_upload(app_state().client(), &nip96_server, file).await?;
+                        let url = nip96_upload(&client, &nip96_server, file).await?;
 
                         Ok(url)
                     } else {

@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use std::time::Duration;
 
+use ::nostr::NostrRegistry;
 use common::display::{shorten_pubkey, RenderedProfile, RenderedTimestamp};
 use common::nip05::nip05_verify;
 use gpui::prelude::FluentBuilder;
@@ -13,7 +15,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, BOOTSTRAP_RELAYS};
+use states::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -35,14 +37,17 @@ pub struct Screening {
 
 impl Screening {
     pub fn new(public_key: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let persons = PersonRegistry::global(cx);
         let profile = persons.read(cx).get_person(&public_key, cx);
 
         let mut tasks = smallvec![];
 
-        let contact_check: Task<Result<(bool, Vec<Profile>), Error>> =
-            cx.background_spawn(async move {
-                let client = app_state().client();
+        let contact_check: Task<Result<(bool, Vec<Profile>), Error>> = cx.background_spawn({
+            let client = Arc::clone(&client);
+            async move {
                 let signer = client.signer().await?;
                 let signer_pubkey = signer.get_public_key().await?;
 
@@ -64,10 +69,10 @@ impl Screening {
                 }
 
                 Ok((followed, mutual_contacts))
-            });
+            }
+        });
 
         let activity_check = cx.background_spawn(async move {
-            let client = app_state().client();
             let filter = Filter::new().author(public_key).limit(1);
             let mut activity: Option<Timestamp> = None;
 
@@ -153,12 +158,12 @@ impl Screening {
     }
 
     fn report(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let public_key = self.profile.public_key();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
-
             let tag = Tag::public_key_report(public_key, Report::Impersonation);
             let event = EventBuilder::report(vec![tag], "").sign(&signer).await?;
 
