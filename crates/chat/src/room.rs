@@ -1,8 +1,10 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use std::time::Duration;
 
+use ::nostr::{NostrRegistry, SignerKind};
 use account::Account;
 use anyhow::{anyhow, Error};
 use common::display::RenderedProfile;
@@ -10,7 +12,8 @@ use common::event::EventUtils;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use states::{app_state, SignerKind, SEND_RETRY};
+
+const SEND_RETRY: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SendOptions {
@@ -209,15 +212,7 @@ impl From<&UnsignedEvent> for Room {
 
 impl Room {
     /// Constructs a new room with the given receiver and tags.
-    pub async fn new(subject: Option<String>, receivers: Vec<PublicKey>) -> Result<Self, Error> {
-        let client = app_state().client();
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        if receivers.is_empty() {
-            return Err(anyhow!("You need to add at least one receiver"));
-        };
-
+    pub fn new(subject: Option<String>, author: PublicKey, receivers: Vec<PublicKey>) -> Self {
         // Convert receiver's public keys into tags
         let mut tags: Tags = Tags::from_list(
             receivers
@@ -235,12 +230,12 @@ impl Room {
 
         let mut event = EventBuilder::new(Kind::PrivateDirectMessage, "")
             .tags(tags)
-            .build(public_key);
+            .build(author);
 
         // Generate event ID
         event.ensure_id();
 
-        Ok(Room::from(&event))
+        Room::from(&event)
     }
 
     /// Sets the kind of the room and returns the modified room
@@ -358,10 +353,11 @@ impl Room {
 
     /// Get messaging relays and encryption keys announcement for each member
     pub fn connect(&self, cx: &App) -> Task<Result<(), Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let members = self.members();
 
         cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
@@ -396,10 +392,11 @@ impl Room {
 
     /// Get all messages belonging to the room
     pub fn get_messages(&self, cx: &App) -> Task<Result<Vec<UnsignedEvent>, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let conversation_id = self.id.to_string();
 
         cx.background_spawn(async move {
-            let client = app_state().client();
             let filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .custom_tag(SingleLetterTag::lowercase(Alphabet::C), conversation_id);
@@ -419,10 +416,6 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
-        // Get the app state
-        let state = app_state();
-        let relay_cache = state.relay_cache.read_blocking();
-
         // Get current user
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
@@ -437,9 +430,7 @@ impl Room {
         // NOTE: current user will be removed from the list of receivers
         for member in self.members.iter() {
             // Get relay hint if available
-            let relay_url = relay_cache
-                .get(member)
-                .and_then(|urls| urls.iter().nth(0).cloned());
+            let relay_url = None;
 
             // Construct a public key tag with relay hint
             let tag = TagStandard::PublicKey {
@@ -493,6 +484,11 @@ impl Room {
         opts: &SendOptions,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let cache_manager = nostr.read(cx).cache_manager();
+        let tracker = nostr.read(cx).tracker();
+
         let rumor = rumor.to_owned();
         let opts = opts.to_owned();
 
@@ -500,14 +496,12 @@ impl Room {
         let mut members = self.members();
 
         cx.background_spawn(async move {
-            let state = app_state();
-            let client = state.client();
             let signer_kind = opts.signer_kind;
+            let cache = cache_manager.lock().await;
+            let tracker = tracker.lock().await;
 
-            let relay_cache = state.relay_cache.read().await;
-            let announcement_cache = state.announcement_cache.read().await;
+            let encryption: Option<Arc<dyn NostrSigner>> = None;
 
-            let encryption = state.device.read().await.encryption.clone();
             // Get the encryption public key
             let encryption_pubkey = if let Some(signer) = encryption.as_ref() {
                 signer.get_public_key().await.ok()
@@ -530,7 +524,7 @@ impl Room {
 
             for member in members.into_iter() {
                 // Get user's messaging relays
-                let urls = relay_cache.get(&member).cloned().unwrap_or_default();
+                let urls = cache.relay(&member).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the message to
                 if urls.is_empty() {
@@ -539,8 +533,8 @@ impl Room {
                 }
 
                 // Get user's encryption public key if available
-                let encryption = announcement_cache
-                    .get(&member)
+                let encryption = cache
+                    .announcement(&member)
                     .and_then(|a| a.to_owned().map(|a| a.public_key()));
 
                 // Skip sending if using encryption signer but receiver's encryption keys not found
@@ -566,8 +560,7 @@ impl Room {
                         if auth {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
-                                let retry_manager = state.tracker().read().await;
-                                let ids = retry_manager.resent_ids();
+                                let ids = tracker.resent_ids();
 
                                 // Check if event was successfully resent
                                 if let Some(output) = ids.iter().find(|e| e.id() == &id).cloned() {
@@ -603,7 +596,7 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
-                let urls = relay_cache.get(&user_pubkey).cloned().unwrap_or_default();
+                let urls = cache.relay(&user_pubkey).cloned().unwrap_or_default();
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -633,9 +626,12 @@ impl Room {
         reports: Vec<SendReport>,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let cache_manager = nostr.read(cx).cache_manager();
+
         cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
+            let cache = cache_manager.lock().await;
             let mut resend_reports = vec![];
 
             for report in reports.into_iter() {
@@ -664,7 +660,7 @@ impl Room {
 
                 // Process the on hold event if it exists
                 if let Some(event) = report.on_hold {
-                    let urls = states.messaging_relays(receiver).await;
+                    let urls = cache.relay(&receiver).cloned().unwrap_or_default();
 
                     // Check if there are any relays to send the event to
                     if urls.is_empty() {

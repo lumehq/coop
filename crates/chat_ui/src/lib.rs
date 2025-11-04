@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use ::nostr::{NostrRegistry, SignerKind};
 pub use actions::*;
-use chat::message::{Message, RenderedMessage};
-use chat::room::{Room, RoomKind, RoomSignal, SendOptions, SendReport};
+use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use common::display::{RenderedProfile, RenderedTimestamp};
 use common::nip96::nip96_upload;
 use gpui::prelude::FluentBuilder;
@@ -22,7 +22,6 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use states::{app_state, SignerKind};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -147,16 +146,16 @@ impl ChatPanel {
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
                     RoomSignal::NewMessage((gift_wrap_id, event)) => {
+                        let nostr = NostrRegistry::global(cx);
+                        let tracker = nostr.read(cx).tracker();
                         let gift_wrap_id = gift_wrap_id.to_owned();
                         let message = Message::user(event.clone());
 
                         cx.spawn_in(window, async move |this, cx| {
-                            let states = app_state();
-                            let event_tracker = states.tracker().read().await;
-                            let sent_ids = event_tracker.sent_ids();
+                            let tracker = tracker.lock().await;
 
                             this.update_in(cx, |this, _window, cx| {
-                                if !sent_ids.contains(&gift_wrap_id) {
+                                if !tracker.sent_ids().contains(&gift_wrap_id) {
                                     this.insert_message(message, false, cx);
                                 }
                             })
@@ -488,6 +487,9 @@ impl ChatPanel {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
@@ -503,9 +505,8 @@ impl ChatPanel {
             let path = paths.pop()?;
 
             let upload = Tokio::spawn(cx, async move {
-                let client = app_state().client();
                 let file = fs::read(path).await.ok()?;
-                let url = nip96_upload(client, &nip96_server, file).await.ok()?;
+                let url = nip96_upload(&client, &nip96_server, file).await.ok()?;
 
                 Some(url)
             });
@@ -1238,11 +1239,12 @@ impl ChatPanel {
 
     fn on_open_seen_on(&mut self, ev: &SeenOn, window: &mut Window, cx: &mut Context<Self>) {
         let id = ev.0;
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let tracker = nostr.read(cx).tracker();
 
         let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
-            let event_tracker = states.tracker().read().await;
+            let tracker = tracker.lock().await;
             let mut relays: Vec<RelayUrl> = vec![];
 
             let filter = Filter::new()
@@ -1252,7 +1254,7 @@ impl ChatPanel {
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
                 if let Some(Ok(id)) = event.tags.identifier().map(EventId::parse) {
-                    if let Some(urls) = event_tracker.seen_on_relays.get(&id).cloned() {
+                    if let Some(urls) = tracker.seen_on_relays.get(&id).cloned() {
                         relays.extend(urls);
                     }
                 }

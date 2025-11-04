@@ -10,7 +10,6 @@ states = { path = "../states" }
 gpui.workspace = true
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
-nostr.workspace = true
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
@@ -22,3 +21,4 @@ log.workspace = true
 webbrowser.workspace = true
 
 qrcode = "0.14.1"
+nostr = { git = "https://github.com/rust-nostr/nostr" }

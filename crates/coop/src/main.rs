@@ -6,7 +6,7 @@ use gpui::{
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
-use states::{app_state, APP_ID, BOOTSTRAP_RELAYS, CLIENT_NAME, SEARCH_RELAYS};
+use states::{APP_ID, CLIENT_NAME};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
@@ -25,29 +25,6 @@ fn main() {
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
-
-    // Initialize app state
-    let app_state = app_state();
-
-    // Connect to relays
-    app.background_executor()
-        .spawn(async move {
-            let client = app_state.client();
-
-            // Get all bootstrapping relays
-            let mut urls = vec![];
-            urls.extend(BOOTSTRAP_RELAYS);
-            urls.extend(SEARCH_RELAYS);
-
-            // Add relay to the relay pool
-            for url in urls.into_iter() {
-                client.add_relay(url).await.ok();
-            }
-
-            // Establish connection to relays
-            client.connect().await;
-        })
-        .detach();
 
     // Run application
     app.run(move |cx| {
@@ -99,17 +76,23 @@ fn main() {
                 // Initialize the tokio runtime
                 gpui_tokio::init(cx);
 
+                // Initialize the nostr client
+                nostr::init(cx);
+
                 // Initialize components
                 ui::init(cx);
+
+                // Initialize backend for keys storage
+                key_store::init(cx);
+
+                // Initialize account state
+                account::init(cx);
 
                 // Initialize app registry
                 chat::init(cx);
 
                 // Initialize person registry
                 person::init(cx);
-
-                // Initialize backend for keys storage
-                key_store::init(cx);
 
                 // Initialize settings
                 settings::init(cx);

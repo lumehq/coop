@@ -163,42 +163,6 @@ impl ChatSpace {
             }),
         );
 
-        tasks.push(
-            // Handle nostr events in the background
-            cx.background_spawn(async move {
-                app_state().handle_notifications().await.ok();
-            }),
-        );
-
-        tasks.push(
-            // Listen all metadata requests then batch them into single subscription
-            cx.background_spawn(async move {
-                app_state().handle_metadata_batching().await;
-            }),
-        );
-
-        tasks.push(
-            // Wait for the signer to be set
-            // Also verify NIP-65 and NIP-17 relays after the signer is set
-            cx.background_spawn(async move {
-                app_state().observe_signer().await;
-            }),
-        );
-
-        tasks.push(
-            // Observe gift wrap process in the background
-            cx.background_spawn(async move {
-                app_state().observe_giftwrap().await;
-            }),
-        );
-
-        tasks.push(
-            // Continuously handle signals from the Nostr channel
-            cx.spawn_in(window, async move |this, cx| {
-                Self::handle_signals(this, cx).await
-            }),
-        );
-
         Self {
             dock,
             title_bar,
@@ -233,17 +197,9 @@ impl ChatSpace {
                         this.receive_encryption(response, window, cx);
                     }
                     SignalKind::SignerSet(public_key) => {
-                        // Set the global account state
-                        account::init(public_key, cx);
-
                         // Load user's settings
                         settings.update(cx, |this, cx| {
                             this.load_settings(cx);
-                        });
-
-                        // Load all chat rooms
-                        chat.update(cx, |this, cx| {
-                            this.load_rooms(window, cx);
                         });
 
                         // Close all opened modals
@@ -273,7 +229,7 @@ impl ChatSpace {
                             let all_panels = this.get_all_panel_ids(cx);
 
                             chat.update(cx, |this, cx| {
-                                this.load_rooms(window, cx);
+                                this.load_rooms(cx);
                                 this.refresh_rooms(all_panels, cx);
 
                                 if s == UnwrappingStatus::Complete {
@@ -281,11 +237,6 @@ impl ChatSpace {
                                 }
                             });
                         }
-                    }
-                    SignalKind::NewProfile(profile) => {
-                        persons.update(cx, |this, cx| {
-                            this.insert_or_update_person(profile, cx);
-                        });
                     }
                     SignalKind::NewMessage(msg) => {
                         chat.update(cx, |this, cx| {
@@ -299,6 +250,7 @@ impl ChatSpace {
                     SignalKind::MessagingRelaysNotFound => {
                         this.set_required_dm_relays(cx);
                     }
+                    _ => {}
                 };
             })
             .ok();

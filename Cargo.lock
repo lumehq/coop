@@ -9,7 +9,7 @@ dependencies = [
  "anyhow",
  "gpui",
  "log",
- "nostr",
+ "nostr 0.2.11",
  "nostr-sdk",
  "smallvec",
  "smol",
@@ -519,6 +519,7 @@ dependencies = [
  "gpui",
  "gpui_tokio",
  "log",
+ "nostr 0.2.11",
  "nostr-sdk",
  "reqwest",
  "semver",
@@ -1041,7 +1042,7 @@ dependencies = [
  "gpui",
  "itertools 0.13.0",
  "log",
- "nostr",
+ "nostr 0.2.11",
  "nostr-sdk",
  "person",
  "serde",
@@ -1049,7 +1050,6 @@ dependencies = [
  "settings",
  "smallvec",
  "smol",
- "states",
 ]
 
 [[package]]
@@ -1066,7 +1066,7 @@ dependencies = [
  "indexset",
  "itertools 0.13.0",
  "log",
- "nostr",
+ "nostr 0.2.11",
  "nostr-sdk",
  "once_cell",
  "person",
@@ -1241,7 +1241,7 @@ dependencies = [
  "gpui",
  "itertools 0.13.0",
  "log",
- "nostr",
+ "nostr 0.43.0",
  "nostr-connect",
  "nostr-sdk",
  "qrcode",
@@ -1326,7 +1326,7 @@ dependencies = [
  "itertools 0.13.0",
  "key_store",
  "log",
- "nostr",
+ "nostr 0.2.11",
  "nostr-connect",
  "nostr-sdk",
  "oneshot",
@@ -3372,7 +3372,6 @@ dependencies = [
  "futures",
  "gpui",
  "log",
- "nostr",
  "nostr-sdk",
  "serde",
  "serde_json",
@@ -3928,6 +3927,27 @@ dependencies = [
 
 [[package]]
 name = "nostr"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "dirs 5.0.1",
+ "flume",
+ "gpui",
+ "log",
+ "nostr-gossip-memory",
+ "nostr-lmdb",
+ "nostr-sdk",
+ "rustls",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "smol",
+ "states",
+ "whoami",
+]
+
+[[package]]
+name = "nostr"
 version = "0.43.0"
 source = "git+https://github.com/rust-nostr/nostr#d79245efe2c97424acc93da687d5f8077236a74b"
 dependencies = [
@@ -3956,7 +3976,7 @@ version = "0.43.0"
 source = "git+https://github.com/rust-nostr/nostr#d79245efe2c97424acc93da687d5f8077236a74b"
 dependencies = [
  "async-utility",
- "nostr",
+ "nostr 0.43.0",
  "nostr-relay-pool",
  "tokio",
  "tracing",
@@ -3969,7 +3989,7 @@ source = "git+https://github.com/rust-nostr/nostr#d79245efe2c97424acc93da687d5f8
 dependencies = [
  "flatbuffers",
  "lru",
- "nostr",
+ "nostr 0.43.0",
  "tokio",
 ]
 
@@ -3978,7 +3998,7 @@ name = "nostr-gossip"
 version = "0.43.0"
 source = "git+https://github.com/rust-nostr/nostr#d79245efe2c97424acc93da687d5f8077236a74b"
 dependencies = [
- "nostr",
+ "nostr 0.43.0",
 ]
 
 [[package]]
@@ -3988,7 +4008,7 @@ source = "git+https://github.com/rust-nostr/nostr#d79245efe2c97424acc93da687d5f8
 dependencies = [
  "indexmap",
  "lru",
- "nostr",
+ "nostr 0.43.0",
  "nostr-gossip",
  "tokio",
 ]
@@ -4001,7 +4021,7 @@ dependencies = [
  "async-utility",
  "flume",
  "heed",
- "nostr",
+ "nostr 0.43.0",
  "nostr-database",
  "tokio",
  "tracing",
@@ -4018,7 +4038,7 @@ dependencies = [
  "hex",
  "lru",
  "negentropy",
- "nostr",
+ "nostr 0.43.0",
  "nostr-database",
  "tokio",
  "tracing",
@@ -4030,7 +4050,7 @@ version = "0.43.0"
 source = "git+https://github.com/rust-nostr/nostr#d79245efe2c97424acc93da687d5f8077236a74b"
 dependencies = [
  "async-utility",
- "nostr",
+ "nostr 0.43.0",
  "nostr-database",
  "nostr-gossip",
  "nostr-relay-pool",
@@ -4554,11 +4574,10 @@ dependencies = [
  "gpui",
  "itertools 0.13.0",
  "log",
- "nostr",
+ "nostr 0.2.11",
  "nostr-sdk",
  "smallvec",
  "smol",
- "states",
 ]
 
 [[package]]
@@ -5916,12 +5935,12 @@ dependencies = [
  "anyhow",
  "gpui",
  "log",
+ "nostr 0.2.11",
  "nostr-sdk",
  "paste",
  "serde",
  "serde_json",
  "smallvec",
- "states",
 ]
 
 [[package]]

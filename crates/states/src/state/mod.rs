@@ -137,35 +137,6 @@ impl AppState {
         &self.ingester
     }
 
-    /// Observes the signer and notifies the app when it's set
-    pub async fn observe_signer(&'static self) {
-        let client = self.client();
-        let loop_duration = Duration::from_millis(800);
-
-        loop {
-            if let Ok(signer) = client.signer().await {
-                if let Ok(public_key) = signer.get_public_key().await {
-                    // Notify the app that the signer has been set
-                    self.signal().send(SignalKind::SignerSet(public_key)).await;
-
-                    // Get user's gossip relays
-                    self.get_nip65(public_key).await.ok();
-
-                    // Initialize the relay and announcement caches
-                    self.init_cache().await.ok();
-
-                    // Initialize client key
-                    self.init_client_key().await.ok();
-
-                    // Exit the loop
-                    break;
-                }
-            }
-
-            smol::Timer::after(loop_duration).await;
-        }
-    }
-
     /// Observes the gift wrap status and notifies the app when it's set
     pub async fn observe_giftwrap(&'static self) {
         let client = self.client();
@@ -325,23 +296,10 @@ impl AppState {
                                 }
                             }
                         }
-                        Kind::Metadata => {
-                            let metadata = Metadata::from_json(&event.content).unwrap_or_default();
-                            let profile = Profile::new(event.pubkey, metadata);
-
-                            self.signal.send(SignalKind::NewProfile(profile)).await;
-                        }
                         Kind::GiftWrap => {
                             self.extract_rumor(&event).await.ok();
                         }
                         _ => {}
-                    }
-                }
-                RelayMessage::EndOfStoredEvents(subscription_id) => {
-                    if subscription_id.as_ref() == &SubscriptionId::new(INBOX_SUB_ID) {
-                        self.signal
-                            .send(SignalKind::GiftWrapStatus(UnwrappingStatus::Processing))
-                            .await;
                     }
                 }
                 RelayMessage::Auth { challenge } => {
@@ -350,20 +308,6 @@ impl AppState {
                         self.signal
                             .send(SignalKind::Auth(AuthRequest::new(challenge, relay_url)))
                             .await;
-                    }
-                }
-                RelayMessage::Ok {
-                    event_id, message, ..
-                } => {
-                    let msg = MachineReadablePrefix::parse(&message);
-                    let mut tracker = self.event_tracker.write().await;
-
-                    // Keep track of events sent by Coop
-                    tracker.sent_ids.insert(event_id);
-
-                    // Keep track of events that need to be resend after auth
-                    if let Some(MachineReadablePrefix::AuthRequired) = msg {
-                        tracker.resend_queue.insert(event_id, relay_url);
                     }
                 }
                 _ => {}

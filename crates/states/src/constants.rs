@@ -1,7 +1,6 @@
 pub const CLIENT_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 
-pub const SETTINGS_IDENTIFIER: &str = "coop:settings";
 pub const INBOX_SUB_ID: &str = "inbox";
 
 /// Bootstrap Relays.

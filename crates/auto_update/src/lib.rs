@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use gpui::http_client::{AsyncBody, HttpClient};
 use gpui::{
@@ -13,7 +14,7 @@ use semver::Version;
 use smallvec::{smallvec, SmallVec};
 use smol::fs::File;
 use smol::process::Command;
-use states::{app_state, BOOTSTRAP_RELAYS};
+use states::BOOTSTRAP_RELAYS;
 
 const APP_PUBKEY: &str = "npub1y9jvl5vznq49eh9f2gj7679v4042kj80lp7p8fte3ql2cr7hty7qsyca8q";
 
@@ -230,8 +231,10 @@ impl AutoUpdater {
     }
 
     fn subscribe_to_updates(cx: &App) -> Task<()> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         cx.background_spawn(async move {
-            let client = app_state().client();
             let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
             let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
 
@@ -250,8 +253,14 @@ impl AutoUpdater {
     }
 
     fn check_for_updates(version: Version, cx: &AsyncApp) -> Task<Result<Vec<EventId>, Error>> {
+        let Ok(client) = cx.update(|cx| {
+            let nostr = NostrRegistry::global(cx);
+            nostr.read(cx).client()
+        }) else {
+            return Task::ready(Err(anyhow!("Entity has been released")));
+        };
+
         cx.background_spawn(async move {
-            let client = app_state().client();
             let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
             let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
 
@@ -294,11 +303,12 @@ impl AutoUpdater {
     }
 
     fn get_latest_release(&mut self, ids: &[EventId], cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let http_client = cx.http_client();
         let ids = ids.to_vec();
 
         let task: Task<Result<(InstallerDir, PathBuf), Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
             let os = std::env::consts::OS;
 

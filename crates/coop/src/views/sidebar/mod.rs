@@ -521,7 +521,7 @@ impl Sidebar {
 
     fn on_reload(&mut self, _ev: &Reload, window: &mut Window, cx: &mut Context<Self>) {
         ChatRegistry::global(cx).update(cx, |this, cx| {
-            this.load_rooms(window, cx);
+            this.load_rooms(cx);
         });
         window.push_notification(t!("common.refreshed"), cx);
     }

@@ -32,6 +32,7 @@ ui = { path = "../ui" }
 title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
+nostr = { path = "../nostr" }
 states = { path = "../states" }
 key_store = { path = "../key_store" }
 chat = { path = "../chat" }
@@ -49,7 +50,6 @@ reqwest_client.workspace = true
 
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
-nostr.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true

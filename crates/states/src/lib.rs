@@ -9,17 +9,10 @@ mod state;
 
 pub use constants::*;
 pub use paths::*;
-pub use state::*;
 
-static APP_STATE: OnceLock<AppState> = OnceLock::new();
 static APP_NAME: OnceLock<String> = OnceLock::new();
 static NIP65_RELAYS: OnceLock<Vec<(RelayUrl, Option<RelayMetadata>)>> = OnceLock::new();
 static NIP17_RELAYS: OnceLock<Vec<RelayUrl>> = OnceLock::new();
-
-/// Initialize the application state.
-pub fn app_state() -> &'static AppState {
-    APP_STATE.get_or_init(AppState::new)
-}
 
 pub fn app_name() -> &'static String {
     APP_NAME.get_or_init(|| {

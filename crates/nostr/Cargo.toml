@@ -1,5 +1,5 @@
 [package]
-name = "key_store"
+name = "nostr"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
@@ -7,14 +7,19 @@ publish.workspace = true
 [dependencies]
 states = { path = "../states" }
 
-gpui.workspace = true
-
 nostr-sdk.workspace = true
+nostr-lmdb.workspace = true
+nostr-gossip-memory.workspace = true
 
-anyhow.workspace = true
-smallvec.workspace = true
+gpui.workspace = true
+dirs.workspace = true
 smol.workspace = true
+flume.workspace = true
+smallvec.workspace = true
 log.workspace = true
-futures.workspace = true
+anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+whoami = "1.6.1"
+rustls = "0.23.23"

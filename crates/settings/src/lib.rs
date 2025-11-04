@@ -1,9 +1,11 @@
+use ::nostr::NostrRegistry;
 use anyhow::anyhow;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, SETTINGS_IDENTIFIER};
+
+const SETTINGS_IDENTIFIER: &str = "coop:settings";
 
 pub fn init(cx: &mut App) {
     let state = cx.new(AppSettings::new);
@@ -122,8 +124,10 @@ impl AppSettings {
     }
 
     pub fn load_settings(&self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -153,9 +157,11 @@ impl AppSettings {
     }
 
     pub fn set_settings(&self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         if let Ok(content) = serde_json::to_string(&self.setting_values) {
             let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
-                let client = app_state().client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
 

@@ -129,8 +129,6 @@ fn render_plain_text_mut(
         let range = link.start()..link.end();
         let url = link.as_str().to_string();
 
-        log::info!("Found URL: {}", url);
-
         url_matches.push((range, url));
     }
 

@@ -1,22 +1,23 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
+use ::nostr::NostrRegistry;
 use account::Account;
 use anyhow::Error;
 use common::event::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task, Window};
+pub use message::*;
 use nostr_sdk::prelude::*;
-use room::RoomKind;
+pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, NewMessage};
 
-use crate::room::Room;
+mod message;
+mod room;
 
-pub mod message;
-pub mod room;
+const GIFTWRAP_SUBSCRIPTION: &str = "inbox";
 
 pub fn init(cx: &mut App) {
     ChatRegistry::set_global(cx.new(ChatRegistry::new), cx);
@@ -47,22 +48,53 @@ pub struct ChatRegistry {
 impl EventEmitter<ChatEvent> for ChatRegistry {}
 
 impl ChatRegistry {
-    /// Retrieve the global registry state
+    /// Retrieve the global chat registry state
     pub fn global(cx: &App) -> Entity<Self> {
         cx.global::<GlobalChatRegistry>().0.clone()
     }
 
-    /// Set the global registry instance
-    pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
+    /// Set the global chat registry instance
+    fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalChatRegistry(state));
     }
 
-    /// Create a new registry instance
-    pub(crate) fn new(_cx: &mut Context<Self>) -> Self {
+    /// Create a new chat registry instance
+    fn new(cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let mut tasks = smallvec![];
+
+        tasks.push(
+            // Handle notifications
+            cx.spawn(async move |this, cx| {
+                let mut notifications = client.notifications();
+                let sub_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
+
+                while let Ok(notification) = notifications.recv().await {
+                    let RelayPoolNotification::Message { message, .. } = notification else {
+                        continue;
+                    };
+
+                    if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
+                        if subscription_id.as_ref() == &sub_id {
+                            // Load chat rooms when end of stored events is received
+                            this.update(cx, |this, cx| {
+                                this.load_rooms(cx);
+                            })
+                            .expect("Entity has been released");
+
+                            // Exit the notification handling loop
+                            break;
+                        }
+                    }
+                }
+            }),
+        );
+
         Self {
             rooms: vec![],
             loading: true,
-            _tasks: smallvec![],
+            _tasks: tasks,
         }
     }
 
@@ -148,14 +180,13 @@ impl ChatRegistry {
     }
 
     /// Load all rooms from the database.
-    pub fn load_rooms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        log::info!("Starting to load chat rooms...");
-
+    pub fn load_rooms(&mut self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         // Get the contact bypass setting
         let bypass_setting = AppSettings::get_contact_bypass(cx);
 
         let task: Task<Result<HashSet<Room>, Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let contacts = client.database().contacts_public_keys(public_key).await?;
@@ -220,10 +251,10 @@ impl ChatRegistry {
             Ok(rooms)
         });
 
-        cx.spawn_in(window, async move |this, cx| {
+        cx.spawn(async move |this, cx| {
             match task.await {
                 Ok(rooms) => {
-                    this.update_in(cx, move |this, _window, cx| {
+                    this.update(cx, move |this, cx| {
                         this.extend_rooms(rooms, cx);
                         this.sort(cx);
                     })
