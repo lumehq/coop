@@ -1,6 +1,6 @@
 use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Error};
-use common::nip96::nip96_upload;
+use common::{default_nip17_relays, default_nip65_relays, nip96_upload, BOOTSTRAP_RELAYS};
 use gpui::{
     div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
     EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
@@ -13,7 +13,6 @@ use key_store::KeyStore;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
-use states::{default_nip17_relays, default_nip65_relays, BOOTSTRAP_RELAYS};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

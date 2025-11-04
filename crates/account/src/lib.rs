@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use ::nostr::NostrRegistry;
+use common::BOOTSTRAP_RELAYS;
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::BOOTSTRAP_RELAYS;
 
 pub fn init(cx: &mut App) {
     Account::set_global(cx.new(Account::new), cx);

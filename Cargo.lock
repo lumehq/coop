@@ -7,13 +7,13 @@ name = "account"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "common",
  "gpui",
  "log",
  "nostr 0.2.11",
  "nostr-sdk",
  "smallvec",
  "smol",
- "states",
 ]
 
 [[package]]
@@ -525,7 +525,6 @@ dependencies = [
  "semver",
  "smallvec",
  "smol",
- "states",
  "tempfile",
 ]
 
@@ -1076,7 +1075,6 @@ dependencies = [
  "settings",
  "smallvec",
  "smol",
- "states",
  "theme",
  "ui",
 ]
@@ -1237,19 +1235,18 @@ version = "0.2.11"
 dependencies = [
  "anyhow",
  "chrono",
+ "dirs 5.0.1",
  "futures",
  "gpui",
  "itertools 0.13.0",
  "log",
  "nostr 0.43.0",
- "nostr-connect",
  "nostr-sdk",
  "qrcode",
  "reqwest",
  "smallvec",
  "smol",
- "states",
- "webbrowser",
+ "whoami",
 ]
 
 [[package]]
@@ -1316,7 +1313,6 @@ dependencies = [
  "chat",
  "chat_ui",
  "common",
- "dirs 5.0.1",
  "flume",
  "futures",
  "gpui",
@@ -1338,7 +1334,6 @@ dependencies = [
  "settings",
  "smallvec",
  "smol",
- "states",
  "theme",
  "title_bar",
  "tracing-subscriber",
@@ -3369,6 +3364,7 @@ name = "key_store"
 version = "0.2.11"
 dependencies = [
  "anyhow",
+ "common",
  "futures",
  "gpui",
  "log",
@@ -3377,7 +3373,6 @@ dependencies = [
  "serde_json",
  "smallvec",
  "smol",
- "states",
 ]
 
 [[package]]
@@ -3930,7 +3925,7 @@ name = "nostr"
 version = "0.2.11"
 dependencies = [
  "anyhow",
- "dirs 5.0.1",
+ "common",
  "flume",
  "gpui",
  "log",
@@ -3942,8 +3937,6 @@ dependencies = [
  "serde_json",
  "smallvec",
  "smol",
- "states",
- "whoami",
 ]
 
 [[package]]
@@ -6145,24 +6138,6 @@ dependencies = [
  "proc-macro-error2",
  "quote",
  "syn 2.0.108",
-]
-
-[[package]]
-name = "states"
-version = "0.2.11"
-dependencies = [
- "anyhow",
- "dirs 5.0.1",
- "flume",
- "log",
- "nostr-gossip-memory",
- "nostr-lmdb",
- "nostr-sdk",
- "rustls",
- "serde",
- "serde_json",
- "smol",
- "whoami",
 ]
 
 [[package]]

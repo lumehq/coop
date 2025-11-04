@@ -6,7 +6,7 @@ use std::sync::Arc;
 use ::nostr::{initialized_at, NostrRegistry};
 use account::Account;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
-use common::event::EventUtils;
+use common::EventUtils;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
@@ -81,13 +81,17 @@ impl ChatRegistry {
 
                     while let Ok(notification) = notifications.recv().await {
                         let RelayPoolNotification::Message { message, .. } = notification else {
+                            // Skip non-message notifications
                             continue;
                         };
 
                         if let RelayMessage::Event { event, .. } = message {
-                            if event.kind == Kind::GiftWrap {
-                                Self::extract_rumor(&client, &tx, &event).await.ok();
+                            if event.kind != Kind::GiftWrap {
+                                // Skip non-gift wrap events
+                                continue;
                             }
+
+                            Self::extract_rumor(&client, &tx, &event).await.ok();
                         }
                     }
                 }
@@ -102,20 +106,24 @@ impl ChatRegistry {
 
                 while let Ok(notification) = notifications.recv().await {
                     let RelayPoolNotification::Message { message, .. } = notification else {
+                        // Skip non-message notifications
                         continue;
                     };
 
                     if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
-                        if subscription_id.as_ref() == &sub_id {
-                            // Load chat rooms when end of stored events is received
-                            this.update(cx, |this, cx| {
-                                this.load_rooms(cx);
-                            })
-                            .expect("Entity has been released");
-
-                            // Exit the notification handling loop
-                            break;
+                        if subscription_id.as_ref() != &sub_id {
+                            // Skip notifications for other subscriptions
+                            continue;
                         }
+
+                        // Load chat rooms when end of stored events is received
+                        this.update(cx, |this, cx| {
+                            this.load_rooms(cx);
+                        })
+                        .expect("Entity has been released");
+
+                        // Exit the notification handling loop
+                        break;
                     }
                 }
             }),
@@ -446,8 +454,7 @@ impl ChatRegistry {
         match initialized_at() <= &event.created_at {
             // New message: send a signal to notify the UI
             true => {
-                let new_message = NewMessage::new(id, event);
-                tx.send(new_message).await;
+                tx.send(NewMessage::new(id, event)).await.ok();
             }
             // Old message: Coop is probably processing the user's messages during initial load
             false => {

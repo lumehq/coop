@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
+use common::{config_dir, BOOTSTRAP_RELAYS, INBOX_SUB_ID, SEARCH_RELAYS};
 pub use encryption::*;
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_gossip_memory::prelude::*;
@@ -9,7 +10,6 @@ use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use smol::lock::Mutex;
-use states::{config_dir, BOOTSTRAP_RELAYS, INBOX_SUB_ID, SEARCH_RELAYS};
 pub use storage::*;
 pub use tracker::*;
 

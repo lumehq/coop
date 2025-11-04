@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use ::nostr::NostrRegistry;
 use anyhow::Error;
-use common::nip96::nip96_upload;
+use common::nip96_upload;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,

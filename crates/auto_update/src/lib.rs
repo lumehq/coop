@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
+use common::BOOTSTRAP_RELAYS;
 use gpui::http_client::{AsyncBody, HttpClient};
 use gpui::{
     App, AppContext, AsyncApp, BackgroundExecutor, Context, Entity, Global, Subscription, Task,
@@ -14,7 +15,6 @@ use semver::Version;
 use smallvec::{smallvec, SmallVec};
 use smol::fs::File;
 use smol::process::Command;
-use states::BOOTSTRAP_RELAYS;
 
 const APP_PUBKEY: &str = "npub1y9jvl5vznq49eh9f2gj7679v4042kj80lp7p8fte3ql2cr7hty7qsyca8q";
 

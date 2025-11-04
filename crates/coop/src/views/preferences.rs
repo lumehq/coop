@@ -1,5 +1,5 @@
 use account::Account;
-use common::display::RenderedProfile;
+use common::RenderedProfile;
 use gpui::http_client::Url;
 use gpui::{
     div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,

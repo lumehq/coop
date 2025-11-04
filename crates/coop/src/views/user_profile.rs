@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use ::nostr::NostrRegistry;
-use common::display::RenderedProfile;
-use common::nip05::nip05_verify;
+use common::{nip05_verify, RenderedProfile};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, App, AppContext, ClipboardItem, Context, Entity, IntoElement,

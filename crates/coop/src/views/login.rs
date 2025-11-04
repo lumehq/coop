@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
+use common::BUNKER_TIMEOUT;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
@@ -12,7 +13,6 @@ use key_store::KeyStore;
 use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::BUNKER_TIMEOUT;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};

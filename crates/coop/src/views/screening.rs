@@ -2,8 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ::nostr::NostrRegistry;
-use common::display::{shorten_pubkey, RenderedProfile, RenderedTimestamp};
-use common::nip05::nip05_verify;
+use common::{nip05_verify, shorten_pubkey, RenderedProfile, RenderedTimestamp, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Div, Entity,
@@ -15,7 +14,6 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

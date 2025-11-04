@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::display::RenderedProfile;
+use common::{RenderedProfile, BUNKER_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -15,7 +15,6 @@ use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use smallvec::{smallvec, SmallVec};
-use states::BUNKER_TIMEOUT;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

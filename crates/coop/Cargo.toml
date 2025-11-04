@@ -33,7 +33,6 @@ title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
 nostr = { path = "../nostr" }
-states = { path = "../states" }
 key_store = { path = "../key_store" }
 chat = { path = "../chat" }
 chat_ui = { path = "../chat_ui" }
@@ -55,7 +54,6 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 itertools.workspace = true
-dirs.workspace = true
 log.workspace = true
 smallvec.workspace = true
 smol.workspace = true

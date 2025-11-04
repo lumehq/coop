@@ -9,7 +9,6 @@ nostr = { path = "../nostr" }
 ui = { path = "../ui" }
 theme = { path = "../theme" }
 common = { path = "../common" }
-states = { path = "../states" }
 account = { path = "../account" }
 person = { path = "../person" }
 chat = { path = "../chat" }

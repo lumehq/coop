@@ -1,7 +1,7 @@
 use std::fs;
 use std::time::Duration;
 
-use dirs::document_dir;
+use common::home_dir;
 use gpui::{
     div, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window,
@@ -46,9 +46,8 @@ impl BackupKeys {
     }
 
     pub fn backup(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Task<()>> {
-        let document_dir = document_dir().expect("Failed to get document directory");
-
-        let path = cx.prompt_for_new_path(&document_dir, Some("My Nostr Account"));
+        let dir = home_dir();
+        let path = cx.prompt_for_new_path(&dir, Some("My Nostr Account"));
         let nsec = self.secret_input.read(cx).value().to_string();
 
         Some(cx.spawn_in(window, async move |this, cx| {

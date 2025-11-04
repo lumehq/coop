@@ -5,8 +5,7 @@ use ::nostr::NostrRegistry;
 use account::Account;
 use anyhow::{anyhow, Error};
 use chat::{ChatRegistry, Room};
-use common::display::{RenderedProfile, TextUtils};
-use common::nip05::nip05_profile;
+use common::{nip05_profile, RenderedProfile, TextUtils, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
@@ -19,7 +18,6 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::BOOTSTRAP_RELAYS;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

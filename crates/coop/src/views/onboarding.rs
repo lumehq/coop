@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::display::TextUtils;
+use common::{TextUtils, CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -14,7 +14,6 @@ use key_store::KeyStore;
 use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::{CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};

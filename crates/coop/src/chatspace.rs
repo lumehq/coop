@@ -6,8 +6,10 @@ use anyhow::Error;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
-use common::display::RenderedProfile;
-use common::event::EventUtils;
+use common::{
+    default_nip17_relays, default_nip65_relays, EventUtils, RenderedProfile, BOOTSTRAP_RELAYS,
+    DEFAULT_SIDEBAR_WIDTH,
+};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
@@ -23,7 +25,6 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{default_nip17_relays, default_nip65_relays, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;

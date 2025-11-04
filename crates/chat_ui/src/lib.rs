@@ -4,8 +4,7 @@ use std::time::Duration;
 use ::nostr::{NostrRegistry, SignerKind};
 pub use actions::*;
 use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendOptions, SendReport};
-use common::display::{RenderedProfile, RenderedTimestamp};
-use common::nip96::nip96_upload;
+use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,

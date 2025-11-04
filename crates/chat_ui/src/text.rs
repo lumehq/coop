@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use common::display::RenderedProfile;
+use common::RenderedProfile;
 use gpui::{
     AnyElement, App, ElementId, HighlightStyle, InteractiveText, IntoElement, SharedString,
     StyledText, UnderlineStyle, Window,

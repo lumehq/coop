@@ -5,8 +5,7 @@ use std::time::Duration;
 use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Error};
 use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
-use common::debounced_delay::DebouncedDelay;
-use common::display::{RenderedTimestamp, TextUtils};
+use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
@@ -20,7 +19,6 @@ use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -261,7 +259,7 @@ impl Sidebar {
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
-            match common::nip05::nip05_profile(&address).await {
+            match common::nip05_profile(&address).await {
                 Ok(profile) => {
                     let signer = client.signer().await?;
                     let public_key = signer.get_public_key().await?;
