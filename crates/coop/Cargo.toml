@@ -32,7 +32,7 @@ ui = { path = "../ui" }
 title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
-nostr = { path = "../nostr" }
+state = { path = "../state" }
 key_store = { path = "../key_store" }
 chat = { path = "../chat" }
 chat_ui = { path = "../chat_ui" }

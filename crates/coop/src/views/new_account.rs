@@ -1,4 +1,3 @@
-use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Error};
 use common::{default_nip17_relays, default_nip65_relays, nip96_upload, BOOTSTRAP_RELAYS};
 use gpui::{
@@ -12,6 +11,7 @@ use key_store::{KeyItem, KeyStore};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

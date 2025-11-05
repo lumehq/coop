@@ -1,9 +1,9 @@
-use ::nostr::NostrRegistry;
 use anyhow::anyhow;
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 
 const SETTINGS_IDENTIFIER: &str = "coop:settings";
 

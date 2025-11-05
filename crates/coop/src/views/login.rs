@@ -9,9 +9,9 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
-use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};

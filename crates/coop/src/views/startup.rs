@@ -10,10 +10,10 @@ use gpui::{
 };
 use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
-use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

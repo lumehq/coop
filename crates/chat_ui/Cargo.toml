@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-nostr = { path = "../nostr" }
+state = { path = "../state" }
 ui = { path = "../ui" }
 theme = { path = "../theme" }
 common = { path = "../common" }

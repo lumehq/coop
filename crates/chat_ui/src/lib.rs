@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use ::nostr::{NostrRegistry, SignerKind};
 pub use actions::*;
 use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
@@ -21,6 +20,7 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
+use state::{NostrRegistry, SignerKind};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

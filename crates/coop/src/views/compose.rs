@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::time::Duration;
 
-use ::nostr::NostrRegistry;
 use account::Account;
 use anyhow::{anyhow, Error};
 use chat::{ChatRegistry, Room};
@@ -18,6 +17,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
-use ::nostr::{initialized_at, NostrRegistry};
 use account::Account;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::EventUtils;
@@ -16,6 +15,7 @@ pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::channel::Sender;
+use state::{initialized_at, NostrRegistry};
 
 mod message;
 mod room;

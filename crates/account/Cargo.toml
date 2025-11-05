@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-nostr = { path = "../nostr" }
+state = { path = "../state" }
 common = { path = "../common" }
 
 gpui.workspace = true

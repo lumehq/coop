@@ -77,7 +77,7 @@ fn main() {
                 gpui_tokio::init(cx);
 
                 // Initialize the nostr client
-                nostr::init(cx);
+                state::init(cx);
 
                 // Initialize components
                 ui::init(cx);

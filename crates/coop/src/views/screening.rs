@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::nostr::NostrRegistry;
 use common::{nip05_verify, shorten_pubkey, RenderedProfile, RenderedTimestamp, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -14,6 +13,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

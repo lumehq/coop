@@ -2,8 +2,8 @@ use std::sync::Mutex;
 
 use gpui::{actions, App};
 use key_store::{KeyItem, KeyStore};
-use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
+use state::NostrRegistry;
 
 actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
 actions!(sidebar, [Reload, RelayStatus]);

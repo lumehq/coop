@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::time::Duration;
 
-use ::nostr::NostrRegistry;
 use anyhow::{anyhow, Error};
 use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
 use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
@@ -19,6 +18,7 @@ use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};

@@ -1,7 +1,6 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use ::nostr::NostrRegistry;
 use anyhow::Error;
 use common::nip96_upload;
 use gpui::prelude::FluentBuilder;
@@ -13,6 +12,7 @@ use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};

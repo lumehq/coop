@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use ::nostr::NostrRegistry;
 use account::Account;
 use anyhow::Error;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
@@ -21,6 +20,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use state::NostrRegistry;
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;

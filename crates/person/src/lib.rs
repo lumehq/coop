@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ::nostr::{processed_events, NostrRegistry};
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
+use state::{processed_events, NostrRegistry};
 
 pub fn init(cx: &mut App) {
     PersonRegistry::set_global(cx.new(PersonRegistry::new), cx);
