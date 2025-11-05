@@ -1,0 +1,20 @@
+[package]
+name = "relay_auth"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+state = { path = "../state" }
+settings = { path = "../settings" }
+common = { path = "../common" }
+theme = { path = "../theme" }
+ui = { path = "../ui" }
+
+gpui.workspace = true
+nostr-sdk.workspace = true
+
+anyhow.workspace = true
+smallvec.workspace = true
+smol.workspace = true
+log.workspace = true

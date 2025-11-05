@@ -420,7 +420,7 @@ impl ChatRegistry {
     ) -> Result<(), Error> {
         // Try to get cached rumor first
         if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
-            Self::process_rumor(tx, gift_wrap.id, event).await?;
+            Self::process_rumor(tx, gift_wrap.id, event).await;
             return Ok(());
         }
 
@@ -440,29 +440,16 @@ impl ChatRegistry {
         Self::set_rumor(client, gift_wrap.id, &rumor_unsigned).await?;
 
         // Process the rumor
-        Self::process_rumor(tx, gift_wrap.id, rumor_unsigned).await?;
+        Self::process_rumor(tx, gift_wrap.id, rumor_unsigned).await;
 
         Ok(())
     }
 
     /// Process a rumor event.
-    async fn process_rumor(
-        tx: &Sender<NewMessage>,
-        id: EventId,
-        event: UnsignedEvent,
-    ) -> Result<(), Error> {
-        match initialized_at() <= &event.created_at {
-            // New message: send a signal to notify the UI
-            true => {
-                tx.send(NewMessage::new(id, event)).await.ok();
-            }
-            // Old message: Coop is probably processing the user's messages during initial load
-            false => {
-                // TODO
-            }
+    async fn process_rumor(tx: &Sender<NewMessage>, id: EventId, event: UnsignedEvent) {
+        if initialized_at() <= &event.created_at {
+            tx.send(NewMessage::new(id, event)).await.ok();
         }
-
-        Ok(())
     }
 
     /// Stores an unwrapped event in local database with reference to original

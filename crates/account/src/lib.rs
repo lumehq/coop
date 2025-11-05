@@ -61,10 +61,12 @@ impl Account {
                         let client = nostr.read(cx).client();
                         // Set public key
                         this.public_key = Some(public_key);
+
                         // Get gossip relays
                         this._tasks.push(cx.background_spawn(async move {
                             Self::get_gossip_relays(&client, public_key).await.ok();
                         }));
+
                         cx.notify();
                     })
                     .expect("Entity has been released")

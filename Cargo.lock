@@ -1326,6 +1326,7 @@ dependencies = [
  "nostr-sdk",
  "oneshot",
  "person",
+ "relay_auth",
  "reqwest_client",
  "rust-i18n",
  "serde",
@@ -5191,6 +5192,23 @@ name = "regex-syntax"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
+
+[[package]]
+name = "relay_auth"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "common",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "settings",
+ "smallvec",
+ "smol",
+ "state",
+ "theme",
+ "ui",
+]
 
 [[package]]
 name = "reqwest"

@@ -64,7 +64,7 @@ pub struct ChatSpace {
     _subscriptions: SmallVec<[Subscription; 3]>,
 
     /// All long running tasks
-    _tasks: SmallVec<[Task<()>; 5]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl ChatSpace {
@@ -326,36 +326,28 @@ impl ChatSpace {
     }
 
     fn render_keyring_warning(window: &mut Window, cx: &mut App) {
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .alert()
-                .button_props(ModalButtonProps::default().ok_text(t!("common.continue")))
+        window.open_modal(cx, move |this, _window, _cx| {
+            this.show_close(true)
                 .title(shared_t!("keyring_disable.label"))
                 .child(
                     v_flex()
                         .gap_2()
+                        .pb_4()
                         .text_sm()
                         .child(shared_t!("keyring_disable.body_1"))
                         .child(shared_t!("keyring_disable.body_2"))
                         .child(shared_t!("keyring_disable.body_3"))
-                        .child(shared_t!("keyring_disable.body_4"))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().danger_foreground)
-                                .child(shared_t!("keyring_disable.body_5")),
-                        ),
+                        .child(shared_t!("keyring_disable.body_4")),
                 )
         });
     }
 
     fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
+        let account = Account::global(cx);
         let chat = ChatRegistry::global(cx);
         let status = chat.read(cx).loading;
 
-        if !Account::has_global(cx) {
+        if !account.read(cx).has_account() {
             return div();
         }
 
@@ -382,6 +374,7 @@ impl ChatSpace {
         let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auto_update = AutoUpdater::global(cx);
+        let account = Account::global(cx);
 
         h_flex()
             .gap_1()
@@ -429,7 +422,7 @@ impl ChatSpace {
                         }),
                 )
             })
-            .when(Account::has_global(cx), |this| {
+            .when(account.read(cx).has_account(), |this| {
                 let persons = PersonRegistry::global(cx);
                 let account = Account::global(cx);
                 let public_key = account.read(cx).public_key();

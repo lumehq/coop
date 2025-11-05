@@ -148,50 +148,38 @@ impl NostrRegistry {
 
             match message {
                 RelayMessage::Event { event, .. } => {
-                    // Skip events that have already been processed
-                    if !processed_events().lock().await.insert(event.id) {
-                        continue;
+                    {
+                        // Skip events that have already been processed
+                        if !processed_events().lock().await.insert(event.id) {
+                            continue;
+                        }
                     }
 
                     match event.kind {
                         Kind::RelayList => {
                             if Self::is_self_authored(client, &event).await {
-                                // Fetch user's metadata event
-                                if let Err(e) =
-                                    Self::subscribe(client, event.pubkey, Kind::Metadata).await
-                                {
-                                    log::error!("Failed to subscribe to metadata event: {e}");
-                                }
-
-                                // Fetch user's contact list event
-                                if let Err(e) =
-                                    Self::subscribe(client, event.pubkey, Kind::ContactList).await
-                                {
-                                    log::error!("Failed to subscribe to contact list event: {e}");
-                                }
-
                                 // Fetch user's messaging relays event
-                                if let Err(e) =
-                                    Self::subscribe(client, event.pubkey, Kind::InboxRelays).await
-                                {
-                                    log::error!("Failed to subscribe to relay event: {e}");
-                                }
+                                _ = Self::subscribe(client, event.pubkey, Kind::InboxRelays).await;
+                                // Fetch user's metadata event
+                                _ = Self::subscribe(client, event.pubkey, Kind::Metadata).await;
+                                // Fetch user's contact list event
+                                _ = Self::subscribe(client, event.pubkey, Kind::ContactList).await;
                             }
                         }
                         Kind::InboxRelays => {
-                            // Extract up to 3 messaging relays
-                            let urls: Vec<RelayUrl> =
-                                nip17::extract_relay_list(&event).take(3).cloned().collect();
-
-                            // Cache the messaging relays
-                            cache.lock().await.insert_relay(event.pubkey, urls);
-
                             // Subscribe to gift wrap events if event is from current user
                             if Self::is_self_authored(client, &event).await {
                                 if let Err(e) = Self::get_messages(client, event.pubkey).await {
                                     log::error!("Failed to subscribe to gift wrap events: {e}");
                                 }
                             }
+
+                            // Extract up to 3 messaging relays
+                            let urls: Vec<RelayUrl> =
+                                nip17::extract_relay_list(&event).take(3).cloned().collect();
+
+                            // Cache the messaging relays
+                            cache.lock().await.insert_relay(event.pubkey, urls);
                         }
                         Kind::ContactList => {
                             if Self::is_self_authored(client, &event).await {

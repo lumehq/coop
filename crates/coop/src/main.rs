@@ -94,6 +94,9 @@ fn main() {
                 // Initialize person registry
                 person::init(cx);
 
+                // Initialize relay auth registry
+                relay_auth::init(window, cx);
+
                 // Initialize settings
                 settings::init(cx);
 
