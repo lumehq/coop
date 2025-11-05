@@ -338,6 +338,16 @@ impl RelayAuth {
 
         // Push the notification to the current window
         window.push_notification(note, cx);
+
+        // Focus the window if it's not active
+        if !window.is_window_active() {
+            window.activate_window();
+        }
+    }
+
+    /// Get the number of pending requests.
+    pub fn pending_requests(&self, cx: &App) -> usize {
+        self.requests.read(cx).iter().count()
     }
 
     /// Reask for approval for all pending requests.

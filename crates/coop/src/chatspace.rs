@@ -18,6 +18,7 @@ use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
+use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
@@ -375,6 +376,8 @@ impl ChatSpace {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auto_update = AutoUpdater::global(cx);
         let account = Account::global(cx);
+        let relay_auth = RelayAuth::global(cx);
+        let pending_requests = relay_auth.read(cx).pending_requests(cx);
 
         h_flex()
             .gap_1()
@@ -419,6 +422,28 @@ impl ChatSpace {
                         .rounded()
                         .on_click(move |_ev, window, cx| {
                             Self::render_keyring_warning(window, cx);
+                        }),
+                )
+            })
+            .when(pending_requests > 0, |this| {
+                this.child(
+                    h_flex()
+                        .id("requests")
+                        .h_6()
+                        .px_2()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .rounded_full()
+                        .bg(cx.theme().warning_background)
+                        .text_color(cx.theme().warning_foreground)
+                        .hover(|this| this.bg(cx.theme().warning_hover))
+                        .active(|this| this.bg(cx.theme().warning_active))
+                        .child(shared_t!("auth.requests", u = pending_requests))
+                        .on_click(move |_ev, window, cx| {
+                            relay_auth.update(cx, |this, cx| {
+                                this.re_ask(window, cx);
+                            });
                         }),
                 )
             })
