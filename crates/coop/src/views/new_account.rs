@@ -8,8 +8,7 @@ use gpui::{
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
-use key_store::backend::KeyItem;
-use key_store::KeyStore;
+use key_store::{KeyItem, KeyStore};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;

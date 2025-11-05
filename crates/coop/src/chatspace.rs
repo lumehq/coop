@@ -6,20 +6,16 @@ use anyhow::Error;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
-use common::{
-    default_nip17_relays, default_nip65_relays, EventUtils, RenderedProfile, BOOTSTRAP_RELAYS,
-    DEFAULT_SIDEBAR_WIDTH,
-};
+use common::{EventUtils, RenderedProfile, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
+    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use i18n::{shared_t, t};
 use itertools::Itertools;
-use key_store::backend::KeyItem;
-use key_store::KeyStore;
+use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
@@ -34,14 +30,12 @@ use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable};
 
 use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
 use crate::views::compose::compose_button;
-use crate::views::setup_relay::SetupRelay;
 use crate::views::{
-    account as account_view, login, new_account, onboarding, preferences, sidebar, user_profile,
-    welcome,
+    login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
 };
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -66,12 +60,6 @@ pub struct ChatSpace {
     /// App's Dock Area
     dock: Entity<DockArea>,
 
-    /// Local state to determine if the user has set up NIP-17 relays
-    nip17_ready: bool,
-
-    /// Local state to determine if the user has set up NIP-65 relays
-    nip65_ready: bool,
-
     /// All subscriptions for observing the app state
     _subscriptions: SmallVec<[Subscription; 3]>,
 
@@ -83,6 +71,7 @@ impl ChatSpace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let chat = ChatRegistry::global(cx);
         let keystore = KeyStore::global(cx);
+        let account = Account::global(cx);
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
@@ -98,7 +87,16 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Observe keystore changes
+            // Observe account entity changes
+            cx.observe_in(&account, window, move |this, state, window, cx| {
+                if state.read(cx).has_account() {
+                    this.set_default_layout(window, cx);
+                };
+            }),
+        );
+
+        subscriptions.push(
+            // Observe keystore entity changes
             cx.observe_in(&keystore, window, move |_this, state, window, cx| {
                 if state.read(cx).initialized {
                     let backend = state.read(cx).backend();
@@ -111,10 +109,8 @@ impl ChatSpace {
                         this.update_in(cx, |this, window, cx| {
                             match result {
                                 Ok(Some((user, secret))) => {
-                                    let public_key = PublicKey::parse(&user).unwrap();
-                                    let secret = String::from_utf8(secret).unwrap();
-
-                                    this.set_account_layout(public_key, secret, window, cx);
+                                    let credential = Credential::new(user, secret);
+                                    this.set_startup_layout(credential, window, cx);
                                 }
                                 _ => {
                                     this.set_onboarding_layout(window, cx);
@@ -129,7 +125,7 @@ impl ChatSpace {
         );
 
         subscriptions.push(
-            // Handle registry events
+            // Observe all events emitted by the chat registry
             cx.subscribe_in(&chat, window, move |this, chat, ev, window, cx| {
                 match ev {
                     ChatEvent::OpenRoom(id) => {
@@ -158,8 +154,6 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
-            nip17_ready: true,
-            nip65_ready: true,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -175,14 +169,8 @@ impl ChatSpace {
         });
     }
 
-    fn set_account_layout(
-        &mut self,
-        public_key: PublicKey,
-        secret: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let panel = Arc::new(account_view::init(public_key, secret, window, cx));
+    fn set_startup_layout(&mut self, cre: Credential, window: &mut Window, cx: &mut Context<Self>) {
+        let panel = Arc::new(startup::init(cre, window, cx));
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
@@ -211,16 +199,6 @@ impl ChatSpace {
             this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
             this.set_center(center, window, cx);
         });
-    }
-
-    fn set_required_dm_relays(&mut self, cx: &mut Context<Self>) {
-        self.nip17_ready = false;
-        cx.notify();
-    }
-
-    fn set_required_gossip_relays(&mut self, cx: &mut Context<Self>) {
-        self.nip65_ready = false;
-        cx.notify();
     }
 
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
@@ -315,6 +293,7 @@ impl ChatSpace {
         window.push_notification(t!("common.copied"), cx);
     }
 
+    #[allow(dead_code)]
     fn get_all_panel_ids(&self, cx: &App) -> Option<Vec<u64>> {
         let ids: Vec<u64> = self
             .dock
@@ -344,170 +323,6 @@ impl ChatSpace {
                 });
             }
         }
-    }
-
-    fn render_setup_gossip_relays_modal(&mut self, window: &mut Window, cx: &mut App) {
-        let relays = default_nip65_relays();
-
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .button_props(
-                    ModalButtonProps::default()
-                        .cancel_text(t!("common.configure"))
-                        .ok_text(t!("common.use_default")),
-                )
-                .title(shared_t!("mailbox.modal"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .text_sm()
-                        .child(shared_t!("mailbox.description"))
-                        .child(
-                            v_flex()
-                                .gap_1()
-                                .text_xs()
-                                .text_color(cx.theme().text_muted)
-                                .child(shared_t!("mailbox.write_label"))
-                                .child(shared_t!("mailbox.read_label")),
-                        )
-                        .child(
-                            div()
-                                .font_semibold()
-                                .text_xs()
-                                .child(shared_t!("common.default")),
-                        )
-                        .child(v_flex().gap_1().children({
-                            let mut items = Vec::with_capacity(relays.len());
-
-                            for (url, metadata) in relays {
-                                items.push(
-                                    div()
-                                        .h_7()
-                                        .px_1p5()
-                                        .h_flex()
-                                        .justify_between()
-                                        .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
-                                        .text_sm()
-                                        .child(
-                                            div()
-                                                .line_height(relative(1.2))
-                                                .child(SharedString::from(url.to_string())),
-                                        )
-                                        .when_some(metadata.as_ref(), |this, metadata| {
-                                            this.child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_semibold()
-                                                    .line_height(relative(1.2))
-                                                    .child(SharedString::from(
-                                                        metadata.to_string(),
-                                                    )),
-                                            )
-                                        }),
-                                );
-                            }
-
-                            items
-                        })),
-                )
-                .on_cancel(|_, _window, _cx| {
-                    // TODO: add configure relays
-                    // true to close the modal
-                    true
-                })
-                .on_ok(|_, window, cx| {
-                    // TODO: set nip65 relays
-                    // false to keep modal open
-                    false
-                })
-        })
-    }
-
-    fn render_setup_dm_relays_modal(window: &mut Window, cx: &mut App) {
-        let relays = default_nip17_relays();
-
-        window.open_modal(cx, move |this, _window, cx| {
-            this.overlay_closable(false)
-                .show_close(false)
-                .keyboard(false)
-                .confirm()
-                .button_props(
-                    ModalButtonProps::default()
-                        .cancel_text(t!("common.configure"))
-                        .ok_text(t!("common.use_default")),
-                )
-                .title(shared_t!("messaging.modal"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .text_sm()
-                        .child(shared_t!("messaging.description"))
-                        .child(
-                            div()
-                                .font_semibold()
-                                .text_xs()
-                                .child(shared_t!("common.default")),
-                        )
-                        .child(v_flex().gap_1().children({
-                            let mut items = Vec::with_capacity(relays.len());
-
-                            for url in relays {
-                                items.push(
-                                    div()
-                                        .h_7()
-                                        .px_1p5()
-                                        .h_flex()
-                                        .justify_between()
-                                        .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
-                                        .text_sm()
-                                        .child(
-                                            div()
-                                                .line_height(relative(1.2))
-                                                .child(SharedString::from(url.to_string())),
-                                        ),
-                                );
-                            }
-
-                            items
-                        })),
-                )
-                .on_cancel(|_, window, cx| {
-                    let view = cx.new(|cx| SetupRelay::new(window, cx));
-                    let weak_view = view.downgrade();
-
-                    window.open_modal(cx, move |modal, _window, _cx| {
-                        let weak_view = weak_view.clone();
-
-                        modal
-                            .confirm()
-                            .title(shared_t!("relays.modal"))
-                            .child(view.clone())
-                            .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
-                            .on_ok(move |_, window, cx| {
-                                weak_view
-                                    .update(cx, |this, cx| {
-                                        this.set_relays(window, cx);
-                                    })
-                                    .ok();
-                                // true to close the modal
-                                false
-                            })
-                    });
-
-                    // true to close the modal
-                    true
-                })
-                .on_ok(|_, window, cx| {
-                    // TODO: set nip17 relays
-                    // false to keep modal open
-                    false
-                })
-        })
     }
 
     fn render_keyring_warning(window: &mut Window, cx: &mut App) {
@@ -611,19 +426,6 @@ impl ChatSpace {
                         .rounded()
                         .on_click(move |_ev, window, cx| {
                             Self::render_keyring_warning(window, cx);
-                        }),
-                )
-            })
-            .when(!self.nip17_ready, |this| {
-                this.child(
-                    Button::new("setup-relays-button")
-                        .icon(IconName::Info)
-                        .label(t!("messaging.button"))
-                        .ghost()
-                        .xsmall()
-                        .rounded()
-                        .on_click(move |_ev, window, cx| {
-                            Self::render_setup_dm_relays_modal(window, cx);
                         }),
                 )
             })

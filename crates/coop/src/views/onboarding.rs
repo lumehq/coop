@@ -9,8 +9,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use i18n::{shared_t, t};
-use key_store::backend::KeyItem;
-use key_store::KeyStore;
+use key_store::{KeyItem, KeyStore};
 use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};

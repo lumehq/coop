@@ -109,6 +109,11 @@ impl Account {
         Ok(())
     }
 
+    /// Check if the account entity has a public key
+    pub fn has_account(&self) -> bool {
+        self.public_key.is_some()
+    }
+
     /// Get the public key of the account
     pub fn public_key(&self) -> PublicKey {
         // This method is only called when user is logged in, so unwrap safely

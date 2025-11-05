@@ -47,7 +47,7 @@ impl BackupKeys {
 
     pub fn backup(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Task<()>> {
         let dir = home_dir();
-        let path = cx.prompt_for_new_path(&dir, Some("My Nostr Account"));
+        let path = cx.prompt_for_new_path(dir, Some("My Nostr Account"));
         let nsec = self.secret_input.read(cx).value().to_string();
 
         Some(cx.spawn_in(window, async move |this, cx| {

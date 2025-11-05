@@ -9,8 +9,7 @@ use gpui::{
     Window,
 };
 use i18n::{shared_t, t};
-use key_store::backend::KeyItem;
-use key_store::KeyStore;
+use key_store::{Credential, KeyItem, KeyStore};
 use nostr::NostrRegistry;
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
@@ -24,18 +23,14 @@ use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::{reset, CoopAuthUrlHandler};
 
-pub fn init(
-    public_key: PublicKey,
-    secret: String,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<Account> {
-    cx.new(|cx| Account::new(public_key, secret, window, cx))
+pub fn init(cre: Credential, window: &mut Window, cx: &mut App) -> Entity<Startup> {
+    cx.new(|cx| Startup::new(cre, window, cx))
 }
 
-pub struct Account {
-    public_key: PublicKey,
-    secret: String,
+/// Startup
+#[derive(Debug)]
+pub struct Startup {
+    credential: Credential,
     loading: bool,
 
     name: SharedString,
@@ -49,13 +44,8 @@ pub struct Account {
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
-impl Account {
-    fn new(
-        public_key: PublicKey,
-        secret: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+impl Startup {
+    fn new(credential: Credential, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let tasks = smallvec![];
         let mut subscriptions = smallvec![];
 
@@ -69,8 +59,7 @@ impl Account {
         );
 
         Self {
-            public_key,
-            secret,
+            credential,
             loading: false,
             name: "Account".into(),
             focus_handle: cx.focus_handle(),
@@ -83,9 +72,11 @@ impl Account {
     fn login(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_loading(true, cx);
 
+        let secret = self.credential.secret();
+
         // Try to login with bunker
-        if self.secret.starts_with("bunker://") {
-            match NostrConnectURI::parse(&self.secret) {
+        if secret.starts_with("bunker://") {
+            match NostrConnectURI::parse(secret) {
                 Ok(uri) => {
                     self.login_with_bunker(uri, window, cx);
                 }
@@ -98,7 +89,7 @@ impl Account {
         };
 
         // Fall back to login with keys
-        match SecretKey::parse(&self.secret) {
+        match SecretKey::parse(secret) {
             Ok(secret) => {
                 self.login_with_keys(secret, cx);
             }
@@ -188,7 +179,7 @@ impl Account {
     }
 }
 
-impl Panel for Account {
+impl Panel for Startup {
     fn panel_id(&self) -> SharedString {
         self.name.clone()
     }
@@ -198,19 +189,21 @@ impl Panel for Account {
     }
 }
 
-impl EventEmitter<PanelEvent> for Account {}
+impl EventEmitter<PanelEvent> for Startup {}
 
-impl Focusable for Account {
+impl Focusable for Startup {
     fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl Render for Account {
+impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&self.public_key, cx);
-        let bunker = self.secret.starts_with("bunker://");
+        let bunker = self.credential.secret().starts_with("bunker://");
+        let profile = persons
+            .read(cx)
+            .get_person(&self.credential.public_key(), cx);
 
         v_flex()
             .image_cache(self.image_cache.clone())

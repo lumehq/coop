@@ -1,11 +1,10 @@
 use std::sync::{Arc, LazyLock};
 
+pub use backend::*;
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use smallvec::{smallvec, SmallVec};
 
-use crate::backend::{FileProvider, KeyBackend, KeyringProvider};
-
-pub mod backend;
+mod backend;
 
 static DISABLE_KEYRING: LazyLock<bool> =
     LazyLock::new(|| std::env::var("DISABLE_KEYRING").is_ok_and(|value| !value.is_empty()));
