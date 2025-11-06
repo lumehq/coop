@@ -34,10 +34,7 @@ pub const BUNKER_TIMEOUT: u64 = 30;
 pub const QUERY_TIMEOUT: u64 = 3;
 
 /// Total metadata requests will be grouped.
-pub const METADATA_BATCH_LIMIT: usize = 100;
-
-/// Maximum timeout for grouping metadata requests. (milliseconds)
-pub const METADATA_BATCH_TIMEOUT: u64 = 300;
+pub const METADATA_BATCH_LIMIT: usize = 20;
 
 /// Default width of the sidebar.
 pub const DEFAULT_SIDEBAR_WIDTH: f32 = 240.;

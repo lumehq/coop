@@ -1,12 +1,13 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use account::Account;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
-use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT};
+use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT};
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -51,6 +52,13 @@ pub enum ChatEvent {
     NewChatRequest(RoomKind),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Signal {
+    Loading(bool),
+    Message(NewMessage),
+    Eose,
+}
+
 impl EventEmitter<ChatEvent> for ChatRegistry {}
 
 impl ChatRegistry {
@@ -69,150 +77,53 @@ impl ChatRegistry {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
-        let (msg_tx, msg_rx) = flume::unbounded::<NewMessage>();
-        let (sync_tx, sync_rx) = flume::bounded::<PublicKey>(1024);
+        let status = Arc::new(AtomicBool::new(true));
+        let (tx, rx) = flume::bounded::<Signal>(2048);
+
         let mut tasks = smallvec![];
 
         tasks.push(
             // Handle gift wrap events
             cx.background_spawn({
                 let client = Arc::clone(&client);
-
-                async move {
-                    let mut notifications = client.notifications();
-                    log::info!("Listening for notifications");
-
-                    let mut processed_events = HashSet::new();
-
-                    while let Ok(notification) = notifications.recv().await {
-                        let RelayPoolNotification::Message { message, .. } = notification else {
-                            // Skip non-message notifications
-                            continue;
-                        };
-
-                        if let RelayMessage::Event { event, .. } = message {
-                            if !processed_events.insert(event.id) {
-                                // Skip if the event has already been processed
-                                continue;
-                            }
-
-                            if event.kind != Kind::GiftWrap {
-                                // Skip non-gift wrap events
-                                continue;
-                            }
-
-                            Self::extract_rumor(&client, &msg_tx, &sync_tx, &event)
-                                .await
-                                .ok();
-                        }
-                    }
-                }
+                let status = Arc::clone(&status);
+                let tx = tx.clone();
+                async move { Self::handle_events(&client, &tx, &status).await }
             }),
         );
 
         tasks.push(
-            // Handle sync metadata for public keys
+            // Handle unwrapping status
             cx.background_spawn({
                 let client = Arc::clone(&client);
-
-                async move {
-                    let timeout = Duration::from_micros(METADATA_BATCH_TIMEOUT);
-                    let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
-                    let mut batch: HashSet<PublicKey> = HashSet::new();
-
-                    /// Internal events for the metadata batching system
-                    enum BatchEvent {
-                        PublicKey(PublicKey),
-                        Timeout,
-                        Closed,
-                    }
-
-                    loop {
-                        let sync_rx = sync_rx.clone();
-
-                        match smol::future::or(
-                            async move {
-                                if let Ok(public_key) = sync_rx.recv_async().await {
-                                    BatchEvent::PublicKey(public_key)
-                                } else {
-                                    BatchEvent::Closed
-                                }
-                            },
-                            async move {
-                                smol::Timer::after(timeout).await;
-                                BatchEvent::Timeout
-                            },
-                        )
-                        .await
-                        {
-                            BatchEvent::PublicKey(public_key) => {
-                                // Prevent duplicate keys from being processed
-                                if processed_pubkeys.insert(public_key) {
-                                    batch.insert(public_key);
-                                }
-
-                                // Process the batch if it's full
-                                if batch.len() >= METADATA_BATCH_LIMIT {
-                                    let public_keys = std::mem::take(&mut batch);
-                                    Self::get_metadata(&client, public_keys).await.ok();
-                                }
-                            }
-                            BatchEvent::Timeout => {
-                                let public_keys = std::mem::take(&mut batch);
-                                Self::get_metadata(&client, public_keys).await.ok();
-                            }
-                            BatchEvent::Closed => {
-                                let public_keys = std::mem::take(&mut batch);
-                                Self::get_metadata(&client, public_keys).await.ok();
-                                // Exit the current loop
-                                break;
-                            }
-                        }
-                    }
-                }
-            }),
-        );
-
-        tasks.push(
-            // Handle end of stored event messages
-            cx.spawn(async move |this, cx| {
-                let sub_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
-                let mut notifications = client.notifications();
-                log::info!("Listening for notifications");
-
-                while let Ok(notification) = notifications.recv().await {
-                    let RelayPoolNotification::Message { message, .. } = notification else {
-                        // Skip non-message notifications
-                        continue;
-                    };
-
-                    if let RelayMessage::EndOfStoredEvents(subscription_id) = message {
-                        if subscription_id.as_ref() != &sub_id {
-                            // Skip notifications for other subscriptions
-                            continue;
-                        }
-
-                        // Load chat rooms when end of stored events is received
-                        this.update(cx, |this, cx| {
-                            this.load_rooms(cx);
-                        })
-                        .expect("Entity has been released");
-
-                        // Exit the notification handling loop
-                        break;
-                    }
-                }
+                async move { Self::handle_unwrapping(&client, &status, &tx).await }
             }),
         );
 
         tasks.push(
             // Handle new messages
             cx.spawn(async move |this, cx| {
-                while let Ok(message) = msg_rx.recv_async().await {
-                    this.update(cx, |this, cx| {
-                        this.new_message(message, cx);
-                    })
-                    .expect("Entity has been released");
+                while let Ok(message) = rx.recv_async().await {
+                    match message {
+                        Signal::Message(message) => {
+                            this.update(cx, |this, cx| {
+                                this.new_message(message, cx);
+                            })
+                            .expect("Entity has been released");
+                        }
+                        Signal::Eose => {
+                            this.update(cx, |this, cx| {
+                                this.load_rooms(cx);
+                            })
+                            .expect("Entity has been released");
+                        }
+                        Signal::Loading(status) => {
+                            this.update(cx, |this, cx| {
+                                this.set_loading(status, cx);
+                            })
+                            .expect("Entity has been released");
+                        }
+                    };
                 }
             }),
         );
@@ -221,6 +132,110 @@ impl ChatRegistry {
             rooms: vec![],
             loading: true,
             _tasks: tasks,
+        }
+    }
+
+    async fn handle_events(client: &Client, tx: &Sender<Signal>, status: &Arc<AtomicBool>) {
+        let mut notifications = client.notifications();
+        log::info!("Listening for notifications");
+
+        let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
+        let mut public_keys = HashSet::new();
+        let mut processed_events = HashSet::new();
+
+        while let Ok(notification) = notifications.recv().await {
+            let RelayPoolNotification::Message { message, .. } = notification else {
+                // Skip non-message notifications
+                continue;
+            };
+
+            match message {
+                RelayMessage::Event { event, .. } => {
+                    if !processed_events.insert(event.id) {
+                        // Skip if the event has already been processed
+                        continue;
+                    }
+
+                    if event.kind != Kind::GiftWrap {
+                        // Skip non-gift wrap events
+                        continue;
+                    }
+
+                    if let Ok(rumor) = Self::extract_rumor(client, event.as_ref()).await {
+                        match initialized_at() <= &event.created_at {
+                            true => {
+                                let new_message = NewMessage::new(event.id, rumor);
+                                let signal = Signal::Message(new_message);
+
+                                if let Err(e) = tx.send_async(signal).await {
+                                    log::error!("Failed to send signal: {}", e);
+                                }
+                            }
+                            false => {
+                                status.store(true, Ordering::Release);
+                            }
+                        }
+
+                        // Get all public keys
+                        public_keys.extend(event.tags.public_keys().copied());
+
+                        let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
+                        let finished = !status.load(Ordering::Acquire) && !public_keys.is_empty();
+
+                        // Get metadata for all public keys if the limit is reached
+                        if limit_reached || finished {
+                            let public_keys = std::mem::take(&mut public_keys);
+                            // Get metadata for the public keys
+                            Self::get_metadata(client, public_keys).await.ok();
+                        }
+                    }
+                }
+                RelayMessage::EndOfStoredEvents(id) => {
+                    if id.as_ref() == &subscription_id {
+                        if let Err(e) = tx.send_async(Signal::Eose).await {
+                            log::error!("Failed to send signal: {}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    async fn handle_unwrapping(client: &Client, status: &Arc<AtomicBool>, tx: &Sender<Signal>) {
+        let loop_duration = Duration::from_secs(20);
+        let mut is_start_processing = false;
+        let mut total_loops = 0;
+
+        loop {
+            if client.has_signer().await {
+                total_loops += 1;
+
+                if status.load(Ordering::Acquire) {
+                    is_start_processing = true;
+
+                    // Reset gift wrap processing flag
+                    _ = status.compare_exchange(true, false, Ordering::Release, Ordering::Relaxed);
+
+                    // Send loading signal
+                    if let Err(e) = tx.send_async(Signal::Loading(true)).await {
+                        log::error!("Failed to send signal: {}", e);
+                    }
+                } else {
+                    // Only run further if we are already processing
+                    // Wait until after 2 loops to prevent exiting early while events are still being processed
+                    if is_start_processing && total_loops >= 2 {
+                        // Send loading signal
+                        if let Err(e) = tx.send_async(Signal::Loading(false)).await {
+                            log::error!("Failed to send signal: {}", e);
+                        }
+                        // Reset the counter
+                        is_start_processing = false;
+                        total_loops = 0;
+                    }
+                }
+            }
+            smol::Timer::after(loop_duration).await;
         }
     }
 
@@ -489,26 +504,22 @@ impl ChatRegistry {
     }
 
     // Unwraps a gift-wrapped event and processes its contents.
-    async fn extract_rumor(
-        client: &Client,
-        msg_tx: &Sender<NewMessage>,
-        sync_tx: &Sender<PublicKey>,
-        gift_wrap: &Event,
-    ) -> Result<(), Error> {
+    async fn extract_rumor(client: &Client, gift_wrap: &Event) -> Result<UnsignedEvent, Error> {
         // Try to get cached rumor first
         if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
-            Self::process_rumor(msg_tx, sync_tx, gift_wrap.id, event).await;
-            return Ok(());
+            return Ok(event);
         }
 
         // Try to unwrap with the available signer
         let unwrapped = Self::try_unwrap(client, gift_wrap).await?;
-        //let sender = unwrapped.sender;
-        let mut rumor_unsigned = unwrapped.rumor;
 
-        //if !self.verify_rumor_sender(sender, &rumor_unsigned) {
-        //    return Err(anyhow!("Cannot verify the sender"));
-        //};
+        // let sender = unwrapped.sender;
+        // TODO: verify sender
+        // if !self.verify_rumor_sender(sender, &rumor_unsigned) {
+        //   return Err(anyhow!("Cannot verify the sender"));
+        // };
+
+        let mut rumor_unsigned = unwrapped.rumor;
 
         // Generate event id for the rumor if it doesn't have one
         rumor_unsigned.ensure_id();
@@ -516,26 +527,7 @@ impl ChatRegistry {
         // Cache the rumor
         Self::set_rumor(client, gift_wrap.id, &rumor_unsigned).await?;
 
-        // Process the rumor
-        Self::process_rumor(msg_tx, sync_tx, gift_wrap.id, rumor_unsigned).await;
-
-        Ok(())
-    }
-
-    /// Process a rumor event.
-    async fn process_rumor(
-        msg_tx: &Sender<NewMessage>,
-        sync_tx: &Sender<PublicKey>,
-        id: EventId,
-        event: UnsignedEvent,
-    ) {
-        for public_key in event.tags.public_keys().copied() {
-            _ = sync_tx.send_async(public_key).await;
-        }
-
-        if initialized_at() <= &event.created_at {
-            _ = msg_tx.send_async(NewMessage::new(id, event)).await;
-        }
+        Ok(rumor_unsigned)
     }
 
     /// Stores an unwrapped event in local database with reference to original
