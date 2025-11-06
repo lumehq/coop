@@ -63,9 +63,6 @@ pub struct ChatSpace {
 
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 4]>,
-
-    /// Background tasks
-    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl ChatSpace {
@@ -78,7 +75,6 @@ impl ChatSpace {
         let dock = cx.new(|cx| DockArea::new(window, cx));
 
         let mut subscriptions = smallvec![];
-        let tasks = smallvec![];
 
         subscriptions.push(
             // Automatically sync theme with system appearance
@@ -92,6 +88,12 @@ impl ChatSpace {
             cx.observe_in(&account, window, move |this, state, window, cx| {
                 if state.read(cx).has_account() {
                     this.set_default_layout(window, cx);
+
+                    // Load all chat room in the database if available
+                    let chat = ChatRegistry::global(cx);
+                    chat.update(cx, |this, cx| {
+                        this.get_rooms(cx);
+                    });
                 };
             }),
         );
@@ -167,7 +169,6 @@ impl ChatSpace {
             dock,
             title_bar,
             _subscriptions: subscriptions,
-            _tasks: tasks,
         }
     }
 

@@ -113,14 +113,14 @@ impl ChatRegistry {
                         }
                         Signal::Eose => {
                             this.update(cx, |this, cx| {
-                                this.load_rooms(cx);
+                                this.get_rooms(cx);
                             })
                             .expect("Entity has been released");
                         }
                         Signal::Loading(status) => {
                             this.update(cx, |this, cx| {
                                 this.set_loading(status, cx);
-                                this.load_rooms(cx);
+                                this.get_rooms(cx);
                             })
                             .expect("Entity has been released");
                         }
@@ -361,14 +361,37 @@ impl ChatRegistry {
     }
 
     /// Load all rooms from the database.
-    pub fn load_rooms(&mut self, cx: &mut Context<Self>) {
+    pub fn get_rooms(&mut self, cx: &mut Context<Self>) {
+        let task = self.create_get_rooms_task(cx);
+
+        self._tasks.push(
+            // Run and finished in the background
+            cx.spawn(async move |this, cx| {
+                match task.await {
+                    Ok(rooms) => {
+                        this.update(cx, move |this, cx| {
+                            this.extend_rooms(rooms, cx);
+                            this.sort(cx);
+                        })
+                        .expect("Entity has been released");
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load rooms: {e}")
+                    }
+                };
+            }),
+        );
+    }
+
+    /// Create a task to load rooms from the database
+    fn create_get_rooms_task(&self, cx: &App) -> Task<Result<HashSet<Room>, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
         // Get the contact bypass setting
         let bypass_setting = AppSettings::get_contact_bypass(cx);
 
-        let task: Task<Result<HashSet<Room>, Error>> = cx.background_spawn(async move {
+        cx.background_spawn(async move {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let contacts = client.database().contacts_public_keys(public_key).await?;
@@ -438,23 +461,7 @@ impl ChatRegistry {
             }
 
             Ok(rooms)
-        });
-
-        cx.spawn(async move |this, cx| {
-            match task.await {
-                Ok(rooms) => {
-                    this.update(cx, move |this, cx| {
-                        this.extend_rooms(rooms, cx);
-                        this.sort(cx);
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    log::error!("Failed to load rooms: {e}")
-                }
-            };
         })
-        .detach();
     }
 
     /// Trigger a refresh of the opened chat rooms by their IDs

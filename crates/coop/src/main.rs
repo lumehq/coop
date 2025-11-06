@@ -76,29 +76,29 @@ fn main() {
                 // Initialize the tokio runtime
                 gpui_tokio::init(cx);
 
-                // Initialize the nostr client
-                state::init(cx);
-
-                // Initialize person registry
-                person::init(cx);
-
-                // Initialize account state
-                account::init(cx);
-
                 // Initialize components
                 ui::init(cx);
 
                 // Initialize backend for keys storage
                 key_store::init(cx);
 
+                // Initialize the nostr client
+                state::init(cx);
+
+                // Initialize person registry
+                person::init(cx);
+
+                // Initialize settings
+                settings::init(cx);
+
+                // Initialize account state
+                account::init(cx);
+
                 // Initialize app registry
                 chat::init(cx);
 
                 // Initialize relay auth registry
                 relay_auth::init(window, cx);
-
-                // Initialize settings
-                settings::init(cx);
 
                 // Initialize auto update
                 auto_update::init(cx);
