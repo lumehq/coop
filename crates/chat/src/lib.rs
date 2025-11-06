@@ -120,6 +120,7 @@ impl ChatRegistry {
                         Signal::Loading(status) => {
                             this.update(cx, |this, cx| {
                                 this.set_loading(status, cx);
+                                this.load_rooms(cx);
                             })
                             .expect("Entity has been released");
                         }
@@ -363,6 +364,7 @@ impl ChatRegistry {
     pub fn load_rooms(&mut self, cx: &mut Context<Self>) {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+
         // Get the contact bypass setting
         let bypass_setting = AppSettings::get_contact_bypass(cx);
 
@@ -375,12 +377,17 @@ impl ChatRegistry {
                 .kind(Kind::ApplicationSpecificData)
                 .custom_tag(SingleLetterTag::lowercase(Alphabet::A), public_key);
 
+            // Get all authored events
+            let authored = client.database().query(authored_filter).await?;
+
             let addressed_filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .custom_tag(SingleLetterTag::lowercase(Alphabet::P), public_key);
 
-            let authored = client.database().query(authored_filter).await?;
+            // Get all addressed events
             let addressed = client.database().query(addressed_filter).await?;
+
+            // Merge authored and addressed events
             let events = authored.merge(addressed);
 
             let mut rooms: HashSet<Room> = HashSet::new();
@@ -388,17 +395,14 @@ impl ChatRegistry {
 
             // Process each event and group by room hash
             for raw in events.into_iter() {
-                match UnsignedEvent::from_json(&raw.content) {
-                    Ok(rumor) => {
-                        if rumor.tags.public_keys().peekable().peek().is_some() {
-                            grouped.entry(rumor.uniq_id()).or_default().push(rumor);
-                        }
+                if let Ok(rumor) = UnsignedEvent::from_json(&raw.content) {
+                    if rumor.tags.public_keys().peekable().peek().is_some() {
+                        grouped.entry(rumor.uniq_id()).or_default().push(rumor);
                     }
-                    Err(e) => log::warn!("Failed to parse stored rumor: {e}"),
                 }
             }
 
-            for (_room_id, mut messages) in grouped.into_iter() {
+            for (_id, mut messages) in grouped.into_iter() {
                 messages.sort_by_key(|m| Reverse(m.created_at));
 
                 let Some(latest) = messages.first() else {
@@ -411,16 +415,21 @@ impl ChatRegistry {
                     continue;
                 }
 
-                let mut public_keys: Vec<PublicKey> = room.members().to_vec();
+                let mut public_keys: Vec<PublicKey> = room.members();
                 public_keys.retain(|pk| pk != &public_key);
 
+                // Check if the user has responded to the room
                 let user_sent = messages.iter().any(|m| m.pubkey == public_key);
 
+                // Determine if the room is ongoing or not
                 let mut bypassed = false;
+
+                // Check if public keys are from the user's contacts
                 if bypass_setting {
                     bypassed = public_keys.iter().any(|k| contacts.contains(k));
                 }
 
+                // Set the room's kind based on status
                 if user_sent || bypassed {
                     room = room.kind(RoomKind::Ongoing);
                 }

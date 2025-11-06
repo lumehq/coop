@@ -61,10 +61,10 @@ pub struct ChatSpace {
     /// App's Dock Area
     dock: Entity<DockArea>,
 
-    /// All subscriptions for observing the app state
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    /// Event subscriptions
+    _subscriptions: SmallVec<[Subscription; 4]>,
 
-    /// All long running tasks
+    /// Background tasks
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
@@ -149,6 +149,17 @@ impl ChatSpace {
                     }
                     _ => {}
                 };
+            }),
+        );
+
+        subscriptions.push(
+            // Observe the chat registry
+            cx.observe(&chat, move |this, chat, cx| {
+                let ids = this.get_all_panels(cx);
+
+                chat.update(cx, |this, cx| {
+                    this.refresh_rooms(ids, cx);
+                });
             }),
         );
 
@@ -294,8 +305,7 @@ impl ChatSpace {
         window.push_notification(t!("common.copied"), cx);
     }
 
-    #[allow(dead_code)]
-    fn get_all_panel_ids(&self, cx: &App) -> Option<Vec<u64>> {
+    fn get_all_panels(&self, cx: &App) -> Option<Vec<u64>> {
         let ids: Vec<u64> = self
             .dock
             .read(cx)
