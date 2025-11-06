@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::{processed_events, NostrRegistry};
+use state::NostrRegistry;
 
 pub fn init(cx: &mut App) {
     PersonRegistry::set_global(cx.new(PersonRegistry::new), cx);
@@ -47,6 +47,9 @@ impl PersonRegistry {
                 let client = Arc::clone(&client);
                 async move |this, cx| {
                     let mut notifications = client.notifications();
+                    log::info!("Listening for notifications");
+
+                    let mut processed_events = HashSet::new();
 
                     while let Ok(notification) = notifications.recv().await {
                         let RelayPoolNotification::Message { message, .. } = notification else {
@@ -55,8 +58,8 @@ impl PersonRegistry {
                         };
 
                         if let RelayMessage::Event { event, .. } = message {
-                            // Skip events that have already been processed
-                            if !processed_events().lock().await.insert(event.id) {
+                            if !processed_events.insert(event.id) {
+                                // Skip if the event has already been processed
                                 continue;
                             }
 

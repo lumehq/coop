@@ -472,8 +472,8 @@ impl Room {
 
         cx.background_spawn(async move {
             let signer_kind = opts.signer_kind;
-            let cache = cache_manager.lock().await;
-            let tracker = tracker.lock().await;
+            let cache = cache_manager.read().await;
+            let tracker = tracker.read().await;
 
             let encryption: Option<Arc<dyn NostrSigner>> = None;
 
@@ -606,7 +606,7 @@ impl Room {
         let cache_manager = nostr.read(cx).cache_manager();
 
         cx.background_spawn(async move {
-            let cache = cache_manager.lock().await;
+            let cache = cache_manager.read().await;
             let mut resend_reports = vec![];
 
             for report in reports.into_iter() {

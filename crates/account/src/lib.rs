@@ -63,9 +63,10 @@ impl Account {
                         this.public_key = Some(public_key);
 
                         // Get gossip relays
-                        this._tasks.push(cx.background_spawn(async move {
+                        cx.background_spawn(async move {
                             Self::get_gossip_relays(&client, public_key).await.ok();
-                        }));
+                        })
+                        .detach();
 
                         cx.notify();
                     })
@@ -105,8 +106,10 @@ impl Account {
 
         // Subscribe to events from the bootstrapping relays
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter.clone(), Some(opts))
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await?;
+
+        log::info!("Getting user's gossip relays...");
 
         Ok(())
     }

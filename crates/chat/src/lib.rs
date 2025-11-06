@@ -2,10 +2,12 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
+use std::time::Duration;
 
 use account::Account;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
-use common::EventUtils;
+use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT, METADATA_BATCH_TIMEOUT};
+use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
@@ -14,7 +16,6 @@ use nostr_sdk::prelude::*;
 pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use smol::channel::Sender;
 use state::{initialized_at, NostrRegistry};
 
 mod message;
@@ -40,7 +41,7 @@ pub struct ChatRegistry {
     pub loading: bool,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 3]>,
+    _tasks: SmallVec<[Task<()>; 4]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -68,7 +69,8 @@ impl ChatRegistry {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
-        let (tx, rx) = smol::channel::unbounded::<NewMessage>();
+        let (msg_tx, msg_rx) = flume::unbounded::<NewMessage>();
+        let (sync_tx, sync_rx) = flume::bounded::<PublicKey>(1024);
         let mut tasks = smallvec![];
 
         tasks.push(
@@ -78,6 +80,9 @@ impl ChatRegistry {
 
                 async move {
                     let mut notifications = client.notifications();
+                    log::info!("Listening for notifications");
+
+                    let mut processed_events = HashSet::new();
 
                     while let Ok(notification) = notifications.recv().await {
                         let RelayPoolNotification::Message { message, .. } = notification else {
@@ -86,12 +91,82 @@ impl ChatRegistry {
                         };
 
                         if let RelayMessage::Event { event, .. } = message {
+                            if !processed_events.insert(event.id) {
+                                // Skip if the event has already been processed
+                                continue;
+                            }
+
                             if event.kind != Kind::GiftWrap {
                                 // Skip non-gift wrap events
                                 continue;
                             }
 
-                            Self::extract_rumor(&client, &tx, &event).await.ok();
+                            Self::extract_rumor(&client, &msg_tx, &sync_tx, &event)
+                                .await
+                                .ok();
+                        }
+                    }
+                }
+            }),
+        );
+
+        tasks.push(
+            // Handle sync metadata for public keys
+            cx.background_spawn({
+                let client = Arc::clone(&client);
+
+                async move {
+                    let timeout = Duration::from_micros(METADATA_BATCH_TIMEOUT);
+                    let mut processed_pubkeys: HashSet<PublicKey> = HashSet::new();
+                    let mut batch: HashSet<PublicKey> = HashSet::new();
+
+                    /// Internal events for the metadata batching system
+                    enum BatchEvent {
+                        PublicKey(PublicKey),
+                        Timeout,
+                        Closed,
+                    }
+
+                    loop {
+                        let sync_rx = sync_rx.clone();
+
+                        match smol::future::or(
+                            async move {
+                                if let Ok(public_key) = sync_rx.recv_async().await {
+                                    BatchEvent::PublicKey(public_key)
+                                } else {
+                                    BatchEvent::Closed
+                                }
+                            },
+                            async move {
+                                smol::Timer::after(timeout).await;
+                                BatchEvent::Timeout
+                            },
+                        )
+                        .await
+                        {
+                            BatchEvent::PublicKey(public_key) => {
+                                // Prevent duplicate keys from being processed
+                                if processed_pubkeys.insert(public_key) {
+                                    batch.insert(public_key);
+                                }
+
+                                // Process the batch if it's full
+                                if batch.len() >= METADATA_BATCH_LIMIT {
+                                    let public_keys = std::mem::take(&mut batch);
+                                    Self::get_metadata(&client, public_keys).await.ok();
+                                }
+                            }
+                            BatchEvent::Timeout => {
+                                let public_keys = std::mem::take(&mut batch);
+                                Self::get_metadata(&client, public_keys).await.ok();
+                            }
+                            BatchEvent::Closed => {
+                                let public_keys = std::mem::take(&mut batch);
+                                Self::get_metadata(&client, public_keys).await.ok();
+                                // Exit the current loop
+                                break;
+                            }
                         }
                     }
                 }
@@ -101,8 +176,9 @@ impl ChatRegistry {
         tasks.push(
             // Handle end of stored event messages
             cx.spawn(async move |this, cx| {
-                let mut notifications = client.notifications();
                 let sub_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
+                let mut notifications = client.notifications();
+                log::info!("Listening for notifications");
 
                 while let Ok(notification) = notifications.recv().await {
                     let RelayPoolNotification::Message { message, .. } = notification else {
@@ -132,7 +208,7 @@ impl ChatRegistry {
         tasks.push(
             // Handle new messages
             cx.spawn(async move |this, cx| {
-                while let Ok(message) = rx.recv().await {
+                while let Ok(message) = msg_rx.recv_async().await {
                     this.update(cx, |this, cx| {
                         this.new_message(message, cx);
                     })
@@ -415,12 +491,13 @@ impl ChatRegistry {
     // Unwraps a gift-wrapped event and processes its contents.
     async fn extract_rumor(
         client: &Client,
-        tx: &Sender<NewMessage>,
+        msg_tx: &Sender<NewMessage>,
+        sync_tx: &Sender<PublicKey>,
         gift_wrap: &Event,
     ) -> Result<(), Error> {
         // Try to get cached rumor first
         if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
-            Self::process_rumor(tx, gift_wrap.id, event).await;
+            Self::process_rumor(msg_tx, sync_tx, gift_wrap.id, event).await;
             return Ok(());
         }
 
@@ -440,15 +517,24 @@ impl ChatRegistry {
         Self::set_rumor(client, gift_wrap.id, &rumor_unsigned).await?;
 
         // Process the rumor
-        Self::process_rumor(tx, gift_wrap.id, rumor_unsigned).await;
+        Self::process_rumor(msg_tx, sync_tx, gift_wrap.id, rumor_unsigned).await;
 
         Ok(())
     }
 
     /// Process a rumor event.
-    async fn process_rumor(tx: &Sender<NewMessage>, id: EventId, event: UnsignedEvent) {
+    async fn process_rumor(
+        msg_tx: &Sender<NewMessage>,
+        sync_tx: &Sender<PublicKey>,
+        id: EventId,
+        event: UnsignedEvent,
+    ) {
+        for public_key in event.tags.public_keys().copied() {
+            _ = sync_tx.send_async(public_key).await;
+        }
+
         if initialized_at() <= &event.created_at {
-            tx.send(NewMessage::new(id, event)).await.ok();
+            _ = msg_tx.send_async(NewMessage::new(id, event)).await;
         }
     }
 
@@ -526,6 +612,33 @@ impl ChatRegistry {
         let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
 
         Ok(unwrapped)
+    }
+
+    /// Get metadata for a list of public keys
+    async fn get_metadata<I>(client: &Client, public_keys: I) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = PublicKey>,
+    {
+        let authors: Vec<PublicKey> = public_keys.into_iter().collect();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+
+        // Return if the list is empty
+        if authors.is_empty() {
+            return Err(anyhow!("You need at least one public key".to_string(),));
+        }
+
+        let filter = Filter::new()
+            .limit(authors.len() * kinds.len() + 10)
+            .authors(authors)
+            .kinds(kinds);
+
+        // Subscribe to filters to the bootstrap relays
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
     }
 
     /// Get the conversation ID for a given rumor (message).

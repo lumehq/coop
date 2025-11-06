@@ -179,7 +179,7 @@ impl RelayAuth {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut tracker = tracker.lock().await;
+                            let mut tracker = tracker.write().await;
 
                             let ids: Vec<EventId> = tracker
                                 .resend_queue

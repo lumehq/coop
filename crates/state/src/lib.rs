@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use nostr_gossip_memory::prelude::*;
 use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use smol::lock::Mutex;
+use smol::lock::RwLock;
 pub use storage::*;
 pub use tracker::*;
 
@@ -32,10 +33,10 @@ pub struct NostrRegistry {
     client: Arc<Client>,
 
     /// Tracks activity related to Nostr events
-    tracker: Arc<Mutex<EventTracker>>,
+    tracker: Arc<RwLock<EventTracker>>,
 
     /// Manages caching of nostr events
-    cache_manager: Arc<Mutex<CacheManager>>,
+    cache_manager: Arc<RwLock<CacheManager>>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -82,8 +83,8 @@ impl NostrRegistry {
                 .build(),
         );
 
-        let tracker = Arc::new(Mutex::new(EventTracker::default()));
-        let cache_manager = Arc::new(Mutex::new(CacheManager::default()));
+        let tracker = Arc::new(RwLock::new(EventTracker::default()));
+        let cache_manager = Arc::new(RwLock::new(CacheManager::default()));
 
         let mut tasks = smallvec![];
 
@@ -95,8 +96,6 @@ impl NostrRegistry {
                 let client = Arc::clone(&client);
                 let cache_manager = Arc::clone(&cache_manager);
                 let tracker = Arc::clone(&tracker);
-
-                let _ = processed_events();
                 let _ = initialized_at();
 
                 async move {
@@ -135,10 +134,13 @@ impl NostrRegistry {
 
     async fn handle_notifications(
         client: &Client,
-        cache: &Arc<Mutex<CacheManager>>,
-        tracker: &Arc<Mutex<EventTracker>>,
+        cache: &Arc<RwLock<CacheManager>>,
+        tracker: &Arc<RwLock<EventTracker>>,
     ) {
         let mut notifications = client.notifications();
+        log::info!("Listening for notifications");
+
+        let mut processed_events = HashSet::new();
 
         while let Ok(notification) = notifications.recv().await {
             let RelayPoolNotification::Message { message, relay_url } = notification else {
@@ -148,16 +150,16 @@ impl NostrRegistry {
 
             match message {
                 RelayMessage::Event { event, .. } => {
-                    {
-                        // Skip events that have already been processed
-                        if !processed_events().lock().await.insert(event.id) {
-                            continue;
-                        }
+                    if !processed_events.insert(event.id) {
+                        // Skip if the event has already been processed
+                        continue;
                     }
 
                     match event.kind {
                         Kind::RelayList => {
                             if Self::is_self_authored(client, &event).await {
+                                log::info!("Found relay list event for the current user");
+
                                 // Fetch user's messaging relays event
                                 _ = Self::subscribe(client, event.pubkey, Kind::InboxRelays).await;
                                 // Fetch user's metadata event
@@ -167,19 +169,24 @@ impl NostrRegistry {
                             }
                         }
                         Kind::InboxRelays => {
-                            // Subscribe to gift wrap events if event is from current user
-                            if Self::is_self_authored(client, &event).await {
-                                if let Err(e) = Self::get_messages(client, event.pubkey).await {
-                                    log::error!("Failed to subscribe to gift wrap events: {e}");
-                                }
-                            }
-
                             // Extract up to 3 messaging relays
                             let urls: Vec<RelayUrl> =
                                 nip17::extract_relay_list(&event).take(3).cloned().collect();
 
+                            // Subscribe to gift wrap events if event is from current user
+                            if Self::is_self_authored(client, &event).await {
+                                log::info!("Found messaging list event for the current user");
+
+                                if let Err(e) =
+                                    Self::get_messages(client, &urls, event.pubkey).await
+                                {
+                                    log::error!("Failed to subscribe to gift wrap events: {e}");
+                                }
+                            }
+
                             // Cache the messaging relays
-                            cache.lock().await.insert_relay(event.pubkey, urls);
+                            let mut cache = cache.write().await;
+                            cache.insert_relay(event.pubkey, urls);
                         }
                         Kind::ContactList => {
                             if Self::is_self_authored(client, &event).await {
@@ -197,7 +204,7 @@ impl NostrRegistry {
                     event_id, message, ..
                 } => {
                     let msg = MachineReadablePrefix::parse(&message);
-                    let mut tracker = tracker.lock().await;
+                    let mut tracker = tracker.write().await;
 
                     // Message that need to be authenticated will be handled separately
                     if let Some(MachineReadablePrefix::AuthRequired) = msg {
@@ -235,12 +242,27 @@ impl NostrRegistry {
     }
 
     /// Get all gift wrap events in the messaging relays for a given public key
-    async fn get_messages(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+    async fn get_messages(
+        client: &Client,
+        urls: &[RelayUrl],
+        public_key: PublicKey,
+    ) -> Result<(), Error> {
         let id = SubscriptionId::new(INBOX_SUB_ID);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
+        // Verify that there are relays provided
+        if urls.is_empty() {
+            return Err(anyhow!("No relays provided"));
+        }
+
+        // Add and connect relays
+        for url in urls {
+            client.add_relay(url).await?;
+            client.connect_relay(url).await?;
+        }
+
         // Subscribe to filters to user's messaging relays
-        client.subscribe_with_id(id, filter, None).await?;
+        client.subscribe_with_id_to(urls, id, filter, None).await?;
 
         Ok(())
     }
@@ -274,12 +296,12 @@ impl NostrRegistry {
     }
 
     /// Returns a reference to the event tracker.
-    pub fn tracker(&self) -> Arc<Mutex<EventTracker>> {
+    pub fn tracker(&self) -> Arc<RwLock<EventTracker>> {
         Arc::clone(&self.tracker)
     }
 
     /// Returns a reference to the cache manager.
-    pub fn cache_manager(&self) -> Arc<Mutex<CacheManager>> {
+    pub fn cache_manager(&self) -> Arc<RwLock<CacheManager>> {
         Arc::clone(&self.cache_manager)
     }
 }

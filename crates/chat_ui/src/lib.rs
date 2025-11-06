@@ -151,7 +151,7 @@ impl ChatPanel {
                         let message = Message::user(event.clone());
 
                         cx.spawn_in(window, async move |this, cx| {
-                            let tracker = tracker.lock().await;
+                            let tracker = tracker.read().await;
 
                             this.update_in(cx, |this, _window, cx| {
                                 if !tracker.sent_ids().contains(&gift_wrap_id) {
@@ -1243,7 +1243,7 @@ impl ChatPanel {
         let tracker = nostr.read(cx).tracker();
 
         let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-            let tracker = tracker.lock().await;
+            let tracker = tracker.read().await;
             let mut relays: Vec<RelayUrl> = vec![];
 
             let filter = Filter::new()

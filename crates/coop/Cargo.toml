@@ -60,7 +60,6 @@ smallvec.workspace = true
 smol.workspace = true
 futures.workspace = true
 oneshot.workspace = true
-flume.workspace = true
 webbrowser.workspace = true
 
 indexset = "0.12.3"
