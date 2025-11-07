@@ -86,17 +86,7 @@ impl Account {
             cx.observe_self(move |this, cx| {
                 let client = nostr.read(cx).client();
 
-                if let Some(public_key) = this.public_key {
-                    this._tasks.push(
-                        // Get current user's gossip relays
-                        cx.background_spawn({
-                            let client = Arc::clone(&client);
-                            async move {
-                                Self::get_gossip_relays(&client, public_key).await.ok();
-                            }
-                        }),
-                    );
-
+                if this.public_key.is_some() && this.client_signer.read(cx).is_none() {
                     this._tasks.push(
                         // Initialize the client key
                         cx.spawn(async move |this, cx| {
@@ -163,6 +153,9 @@ impl Account {
         loop {
             if let Ok(signer) = client.signer().await {
                 if let Ok(public_key) = signer.get_public_key().await {
+                    // Get current user's gossip relays
+                    Self::get_gossip_relays(client, public_key).await.ok()?;
+
                     return Some(public_key);
                 }
             }

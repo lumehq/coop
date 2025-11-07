@@ -68,15 +68,11 @@ keyring_disable:
   label:
     en: "Keyring is disabled"
   body_1:
-    en: "Coop cannot access the Keyring Service on your system."
+    en: "Coop cannot access the Keyring Service on your system. By design, Coop uses Keyring to store your credentials."
   body_2:
-    en: "By design, Coop uses Keyring to store your credentials."
-  body_3:
     en: "Without access to Keyring, Coop will store your credentials as plain text."
-  body_4:
+  body_3:
     en: "If you want to store your credentials in the Keyring, please enable Keyring and allow Coop to access it."
-  body_5:
-    en: "By clicking continue, you agree to store your credentials as plain text."
 
 pending_encryption:
   label:

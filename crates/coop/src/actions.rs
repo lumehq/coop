@@ -5,7 +5,7 @@ use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use state::NostrRegistry;
 
-actions!(coop, [ReloadMetadata, DarkMode, Settings, Logout, Quit]);
+actions!(coop, [KeyringPopup, DarkMode, Settings, Logout, Quit]);
 actions!(sidebar, [Reload, RelayStatus]);
 
 #[derive(Debug, Clone)]

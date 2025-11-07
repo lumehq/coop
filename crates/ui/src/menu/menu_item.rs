@@ -88,7 +88,7 @@ impl RenderOnce for MenuItemElement {
         h_flex()
             .id(self.id)
             .group(&self.group_name)
-            .gap_x_1()
+            .gap_x_2()
             .py_1()
             .px_2()
             .text_base()

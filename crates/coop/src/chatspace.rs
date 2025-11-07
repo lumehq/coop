@@ -1,27 +1,23 @@
 use std::sync::Arc;
 
 use account::Account;
-use anyhow::Error;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
-use common::{EventUtils, RenderedProfile, BOOTSTRAP_RELAYS, DEFAULT_SIDEBAR_WIDTH};
+use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
-use itertools::Itertools;
 use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
-use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
@@ -33,7 +29,7 @@ use ui::modal::ModalButtonProps;
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable};
 
-use crate::actions::{reset, DarkMode, Logout, ReloadMetadata, Settings};
+use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings};
 use crate::views::compose::compose_button;
 use crate::views::{
     login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
@@ -233,51 +229,6 @@ impl ChatSpace {
         }
     }
 
-    fn on_reload_metadata(
-        &mut self,
-        _ev: &ReloadMetadata,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
-        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-            let filter = Filter::new().kind(Kind::PrivateDirectMessage);
-
-            let pubkeys: Vec<PublicKey> = client
-                .database()
-                .query(filter)
-                .await?
-                .into_iter()
-                .flat_map(|event| event.all_pubkeys())
-                .unique()
-                .collect();
-
-            let filter = Filter::new()
-                .kind(Kind::Metadata)
-                .limit(pubkeys.len())
-                .authors(pubkeys);
-
-            client
-                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-                .await?;
-
-            Ok(())
-        });
-
-        cx.spawn_in(window, async move |_, cx| {
-            if task.await.is_ok() {
-                cx.update(|window, cx| {
-                    window.push_notification(t!("common.refreshed"), cx);
-                })
-                .ok();
-            }
-        })
-        .detach();
-    }
-
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         reset(cx);
     }
@@ -304,6 +255,22 @@ impl ChatSpace {
         let Ok(bech32) = ev.0.to_bech32();
         cx.write_to_clipboard(ClipboardItem::new_string(bech32));
         window.push_notification(t!("common.copied"), cx);
+    }
+
+    fn on_keyring(&mut self, _ev: &KeyringPopup, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, _window, _cx| {
+            this.show_close(true)
+                .title(shared_t!("keyring_disable.label"))
+                .child(
+                    v_flex()
+                        .gap_2()
+                        .pb_4()
+                        .text_sm()
+                        .child(shared_t!("keyring_disable.body_1"))
+                        .child(shared_t!("keyring_disable.body_2"))
+                        .child(shared_t!("keyring_disable.body_3")),
+                )
+        });
     }
 
     fn get_all_panels(&self, cx: &App) -> Option<Vec<u64>> {
@@ -337,23 +304,6 @@ impl ChatSpace {
         }
     }
 
-    fn render_keyring_warning(window: &mut Window, cx: &mut App) {
-        window.open_modal(cx, move |this, _window, _cx| {
-            this.show_close(true)
-                .title(shared_t!("keyring_disable.label"))
-                .child(
-                    v_flex()
-                        .gap_2()
-                        .pb_4()
-                        .text_sm()
-                        .child(shared_t!("keyring_disable.body_1"))
-                        .child(shared_t!("keyring_disable.body_2"))
-                        .child(shared_t!("keyring_disable.body_3"))
-                        .child(shared_t!("keyring_disable.body_4")),
-                )
-        });
-    }
-
     fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
         let account = Account::global(cx);
         let chat = ChatRegistry::global(cx);
@@ -383,7 +333,6 @@ impl ChatSpace {
     }
 
     fn titlebar_right(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let file_keystore = KeyStore::global(cx).read(cx).is_using_file_keystore();
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let auto_update = AutoUpdater::global(cx);
         let account = Account::global(cx);
@@ -423,19 +372,6 @@ impl ChatSpace {
                 ),
                 _ => this.child(div()),
             })
-            .when(file_keystore, |this| {
-                this.child(
-                    Button::new("keystore-warning")
-                        .icon(IconName::Warning)
-                        .label("Keyring Disabled")
-                        .ghost()
-                        .xsmall()
-                        .rounded()
-                        .on_click(move |_ev, window, cx| {
-                            Self::render_keyring_warning(window, cx);
-                        }),
-                )
-            })
             .when(pending_requests > 0, |this| {
                 this.child(
                     h_flex()
@@ -464,6 +400,15 @@ impl ChatSpace {
                 let public_key = account.read(cx).public_key();
                 let profile = persons.read(cx).get_person(&public_key, cx);
 
+                let keystore = KeyStore::global(cx);
+                let is_using_file_keystore = keystore.read(cx).is_using_file_keystore();
+
+                let keyring_label = if is_using_file_keystore {
+                    SharedString::from("Disabled")
+                } else {
+                    SharedString::from("Enabled")
+                };
+
                 this.child(
                     Button::new("user")
                         .small()
@@ -471,13 +416,32 @@ impl ChatSpace {
                         .transparent()
                         .icon(IconName::CaretDown)
                         .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
-                        .popup_menu(|this, _window, _cx| {
-                            this.menu(t!("user.dark_mode"), Box::new(DarkMode))
-                                .menu(t!("user.settings"), Box::new(Settings))
+                        .popup_menu(move |this, _window, _cx| {
+                            this.label(profile.display_name())
+                                .menu_with_icon(
+                                    t!("user.dark_mode"),
+                                    IconName::Sun,
+                                    Box::new(DarkMode),
+                                )
+                                .menu_with_icon(
+                                    t!("user.settings"),
+                                    IconName::Settings,
+                                    Box::new(Settings),
+                                )
                                 .separator()
-                                .menu(t!("user.reload_metadata"), Box::new(ReloadMetadata))
+                                .label("Keyring")
+                                .menu_with_icon_and_disabled(
+                                    keyring_label.clone(),
+                                    IconName::Encryption,
+                                    Box::new(KeyringPopup),
+                                    !is_using_file_keystore,
+                                )
                                 .separator()
-                                .menu(t!("user.sign_out"), Box::new(Logout))
+                                .menu_with_icon(
+                                    t!("user.sign_out"),
+                                    IconName::Logout,
+                                    Box::new(Logout),
+                                )
                         }),
                 )
             })
@@ -504,7 +468,7 @@ impl Render for ChatSpace {
             .on_action(cx.listener(Self::on_sign_out))
             .on_action(cx.listener(Self::on_open_pubkey))
             .on_action(cx.listener(Self::on_copy_pubkey))
-            .on_action(cx.listener(Self::on_reload_metadata))
+            .on_action(cx.listener(Self::on_keyring))
             .relative()
             .size_full()
             .child(
