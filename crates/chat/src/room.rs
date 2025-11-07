@@ -441,12 +441,12 @@ impl Room {
 
         // Construct a direct message event
         //
-        // WARNING: never send this event to relays
+        // WARNING: never sign and send this event to relays
         let mut event = EventBuilder::new(Kind::PrivateDirectMessage, content)
             .tags(tags)
             .build(public_key);
 
-        // Generate event ID
+        // Ensure the event id has been generated
         event.ensure_id();
 
         event

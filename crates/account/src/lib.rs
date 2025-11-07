@@ -31,7 +31,7 @@ pub struct Account {
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     ///
     /// Encryption Key used for encryption and decryption instead of the user's identity
-    encryption: Option<Arc<dyn NostrSigner>>,
+    encryption: Entity<Option<Arc<dyn NostrSigner>>>,
 
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 2]>,
@@ -67,6 +67,7 @@ impl Account {
         let client = nostr.read(cx).client();
 
         let client_signer: Entity<Option<Arc<dyn NostrSigner>>> = cx.new(|_| None);
+        let encryption: Entity<Option<Arc<dyn NostrSigner>>> = cx.new(|_| None);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -74,10 +75,8 @@ impl Account {
         subscriptions.push(
             // Observe the client signer state
             cx.observe(&client_signer, move |this, state, cx| {
-                if let Some(signer) = state.read(cx).clone() {
-                    if this.encryption.is_none() {
-                        this.get_encryption(&signer, cx);
-                    }
+                if state.read(cx).is_some() && this.encryption.read(cx).is_none() {
+                    this.get_encryption(cx);
                 }
             }),
         );
@@ -151,7 +150,7 @@ impl Account {
         Self {
             public_key: None,
             client_signer,
-            encryption: None,
+            encryption,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -237,22 +236,21 @@ impl Account {
         }
     }
 
-    fn get_encryption(&mut self, _signer: &Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
+    fn get_encryption(&mut self, cx: &mut Context<Self>) {
         let task = self._get_encryption(cx);
 
-        cx.spawn(async move |_this, cx| {
+        cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(5)).await;
 
-            match task.await {
-                Ok(announcement) => {
-                    log::info!("Received encryption announcement: {announcement:?}");
-                    // Handle the announcement
+            let result = task.await;
+
+            this.update(cx, |this, cx| {
+                if let Ok(announcement) = result {
+                    this.load_encryption(&announcement, cx);
                 }
-                Err(e) => {
-                    log::info!("Encryption error: {e}")
-                    // Handle the error
-                }
-            }
+                cx.notify();
+            })
+            .expect("Entity has been released");
         })
         .detach();
     }
@@ -278,6 +276,28 @@ impl Account {
         })
     }
 
+    fn load_encryption(&mut self, announcement: &Announcement, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let n = announcement.public_key();
+
+        cx.spawn(async move |this, cx| {
+            let result = Self::get_keys(&client, "encryption").await;
+
+            this.update(cx, |this, cx| {
+                if let Ok(keys) = result {
+                    if keys.public_key() == n {
+                        this.set_encryption(Arc::new(keys), cx);
+                    }
+                }
+                // TODO: handle encryption key not matching or not found
+                cx.notify();
+            })
+            .expect("Entity has been released");
+        })
+        .detach();
+    }
+
     /// Set the public key of the account
     pub fn set_account(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
         self.public_key = Some(public_key);
@@ -298,6 +318,14 @@ impl Account {
     /// Set the client signer for the account
     pub fn set_client(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
         self.client_signer.update(cx, |this, cx| {
+            *this = Some(signer);
+            cx.notify();
+        });
+    }
+
+    /// Set the encryption signer for the account
+    pub fn set_encryption(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
+        self.encryption.update(cx, |this, cx| {
             *this = Some(signer);
             cx.notify();
         });
