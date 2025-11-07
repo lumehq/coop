@@ -4,10 +4,9 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
-use account::Account;
+use account::{Account, SignerKind};
 use anyhow::{anyhow, Error};
 use common::{EventUtils, RenderedProfile};
-use encryption::SignerKind;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;

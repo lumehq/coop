@@ -6,7 +6,10 @@ publish.workspace = true
 
 [dependencies]
 state = { path = "../state" }
+settings = { path = "../settings" }
 common = { path = "../common" }
+theme = { path = "../theme" }
+ui = { path = "../ui" }
 
 gpui.workspace = true
 nostr-sdk.workspace = true
@@ -15,3 +18,5 @@ anyhow.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 log.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::{config_dir, BOOTSTRAP_RELAYS, INBOX_SUB_ID, SEARCH_RELAYS};
+use common::{config_dir, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_gossip_memory::prelude::*;
 use nostr_lmdb::NostrLMDB;
@@ -15,6 +15,9 @@ pub use tracker::*;
 
 mod storage;
 mod tracker;
+
+pub const GIFTWRAP_SUBSCRIPTION: &str = "default-inbox";
+pub const ENCRYPTION_GIFTWARP_SUBSCRIPTION: &str = "encryption-inbox";
 
 pub fn init(cx: &mut App) {
     NostrRegistry::set_global(cx.new(NostrRegistry::new), cx);
@@ -249,7 +252,7 @@ impl NostrRegistry {
         urls: &[RelayUrl],
         public_key: PublicKey,
     ) -> Result<(), Error> {
-        let id = SubscriptionId::new(INBOX_SUB_ID);
+        let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
         // Verify that there are relays provided

@@ -1,8 +1,6 @@
 pub const CLIENT_NAME: &str = "Coop";
 pub const APP_ID: &str = "su.reya.coop";
 
-pub const INBOX_SUB_ID: &str = "inbox";
-
 /// Bootstrap Relays.
 pub const BOOTSTRAP_RELAYS: [&str; 5] = [
     "wss://relay.damus.io",
@@ -29,9 +27,6 @@ pub const NOSTR_CONNECT_TIMEOUT: u64 = 200;
 
 /// Default timeout (in seconds) for Nostr Connect (Bunker)
 pub const BUNKER_TIMEOUT: u64 = 30;
-
-/// Default timeout (in seconds) for fetching events
-pub const QUERY_TIMEOUT: u64 = 3;
 
 /// Total metadata requests will be grouped.
 pub const METADATA_BATCH_LIMIT: usize = 20;

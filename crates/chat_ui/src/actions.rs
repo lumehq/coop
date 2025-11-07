@@ -1,4 +1,4 @@
-use encryption::SignerKind;
+use account::SignerKind;
 use gpui::Action;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;

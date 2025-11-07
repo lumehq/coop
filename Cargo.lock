@@ -11,9 +11,14 @@ dependencies = [
  "gpui",
  "log",
  "nostr-sdk",
+ "serde",
+ "serde_json",
+ "settings",
  "smallvec",
  "smol",
  "state",
+ "theme",
+ "ui",
 ]
 
 [[package]]
@@ -1036,7 +1041,6 @@ dependencies = [
  "account",
  "anyhow",
  "common",
- "encryption",
  "flume",
  "futures",
  "fuzzy-matcher",
@@ -1062,7 +1066,6 @@ dependencies = [
  "chat",
  "common",
  "emojis",
- "encryption",
  "gpui",
  "gpui_tokio",
  "indexset",
@@ -1316,7 +1319,6 @@ dependencies = [
  "chat",
  "chat_ui",
  "common",
- "encryption",
  "futures",
  "gpui",
  "gpui_tokio",
@@ -1816,25 +1818,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "encryption"
-version = "0.2.11"
-dependencies = [
- "anyhow",
- "common",
- "gpui",
- "log",
- "nostr-sdk",
- "serde",
- "serde_json",
- "settings",
- "smallvec",
- "smol",
- "state",
- "theme",
- "ui",
 ]
 
 [[package]]
