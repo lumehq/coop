@@ -1036,6 +1036,7 @@ dependencies = [
  "account",
  "anyhow",
  "common",
+ "encryption",
  "flume",
  "futures",
  "fuzzy-matcher",
@@ -1061,6 +1062,7 @@ dependencies = [
  "chat",
  "common",
  "emojis",
+ "encryption",
  "gpui",
  "gpui_tokio",
  "indexset",
@@ -1198,7 +1200,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "indexmap",
  "rustc-hash 2.1.1",
@@ -1314,6 +1316,7 @@ dependencies = [
  "chat",
  "chat_ui",
  "common",
+ "encryption",
  "futures",
  "gpui",
  "gpui_tokio",
@@ -1619,7 +1622,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1813,6 +1816,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "encryption"
+version = "0.2.11"
+dependencies = [
+ "anyhow",
+ "common",
+ "gpui",
+ "log",
+ "nostr-sdk",
+ "serde",
+ "serde_json",
+ "settings",
+ "smallvec",
+ "smol",
+ "state",
+ "theme",
+ "ui",
 ]
 
 [[package]]
@@ -2516,7 +2538,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -2613,7 +2635,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2624,7 +2646,7 @@ dependencies = [
 [[package]]
 name = "gpui_tokio"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "gpui",
@@ -2853,7 +2875,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -2878,7 +2900,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -3683,7 +3705,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -3932,8 +3954,8 @@ dependencies = [
 
 [[package]]
 name = "nostr"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "aes",
  "base64",
@@ -3956,8 +3978,8 @@ dependencies = [
 
 [[package]]
 name = "nostr-connect"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "async-utility",
  "nostr",
@@ -3968,8 +3990,8 @@ dependencies = [
 
 [[package]]
 name = "nostr-database"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "flatbuffers",
  "lru",
@@ -3979,16 +4001,16 @@ dependencies = [
 
 [[package]]
 name = "nostr-gossip"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "nostr",
 ]
 
 [[package]]
 name = "nostr-gossip-memory"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "indexmap",
  "lru",
@@ -3999,8 +4021,8 @@ dependencies = [
 
 [[package]]
 name = "nostr-lmdb"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "async-utility",
  "flume",
@@ -4013,8 +4035,8 @@ dependencies = [
 
 [[package]]
 name = "nostr-relay-pool"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "async-utility",
  "async-wsocket",
@@ -4030,8 +4052,8 @@ dependencies = [
 
 [[package]]
 name = "nostr-sdk"
-version = "0.43.0"
-source = "git+https://github.com/rust-nostr/nostr#f5ac26c3156c6af93fa86c4d6e947c042e52f634"
+version = "0.44.0"
+source = "git+https://github.com/rust-nostr/nostr#c1a24383cd361a408fc53eeac7c1708a3b589194"
 dependencies = [
  "async-utility",
  "nostr",
@@ -4542,7 +4564,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "perf"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "collections",
  "serde",
@@ -4940,9 +4962,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.41"
+version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce25767e7b499d1b604768e7cde645d14cc8584231ea6b295e9c9eb22c02e1d1"
+checksum = "a338cc41d27e6cc6dce6cefc13a0729dfbb81c262b1f519331575dd80ef3067f"
 dependencies = [
  "proc-macro2",
 ]
@@ -5168,7 +5190,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "derive_refineable",
 ]
@@ -5266,7 +5288,7 @@ dependencies = [
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5320,7 +5342,7 @@ dependencies = [
 [[package]]
 name = "rope"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "arrayvec",
  "log",
@@ -5786,7 +5808,7 @@ checksum = "16c2f82143577edb4921b71ede051dac62ca3c16084e918bf7b40c96ae10eb33"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "serde",
@@ -6234,7 +6256,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "arrayvec",
  "log",
@@ -7221,7 +7243,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -7257,7 +7279,7 @@ dependencies = [
 [[package]]
 name = "util_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed#622d626a296378b08f12cf91f20043a13d621724"
+source = "git+https://github.com/zed-industries/zed#784fdcaee3be7bbcf9511097cf620256dc2f7ef6"
 dependencies = [
  "perf",
  "quote",

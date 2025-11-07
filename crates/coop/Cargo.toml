@@ -41,6 +41,7 @@ auto_update = { path = "../auto_update" }
 account = { path = "../account" }
 person = { path = "../person" }
 relay_auth = { path = "../relay_auth" }
+encryption = { path = "../encryption" }
 
 rust-i18n.workspace = true
 i18n.workspace = true

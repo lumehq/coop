@@ -4,6 +4,7 @@ use std::time::Duration;
 pub use actions::*;
 use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendOptions, SendReport};
 use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
+use encryption::SignerKind;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
@@ -20,7 +21,7 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use state::{NostrRegistry, SignerKind};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};

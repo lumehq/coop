@@ -7,10 +7,11 @@ use std::time::Duration;
 use account::Account;
 use anyhow::{anyhow, Error};
 use common::{EventUtils, RenderedProfile};
+use encryption::SignerKind;
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
-use state::{NostrRegistry, SignerKind};
+use state::NostrRegistry;
 
 const SEND_RETRY: usize = 10;
 

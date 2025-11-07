@@ -1,7 +1,7 @@
+use encryption::SignerKind;
 use gpui::Action;
 use nostr_sdk::prelude::*;
 use serde::Deserialize;
-use state::SignerKind;
 
 #[derive(Action, Clone, PartialEq, Eq, Deserialize)]
 #[action(namespace = chat, no_json)]

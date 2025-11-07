@@ -103,6 +103,11 @@ fn main() {
                 // Initialize auto update
                 auto_update::init(cx);
 
+                // Initialize encryption
+                //
+                // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+                encryption::init(cx);
+
                 Root::new(chatspace::init(window, cx).into(), window, cx)
             })
         })

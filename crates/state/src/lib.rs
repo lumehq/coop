@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Error};
 use common::{config_dir, BOOTSTRAP_RELAYS, INBOX_SUB_ID, SEARCH_RELAYS};
-pub use encryption::*;
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_gossip_memory::prelude::*;
 use nostr_lmdb::NostrLMDB;
@@ -14,7 +13,6 @@ use smol::lock::RwLock;
 pub use storage::*;
 pub use tracker::*;
 
-mod encryption;
 mod storage;
 mod tracker;
 
@@ -159,13 +157,17 @@ impl NostrRegistry {
                         Kind::RelayList => {
                             if Self::is_self_authored(client, &event).await {
                                 log::info!("Found relay list event for the current user");
+                                let author = event.pubkey;
+                                let announcement = Kind::Custom(10044);
 
                                 // Fetch user's messaging relays event
-                                _ = Self::subscribe(client, event.pubkey, Kind::InboxRelays).await;
+                                _ = Self::subscribe(client, author, Kind::InboxRelays).await;
+                                // Fetch user's encryption announcement event
+                                _ = Self::subscribe(client, author, announcement).await;
                                 // Fetch user's metadata event
-                                _ = Self::subscribe(client, event.pubkey, Kind::Metadata).await;
+                                _ = Self::subscribe(client, author, Kind::Metadata).await;
                                 // Fetch user's contact list event
-                                _ = Self::subscribe(client, event.pubkey, Kind::ContactList).await;
+                                _ = Self::subscribe(client, author, Kind::ContactList).await;
                             }
                         }
                         Kind::InboxRelays => {

@@ -12,6 +12,7 @@ common = { path = "../common" }
 account = { path = "../account" }
 person = { path = "../person" }
 chat = { path = "../chat" }
+encryption = { path = "../encryption" }
 settings = { path = "../settings" }
 
 gpui.workspace = true
