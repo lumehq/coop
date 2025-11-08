@@ -7,7 +7,7 @@ use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
+    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Element, Entity,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
@@ -18,6 +18,7 @@ use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
+use state::Announcement;
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
@@ -26,8 +27,9 @@ use ui::dock_area::dock::DockPlacement;
 use ui::dock_area::panel::PanelView;
 use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
+use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable};
+use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings};
 use crate::views::compose::compose_button;
@@ -395,9 +397,11 @@ impl ChatSpace {
                 )
             })
             .when(account.read(cx).has_account(), |this| {
-                let persons = PersonRegistry::global(cx);
                 let account = Account::global(cx);
                 let public_key = account.read(cx).public_key();
+                let has_encryption = account.read(cx).has_encryption();
+
+                let persons = PersonRegistry::global(cx);
                 let profile = persons.read(cx).get_person(&public_key, cx);
 
                 let keystore = KeyStore::global(cx);
@@ -410,41 +414,118 @@ impl ChatSpace {
                 };
 
                 this.child(
-                    Button::new("user")
-                        .small()
-                        .reverse()
-                        .transparent()
-                        .icon(IconName::CaretDown)
-                        .child(Avatar::new(profile.avatar(proxy)).size(rems(1.49)))
-                        .popup_menu(move |this, _window, _cx| {
-                            this.label(profile.display_name())
-                                .menu_with_icon(
-                                    t!("user.dark_mode"),
-                                    IconName::Sun,
-                                    Box::new(DarkMode),
+                    h_flex()
+                        .gap_1()
+                        .child(
+                            Popover::new("encryption")
+                                .trigger(
+                                    Button::new("encryption-trigger")
+                                        .tooltip("Manage Encryption Key")
+                                        .icon(IconName::Encryption)
+                                        .rounded()
+                                        .small()
+                                        .cta()
+                                        .map(|this| match has_encryption {
+                                            true => this.ghost_alt(),
+                                            false => this.warning(),
+                                        }),
                                 )
-                                .menu_with_icon(
-                                    t!("user.settings"),
-                                    IconName::Settings,
-                                    Box::new(Settings),
-                                )
-                                .separator()
-                                .label("Keyring")
-                                .menu_with_icon_and_disabled(
-                                    keyring_label.clone(),
-                                    IconName::Encryption,
-                                    Box::new(KeyringPopup),
-                                    !is_using_file_keystore,
-                                )
-                                .separator()
-                                .menu_with_icon(
-                                    t!("user.sign_out"),
-                                    IconName::Logout,
-                                    Box::new(Logout),
-                                )
-                        }),
+                                .content(move |window, cx| {
+                                    let ann = account.read(cx).announcement();
+                                    Self::encryption_popup(ann, window, cx)
+                                }),
+                        )
+                        .child(
+                            Button::new("user")
+                                .small()
+                                .reverse()
+                                .transparent()
+                                .icon(IconName::CaretDown)
+                                .child(Avatar::new(profile.avatar(proxy)).size(rems(1.45)))
+                                .popup_menu(move |this, _window, _cx| {
+                                    this.label(profile.display_name())
+                                        .menu_with_icon(
+                                            t!("user.dark_mode"),
+                                            IconName::Sun,
+                                            Box::new(DarkMode),
+                                        )
+                                        .menu_with_icon(
+                                            t!("user.settings"),
+                                            IconName::Settings,
+                                            Box::new(Settings),
+                                        )
+                                        .separator()
+                                        .label(SharedString::from("Keyring Service"))
+                                        .menu_with_icon_and_disabled(
+                                            keyring_label.clone(),
+                                            IconName::Encryption,
+                                            Box::new(KeyringPopup),
+                                            !is_using_file_keystore,
+                                        )
+                                        .separator()
+                                        .menu_with_icon(
+                                            t!("user.sign_out"),
+                                            IconName::Logout,
+                                            Box::new(Logout),
+                                        )
+                                }),
+                        ),
                 )
             })
+    }
+
+    fn encryption_popup(
+        ann: Option<Arc<Announcement>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Entity<PopoverContent> {
+        cx.new(|cx| {
+            PopoverContent::new(window, cx, move |_window, cx| {
+                v_flex()
+                    .p_2()
+                    .gap_1p5()
+                    .max_w(px(360.))
+                    .text_sm()
+                    .map(|this| {
+                        if let Some(ann) = ann.as_ref() {
+                            this.child(shared_t!("nip4e.announcement"))
+                                .child(
+                                    v_flex()
+                                        .h_12()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded_sm()
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .child(ann.client()),
+                                )
+                                .child(
+                                    Button::new("request")
+                                        .label("Request")
+                                        .small()
+                                        .primary()
+                                        .on_click(move |_ev, _window, _cx| {
+                                            //
+                                        }),
+                                )
+                        } else {
+                            this.child(
+                                div()
+                                    .font_semibold()
+                                    .text_color(cx.theme().text)
+                                    .child("Set up Encryption Key"),
+                            )
+                            .child(shared_t!("nip4e.description"))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().warning_foreground)
+                                    .child(shared_t!("nip4e.warning")),
+                            )
+                        }
+                    })
+                    .into_any()
+            })
+        })
     }
 }
 

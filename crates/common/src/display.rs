@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Error};
 use chrono::{Local, TimeZone};
-use gpui::{Image, ImageFormat, SharedString, SharedUri};
+use gpui::{Image, ImageFormat, SharedString};
 use nostr_sdk::prelude::*;
 use qrcode::render::svg;
 use qrcode::QrCode;
@@ -16,12 +16,12 @@ const FALLBACK_IMG: &str = "https://image.nostr.build/c30703b48f511c293a9003be81
 const IMAGE_RESIZE_SERVICE: &str = "https://wsrv.nl";
 
 pub trait RenderedProfile {
-    fn avatar(&self, proxy: bool) -> SharedUri;
+    fn avatar(&self, proxy: bool) -> SharedString;
     fn display_name(&self) -> SharedString;
 }
 
 impl RenderedProfile for Profile {
-    fn avatar(&self, proxy: bool) -> SharedUri {
+    fn avatar(&self, proxy: bool) -> SharedString {
         self.metadata()
             .picture
             .as_ref()
@@ -32,12 +32,12 @@ impl RenderedProfile for Profile {
                         "{IMAGE_RESIZE_SERVICE}/?url={picture}&w=100&h=100&fit=cover&mask=circle&default={FALLBACK_IMG}&n=-1"
                     );
 
-                    SharedUri::from(url)
+                    url.into()
                 } else {
-                    SharedUri::from(picture)
+                    picture.into()
                 }
             })
-            .unwrap_or_else(|| SharedUri::from("brand/avatar.png"))
+            .unwrap_or_else(|| "brand/avatar.png".into())
     }
 
     fn display_name(&self) -> SharedString {

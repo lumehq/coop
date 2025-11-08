@@ -31,10 +31,15 @@ pub struct Account {
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     ///
     /// Encryption Key used for encryption and decryption instead of the user's identity
-    encryption: Entity<Option<Arc<dyn NostrSigner>>>,
+    encryption: Option<Arc<dyn NostrSigner>>,
+
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    ///
+    /// Encryption Key announcement
+    announcement: Option<Arc<Announcement>>,
 
     /// Event subscriptions
-    _subscriptions: SmallVec<[Subscription; 2]>,
+    _subscriptions: SmallVec<[Subscription; 1]>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -67,52 +72,15 @@ impl Account {
         let client = nostr.read(cx).client();
 
         let client_signer: Entity<Option<Arc<dyn NostrSigner>>> = cx.new(|_| None);
-        let encryption: Entity<Option<Arc<dyn NostrSigner>>> = cx.new(|_| None);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
         subscriptions.push(
-            // Observe the client signer state
-            cx.observe(&client_signer, move |this, state, cx| {
-                if state.read(cx).is_some() && this.encryption.read(cx).is_none() {
-                    this.get_encryption(cx);
-                }
-            }),
-        );
-
-        subscriptions.push(
             // Observe when the public key is set
-            cx.observe_self(move |this, cx| {
-                let client = nostr.read(cx).client();
-
-                if this.public_key.is_some() && this.client_signer.read(cx).is_none() {
-                    this._tasks.push(
-                        // Initialize the client key
-                        cx.spawn(async move |this, cx| {
-                            match Self::get_keys(&client, "client").await {
-                                Ok(keys) => {
-                                    this.update(cx, |this, cx| {
-                                        this.set_client(Arc::new(keys), cx);
-                                    })
-                                    .expect("Entity has been released");
-                                }
-                                Err(_) => {
-                                    let keys = Keys::generate();
-                                    let secret = keys.secret_key().to_secret_hex();
-
-                                    // Store the key in the database for future use
-                                    Self::set_keys(&client, "client", secret).await.ok();
-
-                                    // Update global state
-                                    this.update(cx, |this, cx| {
-                                        this.set_client(Arc::new(keys), cx);
-                                    })
-                                    .expect("Entity has been released");
-                                }
-                            }
-                        }),
-                    );
+            cx.observe(&client_signer, move |this, state, cx| {
+                if state.read(cx).is_some() && this.announcement.is_none() {
+                    this.get_announcement(cx);
                 }
             }),
         );
@@ -124,12 +92,16 @@ impl Account {
 
                 async move |this, cx| {
                     let result = cx
-                        .background_spawn(async move { Self::observe_signer(&client).await })
+                        .background_spawn({
+                            let client = Arc::clone(&client);
+                            async move { Self::observe_signer(&client).await }
+                        })
                         .await;
 
                     if let Some(public_key) = result {
                         this.update(cx, |this, cx| {
                             this.set_account(public_key, cx);
+                            this.get_client_keys(client, cx);
                         })
                         .expect("Entity has been released")
                     }
@@ -140,10 +112,40 @@ impl Account {
         Self {
             public_key: None,
             client_signer,
-            encryption,
+            encryption: None,
+            announcement: None,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
+    }
+
+    /// Get the client keys from the database.
+    fn get_client_keys(&mut self, client: Arc<Client>, cx: &mut Context<Self>) {
+        let task = cx.spawn(async move |this, cx| {
+            match Self::get_keys(&client, "client").await {
+                Ok(keys) => {
+                    this.update(cx, |this, cx| {
+                        this.set_client(Arc::new(keys), cx);
+                    })
+                    .expect("Entity has been released");
+                }
+                Err(_) => {
+                    let keys = Keys::generate();
+                    let secret = keys.secret_key().to_secret_hex();
+
+                    // Store the key in the database for future use
+                    Self::set_keys(&client, "client", secret).await.ok();
+
+                    // Update global state
+                    this.update(cx, |this, cx| {
+                        this.set_client(Arc::new(keys), cx);
+                    })
+                    .expect("Entity has been released");
+                }
+            }
+        });
+
+        self._tasks.push(task);
     }
 
     /// Observe the signer and return the public key when it sets
@@ -229,26 +231,31 @@ impl Account {
         }
     }
 
-    fn get_encryption(&mut self, cx: &mut Context<Self>) {
-        let task = self._get_encryption(cx);
+    fn get_announcement(&mut self, cx: &mut Context<Self>) {
+        let task = self._get_announcement(cx);
 
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(5)).await;
 
-            let result = task.await;
-
-            this.update(cx, |this, cx| {
-                if let Ok(announcement) = result {
-                    this.load_encryption(&announcement, cx);
+            match task.await {
+                Ok(announcement) => {
+                    this.update(cx, |this, cx| {
+                        this.load_encryption(&announcement, cx);
+                        // Set the announcement
+                        this.announcement = Some(Arc::new(announcement));
+                        cx.notify();
+                    })
+                    .expect("Entity has been released");
                 }
-                cx.notify();
-            })
-            .expect("Entity has been released");
+                Err(err) => {
+                    log::error!("Failed to get announcement: {}", err);
+                }
+            };
         })
         .detach();
     }
 
-    fn _get_encryption(&self, cx: &App) -> Task<Result<Announcement, Error>> {
+    fn _get_announcement(&self, cx: &App) -> Task<Result<Announcement, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
@@ -318,10 +325,18 @@ impl Account {
 
     /// Set the encryption signer for the account
     pub fn set_encryption(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
-        self.encryption.update(cx, |this, cx| {
-            *this = Some(signer);
-            cx.notify();
-        });
+        self.encryption = Some(signer);
+        cx.notify();
+    }
+
+    /// Check if the account entity has an encryption key
+    pub fn has_encryption(&self) -> bool {
+        self.encryption.is_some()
+    }
+
+    /// Returns the encryption announcement
+    pub fn announcement(&self) -> Option<Arc<Announcement>> {
+        self.announcement.clone()
     }
 
     /// Extract an encryption keys announcement from an event.

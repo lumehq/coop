@@ -10,7 +10,7 @@ use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
     ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString, SharedUri,
+    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
@@ -1072,7 +1072,7 @@ impl ChatPanel {
             .relative()
             .w_16()
             .child(
-                img(SharedUri::from(url.to_string()))
+                img(url.as_str())
                     .size_16()
                     .shadow_lg()
                     .rounded(cx.theme().radius)

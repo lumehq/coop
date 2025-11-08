@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -26,8 +27,8 @@ impl Announcement {
         self.public_key
     }
 
-    pub fn client(&self) -> &str {
-        self.client.as_str()
+    pub fn client(&self) -> SharedString {
+        SharedString::from(self.client.clone())
     }
 }
 

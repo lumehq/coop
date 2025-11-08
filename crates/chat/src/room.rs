@@ -7,7 +7,7 @@ use std::time::Duration;
 use account::{Account, SignerKind};
 use anyhow::{anyhow, Error};
 use common::{EventUtils, RenderedProfile};
-use gpui::{App, AppContext, Context, EventEmitter, SharedString, SharedUri, Task};
+use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use state::NostrRegistry;
@@ -262,11 +262,11 @@ impl Room {
     }
 
     /// Gets the display image for the room
-    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedUri {
+    pub fn display_image(&self, proxy: bool, cx: &App) -> SharedString {
         if !self.is_group() {
             self.display_member(cx).avatar(proxy)
         } else {
-            SharedUri::from("brand/group.png")
+            SharedString::from("brand/group.png")
         }
     }
 
