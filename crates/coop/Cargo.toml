@@ -39,6 +39,7 @@ chat_ui = { path = "../chat_ui" }
 settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }
 account = { path = "../account" }
+encryption = { path = "../encryption" }
 person = { path = "../person" }
 relay_auth = { path = "../relay_auth" }
 

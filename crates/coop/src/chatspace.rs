@@ -5,6 +5,7 @@ use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
+use encryption::Encryption;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Element, Entity,
@@ -399,10 +400,12 @@ impl ChatSpace {
             .when(account.read(cx).has_account(), |this| {
                 let account = Account::global(cx);
                 let public_key = account.read(cx).public_key();
-                let has_encryption = account.read(cx).has_encryption();
 
                 let persons = PersonRegistry::global(cx);
                 let profile = persons.read(cx).get_person(&public_key, cx);
+
+                let encryption = Encryption::global(cx);
+                let has_encryption = encryption.read(cx).has_encryption();
 
                 let keystore = KeyStore::global(cx);
                 let is_using_file_keystore = keystore.read(cx).is_using_file_keystore();
@@ -431,7 +434,7 @@ impl ChatSpace {
                                         }),
                                 )
                                 .content(move |window, cx| {
-                                    let ann = account.read(cx).announcement();
+                                    let ann = encryption.read(cx).announcement();
                                     Self::encryption_popup(ann, window, cx)
                                 }),
                         )

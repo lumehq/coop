@@ -280,7 +280,7 @@ impl RelayAuth {
     /// Removes an authentication request from the list.
     fn remove(&mut self, challenge: &str, cx: &mut Context<Self>) {
         self.requests.update(cx, |this, cx| {
-            this.retain(|_, r| r.challenge != challenge);
+            this.retain(|_url, req| req.challenge != challenge);
             cx.notify();
         });
     }

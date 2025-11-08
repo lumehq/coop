@@ -1,15 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context as AnyhowContext, Error};
+use anyhow::Error;
 use common::BOOTSTRAP_RELAYS;
-pub use encryption::*;
-use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
+use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::{Announcement, NostrRegistry};
-
-mod encryption;
+use state::NostrRegistry;
 
 pub fn init(cx: &mut App) {
     Account::set_global(cx.new(Account::new), cx);
@@ -23,26 +20,22 @@ pub struct Account {
     /// The public key of the account
     public_key: Option<PublicKey>,
 
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Client Signer that used for communication between devices
-    client_signer: Entity<Option<Arc<dyn NostrSigner>>>,
+    /// Status of the current user NIP-65 relays
+    pub nip65_status: RelayStatus,
 
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Encryption Key used for encryption and decryption instead of the user's identity
-    encryption: Option<Arc<dyn NostrSigner>>,
-
-    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    ///
-    /// Encryption Key announcement
-    announcement: Option<Arc<Announcement>>,
-
-    /// Event subscriptions
-    _subscriptions: SmallVec<[Subscription; 1]>,
+    /// Status of the current user NIP-17 relays
+    pub nip17_status: RelayStatus,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RelayStatus {
+    #[default]
+    Initial,
+    NotSet,
+    Set,
 }
 
 impl Account {
@@ -71,37 +64,21 @@ impl Account {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
-        let client_signer: Entity<Option<Arc<dyn NostrSigner>>> = cx.new(|_| None);
-
-        let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
-        subscriptions.push(
-            // Observe when the public key is set
-            cx.observe(&client_signer, move |this, state, cx| {
-                if state.read(cx).is_some() && this.announcement.is_none() {
-                    this.get_announcement(cx);
-                }
-            }),
-        );
-
         tasks.push(
-            // Handle notifications
+            // Observe the nostr signer and set the public key when it sets
             cx.spawn({
                 let client = Arc::clone(&client);
 
                 async move |this, cx| {
                     let result = cx
-                        .background_spawn({
-                            let client = Arc::clone(&client);
-                            async move { Self::observe_signer(&client).await }
-                        })
+                        .background_spawn(async move { Self::observe_signer(&client).await })
                         .await;
 
                     if let Some(public_key) = result {
                         this.update(cx, |this, cx| {
                             this.set_account(public_key, cx);
-                            this.get_client_keys(client, cx);
                         })
                         .expect("Entity has been released")
                     }
@@ -111,41 +88,10 @@ impl Account {
 
         Self {
             public_key: None,
-            client_signer,
-            encryption: None,
-            announcement: None,
-            _subscriptions: subscriptions,
+            nip65_status: RelayStatus::default(),
+            nip17_status: RelayStatus::default(),
             _tasks: tasks,
         }
-    }
-
-    /// Get the client keys from the database.
-    fn get_client_keys(&mut self, client: Arc<Client>, cx: &mut Context<Self>) {
-        let task = cx.spawn(async move |this, cx| {
-            match Self::get_keys(&client, "client").await {
-                Ok(keys) => {
-                    this.update(cx, |this, cx| {
-                        this.set_client(Arc::new(keys), cx);
-                    })
-                    .expect("Entity has been released");
-                }
-                Err(_) => {
-                    let keys = Keys::generate();
-                    let secret = keys.secret_key().to_secret_hex();
-
-                    // Store the key in the database for future use
-                    Self::set_keys(&client, "client", secret).await.ok();
-
-                    // Update global state
-                    this.update(cx, |this, cx| {
-                        this.set_client(Arc::new(keys), cx);
-                    })
-                    .expect("Entity has been released");
-                }
-            }
-        });
-
-        self._tasks.push(task);
     }
 
     /// Observe the signer and return the public key when it sets
@@ -184,123 +130,72 @@ impl Account {
         Ok(())
     }
 
-    /// Encrypt and store a key in the local database.
-    async fn set_keys<T>(client: &Client, kind: T, value: String) -> Result<(), Error>
-    where
-        T: Into<String>,
-    {
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        // Encrypt the value
-        let content = signer.nip44_encrypt(&public_key, value.as_ref()).await?;
-
-        // Construct the application data event
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
-            .tag(Tag::identifier(format!("coop:{}", kind.into())))
-            .build(public_key)
-            .sign(&Keys::generate())
-            .await?;
-
-        // Save the event to the database
-        client.database().save_event(&event).await?;
-
-        Ok(())
-    }
-
-    /// Get and decrypt a key from the local database.
-    async fn get_keys<T>(client: &Client, kind: T) -> Result<Keys, Error>
-    where
-        T: Into<String>,
-    {
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
+    /// Ensure the user has NIP-65 relays
+    async fn ensure_nip65_relays(client: &Client, public_key: PublicKey) -> Result<bool, Error> {
         let filter = Filter::new()
-            .kind(Kind::ApplicationSpecificData)
-            .identifier(format!("coop:{}", kind.into()));
+            .kind(Kind::RelayList)
+            .author(public_key)
+            .limit(1);
 
-        if let Some(event) = client.database().query(filter).await?.first() {
-            let content = signer.nip44_decrypt(&public_key, &event.content).await?;
-            let secret = SecretKey::parse(&content)?;
-            let keys = Keys::new(secret);
+        // Count the number of nip65 relays event in the database
+        let total = client.database().count(filter).await.unwrap_or(0);
 
-            Ok(keys)
-        } else {
-            Err(anyhow!("Key not found"))
-        }
+        Ok(total > 0)
     }
 
-    fn get_announcement(&mut self, cx: &mut Context<Self>) {
-        let task = self._get_announcement(cx);
+    /// Ensure the user has NIP-17 relays
+    async fn ensure_nip17_relays(client: &Client, public_key: PublicKey) -> Result<bool, Error> {
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
 
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_secs(5)).await;
+        // Count the number of nip17 relays event in the database
+        let total = client.database().count(filter).await.unwrap_or(0);
 
-            match task.await {
-                Ok(announcement) => {
-                    this.update(cx, |this, cx| {
-                        this.load_encryption(&announcement, cx);
-                        // Set the announcement
-                        this.announcement = Some(Arc::new(announcement));
-                        cx.notify();
-                    })
-                    .expect("Entity has been released");
-                }
-                Err(err) => {
-                    log::error!("Failed to get announcement: {}", err);
-                }
-            };
-        })
-        .detach();
-    }
-
-    fn _get_announcement(&self, cx: &App) -> Task<Result<Announcement, Error>> {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
-        cx.background_spawn(async move {
-            let user_signer = client.signer().await?;
-            let public_key = user_signer.get_public_key().await?;
-
-            let filter = Filter::new()
-                .kind(Kind::Custom(10044))
-                .author(public_key)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first() {
-                Ok(Self::extract_announcement(event)?)
-            } else {
-                Err(anyhow!("Announcement not found"))
-            }
-        })
-    }
-
-    fn load_encryption(&mut self, announcement: &Announcement, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let n = announcement.public_key();
-
-        cx.spawn(async move |this, cx| {
-            let result = Self::get_keys(&client, "encryption").await;
-
-            this.update(cx, |this, cx| {
-                if let Ok(keys) = result {
-                    if keys.public_key() == n {
-                        this.set_encryption(Arc::new(keys), cx);
-                    }
-                }
-                // TODO: handle encryption key not matching or not found
-                cx.notify();
-            })
-            .expect("Entity has been released");
-        })
-        .detach();
+        Ok(total > 0)
     }
 
     /// Set the public key of the account
     pub fn set_account(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        // Update account's public key
         self.public_key = Some(public_key);
+
+        // Add background task
+        self._tasks.push(
+            // Verify user's nip65 and nip17 relays
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_secs(10))
+                    .await;
+
+                let ensure_nip65 = Self::ensure_nip65_relays(&client, public_key).await;
+                let ensure_nip17 = Self::ensure_nip17_relays(&client, public_key).await;
+
+                this.update(cx, |this, cx| {
+                    match ensure_nip65 {
+                        Ok(true) => {
+                            this.nip65_status = RelayStatus::Set;
+                        }
+                        _ => this.nip65_status = RelayStatus::NotSet,
+                    };
+
+                    match ensure_nip17 {
+                        Ok(true) => {
+                            this.nip17_status = RelayStatus::Set;
+                        }
+                        _ => this.nip17_status = RelayStatus::NotSet,
+                    };
+
+                    cx.notify();
+                })
+                .expect("Entity has been released")
+            }),
+        );
+
         cx.notify();
     }
 
@@ -313,49 +208,5 @@ impl Account {
     pub fn public_key(&self) -> PublicKey {
         // This method is only called when user is logged in, so unwrap safely
         self.public_key.unwrap()
-    }
-
-    /// Set the client signer for the account
-    pub fn set_client(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
-        self.client_signer.update(cx, |this, cx| {
-            *this = Some(signer);
-            cx.notify();
-        });
-    }
-
-    /// Set the encryption signer for the account
-    pub fn set_encryption(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
-        self.encryption = Some(signer);
-        cx.notify();
-    }
-
-    /// Check if the account entity has an encryption key
-    pub fn has_encryption(&self) -> bool {
-        self.encryption.is_some()
-    }
-
-    /// Returns the encryption announcement
-    pub fn announcement(&self) -> Option<Arc<Announcement>> {
-        self.announcement.clone()
-    }
-
-    /// Extract an encryption keys announcement from an event.
-    fn extract_announcement(event: &Event) -> Result<Announcement, Error> {
-        let public_key = event
-            .tags
-            .iter()
-            .find(|tag| tag.kind().as_str() == "n" || tag.kind().as_str() == "pubkey")
-            .and_then(|tag| tag.content())
-            .and_then(|c| PublicKey::parse(c).ok())
-            .context("Cannot parse public key from the event's tags")?;
-
-        let client_name = event
-            .tags
-            .find(TagKind::Client)
-            .and_then(|tag| tag.content())
-            .map(|c| c.to_string())
-            .context("Cannot parse client name from the event's tags")?;
-
-        Ok(Announcement::new(event.id, client_name, public_key))
     }
 }
