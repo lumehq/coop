@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 pub use signer::*;
 use smallvec::{smallvec, SmallVec};
-use state::{Announcement, NostrRegistry};
+use state::{Announcement, NostrRegistry, Response};
 
 mod signer;
 
@@ -333,6 +334,56 @@ impl Encryption {
         })
     }
 
+    /// Wait for the approval response event
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub fn wait_for_approval(&self, cx: &App) -> Task<Result<Keys, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        let client_signer = self.client_signer.read(cx).clone().unwrap();
+        let mut processed_events = HashSet::new();
+
+        cx.background_spawn(async move {
+            let mut notifications = client.notifications();
+            log::info!("Listening for notifications");
+
+            while let Ok(notification) = notifications.recv().await {
+                let RelayPoolNotification::Message { message, .. } = notification else {
+                    // Skip non-message notifications
+                    continue;
+                };
+
+                if let RelayMessage::Event { event, .. } = message {
+                    if !processed_events.insert(event.id) {
+                        // Skip if the event has already been processed
+                        continue;
+                    }
+
+                    if event.kind != Kind::Custom(4455) {
+                        // Skip non-gift wrap events
+                        continue;
+                    }
+
+                    if let Ok(response) = Self::extract_response(&client, &event).await {
+                        let public_key = response.public_key();
+                        let payload = response.payload();
+
+                        // Decrypt the payload using the client signer
+                        let decrypted = client_signer.nip44_decrypt(&public_key, payload).await?;
+                        let secret = SecretKey::parse(&decrypted)?;
+                        // Construct the encryption keys
+                        let keys = Keys::new(secret);
+
+                        return Ok(keys);
+                    }
+                }
+            }
+
+            Err(anyhow!("Failed to handle Encryption Key approval response"))
+        })
+    }
+
     /// Set the client signer for the account
     pub fn set_client(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
         self.client_signer.update(cx, |this, cx| {
@@ -375,5 +426,24 @@ impl Encryption {
             .context("Cannot parse client name from the event's tags")?;
 
         Ok(Announcement::new(event.id, client_name, public_key))
+    }
+
+    /// Extract an encryption keys response from an event.
+    async fn extract_response(client: &Client, event: &Event) -> Result<Response, Error> {
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        if event.pubkey != public_key {
+            return Err(anyhow!("Event does not belong to current user"));
+        }
+
+        let client_pubkey = event
+            .tags
+            .find(TagKind::custom("P"))
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        Ok(Response::new(event.content.clone(), client_pubkey))
     }
 }
