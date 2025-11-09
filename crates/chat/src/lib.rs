@@ -11,7 +11,7 @@ use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT};
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
 pub use message::*;
 use nostr_sdk::prelude::*;
 pub use room::*;
@@ -38,9 +38,6 @@ pub struct ChatRegistry {
 
     /// Loading status of the registry
     pub loading: bool,
-
-    /// Event subscriptions
-    _subscriptions: SmallVec<[Subscription; 1]>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 4]>,
@@ -75,22 +72,13 @@ impl ChatRegistry {
 
     /// Create a new chat registry instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let account = Account::global(cx);
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
         let status = Arc::new(AtomicBool::new(true));
         let (tx, rx) = flume::bounded::<Signal>(2048);
 
-        let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
-
-        subscriptions.push(
-            // Observe the account global state
-            cx.observe(&account, |_this, _state, _cx| {
-                // TODO: handle subscription after encryption key is set
-            }),
-        );
 
         tasks.push(
             // Handle gift wrap events
@@ -142,7 +130,6 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
-            _subscriptions: subscriptions,
             _tasks: tasks,
         }
     }

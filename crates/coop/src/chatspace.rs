@@ -6,9 +6,10 @@ use chat::{ChatEvent, ChatRegistry};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
 use encryption::Encryption;
+use encryption_ui::EncryptionPanel;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Element, Entity,
+    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
@@ -19,7 +20,6 @@ use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::Announcement;
 use theme::{ActiveTheme, Theme, ThemeMode};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
@@ -30,7 +30,7 @@ use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
 use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
+use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings};
 use crate::views::compose::compose_button;
@@ -60,6 +60,12 @@ pub struct ChatSpace {
     /// App's Dock Area
     dock: Entity<DockArea>,
 
+    /// App's Encryption Panel
+    encryption_panel: Entity<EncryptionPanel>,
+
+    /// Determines if the chat space is ready to use
+    ready: bool,
+
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 4]>,
 }
@@ -72,6 +78,7 @@ impl ChatSpace {
 
         let title_bar = cx.new(|_| TitleBar::new());
         let dock = cx.new(|cx| DockArea::new(window, cx));
+        let encryption_panel = encryption_ui::init(window, cx);
 
         let mut subscriptions = smallvec![];
 
@@ -85,7 +92,7 @@ impl ChatSpace {
         subscriptions.push(
             // Observe account entity changes
             cx.observe_in(&account, window, move |this, state, window, cx| {
-                if state.read(cx).has_account() {
+                if !this.ready && state.read(cx).has_account() {
                     this.set_default_layout(window, cx);
 
                     // Load all chat room in the database if available
@@ -167,6 +174,8 @@ impl ChatSpace {
         Self {
             dock,
             title_bar,
+            encryption_panel,
+            ready: false,
             _subscriptions: subscriptions,
         }
     }
@@ -207,6 +216,7 @@ impl ChatSpace {
             cx,
         );
 
+        self.ready = true;
         self.dock.update(cx, |this, cx| {
             this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
             this.set_center(center, window, cx);
@@ -341,9 +351,10 @@ impl ChatSpace {
         let account = Account::global(cx);
         let relay_auth = RelayAuth::global(cx);
         let pending_requests = relay_auth.read(cx).pending_requests(cx);
+        let encryption_panel = self.encryption_panel.downgrade();
 
         h_flex()
-            .gap_1()
+            .gap_2()
             .map(|this| match auto_update.read(cx).status.as_ref() {
                 AutoUpdateStatus::Checking => this.child(
                     div()
@@ -434,8 +445,17 @@ impl ChatSpace {
                                         }),
                                 )
                                 .content(move |window, cx| {
-                                    let ann = encryption.read(cx).announcement();
-                                    Self::encryption_popup(ann, window, cx)
+                                    let encryption_panel = encryption_panel.clone();
+
+                                    cx.new(|cx| {
+                                        PopoverContent::new(window, cx, move |_window, _cx| {
+                                            if let Some(view) = encryption_panel.upgrade() {
+                                                view.clone().into_any_element()
+                                            } else {
+                                                div().into_any_element()
+                                            }
+                                        })
+                                    })
                                 }),
                         )
                         .child(
@@ -475,60 +495,6 @@ impl ChatSpace {
                         ),
                 )
             })
-    }
-
-    fn encryption_popup(
-        ann: Option<Arc<Announcement>>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Entity<PopoverContent> {
-        cx.new(|cx| {
-            PopoverContent::new(window, cx, move |_window, cx| {
-                v_flex()
-                    .p_2()
-                    .gap_1p5()
-                    .max_w(px(360.))
-                    .text_sm()
-                    .map(|this| {
-                        if let Some(ann) = ann.as_ref() {
-                            this.child(shared_t!("nip4e.announcement"))
-                                .child(
-                                    v_flex()
-                                        .h_12()
-                                        .items_center()
-                                        .justify_center()
-                                        .rounded_sm()
-                                        .bg(cx.theme().elevated_surface_background)
-                                        .child(ann.client()),
-                                )
-                                .child(
-                                    Button::new("request")
-                                        .label("Request")
-                                        .small()
-                                        .primary()
-                                        .on_click(move |_ev, _window, _cx| {
-                                            //
-                                        }),
-                                )
-                        } else {
-                            this.child(
-                                div()
-                                    .font_semibold()
-                                    .text_color(cx.theme().text)
-                                    .child("Set up Encryption Key"),
-                            )
-                            .child(shared_t!("nip4e.description"))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().warning_foreground)
-                                    .child(shared_t!("nip4e.warning")),
-                            )
-                        }
-                    })
-                    .into_any()
-            })
-        })
     }
 }
 

@@ -90,14 +90,6 @@ request_encryption:
   body:
     en: "You've requested for the encryption Key from:"
 
-nip4e:
-  description:
-    en: "Encryption Key is used to replace the User's Identity in encryption and decryption processes."
-  warning:
-    en: "Encryption Key is still in the alpha stage. Please be cautious."
-  announcement:
-    en: "You've set up Encryption Key on other client."
-
 auto_update:
   updating:
     en: "Installing the new update..."

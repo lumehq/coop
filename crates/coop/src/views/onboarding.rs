@@ -224,7 +224,7 @@ impl Focusable for Onboarding {
 }
 
 impl Render for Onboarding {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .size_full()
             .child(

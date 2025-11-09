@@ -176,20 +176,14 @@ impl Account {
                 let ensure_nip17 = Self::ensure_nip17_relays(&client, public_key).await;
 
                 this.update(cx, |this, cx| {
-                    match ensure_nip65 {
-                        Ok(true) => {
-                            this.nip65_status = RelayStatus::Set;
-                        }
-                        _ => this.nip65_status = RelayStatus::NotSet,
+                    this.nip65_status = match ensure_nip65 {
+                        Ok(true) => RelayStatus::Set,
+                        _ => RelayStatus::NotSet,
                     };
-
-                    match ensure_nip17 {
-                        Ok(true) => {
-                            this.nip17_status = RelayStatus::Set;
-                        }
-                        _ => this.nip17_status = RelayStatus::NotSet,
+                    this.nip17_status = match ensure_nip17 {
+                        Ok(true) => RelayStatus::Set,
+                        _ => RelayStatus::NotSet,
                     };
-
                     cx.notify();
                 })
                 .expect("Entity has been released")

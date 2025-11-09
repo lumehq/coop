@@ -330,9 +330,11 @@ impl RelayAuth {
                     .loading(loading)
                     .disabled(loading)
                     .on_click(move |_ev, window, cx| {
-                        _ = entity.update(cx, |this, cx| {
-                            this.response(req.clone(), window, cx);
-                        });
+                        entity
+                            .update(cx, |this, cx| {
+                                this.response(req.clone(), window, cx);
+                            })
+                            .expect("Entity has been released");
                     })
             });
 
@@ -340,7 +342,7 @@ impl RelayAuth {
         window.push_notification(note, cx);
 
         // Focus the window if it's not active
-        if !window.is_window_active() {
+        if !window.is_window_hovered() {
             window.activate_window();
         }
     }

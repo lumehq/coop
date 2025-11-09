@@ -40,6 +40,7 @@ settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }
 account = { path = "../account" }
 encryption = { path = "../encryption" }
+encryption_ui = { path = "../encryption_ui" }
 person = { path = "../person" }
 relay_auth = { path = "../relay_auth" }
 

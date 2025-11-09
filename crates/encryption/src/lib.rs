@@ -202,6 +202,9 @@ impl Encryption {
         })
     }
 
+    /// Load the encryption key that stored in the database
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     fn load_encryption(&mut self, announcement: &Announcement, cx: &mut Context<Self>) {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
@@ -222,40 +225,51 @@ impl Encryption {
         .detach();
     }
 
+    /// Overwrite the encryption key
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub fn new_encryption(&self, cx: &App) -> Task<Result<Keys, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        let keys = Keys::generate();
+        let public_key = keys.public_key();
+        let secret = keys.secret_key().to_secret_hex();
+
+        // Create a task announce the encryption key
+        cx.background_spawn(async move {
+            // Store the encryption key to the database
+            Self::set_keys(&client, "encryption", secret).await?;
+
+            let signer = client.signer().await?;
+
+            // Construct the announcement event
+            let event = EventBuilder::new(Kind::Custom(10044), "")
+                .tags(vec![
+                    Tag::client(app_name()),
+                    Tag::custom(TagKind::custom("n"), vec![public_key]),
+                ])
+                .sign(&signer)
+                .await?;
+
+            // Send the announcement event to user's relays
+            client.send_event(&event).await?;
+
+            Ok(keys)
+        })
+    }
+
     /// Send a request for encryption key from other clients
     ///
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-    fn send_request(&mut self, cx: &mut Context<Self>) {
-        let client_signer = self.client_signer.read(cx).clone().unwrap();
-        let task = self._send_request(client_signer, cx);
-
-        self._tasks.push(
-            // Handle encryption request
-            cx.spawn(async move |this, cx| {
-                match task.await {
-                    Ok(Some(keys)) => {
-                        this.update(cx, |this, cx| {
-                            this.set_encryption(Arc::new(keys), cx);
-                        })
-                        .expect("Entity has been released");
-                    }
-                    Ok(None) => {
-                        //
-                    }
-                    Err(e) => {
-                        log::error!("Failed to send encryption request: {}", e);
-                    }
-                }
-            }),
-        );
-    }
-
-    fn _send_request<T>(&self, client_signer: T, cx: &App) -> Task<Result<Option<Keys>, Error>>
-    where
-        T: NostrSigner,
-    {
+    pub fn send_request(&self, cx: &App) -> Task<Result<Option<Keys>, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+
+        // Get the client signer
+        let Some(client_signer) = self.client_signer.read(cx).clone() else {
+            return Task::ready(Err(anyhow!("Client Signer is required")));
+        };
 
         cx.background_spawn(async move {
             let signer = client.signer().await?;
