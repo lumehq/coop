@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use gpui::SharedString;
 use nostr_sdk::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Announcement {
     id: EventId,
     client: String,

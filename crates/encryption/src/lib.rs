@@ -37,11 +37,22 @@ pub struct Encryption {
     /// Encryption Key announcement
     announcement: Option<Arc<Announcement>>,
 
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    ///
+    /// Requests for encryption keys from other devices
+    requests: Entity<HashSet<Announcement>>,
+
+    /// Handle notifications async task
+    handle_notifications: Option<Task<()>>,
+
+    /// Handle requests async task
+    handle_requests: Option<Task<()>>,
+
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 1]>,
+    _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl Encryption {
@@ -61,7 +72,8 @@ impl Encryption {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
-        let client_signer: Entity<Option<Arc<dyn NostrSigner>>> = cx.new(|_| None);
+        let requests = cx.new(|_| HashSet::default());
+        let client_signer = cx.new(|_| None);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -103,9 +115,12 @@ impl Encryption {
         );
 
         Self {
+            requests,
             client_signer,
             encryption: None,
             announcement: None,
+            handle_notifications: None,
+            handle_requests: None,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
@@ -161,7 +176,7 @@ impl Encryption {
     fn get_announcement(&mut self, cx: &mut Context<Self>) {
         let task = self._get_announcement(cx);
 
-        cx.spawn(async move |this, cx| {
+        self._tasks.push(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(5)).await;
 
             match task.await {
@@ -178,8 +193,7 @@ impl Encryption {
                     log::error!("Failed to get announcement: {}", err);
                 }
             };
-        })
-        .detach();
+        }));
     }
 
     fn _get_announcement(&self, cx: &App) -> Task<Result<Announcement, Error>> {
@@ -218,12 +232,90 @@ impl Encryption {
                 if let Ok(keys) = result {
                     if keys.public_key() == n {
                         this.set_encryption(Arc::new(keys), cx);
+                        this.listen_request(cx);
                     }
                 }
             })
             .expect("Entity has been released");
         })
         .detach();
+    }
+
+    /// Listen for the encryption key request from other devices
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub fn listen_request(&mut self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        let (tx, rx) = flume::bounded::<Announcement>(50);
+
+        let task: Task<Result<(), Error>> = cx.background_spawn({
+            let client = Arc::clone(&client);
+
+            async move {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                let id = SubscriptionId::new("listen-request");
+
+                let filter = Filter::new()
+                    .author(public_key)
+                    .kind(Kind::Custom(4454))
+                    .since(Timestamp::now());
+
+                // Unsubscribe from the previous subscription
+                client.unsubscribe(&id).await;
+
+                // Subscribe to the new subscription
+                client.subscribe_with_id(id, filter, None).await?;
+
+                Ok(())
+            }
+        });
+
+        // Run this task and finish in the background
+        task.detach();
+
+        // Handle notifications
+        self.handle_notifications = Some(cx.background_spawn(async move {
+            let mut notifications = client.notifications();
+            let mut processed_events = HashSet::new();
+
+            while let Ok(notification) = notifications.recv().await {
+                let RelayPoolNotification::Message { message, .. } = notification else {
+                    // Skip if the notification is not a message
+                    continue;
+                };
+
+                if let RelayMessage::Event { event, .. } = message {
+                    if !processed_events.insert(event.id) {
+                        // Skip if the event has already been processed
+                        continue;
+                    }
+
+                    if event.kind != Kind::Custom(4454) {
+                        // Skip if the event is not a encryption events
+                        continue;
+                    };
+
+                    if Self::is_self_authored(&client, &event).await {
+                        if let Ok(announcement) = Self::extract_announcement(&event) {
+                            tx.send_async(announcement).await.ok();
+                        }
+                    }
+                }
+            }
+        }));
+
+        // Handle requests
+        self.handle_requests = Some(cx.spawn(async move |this, cx| {
+            while let Ok(request) = rx.recv_async().await {
+                this.update(cx, |this, cx| {
+                    this.set_request(request, cx);
+                })
+                .expect("Entity has been released");
+            }
+        }));
     }
 
     /// Overwrite the encryption key
@@ -315,7 +407,7 @@ impl Encryption {
                     client.send_event(&event).await?;
 
                     // Create a unique ID to control the subscription later
-                    let subscription_id = SubscriptionId::new("encryption-request");
+                    let subscription_id = SubscriptionId::new("listen-response");
 
                     let filter = Filter::new()
                         .kind(Kind::Custom(4455))
@@ -331,6 +423,65 @@ impl Encryption {
                     Ok(None)
                 }
             }
+        })
+    }
+
+    /// Send the approval response event
+    ///
+    /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
+    pub fn send_response(&self, target: PublicKey, cx: &App) -> Task<Result<(), Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        // Get the client signer
+        let Some(client_signer) = self.client_signer.read(cx).clone() else {
+            return Task::ready(Err(anyhow!("Client Signer is required")));
+        };
+
+        cx.background_spawn(async move {
+            let encryption = Self::get_keys(&client, "encryption").await?;
+            let client_pubkey = client_signer.get_public_key().await?;
+
+            // Encrypt the encryption keys with the client's signer
+            let payload = client_signer
+                .nip44_encrypt(&target, &encryption.secret_key().to_secret_hex())
+                .await?;
+
+            // Construct the response event
+            //
+            // P tag: the current client's public key
+            // p tag: the requester's public key
+            let event = EventBuilder::new(Kind::Custom(4455), payload)
+                .tags(vec![
+                    Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
+                    Tag::public_key(target),
+                ])
+                .sign(&client_signer)
+                .await?;
+
+            // Get the current user's signer and public key
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            // Get the current user's relay list
+            let urls: Vec<RelayUrl> = client
+                .database()
+                .relay_list(public_key)
+                .await?
+                .into_iter()
+                .filter_map(|(url, metadata)| {
+                    if metadata.is_none() || metadata == Some(RelayMetadata::Read) {
+                        Some(url)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Send the response event to the user's relay list
+            client.send_event_to(urls, &event).await?;
+
+            Ok(())
         })
     }
 
@@ -408,6 +559,19 @@ impl Encryption {
         self.announcement.clone()
     }
 
+    /// Returns the encryption requests
+    pub fn requests(&self) -> Entity<HashSet<Announcement>> {
+        self.requests.clone()
+    }
+
+    /// Push the encryption request
+    pub fn set_request(&mut self, request: Announcement, cx: &mut Context<Self>) {
+        self.requests.update(cx, |this, cx| {
+            this.insert(request);
+            cx.notify();
+        });
+    }
+
     /// Extract an encryption keys announcement from an event.
     fn extract_announcement(event: &Event) -> Result<Announcement, Error> {
         let public_key = event
@@ -445,5 +609,15 @@ impl Encryption {
             .context("Cannot parse public key from the event's tags")?;
 
         Ok(Response::new(event.content.clone(), client_pubkey))
+    }
+
+    /// Check if event is published by current user
+    async fn is_self_authored(client: &Client, event: &Event) -> bool {
+        if let Ok(signer) = client.signer().await {
+            if let Ok(public_key) = signer.get_public_key().await {
+                return public_key == event.pubkey;
+            }
+        }
+        false
     }
 }

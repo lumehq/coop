@@ -100,6 +100,7 @@ impl RelayAuth {
             // Handle notifications
             cx.spawn({
                 let client = Arc::clone(&client);
+
                 async move |this, cx| {
                     let mut notifications = client.notifications();
                     let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
@@ -217,35 +218,37 @@ impl RelayAuth {
             Err(anyhow!("Authentication failed"))
         });
 
-        self._tasks.push(cx.spawn_in(window, async move |this, cx| {
-            match task.await {
-                Ok(_) => {
-                    this.update_in(cx, |this, window, cx| {
-                        this.remove(&challenge, cx);
+        self._tasks.push(
+            // Handle response in the background
+            cx.spawn_in(window, async move |this, cx| {
+                match task.await {
+                    Ok(_) => {
+                        this.update_in(cx, |this, window, cx| {
+                            // Clear the current notification
+                            window.clear_notification_by_id(SharedString::from(&challenge), cx);
 
-                        // Save the authenticated relay to automatically authenticate future requests
-                        settings.update(cx, |this, cx| {
-                            this.push_relay(&url, cx);
-                        });
+                            // Remove the challenge from the list of pending authentications
+                            this.remove(&challenge, cx);
 
-                        // Clear the current notification
-                        window.clear_notification_by_id(SharedString::from(challenge), cx);
+                            // Save the authenticated relay to automatically authenticate future requests
+                            settings.update(cx, |this, cx| {
+                                this.push_relay(&url, cx);
+                            });
 
-                        // Push a new notification after current cycle
-                        cx.defer_in(window, move |_, window, cx| {
+                            // Push a new notification after current cycle
                             window.push_notification(format!("{url} has been authenticated"), cx);
-                        });
-                    })
-                    .ok();
-                }
-                Err(e) => {
-                    this.update_in(cx, |_, window, cx| {
-                        window.push_notification(Notification::error(e.to_string()), cx);
-                    })
-                    .ok();
-                }
-            };
-        }));
+                        })
+                        .expect("Entity has been released");
+                    }
+                    Err(e) => {
+                        this.update_in(cx, |_, window, cx| {
+                            window.push_notification(Notification::error(e.to_string()), cx);
+                        })
+                        .expect("Entity has been released");
+                    }
+                };
+            }),
+        );
     }
 
     /// Inserts a new authentication request into the entity.

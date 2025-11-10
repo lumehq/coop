@@ -2,16 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::anyhow;
+use common::shorten_pubkey;
 use encryption::Encryption;
 use futures::FutureExt;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
-    Styled, Window,
+    Styled, Subscription, Window,
 };
+use smallvec::{smallvec, SmallVec};
+use state::Announcement;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
-use ui::{h_flex, v_flex, Disableable, Sizable, StyledExt};
+use ui::notification::Notification;
+use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<EncryptionPanel> {
     cx.new(|cx| EncryptionPanel::new(window, cx))
@@ -22,21 +26,39 @@ pub struct EncryptionPanel {
     /// Whether the panel is currently requesting encryption.
     requesting: bool,
 
-    /// Whether the panel is currently resetting encryption.
-    resetting: bool,
+    /// Whether the panel is currently creating encryption.
+    creating: bool,
 
     /// Whether the panel is currently showing an error.
     error: Entity<Option<SharedString>>,
+
+    /// Event subscriptions
+    _subscriptions: SmallVec<[Subscription; 1]>,
 }
 
 impl EncryptionPanel {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let error = cx.new(|_| None);
+
+        let encryption = Encryption::global(cx);
+        let requests = encryption.read(cx).requests();
+
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(
+            // Observe encryption request
+            cx.observe_in(&requests, window, |this, state, window, cx| {
+                for req in state.read(cx).clone().into_iter() {
+                    this.ask_for_approval(req, window, cx);
+                }
+            }),
+        );
 
         Self {
             requesting: false,
-            resetting: false,
+            creating: false,
             error,
+            _subscriptions: subscriptions,
         }
     }
 
@@ -45,8 +67,8 @@ impl EncryptionPanel {
         cx.notify();
     }
 
-    fn set_resetting(&mut self, status: bool, cx: &mut Context<Self>) {
-        self.resetting = status;
+    fn set_creating(&mut self, status: bool, cx: &mut Context<Self>) {
+        self.creating = status;
         cx.notify();
     }
 
@@ -97,25 +119,32 @@ impl EncryptionPanel {
         .detach();
     }
 
-    fn reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn new_encryption(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let encryption = Encryption::global(cx);
         let reset = encryption.read(cx).new_encryption(cx);
+
+        // Ensure the user has not sent multiple requests
+        if self.requesting {
+            return;
+        }
+        self.set_creating(true, cx);
 
         cx.spawn_in(window, async move |this, cx| {
             match reset.await {
                 Ok(keys) => {
                     this.update(cx, |this, cx| {
-                        this.set_resetting(false, cx);
+                        this.set_creating(false, cx);
                         // Set the encryption key
                         encryption.update(cx, |this, cx| {
                             this.set_encryption(Arc::new(keys), cx);
+                            this.listen_request(cx);
                         });
                     })
                     .expect("Entity has been released");
                 }
                 Err(e) => {
                     this.update(cx, |this, cx| {
-                        this.set_resetting(false, cx);
+                        this.set_creating(false, cx);
                         this.set_error(e.to_string(), cx);
                     })
                     .expect("Entity has been released");
@@ -160,35 +189,136 @@ impl EncryptionPanel {
         })
         .detach();
     }
+
+    fn ask_for_approval(&mut self, req: Announcement, window: &mut Window, cx: &mut Context<Self>) {
+        let client_name = SharedString::from(req.client().to_string());
+        let target = req.public_key();
+
+        let note = Notification::new()
+            .custom_id(SharedString::from(req.id().to_hex()))
+            .autohide(false)
+            .icon(IconName::Info)
+            .title(SharedString::from("Encryption Key Request"))
+            .content(move |_window, cx| {
+                v_flex()
+                    .gap_2()
+                    .text_sm()
+                    .child(SharedString::from(
+                        "You've requested for the Encryption Key from:",
+                    ))
+                    .child(
+                        v_flex()
+                            .py_1()
+                            .px_1p5()
+                            .rounded_sm()
+                            .text_xs()
+                            .bg(cx.theme().warning_background)
+                            .text_color(cx.theme().warning_foreground)
+                            .child(client_name.clone()),
+                    )
+                    .into_any_element()
+            })
+            .action(move |_window, _cx| {
+                Button::new("approve")
+                    .label("Approve")
+                    .small()
+                    .primary()
+                    .loading(false)
+                    .disabled(false)
+                    .on_click(move |_ev, _window, cx| {
+                        let encryption = Encryption::global(cx);
+                        let send_response = encryption.read(cx).send_response(target, cx);
+
+                        send_response.detach();
+                    })
+            });
+
+        // Push the notification to the current window
+        window.push_notification(note, cx);
+
+        // Focus the window if it's not active
+        if !window.is_window_hovered() {
+            window.activate_window();
+        }
+    }
 }
 
 impl Render for EncryptionPanel {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        const NOTICE: &str = "You've set up Encryption Key on other client.";
-        const DESCRIPTION: &str = "Encryption Key is used to replace the User's Identity in encryption and decryption processes.";
+        const NOTICE: &str = "Found an Encryption Announcement";
+        const SUGGEST: &str = "Please request the Encryption Key to continue using.";
+
+        const DESCRIPTION: &str = "Encryption Key is used to replace the User's Identity in encryption and decryption messages. Coop will automatically fallback to User's Identity if needed.";
         const WARNING: &str = "Encryption Key is still in the alpha stage. Please be cautious.";
 
         let encryption = Encryption::global(cx);
+        let has_encryption = encryption.read(cx).has_encryption();
 
         v_flex()
             .p_2()
-            .gap_1p5()
-            .max_w(px(360.))
+            .gap_2()
+            .w(px(320.))
             .text_sm()
-            .map(|this| {
+            .when(has_encryption, |this| {
+                this.child(
+                    h_flex()
+                        .gap_2()
+                        .w_full()
+                        .text_xs()
+                        .font_semibold()
+                        .child(
+                            Icon::new(IconName::CheckCircleFill)
+                                .small()
+                                .text_color(cx.theme().element_foreground),
+                        )
+                        .child(SharedString::from("Encryption Key has been set")),
+                )
+            })
+            .when(!has_encryption, |this| {
                 if let Some(announcement) = encryption.read(cx).announcement().as_ref() {
-                    this.child(SharedString::from(NOTICE))
+                    let pubkey = shorten_pubkey(announcement.public_key(), 16);
+                    let name = announcement.client();
+
+                    this.child(div().font_semibold().child(SharedString::from(NOTICE)))
                         .child(
                             v_flex()
                                 .h_12()
                                 .items_center()
                                 .justify_center()
-                                .rounded_sm()
-                                .bg(cx.theme().elevated_surface_background)
-                                .child(announcement.client()),
+                                .rounded(cx.theme().radius)
+                                .bg(cx.theme().warning_background)
+                                .text_color(cx.theme().warning_foreground)
+                                .child(name),
+                        )
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_semibold()
+                                        .text_color(cx.theme().text_muted)
+                                        .child(SharedString::from("Client Public Key:")),
+                                )
+                                .child(
+                                    h_flex()
+                                        .h_7()
+                                        .w_full()
+                                        .px_2()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .child(SharedString::from(pubkey)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().text_muted)
+                                .child(SharedString::from(SUGGEST)),
                         )
                         .child(
                             h_flex()
+                                .mt_2()
                                 .gap_1()
                                 .when(!self.requesting, |this| {
                                     this.child(
@@ -197,14 +327,14 @@ impl Render for EncryptionPanel {
                                             .flex_1()
                                             .small()
                                             .ghost_alt()
-                                            .loading(self.resetting)
-                                            .disabled(self.resetting)
+                                            .loading(self.creating)
+                                            .disabled(self.creating)
                                             .on_click(cx.listener(move |this, _ev, window, cx| {
-                                                this.reset(window, cx);
+                                                this.new_encryption(window, cx);
                                             })),
                                     )
                                 })
-                                .when(!self.resetting, |this| {
+                                .when(!self.creating, |this| {
                                     this.child(
                                         Button::new("request")
                                             .label({
@@ -235,19 +365,31 @@ impl Render for EncryptionPanel {
                             )
                         })
                 } else {
-                    this.child(
-                        div()
-                            .font_semibold()
-                            .text_color(cx.theme().text)
-                            .child("Set up Encryption Key"),
-                    )
-                    .child(SharedString::from(DESCRIPTION))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().warning_foreground)
-                            .child(SharedString::from(WARNING)),
-                    )
+                    this.w_full()
+                        .child(
+                            div()
+                                .font_semibold()
+                                .child(SharedString::from("Set up Encryption Key")),
+                        )
+                        .child(SharedString::from(DESCRIPTION))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().warning_foreground)
+                                .child(SharedString::from(WARNING)),
+                        )
+                        .child(
+                            Button::new("create")
+                                .label("Setup")
+                                .flex_1()
+                                .small()
+                                .primary()
+                                .loading(self.creating)
+                                .disabled(self.creating)
+                                .on_click(cx.listener(move |this, _ev, window, cx| {
+                                    this.new_encryption(window, cx);
+                                })),
+                        )
                 }
             })
     }
