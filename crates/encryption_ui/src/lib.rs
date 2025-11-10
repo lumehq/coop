@@ -252,7 +252,7 @@ impl Render for EncryptionPanel {
         const WARNING: &str = "Encryption Key is still in the alpha stage. Please be cautious.";
 
         let encryption = Encryption::global(cx);
-        let has_encryption = encryption.read(cx).has_encryption();
+        let has_encryption = encryption.read(cx).has_encryption(cx);
 
         v_flex()
             .p_2()
@@ -269,7 +269,7 @@ impl Render for EncryptionPanel {
                         .child(
                             Icon::new(IconName::CheckCircleFill)
                                 .small()
-                                .text_color(cx.theme().element_foreground),
+                                .text_color(cx.theme().element_active),
                         )
                         .child(SharedString::from("Encryption Key has been set")),
                 )

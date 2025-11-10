@@ -416,7 +416,7 @@ impl ChatSpace {
                 let profile = persons.read(cx).get_person(&public_key, cx);
 
                 let encryption = Encryption::global(cx);
-                let has_encryption = encryption.read(cx).has_encryption();
+                let has_encryption = encryption.read(cx).has_encryption(cx);
 
                 let keystore = KeyStore::global(cx);
                 let is_using_file_keystore = keystore.read(cx).is_using_file_keystore();

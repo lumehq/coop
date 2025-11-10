@@ -30,7 +30,7 @@ pub struct Encryption {
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     ///
     /// Encryption Key used for encryption and decryption instead of the user's identity
-    encryption: Option<Arc<dyn NostrSigner>>,
+    pub encryption: Entity<Option<Arc<dyn NostrSigner>>>,
 
     /// NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
     ///
@@ -42,10 +42,10 @@ pub struct Encryption {
     /// Requests for encryption keys from other devices
     requests: Entity<HashSet<Announcement>>,
 
-    /// Handle notifications async task
+    /// Async task for handling notifications
     handle_notifications: Option<Task<()>>,
 
-    /// Handle requests async task
+    /// Async task for handling requests
     handle_requests: Option<Task<()>>,
 
     /// Event subscriptions
@@ -73,6 +73,7 @@ impl Encryption {
         let client = nostr.read(cx).client();
 
         let requests = cx.new(|_| HashSet::default());
+        let encryption = cx.new(|_| None);
         let client_signer = cx.new(|_| None);
 
         let mut subscriptions = smallvec![];
@@ -81,7 +82,7 @@ impl Encryption {
         subscriptions.push(
             // Observe the account state
             cx.observe(&account, |this, state, cx| {
-                if state.read(cx).has_account() && !this.has_encryption() {
+                if state.read(cx).has_account() && !this.has_encryption(cx) {
                     this.get_announcement(cx);
                 }
             }),
@@ -117,7 +118,7 @@ impl Encryption {
         Self {
             requests,
             client_signer,
-            encryption: None,
+            encryption,
             announcement: None,
             handle_notifications: None,
             handle_requests: None,
@@ -545,13 +546,20 @@ impl Encryption {
 
     /// Set the encryption signer for the account
     pub fn set_encryption(&mut self, signer: Arc<dyn NostrSigner>, cx: &mut Context<Self>) {
-        self.encryption = Some(signer);
-        cx.notify();
+        self.encryption.update(cx, |this, cx| {
+            *this = Some(signer);
+            cx.notify();
+        });
     }
 
     /// Check if the account entity has an encryption key
-    pub fn has_encryption(&self) -> bool {
-        self.encryption.is_some()
+    pub fn has_encryption(&self, cx: &App) -> bool {
+        self.encryption.read(cx).is_some()
+    }
+
+    /// Returns the encryption key
+    pub fn encryption_key(&self, cx: &App) -> Option<Arc<dyn NostrSigner>> {
+        self.encryption.read(cx).clone()
     }
 
     /// Returns the encryption announcement

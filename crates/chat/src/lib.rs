@@ -8,16 +8,18 @@ use std::time::Duration;
 use account::Account;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::{EventUtils, BOOTSTRAP_RELAYS, METADATA_BATCH_LIMIT};
+use encryption::Encryption;
 use flume::Sender;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Task};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Global, Subscription, Task};
 pub use message::*;
 use nostr_sdk::prelude::*;
 pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::{initialized_at, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
+use smol::lock::RwLock;
+use state::{initialized_at, EventTracker, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
 
 mod message;
 mod room;
@@ -38,6 +40,9 @@ pub struct ChatRegistry {
 
     /// Loading status of the registry
     pub loading: bool,
+
+    /// Event subscriptions
+    _subscriptions: SmallVec<[Subscription; 1]>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 4]>,
@@ -72,21 +77,41 @@ impl ChatRegistry {
 
     /// Create a new chat registry instance
     fn new(cx: &mut Context<Self>) -> Self {
+        let encryption = Encryption::global(cx);
+        let encryption_key = encryption.read(cx).encryption.clone();
+
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let tracker = nostr.read(cx).tracker();
 
         let status = Arc::new(AtomicBool::new(true));
         let (tx, rx) = flume::bounded::<Signal>(2048);
 
+        let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
+        subscriptions.push(
+            // Observe the encryption global state
+            cx.observe(&encryption_key, {
+                let status = Arc::clone(&status);
+                let tx = tx.clone();
+
+                move |this, state, cx| {
+                    if let Some(signer) = state.read(cx).clone() {
+                        this.retry_failed_events(&signer, &tx, &status, cx);
+                    }
+                }
+            }),
+        );
+
         tasks.push(
-            // Handle gift wrap events
+            // Handle notifications
             cx.background_spawn({
                 let client = Arc::clone(&client);
                 let status = Arc::clone(&status);
                 let tx = tx.clone();
-                async move { Self::handle_events(&client, &tx, &status).await }
+
+                async move { Self::handle_notifications(&client, &tracker, &tx, &status).await }
             }),
         );
 
@@ -130,15 +155,23 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
+            _subscriptions: subscriptions,
             _tasks: tasks,
         }
     }
 
-    async fn handle_events(client: &Client, tx: &Sender<Signal>, status: &Arc<AtomicBool>) {
+    async fn handle_notifications(
+        client: &Client,
+        tracker: &Arc<RwLock<EventTracker>>,
+        tx: &Sender<Signal>,
+        status: &Arc<AtomicBool>,
+    ) {
         let mut notifications = client.notifications();
         log::info!("Listening for notifications");
 
+        let initialized_at = initialized_at();
         let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
+
         let mut public_keys = HashSet::new();
         let mut processed_events = HashSet::new();
 
@@ -160,32 +193,41 @@ impl ChatRegistry {
                         continue;
                     }
 
-                    if let Ok(rumor) = Self::extract_rumor(client, event.as_ref()).await {
-                        match initialized_at() <= &event.created_at {
-                            true => {
-                                let new_message = NewMessage::new(event.id, rumor);
-                                let signal = Signal::Message(new_message);
+                    // Extract the rumor from the gift wrap event
+                    match Self::extract_rumor(client, event.as_ref()).await {
+                        Ok(rumor) => {
+                            match &event.created_at >= initialized_at {
+                                true => {
+                                    let new_message = NewMessage::new(event.id, rumor);
+                                    let signal = Signal::Message(new_message);
 
-                                if let Err(e) = tx.send_async(signal).await {
-                                    log::error!("Failed to send signal: {}", e);
+                                    if let Err(e) = tx.send_async(signal).await {
+                                        log::error!("Failed to send signal: {}", e);
+                                    }
+                                }
+                                false => {
+                                    status.store(true, Ordering::Release);
                                 }
                             }
-                            false => {
-                                status.store(true, Ordering::Release);
+
+                            // Get all public keys
+                            public_keys.extend(event.tags.public_keys().copied());
+
+                            let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
+                            let done = !status.load(Ordering::Acquire) && !public_keys.is_empty();
+
+                            // Get metadata for all public keys if the limit is reached
+                            if limit_reached || done {
+                                let public_keys = std::mem::take(&mut public_keys);
+                                // Get metadata for the public keys
+                                Self::get_metadata(client, public_keys).await.ok();
                             }
                         }
+                        Err(_e) => {
+                            let mut tracker = tracker.write().await;
+                            tracker.failed_unwrap_events.push(event.as_ref().clone());
 
-                        // Get all public keys
-                        public_keys.extend(event.tags.public_keys().copied());
-
-                        let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
-                        let finished = !status.load(Ordering::Acquire) && !public_keys.is_empty();
-
-                        // Get metadata for all public keys if the limit is reached
-                        if limit_reached || finished {
-                            let public_keys = std::mem::take(&mut public_keys);
-                            // Get metadata for the public keys
-                            Self::get_metadata(client, public_keys).await.ok();
+                            drop(tracker);
                         }
                     }
                 }
@@ -236,6 +278,46 @@ impl ChatRegistry {
             }
             smol::Timer::after(loop_duration).await;
         }
+    }
+
+    fn retry_failed_events(
+        &mut self,
+        signer: &Arc<dyn NostrSigner>,
+        tx: &Sender<Signal>,
+        status: &Arc<AtomicBool>,
+        cx: &mut Context<Self>,
+    ) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let tracker = nostr.read(cx).tracker();
+
+        let signer = Arc::clone(signer);
+        let status = Arc::clone(status);
+
+        let tx = tx.clone();
+        let initialized_at = initialized_at();
+
+        self._tasks.push(cx.background_spawn(async move {
+            let tracker = tracker.read().await;
+
+            for event in tracker.failed_unwrap_events.iter() {
+                if let Ok(rumor) = Self::try_unwrap_custom(&client, &signer, event).await {
+                    match &event.created_at >= initialized_at {
+                        true => {
+                            let new_message = NewMessage::new(event.id, rumor);
+                            let signal = Signal::Message(new_message);
+
+                            if let Err(e) = tx.send_async(signal).await {
+                                log::error!("Failed to send signal: {}", e);
+                            }
+                        }
+                        false => {
+                            status.store(true, Ordering::Release);
+                        }
+                    }
+                }
+            }
+        }));
     }
 
     /// Set the loading status of the chat registry
@@ -526,13 +608,35 @@ impl ChatRegistry {
 
         // Try to unwrap with the available signer
         let unwrapped = Self::try_unwrap(client, gift_wrap).await?;
+        let mut rumor_unsigned = unwrapped.rumor;
 
-        // let sender = unwrapped.sender;
-        // TODO: verify sender
-        // if !self.verify_rumor_sender(sender, &rumor_unsigned) {
-        //   return Err(anyhow!("Cannot verify the sender"));
-        // };
+        // Generate event id for the rumor if it doesn't have one
+        rumor_unsigned.ensure_id();
 
+        // Cache the rumor
+        Self::set_rumor(client, gift_wrap.id, &rumor_unsigned).await?;
+
+        Ok(rumor_unsigned)
+    }
+
+    // Helper method to try unwrapping with different signers
+    async fn try_unwrap(client: &Client, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+        let signer = client.signer().await?;
+        let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
+
+        Ok(unwrapped)
+    }
+
+    /// Helper method to try unwrapping with a custom signer
+    async fn try_unwrap_custom<T>(
+        client: &Client,
+        signer: &T,
+        gift_wrap: &Event,
+    ) -> Result<UnsignedEvent, Error>
+    where
+        T: NostrSigner,
+    {
+        let unwrapped = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await?;
         let mut rumor_unsigned = unwrapped.rumor;
 
         // Generate event id for the rumor if it doesn't have one
@@ -605,19 +709,6 @@ impl ChatRegistry {
         } else {
             Err(anyhow!("Event is not cached yet."))
         }
-    }
-
-    // Helper method to try unwrapping with different signers
-    async fn try_unwrap(client: &Client, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
-        // Try to unwrap with the encryption key if available
-        // NIP-4e: https://github.com/nostr-protocol/nips/blob/per-device-keys/4e.md
-        // TODO
-
-        // Fallback to unwrap with the user's signer
-        let signer = client.signer().await?;
-        let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
-
-        Ok(unwrapped)
     }
 
     /// Get metadata for a list of public keys

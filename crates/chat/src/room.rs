@@ -1,13 +1,12 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::time::Duration;
 
 use account::Account;
 use anyhow::{anyhow, Error};
 use common::{EventUtils, RenderedProfile};
-use encryption::SignerKind;
+use encryption::{Encryption, SignerKind};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
@@ -460,6 +459,9 @@ impl Room {
         opts: &SendOptions,
         cx: &App,
     ) -> Task<Result<Vec<SendReport>, Error>> {
+        let encryption = Encryption::global(cx);
+        let encryption_key = encryption.read(cx).encryption_key(cx);
+
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
         let cache_manager = nostr.read(cx).cache_manager();
@@ -476,10 +478,8 @@ impl Room {
             let cache = cache_manager.read().await;
             let tracker = tracker.read().await;
 
-            let encryption: Option<Arc<dyn NostrSigner>> = None;
-
             // Get the encryption public key
-            let encryption_pubkey = if let Some(signer) = encryption.as_ref() {
+            let encryption_pubkey = if let Some(signer) = encryption_key.as_ref() {
                 signer.get_public_key().await.ok()
             } else {
                 None
@@ -493,7 +493,7 @@ impl Room {
             members.retain(|&pk| pk != user_pubkey);
 
             // Determine the signer will be used based on the provided options
-            let signer = Self::select_signer(&opts.signer_kind, user_signer, encryption)?;
+            let signer = Self::select_signer(&opts.signer_kind, user_signer, encryption_key)?;
 
             // Collect the send reports
             let mut reports: Vec<SendReport> = vec![];
@@ -521,10 +521,16 @@ impl Room {
 
                 let receiver = Self::select_receiver(&signer_kind, member, encryption)?;
                 let rumor = rumor.clone();
-                let tags = vec![Tag::public_key(member)];
+
+                // Construct the sealed event
+                let seal = EventBuilder::seal(&signer, &receiver, rumor.clone())
+                    .await?
+                    .build(member)
+                    .sign(&signer)
+                    .await?;
 
                 // Construct the gift wrap event
-                let event = EventBuilder::gift_wrap(&signer, &receiver, rumor, tags).await?;
+                let event = EventBuilder::gift_wrap_from_seal(&member, &seal, vec![])?;
 
                 // Send the gift wrap event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -674,15 +680,15 @@ impl Room {
 
     fn select_receiver(
         kind: &SignerKind,
-        user: PublicKey,
+        members: PublicKey,
         encryption: Option<PublicKey>,
     ) -> Result<PublicKey, Error> {
         match kind {
             SignerKind::Encryption => {
                 Ok(encryption.ok_or_else(|| anyhow!("Receiver's encryption key not found"))?)
             }
-            SignerKind::User => Ok(user),
-            SignerKind::Auto => Ok(encryption.unwrap_or(user)),
+            SignerKind::User => Ok(members),
+            SignerKind::Auto => Ok(encryption.unwrap_or(members)),
         }
     }
 }
