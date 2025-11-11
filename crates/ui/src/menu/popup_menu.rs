@@ -861,8 +861,8 @@ impl PopupMenu {
     fn render_icon(
         has_icon: bool,
         icon: Option<Icon>,
-        _: &mut Window,
-        _: &mut Context<Self>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
         if !has_icon {
             return None;
@@ -873,7 +873,7 @@ impl PopupMenu {
             .h_3p5()
             .justify_center()
             .text_sm()
-            .when_some(icon, |this, icon| this.child(icon.clone().xsmall()));
+            .when_some(icon, |this, icon| this.child(icon.clone().small()));
 
         Some(icon)
     }

@@ -1,17 +1,17 @@
 use std::time::Duration;
 
 use anyhow::anyhow;
+use common::BUNKER_TIMEOUT;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
     Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use i18n::{shared_t, t};
-use key_store::backend::KeyItem;
-use key_store::KeyStore;
+use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, BUNKER_TIMEOUT};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -213,8 +213,10 @@ impl Login {
     }
 
     fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         cx.background_spawn(async move {
-            let client = app_state().client();
             client.set_signer(signer).await;
         })
         .detach();
@@ -262,6 +264,10 @@ impl Login {
 
     pub fn login_with_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         let keystore = KeyStore::global(cx).read(cx).backend();
+
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_hex().into_bytes();
 
@@ -281,7 +287,6 @@ impl Login {
 
             // Update the signer
             cx.background_spawn(async move {
-                let client = app_state().client();
                 client.set_signer(keys).await;
             })
             .detach();

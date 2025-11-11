@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Error;
-use common::nip96::nip96_upload;
+use common::nip96_upload;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
@@ -12,7 +12,7 @@ use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
-use states::app_state;
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
@@ -34,12 +34,18 @@ pub struct EditProfile {
 
 impl EditProfile {
     pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("profile.placeholder_name")));
+
         let avatar_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/avatar.jpg"));
+
         let website_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("https://your-website.com"));
+
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .multi_line()
@@ -58,7 +64,6 @@ impl EditProfile {
             };
 
             let task: Task<Result<Option<Metadata>, Error>> = cx.background_spawn(async move {
-                let client = app_state().client();
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
                 let metadata = client
@@ -104,8 +109,12 @@ impl EditProfile {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let nip96 = AppSettings::get_media_server(cx);
         let avatar_input = self.avatar_input.downgrade();
+
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -125,9 +134,7 @@ impl EditProfile {
                         let (tx, rx) = oneshot::channel::<Url>();
 
                         nostr_sdk::async_utility::task::spawn(async move {
-                            if let Ok(url) =
-                                nip96_upload(app_state().client(), &nip96, file_data).await
-                            {
+                            if let Ok(url) = nip96_upload(&client, &nip96, file_data).await {
                                 _ = tx.send(url);
                             }
                         });
@@ -168,6 +175,9 @@ impl EditProfile {
     }
 
     pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Profile, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
@@ -190,7 +200,6 @@ impl EditProfile {
         }
 
         cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
 
             // Sign the new metadata event

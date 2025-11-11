@@ -6,9 +6,33 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
+use common::config_dir;
 use futures::FutureExt as _;
 use gpui::AsyncApp;
-use states::config_dir;
+use nostr_sdk::prelude::*;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Credential {
+    public_key: PublicKey,
+    secret: String,
+}
+
+impl Credential {
+    pub fn new(user: String, secret: Vec<u8>) -> Self {
+        Self {
+            public_key: PublicKey::parse(&user).unwrap(),
+            secret: String::from_utf8(secret).unwrap(),
+        }
+    }
+
+    pub fn public_key(&self) -> PublicKey {
+        self.public_key
+    }
+
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyItem {

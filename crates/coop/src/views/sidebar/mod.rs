@@ -3,10 +3,8 @@ use std::ops::Range;
 use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use chat::room::{Room, RoomKind};
-use chat::{ChatEvent, ChatRegistry};
-use common::debounced_delay::DebouncedDelay;
-use common::display::{RenderedTimestamp, TextUtils};
+use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
+use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
@@ -20,7 +18,7 @@ use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -137,8 +135,7 @@ impl Sidebar {
         }
     }
 
-    async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
-        let client = app_state().client();
+    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
@@ -152,18 +149,7 @@ impl Sidebar {
         Ok(())
     }
 
-    async fn create_temp_room(receiver: PublicKey) -> Result<Room, Error> {
-        // Request to get user's metadata
-        Self::request_metadata(receiver).await?;
-
-        // Create a temporary room
-        let room = Room::new(None, vec![receiver]).await?;
-
-        Ok(room)
-    }
-
-    async fn nip50(query: &str) -> Result<BTreeSet<Room>, Error> {
-        let client = app_state().client();
+    async fn nip50(client: &Client, query: &str) -> Result<BTreeSet<Room>, Error> {
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
@@ -186,10 +172,13 @@ impl Sidebar {
                     continue;
                 }
 
-                // Return a temporary room
-                if let Ok(room) = Self::create_temp_room(event.pubkey).await {
-                    rooms.insert(room);
-                }
+                // Request metadata event's author
+                Self::request_metadata(client, event.pubkey).await?;
+
+                // Construct room
+                let room = Room::new(None, public_key, vec![event.pubkey]);
+
+                rooms.insert(room);
             }
         }
 
@@ -212,11 +201,13 @@ impl Sidebar {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let query = query.to_owned();
         let query_cloned = query.clone();
 
         let task = smol::future::or(
-            Tokio::spawn(cx, async move { Self::nip50(&query).await.ok() }),
+            Tokio::spawn(cx, async move { Self::nip50(&client, &query).await.ok() }),
             Tokio::spawn(cx, async move {
                 let _ = rx.recv().await.is_ok();
                 None
@@ -263,13 +254,20 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
-            if let Ok(profile) = common::nip05::nip05_profile(&address).await {
-                Self::create_temp_room(profile.public_key).await
-            } else {
-                Err(anyhow!(t!("sidebar.addr_error")))
+            match common::nip05_profile(&address).await {
+                Ok(profile) => {
+                    let signer = client.signer().await?;
+                    let public_key = signer.get_public_key().await?;
+                    let room = Room::new(None, public_key, vec![profile.public_key]);
+
+                    Ok(room)
+                }
+                Err(e) => Err(anyhow!(e)),
             }
         });
 
@@ -310,6 +308,9 @@ impl Sidebar {
     }
 
     fn search_by_pubkey(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let Ok(public_key) = query.to_public_key() else {
             window.push_notification(t!("common.pubkey_invalid"), cx);
             self.set_finding(false, window, cx);
@@ -317,8 +318,13 @@ impl Sidebar {
         };
 
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
-            // Create a gift wrap event to represent as room
-            Self::create_temp_room(public_key).await
+            let signer = client.signer().await?;
+            let author = signer.get_public_key().await?;
+            let room = Room::new(None, author, vec![public_key]);
+
+            Self::request_metadata(&client, public_key).await?;
+
+            Ok(room)
         });
 
         cx.spawn_in(window, async move |this, cx| {
@@ -521,14 +527,16 @@ impl Sidebar {
 
     fn on_reload(&mut self, _ev: &Reload, window: &mut Window, cx: &mut Context<Self>) {
         ChatRegistry::global(cx).update(cx, |this, cx| {
-            this.load_rooms(window, cx);
+            this.get_rooms(cx);
         });
         window.push_notification(t!("common.refreshed"), cx);
     }
 
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let subscription = client.subscription(&SubscriptionId::new("inbox")).await;
             let mut relays: Vec<Relay> = vec![];
 

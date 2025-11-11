@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use common::display::RenderedProfile;
-use common::nip05::nip05_verify;
+use common::{nip05_verify, RenderedProfile};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, rems, App, AppContext, ClipboardItem, Context, Entity, IntoElement,
@@ -13,7 +12,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::app_state;
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -33,13 +32,15 @@ pub struct UserProfile {
 
 impl UserProfile {
     pub fn new(target: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let persons = PersonRegistry::global(cx);
         let profile = persons.read(cx).get_person(&target, cx);
 
         let mut tasks = smallvec![];
 
         let check_follow: Task<Result<bool, Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let contact_list = client.database().contacts_public_keys(public_key).await?;

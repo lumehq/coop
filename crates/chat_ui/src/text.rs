@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use common::display::RenderedProfile;
+use common::RenderedProfile;
 use gpui::{
     AnyElement, App, ElementId, HighlightStyle, InteractiveText, IntoElement, SharedString,
     StyledText, UnderlineStyle, Window,
@@ -128,8 +128,6 @@ fn render_plain_text_mut(
     for link in URL_REGEX.find_iter(content) {
         let range = link.start()..link.end();
         let url = link.as_str().to_string();
-
-        log::info!("Found URL: {}", url);
 
         url_matches.push((range, url));
     }

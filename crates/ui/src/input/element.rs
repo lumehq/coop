@@ -541,13 +541,10 @@ impl Element for TextElement {
         let mut bounds = bounds;
 
         let (display_text, text_color) = if is_empty {
-            (
-                Rope::from_str_small(placeholder.as_str()),
-                cx.theme().text_muted,
-            )
+            (Rope::from(placeholder.as_str()), cx.theme().text_muted)
         } else if state.masked {
             (
-                Rope::from_str_small("*".repeat(text.chars_count()).as_str()),
+                Rope::from("*".repeat(text.chars_count()).as_str()),
                 cx.theme().text,
             )
         } else {

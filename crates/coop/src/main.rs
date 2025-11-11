@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use assets::Assets;
+use common::{APP_ID, CLIENT_NAME};
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
-use states::{app_state, APP_ID, BOOTSTRAP_RELAYS, CLIENT_NAME, SEARCH_RELAYS};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
@@ -25,29 +25,6 @@ fn main() {
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
-
-    // Initialize app state
-    let app_state = app_state();
-
-    // Connect to relays
-    app.background_executor()
-        .spawn(async move {
-            let client = app_state.client();
-
-            // Get all bootstrapping relays
-            let mut urls = vec![];
-            urls.extend(BOOTSTRAP_RELAYS);
-            urls.extend(SEARCH_RELAYS);
-
-            // Add relay to the relay pool
-            for url in urls.into_iter() {
-                client.add_relay(url).await.ok();
-            }
-
-            // Establish connection to relays
-            client.connect().await;
-        })
-        .detach();
 
     // Run application
     app.run(move |cx| {
@@ -102,17 +79,29 @@ fn main() {
                 // Initialize components
                 ui::init(cx);
 
-                // Initialize app registry
-                chat::init(cx);
+                // Initialize backend for keys storage
+                key_store::init(cx);
+
+                // Initialize the nostr client
+                state::init(cx);
 
                 // Initialize person registry
                 person::init(cx);
 
-                // Initialize backend for keys storage
-                key_store::init(cx);
-
                 // Initialize settings
                 settings::init(cx);
+
+                // Initialize account state
+                account::init(cx);
+
+                // Initialize encryption state
+                encryption::init(cx);
+
+                // Initialize app registry
+                chat::init(cx);
+
+                // Initialize relay auth registry
+                relay_auth::init(window, cx);
 
                 // Initialize auto update
                 auto_update::init(cx);

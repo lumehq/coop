@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::display::TextUtils;
+use common::{TextUtils, CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, px, relative, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
@@ -9,11 +9,10 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use i18n::{shared_t, t};
-use key_store::backend::KeyItem;
-use key_store::KeyStore;
+use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, CLIENT_NAME, NOSTR_CONNECT_RELAY, NOSTR_CONNECT_TIMEOUT};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -165,8 +164,10 @@ impl Onboarding {
     }
 
     fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         cx.background_spawn(async move {
-            let client = app_state().client();
             client.set_signer(signer).await;
         })
         .detach();
@@ -223,7 +224,7 @@ impl Focusable for Onboarding {
 }
 
 impl Render for Onboarding {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .size_full()
             .child(

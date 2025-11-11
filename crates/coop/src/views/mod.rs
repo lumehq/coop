@@ -1,4 +1,3 @@
-pub mod account;
 pub mod backup_keys;
 pub mod compose;
 pub mod edit_profile;
@@ -9,5 +8,6 @@ pub mod preferences;
 pub mod screening;
 pub mod setup_relay;
 pub mod sidebar;
+pub mod startup;
 pub mod user_profile;
 pub mod welcome;

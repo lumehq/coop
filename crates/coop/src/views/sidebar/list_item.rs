@@ -1,12 +1,11 @@
 use std::rc::Rc;
 
-use chat::room::RoomKind;
-use chat::ChatRegistry;
+use chat::{ChatRegistry, RoomKind};
 use chat_ui::{CopyPublicKey, OpenPublicKey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
-    SharedString, SharedUri, StatefulInteractiveElement, Styled, Window,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use i18n::t;
 use nostr_sdk::prelude::*;
@@ -26,7 +25,7 @@ pub struct RoomListItem {
     room_id: Option<u64>,
     public_key: Option<PublicKey>,
     name: Option<SharedString>,
-    avatar: Option<SharedUri>,
+    avatar: Option<SharedString>,
     created_at: Option<SharedString>,
     kind: Option<RoomKind>,
     #[allow(clippy::type_complexity)]
@@ -62,7 +61,7 @@ impl RoomListItem {
         self
     }
 
-    pub fn avatar(mut self, avatar: impl Into<SharedUri>) -> Self {
+    pub fn avatar(mut self, avatar: impl Into<SharedString>) -> Self {
         self.avatar = Some(avatar.into());
         self
     }

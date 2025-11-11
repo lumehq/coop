@@ -5,12 +5,9 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-states = { path = "../states" }
-
 gpui.workspace = true
-nostr-connect.workspace = true
 nostr-sdk.workspace = true
-nostr.workspace = true
+
 anyhow.workspace = true
 itertools.workspace = true
 chrono.workspace = true
@@ -19,6 +16,8 @@ smol.workspace = true
 futures.workspace = true
 reqwest.workspace = true
 log.workspace = true
-webbrowser.workspace = true
 
+dirs = "5.0"
 qrcode = "0.14.1"
+whoami = "1.6.1"
+nostr = { git = "https://github.com/rust-nostr/nostr" }

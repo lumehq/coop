@@ -718,7 +718,7 @@ impl InputState {
     /// Set the default value of the input field.
     pub fn default_value(mut self, value: impl Into<SharedString>) -> Self {
         let text: SharedString = value.into();
-        self.text = Rope::from_str_small(text.as_str());
+        self.text = Rope::from(text.as_str());
         self.text_wrapper.set_default_text(&self.text);
         self
     }
@@ -2099,9 +2099,7 @@ impl EntityInputHandler for InputState {
             .unwrap_or(self.selected_range.into());
 
         let old_text = self.text.clone();
-        let executor = cx.background_executor();
-
-        self.text.replace(range.clone(), new_text, executor);
+        self.text.replace(range.clone(), new_text);
 
         let mut new_offset = (range.start + new_text.len()).min(self.text.len());
 
@@ -2115,7 +2113,7 @@ impl EntityInputHandler for InputState {
 
             if !self.mask_pattern.is_none() {
                 let mask_text = self.mask_pattern.mask(&pending_text);
-                self.text = Rope::from_str_small(mask_text.as_str());
+                self.text = Rope::from(mask_text.as_str());
                 let new_text_len =
                     (new_text.len() + mask_text.len()).saturating_sub(pending_text.len());
                 new_offset = (range.start + new_text_len).min(mask_text.len());
@@ -2123,13 +2121,8 @@ impl EntityInputHandler for InputState {
         }
 
         self.push_history(&old_text, &range, new_text);
-        self.text_wrapper.update(
-            &self.text,
-            &range,
-            &Rope::from_str_small(new_text),
-            false,
-            cx,
-        );
+        self.text_wrapper
+            .update(&self.text, &range, &Rope::from(new_text), false, cx);
         self.selected_range = (new_offset..new_offset).into();
         self.ime_marked_range.take();
         self.update_preferred_column();
@@ -2161,9 +2154,7 @@ impl EntityInputHandler for InputState {
             .unwrap_or(self.selected_range.into());
 
         let old_text = self.text.clone();
-        let executor = cx.background_executor();
-
-        self.text.replace(range.clone(), new_text, executor);
+        self.text.replace(range.clone(), new_text);
 
         if self.mode.is_single_line() {
             let pending_text = self.text.to_string();
@@ -2174,13 +2165,9 @@ impl EntityInputHandler for InputState {
         }
 
         self.push_history(&old_text, &range, new_text);
-        self.text_wrapper.update(
-            &self.text,
-            &range,
-            &Rope::from_str_small(new_text),
-            false,
-            cx,
-        );
+        self.text_wrapper
+            .update(&self.text, &range, &Rope::from(new_text), false, cx);
+
         if new_text.is_empty() {
             // Cancel selection, when cancel IME input.
             self.selected_range = (range.start..range.start).into();
@@ -2195,6 +2182,7 @@ impl EntityInputHandler for InputState {
                 .into();
         }
         self.mode.update_auto_grow(&self.text_wrapper);
+
         cx.emit(InputEvent::Change);
         cx.notify();
     }

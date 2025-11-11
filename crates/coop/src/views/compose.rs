@@ -1,11 +1,10 @@
 use std::ops::Range;
 use std::time::Duration;
 
+use account::Account;
 use anyhow::{anyhow, Error};
-use chat::room::Room;
-use chat::ChatRegistry;
-use common::display::{RenderedProfile, TextUtils};
-use common::nip05::nip05_profile;
+use chat::{ChatRegistry, Room};
+use common::{nip05_profile, RenderedProfile, TextUtils, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
@@ -18,7 +17,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use states::{app_state, BOOTSTRAP_RELAYS};
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -115,7 +114,10 @@ pub struct Compose {
 }
 
 impl Compose {
-    pub fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let contacts = cx.new(|_| vec![]);
         let error_message = cx.new(|_| None);
 
@@ -129,7 +131,6 @@ impl Compose {
         let mut tasks = smallvec![];
 
         let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
-            let client = app_state().client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
@@ -194,10 +195,7 @@ impl Compose {
         }
     }
 
-    async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
-        let states = app_state();
-        let client = states.client();
-
+    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
@@ -220,11 +218,13 @@ impl Compose {
     }
 
     fn push_contact(&mut self, contact: Contact, window: &mut Window, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let pk = contact.public_key;
 
         if !self.contacts.read(cx).iter().any(|c| c.public_key == pk) {
             self._tasks.push(cx.background_spawn(async move {
-                Self::request_metadata(pk).await.ok();
+                Self::request_metadata(&client, pk).await.ok();
             }));
 
             cx.defer_in(window, |this, window, cx| {
@@ -313,6 +313,10 @@ impl Compose {
 
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let chat = ChatRegistry::global(cx);
+
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
+
         let receivers: Vec<PublicKey> = self.selected(cx);
         let subject_input = self.title_input.read(cx).value();
         let subject = (!subject_input.is_empty()).then(|| subject_input.to_string());
@@ -322,25 +326,11 @@ impl Compose {
             return;
         };
 
-        cx.spawn_in(window, async move |this, cx| {
-            let result = Room::new(subject, receivers).await;
+        chat.update(cx, |this, cx| {
+            this.push_room(cx.new(|_| Room::new(subject, public_key, receivers)), cx);
+        });
 
-            this.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(room) => {
-                        chat.update(cx, |this, cx| {
-                            this.push_room(cx.new(|_| room), cx);
-                        });
-                        window.close_modal(cx);
-                    }
-                    Err(e) => {
-                        this.set_error(e.to_string(), cx);
-                    }
-                };
-            })
-            .ok();
-        })
-        .detach();
+        window.close_modal(cx);
     }
 
     fn set_error(&mut self, error: impl Into<SharedString>, cx: &mut Context<Self>) {

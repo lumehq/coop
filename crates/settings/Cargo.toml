@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-states = { path = "../states" }
+state = { path = "../state" }
 
 nostr-sdk.workspace = true
 gpui.workspace = true

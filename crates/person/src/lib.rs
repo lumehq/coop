@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use gpui::{App, AppContext, AsyncApp, Context, Entity, Global, Task};
+use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::app_state;
+use state::NostrRegistry;
 
 pub fn init(cx: &mut App) {
     PersonRegistry::set_global(cx.new(PersonRegistry::new), cx);
@@ -13,6 +14,8 @@ struct GlobalPersonRegistry(Entity<PersonRegistry>);
 
 impl Global for GlobalPersonRegistry {}
 
+/// Person Registry
+#[derive(Debug)]
 pub struct PersonRegistry {
     /// Collection of all persons (user profiles)
     pub persons: HashMap<PublicKey, Entity<Profile>>,
@@ -34,12 +37,58 @@ impl PersonRegistry {
 
     /// Create a new person registry instance
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let mut tasks = smallvec![];
+
+        tasks.push(
+            // Handle notifications
+            cx.spawn({
+                let client = Arc::clone(&client);
+                async move |this, cx| {
+                    let mut notifications = client.notifications();
+                    log::info!("Listening for notifications");
+
+                    let mut processed_events = HashSet::new();
+
+                    while let Ok(notification) = notifications.recv().await {
+                        let RelayPoolNotification::Message { message, .. } = notification else {
+                            // Skip if the notification is not a message
+                            continue;
+                        };
+
+                        if let RelayMessage::Event { event, .. } = message {
+                            if !processed_events.insert(event.id) {
+                                // Skip if the event has already been processed
+                                continue;
+                            }
+
+                            if event.kind != Kind::Metadata {
+                                // Skip if the event is not a metadata event
+                                continue;
+                            };
+
+                            let metadata = Metadata::from_json(&event.content).unwrap_or_default();
+                            let profile = Profile::new(event.pubkey, metadata);
+
+                            this.update(cx, |this, cx| {
+                                this.insert_or_update_person(profile, cx);
+                            })
+                            .expect("Entity has been released")
+                        }
+                    }
+                }
+            }),
+        );
 
         tasks.push(
             // Load all user profiles from the database
             cx.spawn(async move |this, cx| {
-                match Self::load_persons(cx).await {
+                let result = cx
+                    .background_spawn(async move { Self::load_persons(&client).await })
+                    .await;
+
+                match result {
                     Ok(profiles) => {
                         this.update(cx, |this, cx| {
                             this.bulk_insert_persons(profiles, cx);
@@ -59,23 +108,20 @@ impl PersonRegistry {
         }
     }
 
-    /// Create a task to load all user profiles from the database
-    fn load_persons(cx: &AsyncApp) -> Task<Result<Vec<Profile>, Error>> {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let filter = Filter::new().kind(Kind::Metadata).limit(200);
-            let events = client.database().query(filter).await?;
+    /// Load all user profiles from the database
+    async fn load_persons(client: &Client) -> Result<Vec<Profile>, Error> {
+        let filter = Filter::new().kind(Kind::Metadata).limit(200);
+        let events = client.database().query(filter).await?;
 
-            let mut profiles = vec![];
+        let mut profiles = vec![];
 
-            for event in events.into_iter() {
-                let metadata = Metadata::from_json(event.content).unwrap_or_default();
-                let profile = Profile::new(event.pubkey, metadata);
-                profiles.push(profile);
-            }
+        for event in events.into_iter() {
+            let metadata = Metadata::from_json(event.content).unwrap_or_default();
+            let profile = Profile::new(event.pubkey, metadata);
+            profiles.push(profile);
+        }
 
-            Ok(profiles)
-        })
+        Ok(profiles)
     }
 
     /// Insert batch of persons

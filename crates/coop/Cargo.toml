@@ -32,14 +32,17 @@ ui = { path = "../ui" }
 title_bar = { path = "../title_bar" }
 theme = { path = "../theme" }
 common = { path = "../common" }
-states = { path = "../states" }
+state = { path = "../state" }
 key_store = { path = "../key_store" }
 chat = { path = "../chat" }
 chat_ui = { path = "../chat_ui" }
 settings = { path = "../settings" }
 auto_update = { path = "../auto_update" }
 account = { path = "../account" }
+encryption = { path = "../encryption" }
+encryption_ui = { path = "../encryption_ui" }
 person = { path = "../person" }
+relay_auth = { path = "../relay_auth" }
 
 rust-i18n.workspace = true
 i18n.workspace = true
@@ -49,19 +52,16 @@ reqwest_client.workspace = true
 
 nostr-connect.workspace = true
 nostr-sdk.workspace = true
-nostr.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 itertools.workspace = true
-dirs.workspace = true
 log.workspace = true
 smallvec.workspace = true
 smol.workspace = true
 futures.workspace = true
 oneshot.workspace = true
-flume.workspace = true
 webbrowser.workspace = true
 
 indexset = "0.12.3"

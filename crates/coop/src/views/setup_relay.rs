@@ -4,15 +4,14 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, uniform_list, App, AppContext, AsyncWindowContext, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Subscription,
-    Task, TextAlign, UniformList, Window,
+    div, px, uniform_list, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign, UniformList,
+    Window,
 };
 use i18n::{shared_t, t};
-use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use states::app_state;
+use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
@@ -39,6 +38,9 @@ pub struct SetupRelay {
 
 impl SetupRelay {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
 
         let mut subscriptions = smallvec![];
@@ -47,7 +49,11 @@ impl SetupRelay {
         tasks.push(
             // Load user's relays in the local database
             cx.spawn_in(window, async move |this, cx| {
-                if let Ok(relays) = Self::load(cx).await {
+                let result = cx
+                    .background_spawn(async move { Self::load(&client).await })
+                    .await;
+
+                if let Ok(relays) = result {
                     this.update(cx, |this, cx| {
                         this.relays.extend(relays);
                         cx.notify();
@@ -79,24 +85,21 @@ impl SetupRelay {
         }
     }
 
-    fn load(cx: &AsyncWindowContext) -> Task<Result<Vec<RelayUrl>, Error>> {
-        cx.background_spawn(async move {
-            let client = app_state().client();
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
+    async fn load(client: &Client) -> Result<Vec<RelayUrl>, Error> {
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
 
-            let filter = Filter::new()
-                .kind(Kind::InboxRelays)
-                .author(public_key)
-                .limit(1);
+        let filter = Filter::new()
+            .kind(Kind::InboxRelays)
+            .author(public_key)
+            .limit(1);
 
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                let urls = nip17::extract_owned_relay_list(event).collect();
-                Ok(urls)
-            } else {
-                Err(anyhow!("Not found."))
-            }
-        })
+        if let Some(event) = client.database().query(filter).await?.first_owned() {
+            let urls = nip17::extract_owned_relay_list(event).collect();
+            Ok(urls)
+        } else {
+            Err(anyhow!("Not found."))
+        }
     }
 
     fn add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -150,13 +153,12 @@ impl SetupRelay {
             return;
         };
 
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
         let relays = self.relays.clone();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-            let states = app_state();
-            let client = states.client();
             let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
 
             let tags: Vec<Tag> = relays
                 .iter()
@@ -176,12 +178,6 @@ impl SetupRelay {
                 client.add_relay(relay).await.ok();
                 client.connect_relay(relay).await.ok();
             }
-
-            // Fetch gift wrap events
-            states
-                .get_messages(public_key, &relays.into_iter().collect_vec())
-                .await
-                .ok();
 
             Ok(())
         });
