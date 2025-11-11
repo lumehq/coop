@@ -161,12 +161,11 @@ impl NostrRegistry {
                             if Self::is_self_authored(client, &event).await {
                                 log::info!("Found relay list event for the current user");
                                 let author = event.pubkey;
-                                let announcement = Kind::Custom(10044);
 
                                 // Fetch user's messaging relays event
                                 _ = Self::subscribe(client, author, Kind::InboxRelays).await;
                                 // Fetch user's encryption announcement event
-                                _ = Self::subscribe(client, author, announcement).await;
+                                _ = Self::subscribe(client, author, Kind::Custom(10044)).await;
                                 // Fetch user's metadata event
                                 _ = Self::subscribe(client, author, Kind::Metadata).await;
                                 // Fetch user's contact list event
@@ -194,6 +193,7 @@ impl NostrRegistry {
                             cache.insert_relay(event.pubkey, urls);
                         }
                         Kind::Custom(10044) => {
+                            log::info!("announcement: {event:?}");
                             // Cache the announcement event
                             if let Ok(announcement) = Self::extract_announcement(&event) {
                                 let mut cache = cache.write().await;

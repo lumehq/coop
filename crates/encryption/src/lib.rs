@@ -413,7 +413,6 @@ impl Encryption {
                     let filter = Filter::new()
                         .kind(Kind::Custom(4455))
                         .author(public_key)
-                        .pubkey(client_pubkey)
                         .since(Timestamp::now());
 
                     // Subscribe to the approval response event
@@ -440,6 +439,7 @@ impl Encryption {
         };
 
         cx.background_spawn(async move {
+            let signer = client.signer().await?;
             let encryption = Self::get_keys(&client, "encryption").await?;
             let client_pubkey = client_signer.get_public_key().await?;
 
@@ -457,30 +457,11 @@ impl Encryption {
                     Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
                     Tag::public_key(target),
                 ])
-                .sign(&client_signer)
+                .sign(&signer)
                 .await?;
 
-            // Get the current user's signer and public key
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            // Get the current user's relay list
-            let urls: Vec<RelayUrl> = client
-                .database()
-                .relay_list(public_key)
-                .await?
-                .into_iter()
-                .filter_map(|(url, metadata)| {
-                    if metadata.is_none() || metadata == Some(RelayMetadata::Read) {
-                        Some(url)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
             // Send the response event to the user's relay list
-            client.send_event_to(urls, &event).await?;
+            client.send_event(&event).await?;
 
             Ok(())
         })
