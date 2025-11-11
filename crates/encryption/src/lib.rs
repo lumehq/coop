@@ -234,10 +234,58 @@ impl Encryption {
                     if keys.public_key() == n {
                         this.set_encryption(Arc::new(keys), cx);
                         this.listen_request(cx);
+                        return;
                     }
                 }
+                this.load_response(cx);
             })
             .expect("Entity has been released");
+        })
+        .detach();
+    }
+
+    pub fn load_response(&mut self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        // Get the client signer
+        let Some(client_signer) = self.client_signer.read(cx).clone() else {
+            return;
+        };
+
+        let task: Task<Result<Keys, Error>> = cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+
+            let filter = Filter::new()
+                .author(public_key)
+                .kind(Kind::Custom(4455))
+                .limit(1);
+
+            if let Some(event) = client.database().query(filter).await?.first_owned() {
+                let response = NostrRegistry::extract_response(&client, &event).await?;
+                let public_key = response.public_key();
+                let payload = response.payload();
+
+                // Decrypt the payload using the client signer
+                let decrypted = client_signer.nip44_decrypt(&public_key, payload).await?;
+                let secret = SecretKey::parse(&decrypted)?;
+                // Construct the encryption keys
+                let keys = Keys::new(secret);
+
+                return Ok(keys);
+            }
+
+            Err(anyhow!("Not found"))
+        });
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(keys) = task.await {
+                this.update(cx, |this, cx| {
+                    this.set_encryption(Arc::new(keys), cx);
+                })
+                .expect("Entity has been released");
+            }
         })
         .detach();
     }
