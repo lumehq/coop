@@ -196,6 +196,19 @@ impl ChatRegistry {
                     // Extract the rumor from the gift wrap event
                     match Self::extract_rumor(client, event.as_ref()).await {
                         Ok(rumor) => {
+                            // Get all public keys
+                            public_keys.extend(rumor.all_pubkeys());
+
+                            let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
+                            let done = !status.load(Ordering::Acquire) && !public_keys.is_empty();
+
+                            // Get metadata for all public keys if the limit is reached
+                            if limit_reached || done {
+                                let public_keys = std::mem::take(&mut public_keys);
+                                // Get metadata for the public keys
+                                Self::get_metadata(client, public_keys).await.ok();
+                            }
+
                             match &event.created_at >= initialized_at {
                                 true => {
                                     let new_message = NewMessage::new(event.id, rumor);
@@ -208,19 +221,6 @@ impl ChatRegistry {
                                 false => {
                                     status.store(true, Ordering::Release);
                                 }
-                            }
-
-                            // Get all public keys
-                            public_keys.extend(event.tags.public_keys().copied());
-
-                            let limit_reached = public_keys.len() >= METADATA_BATCH_LIMIT;
-                            let done = !status.load(Ordering::Acquire) && !public_keys.is_empty();
-
-                            // Get metadata for all public keys if the limit is reached
-                            if limit_reached || done {
-                                let public_keys = std::mem::take(&mut public_keys);
-                                // Get metadata for the public keys
-                                Self::get_metadata(client, public_keys).await.ok();
                             }
                         }
                         Err(_e) => {

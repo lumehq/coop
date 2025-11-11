@@ -256,8 +256,8 @@ impl Render for EncryptionPanel {
 
         v_flex()
             .p_2()
-            .max_w(px(320.))
-            .w(px(320.))
+            .max_w(px(340.))
+            .w(px(340.))
             .text_sm()
             .when(has_encryption, |this| {
                 this.child(
