@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use anyhow::{anyhow, Error};
 use gpui::{
@@ -31,14 +33,18 @@ impl Global for GlobalRelayAuth {}
 pub struct AuthRequest {
     pub url: RelayUrl,
     pub challenge: String,
-    pub sending: bool,
+}
+
+impl Hash for AuthRequest {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.challenge.hash(state);
+    }
 }
 
 impl AuthRequest {
     pub fn new(challenge: impl Into<String>, url: RelayUrl) -> Self {
         Self {
             challenge: challenge.into(),
-            sending: false,
             url,
         }
     }
@@ -47,7 +53,7 @@ impl AuthRequest {
 #[derive(Debug)]
 pub struct RelayAuth {
     /// Entity for managing auth requests
-    requests: Entity<HashMap<RelayUrl, AuthRequest>>,
+    requests: HashSet<AuthRequest>,
 
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
@@ -71,26 +77,25 @@ impl RelayAuth {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let requests: Entity<HashMap<RelayUrl, AuthRequest>> = cx.new(|_| HashMap::new());
+        let entity = cx.entity();
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
         subscriptions.push(
             // Observe the current state
-            cx.observe_in(&requests, window, |this, requests, window, cx| {
+            cx.observe_in(&entity, window, |this, _, window, cx| {
                 let auto_auth = AppSettings::get_auto_auth(cx);
-                let requests = requests.read(cx).clone();
 
-                for (url, request) in requests.into_iter() {
-                    let is_authenticated = AppSettings::read_global(cx).is_authenticated(&url);
+                for req in this.requests.clone().into_iter() {
+                    let is_authenticated = AppSettings::read_global(cx).is_authenticated(&req.url);
 
                     if auto_auth && is_authenticated {
                         // Automatically authenticate if the relay is authenticated before
-                        this.response(request, window, cx);
+                        this.response(req.to_owned(), window, cx);
                     } else {
                         // Otherwise open the auth request popup
-                        this.ask_for_approval(request, window, cx);
+                        this.ask_for_approval(req.to_owned(), window, cx);
                     }
                 }
             }),
@@ -98,44 +103,52 @@ impl RelayAuth {
 
         tasks.push(
             // Handle notifications
-            cx.spawn({
-                let client = Arc::clone(&client);
+            cx.spawn(async move |this, cx| {
+                let mut notifications = client.notifications();
+                let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
 
-                async move |this, cx| {
-                    let mut notifications = client.notifications();
-                    let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
+                while let Ok(notification) = notifications.recv().await {
+                    let RelayPoolNotification::Message { message, relay_url } = notification else {
+                        // Skip if the notification is not a message
+                        continue;
+                    };
 
-                    while let Ok(notification) = notifications.recv().await {
-                        let RelayPoolNotification::Message { message, relay_url } = notification
-                        else {
-                            // Skip if the notification is not a message
-                            continue;
+                    if let RelayMessage::Auth { challenge } = message {
+                        if challenges.insert(challenge.clone()) {
+                            this.update(cx, |this, cx| {
+                                this.requests.insert(AuthRequest::new(challenge, relay_url));
+                                cx.notify();
+                            })
+                            .expect("Entity has been released");
                         };
-
-                        if let RelayMessage::Auth { challenge } = message {
-                            if challenges.insert(challenge.clone()) {
-                                this.update(cx, |this, cx| {
-                                    let request = AuthRequest::new(challenge, relay_url.clone());
-                                    this.insert(relay_url, request, cx);
-                                })
-                                .expect("Entity has been released")
-                            }
-                        }
                     }
                 }
             }),
         );
 
         Self {
-            requests,
+            requests: HashSet::new(),
             _subscriptions: subscriptions,
             _tasks: tasks,
+        }
+    }
+
+    /// Get the number of pending requests.
+    pub fn pending_requests(&self, _cx: &App) -> usize {
+        self.requests.len()
+    }
+
+    /// Reask for approval for all pending requests.
+    pub fn re_ask(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for request in self.requests.clone().into_iter() {
+            self.ask_for_approval(request, window, cx);
         }
     }
 
     /// Respond to an authentication request.
     fn response(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
         let settings = AppSettings::global(cx);
+
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
         let tracker = nostr.read(cx).tracker();
@@ -145,9 +158,6 @@ impl RelayAuth {
 
         let challenge_clone = challenge.clone();
         let url_clone = url.clone();
-
-        // Set Coop is sending auth for this request
-        self.set_sending(&challenge, cx);
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let signer = client.signer().await?;
@@ -227,16 +237,17 @@ impl RelayAuth {
                             // Clear the current notification
                             window.clear_notification_by_id(SharedString::from(&challenge), cx);
 
-                            // Remove the challenge from the list of pending authentications
-                            this.remove(&challenge, cx);
+                            // Push a new notification
+                            window.push_notification(format!("{url} has been authenticated"), cx);
 
                             // Save the authenticated relay to automatically authenticate future requests
                             settings.update(cx, |this, cx| {
                                 this.push_relay(&url, cx);
                             });
 
-                            // Push a new notification after current cycle
-                            window.push_notification(format!("{url} has been authenticated"), cx);
+                            // Remove the challenge from the list of pending authentications
+                            this.requests.remove(&req);
+                            cx.notify();
                         })
                         .expect("Entity has been released");
                     }
@@ -251,49 +262,11 @@ impl RelayAuth {
         );
     }
 
-    /// Inserts a new authentication request into the entity.
-    fn insert(&mut self, relay_url: RelayUrl, request: AuthRequest, cx: &mut App) {
-        self.requests.update(cx, |this, cx| {
-            this.insert(relay_url, request);
-            cx.notify();
-        });
-    }
-
-    /// Sets the sending status of an authentication request.
-    fn set_sending(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        self.requests.update(cx, |this, cx| {
-            for (_, req) in this.iter_mut() {
-                if req.challenge == challenge {
-                    req.sending = true;
-                    cx.notify();
-                }
-            }
-        });
-    }
-
-    /// Checks if an authentication request is currently being sent.
-    fn is_sending(&self, challenge: &str, cx: &App) -> bool {
-        self.requests
-            .read(cx)
-            .values()
-            .find(|req| req.challenge == challenge)
-            .is_some_and(|req| req.sending)
-    }
-
-    /// Removes an authentication request from the list.
-    fn remove(&mut self, challenge: &str, cx: &mut Context<Self>) {
-        self.requests.update(cx, |this, cx| {
-            this.retain(|_url, req| req.challenge != challenge);
-            cx.notify();
-        });
-    }
-
     /// Push a popup to approve the authentication request.
     fn ask_for_approval(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
         let url = SharedString::from(req.url.clone().to_string());
-
-        // Get a weak reference to the current entity
         let entity = cx.entity().downgrade();
+        let loading = Rc::new(Cell::new(false));
 
         let note = Notification::new()
             .custom_id(SharedString::from(&req.challenge))
@@ -317,27 +290,28 @@ impl RelayAuth {
                     )
                     .into_any_element()
             })
-            .action(move |_window, cx| {
+            .action(move |_window, _cx| {
                 let entity = entity.clone();
                 let req = req.clone();
-
-                // Get the loading state
-                let loading = entity
-                    .read_with(cx, |this, cx| this.is_sending(&req.challenge, cx))
-                    .unwrap_or_default();
 
                 Button::new("approve")
                     .label("Approve")
                     .small()
                     .primary()
-                    .loading(loading)
-                    .disabled(loading)
-                    .on_click(move |_ev, window, cx| {
-                        entity
-                            .update(cx, |this, cx| {
-                                this.response(req.clone(), window, cx);
-                            })
-                            .expect("Entity has been released");
+                    .loading(loading.get())
+                    .disabled(loading.get())
+                    .on_click({
+                        let loading = Rc::clone(&loading);
+                        move |_ev, window, cx| {
+                            // Set loading state to true
+                            loading.set(true);
+                            // Process to approve the request
+                            entity
+                                .update(cx, |this, cx| {
+                                    this.response(req.clone(), window, cx);
+                                })
+                                .expect("Entity has been released");
+                        }
                     })
             });
 
@@ -347,18 +321,6 @@ impl RelayAuth {
         // Focus the window if it's not active
         if !window.is_window_hovered() {
             window.activate_window();
-        }
-    }
-
-    /// Get the number of pending requests.
-    pub fn pending_requests(&self, cx: &App) -> usize {
-        self.requests.read(cx).iter().count()
-    }
-
-    /// Reask for approval for all pending requests.
-    pub fn re_ask(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for (_url, request) in self.requests.read(cx).clone() {
-            self.ask_for_approval(request, window, cx);
         }
     }
 }

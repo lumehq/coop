@@ -518,7 +518,7 @@ impl ChatRegistry {
                     continue;
                 }
 
-                let mut public_keys: Vec<PublicKey> = room.members();
+                let mut public_keys = room.members();
                 public_keys.retain(|pk| pk != &public_key);
 
                 // Check if the user has responded to the room

@@ -256,7 +256,7 @@ impl Render for EncryptionPanel {
 
         v_flex()
             .p_2()
-            .gap_2()
+            .max_w(px(320.))
             .w(px(320.))
             .text_sm()
             .when(has_encryption, |this| {
@@ -279,117 +279,128 @@ impl Render for EncryptionPanel {
                     let pubkey = shorten_pubkey(announcement.public_key(), 16);
                     let name = announcement.client();
 
-                    this.child(div().font_semibold().child(SharedString::from(NOTICE)))
-                        .child(
-                            v_flex()
-                                .h_12()
-                                .items_center()
-                                .justify_center()
-                                .rounded(cx.theme().radius)
-                                .bg(cx.theme().warning_background)
-                                .text_color(cx.theme().warning_foreground)
-                                .child(name),
-                        )
-                        .child(
-                            v_flex()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_semibold()
-                                        .text_color(cx.theme().text_muted)
-                                        .child(SharedString::from("Client Public Key:")),
-                                )
-                                .child(
-                                    h_flex()
-                                        .h_7()
-                                        .w_full()
-                                        .px_2()
-                                        .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
-                                        .child(SharedString::from(pubkey)),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().text_muted)
-                                .child(SharedString::from(SUGGEST)),
-                        )
-                        .child(
-                            h_flex()
-                                .mt_2()
-                                .gap_1()
-                                .when(!self.requesting, |this| {
-                                    this.child(
-                                        Button::new("reset")
-                                            .label("Reset")
-                                            .flex_1()
-                                            .small()
-                                            .ghost_alt()
-                                            .loading(self.creating)
-                                            .disabled(self.creating)
-                                            .on_click(cx.listener(move |this, _ev, window, cx| {
-                                                this.new_encryption(window, cx);
-                                            })),
+                    this.child(
+                        v_flex()
+                            .gap_2()
+                            .child(div().font_semibold().child(SharedString::from(NOTICE)))
+                            .child(
+                                v_flex()
+                                    .h_12()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(cx.theme().radius)
+                                    .bg(cx.theme().warning_background)
+                                    .text_color(cx.theme().warning_foreground)
+                                    .child(name),
+                            )
+                            .child(
+                                v_flex()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_semibold()
+                                            .text_color(cx.theme().text_muted)
+                                            .child(SharedString::from("Client Public Key:")),
                                     )
-                                })
-                                .when(!self.creating, |this| {
-                                    this.child(
-                                        Button::new("request")
-                                            .label({
-                                                if self.requesting {
-                                                    "Wait for approval"
-                                                } else {
-                                                    "Request"
-                                                }
-                                            })
-                                            .flex_1()
-                                            .small()
-                                            .primary()
-                                            .loading(self.requesting)
-                                            .disabled(self.requesting)
-                                            .on_click(cx.listener(move |this, _ev, window, cx| {
-                                                this.request(window, cx);
-                                            })),
-                                    )
-                                }),
-                        )
-                        .when_some(self.error.read(cx).as_ref(), |this, error| {
-                            this.child(
+                                    .child(
+                                        h_flex()
+                                            .h_7()
+                                            .w_full()
+                                            .px_2()
+                                            .rounded(cx.theme().radius)
+                                            .bg(cx.theme().elevated_surface_background)
+                                            .child(SharedString::from(pubkey)),
+                                    ),
+                            )
+                            .child(
                                 div()
                                     .text_xs()
-                                    .text_center()
-                                    .text_color(cx.theme().danger_foreground)
-                                    .child(error.clone()),
+                                    .text_color(cx.theme().text_muted)
+                                    .child(SharedString::from(SUGGEST)),
                             )
-                        })
+                            .child(
+                                h_flex()
+                                    .mt_2()
+                                    .gap_1()
+                                    .when(!self.requesting, |this| {
+                                        this.child(
+                                            Button::new("reset")
+                                                .label("Reset")
+                                                .flex_1()
+                                                .small()
+                                                .ghost_alt()
+                                                .loading(self.creating)
+                                                .disabled(self.creating)
+                                                .on_click(cx.listener(
+                                                    move |this, _ev, window, cx| {
+                                                        this.new_encryption(window, cx);
+                                                    },
+                                                )),
+                                        )
+                                    })
+                                    .when(!self.creating, |this| {
+                                        this.child(
+                                            Button::new("request")
+                                                .label({
+                                                    if self.requesting {
+                                                        "Wait for approval"
+                                                    } else {
+                                                        "Request"
+                                                    }
+                                                })
+                                                .flex_1()
+                                                .small()
+                                                .primary()
+                                                .loading(self.requesting)
+                                                .disabled(self.requesting)
+                                                .on_click(cx.listener(
+                                                    move |this, _ev, window, cx| {
+                                                        this.request(window, cx);
+                                                    },
+                                                )),
+                                        )
+                                    }),
+                            )
+                            .when_some(self.error.read(cx).as_ref(), |this, error| {
+                                this.child(
+                                    div()
+                                        .text_xs()
+                                        .text_center()
+                                        .text_color(cx.theme().danger_foreground)
+                                        .child(error.clone()),
+                                )
+                            }),
+                    )
                 } else {
-                    this.w_full()
-                        .child(
-                            div()
-                                .font_semibold()
-                                .child(SharedString::from("Set up Encryption Key")),
-                        )
-                        .child(SharedString::from(DESCRIPTION))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().warning_foreground)
-                                .child(SharedString::from(WARNING)),
-                        )
-                        .child(
-                            Button::new("create")
-                                .label("Setup")
-                                .flex_1()
-                                .small()
-                                .primary()
-                                .loading(self.creating)
-                                .disabled(self.creating)
-                                .on_click(cx.listener(move |this, _ev, window, cx| {
-                                    this.new_encryption(window, cx);
-                                })),
-                        )
+                    this.child(
+                        v_flex()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .font_semibold()
+                                    .child(SharedString::from("Set up Encryption Key")),
+                            )
+                            .child(SharedString::from(DESCRIPTION))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().warning_foreground)
+                                    .child(SharedString::from(WARNING)),
+                            )
+                            .child(
+                                Button::new("create")
+                                    .label("Setup")
+                                    .flex_1()
+                                    .small()
+                                    .primary()
+                                    .loading(self.creating)
+                                    .disabled(self.creating)
+                                    .on_click(cx.listener(move |this, _ev, window, cx| {
+                                        this.new_encryption(window, cx);
+                                    })),
+                            ),
+                    )
                 }
             })
     }

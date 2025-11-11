@@ -48,7 +48,6 @@ impl EventUtils for UnsignedEvent {
     fn all_pubkeys(&self) -> Vec<PublicKey> {
         let mut public_keys: Vec<PublicKey> = self.tags.public_keys().copied().collect();
         public_keys.push(self.pubkey);
-
-        public_keys
+        public_keys.into_iter().unique().sorted().collect()
     }
 }
