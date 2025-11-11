@@ -9,7 +9,7 @@ use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 pub use signer::*;
 use smallvec::{smallvec, SmallVec};
-use state::{Announcement, NostrRegistry, Response};
+use state::{Announcement, NostrRegistry};
 
 mod signer;
 
@@ -211,7 +211,7 @@ impl Encryption {
                 .limit(1);
 
             if let Some(event) = client.database().query(filter).await?.first() {
-                Ok(Self::extract_announcement(event)?)
+                Ok(NostrRegistry::extract_announcement(event)?)
             } else {
                 Err(anyhow!("Announcement not found"))
             }
@@ -299,8 +299,8 @@ impl Encryption {
                         continue;
                     };
 
-                    if Self::is_self_authored(&client, &event).await {
-                        if let Ok(announcement) = Self::extract_announcement(&event) {
+                    if NostrRegistry::is_self_authored(&client, &event).await {
+                        if let Ok(announcement) = NostrRegistry::extract_announcement(&event) {
                             tx.send_async(announcement).await.ok();
                         }
                     }
@@ -517,7 +517,7 @@ impl Encryption {
                         continue;
                     }
 
-                    if let Ok(response) = Self::extract_response(&client, &event).await {
+                    if let Ok(response) = NostrRegistry::extract_response(&client, &event).await {
                         let public_key = response.public_key();
                         let payload = response.payload();
 
@@ -578,54 +578,5 @@ impl Encryption {
             this.insert(request);
             cx.notify();
         });
-    }
-
-    /// Extract an encryption keys announcement from an event.
-    fn extract_announcement(event: &Event) -> Result<Announcement, Error> {
-        let public_key = event
-            .tags
-            .iter()
-            .find(|tag| tag.kind().as_str() == "n" || tag.kind().as_str() == "pubkey")
-            .and_then(|tag| tag.content())
-            .and_then(|c| PublicKey::parse(c).ok())
-            .context("Cannot parse public key from the event's tags")?;
-
-        let client_name = event
-            .tags
-            .find(TagKind::Client)
-            .and_then(|tag| tag.content())
-            .map(|c| c.to_string())
-            .context("Cannot parse client name from the event's tags")?;
-
-        Ok(Announcement::new(event.id, client_name, public_key))
-    }
-
-    /// Extract an encryption keys response from an event.
-    async fn extract_response(client: &Client, event: &Event) -> Result<Response, Error> {
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        if event.pubkey != public_key {
-            return Err(anyhow!("Event does not belong to current user"));
-        }
-
-        let client_pubkey = event
-            .tags
-            .find(TagKind::custom("P"))
-            .and_then(|tag| tag.content())
-            .and_then(|c| PublicKey::parse(c).ok())
-            .context("Cannot parse public key from the event's tags")?;
-
-        Ok(Response::new(event.content.clone(), client_pubkey))
-    }
-
-    /// Check if event is published by current user
-    async fn is_self_authored(client: &Client, event: &Event) -> bool {
-        if let Ok(signer) = client.signer().await {
-            if let Ok(public_key) = signer.get_public_key().await {
-                return public_key == event.pubkey;
-            }
-        }
-        false
     }
 }

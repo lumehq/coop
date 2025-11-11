@@ -45,6 +45,7 @@ impl PersonRegistry {
             // Handle notifications
             cx.spawn({
                 let client = Arc::clone(&client);
+
                 async move |this, cx| {
                     let mut notifications = client.notifications();
                     log::info!("Listening for notifications");

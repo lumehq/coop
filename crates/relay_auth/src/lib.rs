@@ -85,10 +85,11 @@ impl RelayAuth {
         subscriptions.push(
             // Observe the current state
             cx.observe_in(&entity, window, |this, _, window, cx| {
+                let settings = AppSettings::global(cx);
                 let auto_auth = AppSettings::get_auto_auth(cx);
 
                 for req in this.requests.clone().into_iter() {
-                    let is_authenticated = AppSettings::read_global(cx).is_authenticated(&req.url);
+                    let is_authenticated = settings.read(cx).is_authenticated(&req.url);
 
                     if auto_auth && is_authenticated {
                         // Automatically authenticate if the relay is authenticated before

@@ -101,6 +101,15 @@ impl ChatPanel {
         let mut tasks = smallvec![];
 
         tasks.push(
+            // Get messaging relays and encryption keys announcement for each member
+            cx.background_spawn(async move {
+                if let Err(e) = connect.await {
+                    log::error!("Failed to initialize room: {}", e);
+                }
+            }),
+        );
+
+        tasks.push(
             // Load all messages belonging to this room
             cx.spawn_in(window, async move |this, cx| {
                 let result = get_messages.await;
@@ -116,15 +125,6 @@ impl ChatPanel {
                     };
                 })
                 .ok();
-            }),
-        );
-
-        tasks.push(
-            // Get messaging relays and encryption keys announcement for each member
-            cx.background_spawn(async move {
-                if let Err(e) = connect.await {
-                    log::error!("Failed to initialize room: {}", e);
-                }
             }),
         );
 

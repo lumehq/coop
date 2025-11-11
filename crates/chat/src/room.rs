@@ -391,6 +391,10 @@ impl Room {
 
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
+        let nostr = NostrRegistry::global(cx);
+        let cache = nostr.read(cx).cache_manager();
+        let cache = cache.read_blocking();
+
         // Get current user
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
@@ -405,7 +409,9 @@ impl Room {
         // NOTE: current user will be removed from the list of receivers
         for member in self.members.iter() {
             // Get relay hint if available
-            let relay_url = None;
+            let relay_url = cache
+                .relay(member)
+                .and_then(|urls| urls.iter().nth(0).cloned());
 
             // Construct a public key tag with relay hint
             let tag = TagStandard::PublicKey {
@@ -464,7 +470,7 @@ impl Room {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let cache_manager = nostr.read(cx).cache_manager();
+        let cache = nostr.read(cx).cache_manager();
         let tracker = nostr.read(cx).tracker();
 
         let rumor = rumor.to_owned();
@@ -475,7 +481,7 @@ impl Room {
 
         cx.background_spawn(async move {
             let signer_kind = opts.signer_kind;
-            let cache = cache_manager.read().await;
+            let cache = cache.read().await;
             let tracker = tracker.read().await;
 
             // Get the encryption public key
@@ -506,6 +512,12 @@ impl Room {
                 if urls.is_empty() {
                     reports.push(SendReport::new(member).relays_not_found());
                     continue;
+                }
+
+                // Ensure connection to all messaging relays
+                for url in urls.iter() {
+                    client.add_relay(url).await?;
+                    client.connect_relay(url).await?;
                 }
 
                 // Get user's encryption public key if available
@@ -589,15 +601,22 @@ impl Room {
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
                     reports.push(SendReport::new(user_pubkey).relays_not_found());
-                } else {
-                    // Send the event to the messaging relays
-                    match client.send_event_to(urls, &event).await {
-                        Ok(output) => {
-                            reports.push(SendReport::new(user_pubkey).status(output));
-                        }
-                        Err(e) => {
-                            reports.push(SendReport::new(user_pubkey).error(e.to_string()));
-                        }
+                    return Ok(reports);
+                }
+
+                // Ensure connection to all messaging relays
+                for url in urls.iter() {
+                    client.add_relay(url).await?;
+                    client.connect_relay(url).await?;
+                }
+
+                // Send the event to the messaging relays
+                match client.send_event_to(urls, &event).await {
+                    Ok(output) => {
+                        reports.push(SendReport::new(user_pubkey).status(output));
+                    }
+                    Err(e) => {
+                        reports.push(SendReport::new(user_pubkey).error(e.to_string()));
                     }
                 }
             } else {

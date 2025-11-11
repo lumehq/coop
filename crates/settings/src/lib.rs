@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -8,17 +8,7 @@ use state::NostrRegistry;
 const SETTINGS_IDENTIFIER: &str = "coop:settings";
 
 pub fn init(cx: &mut App) {
-    let state = cx.new(AppSettings::new);
-
-    // Observe for state changes and save settings to database
-    state.update(cx, |this, cx| {
-        this._subscriptions
-            .push(cx.observe(&state, |this, _state, cx| {
-                this.set_settings(cx);
-            }));
-    });
-
-    AppSettings::set_global(state, cx);
+    AppSettings::set_global(cx.new(AppSettings::new), cx)
 }
 
 macro_rules! setting_accessors {
@@ -27,7 +17,7 @@ macro_rules! setting_accessors {
             $(
                 paste::paste! {
                     pub fn [<get_ $field>](cx: &App) -> $type {
-                        Self::read_global(cx).setting_values.$field.clone()
+                        Self::global(cx).read(cx).setting_values.$field.clone()
                     }
 
                     pub fn [<update_ $field>](value: $type, cx: &mut App) {
@@ -51,10 +41,9 @@ setting_accessors! {
     pub contact_bypass: bool,
     pub auto_login: bool,
     pub auto_auth: bool,
-    pub disable_keyring: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub media_server: Url,
     pub proxy_user_avatars: bool,
@@ -64,7 +53,6 @@ pub struct Settings {
     pub contact_bypass: bool,
     pub auto_login: bool,
     pub auto_auth: bool,
-    pub disable_keyring: bool,
     pub authenticated_relays: Vec<RelayUrl>,
 }
 
@@ -79,7 +67,6 @@ impl Default for Settings {
             contact_bypass: true,
             auto_login: false,
             auto_auth: true,
-            disable_keyring: false,
             authenticated_relays: vec![],
         }
     }
@@ -97,7 +84,12 @@ impl Global for GlobalAppSettings {}
 
 pub struct AppSettings {
     setting_values: Settings,
+
+    // Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
+
+    // Background tasks
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl AppSettings {
@@ -106,62 +98,91 @@ impl AppSettings {
         cx.global::<GlobalAppSettings>().0.clone()
     }
 
-    /// Retrieve the Settings instance
-    pub fn read_global(cx: &App) -> &Self {
-        cx.global::<GlobalAppSettings>().0.read(cx)
-    }
-
     /// Set the Global Settings instance
     pub(crate) fn set_global(state: Entity<Self>, cx: &mut App) {
         cx.set_global(GlobalAppSettings(state));
     }
 
-    fn new(_cx: &mut Context<Self>) -> Self {
+    fn new(cx: &mut Context<Self>) -> Self {
+        let load_settings = Self::_load_settings(false, cx);
+
+        let mut tasks = smallvec![];
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(
+            // Observe and automatically save settings on changes
+            cx.observe_self(|this, cx| {
+                this.set_settings(cx);
+            }),
+        );
+
+        tasks.push(
+            // Load the initial settings
+            cx.spawn(async move |this, cx| {
+                if let Ok(settings) = load_settings.await {
+                    this.update(cx, |this, cx| {
+                        this.setting_values = settings;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            }),
+        );
+
         Self {
             setting_values: Settings::default(),
-            _subscriptions: smallvec![],
+            _subscriptions: subscriptions,
+            _tasks: tasks,
         }
     }
 
-    pub fn load_settings(&self, cx: &mut Context<Self>) {
+    pub fn load_settings(&mut self, cx: &mut Context<Self>) {
+        let task = Self::_load_settings(true, cx);
+
+        self._tasks.push(
+            // Run task in the background
+            cx.spawn(async move |this, cx| {
+                if let Ok(settings) = task.await {
+                    this.update(cx, |this, cx| {
+                        this.setting_values = settings;
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            }),
+        );
+    }
+
+    fn _load_settings(user: bool, cx: &App) -> Task<Result<Settings, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
-        let task: Task<Result<Settings, anyhow::Error>> = cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let filter = Filter::new()
+        cx.background_spawn(async move {
+            let mut filter = Filter::new()
                 .kind(Kind::ApplicationSpecificData)
                 .identifier(SETTINGS_IDENTIFIER)
-                .author(public_key)
                 .limit(1);
+
+            if user {
+                let signer = client.signer().await?;
+                let public_key = signer.get_public_key().await?;
+                filter = filter.author(public_key);
+            }
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
                 Ok(serde_json::from_str(&event.content).unwrap_or(Settings::default()))
             } else {
                 Err(anyhow!("Not found"))
             }
-        });
-
-        cx.spawn(async move |this, cx| {
-            if let Ok(settings) = task.await {
-                this.update(cx, |this, cx| {
-                    this.setting_values = settings;
-                    cx.notify();
-                })
-                .ok();
-            }
         })
-        .detach();
     }
 
-    pub fn set_settings(&self, cx: &mut Context<Self>) {
+    pub fn set_settings(&mut self, cx: &mut Context<Self>) {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
         if let Ok(content) = serde_json::to_string(&self.setting_values) {
-            let task: Task<Result<(), anyhow::Error>> = cx.background_spawn(async move {
+            let task: Task<Result<(), Error>> = cx.background_spawn(async move {
                 let signer = client.signer().await?;
                 let public_key = signer.get_public_key().await?;
 
@@ -180,14 +201,17 @@ impl AppSettings {
         }
     }
 
+    /// Check if auto authentication is enabled
     pub fn is_auto_auth(&self) -> bool {
         !self.setting_values.authenticated_relays.is_empty() && self.setting_values.auto_auth
     }
 
+    /// Check if a relay is authenticated
     pub fn is_authenticated(&self, url: &RelayUrl) -> bool {
         self.setting_values.authenticated_relays.contains(url)
     }
 
+    /// Push a relay to the authenticated relays list
     pub fn push_relay(&mut self, relay_url: &RelayUrl, cx: &mut Context<Self>) {
         if !self.is_authenticated(relay_url) {
             self.setting_values

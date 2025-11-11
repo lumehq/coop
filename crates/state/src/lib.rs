@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::{config_dir, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_gossip_memory::prelude::*;
@@ -193,6 +193,13 @@ impl NostrRegistry {
                             let mut cache = cache.write().await;
                             cache.insert_relay(event.pubkey, urls);
                         }
+                        Kind::Custom(10044) => {
+                            // Cache the announcement event
+                            if let Ok(announcement) = Self::extract_announcement(&event) {
+                                let mut cache = cache.write().await;
+                                cache.insert_announcement(event.pubkey, Some(announcement));
+                            }
+                        }
                         Kind::ContactList => {
                             if Self::is_self_authored(client, &event).await {
                                 let pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
@@ -226,7 +233,7 @@ impl NostrRegistry {
     }
 
     /// Check if event is published by current user
-    async fn is_self_authored(client: &Client, event: &Event) -> bool {
+    pub async fn is_self_authored(client: &Client, event: &Event) -> bool {
         if let Ok(signer) = client.signer().await {
             if let Ok(public_key) = signer.get_public_key().await {
                 return public_key == event.pubkey;
@@ -293,6 +300,45 @@ impl NostrRegistry {
             .await?;
 
         Ok(())
+    }
+
+    /// Extract an encryption keys announcement from an event.
+    pub fn extract_announcement(event: &Event) -> Result<Announcement, Error> {
+        let public_key = event
+            .tags
+            .iter()
+            .find(|tag| tag.kind().as_str() == "n" || tag.kind().as_str() == "pubkey")
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        let client_name = event
+            .tags
+            .find(TagKind::Client)
+            .and_then(|tag| tag.content())
+            .map(|c| c.to_string())
+            .context("Cannot parse client name from the event's tags")?;
+
+        Ok(Announcement::new(event.id, client_name, public_key))
+    }
+
+    /// Extract an encryption keys response from an event.
+    pub async fn extract_response(client: &Client, event: &Event) -> Result<Response, Error> {
+        let signer = client.signer().await?;
+        let public_key = signer.get_public_key().await?;
+
+        if event.pubkey != public_key {
+            return Err(anyhow!("Event does not belong to current user"));
+        }
+
+        let client_pubkey = event
+            .tags
+            .find(TagKind::custom("P"))
+            .and_then(|tag| tag.content())
+            .and_then(|c| PublicKey::parse(c).ok())
+            .context("Cannot parse public key from the event's tags")?;
+
+        Ok(Response::new(event.content.clone(), client_pubkey))
     }
 
     /// Returns a reference to the nostr client.
