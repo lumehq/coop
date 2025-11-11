@@ -1,3 +1,5 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -193,11 +195,13 @@ impl EncryptionPanel {
     fn ask_for_approval(&mut self, req: Announcement, window: &mut Window, cx: &mut Context<Self>) {
         let client_name = SharedString::from(req.client().to_string());
         let target = req.public_key();
+        let id = SharedString::from(req.id().to_hex());
+        let loading = Rc::new(Cell::new(false));
 
         let note = Notification::new()
-            .custom_id(SharedString::from(req.id().to_hex()))
+            .custom_id(id.clone())
             .autohide(false)
-            .icon(IconName::Info)
+            .icon(IconName::Encryption)
             .title(SharedString::from("Encryption Key Request"))
             .content(move |_window, cx| {
                 v_flex()
@@ -208,13 +212,21 @@ impl EncryptionPanel {
                     ))
                     .child(
                         v_flex()
-                            .py_1()
-                            .px_1p5()
-                            .rounded_sm()
-                            .text_xs()
+                            .h_12()
+                            .px_2()
+                            .rounded(cx.theme().radius)
                             .bg(cx.theme().warning_background)
                             .text_color(cx.theme().warning_foreground)
                             .child(client_name.clone()),
+                    )
+                    .child(
+                        h_flex()
+                            .h_7()
+                            .w_full()
+                            .px_2()
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().elevated_surface_background)
+                            .child(SharedString::from(target.to_hex())),
                     )
                     .into_any_element()
             })
@@ -223,13 +235,38 @@ impl EncryptionPanel {
                     .label("Approve")
                     .small()
                     .primary()
-                    .loading(false)
-                    .disabled(false)
-                    .on_click(move |_ev, _window, cx| {
-                        let encryption = Encryption::global(cx);
-                        let send_response = encryption.read(cx).send_response(target, cx);
+                    .loading(loading.get())
+                    .disabled(loading.get())
+                    .on_click({
+                        let loading = Rc::clone(&loading);
+                        let id = id.clone();
 
-                        send_response.detach();
+                        move |_ev, window, cx| {
+                            // Set loading state to true
+                            loading.set(true);
+
+                            let encryption = Encryption::global(cx);
+                            let send_response = encryption.read(cx).send_response(target, cx);
+                            let id = id.clone();
+
+                            window
+                                .spawn(cx, async move |cx| {
+                                    let result = send_response.await;
+
+                                    cx.update(|window, cx| {
+                                        match result {
+                                            Ok(_) => {
+                                                window.clear_notification_by_id(id, cx);
+                                            }
+                                            Err(e) => {
+                                                window.push_notification(e.to_string(), cx);
+                                            }
+                                        };
+                                    })
+                                    .expect("Entity has been released");
+                                })
+                                .detach();
+                        }
                     })
             });
 
