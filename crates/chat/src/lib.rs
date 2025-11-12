@@ -107,7 +107,7 @@ impl ChatRegistry {
         tasks.push(
             // Handle notifications
             cx.background_spawn({
-                let client = Arc::clone(&client);
+                let client = nostr.read(cx).client();
                 let status = Arc::clone(&status);
                 let tx = tx.clone();
 
@@ -117,10 +117,9 @@ impl ChatRegistry {
 
         tasks.push(
             // Handle unwrapping status
-            cx.background_spawn({
-                let client = Arc::clone(&client);
-                async move { Self::handle_unwrapping(&client, &status, &tx).await }
-            }),
+            cx.background_spawn(
+                async move { Self::handle_unwrapping(&client, &status, &tx).await },
+            ),
         );
 
         tasks.push(

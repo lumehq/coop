@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use gpui::{App, AppContext, Context, Entity, Global, Task};
 use nostr_sdk::prelude::*;
@@ -44,7 +43,7 @@ impl PersonRegistry {
         tasks.push(
             // Handle notifications
             cx.spawn({
-                let client = Arc::clone(&client);
+                let client = nostr.read(cx).client();
 
                 async move |this, cx| {
                     let mut notifications = client.notifications();

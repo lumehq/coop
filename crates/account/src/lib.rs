@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Error;
@@ -68,20 +67,16 @@ impl Account {
 
         tasks.push(
             // Observe the nostr signer and set the public key when it sets
-            cx.spawn({
-                let client = Arc::clone(&client);
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_spawn(async move { Self::observe_signer(&client).await })
+                    .await;
 
-                async move |this, cx| {
-                    let result = cx
-                        .background_spawn(async move { Self::observe_signer(&client).await })
-                        .await;
-
-                    if let Some(public_key) = result {
-                        this.update(cx, |this, cx| {
-                            this.set_account(public_key, cx);
-                        })
-                        .expect("Entity has been released")
-                    }
+                if let Some(public_key) = result {
+                    this.update(cx, |this, cx| {
+                        this.set_account(public_key, cx);
+                    })
+                    .expect("Entity has been released")
                 }
             }),
         );

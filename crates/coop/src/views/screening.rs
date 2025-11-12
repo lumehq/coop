@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use common::{nip05_verify, shorten_pubkey, RenderedProfile, RenderedTimestamp, BOOTSTRAP_RELAYS};
@@ -44,7 +43,7 @@ impl Screening {
         let mut tasks = smallvec![];
 
         let contact_check: Task<Result<(bool, Vec<Profile>), Error>> = cx.background_spawn({
-            let client = Arc::clone(&client);
+            let client = nostr.read(cx).client();
             async move {
                 let signer = client.signer().await?;
                 let signer_pubkey = signer.get_public_key().await?;

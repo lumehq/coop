@@ -8,6 +8,7 @@ use anyhow::{anyhow, Error};
 use common::{EventUtils, RenderedProfile};
 use encryption::{Encryption, SignerKind};
 use gpui::{App, AppContext, Context, EventEmitter, SharedString, Task};
+use itertools::Itertools;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use state::NostrRegistry;
@@ -376,14 +377,14 @@ impl Room {
                 .kind(Kind::ApplicationSpecificData)
                 .custom_tag(SingleLetterTag::lowercase(Alphabet::C), conversation_id);
 
-            let stored = client.database().query(filter).await?;
-
-            let mut messages: Vec<UnsignedEvent> = stored
+            let messages = client
+                .database()
+                .query(filter)
+                .await?
                 .into_iter()
                 .filter_map(|event| UnsignedEvent::from_json(&event.content).ok())
+                .sorted_by_key(|message| message.created_at)
                 .collect();
-
-            messages.sort_by_key(|message| message.created_at);
 
             Ok(messages)
         })

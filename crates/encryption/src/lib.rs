@@ -300,7 +300,7 @@ impl Encryption {
         let (tx, rx) = flume::bounded::<Announcement>(50);
 
         let task: Task<Result<(), Error>> = cx.background_spawn({
-            let client = Arc::clone(&client);
+            let client = nostr.read(cx).client();
 
             async move {
                 let signer = client.signer().await?;
