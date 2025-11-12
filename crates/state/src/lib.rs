@@ -191,9 +191,9 @@ impl NostrRegistry {
                             // Cache the messaging relays
                             let mut cache = cache.write().await;
                             cache.insert_relay(event.pubkey, urls);
+                            log::info!("nip17: {event:?}");
                         }
                         Kind::Custom(10044) => {
-                            log::info!("announcement: {event:?}");
                             // Cache the announcement event
                             if let Ok(announcement) = Self::extract_announcement(&event) {
                                 let mut cache = cache.write().await;

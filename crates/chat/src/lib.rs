@@ -209,7 +209,7 @@ impl ChatRegistry {
                                 Self::get_metadata(client, public_keys).await.ok();
                             }
 
-                            match &event.created_at >= initialized_at {
+                            match &rumor.created_at >= initialized_at {
                                 true => {
                                     let new_message = NewMessage::new(event.id, rumor);
                                     let signal = Signal::Message(new_message);
