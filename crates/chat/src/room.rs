@@ -410,9 +410,7 @@ impl Room {
         // NOTE: current user will be removed from the list of receivers
         for member in self.members.iter() {
             // Get relay hint if available
-            let relay_url = cache
-                .relay(member)
-                .and_then(|urls| urls.iter().nth(0).cloned());
+            let relay_url = cache.messaging_relays(member).first().cloned();
 
             // Construct a public key tag with relay hint
             let tag = TagStandard::PublicKey {
@@ -507,7 +505,9 @@ impl Room {
 
             for member in members.into_iter() {
                 // Get user's messaging relays
-                let urls = cache.relay(&member).cloned().unwrap_or_default();
+                let urls = cache.messaging_relays(&member);
+                // Get user's encryption public key if available
+                let encryption = cache.announcement(&member).map(|a| a.public_key());
 
                 // Check if there are any relays to send the message to
                 if urls.is_empty() {
@@ -520,11 +520,6 @@ impl Room {
                     client.add_relay(url).await?;
                     client.connect_relay(url).await?;
                 }
-
-                // Get user's encryption public key if available
-                let encryption = cache
-                    .announcement(&member)
-                    .and_then(|a| a.to_owned().map(|a| a.public_key()));
 
                 // Skip sending if using encryption signer but receiver's encryption keys not found
                 if encryption.is_none() && matches!(signer_kind, SignerKind::Encryption) {
@@ -597,7 +592,7 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
-                let urls = cache.relay(&user_pubkey).cloned().unwrap_or_default();
+                let urls = cache.messaging_relays(&user_pubkey);
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -668,7 +663,7 @@ impl Room {
 
                 // Process the on hold event if it exists
                 if let Some(event) = report.on_hold {
-                    let urls = cache.relay(&receiver).cloned().unwrap_or_default();
+                    let urls = cache.messaging_relays(&receiver);
 
                     // Check if there are any relays to send the event to
                     if urls.is_empty() {
