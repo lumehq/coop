@@ -197,7 +197,7 @@ impl Compose {
 
     async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let kinds = vec![Kind::Metadata, Kind::ContactList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
 
         client

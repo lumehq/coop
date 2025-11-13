@@ -176,12 +176,14 @@ impl Encryption {
 
     fn get_announcement(&mut self, cx: &mut Context<Self>) {
         let task = self._get_announcement(cx);
+        let delay = Duration::from_secs(10);
 
-        self._tasks.push(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_secs(5)).await;
+        self._tasks.push(
+            // Run task in the background
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(delay).await;
 
-            match task.await {
-                Ok(announcement) => {
+                if let Ok(announcement) = task.await {
                     this.update(cx, |this, cx| {
                         this.load_encryption(&announcement, cx);
                         // Set the announcement
@@ -190,11 +192,8 @@ impl Encryption {
                     })
                     .expect("Entity has been released");
                 }
-                Err(err) => {
-                    log::error!("Failed to get announcement: {}", err);
-                }
-            };
-        }));
+            }),
+        );
     }
 
     fn _get_announcement(&self, cx: &App) -> Task<Result<Announcement, Error>> {
@@ -373,6 +372,7 @@ impl Encryption {
     pub fn new_encryption(&self, cx: &App) -> Task<Result<Keys, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let cache = nostr.read(cx).cache_manager();
 
         let keys = Keys::generate();
         let public_key = keys.public_key();
@@ -384,6 +384,8 @@ impl Encryption {
             Self::set_keys(&client, "encryption", secret).await?;
 
             let signer = client.signer().await?;
+            let cache = cache.read().await;
+            let write_relays = cache.inbox_relays(&public_key);
 
             // Construct the announcement event
             let event = EventBuilder::new(Kind::Custom(10044), "")
@@ -395,7 +397,7 @@ impl Encryption {
                 .await?;
 
             // Send the announcement event to user's relays
-            client.send_event(&event).await?;
+            client.send_event_to(write_relays, &event).await?;
 
             Ok(keys)
         })
@@ -407,6 +409,7 @@ impl Encryption {
     pub fn send_request(&self, cx: &App) -> Task<Result<Option<Keys>, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let cache = nostr.read(cx).cache_manager();
 
         // Get the client signer
         let Some(client_signer) = self.client_signer.read(cx).clone() else {
@@ -443,6 +446,9 @@ impl Encryption {
                     Ok(Some(keys))
                 }
                 None => {
+                    let cache = cache.read().await;
+                    let write_relays = cache.inbox_relays(&public_key);
+
                     // Construct encryption keys request event
                     let event = EventBuilder::new(Kind::Custom(4454), "")
                         .tags(vec![
@@ -453,7 +459,7 @@ impl Encryption {
                         .await?;
 
                     // Send a request for encryption keys from other devices
-                    client.send_event(&event).await?;
+                    client.send_event_to(write_relays, &event).await?;
 
                     // Create a unique ID to control the subscription later
                     let subscription_id = SubscriptionId::new("listen-response");
@@ -480,6 +486,7 @@ impl Encryption {
     pub fn send_response(&self, target: PublicKey, cx: &App) -> Task<Result<(), Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let cache = nostr.read(cx).cache_manager();
 
         // Get the client signer
         let Some(client_signer) = self.client_signer.read(cx).clone() else {
@@ -488,6 +495,10 @@ impl Encryption {
 
         cx.background_spawn(async move {
             let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let cache = cache.read().await;
+            let write_relays = cache.inbox_relays(&public_key);
+
             let encryption = Self::get_keys(&client, "encryption").await?;
             let client_pubkey = client_signer.get_public_key().await?;
 
@@ -505,11 +516,12 @@ impl Encryption {
                     Tag::custom(TagKind::custom("P"), vec![client_pubkey]),
                     Tag::public_key(target),
                 ])
+                .build(public_key)
                 .sign(&signer)
                 .await?;
 
             // Send the response event to the user's relay list
-            client.send_event(&event).await?;
+            client.send_event_to(write_relays, &event).await?;
 
             Ok(())
         })

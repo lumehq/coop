@@ -717,7 +717,7 @@ impl ChatRegistry {
     {
         let authors: Vec<PublicKey> = public_keys.into_iter().collect();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let kinds = vec![Kind::Metadata, Kind::ContactList];
 
         // Return if the list is empty
         if authors.is_empty() {
@@ -725,7 +725,7 @@ impl ChatRegistry {
         }
 
         let filter = Filter::new()
-            .limit(authors.len() * kinds.len() + 10)
+            .limit(authors.len() * kinds.len())
             .authors(authors)
             .kinds(kinds);
 

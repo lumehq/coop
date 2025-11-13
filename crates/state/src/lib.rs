@@ -16,8 +16,7 @@ pub use tracker::*;
 mod storage;
 mod tracker;
 
-pub const GIFTWRAP_SUBSCRIPTION: &str = "default-inbox";
-pub const ENCRYPTION_GIFTWARP_SUBSCRIPTION: &str = "encryption-inbox";
+pub const GIFTWRAP_SUBSCRIPTION: &str = "gift-wrap-events";
 
 pub fn init(cx: &mut App) {
     NostrRegistry::set_global(cx.new(NostrRegistry::new), cx);
@@ -153,17 +152,39 @@ impl NostrRegistry {
 
                             drop(cache);
 
-                            // Fetch user's messaging relays event
-                            _ = Self::subscribe(client, &event, Kind::InboxRelays).await;
+                            let urls: Vec<RelayUrl> = nip65::extract_relay_list(&event)
+                                .filter_map(|(url, metadata)| {
+                                    if metadata.is_none() || metadata == &Some(RelayMetadata::Write)
+                                    {
+                                        Some(url.to_owned())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .take(3)
+                                .collect();
 
                             // Fetch user's encryption announcement event
-                            _ = Self::subscribe(client, &event, Kind::Custom(10044)).await;
+                            Self::subscribe(client, &urls, event.pubkey, Kind::Custom(10044))
+                                .await
+                                .ok();
 
-                            // Fetch user's metadata event
-                            _ = Self::subscribe(client, &event, Kind::Metadata).await;
+                            // Fetch user's messaging relays event
+                            Self::subscribe(client, &urls, event.pubkey, Kind::InboxRelays)
+                                .await
+                                .ok();
 
-                            // Fetch user's contact list event
-                            _ = Self::subscribe(client, &event, Kind::ContactList).await;
+                            if Self::is_self_authored(client, &event).await {
+                                // Fetch user's metadata event
+                                Self::subscribe(client, &urls, event.pubkey, Kind::Metadata)
+                                    .await
+                                    .ok();
+
+                                // Fetch user's contact list event
+                                Self::subscribe(client, &urls, event.pubkey, Kind::ContactList)
+                                    .await
+                                    .ok();
+                            }
                         }
                         Kind::InboxRelays => {
                             let mut cache = cache.write().await;
@@ -171,8 +192,14 @@ impl NostrRegistry {
 
                             drop(cache);
 
-                            // Fetch user's inbox messages
-                            _ = Self::get_messages(client, &event).await;
+                            if Self::is_self_authored(client, &event).await {
+                                // Extract user's messaging relays
+                                let urls: Vec<RelayUrl> =
+                                    nip17::extract_relay_list(&event).cloned().collect();
+
+                                // Fetch user's inbox messages in the extracted relays
+                                _ = Self::get_messages(client, &urls).await;
+                            }
                         }
                         Kind::Custom(10044) => {
                             let mut cache = cache.write().await;
@@ -182,9 +209,12 @@ impl NostrRegistry {
                         }
                         Kind::ContactList => {
                             if Self::is_self_authored(client, &event).await {
-                                let pubkeys: Vec<_> = event.tags.public_keys().copied().collect();
+                                let public_keys: Vec<PublicKey> =
+                                    event.tags.public_keys().copied().collect();
 
-                                if let Err(e) = Self::get_metadata_for_list(client, pubkeys).await {
+                                if let Err(e) =
+                                    Self::get_metadata_for_list(client, public_keys).await
+                                {
                                     log::error!("Failed to get metadata for list: {e}");
                                 }
                             }
@@ -223,28 +253,14 @@ impl NostrRegistry {
     }
 
     /// Subscribe for events that match the given kind for a given author
-    async fn subscribe(client: &Client, relay: &Event, kind: Kind) -> Result<(), Error> {
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
-
-        if relay.pubkey != public_key {
-            return Err(anyhow!("Messaging Relays does not belong to the user"));
-        };
-
+    async fn subscribe(
+        client: &Client,
+        urls: &[RelayUrl],
+        author: PublicKey,
+        kind: Kind,
+    ) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let filter = Filter::new().author(public_key).kind(kind).limit(1);
-
-        // Extract relays from the relay event
-        let urls: Vec<RelayUrl> = nip65::extract_relay_list(relay)
-            .filter_map(|(url, metadata)| {
-                if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
-                    Some(url)
-                } else {
-                    None
-                }
-            })
-            .cloned()
-            .collect();
+        let filter = Filter::new().author(author).kind(kind).limit(1);
 
         // Verify that there are relays provided
         if urls.is_empty() {
@@ -264,19 +280,12 @@ impl NostrRegistry {
     }
 
     /// Get all gift wrap events in the messaging relays for a given public key
-    async fn get_messages(client: &Client, relay: &Event) -> Result<(), Error> {
+    async fn get_messages(client: &Client, urls: &[RelayUrl]) -> Result<(), Error> {
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
-        if relay.pubkey != public_key {
-            return Err(anyhow!("Messaging Relays does not belong to the user"));
-        };
-
         let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
-
-        // Extract relays from the relay event
-        let urls: Vec<RelayUrl> = nip17::extract_relay_list(relay).take(3).cloned().collect();
 
         // Verify that there are relays provided
         if urls.is_empty() {
@@ -298,7 +307,7 @@ impl NostrRegistry {
     /// Get metadata for a list of public keys
     async fn get_metadata_for_list(client: &Client, pubkeys: Vec<PublicKey>) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let kinds = vec![Kind::Metadata, Kind::ContactList, Kind::RelayList];
+        let kinds = vec![Kind::Metadata, Kind::ContactList];
 
         // Return if the list is empty
         if pubkeys.is_empty() {
@@ -306,7 +315,7 @@ impl NostrRegistry {
         }
 
         let filter = Filter::new()
-            .limit(pubkeys.len() * kinds.len() + 10)
+            .limit(pubkeys.len() * kinds.len())
             .authors(pubkeys)
             .kinds(kinds);
 

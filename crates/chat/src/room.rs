@@ -327,7 +327,7 @@ impl Room {
         cx.emit(RoomSignal::Refresh);
     }
 
-    /// Get messaging relays and encryption keys announcement for each member
+    /// Get gossip relays for each member
     pub fn connect(&self, cx: &App) -> Task<Result<(), Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
@@ -343,22 +343,10 @@ impl Room {
                     continue;
                 };
 
-                // Construct a filter for messaging relays
-                let filter = Filter::new()
-                    .kind(Kind::InboxRelays)
-                    .author(member)
-                    .limit(1);
+                // Construct a filter for gossip relays
+                let filter = Filter::new().kind(Kind::RelayList).author(member).limit(1);
 
-                // Subscribe to get members messaging relays
-                client.subscribe(filter, Some(opts)).await?;
-
-                // Construct a filter for encryption keys announcement
-                let filter = Filter::new()
-                    .kind(Kind::Custom(10044))
-                    .author(member)
-                    .limit(1);
-
-                // Subscribe to get members encryption keys announcement
+                // Subscribe to get member's gossip relays
                 client.subscribe(filter, Some(opts)).await?;
             }
 
@@ -481,7 +469,6 @@ impl Room {
         cx.background_spawn(async move {
             let signer_kind = opts.signer_kind;
             let cache = cache.read().await;
-            let tracker = tracker.read().await;
 
             // Get the encryption public key
             let encryption_pubkey = if let Some(signer) = encryption_key.as_ref() {
@@ -550,6 +537,7 @@ impl Room {
                         if auth {
                             // Wait for authenticated and resent event successfully
                             for attempt in 0..=SEND_RETRY {
+                                let tracker = tracker.read().await;
                                 let ids = tracker.resent_ids();
 
                                 // Check if event was successfully resent
