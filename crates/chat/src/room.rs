@@ -468,7 +468,7 @@ impl Room {
 
         cx.background_spawn(async move {
             let signer_kind = opts.signer_kind;
-            let cache = gossip.read().await;
+            let gossip = gossip.read().await;
 
             // Get the encryption public key
             let encryption_pubkey = if let Some(signer) = encryption_key.as_ref() {
@@ -492,9 +492,9 @@ impl Room {
 
             for member in members.into_iter() {
                 // Get user's messaging relays
-                let urls = cache.messaging_relays(&member);
+                let urls = gossip.messaging_relays(&member);
                 // Get user's encryption public key if available
-                let encryption = cache.announcement(&member).map(|a| a.public_key());
+                let encryption = gossip.announcement(&member).map(|a| a.public_key());
 
                 // Check if there are any relays to send the message to
                 if urls.is_empty() {
@@ -502,11 +502,8 @@ impl Room {
                     continue;
                 }
 
-                // Ensure connection to all messaging relays
-                for url in urls.iter() {
-                    client.add_relay(url).await?;
-                    client.connect_relay(url).await?;
-                }
+                // Ensure connections to the relays
+                gossip.ensure_connections(&client, &urls).await;
 
                 // Skip sending if using encryption signer but receiver's encryption keys not found
                 if encryption.is_none() && matches!(signer_kind, SignerKind::Encryption) {
@@ -580,7 +577,7 @@ impl Room {
 
             // Only send a backup message to current user if sent successfully to others
             if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
-                let urls = cache.messaging_relays(&user_pubkey);
+                let urls = gossip.messaging_relays(&user_pubkey);
 
                 // Check if there are any relays to send the event to
                 if urls.is_empty() {
@@ -588,11 +585,8 @@ impl Room {
                     return Ok(reports);
                 }
 
-                // Ensure connection to all messaging relays
-                for url in urls.iter() {
-                    client.add_relay(url).await?;
-                    client.connect_relay(url).await?;
-                }
+                // Ensure connections to the relays
+                gossip.ensure_connections(&client, &urls).await;
 
                 // Send the event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -657,6 +651,9 @@ impl Room {
                     if urls.is_empty() {
                         resend_reports.push(SendReport::new(receiver).relays_not_found());
                     } else {
+                        // Ensure connections to the relays
+                        gossip.ensure_connections(&client, &urls).await;
+
                         // Send the event to the messaging relays
                         match client.send_event_to(urls, &event).await {
                             Ok(output) => {

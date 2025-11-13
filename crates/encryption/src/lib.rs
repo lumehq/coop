@@ -384,8 +384,12 @@ impl Encryption {
             Self::set_keys(&client, "encryption", secret).await?;
 
             let signer = client.signer().await?;
+            let signer_pubkey = signer.get_public_key().await?;
             let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&public_key);
+            let write_relays = gossip.inbox_relays(&signer_pubkey);
+
+            // Ensure connections to the write relays
+            gossip.ensure_connections(&client, &write_relays).await;
 
             // Construct the announcement event
             let event = EventBuilder::new(Kind::Custom(10044), "")
@@ -393,6 +397,7 @@ impl Encryption {
                     Tag::client(app_name()),
                     Tag::custom(TagKind::custom("n"), vec![public_key]),
                 ])
+                .build(signer_pubkey)
                 .sign(&signer)
                 .await?;
 
@@ -449,6 +454,9 @@ impl Encryption {
                     let gossip = gossip.read().await;
                     let write_relays = gossip.inbox_relays(&public_key);
 
+                    // Ensure connections to the write relays
+                    gossip.ensure_connections(&client, &write_relays).await;
+
                     // Construct encryption keys request event
                     let event = EventBuilder::new(Kind::Custom(4454), "")
                         .tags(vec![
@@ -459,7 +467,7 @@ impl Encryption {
                         .await?;
 
                     // Send a request for encryption keys from other devices
-                    client.send_event_to(write_relays, &event).await?;
+                    client.send_event_to(&write_relays, &event).await?;
 
                     // Create a unique ID to control the subscription later
                     let subscription_id = SubscriptionId::new("listen-response");
@@ -471,7 +479,7 @@ impl Encryption {
 
                     // Subscribe to the approval response event
                     client
-                        .subscribe_with_id(subscription_id, filter, None)
+                        .subscribe_with_id_to(&write_relays, subscription_id, filter, None)
                         .await?;
 
                     Ok(None)
@@ -498,6 +506,9 @@ impl Encryption {
             let public_key = signer.get_public_key().await?;
             let gossip = gossip.read().await;
             let write_relays = gossip.inbox_relays(&public_key);
+
+            // Ensure connections to the write relays
+            gossip.ensure_connections(&client, &write_relays).await;
 
             let encryption = Self::get_keys(&client, "encryption").await?;
             let client_pubkey = client_signer.get_public_key().await?;

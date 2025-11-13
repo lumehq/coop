@@ -159,6 +159,14 @@ impl Gossip {
             );
     }
 
+    /// Ensure connections for the given relay list
+    pub async fn ensure_connections(&self, client: &Client, urls: &[RelayUrl]) {
+        for url in urls {
+            client.add_relay(url).await.ok();
+            client.connect_relay(url).await.ok();
+        }
+    }
+
     /// Get announcement for a public key
     pub fn announcement(&self, public_key: &PublicKey) -> Option<Announcement> {
         self.announcements

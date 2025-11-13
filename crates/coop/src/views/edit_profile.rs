@@ -206,6 +206,9 @@ impl EditProfile {
             let gossip = gossip.read().await;
             let write_relays = gossip.inbox_relays(&public_key);
 
+            // Ensure connections to the write relays
+            gossip.ensure_connections(&client, &write_relays).await;
+
             // Sign the new metadata event
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;
 

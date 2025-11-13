@@ -164,6 +164,9 @@ impl SetupRelay {
             let gossip = gossip.read().await;
             let write_relays = gossip.inbox_relays(&public_key);
 
+            // Ensure connections to the write relays
+            gossip.ensure_connections(&client, &write_relays).await;
+
             let tags: Vec<Tag> = relays
                 .iter()
                 .map(|relay| Tag::relay(relay.clone()))

@@ -183,6 +183,7 @@ impl EncryptionPanel {
                         });
                     }
                     Err(e) => {
+                        this.set_requesting(false, cx);
                         this.set_error(e.to_string(), cx);
                     }
                 };
@@ -213,6 +214,8 @@ impl EncryptionPanel {
                     .child(
                         v_flex()
                             .h_12()
+                            .items_center()
+                            .justify_center()
                             .px_2()
                             .rounded(cx.theme().radius)
                             .bg(cx.theme().warning_background)
