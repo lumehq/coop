@@ -49,10 +49,10 @@ pub struct Encryption {
     handle_requests: Option<Task<()>>,
 
     /// Event subscriptions
-    _subscriptions: SmallVec<[Subscription; 1]>,
+    _subscriptions: SmallVec<[Subscription; 2]>,
 
     /// Tasks for asynchronous operations
-    _tasks: SmallVec<[Task<()>; 2]>,
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Encryption {
@@ -69,27 +69,49 @@ impl Encryption {
     /// Create a new encryption instance
     fn new(cx: &mut Context<Self>) -> Self {
         let account = Account::global(cx);
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
 
         let requests = cx.new(|_| HashSet::default());
         let encryption = cx.new(|_| None);
         let client_signer = cx.new(|_| None);
 
         let mut subscriptions = smallvec![];
-        let mut tasks = smallvec![];
 
         subscriptions.push(
             // Observe the account state
             cx.observe(&account, |this, state, cx| {
-                if state.read(cx).has_account() && !this.has_encryption(cx) {
+                if state.read(cx).has_account() && this.client_signer.read(cx).is_none() {
+                    this.load_client_keys(cx);
+                }
+            }),
+        );
+
+        subscriptions.push(
+            // Observe the client signer state
+            cx.observe(&client_signer, |this, state, cx| {
+                if state.read(cx).is_some() {
                     this.get_announcement(cx);
                 }
             }),
         );
 
-        tasks.push(
-            // Get the client key
+        Self {
+            requests,
+            client_signer,
+            encryption,
+            announcement: None,
+            handle_notifications: None,
+            handle_requests: None,
+            _subscriptions: subscriptions,
+            _tasks: smallvec![],
+        }
+    }
+
+    fn load_client_keys(&mut self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        self._tasks.push(
+            // Run in the main thread
             cx.spawn(async move |this, cx| {
                 match Self::get_keys(&client, "client").await {
                     Ok(keys) => {
@@ -113,18 +135,7 @@ impl Encryption {
                     }
                 }
             }),
-        );
-
-        Self {
-            requests,
-            client_signer,
-            encryption,
-            announcement: None,
-            handle_notifications: None,
-            handle_requests: None,
-            _subscriptions: subscriptions,
-            _tasks: tasks,
-        }
+        )
     }
 
     /// Encrypt and store a key in the local database.
@@ -235,7 +246,7 @@ impl Encryption {
                         this.listen_request(cx);
                     }
                 }
-                // this.load_response(cx);
+                this.load_response(cx);
             })
             .expect("Entity has been released");
         })
@@ -262,13 +273,14 @@ impl Encryption {
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
                 let response = NostrRegistry::extract_response(&client, &event).await?;
-                let public_key = response.public_key();
-                let payload = response.payload();
 
                 // Decrypt the payload using the client signer
-                let decrypted = client_signer.nip44_decrypt(&public_key, payload).await?;
-                let secret = SecretKey::parse(&decrypted)?;
+                let decrypted = client_signer
+                    .nip44_decrypt(&response.public_key(), response.payload())
+                    .await?;
+
                 // Construct the encryption keys
+                let secret = SecretKey::parse(&decrypted)?;
                 let keys = Keys::new(secret);
 
                 return Ok(keys);
@@ -278,12 +290,17 @@ impl Encryption {
         });
 
         cx.spawn(async move |this, cx| {
-            if let Ok(keys) = task.await {
-                this.update(cx, |this, cx| {
-                    this.set_encryption(Arc::new(keys), cx);
-                })
-                .expect("Entity has been released");
-            }
+            match task.await {
+                Ok(keys) => {
+                    this.update(cx, |this, cx| {
+                        this.set_encryption(Arc::new(keys), cx);
+                    })
+                    .expect("Entity has been released");
+                }
+                Err(e) => {
+                    log::error!("Failed to decrypt payload: {e}");
+                }
+            };
         })
         .detach();
     }
@@ -544,12 +561,14 @@ impl Encryption {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
-        let client_signer = self.client_signer.read(cx).clone().unwrap();
-        let mut processed_events = HashSet::new();
+        // Get the client signer
+        let Some(client_signer) = self.client_signer.read(cx).clone() else {
+            return Task::ready(Err(anyhow!("Client Signer is required")));
+        };
 
         cx.background_spawn(async move {
             let mut notifications = client.notifications();
-            log::info!("Listening for notifications");
+            let mut processed_events = HashSet::new();
 
             while let Ok(notification) = notifications.recv().await {
                 let RelayPoolNotification::Message { message, .. } = notification else {

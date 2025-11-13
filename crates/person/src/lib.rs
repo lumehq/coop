@@ -47,8 +47,6 @@ impl PersonRegistry {
 
                 async move |this, cx| {
                     let mut notifications = client.notifications();
-                    log::info!("Listening for notifications");
-
                     let mut processed_events = HashSet::new();
 
                     while let Ok(notification) = notifications.recv().await {

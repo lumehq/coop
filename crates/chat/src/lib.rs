@@ -165,12 +165,10 @@ impl ChatRegistry {
         tx: &Sender<Signal>,
         status: &Arc<AtomicBool>,
     ) {
-        let mut notifications = client.notifications();
-        log::info!("Listening for notifications");
-
         let initialized_at = initialized_at();
         let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
 
+        let mut notifications = client.notifications();
         let mut public_keys = HashSet::new();
         let mut processed_events = HashSet::new();
 
