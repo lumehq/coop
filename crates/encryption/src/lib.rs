@@ -233,10 +233,9 @@ impl Encryption {
                     if keys.public_key() == n {
                         this.set_encryption(Arc::new(keys), cx);
                         this.listen_request(cx);
-                        return;
                     }
                 }
-                this.load_response(cx);
+                // this.load_response(cx);
             })
             .expect("Entity has been released");
         })
@@ -565,7 +564,7 @@ impl Encryption {
                     }
 
                     if event.kind != Kind::Custom(4455) {
-                        // Skip non-gift wrap events
+                        // Skip non-response events
                         continue;
                     }
 
@@ -580,6 +579,8 @@ impl Encryption {
                         let keys = Keys::new(secret);
 
                         return Ok(keys);
+                    } else {
+                        log::error!("Failed to extract response from event");
                     }
                 }
             }
