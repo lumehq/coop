@@ -372,7 +372,7 @@ impl Encryption {
     pub fn new_encryption(&self, cx: &App) -> Task<Result<Keys, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let cache = nostr.read(cx).cache_manager();
+        let gossip = nostr.read(cx).gossip();
 
         let keys = Keys::generate();
         let public_key = keys.public_key();
@@ -384,8 +384,8 @@ impl Encryption {
             Self::set_keys(&client, "encryption", secret).await?;
 
             let signer = client.signer().await?;
-            let cache = cache.read().await;
-            let write_relays = cache.inbox_relays(&public_key);
+            let gossip = gossip.read().await;
+            let write_relays = gossip.inbox_relays(&public_key);
 
             // Construct the announcement event
             let event = EventBuilder::new(Kind::Custom(10044), "")
@@ -409,7 +409,7 @@ impl Encryption {
     pub fn send_request(&self, cx: &App) -> Task<Result<Option<Keys>, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let cache = nostr.read(cx).cache_manager();
+        let gossip = nostr.read(cx).gossip();
 
         // Get the client signer
         let Some(client_signer) = self.client_signer.read(cx).clone() else {
@@ -446,8 +446,8 @@ impl Encryption {
                     Ok(Some(keys))
                 }
                 None => {
-                    let cache = cache.read().await;
-                    let write_relays = cache.inbox_relays(&public_key);
+                    let gossip = gossip.read().await;
+                    let write_relays = gossip.inbox_relays(&public_key);
 
                     // Construct encryption keys request event
                     let event = EventBuilder::new(Kind::Custom(4454), "")
@@ -486,7 +486,7 @@ impl Encryption {
     pub fn send_response(&self, target: PublicKey, cx: &App) -> Task<Result<(), Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let cache = nostr.read(cx).cache_manager();
+        let gossip = nostr.read(cx).gossip();
 
         // Get the client signer
         let Some(client_signer) = self.client_signer.read(cx).clone() else {
@@ -496,8 +496,8 @@ impl Encryption {
         cx.background_spawn(async move {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
-            let cache = cache.read().await;
-            let write_relays = cache.inbox_relays(&public_key);
+            let gossip = gossip.read().await;
+            let write_relays = gossip.inbox_relays(&public_key);
 
             let encryption = Self::get_keys(&client, "encryption").await?;
             let client_pubkey = client_signer.get_public_key().await?;

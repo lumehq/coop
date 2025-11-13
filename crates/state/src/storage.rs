@@ -58,18 +58,18 @@ impl Response {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CacheManager {
-    /// Cache of gossip relays for each public key
+pub struct Gossip {
+    /// Gossip relays for each public key
     relays: HashMap<PublicKey, HashSet<(RelayUrl, Option<RelayMetadata>)>>,
 
-    /// Cache of messaging relays for each public key
+    /// Messaging relays for each public key
     messaging_relays: HashMap<PublicKey, HashSet<RelayUrl>>,
 
-    /// Cache of device announcement for each public key
+    /// Encryption announcement for each public key
     announcements: HashMap<PublicKey, Option<Announcement>>,
 }
 
-impl CacheManager {
+impl Gossip {
     /// Get inbox relays for a public key
     pub fn inbox_relays(&self, public_key: &PublicKey) -> Vec<RelayUrl> {
         self.relays

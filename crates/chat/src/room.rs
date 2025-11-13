@@ -381,8 +381,8 @@ impl Room {
     /// Create a new message event (unsigned)
     pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
         let nostr = NostrRegistry::global(cx);
-        let cache = nostr.read(cx).cache_manager();
-        let cache = cache.read_blocking();
+        let gossip = nostr.read(cx).gossip();
+        let gossip = gossip.read_blocking();
 
         // Get current user
         let account = Account::global(cx);
@@ -398,7 +398,7 @@ impl Room {
         // NOTE: current user will be removed from the list of receivers
         for member in self.members.iter() {
             // Get relay hint if available
-            let relay_url = cache.messaging_relays(member).first().cloned();
+            let relay_url = gossip.messaging_relays(member).first().cloned();
 
             // Construct a public key tag with relay hint
             let tag = TagStandard::PublicKey {
@@ -457,7 +457,7 @@ impl Room {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let cache = nostr.read(cx).cache_manager();
+        let gossip = nostr.read(cx).gossip();
         let tracker = nostr.read(cx).tracker();
 
         let rumor = rumor.to_owned();
@@ -468,7 +468,7 @@ impl Room {
 
         cx.background_spawn(async move {
             let signer_kind = opts.signer_kind;
-            let cache = cache.read().await;
+            let cache = gossip.read().await;
 
             // Get the encryption public key
             let encryption_pubkey = if let Some(signer) = encryption_key.as_ref() {
@@ -619,10 +619,10 @@ impl Room {
     ) -> Task<Result<Vec<SendReport>, Error>> {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let cache_manager = nostr.read(cx).cache_manager();
+        let gossip = nostr.read(cx).gossip();
 
         cx.background_spawn(async move {
-            let cache = cache_manager.read().await;
+            let gossip = gossip.read().await;
             let mut resend_reports = vec![];
 
             for report in reports.into_iter() {
@@ -651,7 +651,7 @@ impl Room {
 
                 // Process the on hold event if it exists
                 if let Some(event) = report.on_hold {
-                    let urls = cache.messaging_relays(&receiver);
+                    let urls = gossip.messaging_relays(&receiver);
 
                     // Check if there are any relays to send the event to
                     if urls.is_empty() {

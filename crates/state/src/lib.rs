@@ -29,14 +29,14 @@ impl Global for GlobalNostrRegistry {}
 /// Nostr Registry
 #[derive(Debug)]
 pub struct NostrRegistry {
-    /// Nostr client instance
+    /// Nostr Client
     client: Client,
+
+    /// Custom gossip implementation
+    gossip: Arc<RwLock<Gossip>>,
 
     /// Tracks activity related to Nostr events
     tracker: Arc<RwLock<EventTracker>>,
-
-    /// Manages caching of nostr events
-    cache_manager: Arc<RwLock<CacheManager>>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -76,7 +76,7 @@ impl NostrRegistry {
         let client = ClientBuilder::default().database(lmdb).opts(opts).build();
 
         let tracker = Arc::new(RwLock::new(EventTracker::default()));
-        let cache = Arc::new(RwLock::new(CacheManager::default()));
+        let gossip = Arc::new(RwLock::new(Gossip::default()));
 
         let mut tasks = smallvec![];
 
@@ -86,7 +86,7 @@ impl NostrRegistry {
             // And handle notifications from the nostr relay pool channel
             cx.background_spawn({
                 let client = client.clone();
-                let cache = Arc::clone(&cache);
+                let gossip = Arc::clone(&gossip);
                 let tracker = Arc::clone(&tracker);
                 let _ = initialized_at();
 
@@ -95,7 +95,7 @@ impl NostrRegistry {
                     Self::connect(&client).await;
 
                     // Handle notifications from the relay pool
-                    Self::handle_notifications(&client, &cache, &tracker).await;
+                    Self::handle_notifications(&client, &gossip, &tracker).await;
                 }
             }),
         );
@@ -103,7 +103,7 @@ impl NostrRegistry {
         Self {
             client,
             tracker,
-            cache_manager: cache,
+            gossip,
             _tasks: tasks,
         }
     }
@@ -126,7 +126,7 @@ impl NostrRegistry {
 
     async fn handle_notifications(
         client: &Client,
-        cache: &Arc<RwLock<CacheManager>>,
+        gossip: &Arc<RwLock<Gossip>>,
         tracker: &Arc<RwLock<EventTracker>>,
     ) {
         let mut notifications = client.notifications();
@@ -147,50 +147,28 @@ impl NostrRegistry {
 
                     match event.kind {
                         Kind::RelayList => {
-                            let mut cache = cache.write().await;
-                            cache.insert_relays(&event);
+                            let mut gossip = gossip.write().await;
+                            gossip.insert_relays(&event);
 
-                            drop(cache);
-
-                            let urls: Vec<RelayUrl> = nip65::extract_relay_list(&event)
-                                .filter_map(|(url, metadata)| {
-                                    if metadata.is_none() || metadata == &Some(RelayMetadata::Write)
-                                    {
-                                        Some(url.to_owned())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .take(3)
-                                .collect();
+                            let urls: Vec<RelayUrl> = Self::extract_write_relays(&event);
+                            let author = event.pubkey;
 
                             // Fetch user's encryption announcement event
-                            Self::subscribe(client, &urls, event.pubkey, Kind::Custom(10044))
-                                .await
-                                .ok();
-
+                            Self::get(client, &urls, author, Kind::Custom(10044)).await;
                             // Fetch user's messaging relays event
-                            Self::subscribe(client, &urls, event.pubkey, Kind::InboxRelays)
-                                .await
-                                .ok();
+                            Self::get(client, &urls, author, Kind::InboxRelays).await;
 
+                            // Verify if the event is belonging to the current user
                             if Self::is_self_authored(client, &event).await {
                                 // Fetch user's metadata event
-                                Self::subscribe(client, &urls, event.pubkey, Kind::Metadata)
-                                    .await
-                                    .ok();
-
+                                Self::get(client, &urls, author, Kind::Metadata).await;
                                 // Fetch user's contact list event
-                                Self::subscribe(client, &urls, event.pubkey, Kind::ContactList)
-                                    .await
-                                    .ok();
+                                Self::get(client, &urls, author, Kind::ContactList).await;
                             }
                         }
                         Kind::InboxRelays => {
-                            let mut cache = cache.write().await;
-                            cache.insert_messaging_relays(&event);
-
-                            drop(cache);
+                            let mut gossip = gossip.write().await;
+                            gossip.insert_messaging_relays(&event);
 
                             if Self::is_self_authored(client, &event).await {
                                 // Extract user's messaging relays
@@ -198,14 +176,12 @@ impl NostrRegistry {
                                     nip17::extract_relay_list(&event).cloned().collect();
 
                                 // Fetch user's inbox messages in the extracted relays
-                                _ = Self::get_messages(client, &urls).await;
+                                Self::get_messages(client, event.pubkey, &urls).await;
                             }
                         }
                         Kind::Custom(10044) => {
-                            let mut cache = cache.write().await;
-                            cache.insert_announcement(&event);
-
-                            drop(cache);
+                            let mut gossip = gossip.write().await;
+                            gossip.insert_announcement(&event);
                         }
                         Kind::ContactList => {
                             if Self::is_self_authored(client, &event).await {
@@ -252,56 +228,48 @@ impl NostrRegistry {
         false
     }
 
-    /// Subscribe for events that match the given kind for a given author
-    async fn subscribe(
-        client: &Client,
-        urls: &[RelayUrl],
-        author: PublicKey,
-        kind: Kind,
-    ) -> Result<(), Error> {
+    /// Get event that match the given kind for a given author
+    async fn get(client: &Client, urls: &[RelayUrl], author: PublicKey, kind: Kind) {
+        // Skip if no relays are provided
+        if urls.is_empty() {
+            return;
+        }
+
+        // Ensure relay connections
+        for url in urls.iter() {
+            client.add_relay(url).await.ok();
+            client.connect_relay(url).await.ok();
+        }
+
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let filter = Filter::new().author(author).kind(kind).limit(1);
 
+        // Subscribe to filters from the user's write relays
+        if let Err(e) = client.subscribe_to(urls, filter, Some(opts)).await {
+            log::error!("Failed to subscribe: {}", e);
+        }
+    }
+
+    /// Get all gift wrap events in the messaging relays for a given public key
+    async fn get_messages(client: &Client, public_key: PublicKey, urls: &[RelayUrl]) {
         // Verify that there are relays provided
         if urls.is_empty() {
-            return Err(anyhow!("No relays provided"));
+            return;
         }
 
         // Ensure relay connection
         for url in urls.iter() {
-            client.add_relay(url).await?;
-            client.connect_relay(url).await?;
+            client.add_relay(url).await.ok();
+            client.connect_relay(url).await.ok();
         }
-
-        // Subscribe to filters from the user's write relays
-        client.subscribe_to(urls, filter, Some(opts)).await?;
-
-        Ok(())
-    }
-
-    /// Get all gift wrap events in the messaging relays for a given public key
-    async fn get_messages(client: &Client, urls: &[RelayUrl]) -> Result<(), Error> {
-        let signer = client.signer().await?;
-        let public_key = signer.get_public_key().await?;
 
         let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-        // Verify that there are relays provided
-        if urls.is_empty() {
-            return Err(anyhow!("No relays provided"));
-        }
-
-        // Ensure relay connection
-        for url in urls.iter() {
-            client.add_relay(url).await?;
-            client.connect_relay(url).await?;
-        }
-
         // Subscribe to filters to user's messaging relays
-        client.subscribe_with_id_to(urls, id, filter, None).await?;
-
-        Ok(())
+        if let Err(e) = client.subscribe_with_id_to(urls, id, filter, None).await {
+            log::error!("Failed to subscribe: {}", e);
+        }
     }
 
     /// Get metadata for a list of public keys
@@ -325,6 +293,19 @@ impl NostrRegistry {
             .await?;
 
         Ok(())
+    }
+
+    fn extract_write_relays(event: &Event) -> Vec<RelayUrl> {
+        nip65::extract_relay_list(event)
+            .filter_map(|(url, metadata)| {
+                if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
+                    Some(url.to_owned())
+                } else {
+                    None
+                }
+            })
+            .take(3)
+            .collect()
     }
 
     /// Extract an encryption keys announcement from an event.
@@ -377,7 +358,7 @@ impl NostrRegistry {
     }
 
     /// Returns a reference to the cache manager.
-    pub fn cache_manager(&self) -> Arc<RwLock<CacheManager>> {
-        Arc::clone(&self.cache_manager)
+    pub fn gossip(&self) -> Arc<RwLock<Gossip>> {
+        Arc::clone(&self.gossip)
     }
 }
