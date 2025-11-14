@@ -602,8 +602,27 @@ impl ChatRegistry {
         T: NostrSigner,
     {
         if let Some(custom_signer) = signer.as_ref() {
-            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(custom_signer, gift_wrap).await {
-                return Ok(unwrapped);
+            if let Ok(seal) = custom_signer
+                .nip44_decrypt(&gift_wrap.pubkey, &gift_wrap.content)
+                .await
+            {
+                let seal: Event = Event::from_json(seal)?;
+                seal.verify_with_ctx(SECP256K1)?;
+
+                // Decrypt the rumor
+                // TODO: verify the sender
+                let rumor = custom_signer
+                    .nip44_decrypt(&seal.pubkey, &seal.content)
+                    .await?;
+
+                // Construct the unsigned event
+                let rumor = UnsignedEvent::from_json(rumor)?;
+
+                // Return the unwrapped gift
+                return Ok(UnwrappedGift {
+                    sender: rumor.pubkey,
+                    rumor,
+                });
             }
         }
 
