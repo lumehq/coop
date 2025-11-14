@@ -286,7 +286,7 @@ impl Encryption {
                 return Ok(keys);
             }
 
-            Err(anyhow!("Not found"))
+            Err(anyhow!("not found"))
         });
 
         cx.spawn(async move |this, cx| {
@@ -298,7 +298,7 @@ impl Encryption {
                     .expect("Entity has been released");
                 }
                 Err(e) => {
-                    log::error!("Failed to decrypt payload: {e}");
+                    log::warn!("Failed to load encryption response: {e}");
                 }
             };
         })

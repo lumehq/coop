@@ -220,11 +220,11 @@ impl ChatRegistry {
                                 }
                             }
                         }
-                        Err(_e) => {
+                        Err(e) => {
                             let mut tracker = tracker.write().await;
                             tracker.failed_unwrap_events.push(event.as_ref().clone());
 
-                            drop(tracker);
+                            log::warn!("Failed to unwrap gift wrap event: {}", e);
                         }
                     }
                 }
@@ -298,21 +298,26 @@ impl ChatRegistry {
             let tracker = tracker.read().await;
 
             for event in tracker.failed_unwrap_events.iter() {
-                if let Ok(rumor) = Self::try_unwrap_custom(&client, &signer, event).await {
-                    match &event.created_at >= initialized_at {
-                        true => {
-                            let new_message = NewMessage::new(event.id, rumor);
-                            let signal = Signal::Message(new_message);
+                match Self::try_unwrap_custom(&client, &signer, event).await {
+                    Ok(rumor) => {
+                        match &event.created_at >= initialized_at {
+                            true => {
+                                let new_message = NewMessage::new(event.id, rumor);
+                                let signal = Signal::Message(new_message);
 
-                            if let Err(e) = tx.send_async(signal).await {
-                                log::error!("Failed to send signal: {}", e);
+                                if let Err(e) = tx.send_async(signal).await {
+                                    log::error!("Failed to send signal: {}", e);
+                                }
                             }
-                        }
-                        false => {
-                            status.store(true, Ordering::Release);
-                        }
+                            false => {
+                                status.store(true, Ordering::Release);
+                            }
+                        };
                     }
-                }
+                    Err(e) => {
+                        log::warn!("Failed to unwrap gift wrap with custom signer: {}", e);
+                    }
+                };
             }
         }));
     }
