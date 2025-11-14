@@ -272,13 +272,13 @@ impl ChatPanel {
 
         // Get the current room entity
         let room = self.room.read(cx);
+        let opts = self.options.read(cx);
 
         // Create a temporary message for optimistic update
-        let rumor = room.create_message(&content, replies.as_ref(), cx);
+        let rumor = room.create_message(&content, replies.as_ref(), opts, cx);
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let opts = self.options.read(cx);
         let send_message = room.send_message(&rumor, opts, cx);
 
         // Optimistically update message list

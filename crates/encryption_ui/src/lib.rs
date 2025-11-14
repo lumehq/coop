@@ -309,18 +309,16 @@ impl Render for EncryptionPanel {
                         .gap_2()
                         .when(has_encryption, |this| {
                             this.child(
-                                v_flex().gap_2().child(
-                                    h_flex()
-                                        .gap_1p5()
-                                        .text_sm()
-                                        .font_semibold()
-                                        .child(
-                                            Icon::new(IconName::CheckCircle)
-                                                .text_color(cx.theme().element_foreground)
-                                                .small(),
-                                        )
-                                        .child(SharedString::from("Encryption Key has been set")),
-                                ),
+                                h_flex()
+                                    .gap_1p5()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .child(
+                                        Icon::new(IconName::CheckCircle)
+                                            .text_color(cx.theme().element_foreground)
+                                            .small(),
+                                    )
+                                    .child(SharedString::from("Encryption Key has been set")),
                             )
                         })
                         .when(!has_encryption, |this| {

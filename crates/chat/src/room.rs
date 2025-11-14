@@ -379,14 +379,29 @@ impl Room {
     }
 
     /// Create a new message event (unsigned)
-    pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
+    pub fn create_message(
+        &self,
+        content: &str,
+        replies: &[EventId],
+        opts: &SendOptions,
+        cx: &App,
+    ) -> UnsignedEvent {
         let nostr = NostrRegistry::global(cx);
         let gossip = nostr.read(cx).gossip();
-        let gossip = gossip.read_blocking();
+        let read_gossip = gossip.read_blocking();
+        let signer_kind = opts.signer_kind;
 
         // Get current user
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
+
+        // Get current user's encryption announcement
+        let announcement = read_gossip
+            .announcement(&public_key)
+            .map(|ann| ann.public_key());
+
+        // Select author based on signer kind
+        let author = Self::select_author(&signer_kind, public_key, announcement).unwrap();
 
         // Get room's subject
         let subject = self.subject.clone();
@@ -398,7 +413,7 @@ impl Room {
         // NOTE: current user will be removed from the list of receivers
         for member in self.members.iter() {
             // Get relay hint if available
-            let relay_url = gossip.messaging_relays(member).first().cloned();
+            let relay_url = read_gossip.messaging_relays(member).first().cloned();
 
             // Construct a public key tag with relay hint
             let tag = TagStandard::PublicKey {
@@ -437,7 +452,7 @@ impl Room {
         // WARNING: never sign and send this event to relays
         let mut event = EventBuilder::new(Kind::PrivateDirectMessage, content)
             .tags(tags)
-            .build(public_key);
+            .build(author);
 
         // Ensure the event id has been generated
         event.ensure_id();
@@ -517,7 +532,6 @@ impl Room {
                 // Construct the sealed event
                 let seal = EventBuilder::seal(&signer, &receiver, rumor.clone())
                     .await?
-                    .build(member)
                     .sign(&signer)
                     .await?;
 
@@ -568,7 +582,6 @@ impl Room {
             // Construct the sealed event
             let seal = EventBuilder::seal(&signer, &receiver, rumor.clone())
                 .await?
-                .build(user_pubkey)
                 .sign(&signer)
                 .await?;
 
@@ -684,17 +697,31 @@ impl Room {
         }
     }
 
-    fn select_receiver(
+    fn select_author(
         kind: &SignerKind,
-        members: PublicKey,
+        author: PublicKey,
         encryption: Option<PublicKey>,
     ) -> Result<PublicKey, Error> {
         match kind {
             SignerKind::Encryption => {
                 Ok(encryption.ok_or_else(|| anyhow!("Receiver's encryption key not found"))?)
             }
-            SignerKind::User => Ok(members),
-            SignerKind::Auto => Ok(encryption.unwrap_or(members)),
+            SignerKind::User => Ok(author),
+            SignerKind::Auto => Ok(encryption.unwrap_or(author)),
+        }
+    }
+
+    fn select_receiver(
+        kind: &SignerKind,
+        member: PublicKey,
+        encryption: Option<PublicKey>,
+    ) -> Result<PublicKey, Error> {
+        match kind {
+            SignerKind::Encryption => {
+                Ok(encryption.ok_or_else(|| anyhow!("Receiver's encryption key not found"))?)
+            }
+            SignerKind::User => Ok(member),
+            SignerKind::Auto => Ok(encryption.unwrap_or(member)),
         }
     }
 }
