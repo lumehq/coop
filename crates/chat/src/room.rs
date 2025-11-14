@@ -379,29 +379,14 @@ impl Room {
     }
 
     /// Create a new message event (unsigned)
-    pub fn create_message(
-        &self,
-        content: &str,
-        replies: &[EventId],
-        opts: &SendOptions,
-        cx: &App,
-    ) -> UnsignedEvent {
+    pub fn create_message(&self, content: &str, replies: &[EventId], cx: &App) -> UnsignedEvent {
         let nostr = NostrRegistry::global(cx);
         let gossip = nostr.read(cx).gossip();
         let read_gossip = gossip.read_blocking();
-        let signer_kind = opts.signer_kind;
 
         // Get current user
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
-
-        // Get current user's encryption announcement
-        let announcement = read_gossip
-            .announcement(&public_key)
-            .map(|ann| ann.public_key());
-
-        // Select author based on signer kind
-        let author = Self::select_author(&signer_kind, public_key, announcement).unwrap();
 
         // Get room's subject
         let subject = self.subject.clone();
@@ -452,7 +437,7 @@ impl Room {
         // WARNING: never sign and send this event to relays
         let mut event = EventBuilder::new(Kind::PrivateDirectMessage, content)
             .tags(tags)
-            .build(author);
+            .build(public_key);
 
         // Ensure the event id has been generated
         event.ensure_id();
@@ -485,15 +470,16 @@ impl Room {
             let signer_kind = opts.signer_kind;
             let gossip = gossip.read().await;
 
+            // Get current user's signer and public key
+            let user_signer = client.signer().await?;
+            let user_pubkey = user_signer.get_public_key().await?;
+
             // Get the encryption public key
             let encryption_pubkey = if let Some(signer) = encryption_key.as_ref() {
                 signer.get_public_key().await.ok()
             } else {
                 None
             };
-
-            let user_signer = client.signer().await?;
-            let user_pubkey = user_signer.get_public_key().await?;
 
             // Remove the current user's public key from the list of receivers
             // the current user will be handled separately
@@ -517,26 +503,26 @@ impl Room {
                     continue;
                 }
 
-                // Ensure connections to the relays
-                gossip.ensure_connections(&client, &urls).await;
-
                 // Skip sending if using encryption signer but receiver's encryption keys not found
                 if encryption.is_none() && matches!(signer_kind, SignerKind::Encryption) {
                     reports.push(SendReport::new(member).device_not_found());
                     continue;
                 }
 
-                let receiver = Self::select_receiver(&signer_kind, member, encryption)?;
-                let rumor = rumor.clone();
+                // Ensure connections to the relays
+                gossip.ensure_connections(&client, &urls).await;
 
-                // Construct the sealed event
-                let seal = EventBuilder::seal(&signer, &receiver, rumor.clone())
-                    .await?
-                    .sign(&signer)
-                    .await?;
+                // Determine the receiver based on the signer kind
+                let receiver = Self::select_receiver(&signer_kind, member, encryption)?;
 
                 // Construct the gift wrap event
-                let event = EventBuilder::gift_wrap_from_seal(&member, &seal, vec![])?;
+                let event = EventBuilder::gift_wrap(
+                    &signer,
+                    &receiver,
+                    rumor.clone(),
+                    vec![Tag::public_key(member)],
+                )
+                .await?;
 
                 // Send the gift wrap event to the messaging relays
                 match client.send_event_to(urls, &event).await {
@@ -576,20 +562,33 @@ impl Room {
                 }
             }
 
-            let receiver = Self::select_receiver(&signer_kind, user_pubkey, encryption_pubkey)?;
-            let rumor = rumor.clone();
+            // Return early if the user disabled backup.
+            //
+            // Coop will not send a gift wrap event to the current user.
+            if !opts.backup() {
+                return Ok(reports);
+            }
 
-            // Construct the sealed event
-            let seal = EventBuilder::seal(&signer, &receiver, rumor.clone())
-                .await?
-                .sign(&signer)
-                .await?;
+            // Skip sending if using encryption signer but receiver's encryption keys not found
+            if encryption_pubkey.is_none() && matches!(signer_kind, SignerKind::Encryption) {
+                reports.push(SendReport::new(user_pubkey).device_not_found());
+                return Ok(reports);
+            }
+
+            // Determine the receiver based on the signer kind
+            let receiver = Self::select_receiver(&signer_kind, user_pubkey, encryption_pubkey)?;
 
             // Construct the gift-wrapped event
-            let event = EventBuilder::gift_wrap_from_seal(&receiver, &seal, vec![])?;
+            let event = EventBuilder::gift_wrap(
+                &signer,
+                &receiver,
+                rumor.clone(),
+                vec![Tag::public_key(user_pubkey)],
+            )
+            .await?;
 
             // Only send a backup message to current user if sent successfully to others
-            if opts.backup() && reports.iter().all(|r| r.is_sent_success()) {
+            if reports.iter().all(|r| r.is_sent_success()) {
                 let urls = gossip.messaging_relays(&user_pubkey);
 
                 // Check if there are any relays to send the event to
@@ -694,20 +693,6 @@ impl Room {
             }
             SignerKind::User => Ok(user),
             SignerKind::Auto => Ok(encryption.unwrap_or(user)),
-        }
-    }
-
-    fn select_author(
-        kind: &SignerKind,
-        author: PublicKey,
-        encryption: Option<PublicKey>,
-    ) -> Result<PublicKey, Error> {
-        match kind {
-            SignerKind::Encryption => {
-                Ok(encryption.ok_or_else(|| anyhow!("Receiver's encryption key not found"))?)
-            }
-            SignerKind::User => Ok(author),
-            SignerKind::Auto => Ok(encryption.unwrap_or(author)),
         }
     }
 

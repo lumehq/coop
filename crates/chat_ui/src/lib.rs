@@ -275,7 +275,7 @@ impl ChatPanel {
         let opts = self.options.read(cx);
 
         // Create a temporary message for optimistic update
-        let rumor = room.create_message(&content, replies.as_ref(), opts, cx);
+        let rumor = room.create_message(&content, replies.as_ref(), cx);
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background

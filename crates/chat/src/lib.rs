@@ -18,8 +18,7 @@ use nostr_sdk::prelude::*;
 pub use room::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use smol::lock::RwLock;
-use state::{initialized_at, EventTracker, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
+use state::{initialized_at, NostrRegistry, GIFTWRAP_SUBSCRIPTION};
 
 mod message;
 mod room;
@@ -40,6 +39,9 @@ pub struct ChatRegistry {
 
     /// Loading status of the registry
     pub loading: bool,
+
+    /// Async task for handling notifications
+    handle_notifications: Task<()>,
 
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
@@ -82,10 +84,18 @@ impl ChatRegistry {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
-        let tracker = nostr.read(cx).tracker();
 
         let status = Arc::new(AtomicBool::new(true));
         let (tx, rx) = flume::bounded::<Signal>(2048);
+
+        let handle_notifications = cx.background_spawn({
+            let client = nostr.read(cx).client();
+            let status = Arc::clone(&status);
+            let tx = tx.clone();
+            let signer: Option<Arc<dyn NostrSigner>> = None;
+
+            async move { Self::handle_notifications(&client, &signer, &tx, &status).await }
+        });
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
@@ -98,20 +108,19 @@ impl ChatRegistry {
 
                 move |this, state, cx| {
                     if let Some(signer) = state.read(cx).clone() {
-                        this.retry_failed_events(&signer, &tx, &status, cx);
+                        this.handle_notifications = cx.background_spawn({
+                            let client = nostr.read(cx).client();
+                            let status = Arc::clone(&status);
+                            let tx = tx.clone();
+                            let signer = Some(signer);
+
+                            async move {
+                                Self::handle_notifications(&client, &signer, &tx, &status).await
+                            }
+                        });
+                        cx.notify();
                     }
                 }
-            }),
-        );
-
-        tasks.push(
-            // Handle notifications
-            cx.background_spawn({
-                let client = nostr.read(cx).client();
-                let status = Arc::clone(&status);
-                let tx = tx.clone();
-
-                async move { Self::handle_notifications(&client, &tracker, &tx, &status).await }
             }),
         );
 
@@ -154,17 +163,20 @@ impl ChatRegistry {
         Self {
             rooms: vec![],
             loading: true,
+            handle_notifications,
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
     }
 
-    async fn handle_notifications(
+    async fn handle_notifications<T>(
         client: &Client,
-        tracker: &Arc<RwLock<EventTracker>>,
+        signer: &Option<T>,
         tx: &Sender<Signal>,
         status: &Arc<AtomicBool>,
-    ) {
+    ) where
+        T: NostrSigner,
+    {
         let initialized_at = initialized_at();
         let subscription_id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
 
@@ -191,7 +203,7 @@ impl ChatRegistry {
                     }
 
                     // Extract the rumor from the gift wrap event
-                    match Self::extract_rumor(client, event.as_ref()).await {
+                    match Self::extract_rumor(client, signer, event.as_ref()).await {
                         Ok(rumor) => {
                             // Get all public keys
                             public_keys.extend(rumor.all_pubkeys());
@@ -221,9 +233,6 @@ impl ChatRegistry {
                             }
                         }
                         Err(e) => {
-                            let mut tracker = tracker.write().await;
-                            tracker.failed_unwrap_events.push(event.as_ref().clone());
-
                             log::warn!("Failed to unwrap gift wrap event: {}", e);
                         }
                     }
@@ -275,51 +284,6 @@ impl ChatRegistry {
             }
             smol::Timer::after(loop_duration).await;
         }
-    }
-
-    fn retry_failed_events(
-        &mut self,
-        signer: &Arc<dyn NostrSigner>,
-        tx: &Sender<Signal>,
-        status: &Arc<AtomicBool>,
-        cx: &mut Context<Self>,
-    ) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let tracker = nostr.read(cx).tracker();
-
-        let signer = Arc::clone(signer);
-        let status = Arc::clone(status);
-
-        let tx = tx.clone();
-        let initialized_at = initialized_at();
-
-        self._tasks.push(cx.background_spawn(async move {
-            let tracker = tracker.read().await;
-
-            for event in tracker.failed_unwrap_events.iter() {
-                match Self::try_unwrap_custom(&client, &signer, event).await {
-                    Ok(rumor) => {
-                        match &event.created_at >= initialized_at {
-                            true => {
-                                let new_message = NewMessage::new(event.id, rumor);
-                                let signal = Signal::Message(new_message);
-
-                                if let Err(e) = tx.send_async(signal).await {
-                                    log::error!("Failed to send signal: {}", e);
-                                }
-                            }
-                            false => {
-                                status.store(true, Ordering::Release);
-                            }
-                        };
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to unwrap gift wrap with custom signer: {}", e);
-                    }
-                };
-            }
-        }));
     }
 
     /// Set the loading status of the chat registry
@@ -602,14 +566,21 @@ impl ChatRegistry {
     }
 
     // Unwraps a gift-wrapped event and processes its contents.
-    async fn extract_rumor(client: &Client, gift_wrap: &Event) -> Result<UnsignedEvent, Error> {
+    async fn extract_rumor<T>(
+        client: &Client,
+        signer: &Option<T>,
+        gift_wrap: &Event,
+    ) -> Result<UnsignedEvent, Error>
+    where
+        T: NostrSigner,
+    {
         // Try to get cached rumor first
         if let Ok(event) = Self::get_rumor(client, gift_wrap.id).await {
             return Ok(event);
         }
 
         // Try to unwrap with the available signer
-        let unwrapped = Self::try_unwrap(client, gift_wrap).await?;
+        let unwrapped = Self::try_unwrap(client, signer, gift_wrap).await?;
         let mut rumor_unsigned = unwrapped.rumor;
 
         // Generate event id for the rumor if it doesn't have one
@@ -622,32 +593,24 @@ impl ChatRegistry {
     }
 
     // Helper method to try unwrapping with different signers
-    async fn try_unwrap(client: &Client, gift_wrap: &Event) -> Result<UnwrappedGift, Error> {
+    async fn try_unwrap<T>(
+        client: &Client,
+        signer: &Option<T>,
+        gift_wrap: &Event,
+    ) -> Result<UnwrappedGift, Error>
+    where
+        T: NostrSigner,
+    {
+        if let Some(custom_signer) = signer.as_ref() {
+            if let Ok(unwrapped) = UnwrappedGift::from_gift_wrap(custom_signer, gift_wrap).await {
+                return Ok(unwrapped);
+            }
+        }
+
         let signer = client.signer().await?;
         let unwrapped = UnwrappedGift::from_gift_wrap(&signer, gift_wrap).await?;
 
         Ok(unwrapped)
-    }
-
-    /// Helper method to try unwrapping with a custom signer
-    async fn try_unwrap_custom<T>(
-        client: &Client,
-        signer: &T,
-        gift_wrap: &Event,
-    ) -> Result<UnsignedEvent, Error>
-    where
-        T: NostrSigner,
-    {
-        let unwrapped = UnwrappedGift::from_gift_wrap(signer, gift_wrap).await?;
-        let mut rumor_unsigned = unwrapped.rumor;
-
-        // Generate event id for the rumor if it doesn't have one
-        rumor_unsigned.ensure_id();
-
-        // Cache the rumor
-        Self::set_rumor(client, gift_wrap.id, &rumor_unsigned).await?;
-
-        Ok(rumor_unsigned)
     }
 
     /// Stores an unwrapped event in local database with reference to original
