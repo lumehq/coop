@@ -1,3 +1,5 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -181,6 +183,7 @@ impl EncryptionPanel {
                         });
                     }
                     Err(e) => {
+                        this.set_requesting(false, cx);
                         this.set_error(e.to_string(), cx);
                     }
                 };
@@ -193,11 +196,13 @@ impl EncryptionPanel {
     fn ask_for_approval(&mut self, req: Announcement, window: &mut Window, cx: &mut Context<Self>) {
         let client_name = SharedString::from(req.client().to_string());
         let target = req.public_key();
+        let id = SharedString::from(req.id().to_hex());
+        let loading = Rc::new(Cell::new(false));
 
         let note = Notification::new()
-            .custom_id(SharedString::from(req.id().to_hex()))
+            .custom_id(id.clone())
             .autohide(false)
-            .icon(IconName::Info)
+            .icon(IconName::Encryption)
             .title(SharedString::from("Encryption Key Request"))
             .content(move |_window, cx| {
                 v_flex()
@@ -208,13 +213,23 @@ impl EncryptionPanel {
                     ))
                     .child(
                         v_flex()
-                            .py_1()
-                            .px_1p5()
-                            .rounded_sm()
-                            .text_xs()
+                            .h_12()
+                            .items_center()
+                            .justify_center()
+                            .px_2()
+                            .rounded(cx.theme().radius)
                             .bg(cx.theme().warning_background)
                             .text_color(cx.theme().warning_foreground)
                             .child(client_name.clone()),
+                    )
+                    .child(
+                        h_flex()
+                            .h_7()
+                            .w_full()
+                            .px_2()
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().elevated_surface_background)
+                            .child(SharedString::from(target.to_hex())),
                     )
                     .into_any_element()
             })
@@ -223,13 +238,38 @@ impl EncryptionPanel {
                     .label("Approve")
                     .small()
                     .primary()
-                    .loading(false)
-                    .disabled(false)
-                    .on_click(move |_ev, _window, cx| {
-                        let encryption = Encryption::global(cx);
-                        let send_response = encryption.read(cx).send_response(target, cx);
+                    .loading(loading.get())
+                    .disabled(loading.get())
+                    .on_click({
+                        let loading = Rc::clone(&loading);
+                        let id = id.clone();
 
-                        send_response.detach();
+                        move |_ev, window, cx| {
+                            // Set loading state to true
+                            loading.set(true);
+
+                            let encryption = Encryption::global(cx);
+                            let send_response = encryption.read(cx).send_response(target, cx);
+                            let id = id.clone();
+
+                            window
+                                .spawn(cx, async move |cx| {
+                                    let result = send_response.await;
+
+                                    cx.update(|window, cx| {
+                                        match result {
+                                            Ok(_) => {
+                                                window.clear_notification_by_id(id, cx);
+                                            }
+                                            Err(e) => {
+                                                window.push_notification(e.to_string(), cx);
+                                            }
+                                        };
+                                    })
+                                    .expect("Entity has been released");
+                                })
+                                .detach();
+                        }
                     })
             });
 
@@ -252,6 +292,7 @@ impl Render for EncryptionPanel {
         const WARNING: &str = "Encryption Key is still in the alpha stage. Please be cautious.";
 
         let encryption = Encryption::global(cx);
+        let announcement = encryption.read(cx).announcement();
         let has_encryption = encryption.read(cx).has_encryption(cx);
 
         v_flex()
@@ -259,149 +300,165 @@ impl Render for EncryptionPanel {
             .max_w(px(340.))
             .w(px(340.))
             .text_sm()
-            .when(has_encryption, |this| {
-                this.child(
-                    h_flex()
-                        .gap_2()
-                        .w_full()
-                        .text_xs()
-                        .font_semibold()
-                        .child(
-                            Icon::new(IconName::CheckCircleFill)
-                                .small()
-                                .text_color(cx.theme().element_active),
-                        )
-                        .child(SharedString::from("Encryption Key has been set")),
-                )
-            })
-            .when(!has_encryption, |this| {
-                if let Some(announcement) = encryption.read(cx).announcement().as_ref() {
-                    let pubkey = shorten_pubkey(announcement.public_key(), 16);
-                    let name = announcement.client();
+            .when_some(announcement.as_ref(), |this, announcement| {
+                let pubkey = shorten_pubkey(announcement.public_key(), 16);
+                let name = announcement.client();
 
-                    this.child(
-                        v_flex()
-                            .gap_2()
-                            .child(div().font_semibold().child(SharedString::from(NOTICE)))
-                            .child(
-                                v_flex()
-                                    .h_12()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(cx.theme().radius)
-                                    .bg(cx.theme().warning_background)
-                                    .text_color(cx.theme().warning_foreground)
-                                    .child(name),
+                this.child(
+                    v_flex()
+                        .gap_2()
+                        .when(has_encryption, |this| {
+                            this.child(
+                                h_flex()
+                                    .gap_1p5()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .child(
+                                        Icon::new(IconName::CheckCircle)
+                                            .text_color(cx.theme().element_foreground)
+                                            .small(),
+                                    )
+                                    .child(SharedString::from("Encryption Key has been set")),
                             )
-                            .child(
+                        })
+                        .when(!has_encryption, |this| {
+                            this.child(div().font_semibold().child(SharedString::from(NOTICE)))
+                        })
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_semibold()
+                                        .text_color(cx.theme().text_muted)
+                                        .child(SharedString::from("Client Name:")),
+                                )
+                                .child(
+                                    h_flex()
+                                        .h_12()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .child(name),
+                                ),
+                        )
+                        .child(
+                            v_flex()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_semibold()
+                                        .text_color(cx.theme().text_muted)
+                                        .child(SharedString::from("Client Public Key:")),
+                                )
+                                .child(
+                                    h_flex()
+                                        .h_7()
+                                        .w_full()
+                                        .px_2()
+                                        .rounded(cx.theme().radius)
+                                        .bg(cx.theme().elevated_surface_background)
+                                        .child(SharedString::from(pubkey)),
+                                ),
+                        )
+                        .when(!has_encryption, |this| {
+                            this.child(
                                 v_flex()
-                                    .gap_1()
+                                    .gap_2()
                                     .child(
                                         div()
                                             .text_xs()
-                                            .font_semibold()
                                             .text_color(cx.theme().text_muted)
-                                            .child(SharedString::from("Client Public Key:")),
+                                            .child(SharedString::from(SUGGEST)),
                                     )
                                     .child(
                                         h_flex()
-                                            .h_7()
-                                            .w_full()
-                                            .px_2()
-                                            .rounded(cx.theme().radius)
-                                            .bg(cx.theme().elevated_surface_background)
-                                            .child(SharedString::from(pubkey)),
+                                            .mt_2()
+                                            .gap_1()
+                                            .when(!self.requesting, |this| {
+                                                this.child(
+                                                    Button::new("reset")
+                                                        .label("Reset")
+                                                        .flex_1()
+                                                        .small()
+                                                        .ghost_alt()
+                                                        .loading(self.creating)
+                                                        .disabled(self.creating)
+                                                        .on_click(cx.listener(
+                                                            move |this, _ev, window, cx| {
+                                                                this.new_encryption(window, cx);
+                                                            },
+                                                        )),
+                                                )
+                                            })
+                                            .when(!self.creating, |this| {
+                                                this.child(
+                                                    Button::new("request")
+                                                        .label({
+                                                            if self.requesting {
+                                                                "Wait for approval"
+                                                            } else {
+                                                                "Request"
+                                                            }
+                                                        })
+                                                        .flex_1()
+                                                        .small()
+                                                        .primary()
+                                                        .loading(self.requesting)
+                                                        .disabled(self.requesting)
+                                                        .on_click(cx.listener(
+                                                            move |this, _ev, window, cx| {
+                                                                this.request(window, cx);
+                                                            },
+                                                        )),
+                                                )
+                                            }),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().text_muted)
-                                    .child(SharedString::from(SUGGEST)),
-                            )
-                            .child(
-                                h_flex()
-                                    .mt_2()
-                                    .gap_1()
-                                    .when(!self.requesting, |this| {
-                                        this.child(
-                                            Button::new("reset")
-                                                .label("Reset")
-                                                .flex_1()
-                                                .small()
-                                                .ghost_alt()
-                                                .loading(self.creating)
-                                                .disabled(self.creating)
-                                                .on_click(cx.listener(
-                                                    move |this, _ev, window, cx| {
-                                                        this.new_encryption(window, cx);
-                                                    },
-                                                )),
-                                        )
-                                    })
-                                    .when(!self.creating, |this| {
-                                        this.child(
-                                            Button::new("request")
-                                                .label({
-                                                    if self.requesting {
-                                                        "Wait for approval"
-                                                    } else {
-                                                        "Request"
-                                                    }
-                                                })
-                                                .flex_1()
-                                                .small()
-                                                .primary()
-                                                .loading(self.requesting)
-                                                .disabled(self.requesting)
-                                                .on_click(cx.listener(
-                                                    move |this, _ev, window, cx| {
-                                                        this.request(window, cx);
-                                                    },
-                                                )),
-                                        )
-                                    }),
-                            )
-                            .when_some(self.error.read(cx).as_ref(), |this, error| {
-                                this.child(
-                                    div()
-                                        .text_xs()
-                                        .text_center()
-                                        .text_color(cx.theme().danger_foreground)
-                                        .child(error.clone()),
-                                )
-                            }),
-                    )
-                } else {
-                    this.child(
-                        v_flex()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .font_semibold()
-                                    .child(SharedString::from("Set up Encryption Key")),
-                            )
-                            .child(SharedString::from(DESCRIPTION))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(cx.theme().warning_foreground)
-                                    .child(SharedString::from(WARNING)),
-                            )
-                            .child(
-                                Button::new("create")
-                                    .label("Setup")
-                                    .flex_1()
-                                    .small()
-                                    .primary()
-                                    .loading(self.creating)
-                                    .disabled(self.creating)
-                                    .on_click(cx.listener(move |this, _ev, window, cx| {
-                                        this.new_encryption(window, cx);
-                                    })),
-                            ),
-                    )
-                }
+                        }),
+                )
+            })
+            .when_none(&announcement, |this| {
+                this.child(
+                    v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .font_semibold()
+                                .child(SharedString::from("Set up Encryption Key")),
+                        )
+                        .child(SharedString::from(DESCRIPTION))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().warning_foreground)
+                                .child(SharedString::from(WARNING)),
+                        )
+                        .child(
+                            Button::new("create")
+                                .label("Setup")
+                                .flex_1()
+                                .small()
+                                .primary()
+                                .loading(self.creating)
+                                .disabled(self.creating)
+                                .on_click(cx.listener(move |this, _ev, window, cx| {
+                                    this.new_encryption(window, cx);
+                                })),
+                        ),
+                )
+            })
+            .when_some(self.error.read(cx).as_ref(), |this, error| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_center()
+                        .text_color(cx.theme().danger_foreground)
+                        .child(error.clone()),
+                )
             })
     }
 }

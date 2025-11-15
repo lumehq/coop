@@ -297,7 +297,7 @@ impl AutoUpdater {
                     Err(anyhow!("No update available"))
                 }
             } else {
-                Err(anyhow!("Not found"))
+                Err(anyhow!("No update available"))
             }
         })
     }

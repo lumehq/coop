@@ -155,10 +155,17 @@ impl SetupRelay {
 
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+        let gossip = nostr.read(cx).gossip();
         let relays = self.relays.clone();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let gossip = gossip.read().await;
+            let write_relays = gossip.inbox_relays(&public_key);
+
+            // Ensure connections to the write relays
+            gossip.ensure_connections(&client, &write_relays).await;
 
             let tags: Vec<Tag> = relays
                 .iter()
@@ -171,7 +178,7 @@ impl SetupRelay {
                 .await?;
 
             // Set messaging relays
-            client.send_event(&event).await?;
+            client.send_event_to(write_relays, &event).await?;
 
             // Connect to messaging relays
             for relay in relays.iter() {

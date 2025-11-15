@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Error;
@@ -21,10 +20,10 @@ pub struct Account {
     public_key: Option<PublicKey>,
 
     /// Status of the current user NIP-65 relays
-    pub nip65_status: RelayStatus,
+    pub nip65_status: Entity<RelayStatus>,
 
     /// Status of the current user NIP-17 relays
-    pub nip17_status: RelayStatus,
+    pub nip17_status: Entity<RelayStatus>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 2]>,
@@ -64,32 +63,31 @@ impl Account {
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
 
+        let nip65_status = cx.new(|_| RelayStatus::default());
+        let nip17_status = cx.new(|_| RelayStatus::default());
+
         let mut tasks = smallvec![];
 
         tasks.push(
             // Observe the nostr signer and set the public key when it sets
-            cx.spawn({
-                let client = Arc::clone(&client);
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_spawn(async move { Self::observe_signer(&client).await })
+                    .await;
 
-                async move |this, cx| {
-                    let result = cx
-                        .background_spawn(async move { Self::observe_signer(&client).await })
-                        .await;
-
-                    if let Some(public_key) = result {
-                        this.update(cx, |this, cx| {
-                            this.set_account(public_key, cx);
-                        })
-                        .expect("Entity has been released")
-                    }
+                if let Some(public_key) = result {
+                    this.update(cx, |this, cx| {
+                        this.set_account(public_key, cx);
+                    })
+                    .expect("Entity has been released")
                 }
             }),
         );
 
         Self {
             public_key: None,
-            nip65_status: RelayStatus::default(),
-            nip17_status: RelayStatus::default(),
+            nip65_status,
+            nip17_status,
             _tasks: tasks,
         }
     }
@@ -124,8 +122,6 @@ impl Account {
         client
             .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
             .await?;
-
-        log::info!("Getting user's gossip relays...");
 
         Ok(())
     }
@@ -168,23 +164,29 @@ impl Account {
         self._tasks.push(
             // Verify user's nip65 and nip17 relays
             cx.spawn(async move |this, cx| {
-                cx.background_executor()
-                    .timer(Duration::from_secs(10))
-                    .await;
+                cx.background_executor().timer(Duration::from_secs(5)).await;
 
+                // Fetch the NIP-65 relays event in the local database
                 let ensure_nip65 = Self::ensure_nip65_relays(&client, public_key).await;
+
+                // Fetch the NIP-17 relays event in the local database
                 let ensure_nip17 = Self::ensure_nip17_relays(&client, public_key).await;
 
                 this.update(cx, |this, cx| {
-                    this.nip65_status = match ensure_nip65 {
-                        Ok(true) => RelayStatus::Set,
-                        _ => RelayStatus::NotSet,
-                    };
-                    this.nip17_status = match ensure_nip17 {
-                        Ok(true) => RelayStatus::Set,
-                        _ => RelayStatus::NotSet,
-                    };
-                    cx.notify();
+                    this.nip65_status.update(cx, |this, cx| {
+                        *this = match ensure_nip65 {
+                            Ok(true) => RelayStatus::Set,
+                            _ => RelayStatus::NotSet,
+                        };
+                        cx.notify();
+                    });
+                    this.nip17_status.update(cx, |this, cx| {
+                        *this = match ensure_nip17 {
+                            Ok(true) => RelayStatus::Set,
+                            _ => RelayStatus::NotSet,
+                        };
+                        cx.notify();
+                    });
                 })
                 .expect("Entity has been released")
             }),

@@ -11,9 +11,6 @@ pub fn initialized_at() -> &'static Timestamp {
 
 #[derive(Debug, Clone, Default)]
 pub struct EventTracker {
-    /// Tracking events that have failed to unwrap
-    pub failed_unwrap_events: Vec<Event>,
-
     /// Tracking events that have been resent by Coop in the current session
     pub resent_ids: Vec<Output<EventId>>,
 
@@ -28,10 +25,6 @@ pub struct EventTracker {
 }
 
 impl EventTracker {
-    pub fn failed_unwrap_events(&self) -> &Vec<Event> {
-        &self.failed_unwrap_events
-    }
-
     pub fn resent_ids(&self) -> &Vec<Output<EventId>> {
         &self.resent_ids
     }

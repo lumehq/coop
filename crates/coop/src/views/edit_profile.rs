@@ -175,9 +175,6 @@ impl EditProfile {
     }
 
     pub fn set_metadata(&mut self, cx: &mut Context<Self>) -> Task<Result<Profile, Error>> {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let avatar = self.avatar_input.read(cx).value().to_string();
         let name = self.name_input.read(cx).value().to_string();
         let bio = self.bio_input.read(cx).value().to_string();
@@ -199,14 +196,24 @@ impl EditProfile {
             new_metadata = new_metadata.website(url);
         }
 
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let gossip = nostr.read(cx).gossip();
+
         cx.background_spawn(async move {
             let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let gossip = gossip.read().await;
+            let write_relays = gossip.inbox_relays(&public_key);
+
+            // Ensure connections to the write relays
+            gossip.ensure_connections(&client, &write_relays).await;
 
             // Sign the new metadata event
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;
 
             // Send event to user's write relayss
-            client.send_event(&event).await?;
+            client.send_event_to(write_relays, &event).await?;
 
             // Return the updated profile
             let metadata = Metadata::from_json(&event.content).unwrap_or_default();

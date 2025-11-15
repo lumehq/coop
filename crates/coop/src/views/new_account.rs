@@ -137,11 +137,12 @@ impl NewAccount {
 
                 // Verify the signer
                 let signer = client.signer().await?;
+                let nip65_relays = default_nip65_relays();
 
                 // Construct a NIP-65 event
                 let event = EventBuilder::new(Kind::RelayList, "")
                     .tags(
-                        default_nip65_relays()
+                        nip65_relays
                             .iter()
                             .cloned()
                             .map(|(url, metadata)| Tag::relay_metadata(url, metadata)),
@@ -152,6 +153,25 @@ impl NewAccount {
                 // Set NIP-65 relays
                 client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
+                // Ensure relays are connected
+                for (url, _metadata) in nip65_relays.iter() {
+                    client.add_relay(url).await?;
+                    client.connect_relay(url).await?;
+                }
+
+                // Extract only write relays
+                let write_relays: Vec<RelayUrl> = nip65_relays
+                    .iter()
+                    .filter_map(|(url, metadata)| {
+                        if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
+                            Some(url.to_owned())
+                        } else {
+                            None
+                        }
+                    })
+                    .take(3)
+                    .collect();
+
                 // Construct a NIP-17 event
                 let event = EventBuilder::new(Kind::InboxRelays, "")
                     .tags(default_nip17_relays().iter().cloned().map(Tag::relay))
@@ -159,13 +179,13 @@ impl NewAccount {
                     .await?;
 
                 // Set NIP-17 relays
-                client.send_event(&event).await?;
+                client.send_event_to(&write_relays, &event).await?;
 
                 // Construct a metadata event
                 let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
 
                 // Set metadata
-                client.send_event(&event).await?;
+                client.send_event_to(&write_relays, &event).await?;
 
                 Ok(())
             });
