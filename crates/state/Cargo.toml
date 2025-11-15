@@ -9,7 +9,6 @@ common = { path = "../common" }
 
 nostr-sdk.workspace = true
 nostr-lmdb.workspace = true
-nostr-gossip-memory.workspace = true
 
 gpui.workspace = true
 smol.workspace = true
@@ -20,4 +19,3 @@ serde.workspace = true
 serde_json.workspace = true
 
 rustls = "0.23.23"
-event-listener = "5.4.1"

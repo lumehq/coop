@@ -96,21 +96,18 @@ impl ButtonCustomVariant {
 }
 
 /// The variant of the Button.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
+    #[default]
     Primary,
     Secondary,
     Danger,
     Warning,
-    Ghost { alt: bool },
+    Ghost {
+        alt: bool,
+    },
     Transparent,
     Custom(ButtonCustomVariant),
-}
-
-impl Default for ButtonVariant {
-    fn default() -> Self {
-        Self::Primary
-    }
 }
 
 /// A Button element.

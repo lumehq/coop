@@ -1655,7 +1655,7 @@ impl InputState {
 
             // Return offset by use closest_index_for_x if is single line mode.
             if self.mode.is_single_line() {
-                return rendered_line.unwrapped_layout.index_for_x(pos.x);
+                return rendered_line.unwrapped_layout.index_for_x(pos.x).unwrap();
             }
 
             let index_result = rendered_line.index_for_position(pos, line_height);

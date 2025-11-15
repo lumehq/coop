@@ -5,7 +5,6 @@ use std::time::Duration;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::{config_dir, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::{App, AppContext, Context, Entity, Global, Task};
-use nostr_gossip_memory::prelude::*;
 use nostr_lmdb::NostrLMDB;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
