@@ -251,7 +251,7 @@ impl NostrRegistry {
     }
 
     /// Get all gift wrap events in the messaging relays for a given public key
-    async fn get_messages(client: &Client, public_key: PublicKey, urls: &[RelayUrl]) {
+    pub async fn get_messages(client: &Client, public_key: PublicKey, urls: &[RelayUrl]) {
         // Verify that there are relays provided
         if urls.is_empty() {
             return;
@@ -266,9 +266,14 @@ impl NostrRegistry {
         let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
+        // Unsubscribe from the previous subscription
+        client.unsubscribe(&id).await;
+
         // Subscribe to filters to user's messaging relays
         if let Err(e) = client.subscribe_with_id_to(urls, id, filter, None).await {
             log::error!("Failed to subscribe: {}", e);
+        } else {
+            log::info!("Subscribed to gift wrap events for public key {public_key}",);
         }
     }
 

@@ -80,7 +80,7 @@ impl Encryption {
             // Observe the account state
             cx.observe(&account, |this, state, cx| {
                 if state.read(cx).has_account() && this.client_signer.read(cx).is_none() {
-                    this.load_client_keys(cx);
+                    this.get_client(cx);
                 }
             }),
         );
@@ -90,6 +90,15 @@ impl Encryption {
             cx.observe(&client_signer, |this, state, cx| {
                 if state.read(cx).is_some() {
                     this.get_announcement(cx);
+                }
+            }),
+        );
+
+        subscriptions.push(
+            // Observe the encryption signer state
+            cx.observe(&encryption, |this, state, cx| {
+                if state.read(cx).is_some() {
+                    this._tasks.push(this.resubscribe_messages(cx));
                 }
             }),
         );
@@ -104,38 +113,6 @@ impl Encryption {
             _subscriptions: subscriptions,
             _tasks: smallvec![],
         }
-    }
-
-    fn load_client_keys(&mut self, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
-        self._tasks.push(
-            // Run in the main thread
-            cx.spawn(async move |this, cx| {
-                match Self::get_keys(&client, "client").await {
-                    Ok(keys) => {
-                        this.update(cx, |this, cx| {
-                            this.set_client(Arc::new(keys), cx);
-                        })
-                        .expect("Entity has been released");
-                    }
-                    Err(_) => {
-                        let keys = Keys::generate();
-                        let secret = keys.secret_key().to_secret_hex();
-
-                        // Store the key in the database for future use
-                        Self::set_keys(&client, "client", secret).await.ok();
-
-                        // Update global state
-                        this.update(cx, |this, cx| {
-                            this.set_client(Arc::new(keys), cx);
-                        })
-                        .expect("Entity has been released");
-                    }
-                }
-            }),
-        )
     }
 
     /// Encrypt and store a key in the local database.
@@ -185,6 +162,40 @@ impl Encryption {
         }
     }
 
+    /// Get the client keys from the database
+    fn get_client(&mut self, cx: &mut Context<Self>) {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        self._tasks.push(
+            // Run in the main thread
+            cx.spawn(async move |this, cx| {
+                match Self::get_keys(&client, "client").await {
+                    Ok(keys) => {
+                        this.update(cx, |this, cx| {
+                            this.set_client(Arc::new(keys), cx);
+                        })
+                        .expect("Entity has been released");
+                    }
+                    Err(_) => {
+                        let keys = Keys::generate();
+                        let secret = keys.secret_key().to_secret_hex();
+
+                        // Store the key in the database for future use
+                        Self::set_keys(&client, "client", secret).await.ok();
+
+                        // Update global state
+                        this.update(cx, |this, cx| {
+                            this.set_client(Arc::new(keys), cx);
+                        })
+                        .expect("Entity has been released");
+                    }
+                }
+            }),
+        )
+    }
+
+    /// Get the announcement from the database
     fn get_announcement(&mut self, cx: &mut Context<Self>) {
         let task = self._get_announcement(cx);
         let delay = Duration::from_secs(10);
@@ -650,5 +661,22 @@ impl Encryption {
             this.insert(request);
             cx.notify();
         });
+    }
+
+    /// Resubscribe to gift wrap events
+    fn resubscribe_messages(&self, cx: &App) -> Task<()> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+        let gossip = nostr.read(cx).gossip();
+
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
+
+        cx.background_spawn(async move {
+            let gossip = gossip.read().await;
+            let relays = gossip.messaging_relays(&public_key);
+
+            NostrRegistry::get_messages(&client, public_key, &relays).await;
+        })
     }
 }
