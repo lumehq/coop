@@ -128,6 +128,7 @@ impl NewAccount {
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
             let signer = keys.clone();
             let nip65_relays = default_nip65_relays();
+            let nip17_relays = default_nip17_relays();
 
             // Construct a NIP-65 event
             let event = EventBuilder::new(Kind::RelayList, "")
@@ -143,12 +144,6 @@ impl NewAccount {
             // Set NIP-65 relays
             client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
-            // Ensure relays are connected
-            for (url, _metadata) in nip65_relays.iter() {
-                client.add_relay(url).await?;
-                client.connect_relay(url).await?;
-            }
-
             // Extract only write relays
             let write_relays: Vec<RelayUrl> = nip65_relays
                 .iter()
@@ -162,9 +157,15 @@ impl NewAccount {
                 .take(3)
                 .collect();
 
+            // Ensure relays are connected
+            for url in write_relays.iter() {
+                client.add_relay(url).await?;
+                client.connect_relay(url).await?;
+            }
+
             // Construct a NIP-17 event
             let event = EventBuilder::new(Kind::InboxRelays, "")
-                .tags(default_nip17_relays().iter().cloned().map(Tag::relay))
+                .tags(nip17_relays.iter().cloned().map(Tag::relay))
                 .sign(&signer)
                 .await?;
 
