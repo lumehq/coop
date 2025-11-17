@@ -11,9 +11,11 @@ use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
 
-pub(crate) mod actions;
-pub(crate) mod chatspace;
-pub(crate) mod views;
+mod actions;
+mod chatspace;
+mod login;
+mod new_identity;
+mod views;
 
 i18n::init!();
 

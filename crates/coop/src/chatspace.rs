@@ -34,9 +34,8 @@ use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings};
 use crate::views::compose::compose_button;
-use crate::views::{
-    login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
-};
+use crate::views::{onboarding, preferences, sidebar, startup, user_profile, welcome};
+use crate::{login, new_identity};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     cx.new(|cx| ChatSpace::new(window, cx))
@@ -48,7 +47,7 @@ pub fn login(window: &mut Window, cx: &mut App) {
 }
 
 pub fn new_account(window: &mut Window, cx: &mut App) {
-    let panel = new_account::init(window, cx);
+    let panel = new_identity::init(window, cx);
     ChatSpace::set_center_panel(panel, window, cx);
 }
 

@@ -19,12 +19,13 @@ use ui::input::{InputState, TextInput};
 use ui::modal::ModalButtonProps;
 use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable};
 
-use crate::views::backup_keys::BackupKeys;
+mod backup;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
-    NewAccount::new(window, cx)
+    cx.new(|cx| NewAccount::new(window, cx))
 }
 
+#[derive(Debug)]
 pub struct NewAccount {
     name_input: Entity<InputState>,
     avatar_input: Entity<InputState>,
@@ -37,11 +38,7 @@ pub struct NewAccount {
 }
 
 impl NewAccount {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::view(window, cx))
-    }
-
-    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let temp_keys = cx.new(|_| Keys::generate());
         let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Alice"));
         let avatar_input = cx.new(|cx| InputState::new(window, cx));
@@ -61,7 +58,7 @@ impl NewAccount {
         self.submitting(true, cx);
 
         let keys = self.temp_keys.read(cx).clone();
-        let view = cx.new(|cx| BackupKeys::new(&keys, window, cx));
+        let view = backup::init(&keys, window, cx);
         let weak_view = view.downgrade();
         let current_view = cx.entity().downgrade();
 

@@ -2,25 +2,33 @@ use std::time::Duration;
 
 use common::home_dir;
 use gpui::{
-    div, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement, Render,
-    SharedString, Styled, Task, Window,
+    div, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
+    Render, SharedString, Styled, Task, Window,
 };
 use nostr_sdk::prelude::*;
+use smallvec::{smallvec, SmallVec};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
 use ui::{divider, h_flex, v_flex, Disableable, IconName, Sizable, StyledExt};
 
+pub fn init(keys: &Keys, window: &mut Window, cx: &mut App) -> Entity<Backup> {
+    cx.new(|cx| Backup::new(keys, window, cx))
+}
+
 #[derive(Debug)]
-pub struct BackupKeys {
+pub struct Backup {
     pubkey_input: Entity<InputState>,
     secret_input: Entity<InputState>,
     error: Option<SharedString>,
     copied: bool,
+
+    // Async operations
+    _tasks: SmallVec<[Task<()>; 1]>,
 }
 
-impl BackupKeys {
-    pub fn new(keys: &Keys, window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+impl Backup {
+    pub fn new(keys: &Keys, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Ok(npub) = keys.public_key.to_bech32();
         let Ok(nsec) = keys.secret_key().to_bech32();
 
@@ -41,6 +49,7 @@ impl BackupKeys {
             secret_input,
             error: None,
             copied: false,
+            _tasks: smallvec![],
         }
     }
 
@@ -79,18 +88,14 @@ impl BackupKeys {
 
         // Reset the copied state after a delay
         if status {
-            cx.spawn_in(window, async move |this, cx| {
+            self._tasks.push(cx.spawn_in(window, async move |this, cx| {
                 cx.background_executor().timer(Duration::from_secs(2)).await;
 
-                cx.update(|window, cx| {
-                    this.update(cx, |this, cx| {
-                        this.set_copied(false, window, cx);
-                    })
-                    .ok();
+                this.update_in(cx, |this, window, cx| {
+                    this.set_copied(false, window, cx);
                 })
                 .ok();
-            })
-            .detach();
+            }));
         }
     }
 
@@ -102,22 +107,19 @@ impl BackupKeys {
         cx.notify();
 
         // Clear the error message after a delay
-        cx.spawn_in(window, async move |this, cx| {
+        self._tasks.push(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(2)).await;
-            cx.update(|_, cx| {
-                this.update(cx, |this, cx| {
-                    this.error = None;
-                    cx.notify();
-                })
-                .ok();
+
+            this.update(cx, |this, cx| {
+                this.error = None;
+                cx.notify();
             })
             .ok();
-        })
-        .detach();
+        }));
     }
 }
 
-impl Render for BackupKeys {
+impl Render for Backup {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         const DESCRIPTION: &str = "In Nostr, your account is defined by a KEY PAIR. These keys are used to sign your messages and identify you.";
         const WARN: &str = "You must keep the Secret Key in a safe place. If you lose it, you will lose access to your account.";
