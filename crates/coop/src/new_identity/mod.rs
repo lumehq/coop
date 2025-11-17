@@ -76,20 +76,26 @@ impl NewAccount {
                 .on_ok(move |_, window, cx| {
                     weak_view
                         .update(cx, |this, cx| {
-                            let current_view = current_view.clone();
+                            let view = current_view.clone();
+                            let task = this.backup(window, cx);
 
-                            if let Some(task) = this.backup(window, cx) {
-                                cx.spawn_in(window, async move |_, cx| {
-                                    task.await;
+                            cx.spawn_in(window, async move |_this, cx| {
+                                let result = task.await;
 
-                                    current_view
-                                        .update(cx, |this, cx| {
+                                match result {
+                                    Ok(_) => {
+                                        view.update_in(cx, |this, window, cx| {
+                                            window.close_all_modals(cx);
                                             this.set_signer(cx);
                                         })
-                                        .ok();
-                                })
-                                .detach();
-                            }
+                                        .expect("Entity has been released");
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to backup: {e}");
+                                    }
+                                }
+                            })
+                            .detach();
                         })
                         .ok();
                     // true to close the modal

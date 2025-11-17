@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use anyhow::{anyhow, Error};
 use common::home_dir;
 use gpui::{
     div, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
@@ -53,12 +54,12 @@ impl Backup {
         }
     }
 
-    pub fn backup(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<Task<()>> {
+    pub fn backup(&self, window: &Window, cx: &Context<Self>) -> Task<Result<(), Error>> {
         let dir = home_dir();
         let path = cx.prompt_for_new_path(dir, Some("My Nostr Account"));
         let nsec = self.secret_input.read(cx).value().to_string();
 
-        Some(cx.spawn_in(window, async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             match Flatten::flatten(path.await.map_err(|e| e.into())) {
                 Ok(Ok(Some(path))) => {
                     if let Err(e) = smol::fs::write(&path, nsec).await {
@@ -66,13 +67,17 @@ impl Backup {
                             this.set_error(e.to_string(), window, cx);
                         })
                         .expect("Entity has been released");
+                    } else {
+                        return Ok(());
                     }
                 }
                 _ => {
                     log::error!("Failed to save backup keys");
                 }
             };
-        }))
+
+            Err(anyhow!("Failed to backup keys"))
+        })
     }
 
     fn copy(&mut self, value: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) {
