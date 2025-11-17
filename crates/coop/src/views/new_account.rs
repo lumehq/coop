@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Error};
 use common::{default_nip17_relays, default_nip65_relays, nip96_upload, BOOTSTRAP_RELAYS};
 use gpui::{
-    div, relative, rems, AnyElement, App, AppContext, AsyncWindowContext, Context, Entity,
-    EventEmitter, Flatten, FocusHandle, Focusable, IntoElement, ParentElement, PathPromptOptions,
-    Render, SharedString, Styled, Task, WeakEntity, Window,
+    rems, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle,
+    Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Task,
+    Window,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -12,13 +12,12 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
 use state::NostrRegistry;
-use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
 use ui::input::{InputState, TextInput};
 use ui::modal::ModalButtonProps;
-use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
+use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable};
 
 use crate::views::backup_keys::BackupKeys;
 
@@ -53,7 +52,7 @@ impl NewAccount {
             temp_keys,
             uploading: false,
             submitting: false,
-            name: "New Account".into(),
+            name: "Create a new identity".into(),
             focus_handle: cx.focus_handle(),
         }
     }
@@ -184,8 +183,9 @@ impl NewAccount {
                 // Construct a metadata event
                 let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
 
-                // Set metadata
+                // Send metadata event to both write relays and bootstrap relays
                 client.send_event_to(&write_relays, &event).await?;
+                client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
 
                 Ok(())
             });
@@ -230,37 +230,29 @@ impl NewAccount {
         });
 
         cx.spawn_in(window, async move |this, cx| {
-            match Flatten::flatten(task.await.map_err(|e| e.into())) {
-                Ok(Ok(url)) => {
-                    this.update_in(cx, |this, window, cx| {
+            let result = Flatten::flatten(task.await.map_err(|e| e.into()));
+
+            this.update_in(cx, |this, window, cx| {
+                match result {
+                    Ok(Ok(url)) => {
                         this.uploading(false, cx);
                         this.avatar_input.update(cx, |this, cx| {
                             this.set_value(url.to_string(), window, cx);
                         });
-                    })
-                    .ok();
-                }
-                Ok(Err(e)) => {
-                    Self::notify_error(cx, this, e.to_string());
-                }
-                Err(e) => {
-                    Self::notify_error(cx, this, e.to_string());
-                }
-            }
+                    }
+                    Ok(Err(e)) => {
+                        window.push_notification(e.to_string(), cx);
+                        this.uploading(false, cx);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to upload avatar: {e}");
+                        this.uploading(false, cx);
+                    }
+                };
+            })
+            .expect("Entity has been released");
         })
         .detach();
-    }
-
-    fn notify_error(cx: &mut AsyncWindowContext, entity: WeakEntity<NewAccount>, e: String) {
-        cx.update(|window, cx| {
-            entity
-                .update(cx, |this, cx| {
-                    window.push_notification(e, cx);
-                    this.uploading(false, cx);
-                })
-                .ok();
-        })
-        .ok();
     }
 
     fn submitting(&mut self, status: bool, cx: &mut Context<Self>) {
@@ -294,65 +286,45 @@ impl Focusable for NewAccount {
 
 impl Render for NewAccount {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let avatar = self.avatar_input.read(cx).value();
+
         v_flex()
             .size_full()
             .relative()
             .items_center()
             .justify_center()
-            .gap_10()
-            .child(
-                div()
-                    .text_lg()
-                    .text_center()
-                    .font_semibold()
-                    .line_height(relative(1.3))
-                    .child(shared_t!("new_account.title")),
-            )
             .child(
                 v_flex()
                     .w_96()
-                    .gap_4()
+                    .gap_2()
+                    .child(
+                        v_flex()
+                            .h_40()
+                            .w_full()
+                            .items_center()
+                            .justify_center()
+                            .gap_4()
+                            .child(Avatar::new(avatar).size(rems(4.25)))
+                            .child(
+                                Button::new("upload")
+                                    .icon(IconName::PlusCircleFill)
+                                    .label("Add an avatar")
+                                    .xsmall()
+                                    .ghost()
+                                    .rounded()
+                                    .disabled(self.uploading)
+                                    .loading(self.uploading)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.upload(window, cx);
+                                    })),
+                            ),
+                    )
                     .child(
                         v_flex()
                             .gap_1()
                             .text_sm()
                             .child(shared_t!("new_account.name"))
                             .child(TextInput::new(&self.name_input).small()),
-                    )
-                    .child(
-                        v_flex()
-                            .gap_1()
-                            .child(div().text_sm().child(shared_t!("new_account.avatar")))
-                            .child(
-                                v_flex()
-                                    .p_1()
-                                    .h_32()
-                                    .w_full()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_2()
-                                    .rounded(cx.theme().radius)
-                                    .border_1()
-                                    .border_dashed()
-                                    .border_color(cx.theme().border)
-                                    .child(
-                                        Avatar::new(self.avatar_input.read(cx).value().to_string())
-                                            .size(rems(2.25)),
-                                    )
-                                    .child(
-                                        Button::new("upload")
-                                            .icon(IconName::Plus)
-                                            .label(t!("common.upload"))
-                                            .ghost()
-                                            .small()
-                                            .rounded()
-                                            .disabled(self.submitting || self.uploading)
-                                            .loading(self.uploading)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.upload(window, cx);
-                                            })),
-                                    ),
-                            ),
                     )
                     .child(divider(cx))
                     .child(
