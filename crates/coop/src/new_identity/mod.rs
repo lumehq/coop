@@ -85,8 +85,7 @@ impl NewAccount {
                                 match result {
                                     Ok(_) => {
                                         view.update_in(cx, |this, window, cx| {
-                                            window.close_all_modals(cx);
-                                            this.set_signer(cx);
+                                            this.set_signer(window, cx);
                                         })
                                         .expect("Entity has been released");
                                     }
@@ -104,7 +103,7 @@ impl NewAccount {
         })
     }
 
-    pub fn set_signer(&mut self, cx: &mut Context<Self>) {
+    pub fn set_signer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let keystore = KeyStore::global(cx).read(cx).backend();
 
         let nostr = NostrRegistry::global(cx);
@@ -122,7 +121,70 @@ impl NewAccount {
             metadata = metadata.picture(url);
         };
 
-        cx.spawn(async move |_, cx| {
+        // Close all modals if available
+        window.close_all_modals(cx);
+
+        // Set the client's signer with the current keys
+        let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let signer = keys.clone();
+            let nip65_relays = default_nip65_relays();
+
+            // Construct a NIP-65 event
+            let event = EventBuilder::new(Kind::RelayList, "")
+                .tags(
+                    nip65_relays
+                        .iter()
+                        .cloned()
+                        .map(|(url, metadata)| Tag::relay_metadata(url, metadata)),
+                )
+                .sign(&signer)
+                .await?;
+
+            // Set NIP-65 relays
+            client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
+
+            // Ensure relays are connected
+            for (url, _metadata) in nip65_relays.iter() {
+                client.add_relay(url).await?;
+                client.connect_relay(url).await?;
+            }
+
+            // Extract only write relays
+            let write_relays: Vec<RelayUrl> = nip65_relays
+                .iter()
+                .filter_map(|(url, metadata)| {
+                    if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
+                        Some(url.to_owned())
+                    } else {
+                        None
+                    }
+                })
+                .take(3)
+                .collect();
+
+            // Construct a NIP-17 event
+            let event = EventBuilder::new(Kind::InboxRelays, "")
+                .tags(default_nip17_relays().iter().cloned().map(Tag::relay))
+                .sign(&signer)
+                .await?;
+
+            // Set NIP-17 relays
+            client.send_event_to(&write_relays, &event).await?;
+
+            // Construct a metadata event
+            let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
+
+            // Send metadata event to both write relays and bootstrap relays
+            client.send_event_to(&write_relays, &event).await?;
+            client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
+
+            // Update the client's signer with the current keys
+            client.set_signer(keys).await;
+
+            Ok(())
+        });
+
+        cx.spawn_in(window, async move |this, cx| {
             let url = KeyItem::User.to_string();
 
             // Write the app keys for further connection
@@ -131,69 +193,13 @@ impl NewAccount {
                 .await
                 .ok();
 
-            // Update the signer
-            // Set the client's signer with the current keys
-            let task: Task<Result<(), Error>> = cx.background_spawn(async move {
-                // Set the client's signer with the current keys
-                client.set_signer(keys).await;
-
-                // Verify the signer
-                let signer = client.signer().await?;
-                let nip65_relays = default_nip65_relays();
-
-                // Construct a NIP-65 event
-                let event = EventBuilder::new(Kind::RelayList, "")
-                    .tags(
-                        nip65_relays
-                            .iter()
-                            .cloned()
-                            .map(|(url, metadata)| Tag::relay_metadata(url, metadata)),
-                    )
-                    .sign(&signer)
-                    .await?;
-
-                // Set NIP-65 relays
-                client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
-
-                // Ensure relays are connected
-                for (url, _metadata) in nip65_relays.iter() {
-                    client.add_relay(url).await?;
-                    client.connect_relay(url).await?;
-                }
-
-                // Extract only write relays
-                let write_relays: Vec<RelayUrl> = nip65_relays
-                    .iter()
-                    .filter_map(|(url, metadata)| {
-                        if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
-                            Some(url.to_owned())
-                        } else {
-                            None
-                        }
-                    })
-                    .take(3)
-                    .collect();
-
-                // Construct a NIP-17 event
-                let event = EventBuilder::new(Kind::InboxRelays, "")
-                    .tags(default_nip17_relays().iter().cloned().map(Tag::relay))
-                    .sign(&signer)
-                    .await?;
-
-                // Set NIP-17 relays
-                client.send_event_to(&write_relays, &event).await?;
-
-                // Construct a metadata event
-                let event = EventBuilder::metadata(&metadata).sign(&signer).await?;
-
-                // Send metadata event to both write relays and bootstrap relays
-                client.send_event_to(&write_relays, &event).await?;
-                client.send_event_to(BOOTSTRAP_RELAYS, &event).await?;
-
-                Ok(())
-            });
-
-            task.detach();
+            if let Err(e) = task.await {
+                this.update_in(cx, |this, window, cx| {
+                    this.submitting(false, cx);
+                    window.push_notification(e.to_string(), cx);
+                })
+                .expect("Entity has been released");
+            }
         })
         .detach();
     }
@@ -316,7 +322,7 @@ impl Render for NewAccount {
                                     .ghost()
                                     .rounded()
                                     .disabled(self.uploading)
-                                    .loading(self.uploading)
+                                    //.loading(self.uploading)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.upload(window, cx);
                                     })),
@@ -327,7 +333,11 @@ impl Render for NewAccount {
                             .gap_1()
                             .text_sm()
                             .child(shared_t!("new_account.name"))
-                            .child(TextInput::new(&self.name_input).small()),
+                            .child(
+                                TextInput::new(&self.name_input)
+                                    .disabled(self.submitting)
+                                    .small(),
+                            ),
                     )
                     .child(divider(cx))
                     .child(

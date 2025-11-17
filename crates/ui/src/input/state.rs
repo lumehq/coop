@@ -522,7 +522,7 @@ impl InputState {
             if new_row >= last_layout.visible_range.start {
                 let visible_row = new_row.saturating_sub(last_layout.visible_range.start);
                 if let Some(line) = last_layout.lines.get(visible_row) {
-                    if let Ok(x) = line.index_for_position(
+                    if let Ok(x) = line.closest_index_for_position(
                         Point {
                             x: preferred_x,
                             y: px(0.),
@@ -1655,10 +1655,11 @@ impl InputState {
 
             // Return offset by use closest_index_for_x if is single line mode.
             if self.mode.is_single_line() {
-                return rendered_line.unwrapped_layout.index_for_x(pos.x).unwrap();
+                return rendered_line.unwrapped_layout.closest_index_for_x(pos.x);
             }
 
-            let index_result = rendered_line.index_for_position(pos, line_height);
+            let index_result = rendered_line.closest_index_for_position(pos, line_height);
+
             if let Ok(v) = index_result {
                 index += v;
                 break;

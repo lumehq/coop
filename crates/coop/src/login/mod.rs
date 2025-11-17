@@ -75,7 +75,7 @@ impl Login {
             pass_input,
             error,
             countdown,
-            name: "Login".into(),
+            name: "Welcome Back".into(),
             focus_handle: cx.focus_handle(),
             logging_in: false,
             require_password: false,
@@ -367,18 +367,10 @@ impl Render for Login {
                     .child(
                         div()
                             .text_center()
-                            .child(
-                                div()
-                                    .text_xl()
-                                    .font_semibold()
-                                    .line_height(relative(1.3))
-                                    .child(shared_t!("login.title")),
-                            )
-                            .child(
-                                div()
-                                    .text_color(cx.theme().text_muted)
-                                    .child(shared_t!("login.key_description")),
-                            ),
+                            .text_xl()
+                            .font_semibold()
+                            .line_height(relative(1.3))
+                            .child(SharedString::from("Continue with Private Key or Bunker")),
                     )
                     .child(
                         v_flex()
