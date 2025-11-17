@@ -91,7 +91,11 @@ impl Render for TitleBar {
                 if window.is_fullscreen() {
                     this.px_2()
                 } else if cx.theme().platform_kind.is_mac() {
-                    this.pl(px(platforms::mac::TRAFFIC_LIGHT_PADDING)).pr_2()
+                    this.pl(px(platforms::mac::TRAFFIC_LIGHT_PADDING))
+                        .pr_2()
+                        .when(children.len() <= 1, |this| {
+                            this.pr(px(platforms::mac::TRAFFIC_LIGHT_PADDING))
+                        })
                 } else {
                     this.px_2()
                 }

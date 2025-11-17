@@ -61,7 +61,7 @@ impl Startup {
         Self {
             credential,
             loading: false,
-            name: "Account".into(),
+            name: "Continue".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             _subscriptions: subscriptions,

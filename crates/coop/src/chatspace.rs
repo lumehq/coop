@@ -30,13 +30,12 @@ use ui::dock_area::{ClosePanel, DockArea, DockItem};
 use ui::modal::ModalButtonProps;
 use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable};
+use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings};
 use crate::views::compose::compose_button;
-use crate::views::{
-    login, new_account, onboarding, preferences, sidebar, startup, user_profile, welcome,
-};
+use crate::views::{onboarding, preferences, sidebar, startup, user_profile, welcome};
+use crate::{login, new_identity};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     cx.new(|cx| ChatSpace::new(window, cx))
@@ -48,7 +47,7 @@ pub fn login(window: &mut Window, cx: &mut App) {
 }
 
 pub fn new_account(window: &mut Window, cx: &mut App) {
-    let panel = new_account::init(window, cx);
+    let panel = new_identity::init(window, cx);
     ChatSpace::set_center_panel(panel, window, cx);
 }
 
@@ -496,6 +495,43 @@ impl ChatSpace {
                 )
             })
     }
+
+    fn titlebar_center(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let entity = cx.entity().downgrade();
+        let panel = self.dock.read(cx).items.view();
+        let title = panel.title(cx);
+        let id = panel.panel_id(cx);
+
+        if id == "Onboarding" {
+            return div();
+        };
+
+        h_flex()
+            .flex_1()
+            .w_full()
+            .justify_center()
+            .text_center()
+            .font_semibold()
+            .text_sm()
+            .child(
+                div().flex_1().child(
+                    Button::new("back")
+                        .icon(IconName::ArrowLeft)
+                        .small()
+                        .ghost_alt()
+                        .rounded()
+                        .on_click(move |_ev, window, cx| {
+                            entity
+                                .update(cx, |this, cx| {
+                                    this.set_onboarding_layout(window, cx);
+                                })
+                                .expect("Entity has been released");
+                        }),
+                ),
+            )
+            .child(div().flex_1().child(title))
+            .child(div().flex_1())
+    }
 }
 
 impl Render for ChatSpace {
@@ -505,10 +541,16 @@ impl Render for ChatSpace {
 
         let left = self.titlebar_left(window, cx).into_any_element();
         let right = self.titlebar_right(window, cx).into_any_element();
+        let center = self.titlebar_center(cx).into_any_element();
+        let single_panel = self.dock.read(cx).items.panel_ids(cx).is_empty();
 
         // Update title bar children
         self.title_bar.update(cx, |this, _cx| {
-            this.set_children(vec![left, right]);
+            if single_panel {
+                this.set_children(vec![center]);
+            } else {
+                this.set_children(vec![left, right]);
+            }
         });
 
         div()
