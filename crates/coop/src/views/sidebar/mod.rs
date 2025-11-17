@@ -18,7 +18,7 @@ use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::{NostrRegistry, GIFTWRAP_SUBSCRIPTION};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -535,7 +535,9 @@ impl Sidebar {
         let client = nostr.read(cx).client();
 
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
-            let subscription = client.subscription(&SubscriptionId::new("inbox")).await;
+            let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
+            let subscription = client.subscription(&id).await;
+
             let mut relays: Vec<Relay> = vec![];
 
             for (url, _filter) in subscription.into_iter() {

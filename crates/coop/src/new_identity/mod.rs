@@ -154,7 +154,6 @@ impl NewAccount {
                         None
                     }
                 })
-                .take(3)
                 .collect();
 
             // Ensure relays are connected

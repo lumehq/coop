@@ -78,7 +78,7 @@ impl Gossip {
                 relays
                     .iter()
                     .filter_map(|(url, metadata)| {
-                        if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
+                        if metadata.is_none() || metadata == &Some(RelayMetadata::Read) {
                             Some(url.to_owned())
                         } else {
                             None
@@ -97,7 +97,7 @@ impl Gossip {
                 relays
                     .iter()
                     .filter_map(|(url, metadata)| {
-                        if metadata.is_none() || metadata == &Some(RelayMetadata::Read) {
+                        if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
                             Some(url.to_owned())
                         } else {
                             None
