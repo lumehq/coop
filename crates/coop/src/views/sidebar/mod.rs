@@ -812,6 +812,7 @@ impl Render for Sidebar {
                                 this.child(deferred(
                                     v_flex()
                                         .py_2()
+                                        .px_1p5()
                                         .gap_1p5()
                                         .items_center()
                                         .justify_center()
@@ -835,6 +836,7 @@ impl Render for Sidebar {
                                 this.child(deferred(
                                     v_flex()
                                         .py_2()
+                                        .px_1p5()
                                         .gap_1p5()
                                         .items_center()
                                         .justify_center()
