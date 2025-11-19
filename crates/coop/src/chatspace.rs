@@ -34,10 +34,8 @@ use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
 use crate::views::compose::compose_button;
-use crate::views::{
-    edit_profile, onboarding, preferences, setup_relay, sidebar, startup, user_profile, welcome,
-};
-use crate::{login, new_identity};
+use crate::views::{onboarding, preferences, setup_relay, sidebar, startup, user_profile, welcome};
+use crate::{login, new_identity, user};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     cx.new(|cx| ChatSpace::new(window, cx))
@@ -230,50 +228,50 @@ impl ChatSpace {
         window.open_modal(cx, move |modal, _window, _cx| {
             modal
                 .title(shared_t!("common.preferences"))
-                .width(px(580.))
+                .width(px(520.))
                 .child(view.clone())
         });
     }
 
     fn on_profile(&mut self, _ev: &ViewProfile, window: &mut Window, cx: &mut Context<Self>) {
-        let entity = edit_profile::init(window, cx);
-        let view = entity.downgrade();
+        let view = user::init(window, cx);
+        let entity = view.downgrade();
 
         window.open_modal(cx, move |modal, _window, _cx| {
-            let view = view.clone();
+            let entity = entity.clone();
 
             modal
                 .confirm()
-                .title(shared_t!("profile.title"))
-                .child(entity.clone())
+                .child(view.clone())
                 .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
                 .on_ok(move |_, window, cx| {
-                    view.update(cx, |this, cx| {
-                        let persons = PersonRegistry::global(cx);
-                        let set_metadata = this.set_metadata(cx);
+                    entity
+                        .update(cx, |this, cx| {
+                            let persons = PersonRegistry::global(cx);
+                            let set_metadata = this.set_metadata(cx);
 
-                        cx.spawn_in(window, async move |this, cx| {
-                            let result = set_metadata.await;
+                            cx.spawn_in(window, async move |this, cx| {
+                                let result = set_metadata.await;
 
-                            this.update_in(cx, |_, window, cx| {
-                                match result {
-                                    Ok(profile) => {
-                                        persons.update(cx, |this, cx| {
-                                            this.insert_or_update_person(profile, cx);
-                                            // Close the edit profile modal
-                                            window.close_all_modals(cx);
-                                        });
-                                    }
-                                    Err(e) => {
-                                        window.push_notification(e.to_string(), cx);
-                                    }
-                                };
+                                this.update_in(cx, |_, window, cx| {
+                                    match result {
+                                        Ok(profile) => {
+                                            persons.update(cx, |this, cx| {
+                                                this.insert_or_update_person(profile, cx);
+                                                // Close the edit profile modal
+                                                window.close_all_modals(cx);
+                                            });
+                                        }
+                                        Err(e) => {
+                                            window.push_notification(e.to_string(), cx);
+                                        }
+                                    };
+                                })
+                                .ok();
                             })
-                            .ok();
+                            .detach();
                         })
-                        .detach();
-                    })
-                    .ok();
+                        .ok();
 
                     // false to keep the modal open
                     false
@@ -282,21 +280,22 @@ impl ChatSpace {
     }
 
     fn on_relays(&mut self, _ev: &ViewRelays, window: &mut Window, cx: &mut Context<Self>) {
-        let entity = setup_relay::init(window, cx);
-        let view = entity.downgrade();
+        let view = setup_relay::init(window, cx);
+        let entity = view.downgrade();
 
         window.open_modal(cx, move |this, _window, _cx| {
-            let view = view.clone();
+            let entity = entity.clone();
 
             this.confirm()
                 .title(shared_t!("relays.modal"))
-                .child(entity.clone())
+                .child(view.clone())
                 .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
                 .on_ok(move |_, window, cx| {
-                    view.update(cx, |this, cx| {
-                        this.set_relays(window, cx);
-                    })
-                    .ok();
+                    entity
+                        .update(cx, |this, cx| {
+                            this.set_relays(window, cx);
+                        })
+                        .ok();
 
                     // false to keep the modal open
                     false

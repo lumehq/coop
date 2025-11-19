@@ -1,5 +1,4 @@
 pub mod compose;
-pub mod edit_profile;
 pub mod onboarding;
 pub mod preferences;
 pub mod screening;
