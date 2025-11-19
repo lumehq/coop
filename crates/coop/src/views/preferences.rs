@@ -1,22 +1,15 @@
-use account::Account;
-use common::RenderedProfile;
 use gpui::http_client::Url;
 use gpui::{
-    div, px, relative, rems, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
+    Styled, Window,
 };
 use i18n::{shared_t, t};
-use person::PersonRegistry;
 use settings::AppSettings;
 use theme::ActiveTheme;
-use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
-use ui::modal::ModalButtonProps;
 use ui::switch::Switch;
-use ui::{h_flex, v_flex, ContextModal, IconName, Sizable, Size, StyledExt};
-
-use crate::views::{edit_profile, setup_relay};
+use ui::{h_flex, v_flex, IconName, Sizable, Size, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     cx.new(|cx| Preferences::new(window, cx))
@@ -37,73 +30,6 @@ impl Preferences {
 
         Self { media_input }
     }
-
-    fn open_edit_profile(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = edit_profile::init(window, cx);
-        let weak_view = view.downgrade();
-
-        window.open_modal(cx, move |modal, _window, _cx| {
-            let weak_view = weak_view.clone();
-
-            modal
-                .confirm()
-                .title(shared_t!("profile.title"))
-                .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
-                .on_ok(move |_, window, cx| {
-                    weak_view
-                        .update(cx, |this, cx| {
-                            let persons = PersonRegistry::global(cx);
-                            let set_metadata = this.set_metadata(cx);
-
-                            cx.spawn_in(window, async move |this, cx| {
-                                let result = set_metadata.await;
-
-                                this.update_in(cx, |_, window, cx| {
-                                    match result {
-                                        Ok(profile) => {
-                                            persons.update(cx, |this, cx| {
-                                                this.insert_or_update_person(profile, cx);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            window.push_notification(e.to_string(), cx);
-                                        }
-                                    };
-                                })
-                                .ok();
-                            })
-                            .detach();
-                        })
-                        .ok();
-                    // true to close the modal
-                    true
-                })
-        });
-    }
-
-    fn open_relays(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = setup_relay::init(window, cx);
-        let weak_view = view.downgrade();
-
-        window.open_modal(cx, move |this, _window, _cx| {
-            let weak_view = weak_view.clone();
-
-            this.confirm()
-                .title(shared_t!("relays.modal"))
-                .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
-                .on_ok(move |_, window, cx| {
-                    weak_view
-                        .update(cx, |this, cx| {
-                            this.set_relays(window, cx);
-                        })
-                        .ok();
-                    // true to close the modal
-                    false
-                })
-        });
-    }
 }
 
 impl Render for Preferences {
@@ -115,68 +41,9 @@ impl Render for Preferences {
         let proxy = AppSettings::get_proxy_user_avatars(cx);
         let hide = AppSettings::get_hide_user_avatars(cx);
 
-        let persons = PersonRegistry::global(cx);
-        let account = Account::global(cx);
-        let public_key = account.read(cx).public_key();
-        let profile = persons.read(cx).get_person(&public_key, cx);
-
         let input_state = self.media_input.downgrade();
 
         v_flex()
-            .child(
-                v_flex()
-                    .pb_2()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().text_placeholder)
-                            .font_semibold()
-                            .child(shared_t!("preferences.account_header")),
-                    )
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .justify_between()
-                            .child(
-                                h_flex()
-                                    .id("user")
-                                    .gap_2()
-                                    .child(Avatar::new(profile.avatar(proxy)).size(rems(2.4)))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .text_sm()
-                                            .child(
-                                                div()
-                                                    .font_semibold()
-                                                    .line_height(relative(1.3))
-                                                    .child(profile.display_name()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(cx.theme().text_muted)
-                                                    .line_height(relative(1.3))
-                                                    .child(shared_t!("preferences.account_btn")),
-                                            ),
-                                    )
-                                    .on_click(cx.listener(move |this, _e, window, cx| {
-                                        this.open_edit_profile(window, cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("relays")
-                                    .label("Messaging Relays")
-                                    .xsmall()
-                                    .ghost_alt()
-                                    .rounded()
-                                    .on_click(cx.listener(move |this, _e, window, cx| {
-                                        this.open_relays(window, cx);
-                                    })),
-                            ),
-                    ),
-            )
             .child(
                 v_flex()
                     .py_2()

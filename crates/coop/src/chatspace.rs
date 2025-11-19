@@ -32,9 +32,11 @@ use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
-use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings};
+use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
 use crate::views::compose::compose_button;
-use crate::views::{onboarding, preferences, sidebar, startup, user_profile, welcome};
+use crate::views::{
+    edit_profile, onboarding, preferences, setup_relay, sidebar, startup, user_profile, welcome,
+};
 use crate::{login, new_identity};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -230,6 +232,75 @@ impl ChatSpace {
                 .title(shared_t!("common.preferences"))
                 .width(px(580.))
                 .child(view.clone())
+        });
+    }
+
+    fn on_profile(&mut self, _ev: &ViewProfile, window: &mut Window, cx: &mut Context<Self>) {
+        let entity = edit_profile::init(window, cx);
+        let view = entity.downgrade();
+
+        window.open_modal(cx, move |modal, _window, _cx| {
+            let view = view.clone();
+
+            modal
+                .confirm()
+                .title(shared_t!("profile.title"))
+                .child(entity.clone())
+                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .on_ok(move |_, window, cx| {
+                    view.update(cx, |this, cx| {
+                        let persons = PersonRegistry::global(cx);
+                        let set_metadata = this.set_metadata(cx);
+
+                        cx.spawn_in(window, async move |this, cx| {
+                            let result = set_metadata.await;
+
+                            this.update_in(cx, |_, window, cx| {
+                                match result {
+                                    Ok(profile) => {
+                                        persons.update(cx, |this, cx| {
+                                            this.insert_or_update_person(profile, cx);
+                                            // Close the edit profile modal
+                                            window.close_all_modals(cx);
+                                        });
+                                    }
+                                    Err(e) => {
+                                        window.push_notification(e.to_string(), cx);
+                                    }
+                                };
+                            })
+                            .ok();
+                        })
+                        .detach();
+                    })
+                    .ok();
+
+                    // false to keep the modal open
+                    false
+                })
+        });
+    }
+
+    fn on_relays(&mut self, _ev: &ViewRelays, window: &mut Window, cx: &mut Context<Self>) {
+        let entity = setup_relay::init(window, cx);
+        let view = entity.downgrade();
+
+        window.open_modal(cx, move |this, _window, _cx| {
+            let view = view.clone();
+
+            this.confirm()
+                .title(shared_t!("relays.modal"))
+                .child(entity.clone())
+                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .on_ok(move |_, window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.set_relays(window, cx);
+                    })
+                    .ok();
+
+                    // false to keep the modal open
+                    false
+                })
         });
     }
 
@@ -467,14 +538,14 @@ impl ChatSpace {
                                 .popup_menu(move |this, _window, _cx| {
                                     this.label(profile.display_name())
                                         .menu_with_icon(
-                                            t!("user.dark_mode"),
-                                            IconName::Sun,
-                                            Box::new(DarkMode),
+                                            "Profile",
+                                            IconName::EmojiFill,
+                                            Box::new(ViewProfile),
                                         )
                                         .menu_with_icon(
-                                            t!("user.settings"),
-                                            IconName::Settings,
-                                            Box::new(Settings),
+                                            "Messaging Relays",
+                                            IconName::Server,
+                                            Box::new(ViewRelays),
                                         )
                                         .separator()
                                         .label(SharedString::from("Keyring Service"))
@@ -486,7 +557,17 @@ impl ChatSpace {
                                         )
                                         .separator()
                                         .menu_with_icon(
-                                            t!("user.sign_out"),
+                                            "Dark Mode",
+                                            IconName::Sun,
+                                            Box::new(DarkMode),
+                                        )
+                                        .menu_with_icon(
+                                            "Settings",
+                                            IconName::Settings,
+                                            Box::new(Settings),
+                                        )
+                                        .menu_with_icon(
+                                            "Sign Out",
                                             IconName::Logout,
                                             Box::new(Logout),
                                         )
@@ -556,6 +637,8 @@ impl Render for ChatSpace {
         div()
             .id(SharedString::from("chatspace"))
             .on_action(cx.listener(Self::on_settings))
+            .on_action(cx.listener(Self::on_profile))
+            .on_action(cx.listener(Self::on_relays))
             .on_action(cx.listener(Self::on_dark_mode))
             .on_action(cx.listener(Self::on_sign_out))
             .on_action(cx.listener(Self::on_open_pubkey))
