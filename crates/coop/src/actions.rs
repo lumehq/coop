@@ -5,8 +5,22 @@ use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use state::NostrRegistry;
 
-actions!(coop, [KeyringPopup, DarkMode, Settings, Logout, Quit]);
+// Sidebar actions
 actions!(sidebar, [Reload, RelayStatus]);
+
+// User actions
+actions!(
+    coop,
+    [
+        KeyringPopup,
+        DarkMode,
+        ViewProfile,
+        ViewRelays,
+        Settings,
+        Logout,
+        Quit
+    ]
+);
 
 #[derive(Debug, Clone)]
 pub struct CoopAuthUrlHandler;

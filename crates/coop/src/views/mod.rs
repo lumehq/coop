@@ -1,10 +1,8 @@
 pub mod compose;
-pub mod edit_profile;
 pub mod onboarding;
 pub mod preferences;
 pub mod screening;
 pub mod setup_relay;
 pub mod sidebar;
 pub mod startup;
-pub mod user_profile;
 pub mod welcome;

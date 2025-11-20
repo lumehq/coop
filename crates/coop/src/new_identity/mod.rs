@@ -244,20 +244,18 @@ impl NewAccount {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(Ok(url)) => {
-                        this.uploading(false, cx);
                         this.avatar_input.update(cx, |this, cx| {
                             this.set_value(url.to_string(), window, cx);
                         });
                     }
                     Ok(Err(e)) => {
                         window.push_notification(e.to_string(), cx);
-                        this.uploading(false, cx);
                     }
                     Err(e) => {
                         log::warn!("Failed to upload avatar: {e}");
-                        this.uploading(false, cx);
                     }
                 };
+                this.uploading(false, cx);
             })
             .expect("Entity has been released");
         })
