@@ -33,8 +33,9 @@ use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
+use crate::user::viewer;
 use crate::views::compose::compose_button;
-use crate::views::{onboarding, preferences, setup_relay, sidebar, startup, user_profile, welcome};
+use crate::views::{onboarding, preferences, setup_relay, sidebar, startup, welcome};
 use crate::{login, new_identity, user};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
@@ -241,9 +242,10 @@ impl ChatSpace {
             let entity = entity.clone();
 
             modal
+                .title("Profile")
                 .confirm()
                 .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .button_props(ModalButtonProps::default().ok_text("Update"))
                 .on_ok(move |_, window, cx| {
                     entity
                         .update(cx, |this, cx| {
@@ -317,17 +319,22 @@ impl ChatSpace {
 
     fn on_open_pubkey(&mut self, ev: &OpenPublicKey, window: &mut Window, cx: &mut Context<Self>) {
         let public_key = ev.0;
-        let profile = user_profile::init(public_key, window, cx);
+        let view = viewer::init(public_key, window, cx);
 
         window.open_modal(cx, move |this, _window, _cx| {
             this.alert()
                 .show_close(true)
                 .overlay_closable(true)
-                .child(profile.clone())
-                .button_props(ModalButtonProps::default().ok_text(t!("profile.njump")))
+                .child(view.clone())
+                .button_props(ModalButtonProps::default().ok_text("View on njump.me"))
                 .on_ok(move |_, _window, cx| {
-                    let Ok(bech32) = public_key.to_bech32();
-                    cx.open_url(&format!("https://njump.me/{bech32}"));
+                    let bech32 = public_key.to_bech32().unwrap();
+                    let url = format!("https://njump.me/{bech32}");
+
+                    // Open the URL in the default browser
+                    cx.open_url(&url);
+
+                    // false to keep the modal open
                     false
                 })
         });

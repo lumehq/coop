@@ -1,14 +1,14 @@
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::{anyhow, Error};
-use common::nip96_upload;
+use common::{nip96_upload, shorten_pubkey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, App, AppContext, Context, Entity, Flatten, IntoElement, ParentElement,
+    div, img, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
     PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
@@ -17,7 +17,9 @@ use state::NostrRegistry;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
-use ui::{v_flex, ContextModal, Disableable, IconName, Sizable};
+use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
+
+pub mod viewer;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<UserProfile> {
     cx.new(|cx| UserProfile::new(window, cx))
@@ -42,6 +44,9 @@ pub struct UserProfile {
 
     /// Uploading state
     uploading: bool,
+
+    /// Copied states
+    copied: bool,
 
     /// Async operations
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -83,6 +88,7 @@ impl UserProfile {
             bio_input,
             website_input,
             uploading: false,
+            copied: false,
             _tasks: tasks,
         }
     }
@@ -136,6 +142,34 @@ impl UserProfile {
         cx.notify();
     }
 
+    fn copy(&mut self, value: String, window: &mut Window, cx: &mut Context<Self>) {
+        let item = ClipboardItem::new_string(value);
+        cx.write_to_clipboard(item);
+
+        self.set_copied(true, window, cx);
+    }
+
+    fn set_copied(&mut self, status: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.copied = status;
+        cx.notify();
+
+        if status {
+            self._tasks.push(
+                // Reset the copied state after a delay
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(Duration::from_secs(2)).await;
+                    cx.update(|window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.set_copied(false, window, cx);
+                        })
+                        .ok();
+                    })
+                    .ok();
+                }),
+            );
+        }
+    }
+
     fn uploading(&mut self, status: bool, cx: &mut Context<Self>) {
         self.uploading = status;
         cx.notify();
@@ -181,20 +215,18 @@ impl UserProfile {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(Ok(url)) => {
-                        this.uploading(false, cx);
                         this.avatar_input.update(cx, |this, cx| {
                             this.set_value(url.to_string(), window, cx);
                         });
                     }
                     Ok(Err(e)) => {
                         window.push_notification(e.to_string(), cx);
-                        this.uploading(false, cx);
                     }
                     Err(e) => {
                         log::warn!("Failed to upload avatar: {e}");
-                        this.uploading(false, cx);
                     }
                 };
+                this.uploading(false, cx);
             })
             .expect("Entity has been released");
         })
@@ -260,35 +292,27 @@ impl Render for UserProfile {
             .gap_3()
             .child(
                 v_flex()
+                    .relative()
                     .w_full()
                     .h_32()
-                    .bg(cx.theme().surface_background)
-                    .rounded(cx.theme().radius)
                     .items_center()
                     .justify_center()
                     .gap_2()
+                    .bg(cx.theme().surface_background)
+                    .rounded(cx.theme().radius)
                     .map(|this| {
                         let picture = self.avatar_input.read(cx).value();
-                        if picture.is_empty() {
-                            this.child(
-                                img("brand/avatar.png")
-                                    .rounded_full()
-                                    .size_10()
-                                    .flex_shrink_0(),
-                            )
+                        let source = if picture.is_empty() {
+                            "brand/avatar.png"
                         } else {
-                            this.child(
-                                img(picture.clone())
-                                    .rounded_full()
-                                    .size_10()
-                                    .flex_shrink_0(),
-                            )
-                        }
+                            picture.as_str()
+                        };
+                        this.child(img(source).rounded_full().size_10().flex_shrink_0())
                     })
                     .child(
                         Button::new("upload")
                             .icon(IconName::Upload)
-                            .label(t!("common.change"))
+                            .label("Change")
                             .ghost()
                             .small()
                             .disabled(self.uploading)
@@ -298,31 +322,72 @@ impl Render for UserProfile {
                     ),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
+                v_flex()
                     .gap_1()
                     .text_sm()
-                    .child(shared_t!("profile.label_name"))
+                    .child(SharedString::from("Name:"))
                     .child(TextInput::new(&self.name_input).small()),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
+                v_flex()
                     .gap_1()
                     .text_sm()
-                    .child(shared_t!("profile.label_website"))
-                    .child(TextInput::new(&self.website_input).small()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .text_sm()
-                    .child(shared_t!("profile.label_bio"))
+                    .child(SharedString::from("Bio:"))
                     .child(TextInput::new(&self.bio_input).small()),
             )
+            .child(
+                v_flex()
+                    .gap_1()
+                    .text_sm()
+                    .child(SharedString::from("Website:"))
+                    .child(TextInput::new(&self.website_input).small()),
+            )
+            .when_some(self.profile.as_ref(), |this, profile| {
+                let public_key = profile.public_key();
+                let display = SharedString::from(shorten_pubkey(profile.public_key(), 8));
+
+                this.child(div().my_1().h_px().w_full().bg(cx.theme().border))
+                    .child(
+                        v_flex()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().text_placeholder)
+                                    .font_semibold()
+                                    .child(SharedString::from("Public Key:")),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .w_full()
+                                    .h_12()
+                                    .justify_center()
+                                    .bg(cx.theme().surface_background)
+                                    .rounded(cx.theme().radius)
+                                    .text_sm()
+                                    .child(display)
+                                    .child(
+                                        Button::new("copy")
+                                            .icon({
+                                                if self.copied {
+                                                    IconName::CheckCircleFill
+                                                } else {
+                                                    IconName::Copy
+                                                }
+                                            })
+                                            .xsmall()
+                                            .ghost()
+                                            .on_click(cx.listener(move |this, _e, window, cx| {
+                                                this.copy(
+                                                    public_key.to_bech32().unwrap(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            })),
+                                    ),
+                            ),
+                    )
+            })
     }
 }
