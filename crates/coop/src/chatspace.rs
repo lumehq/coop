@@ -35,8 +35,8 @@ use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
 use crate::user::viewer;
 use crate::views::compose::compose_button;
-use crate::views::{onboarding, preferences, setup_relay, sidebar, startup, welcome};
-use crate::{login, new_identity, user};
+use crate::views::{onboarding, preferences, setup_relay, startup, welcome};
+use crate::{login, new_identity, sidebar, user};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     cx.new(|cx| ChatSpace::new(window, cx))
