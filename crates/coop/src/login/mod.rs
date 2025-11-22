@@ -111,7 +111,7 @@ impl Login {
     }
 
     fn login_with_bunker(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Ok(uri) = NostrConnectURI::parse(content) else {
+        let Ok(uri) = NostrConnectUri::parse(content) else {
             self.set_error(t!("login.bunker_invalid"), cx);
             return;
         };
@@ -165,7 +165,7 @@ impl Login {
     fn save_connection(
         &mut self,
         keys: &Keys,
-        uri: &NostrConnectURI,
+        uri: &NostrConnectUri,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::ops::Range;
 use std::time::Duration;
 
+use account::Account;
 use anyhow::{anyhow, Error};
 use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
 use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
@@ -30,7 +30,7 @@ use crate::actions::{RelayStatus, Reload};
 mod list_item;
 
 const FIND_DELAY: u64 = 600;
-const FIND_LIMIT: usize = 10;
+const FIND_LIMIT: usize = 20;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     cx.new(|cx| Sidebar::new(window, cx))
@@ -39,24 +39,24 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
 pub struct Sidebar {
     name: SharedString,
 
-    find_input: Entity<InputState>,
-    find_debouncer: DebouncedDelay<Self>,
-    finding: bool,
-
-    local_result: Entity<Option<Vec<Entity<Room>>>>,
-    global_result: Entity<Option<Vec<Entity<Room>>>>,
-
-    indicator: Entity<Option<RoomKind>>,
-    active_filter: Entity<RoomKind>,
-
     /// Focus handle for the sidebar
     focus_handle: FocusHandle,
 
     /// Image cache
     image_cache: Entity<RetainAllImageCache>,
 
+    /// Search results
+    search_results: Entity<Option<Vec<Entity<Room>>>>,
+
     /// Async search operation
     search_task: Option<Task<()>>,
+
+    find_input: Entity<InputState>,
+    find_debouncer: DebouncedDelay<Self>,
+    finding: bool,
+
+    indicator: Entity<Option<RoomKind>>,
+    active_filter: Entity<RoomKind>,
 
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 3]>,
@@ -66,8 +66,7 @@ impl Sidebar {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let active_filter = cx.new(|_| RoomKind::Ongoing);
         let indicator = cx.new(|_| None);
-        let local_result = cx.new(|_| None);
-        let global_result = cx.new(|_| None);
+        let search_results = cx.new(|_| None);
 
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("sidebar.search_label")));
@@ -131,29 +130,13 @@ impl Sidebar {
             indicator,
             active_filter,
             find_input,
-            local_result,
-            global_result,
+            search_results,
             search_task: None,
             _subscriptions: subscriptions,
         }
     }
 
-    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
-        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-        let kinds = vec![Kind::Metadata, Kind::ContactList];
-        let filter = Filter::new()
-            .author(public_key)
-            .limit(kinds.len())
-            .kinds(kinds);
-
-        client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-            .await?;
-
-        Ok(())
-    }
-
-    async fn nip50(client: &Client, query: &str) -> Result<HashSet<Room>, Error> {
+    async fn nip50(client: &Client, query: &str) -> Result<Vec<Event>, Error> {
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
@@ -162,11 +145,11 @@ impl Sidebar {
             .search(query.to_lowercase())
             .limit(FIND_LIMIT);
 
-        let mut rooms: HashSet<Room> = HashSet::new();
-
         let mut stream = client
             .stream_events_from(SEARCH_RELAYS, filter, Duration::from_secs(3))
             .await?;
+
+        let mut results: Vec<Event> = Vec::with_capacity(FIND_LIMIT);
 
         while let Some(event) = stream.next().await {
             // Skip if author is match current user
@@ -174,22 +157,35 @@ impl Sidebar {
                 continue;
             }
 
-            // Skip if content includes query
-            if event.content.contains(query) {
+            // Skip if the event has already been added
+            if results.iter().any(|this| this.pubkey == event.pubkey) {
                 continue;
             }
 
-            // Construct room
-            let receivers = vec![event.pubkey];
-            let room = Room::new(None, public_key, receivers);
-
-            // Request metadata event's author
-            Self::request_metadata(client, event.pubkey).await?;
-
-            rooms.insert(room);
+            results.push(event);
         }
 
-        Ok(rooms)
+        if results.is_empty() {
+            return Err(anyhow!("No results for query {query}"));
+        }
+
+        // Get all public keys
+        let public_keys: Vec<PublicKey> = results.iter().map(|event| event.pubkey).collect();
+
+        // Fetch metadata and contact lists if public keys is not empty
+        if !public_keys.is_empty() {
+            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+            let filter = Filter::new()
+                .kinds(vec![Kind::Metadata, Kind::ContactList])
+                .limit(public_keys.len() * 2)
+                .authors(public_keys);
+
+            client
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                .await?;
+        }
+
+        Ok(results)
     }
 
     fn debounced_search(&self, window: &mut Window, cx: &mut Context<Self>) -> Task<()> {
@@ -202,8 +198,12 @@ impl Sidebar {
     }
 
     fn search_by_nip50(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let account = Account::global(cx);
+        let public_key = account.read(cx).public_key();
+
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
+
         let query = query.to_owned();
 
         self.search_task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -212,17 +212,14 @@ impl Sidebar {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(results) => {
-                        if results.is_empty() {
-                            window.push_notification(
-                                format!("There are no users matching query {query}"),
-                                cx,
-                            );
-                        } else {
-                            let rooms: Vec<Entity<Room>> =
-                                results.into_iter().map(|room| cx.new(|_| room)).collect();
+                        let rooms = results
+                            .into_iter()
+                            .map(|event| {
+                                cx.new(|_| Room::new(None, public_key, vec![event.pubkey]))
+                            })
+                            .collect();
 
-                            this.results(rooms, true, cx);
-                        }
+                        this.set_results(rooms, cx);
                     }
                     Err(e) => {
                         window.push_notification(e.to_string(), cx);
@@ -259,7 +256,7 @@ impl Sidebar {
             this.update_in(cx, |this, window, cx| {
                 match result {
                     Ok(Ok(room)) => {
-                        this.results(vec![cx.new(|_| room)], true, cx);
+                        this.set_results(vec![cx.new(|_| room)], cx);
                     }
                     Ok(Err(e)) => {
                         window.push_notification(e.to_string(), cx);
@@ -287,11 +284,19 @@ impl Sidebar {
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
             let signer = client.signer().await?;
             let author = signer.get_public_key().await?;
+
+            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
             let receivers = vec![public_key];
             let room = Room::new(None, author, receivers);
 
-            // Request metadata event's author
-            Self::request_metadata(&client, public_key).await?;
+            let filter = Filter::new()
+                .kinds(vec![Kind::Metadata, Kind::ContactList])
+                .author(public_key)
+                .limit(2);
+
+            client
+                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                .await?;
 
             Ok(room)
         });
@@ -303,12 +308,12 @@ impl Sidebar {
                 match result {
                     Ok(room) => {
                         let chat = ChatRegistry::global(cx);
-                        let result = chat.read(cx).search_by_public_key(public_key, cx);
+                        let local_results = chat.read(cx).search_by_public_key(public_key, cx);
 
-                        if !result.is_empty() {
-                            this.results(result, false, cx);
+                        if !local_results.is_empty() {
+                            this.set_results(local_results, cx);
                         } else {
-                            this.results(vec![cx.new(|_| room)], true, cx);
+                            this.set_results(vec![cx.new(|_| room)], cx);
                         }
                     }
                     Err(e) => {
@@ -365,7 +370,7 @@ impl Sidebar {
 
         // Try to update with local results first
         if !local_results.is_empty() {
-            self.results(local_results, false, cx);
+            self.set_results(local_results, cx);
             return;
         };
 
@@ -373,18 +378,11 @@ impl Sidebar {
         self.search_by_nip50(&query, window, cx);
     }
 
-    fn results(&mut self, rooms: Vec<Entity<Room>>, global: bool, cx: &mut Context<Self>) {
-        if global {
-            self.global_result.update(cx, |this, cx| {
-                *this = Some(rooms);
-                cx.notify();
-            });
-        } else {
-            self.local_result.update(cx, |this, cx| {
-                *this = Some(rooms);
-                cx.notify();
-            });
-        }
+    fn set_results(&mut self, rooms: Vec<Entity<Room>>, cx: &mut Context<Self>) {
+        self.search_results.update(cx, |this, cx| {
+            *this = Some(rooms);
+            cx.notify();
+        });
     }
 
     fn set_finding(&mut self, status: bool, _window: &mut Window, cx: &mut Context<Self>) {
@@ -405,13 +403,7 @@ impl Sidebar {
         }
 
         // Clear all local results
-        self.local_result.update(cx, |this, cx| {
-            *this = None;
-            cx.notify();
-        });
-
-        // Clear all global results
-        self.global_result.update(cx, |this, cx| {
+        self.search_results.update(cx, |this, cx| {
             *this = None;
             cx.notify();
         });
@@ -437,7 +429,7 @@ impl Sidebar {
         let room = if let Some(room) = chat.read(cx).room(&id, cx) {
             room
         } else {
-            let Some(result) = self.global_result.read(cx).as_ref() else {
+            let Some(result) = self.search_results.read(cx).as_ref() else {
                 window.push_notification(t!("common.room_error"), cx);
                 return;
             };
@@ -608,12 +600,10 @@ impl Render for Sidebar {
         let loading = chat.read(cx).loading;
 
         // Get rooms from either search results or the chat registry
-        let rooms = if let Some(results) = self.local_result.read(cx).as_ref() {
-            results.to_owned()
-        } else if let Some(results) = self.global_result.read(cx).as_ref() {
+        let rooms = if let Some(results) = self.search_results.read(cx).as_ref() {
             results.to_owned()
         } else {
-            #[allow(clippy::collapsible_else_if)]
+            // Filter rooms based on the active filter
             if self.active_filter.read(cx) == &RoomKind::Ongoing {
                 chat.read(cx).ongoing_rooms(cx)
             } else {
@@ -652,13 +642,19 @@ impl Render for Sidebar {
                             .cleanable()
                             .appearance(true)
                             .text_xs()
-                            .suffix(
-                                Button::new("find")
-                                    .icon(IconName::Search)
-                                    .tooltip(t!("sidebar.search_tooltip"))
-                                    .transparent()
-                                    .small(),
-                            ),
+                            .map(|this| {
+                                if !self.find_input.read(cx).loading {
+                                    this.suffix(
+                                        Button::new("find")
+                                            .icon(IconName::Search)
+                                            .tooltip(t!("sidebar.search_tooltip"))
+                                            .transparent()
+                                            .small(),
+                                    )
+                                } else {
+                                    this
+                                }
+                            }),
                     ),
             )
             // Chat Rooms

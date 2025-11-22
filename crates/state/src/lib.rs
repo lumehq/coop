@@ -69,9 +69,15 @@ impl NostrRegistry {
                 timeout: Duration::from_secs(600),
             });
 
+        // Construct the lmdb
+        let lmdb = cx.background_executor().block(async move {
+            let path = config_dir().join("nostr");
+            NostrLMDB::open(path)
+                .await
+                .expect("Failed to initialize database")
+        });
+
         // Construct the nostr client
-        let path = config_dir().join("nostr");
-        let lmdb = NostrLMDB::open(path).expect("Failed to initialize database");
         let client = ClientBuilder::default().database(lmdb).opts(opts).build();
 
         let tracker = Arc::new(RwLock::new(EventTracker::default()));
