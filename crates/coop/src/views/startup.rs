@@ -76,7 +76,7 @@ impl Startup {
 
         // Try to login with bunker
         if secret.starts_with("bunker://") {
-            match NostrConnectURI::parse(secret) {
+            match NostrConnectUri::parse(secret) {
                 Ok(uri) => {
                     self.login_with_bunker(uri, window, cx);
                 }
@@ -102,7 +102,7 @@ impl Startup {
 
     fn login_with_bunker(
         &mut self,
-        uri: NostrConnectURI,
+        uri: NostrConnectUri,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

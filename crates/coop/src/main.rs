@@ -15,6 +15,7 @@ mod actions;
 mod chatspace;
 mod login;
 mod new_identity;
+mod sidebar;
 mod user;
 mod views;
 

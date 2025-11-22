@@ -78,7 +78,7 @@ impl Onboarding {
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
 
         let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
-        let uri = NostrConnectURI::client(app_keys.public_key(), vec![relay], CLIENT_NAME);
+        let uri = NostrConnectUri::client(app_keys.public_key(), vec![relay], CLIENT_NAME);
         let qr_code = uri.to_string().to_qr();
 
         // NIP46: https://github.com/nostr-protocol/nips/blob/master/46.md
@@ -119,7 +119,7 @@ impl Onboarding {
 
     fn save_connection(
         &mut self,
-        uri: &NostrConnectURI,
+        uri: &NostrConnectUri,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
