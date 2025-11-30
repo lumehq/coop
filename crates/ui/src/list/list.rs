@@ -629,7 +629,7 @@ where
                                             )
                                             .flex_grow()
                                             .with_sizing_behavior(sizing_behavior)
-                                            .track_scroll(vertical_scroll_handle)
+                                            .track_scroll(&vertical_scroll_handle)
                                             .into_any_element(),
                                         )
                                     })
