@@ -44,11 +44,11 @@ pub fn default_nip65_relays() -> &'static Vec<(RelayUrl, Option<RelayMetadata>)>
                 Some(RelayMetadata::Read),
             ),
             (
-                RelayUrl::parse("wss://nostr.oxtr.dev").unwrap(),
+                RelayUrl::parse("wss://nos.lol").unwrap(),
                 Some(RelayMetadata::Write),
             ),
             (
-                RelayUrl::parse("wss://nostr.fmt.wiz.biz").unwrap(),
+                RelayUrl::parse("wss://relay.snort.social").unwrap(),
                 Some(RelayMetadata::Write),
             ),
             (RelayUrl::parse("wss://relay.primal.net").unwrap(), None),

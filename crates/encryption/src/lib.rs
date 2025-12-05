@@ -198,7 +198,7 @@ impl Encryption {
     /// Get the announcement from the database
     fn get_announcement(&mut self, cx: &mut Context<Self>) {
         let task = self._get_announcement(cx);
-        let delay = Duration::from_secs(10);
+        let delay = Duration::from_secs(5);
 
         self._tasks.push(
             // Run task in the background
@@ -413,7 +413,7 @@ impl Encryption {
             let signer = client.signer().await?;
             let signer_pubkey = signer.get_public_key().await?;
             let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&signer_pubkey);
+            let write_relays = gossip.outbox_relays(&signer_pubkey);
 
             // Ensure connections to the write relays
             gossip.ensure_connections(&client, &write_relays).await;
@@ -479,7 +479,7 @@ impl Encryption {
                 }
                 None => {
                     let gossip = gossip.read().await;
-                    let write_relays = gossip.inbox_relays(&public_key);
+                    let write_relays = gossip.outbox_relays(&public_key);
 
                     // Ensure connections to the write relays
                     gossip.ensure_connections(&client, &write_relays).await;
@@ -532,7 +532,7 @@ impl Encryption {
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&public_key);
+            let write_relays = gossip.outbox_relays(&public_key);
 
             // Ensure connections to the write relays
             gossip.ensure_connections(&client, &write_relays).await;

@@ -194,7 +194,7 @@ impl EncryptionPanel {
     }
 
     fn ask_for_approval(&mut self, req: Announcement, window: &mut Window, cx: &mut Context<Self>) {
-        let client_name = SharedString::from(req.client().to_string());
+        let client_name = req.client_name();
         let target = req.public_key();
         let id = SharedString::from(req.id().to_hex());
         let loading = Rc::new(Cell::new(false));
@@ -302,7 +302,7 @@ impl Render for EncryptionPanel {
             .text_sm()
             .when_some(announcement.as_ref(), |this, announcement| {
                 let pubkey = shorten_pubkey(announcement.public_key(), 16);
-                let name = announcement.client();
+                let client_name = announcement.client_name();
 
                 this.child(
                     v_flex()
@@ -341,7 +341,7 @@ impl Render for EncryptionPanel {
                                         .justify_center()
                                         .rounded(cx.theme().radius)
                                         .bg(cx.theme().elevated_surface_background)
-                                        .child(name),
+                                        .child(client_name.clone()),
                                 ),
                         )
                         .child(

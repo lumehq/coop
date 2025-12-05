@@ -158,6 +158,8 @@ impl NostrRegistry {
                             let urls: Vec<RelayUrl> = Self::extract_write_relays(&event);
                             let author = event.pubkey;
 
+                            log::info!("Write relays: {urls:?}");
+
                             // Fetch user's encryption announcement event
                             Self::get(client, &urls, author, Kind::Custom(10044)).await;
                             // Fetch user's messaging relays event
@@ -305,7 +307,20 @@ impl NostrRegistry {
         Ok(())
     }
 
-    fn extract_write_relays(event: &Event) -> Vec<RelayUrl> {
+    pub fn extract_read_relays(event: &Event) -> Vec<RelayUrl> {
+        nip65::extract_relay_list(event)
+            .filter_map(|(url, metadata)| {
+                if metadata.is_none() || metadata == &Some(RelayMetadata::Read) {
+                    Some(url.to_owned())
+                } else {
+                    None
+                }
+            })
+            .take(3)
+            .collect()
+    }
+
+    pub fn extract_write_relays(event: &Event) -> Vec<RelayUrl> {
         nip65::extract_relay_list(event)
             .filter_map(|(url, metadata)| {
                 if metadata.is_none() || metadata == &Some(RelayMetadata::Write) {
@@ -332,8 +347,7 @@ impl NostrRegistry {
             .tags
             .find(TagKind::Client)
             .and_then(|tag| tag.content())
-            .map(|c| c.to_string())
-            .context("Cannot parse client name from the event's tags")?;
+            .map(|c| c.to_string());
 
         Ok(Announcement::new(event.id, client_name, public_key))
     }
