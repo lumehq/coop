@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context as AnyhowContext, Error};
 use common::{config_dir, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::{App, AppContext, Context, Entity, Global, Task};
-use nostr_lmdb::NostrLMDB;
+use nostr_lmdb::NostrLmdb;
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use smol::lock::RwLock;
@@ -72,7 +72,7 @@ impl NostrRegistry {
         // Construct the lmdb
         let lmdb = cx.background_executor().block(async move {
             let path = config_dir().join("nostr");
-            NostrLMDB::open(path)
+            NostrLmdb::open(path)
                 .await
                 .expect("Failed to initialize database")
         });
