@@ -607,7 +607,7 @@ impl ChatRegistry {
                 .await
             {
                 let seal: Event = Event::from_json(seal)?;
-                seal.verify_with_ctx(SECP256K1)?;
+                seal.verify_with_ctx(&SECP256K1)?;
 
                 // Decrypt the rumor
                 // TODO: verify the sender
