@@ -6,12 +6,12 @@ use gpui::{
     div, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
     Render, SharedString, Styled, Task, Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::divider::Divider;
+use gpui_component::input::{Input, InputState};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, StyledExt};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::input::{InputState, TextInput};
-use ui::{divider, h_flex, v_flex, Disableable, IconName, Sizable, StyledExt};
 
 pub fn init(keys: &Keys, window: &mut Window, cx: &mut App) -> Entity<Backup> {
     cx.new(|cx| Backup::new(keys, window, cx))
@@ -33,17 +33,8 @@ impl Backup {
         let Ok(npub) = keys.public_key.to_bech32();
         let Ok(nsec) = keys.secret_key().to_bech32();
 
-        let pubkey_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .disabled(true)
-                .default_value(npub)
-        });
-
-        let secret_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .disabled(true)
-                .default_value(nsec)
-        });
+        let pubkey_input = cx.new(|cx| InputState::new(window, cx).default_value(npub));
+        let secret_input = cx.new(|cx| InputState::new(window, cx).default_value(nsec));
 
         Self {
             pubkey_input,
@@ -146,17 +137,17 @@ impl Render for Backup {
                     .child(
                         h_flex()
                             .gap_1()
-                            .child(TextInput::new(&self.pubkey_input).small())
+                            .child(Input::new(&self.pubkey_input).small().disabled(true))
                             .child(
                                 Button::new("copy-pubkey")
                                     .icon({
                                         if self.copied {
-                                            IconName::CheckCircleFill
+                                            IconName::CircleCheck
                                         } else {
                                             IconName::Copy
                                         }
                                     })
-                                    .ghost_alt()
+                                    .ghost()
                                     .disabled(self.copied)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.copy(this.pubkey_input.read(cx).value(), window, cx);
@@ -166,11 +157,11 @@ impl Render for Backup {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(cx.theme().text_muted)
+                            .text_color(cx.theme().muted_foreground)
                             .child(SharedString::from(PK)),
                     ),
             )
-            .child(divider(cx))
+            .child(Divider::horizontal())
             .child(
                 v_flex()
                     .gap_1()
@@ -182,17 +173,17 @@ impl Render for Backup {
                     .child(
                         h_flex()
                             .gap_1()
-                            .child(TextInput::new(&self.secret_input).small())
+                            .child(Input::new(&self.secret_input).small().disabled(true))
                             .child(
                                 Button::new("copy-secret")
                                     .icon({
                                         if self.copied {
-                                            IconName::CheckCircleFill
+                                            IconName::CircleCheck
                                         } else {
                                             IconName::Copy
                                         }
                                     })
-                                    .ghost_alt()
+                                    .ghost()
                                     .disabled(self.copied)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.copy(this.secret_input.read(cx).value(), window, cx);
@@ -202,11 +193,11 @@ impl Render for Backup {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(cx.theme().text_muted)
+                            .text_color(cx.theme().muted_foreground)
                             .child(SharedString::from(SK)),
                     ),
             )
-            .child(divider(cx))
+            .child(Divider::horizontal())
             .child(
                 div()
                     .text_xs()

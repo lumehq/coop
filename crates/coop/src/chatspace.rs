@@ -13,6 +13,16 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dialog::DialogButtonProps;
+use gpui_component::dock::{DockArea, DockItem, DockPlacement, PanelView};
+use gpui_component::menu::DropdownMenu;
+use gpui_component::popover::Popover;
+use gpui_component::{
+    h_flex, v_flex, ActiveTheme, IconName, Root, Sizable, StyledExt, Theme, ThemeMode, TitleBar,
+    WindowExt,
+};
 use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
@@ -20,17 +30,6 @@ use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use theme::{ActiveTheme, Theme, ThemeMode};
-use title_bar::TitleBar;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::dock_area::dock::DockPlacement;
-use ui::dock_area::panel::PanelView;
-use ui::dock_area::{ClosePanel, DockArea, DockItem};
-use ui::modal::ModalButtonProps;
-use ui::popover::{Popover, PopoverContent};
-use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
 use crate::user::viewer;
@@ -54,9 +53,6 @@ pub fn new_account(window: &mut Window, cx: &mut App) {
 
 #[derive(Debug)]
 pub struct ChatSpace {
-    /// App's Title Bar
-    title_bar: Entity<TitleBar>,
-
     /// App's Dock Area
     dock: Entity<DockArea>,
 
@@ -75,10 +71,13 @@ impl ChatSpace {
         let chat = ChatRegistry::global(cx);
         let keystore = KeyStore::global(cx);
         let account = Account::global(cx);
-
-        let title_bar = cx.new(|_| TitleBar::new());
-        let dock = cx.new(|cx| DockArea::new(window, cx));
         let encryption_panel = encryption_ui::init(window, cx);
+
+        // App's dock area
+        let dock = cx.new(|cx| {
+            DockArea::new("dock", None, window, cx)
+                .panel_style(gpui_component::dock::PanelStyle::TabBar)
+        });
 
         let mut subscriptions = smallvec![];
 
@@ -141,18 +140,20 @@ impl ChatSpace {
                         if let Some(room) = chat.read(cx).room(id, cx) {
                             this.dock.update(cx, |this, cx| {
                                 let panel = chat_ui::init(room, window, cx);
-                                this.add_panel(Arc::new(panel), DockPlacement::Center, window, cx);
+                                this.add_panel(
+                                    Arc::new(panel),
+                                    DockPlacement::Center,
+                                    None,
+                                    window,
+                                    cx,
+                                );
                             });
                         }
                     }
                     ChatEvent::CloseRoom(..) => {
-                        this.dock.update(cx, |this, cx| {
-                            this.focus_tab_panel(window, cx);
-
-                            cx.defer_in(window, |_, window, cx| {
-                                window.dispatch_action(Box::new(ClosePanel), cx);
-                                window.close_all_modals(cx);
-                            });
+                        this.dock.update(cx, |_this, cx| {
+                            //window.dispatch_action(Box::new(ClosePanel), cx);
+                            window.close_all_dialogs(cx);
                         });
                     }
                     _ => {}
@@ -173,7 +174,6 @@ impl ChatSpace {
 
         Self {
             dock,
-            title_bar,
             encryption_panel,
             ready: false,
             _subscriptions: subscriptions,
@@ -185,7 +185,6 @@ impl ChatSpace {
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
-            this.reset(window, cx);
             this.set_center(center, window, cx);
         });
     }
@@ -195,7 +194,6 @@ impl ChatSpace {
         let center = DockItem::panel(panel);
 
         self.dock.update(cx, |this, cx| {
-            this.reset(window, cx);
             this.set_center(center, window, cx);
         });
     }
@@ -209,7 +207,7 @@ impl ChatSpace {
         let left = DockItem::panel(sidebar);
         let center = DockItem::split_with_sizes(
             Axis::Vertical,
-            vec![DockItem::tabs(vec![center], None, &weak_dock, window, cx)],
+            vec![DockItem::tabs(vec![center], &weak_dock, window, cx)],
             vec![None],
             &weak_dock,
             window,
@@ -226,7 +224,7 @@ impl ChatSpace {
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
         let view = preferences::init(window, cx);
 
-        window.open_modal(cx, move |modal, _window, _cx| {
+        window.open_dialog(cx, move |modal, _window, _cx| {
             modal
                 .title(shared_t!("common.preferences"))
                 .width(px(520.))
@@ -238,14 +236,14 @@ impl ChatSpace {
         let view = user::init(window, cx);
         let entity = view.downgrade();
 
-        window.open_modal(cx, move |modal, _window, _cx| {
+        window.open_dialog(cx, move |modal, _window, _cx| {
             let entity = entity.clone();
 
             modal
                 .title("Profile")
                 .confirm()
                 .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text("Update"))
+                .button_props(DialogButtonProps::default().ok_text("Update"))
                 .on_ok(move |_, window, cx| {
                     entity
                         .update(cx, |this, cx| {
@@ -261,7 +259,7 @@ impl ChatSpace {
                                             persons.update(cx, |this, cx| {
                                                 this.insert_or_update_person(profile, cx);
                                                 // Close the edit profile modal
-                                                window.close_all_modals(cx);
+                                                window.close_all_dialogs(cx);
                                             });
                                         }
                                         Err(e) => {
@@ -285,13 +283,13 @@ impl ChatSpace {
         let view = setup_relay::init(window, cx);
         let entity = view.downgrade();
 
-        window.open_modal(cx, move |this, _window, _cx| {
+        window.open_dialog(cx, move |this, _window, _cx| {
             let entity = entity.clone();
 
             this.confirm()
                 .title(shared_t!("relays.modal"))
                 .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text(t!("common.update")))
+                .button_props(DialogButtonProps::default().ok_text(t!("common.update")))
                 .on_ok(move |_, window, cx| {
                     entity
                         .update(cx, |this, cx| {
@@ -321,12 +319,12 @@ impl ChatSpace {
         let public_key = ev.0;
         let view = viewer::init(public_key, window, cx);
 
-        window.open_modal(cx, move |this, _window, _cx| {
+        window.open_dialog(cx, move |this, _window, _cx| {
             this.alert()
-                .show_close(true)
+                .close_button(true)
                 .overlay_closable(true)
                 .child(view.clone())
-                .button_props(ModalButtonProps::default().ok_text("View on njump.me"))
+                .button_props(DialogButtonProps::default().ok_text("View on njump.me"))
                 .on_ok(move |_, _window, cx| {
                     let bech32 = public_key.to_bech32().unwrap();
                     let url = format!("https://njump.me/{bech32}");
@@ -343,12 +341,12 @@ impl ChatSpace {
     fn on_copy_pubkey(&mut self, ev: &CopyPublicKey, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(bech32) = ev.0.to_bech32();
         cx.write_to_clipboard(ClipboardItem::new_string(bech32));
-        window.push_notification(t!("common.copied"), cx);
+        window.push_notification(shared_t!("common.copied"), cx);
     }
 
     fn on_keyring(&mut self, _ev: &KeyringPopup, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_modal(cx, move |this, _window, _cx| {
-            this.show_close(true)
+        window.open_dialog(cx, move |this, _window, _cx| {
+            this.close_button(true)
                 .title(shared_t!("keyring_disable.label"))
                 .child(
                     v_flex()
@@ -363,6 +361,7 @@ impl ChatSpace {
     }
 
     fn get_all_panels(&self, cx: &App) -> Option<Vec<u64>> {
+        /*
         let ids: Vec<u64> = self
             .dock
             .read(cx)
@@ -371,8 +370,10 @@ impl ChatSpace {
             .into_iter()
             .filter_map(|panel| panel.parse::<u64>().ok())
             .collect();
+        */
 
-        Some(ids)
+        //Some(ids)
+        None
     }
 
     fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
@@ -406,7 +407,7 @@ impl ChatSpace {
             .gap_2()
             .h_6()
             .w_full()
-            .child(compose_button())
+            .child(compose_button(cx))
             .when(status, |this| {
                 this.child(deferred(
                     h_flex()
@@ -415,7 +416,7 @@ impl ChatSpace {
                         .gap_1()
                         .text_xs()
                         .rounded_full()
-                        .bg(cx.theme().surface_background)
+                        .bg(cx.theme().muted)
                         .child(shared_t!("loading.label")),
                 ))
             })
@@ -435,26 +436,26 @@ impl ChatSpace {
                 AutoUpdateStatus::Checking => this.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().text_muted)
+                        .text_color(cx.theme().muted_foreground)
                         .child(SharedString::from("Checking for Coop updates...")),
                 ),
                 AutoUpdateStatus::Installing => this.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().text_muted)
+                        .text_color(cx.theme().muted_foreground)
                         .child(SharedString::from("Installing updates...")),
                 ),
                 AutoUpdateStatus::Errored { msg } => this.child(
                     div()
                         .text_xs()
-                        .text_color(cx.theme().text_muted)
+                        .text_color(cx.theme().muted_foreground)
                         .child(SharedString::from(msg.as_ref())),
                 ),
                 AutoUpdateStatus::Updated => this.child(
                     div()
                         .id("restart")
                         .text_xs()
-                        .text_color(cx.theme().text_muted)
+                        .text_color(cx.theme().muted_foreground)
                         .child(SharedString::from("Updated. Click to restart"))
                         .on_click(|_ev, _window, cx| {
                             cx.restart();
@@ -472,7 +473,7 @@ impl ChatSpace {
                         .justify_center()
                         .text_xs()
                         .rounded_full()
-                        .bg(cx.theme().warning_background)
+                        .bg(cx.theme().warning)
                         .text_color(cx.theme().warning_foreground)
                         .hover(|this| this.bg(cx.theme().warning_hover))
                         .active(|this| this.bg(cx.theme().warning_active))
@@ -511,53 +512,47 @@ impl ChatSpace {
                                 .trigger(
                                     Button::new("encryption-trigger")
                                         .tooltip("Manage Encryption Key")
-                                        .icon(IconName::Encryption)
-                                        .rounded()
+                                        //.icon(IconName::Encryption)
+                                        .rounded(cx.theme().radius)
                                         .small()
-                                        .cta()
                                         .map(|this| match has_encryption {
-                                            true => this.ghost_alt(),
+                                            true => this.link(),
                                             false => this.warning(),
                                         }),
                                 )
-                                .content(move |window, cx| {
+                                .content(move |_this, _window, _cx| {
                                     let encryption_panel = encryption_panel.clone();
 
-                                    cx.new(|cx| {
-                                        PopoverContent::new(window, cx, move |_window, _cx| {
-                                            if let Some(view) = encryption_panel.upgrade() {
-                                                view.clone().into_any_element()
-                                            } else {
-                                                div().into_any_element()
-                                            }
-                                        })
-                                    })
+                                    if let Some(view) = encryption_panel.upgrade() {
+                                        view.clone().into_any_element()
+                                    } else {
+                                        div().into_any_element()
+                                    }
                                 }),
                         )
                         .child(
                             Button::new("user")
                                 .small()
-                                .reverse()
-                                .transparent()
-                                .icon(IconName::CaretDown)
-                                .child(Avatar::new(profile.avatar(proxy)).size(rems(1.45)))
-                                .popup_menu(move |this, _window, _cx| {
+                                .text()
+                                //.icon(IconName::CaretDown)
+                                .child(Avatar::new().src(profile.avatar(proxy)).size(rems(1.45)))
+                                .dropdown_menu(move |this, _window, _cx| {
                                     this.label(profile.display_name())
                                         .menu_with_icon(
                                             "Profile",
-                                            IconName::EmojiFill,
+                                            IconName::ArrowUp,
                                             Box::new(ViewProfile),
                                         )
                                         .menu_with_icon(
                                             "Messaging Relays",
-                                            IconName::Server,
+                                            IconName::ArrowUp,
                                             Box::new(ViewRelays),
                                         )
                                         .separator()
                                         .label(SharedString::from("Keyring Service"))
                                         .menu_with_icon_and_disabled(
                                             keyring_label.clone(),
-                                            IconName::Encryption,
+                                            IconName::ArrowUp,
                                             Box::new(KeyringPopup),
                                             !is_using_file_keystore,
                                         )
@@ -574,7 +569,7 @@ impl ChatSpace {
                                         )
                                         .menu_with_icon(
                                             "Sign Out",
-                                            IconName::Logout,
+                                            IconName::ArrowUp,
                                             Box::new(Logout),
                                         )
                                 }),
@@ -583,13 +578,13 @@ impl ChatSpace {
             })
     }
 
-    fn titlebar_center(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn titlebar_center(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entity = cx.entity().downgrade();
-        let panel = self.dock.read(cx).items.view();
-        let title = panel.title(cx);
-        let id = panel.panel_id(cx);
+        let panel = self.dock.read(cx).items().view();
+        let title = panel.title(window, cx);
+        let name = panel.panel_name(cx);
 
-        if id == "Onboarding" {
+        if name == "Onboarding" {
             return div();
         };
 
@@ -605,8 +600,8 @@ impl ChatSpace {
                     Button::new("back")
                         .icon(IconName::ArrowLeft)
                         .small()
-                        .ghost_alt()
-                        .rounded()
+                        .ghost()
+                        .rounded(cx.theme().radius)
                         .on_click(move |_ev, window, cx| {
                             entity
                                 .update(cx, |this, cx| {
@@ -623,22 +618,8 @@ impl ChatSpace {
 
 impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let modal_layer = Root::render_modal_layer(window, cx);
+        let modal_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
-
-        let left = self.titlebar_left(window, cx).into_any_element();
-        let right = self.titlebar_right(window, cx).into_any_element();
-        let center = self.titlebar_center(cx).into_any_element();
-        let single_panel = self.dock.read(cx).items.panel_ids(cx).is_empty();
-
-        // Update title bar children
-        self.title_bar.update(cx, |this, _cx| {
-            if single_panel {
-                this.set_children(vec![center]);
-            } else {
-                this.set_children(vec![left, right]);
-            }
-        });
 
         div()
             .id(SharedString::from("chatspace"))
@@ -656,7 +637,7 @@ impl Render for ChatSpace {
                 v_flex()
                     .size_full()
                     // Title Bar
-                    .child(self.title_bar.clone())
+                    .child(TitleBar::new())
                     // Dock
                     .child(self.dock.clone()),
             )

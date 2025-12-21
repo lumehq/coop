@@ -7,7 +7,6 @@ publish.workspace = true
 [dependencies]
 common = { path = "../common" }
 theme = { path = "../theme" }
-ui = { path = "../ui" }
 
 rust-i18n.workspace = true
 i18n.workspace = true

@@ -6,8 +6,6 @@ publish.workspace = true
 
 [dependencies]
 state = { path = "../state" }
-ui = { path = "../ui" }
-theme = { path = "../theme" }
 common = { path = "../common" }
 account = { path = "../account" }
 encryption = { path = "../encryption" }
@@ -15,6 +13,7 @@ person = { path = "../person" }
 settings = { path = "../settings" }
 
 gpui.workspace = true
+gpui-component.workspace = true
 
 nostr-sdk.workspace = true
 anyhow.workspace = true

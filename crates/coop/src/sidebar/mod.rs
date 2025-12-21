@@ -7,9 +7,16 @@ use chat::{ChatEvent, ChatRegistry, Room, RoomKind};
 use common::{DebouncedDelay, RenderedTimestamp, TextUtils, BOOTSTRAP_RELAYS, SEARCH_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, relative, uniform_list, AnyElement, App, AppContext, Context, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
+    deferred, div, relative, uniform_list, App, AppContext, Context, Entity, EventEmitter,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
     RetainAllImageCache, SharedString, Styled, Subscription, Task, Window,
+};
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::menu::DropdownMenu;
+use gpui_component::{
+    h_flex, v_flex, ActiveTheme, Icon, IconName, Selectable, Sizable, StyledExt, WindowExt,
 };
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
@@ -18,12 +25,6 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::{NostrRegistry, GIFTWRAP_SUBSCRIPTION};
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::input::{InputEvent, InputState, TextInput};
-use ui::popup_menu::PopupMenuExt;
-use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Selectable, Sizable, StyledExt};
 
 use crate::actions::{RelayStatus, Reload};
 
@@ -385,12 +386,11 @@ impl Sidebar {
         });
     }
 
-    fn set_finding(&mut self, status: bool, _window: &mut Window, cx: &mut Context<Self>) {
+    fn set_finding(&mut self, status: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.finding = status;
         // Disable the input to prevent duplicate requests
         self.find_input.update(cx, |this, cx| {
-            this.set_disabled(status, cx);
-            this.set_loading(status, cx);
+            this.set_loading(status, window, cx);
         });
 
         cx.notify();
@@ -430,12 +430,12 @@ impl Sidebar {
             room
         } else {
             let Some(result) = self.search_results.read(cx).as_ref() else {
-                window.push_notification(t!("common.room_error"), cx);
+                window.push_notification(shared_t!("common.room_error"), cx);
                 return;
             };
 
             let Some(room) = result.iter().find(|this| this.read(cx).id == id).cloned() else {
-                window.push_notification(t!("common.room_error"), cx);
+                window.push_notification(shared_t!("common.room_error"), cx);
                 return;
             };
 
@@ -454,7 +454,7 @@ impl Sidebar {
         ChatRegistry::global(cx).update(cx, |this, cx| {
             this.get_rooms(cx);
         });
-        window.push_notification(t!("common.refreshed"), cx);
+        window.push_notification(shared_t!("common.refreshed"), cx);
     }
 
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
@@ -486,8 +486,8 @@ impl Sidebar {
     }
 
     fn manage_relays(&mut self, relays: Vec<Relay>, window: &mut Window, cx: &mut Context<Self>) {
-        window.open_modal(cx, move |this, _window, cx| {
-            this.show_close(true)
+        window.open_dialog(cx, move |this, _window, cx| {
+            this.close_button(true)
                 .overlay_closable(true)
                 .keyboard(true)
                 .title(shared_t!("manage_relays.modal"))
@@ -505,14 +505,14 @@ impl Sidebar {
                                 .px_2()
                                 .justify_between()
                                 .text_xs()
-                                .bg(cx.theme().elevated_surface_background)
+                                .bg(cx.theme().list)
                                 .rounded(cx.theme().radius)
                                 .child(
                                     h_flex()
                                         .gap_1()
                                         .font_semibold()
                                         .child(
-                                            Icon::new(IconName::Signal)
+                                            Icon::new(IconName::Plus)
                                                 .small()
                                                 .text_color(cx.theme().danger_active)
                                                 .when(connected, |this| {
@@ -524,7 +524,7 @@ impl Sidebar {
                                 .child(
                                     div()
                                         .text_right()
-                                        .text_color(cx.theme().text_muted)
+                                        .text_color(cx.theme().muted_foreground)
                                         .child(shared_t!("manage_relays.time", t = time)),
                                 ),
                         );
@@ -577,12 +577,12 @@ impl Sidebar {
 }
 
 impl Panel for Sidebar {
-    fn panel_id(&self) -> SharedString {
-        self.name.clone()
+    fn panel_name(&self) -> &'static str {
+        "Sidebar"
     }
 
-    fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
+    fn title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().child("Sidebar")
     }
 }
 
@@ -637,24 +637,18 @@ impl Render for Sidebar {
                     .flex_none()
                     .flex()
                     .child(
-                        TextInput::new(&self.find_input)
+                        Input::new(&self.find_input)
                             .small()
-                            .cleanable()
+                            .cleanable(true)
                             .appearance(true)
                             .text_xs()
-                            .map(|this| {
-                                if !self.find_input.read(cx).loading {
-                                    this.suffix(
-                                        Button::new("find")
-                                            .icon(IconName::Search)
-                                            .tooltip(t!("sidebar.search_tooltip"))
-                                            .transparent()
-                                            .small(),
-                                    )
-                                } else {
-                                    this
-                                }
-                            }),
+                            .suffix(
+                                Button::new("find")
+                                    .icon(IconName::Search)
+                                    .tooltip(t!("sidebar.search_tooltip"))
+                                    .text()
+                                    .small(),
+                            ),
                     ),
             )
             // Chat Rooms
@@ -678,15 +672,13 @@ impl Render for Sidebar {
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
                                             this.child(
-                                                div().size_1().rounded_full().bg(cx.theme().cursor),
+                                                div().size_1().rounded_full().bg(cx.theme().caret),
                                             )
                                         })
                                     })
                                     .small()
-                                    .cta()
-                                    .bold()
-                                    .secondary()
-                                    .rounded()
+                                    .ghost()
+                                    .rounded(cx.theme().radius)
                                     .selected(self.filter(&RoomKind::Ongoing, cx))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::Ongoing, cx);
@@ -699,15 +691,13 @@ impl Render for Sidebar {
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
                                             this.child(
-                                                div().size_1().rounded_full().bg(cx.theme().cursor),
+                                                div().size_1().rounded_full().bg(cx.theme().caret),
                                             )
                                         })
                                     })
                                     .small()
-                                    .cta()
-                                    .bold()
-                                    .secondary()
-                                    .rounded()
+                                    .ghost()
+                                    .rounded(cx.theme().radius)
                                     .selected(!self.filter(&RoomKind::Ongoing, cx))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_filter(RoomKind::default(), cx);
@@ -725,8 +715,8 @@ impl Render for Sidebar {
                                             .icon(IconName::Ellipsis)
                                             .xsmall()
                                             .ghost()
-                                            .rounded()
-                                            .popup_menu(move |this, _window, _cx| {
+                                            .rounded(cx.theme().radius)
+                                            .dropdown_menu(move |this, _window, _cx| {
                                                 this.menu(
                                                     t!("sidebar.reload_menu"),
                                                     Box::new(Reload),
@@ -760,7 +750,7 @@ impl Render for Sidebar {
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .text_color(cx.theme().text_muted)
+                                                .text_color(cx.theme().muted_foreground)
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("sidebar.no_conversations_label")),
                                         ),
@@ -784,7 +774,7 @@ impl Render for Sidebar {
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .text_color(cx.theme().text_muted)
+                                                .text_color(cx.theme().muted_foreground)
                                                 .line_height(relative(1.25))
                                                 .child(shared_t!("sidebar.no_requests_label")),
                                         ),

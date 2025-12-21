@@ -11,7 +11,6 @@ use gpui::{
 use smallvec::{smallvec, SmallVec};
 use theme::platform_kind::PlatformKind;
 use theme::{ActiveTheme, CLIENT_SIDE_DECORATION_ROUNDING};
-use ui::h_flex;
 
 #[cfg(target_os = "linux")]
 use crate::platforms::linux::LinuxWindowControls;
@@ -83,7 +82,9 @@ impl Render for TitleBar {
         let color = self.title_bar_color(window, cx);
         let children = mem::take(&mut self.children);
 
-        h_flex()
+        div()
+            .flex()
+            .items_center()
             .window_control_area(WindowControlArea::Drag)
             .w_full()
             .h(height)

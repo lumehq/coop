@@ -8,14 +8,13 @@ use gpui::{
     ParentElement, Render, SharedString, Styled, Subscription, Task, TextAlign, UniformList,
     Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, WindowExt};
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::input::{InputEvent, InputState, TextInput};
-use ui::{h_flex, v_flex, ContextModal, IconName, Sizable};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<SetupRelay> {
     cx.new(|cx| SetupRelay::new(window, cx))
@@ -193,7 +192,7 @@ impl SetupRelay {
             match task.await {
                 Ok(_) => {
                     cx.update(|window, cx| {
-                        window.close_modal(cx);
+                        window.close_dialog(cx);
                     })
                     .ok();
                 }
@@ -236,7 +235,7 @@ impl SetupRelay {
                                         .items_center()
                                         .justify_between()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
+                                        .bg(cx.theme().muted)
                                         .text_xs()
                                         .child(SharedString::from(url.to_string()))
                                         .child(
@@ -283,7 +282,7 @@ impl Render for SetupRelay {
             .text_sm()
             .child(
                 div()
-                    .text_color(cx.theme().text_muted)
+                    .text_color(cx.theme().muted_foreground)
                     .child(shared_t!("relays.description")),
             )
             .child(
@@ -293,10 +292,10 @@ impl Render for SetupRelay {
                         h_flex()
                             .gap_1()
                             .w_full()
-                            .child(TextInput::new(&self.input).small())
+                            .child(Input::new(&self.input).small())
                             .child(
                                 Button::new("add")
-                                    .icon(IconName::PlusFill)
+                                    .icon(IconName::Plus)
                                     .label(t!("common.add"))
                                     .ghost()
                                     .on_click(cx.listener(move |this, _, window, cx| {

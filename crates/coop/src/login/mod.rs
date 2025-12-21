@@ -4,20 +4,19 @@ use anyhow::anyhow;
 use common::BUNKER_TIMEOUT;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
-    Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
+    div, relative, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::notification::Notification;
+use gpui_component::{v_flex, ActiveTheme, Disableable, StyledExt, WindowExt};
 use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::input::{InputEvent, InputState, TextInput};
-use ui::notification::Notification;
-use ui::{v_flex, ContextModal, Disableable, StyledExt};
 
 use crate::actions::CoopAuthUrlHandler;
 
@@ -27,16 +26,25 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
 
 #[derive(Debug)]
 pub struct Login {
-    key_input: Entity<InputState>,
-    pass_input: Entity<InputState>,
-    error: Entity<Option<SharedString>>,
-    countdown: Entity<Option<u64>>,
-    require_password: bool,
-    logging_in: bool,
-
-    /// Panel
-    name: SharedString,
     focus_handle: FocusHandle,
+
+    /// Input for nsec or bunker uri
+    key_input: Entity<InputState>,
+
+    /// Input for password if required
+    pass_input: Entity<InputState>,
+
+    /// Error message
+    error: Entity<Option<SharedString>>,
+
+    /// Countdown timer
+    countdown: Entity<Option<u64>>,
+
+    /// Whether the key requires a password for decryption
+    require_password: bool,
+
+    /// Whether the login process is in progress
+    logging_in: bool,
 
     /// Event subscriptions
     _subscriptions: SmallVec<[Subscription; 1]>,
@@ -71,12 +79,11 @@ impl Login {
         );
 
         Self {
+            focus_handle: cx.focus_handle(),
             key_input,
             pass_input,
             error,
             countdown,
-            name: "Welcome Back".into(),
-            focus_handle: cx.focus_handle(),
             logging_in: false,
             require_password: false,
             _subscriptions: subscriptions,
@@ -336,12 +343,12 @@ impl Login {
 }
 
 impl Panel for Login {
-    fn panel_id(&self) -> SharedString {
-        self.name.clone()
+    fn panel_name(&self) -> &'static str {
+        "Login"
     }
 
-    fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().child("Welcome Back")
     }
 }
 
@@ -380,18 +387,18 @@ impl Render for Login {
                                 v_flex()
                                     .gap_1()
                                     .text_sm()
-                                    .text_color(cx.theme().text_muted)
+                                    .text_color(cx.theme().muted_foreground)
                                     .child("nsec or bunker://")
-                                    .child(TextInput::new(&self.key_input)),
+                                    .child(Input::new(&self.key_input)),
                             )
                             .when(self.require_password, |this| {
                                 this.child(
                                     v_flex()
                                         .gap_1()
                                         .text_sm()
-                                        .text_color(cx.theme().text_muted)
+                                        .text_color(cx.theme().muted_foreground)
                                         .child("Password:")
-                                        .child(TextInput::new(&self.pass_input)),
+                                        .child(Input::new(&self.pass_input)),
                                 )
                             })
                             .child(
@@ -409,7 +416,7 @@ impl Render for Login {
                                     div()
                                         .text_xs()
                                         .text_center()
-                                        .text_color(cx.theme().text_muted)
+                                        .text_color(cx.theme().muted_foreground)
                                         .child(shared_t!("login.approve_message", i = i)),
                                 )
                             })

@@ -6,11 +6,11 @@ use gpui::{
     AnyElement, App, ElementId, HighlightStyle, InteractiveText, IntoElement, SharedString,
     StyledText, UnderlineStyle, Window,
 };
+use gpui_component::ActiveTheme;
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use person::PersonRegistry;
 use regex::Regex;
-use theme::ActiveTheme;
 
 use crate::actions::OpenPublicKey;
 
@@ -62,7 +62,7 @@ impl RenderedText {
     }
 
     pub fn element(&self, id: ElementId, window: &Window, cx: &App) -> AnyElement {
-        let link_color = cx.theme().text_accent;
+        let link_color = cx.theme().primary_foreground;
 
         InteractiveText::new(
             id,

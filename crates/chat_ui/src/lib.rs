@@ -7,11 +7,22 @@ use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
 use encryption::SignerKind;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
-    ClipboardItem, Context, Element, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit,
-    ParentElement, PathPromptOptions, Render, RetainAllImageCache, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Subscription, Task, Window,
+    div, img, list, px, red, relative, svg, white, AnyElement, App, AppContext, ClipboardItem,
+    Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ListAlignment, ListOffset, ListState, MouseButton, ObjectFit, ParentElement,
+    PathPromptOptions, Render, RetainAllImageCache, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, Subscription, Task, Window,
+};
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dialog::DialogButtonProps;
+use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::menu::{ContextMenuExt, DropdownMenu};
+use gpui_component::notification::Notification;
+use gpui_component::{
+    h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
+    StyledExt, WindowExt,
 };
 use gpui_tokio::Tokio;
 use indexset::{BTreeMap, BTreeSet};
@@ -22,19 +33,6 @@ use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::context_menu::ContextMenuExt;
-use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::input::{InputEvent, InputState, TextInput};
-use ui::modal::ModalButtonProps;
-use ui::notification::Notification;
-use ui::popup_menu::PopupMenuExt;
-use ui::{
-    h_flex, v_flex, ContextModal, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
-    StyledExt,
-};
 
 use crate::emoji::EmojiPicker;
 use crate::text::RenderedText;
@@ -82,7 +80,6 @@ impl ChatPanel {
             InputState::new(window, cx)
                 .placeholder("Message...")
                 .auto_grow(1, 20)
-                .prevent_new_line_on_enter()
                 .clean_on_escape()
         });
 
@@ -262,8 +259,7 @@ impl ChatPanel {
 
         // Temporary disable the message input
         self.input.update(cx, |this, cx| {
-            this.set_loading(false, cx);
-            this.set_disabled(false, cx);
+            this.set_loading(false, window, cx);
             this.set_value("", window, cx);
         });
 
@@ -294,8 +290,7 @@ impl ChatPanel {
                 this.remove_all_replies(cx);
                 this.remove_all_attachments(cx);
                 this.input.update(cx, |this, cx| {
-                    this.set_loading(false, cx);
-                    this.set_disabled(false, cx);
+                    this.set_loading(false, window, cx);
                     this.set_value("", window, cx);
                 });
             })
@@ -584,13 +579,13 @@ impl ChatPanel {
             .justify_center()
             .text_center()
             .text_xs()
-            .text_color(cx.theme().text_placeholder)
+            .text_color(cx.theme().muted_foreground)
             .line_height(relative(1.3))
             .child(
                 svg()
                     .path("brand/coop.svg")
                     .size_10()
-                    .text_color(cx.theme().elevated_surface_background),
+                    .text_color(cx.theme().muted),
             )
             .child(SharedString::from(
                 "This conversation is private. Only members can see each other's messages.",
@@ -605,14 +600,15 @@ impl ChatPanel {
             .w_full()
             .py_1()
             .px_3()
-            .bg(cx.theme().warning_background)
+            .bg(cx.theme().warning)
             .child(
-                h_flex()
+                Avatar::new()
+                    .src("brand/system.png")
+                    .name(content)
+                    .small()
                     .gap_3()
                     .text_sm()
-                    .text_color(cx.theme().warning_foreground)
-                    .child(Avatar::new("brand/system.png").size(rems(2.)))
-                    .child(content),
+                    .text_color(cx.theme().warning_foreground),
             )
             .child(
                 div()
@@ -691,7 +687,7 @@ impl ChatPanel {
                         this.child(
                             div()
                                 .id(SharedString::from(format!("{ix}-avatar")))
-                                .child(Avatar::new(author.avatar(proxy)).size(rems(2.)))
+                                .child(Avatar::new().src(author.avatar(proxy)).small())
                                 .context_menu(move |this, _window, _cx| {
                                     let view = Box::new(OpenPublicKey(public_key));
                                     let copy = Box::new(CopyPublicKey(public_key));
@@ -711,11 +707,11 @@ impl ChatPanel {
                                 h_flex()
                                     .gap_2()
                                     .text_sm()
-                                    .text_color(cx.theme().text_placeholder)
+                                    .text_color(cx.theme().muted)
                                     .child(
                                         div()
                                             .font_semibold()
-                                            .text_color(cx.theme().text)
+                                            .text_color(cx.theme().foreground)
                                             .child(author.display_name()),
                                     )
                                     .child(message.created_at.to_human_time())
@@ -745,7 +741,7 @@ impl ChatPanel {
             .on_double_click(cx.listener(move |this, _, _window, cx| {
                 this.reply_to(&id, cx);
             }))
-            .hover(|this| this.bg(cx.theme().surface_background))
+            .hover(|this| this.bg(cx.theme().list_hover))
             .into_any_element()
     }
 
@@ -768,11 +764,11 @@ impl ChatPanel {
                     .w_full()
                     .px_2()
                     .border_l_2()
-                    .border_color(cx.theme().element_selected)
+                    .border_color(cx.theme().primary_active)
                     .text_sm()
                     .child(
                         div()
-                            .text_color(cx.theme().text_accent)
+                            .text_color(cx.theme().secondary_foreground)
                             .child(author.display_name()),
                     )
                     .child(
@@ -782,7 +778,7 @@ impl ChatPanel {
                             .line_clamp(1)
                             .child(SharedString::from(&message.content)),
                     )
-                    .hover(|this| this.bg(cx.theme().elevated_surface_background))
+                    .hover(|this| this.bg(cx.theme().secondary_hover))
                     .on_click({
                         let id = *id;
                         cx.listener(move |this, _event, _window, _cx| {
@@ -803,8 +799,8 @@ impl ChatPanel {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
-                    window.open_modal(cx, move |this, _window, cx| {
-                        this.show_close(true)
+                    window.open_dialog(cx, move |this, _window, cx| {
+                        this.close_button(true)
                             .title(SharedString::from("Sent Reports"))
                             .child(v_flex().pb_4().gap_4().children({
                                 let mut items = Vec::with_capacity(reports.len());
@@ -835,8 +831,8 @@ impl ChatPanel {
                 this.on_click(move |_e, window, cx| {
                     let reports = reports.clone();
 
-                    window.open_modal(cx, move |this, _window, cx| {
-                        this.show_close(true)
+                    window.open_dialog(cx, move |this, _window, cx| {
+                        this.close_button(true)
                             .title(SharedString::from("Sent Reports"))
                             .child(v_flex().gap_4().pb_4().w_full().children({
                                 let mut items = Vec::with_capacity(reports.len());
@@ -867,11 +863,12 @@ impl ChatPanel {
                     .text_sm()
                     .child(SharedString::from("Sent to:"))
                     .child(
-                        h_flex()
+                        Avatar::new()
+                            .src(avatar)
+                            .name(name.clone())
+                            .xsmall()
                             .gap_1()
-                            .font_semibold()
-                            .child(Avatar::new(avatar).size(rems(1.25)))
-                            .child(name.clone()),
+                            .font_semibold(),
                     ),
             )
             .when(report.relays_not_found, |this| {
@@ -884,7 +881,7 @@ impl ChatPanel {
                         .w_full()
                         .text_sm()
                         .rounded(cx.theme().radius)
-                        .bg(cx.theme().danger_background)
+                        .bg(cx.theme().danger)
                         .text_color(cx.theme().danger_foreground)
                         .child(
                             div()
@@ -905,7 +902,7 @@ impl ChatPanel {
                         .w_full()
                         .text_sm()
                         .rounded(cx.theme().radius)
-                        .bg(cx.theme().danger_background)
+                        .bg(cx.theme().danger)
                         .text_color(cx.theme().danger_foreground)
                         .child(
                             div()
@@ -926,7 +923,7 @@ impl ChatPanel {
                         .w_full()
                         .text_sm()
                         .rounded(cx.theme().radius)
-                        .bg(cx.theme().danger_background)
+                        .bg(cx.theme().danger)
                         .text_color(cx.theme().danger_foreground)
                         .child(div().flex_1().w_full().text_center().child(error)),
                 )
@@ -947,7 +944,7 @@ impl ChatPanel {
                                         .px_2()
                                         .w_full()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
+                                        .bg(cx.theme().muted)
                                         .child(
                                             div()
                                                 .text_xs()
@@ -978,7 +975,7 @@ impl ChatPanel {
                                         .px_2()
                                         .w_full()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
+                                        .bg(cx.theme().muted)
                                         .child(
                                             div()
                                                 .text_xs()
@@ -1004,13 +1001,13 @@ impl ChatPanel {
 
     fn render_border(&self, cx: &Context<Self>) -> impl IntoElement {
         div()
-            .group_hover("", |this| this.bg(cx.theme().element_active))
+            .group_hover("", |this| this.bg(cx.theme().primary_active))
             .absolute()
             .left_0()
             .top_0()
             .w(px(2.))
             .h_full()
-            .bg(cx.theme().border_transparent)
+            .bg(gpui::transparent_black())
     }
 
     fn render_actions(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
@@ -1028,7 +1025,7 @@ impl ChatPanel {
             .bg(cx.theme().background)
             .child(
                 Button::new("reply")
-                    .icon(IconName::Reply)
+                    //.icon(IconName::Reply)
                     .tooltip("Reply")
                     .small()
                     .ghost()
@@ -1058,7 +1055,7 @@ impl ChatPanel {
                     .icon(IconName::Ellipsis)
                     .small()
                     .ghost()
-                    .popup_menu({
+                    .dropdown_menu({
                         let id = id.to_owned();
                         move |this, _, _| this.menu("Seen on", Box::new(SeenOn(id)))
                     }),
@@ -1122,7 +1119,7 @@ impl ChatPanel {
                 .w_full()
                 .pl_2()
                 .border_l_2()
-                .border_color(cx.theme().element_active)
+                .border_color(cx.theme().primary_active)
                 .child(
                     div()
                         .flex()
@@ -1134,11 +1131,11 @@ impl ChatPanel {
                                 .items_baseline()
                                 .gap_1()
                                 .text_xs()
-                                .text_color(cx.theme().text_muted)
+                                .text_color(cx.theme().muted)
                                 .child(SharedString::from("Replying to:"))
                                 .child(
                                     div()
-                                        .text_color(cx.theme().text_accent)
+                                        .text_color(cx.theme().primary_foreground)
                                         .child(profile.display_name()),
                                 ),
                         )
@@ -1192,21 +1189,21 @@ impl ChatPanel {
             .map(|subject| subject.to_string());
 
         Button::new("subject")
-            .icon(IconName::Edit)
+            //.icon(IconName::Edit)
             .tooltip("Change the subject of the conversation")
             .on_click(move |_, window, cx| {
                 let view = subject::init(subject.clone(), window, cx);
                 let room = room.clone();
                 let weak_view = view.downgrade();
 
-                window.open_modal(cx, move |this, _window, _cx| {
+                window.open_dialog(cx, move |this, _window, _cx| {
                     let room = room.clone();
                     let weak_view = weak_view.clone();
 
                     this.confirm()
                         .title("Change the subject of the conversation")
                         .child(view.clone())
-                        .button_props(ModalButtonProps::default().ok_text("Change"))
+                        .button_props(DialogButtonProps::default().ok_text("Change"))
                         .on_ok(move |_, _window, cx| {
                             if let Ok(subject) =
                                 weak_view.read_with(cx, |this, cx| this.new_subject(cx))
@@ -1227,7 +1224,7 @@ impl ChatPanel {
         let room = self.room.downgrade();
 
         Button::new("reload")
-            .icon(IconName::Refresh)
+            //.icon(IconName::Refresh)
             .tooltip("Reload")
             .on_click(move |_ev, window, cx| {
                 _ = room.update(cx, |this, cx| {
@@ -1266,8 +1263,8 @@ impl ChatPanel {
         cx.spawn_in(window, async move |_, cx| {
             if let Ok(urls) = task.await {
                 cx.update(|window, cx| {
-                    window.open_modal(cx, move |this, _window, cx| {
-                        this.show_close(true)
+                    window.open_dialog(cx, move |this, _window, cx| {
+                        this.close_button(true)
                             .title(SharedString::from("Seen on"))
                             .child(v_flex().pb_4().gap_2().children({
                                 let mut items = Vec::with_capacity(urls.len());
@@ -1277,7 +1274,7 @@ impl ChatPanel {
                                         h_flex()
                                             .h_8()
                                             .px_2()
-                                            .bg(cx.theme().elevated_surface_background)
+                                            .bg(cx.theme().muted)
                                             .rounded(cx.theme().radius)
                                             .font_semibold()
                                             .text_xs()
@@ -1304,29 +1301,29 @@ impl ChatPanel {
 }
 
 impl Panel for ChatPanel {
-    fn panel_id(&self) -> SharedString {
-        self.id.clone()
+    fn panel_name(&self) -> &'static str {
+        "Chat"
     }
 
-    fn title(&self, cx: &App) -> AnyElement {
+    fn title(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.room.read_with(cx, |this, cx| {
             let proxy = AppSettings::get_proxy_user_avatars(cx);
             let label = this.display_name(cx);
             let url = this.display_image(proxy, cx);
 
-            h_flex()
-                .gap_1p5()
-                .child(Avatar::new(url).size(rems(1.25)))
-                .child(label)
-                .into_any()
+            Avatar::new().src(url).name(label).xsmall()
         })
     }
 
-    fn toolbar_buttons(&self, _window: &Window, cx: &App) -> Vec<Button> {
+    fn toolbar_buttons(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<Button>> {
         let subject_button = self.subject_button(cx);
         let reload_button = self.reload_button(cx);
 
-        vec![subject_button, reload_button]
+        Some(vec![subject_button, reload_button])
     }
 }
 
@@ -1378,10 +1375,10 @@ impl Render for ChatPanel {
                                     .child(
                                         h_flex()
                                             .gap_1()
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child(
                                                 Button::new("upload")
-                                                    .icon(IconName::Upload)
+                                                    //.icon(IconName::Upload)
                                                     .loading(self.uploading)
                                                     .disabled(self.uploading)
                                                     .ghost()
@@ -1395,17 +1392,17 @@ impl Render for ChatPanel {
                                             .child(
                                                 EmojiPicker::new()
                                                     .target(self.input.downgrade())
-                                                    .icon(IconName::EmojiFill)
+                                                    //.icon(IconName::EmojiFill)
                                                     .large(),
                                             ),
                                     )
-                                    .child(TextInput::new(&self.input))
+                                    .child(Input::new(&self.input))
                                     .child(
                                         Button::new("encryptions")
-                                            .icon(IconName::Encryption)
+                                            //.icon(IconName::Encryption)
                                             .ghost()
                                             .large()
-                                            .popup_menu(move |this, _window, _cx| {
+                                            .dropdown_menu(move |this, _window, _cx| {
                                                 this.label("Encrypt by:")
                                                     .menu_with_check(
                                                         "Encryption Key",

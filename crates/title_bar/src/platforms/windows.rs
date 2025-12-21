@@ -4,7 +4,6 @@ use gpui::{
     RenderOnce, Rgba, StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use theme::ActiveTheme;
-use ui::h_flex;
 
 #[derive(IntoElement)]
 pub struct WindowsWindowControls {
@@ -116,7 +115,9 @@ impl WindowsCaptionButton {
 
 impl RenderOnce for WindowsCaptionButton {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        h_flex()
+        div()
+            .flex()
+            .items_center()
             .id(self.id)
             .justify_center()
             .content_center()

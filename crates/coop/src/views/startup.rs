@@ -3,23 +3,21 @@ use std::time::Duration;
 use common::{RenderedProfile, BUNKER_TIMEOUT};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, rems, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Render,
-    RetainAllImageCache, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
-    Window,
+    div, relative, svg, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    InteractiveElement, IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::spinner::Spinner;
+use gpui_component::{h_flex, v_flex, ActiveTheme, Sizable, StyledExt, WindowExt};
 use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::indicator::Indicator;
-use ui::{h_flex, v_flex, ContextModal, Sizable, StyledExt};
 
 use crate::actions::{reset, CoopAuthUrlHandler};
 
@@ -147,7 +145,7 @@ impl Startup {
                         )
                     }
                     Ok(None) => {
-                        window.push_notification(t!("login.keyring_required"), cx);
+                        window.push_notification(shared_t!("login.keyring_required"), cx);
                         this.set_loading(false, cx);
                     }
                     Err(e) => {
@@ -180,12 +178,12 @@ impl Startup {
 }
 
 impl Panel for Startup {
-    fn panel_id(&self) -> SharedString {
-        self.name.clone()
+    fn panel_name(&self) -> &'static str {
+        "Startup"
     }
 
-    fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div().child("Startup")
     }
 }
 
@@ -221,7 +219,7 @@ impl Render for Startup {
                         svg()
                             .path("brand/coop.svg")
                             .size_16()
-                            .text_color(cx.theme().elevated_surface_background),
+                            .text_color(cx.theme().muted),
                     )
                     .child(
                         div()
@@ -235,7 +233,7 @@ impl Render for Startup {
                             )
                             .child(
                                 div()
-                                    .text_color(cx.theme().text_muted)
+                                    .text_color(cx.theme().muted_foreground)
                                     .child(shared_t!("welcome.subtitle")),
                             ),
                     ),
@@ -248,7 +246,7 @@ impl Render for Startup {
                             .id("account")
                             .h_10()
                             .w_72()
-                            .bg(cx.theme().elevated_surface_background)
+                            .bg(cx.theme().muted)
                             .rounded_lg()
                             .text_sm()
                             .when(self.loading, |this| {
@@ -258,7 +256,7 @@ impl Render for Startup {
                                         .flex()
                                         .items_center()
                                         .justify_center()
-                                        .child(Indicator::new().small()),
+                                        .child(Spinner::new().small()),
                                 )
                             })
                             .when(!self.loading, |this| {
@@ -273,7 +271,7 @@ impl Render for Startup {
                                         .child(
                                             h_flex()
                                                 .gap_1()
-                                                .child(Avatar::new(avatar).size(rems(1.5)))
+                                                .child(Avatar::new().src(avatar).small())
                                                 .child(div().pb_px().font_semibold().child(name)),
                                         )
                                         .child(div().when(bunker, |this| {
@@ -292,14 +290,14 @@ impl Render for Startup {
                                         })),
                                 )
                             })
-                            .text_color(cx.theme().text)
+                            .text_color(cx.theme().foreground)
                             .active(|this| {
-                                this.text_color(cx.theme().element_foreground)
-                                    .bg(cx.theme().element_active)
+                                this.text_color(cx.theme().primary_foreground)
+                                    .bg(cx.theme().primary_active)
                             })
                             .hover(|this| {
-                                this.text_color(cx.theme().element_foreground)
-                                    .bg(cx.theme().element_hover)
+                                this.text_color(cx.theme().primary_foreground)
+                                    .bg(cx.theme().primary_foreground)
                             })
                             .on_click(cx.listener(move |this, _e, window, cx| {
                                 this.login(window, cx);

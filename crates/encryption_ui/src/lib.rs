@@ -12,16 +12,19 @@ use gpui::{
     div, px, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
     Styled, Subscription, Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::notification::Notification;
+use gpui_component::{
+    h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, StyledExt, WindowExt,
+};
 use smallvec::{smallvec, SmallVec};
 use state::Announcement;
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::notification::Notification;
-use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<EncryptionPanel> {
     cx.new(|cx| EncryptionPanel::new(window, cx))
 }
+
+struct TaskNotification;
 
 #[derive(Debug)]
 pub struct EncryptionPanel {
@@ -200,11 +203,11 @@ impl EncryptionPanel {
         let loading = Rc::new(Cell::new(false));
 
         let note = Notification::new()
-            .custom_id(id.clone())
+            .id1::<TaskNotification>(id)
             .autohide(false)
-            .icon(IconName::Encryption)
+            //.icon(IconName::Encryption)
             .title(SharedString::from("Encryption Key Request"))
-            .content(move |_window, cx| {
+            .content(move |_this, _window, cx| {
                 v_flex()
                     .gap_2()
                     .text_sm()
@@ -218,7 +221,7 @@ impl EncryptionPanel {
                             .justify_center()
                             .px_2()
                             .rounded(cx.theme().radius)
-                            .bg(cx.theme().warning_background)
+                            .bg(cx.theme().warning)
                             .text_color(cx.theme().warning_foreground)
                             .child(client_name.clone()),
                     )
@@ -228,49 +231,43 @@ impl EncryptionPanel {
                             .w_full()
                             .px_2()
                             .rounded(cx.theme().radius)
-                            .bg(cx.theme().elevated_surface_background)
+                            .bg(cx.theme().muted)
                             .child(SharedString::from(target.to_hex())),
                     )
                     .into_any_element()
             })
-            .action(move |_window, _cx| {
+            .action(move |_this, _window, cx| {
                 Button::new("approve")
                     .label("Approve")
                     .small()
                     .primary()
                     .loading(loading.get())
                     .disabled(loading.get())
-                    .on_click({
+                    .on_click(cx.listener({
                         let loading = Rc::clone(&loading);
-                        let id = id.clone();
+                        move |this, _ev, window, cx| {
+                            let encryption = Encryption::global(cx);
+                            let send_response = encryption.read(cx).send_response(target, cx);
 
-                        move |_ev, window, cx| {
                             // Set loading state to true
                             loading.set(true);
 
-                            let encryption = Encryption::global(cx);
-                            let send_response = encryption.read(cx).send_response(target, cx);
-                            let id = id.clone();
-
+                            // Send the response in a separate task
                             window
                                 .spawn(cx, async move |cx| {
-                                    let result = send_response.await;
-
-                                    cx.update(|window, cx| {
-                                        match result {
-                                            Ok(_) => {
-                                                window.clear_notification_by_id(id, cx);
-                                            }
-                                            Err(e) => {
-                                                window.push_notification(e.to_string(), cx);
-                                            }
-                                        };
-                                    })
-                                    .expect("Entity has been released");
+                                    if let Err(e) = send_response.await {
+                                        cx.update(|window, cx| {
+                                            window.push_notification(e.to_string(), cx);
+                                        })
+                                        .ok();
+                                    }
                                 })
                                 .detach();
+
+                            // Dismiss the current notification after sending the response
+                            this.dismiss(window, cx);
                         }
-                    })
+                    }))
             });
 
         // Push the notification to the current window
@@ -314,8 +311,8 @@ impl Render for EncryptionPanel {
                                     .text_sm()
                                     .font_semibold()
                                     .child(
-                                        Icon::new(IconName::CheckCircle)
-                                            .text_color(cx.theme().element_foreground)
+                                        Icon::new(IconName::CircleCheck)
+                                            .text_color(cx.theme().primary_foreground)
                                             .small(),
                                     )
                                     .child(SharedString::from("Encryption Key has been set")),
@@ -331,7 +328,7 @@ impl Render for EncryptionPanel {
                                     div()
                                         .text_xs()
                                         .font_semibold()
-                                        .text_color(cx.theme().text_muted)
+                                        .text_color(cx.theme().muted_foreground)
                                         .child(SharedString::from("Client Name:")),
                                 )
                                 .child(
@@ -340,7 +337,7 @@ impl Render for EncryptionPanel {
                                         .items_center()
                                         .justify_center()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
+                                        .bg(cx.theme().muted)
                                         .child(client_name.clone()),
                                 ),
                         )
@@ -351,7 +348,7 @@ impl Render for EncryptionPanel {
                                     div()
                                         .text_xs()
                                         .font_semibold()
-                                        .text_color(cx.theme().text_muted)
+                                        .text_color(cx.theme().muted_foreground)
                                         .child(SharedString::from("Client Public Key:")),
                                 )
                                 .child(
@@ -360,7 +357,7 @@ impl Render for EncryptionPanel {
                                         .w_full()
                                         .px_2()
                                         .rounded(cx.theme().radius)
-                                        .bg(cx.theme().elevated_surface_background)
+                                        .bg(cx.theme().muted)
                                         .child(SharedString::from(pubkey)),
                                 ),
                         )
@@ -371,7 +368,7 @@ impl Render for EncryptionPanel {
                                     .child(
                                         div()
                                             .text_xs()
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child(SharedString::from(SUGGEST)),
                                     )
                                     .child(
@@ -384,7 +381,7 @@ impl Render for EncryptionPanel {
                                                         .label("Reset")
                                                         .flex_1()
                                                         .small()
-                                                        .ghost_alt()
+                                                        .ghost()
                                                         .loading(self.creating)
                                                         .disabled(self.creating)
                                                         .on_click(cx.listener(

@@ -3,9 +3,13 @@ use std::time::Duration;
 use common::{nip05_verify, shorten_pubkey, RenderedProfile, RenderedTimestamp, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, uniform_list, App, AppContext, Context, Div, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Task, Window,
+    div, px, relative, uniform_list, App, AppContext, Context, Div, Entity, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, Styled, Task, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::spinner::Spinner;
+use gpui_component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, WindowExt};
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
@@ -13,11 +17,6 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::indicator::Indicator;
-use ui::{h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<Screening> {
     cx.new(|cx| Screening::new(public_key, window, cx))
@@ -173,8 +172,8 @@ impl Screening {
         cx.spawn_in(window, async move |_, cx| {
             if task.await.is_ok() {
                 cx.update(|window, cx| {
-                    window.close_modal(cx);
-                    window.push_notification(t!("screening.report_msg"), cx);
+                    window.close_dialog(cx);
+                    window.push_notification(shared_t!("screening.report_msg"), cx);
                 })
                 .ok();
             }
@@ -185,7 +184,7 @@ impl Screening {
     fn mutual_contacts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let contacts = self.mutual_contacts.clone();
 
-        window.open_modal(cx, move |this, _window, _cx| {
+        window.open_dialog(cx, move |this, _window, _cx| {
             let contacts = contacts.clone();
             let total = contacts.len();
 
@@ -204,10 +203,8 @@ impl Screening {
                                         .gap_1p5()
                                         .rounded(cx.theme().radius)
                                         .text_sm()
-                                        .hover(|this| {
-                                            this.bg(cx.theme().elevated_surface_background)
-                                        })
-                                        .child(Avatar::new(contact.avatar(true)).size(rems(1.75)))
+                                        .hover(|this| this.bg(cx.theme().list_hover))
+                                        .child(Avatar::new().src(contact.avatar(false)).small())
                                         .child(contact.display_name()),
                                 );
                             }
@@ -237,7 +234,7 @@ impl Render for Screening {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
+                    .child(Avatar::new().src(self.profile.avatar(proxy)).large())
                     .child(
                         div()
                             .font_semibold()
@@ -255,7 +252,7 @@ impl Render for Screening {
                             .h_7()
                             .justify_center()
                             .rounded_full()
-                            .bg(cx.theme().surface_background)
+                            .bg(cx.theme().muted)
                             .text_sm()
                             .truncate()
                             .text_ellipsis()
@@ -269,9 +266,9 @@ impl Render for Screening {
                             .child(
                                 Button::new("njump")
                                     .label(t!("profile.njump"))
-                                    .secondary()
+                                    .primary()
                                     .small()
-                                    .rounded()
+                                    .rounded(cx.theme().radius)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.open_njump(window, cx);
                                     })),
@@ -279,9 +276,9 @@ impl Render for Screening {
                             .child(
                                 Button::new("report")
                                     .tooltip(t!("screening.report"))
-                                    .icon(IconName::Report)
+                                    .icon(IconName::Asterisk)
                                     .danger()
-                                    .rounded()
+                                    .rounded(cx.theme().radius)
                                     .on_click(cx.listener(move |this, _e, window, cx| {
                                         this.report(window, cx);
                                     })),
@@ -304,7 +301,7 @@ impl Render for Screening {
                                     .child(
                                         div()
                                             .line_clamp(1)
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child({
                                                 if self.followed {
                                                     shared_t!("screening.contact")
@@ -333,7 +330,7 @@ impl Render for Screening {
                                                     .icon(IconName::Info)
                                                     .xsmall()
                                                     .ghost()
-                                                    .rounded()
+                                                    .rounded(cx.theme().radius)
                                                     .tooltip(t!("screening.active_tooltip")),
                                             ),
                                     )
@@ -341,7 +338,7 @@ impl Render for Screening {
                                         div()
                                             .w_full()
                                             .line_clamp(1)
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .map(|this| {
                                                 if let Some(date) = self.last_active {
                                                     this.child(shared_t!(
@@ -373,7 +370,7 @@ impl Render for Screening {
                                     .child(
                                         div()
                                             .line_clamp(1)
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child({
                                                 if self.address(cx).is_some() {
                                                     if self.verified {
@@ -405,7 +402,7 @@ impl Render for Screening {
                                                     .icon(IconName::Info)
                                                     .xsmall()
                                                     .ghost()
-                                                    .rounded()
+                                                    .rounded(cx.theme().radius)
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
                                                             this.mutual_contacts(window, cx);
@@ -416,7 +413,7 @@ impl Render for Screening {
                                     .child(
                                         div()
                                             .line_clamp(1)
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child({
                                                 if total_mutuals > 0 {
                                                     shared_t!("screening.mutual", u = total_mutuals)
@@ -438,15 +435,15 @@ fn status_badge(status: Option<bool>, cx: &App) -> Div {
         .flex_shrink_0()
         .map(|this| {
             if let Some(status) = status {
-                this.child(Icon::new(IconName::CheckCircleFill).small().text_color({
+                this.child(Icon::new(IconName::CircleCheck).small().text_color({
                     if status {
-                        cx.theme().icon_accent
+                        cx.theme().secondary_foreground
                     } else {
-                        cx.theme().icon_muted
+                        cx.theme().muted_foreground
                     }
                 }))
             } else {
-                this.child(Indicator::new().small())
+                this.child(Spinner::new().small())
             }
         })
 }

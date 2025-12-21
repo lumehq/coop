@@ -2,14 +2,13 @@ use std::sync::OnceLock;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, App, AppContext, Corner, Element, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    div, px, App, Corner, Element, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::input::InputState;
-use ui::popover::{Popover, PopoverContent};
-use ui::{Icon, Sizable, Size};
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::input::InputState;
+use gpui_component::popover::Popover;
+use gpui_component::{ActiveTheme, Icon, Sizable, Size};
 
 static EMOJIS: OnceLock<Vec<SharedString>> = OnceLock::new();
 
@@ -86,54 +85,49 @@ impl RenderOnce for EmojiPicker {
                     .ghost()
                     .with_size(self.size),
             )
-            .content(move |window, cx| {
+            .content(move |this, window, cx| {
                 let input = self.target.clone();
 
-                cx.new(|cx| {
-                    PopoverContent::new(window, cx, move |_window, cx| {
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .children(get_emojis().iter().map(|e| {
                         div()
+                            .id(e.clone())
+                            .flex_auto()
+                            .size_10()
                             .flex()
-                            .flex_wrap()
                             .items_center()
-                            .gap_2()
-                            .children(get_emojis().iter().map(|e| {
-                                div()
-                                    .id(e.clone())
-                                    .flex_auto()
-                                    .size_10()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(cx.theme().radius)
-                                    .child(e.clone())
-                                    .hover(|this| this.bg(cx.theme().ghost_element_hover))
-                                    .on_click({
-                                        let item = e.clone();
-                                        let input = input.clone();
+                            .justify_center()
+                            .rounded(cx.theme().radius)
+                            .child(e.clone())
+                            .hover(|this| this.bg(cx.theme().list_hover))
+                            .on_click({
+                                let item = e.clone();
+                                let input = input.clone();
 
-                                        move |_, window, cx| {
-                                            if let Some(input) = input.as_ref() {
-                                                _ = input.update(cx, |this, cx| {
-                                                    let value = this.value();
-                                                    let new_text = if value.is_empty() {
-                                                        format!("{item}")
-                                                    } else if value.ends_with(" ") {
-                                                        format!("{value}{item}")
-                                                    } else {
-                                                        format!("{value} {item}")
-                                                    };
-                                                    this.set_value(new_text, window, cx);
-                                                });
-                                            }
-                                        }
-                                    })
-                            }))
-                            .into_any()
-                    })
-                    .scrollable()
-                    .max_h(px(300.))
-                    .max_w(px(300.))
-                })
+                                move |_, window, cx| {
+                                    if let Some(input) = input.as_ref() {
+                                        _ = input.update(cx, |this, cx| {
+                                            let value = this.value();
+                                            let new_text = if value.is_empty() {
+                                                format!("{item}")
+                                            } else if value.ends_with(" ") {
+                                                format!("{value}{item}")
+                                            } else {
+                                                format!("{value} {item}")
+                                            };
+                                            this.set_value(new_text, window, cx);
+                                        });
+                                    }
+                                }
+                            })
+                    }))
+                    .into_any()
             })
+            .max_h(px(300.))
+            .max_w(px(300.))
     }
 }

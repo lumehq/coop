@@ -1,21 +1,18 @@
 use std::rc::Rc;
 
 use chat::{ChatRegistry, RoomKind};
-use chat_ui::{CopyPublicKey, OpenPublicKey};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::dialog::DialogButtonProps;
+use gpui_component::skeleton::Skeleton;
+use gpui_component::{h_flex, ActiveTheme, StyledExt, WindowExt};
 use i18n::t;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
-use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::context_menu::ContextMenuExt;
-use ui::modal::ModalButtonProps;
-use ui::skeleton::Skeleton;
-use ui::{h_flex, ContextModal, StyledExt};
 
 use crate::views::screening;
 
@@ -140,7 +137,7 @@ impl RenderOnce for RoomListItem {
                         .size_6()
                         .rounded_full()
                         .overflow_hidden()
-                        .child(Avatar::new(avatar).size(rems(1.5))),
+                        .child(Avatar::new().src(avatar).size(rems(1.5))),
                 )
             })
             .child(
@@ -162,26 +159,22 @@ impl RenderOnce for RoomListItem {
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(cx.theme().text_placeholder)
+                            .text_color(cx.theme().muted_foreground)
                             .child(created_at),
                     ),
             )
-            .hover(|this| this.bg(cx.theme().elevated_surface_background))
-            .context_menu(move |this, _window, _cx| {
-                this.menu(t!("profile.view"), Box::new(OpenPublicKey(public_key)))
-                    .menu(t!("profile.copy"), Box::new(CopyPublicKey(public_key)))
-            })
+            .hover(|this| this.bg(cx.theme().list_hover))
             .on_click(move |event, window, cx| {
                 handler(event, window, cx);
 
                 if kind != RoomKind::Ongoing && require_screening {
                     let screening = screening::init(public_key, window, cx);
 
-                    window.open_modal(cx, move |this, _window, _cx| {
+                    window.open_dialog(cx, move |this, _window, _cx| {
                         this.confirm()
                             .child(screening.clone())
                             .button_props(
-                                ModalButtonProps::default()
+                                DialogButtonProps::default()
                                     .cancel_text(t!("screening.ignore"))
                                     .ok_text(t!("screening.response")),
                             )

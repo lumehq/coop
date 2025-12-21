@@ -3,13 +3,12 @@ use gpui::{
     div, px, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
     Styled, Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::input::{Input, InputState};
+use gpui_component::switch::Switch;
+use gpui_component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, Size, StyledExt};
 use i18n::{shared_t, t};
 use settings::AppSettings;
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::input::{InputState, TextInput};
-use ui::switch::Switch;
-use ui::{h_flex, v_flex, IconName, Sizable, Size, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Preferences> {
     cx.new(|cx| Preferences::new(window, cx))
@@ -52,7 +51,7 @@ impl Render for Preferences {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().text_placeholder)
+                            .text_color(cx.theme().muted_foreground)
                             .font_semibold()
                             .child(shared_t!("preferences.relay_and_media")),
                     )
@@ -63,7 +62,7 @@ impl Render for Preferences {
                             .child(
                                 h_flex()
                                     .gap_1()
-                                    .child(TextInput::new(&self.media_input).xsmall())
+                                    .child(Input::new(&self.media_input).xsmall())
                                     .child(
                                         Button::new("update")
                                             .icon(IconName::Check)
@@ -84,14 +83,13 @@ impl Render for Preferences {
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(cx.theme().text_muted)
+                                    .text_color(cx.theme().muted_foreground)
                                     .child(shared_t!("preferences.media_description")),
                             ),
                     )
                     .child(
                         Switch::new("auth")
-                            .label(t!("preferences.auto_auth"))
-                            .description(t!("preferences.auto_auth_description"))
+                            .label(shared_t!("preferences.auto_auth"))
                             .checked(auto_auth)
                             .on_click(move |_, _window, cx| {
                                 AppSettings::update_auto_auth(!auto_auth, cx);
@@ -107,7 +105,7 @@ impl Render for Preferences {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().text_placeholder)
+                            .text_color(cx.theme().muted_foreground)
                             .font_semibold()
                             .child(shared_t!("preferences.messages_header")),
                     )
@@ -116,8 +114,7 @@ impl Render for Preferences {
                             .gap_2()
                             .child(
                                 Switch::new("screening")
-                                    .label(t!("preferences.screening_label"))
-                                    .description(t!("preferences.screening_description"))
+                                    .label(shared_t!("preferences.screening_label"))
                                     .checked(screening)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_screening(!screening, cx);
@@ -125,8 +122,7 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("bypass")
-                                    .label(t!("preferences.bypass_label"))
-                                    .description(t!("preferences.bypass_description"))
+                                    .label(shared_t!("preferences.bypass_label"))
                                     .checked(bypass)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_contact_bypass(!bypass, cx);
@@ -134,8 +130,7 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("backup")
-                                    .label(t!("preferences.backup_label"))
-                                    .description(t!("preferences.backup_description"))
+                                    .label(shared_t!("preferences.backup_label"))
                                     .checked(backup)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_backup_messages(!backup, cx);
@@ -152,7 +147,7 @@ impl Render for Preferences {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().text_placeholder)
+                            .text_color(cx.theme().muted_foreground)
                             .font_semibold()
                             .child(shared_t!("preferences.display_header")),
                     )
@@ -161,8 +156,7 @@ impl Render for Preferences {
                             .gap_2()
                             .child(
                                 Switch::new("hide_avatar")
-                                    .label(t!("preferences.hide_avatars_label"))
-                                    .description(t!("preferences.hide_avatar_description"))
+                                    .label(shared_t!("preferences.hide_avatars_label"))
                                     .checked(hide)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_hide_user_avatars(!hide, cx);
@@ -170,8 +164,7 @@ impl Render for Preferences {
                             )
                             .child(
                                 Switch::new("proxy_avatar")
-                                    .label(t!("preferences.proxy_avatars_label"))
-                                    .description(t!("preferences.proxy_description"))
+                                    .label(shared_t!("preferences.proxy_avatars_label"))
                                     .checked(proxy)
                                     .on_click(move |_, _window, cx| {
                                         AppSettings::update_proxy_user_avatars(!proxy, cx);

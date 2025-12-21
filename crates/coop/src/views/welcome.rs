@@ -1,11 +1,10 @@
 use gpui::{
-    div, svg, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    div, svg, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
-use theme::ActiveTheme;
-use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::{v_flex, StyledExt};
+use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::{v_flex, ActiveTheme, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
     Welcome::new(window, cx)
@@ -34,19 +33,17 @@ impl Welcome {
 }
 
 impl Panel for Welcome {
-    fn panel_id(&self) -> SharedString {
-        self.name.clone()
+    fn panel_name(&self) -> &'static str {
+        "Welcome"
     }
 
-    fn title(&self, cx: &App) -> AnyElement {
-        div()
-            .child(
-                svg()
-                    .path("brand/coop.svg")
-                    .size_4()
-                    .text_color(cx.theme().element_background),
-            )
-            .into_any_element()
+    fn title(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().child(
+            svg()
+                .path("brand/coop.svg")
+                .size_4()
+                .text_color(cx.theme().primary),
+        )
     }
 }
 
@@ -74,7 +71,7 @@ impl Render for Welcome {
                         svg()
                             .path("brand/coop.svg")
                             .size_12()
-                            .text_color(cx.theme().elevated_surface_background),
+                            .text_color(cx.theme().muted),
                     )
                     .child(
                         v_flex()
@@ -84,13 +81,13 @@ impl Render for Welcome {
                             .child(
                                 div()
                                     .font_semibold()
-                                    .text_color(cx.theme().text_muted)
+                                    .text_color(cx.theme().muted_foreground)
                                     .child(SharedString::from("coop on nostr")),
                             )
                             .child(
                                 div()
                                     .id("version")
-                                    .text_color(cx.theme().text_placeholder)
+                                    .text_color(cx.theme().info_foreground)
                                     .text_xs()
                                     .child(self.version.clone())
                                     .on_click(|_, _window, cx| {

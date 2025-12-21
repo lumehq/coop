@@ -7,7 +7,7 @@ use gpui::{
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
-use ui::Root;
+use gpui_component::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
 
@@ -81,7 +81,7 @@ fn main() {
                 gpui_tokio::init(cx);
 
                 // Initialize components
-                ui::init(cx);
+                gpui_component::init(cx);
 
                 // Initialize backend for keys storage
                 key_store::init(cx);
@@ -110,7 +110,7 @@ fn main() {
                 // Initialize auto update
                 auto_update::init(cx);
 
-                Root::new(chatspace::init(window, cx).into(), window, cx)
+                Root::new(chatspace::init(window, cx), window, cx)
             })
         })
         .expect("Failed to open window. Please restart the application.");
