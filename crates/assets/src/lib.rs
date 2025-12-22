@@ -7,6 +7,7 @@ use rust_embed::RustEmbed;
 #[include = "fonts/**/*"]
 #[include = "brand/**/*"]
 #[include = "icons/**/*"]
+#[include = "themes/**/*"]
 #[exclude = "*.DS_Store"]
 pub struct Assets;
 

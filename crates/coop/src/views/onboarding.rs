@@ -12,7 +12,7 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::divider::Divider;
 use gpui_component::dock::{Panel, PanelEvent};
 use gpui_component::notification::Notification;
-use gpui_component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, WindowExt};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Sizable, StyledExt, WindowExt};
 use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
@@ -57,12 +57,13 @@ impl NostrConnectApp {
 }
 
 pub struct Onboarding {
-    app_keys: Keys,
-    qr_code: Option<Arc<Image>>,
-
-    /// Panel
-    name: SharedString,
     focus_handle: FocusHandle,
+
+    /// App keys for nostr connect
+    app_keys: Keys,
+
+    /// QR Code for nostr connect
+    qr_code: Option<Arc<Image>>,
 
     /// Background tasks
     _tasks: SmallVec<[Task<()>; 1]>,
@@ -111,7 +112,6 @@ impl Onboarding {
         Self {
             qr_code,
             app_keys,
-            name: "Onboarding".into(),
             focus_handle: cx.focus_handle(),
             _tasks: tasks,
         }
@@ -195,6 +195,7 @@ impl Onboarding {
             .py_0p5()
             .px_2()
             .bg(cx.theme().list)
+            .text_color(cx.theme().foreground)
             .child(label.into())
             .on_click({
                 let url = url.to_owned();
@@ -208,10 +209,6 @@ impl Onboarding {
 impl Panel for Onboarding {
     fn panel_name(&self) -> &'static str {
         "Onboarding"
-    }
-
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child("Onboarding")
     }
 }
 
@@ -243,7 +240,7 @@ impl Render for Onboarding {
                                 svg()
                                     .path("brand/coop.svg")
                                     .size_16()
-                                    .text_color(cx.theme().muted),
+                                    .text_color(cx.theme().primary_active),
                             )
                             .child(
                                 div()
@@ -268,33 +265,19 @@ impl Render for Onboarding {
                             .gap_3()
                             .child(
                                 Button::new("continue_btn")
-                                    .icon(Icon::new(IconName::ArrowRight))
-                                    .label(shared_t!("onboarding.start_messaging"))
+                                    .label(t!("onboarding.start_messaging"))
                                     .primary()
-                                    .large()
-                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                    .on_click(cx.listener(move |_this, _ev, window, cx| {
                                         chatspace::new_account(window, cx);
                                     })),
                             )
-                            .child(
-                                h_flex()
-                                    .my_1()
-                                    .gap_1()
-                                    .child(Divider::horizontal())
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(shared_t!("onboarding.divider")),
-                                    )
-                                    .child(Divider::horizontal()),
-                            )
+                            .child(Divider::horizontal().label(t!("onboarding.divider")).my_1())
                             .child(
                                 Button::new("key")
                                     .label(t!("onboarding.key_login"))
-                                    .large()
+                                    .small()
                                     .link()
-                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                    .on_click(cx.listener(move |_this, _ev, window, cx| {
                                         chatspace::login(window, cx);
                                     })),
                             ),
@@ -325,7 +308,7 @@ impl Render for Onboarding {
                                                 .rounded_xl()
                                                 .shadow_lg()
                                                 .border_1()
-                                                .border_color(cx.theme().primary_active),
+                                                .border_color(cx.theme().border),
                                         )
                                     })
                                     .child(

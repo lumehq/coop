@@ -1,16 +1,15 @@
 use anyhow::{anyhow, Error};
 use common::{default_nip17_relays, default_nip65_relays, nip96_upload, BOOTSTRAP_RELAYS};
 use gpui::{
-    div, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable,
-    IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Task, Window,
+    App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable, IntoElement,
+    ParentElement, PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
 use gpui_component::avatar::Avatar;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::dialog::DialogButtonProps;
-use gpui_component::divider::Divider;
 use gpui_component::dock::{Panel, PanelEvent};
 use gpui_component::input::{Input, InputState};
-use gpui_component::{v_flex, ActiveTheme, Disableable, IconName, Sizable, WindowExt};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, WindowExt};
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
@@ -18,6 +17,8 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
 use state::NostrRegistry;
+
+use crate::chatspace;
 
 mod backup;
 
@@ -286,7 +287,19 @@ impl Panel for NewAccount {
     }
 
     fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child("Create a new identity")
+        h_flex()
+            .text_xs()
+            .gap_2()
+            .child(
+                Button::new("back")
+                    .icon(IconName::ArrowLeft)
+                    .small()
+                    .ghost()
+                    .on_click(|_ev, window, cx| {
+                        chatspace::onboarding(window, cx);
+                    }),
+            )
+            .child("Create a new identity")
     }
 }
 
@@ -310,7 +323,7 @@ impl Render for NewAccount {
             .child(
                 v_flex()
                     .w_96()
-                    .gap_2()
+                    .gap_3()
                     .child(
                         v_flex()
                             .h_40()
@@ -327,7 +340,7 @@ impl Render for NewAccount {
                                     .ghost()
                                     .rounded(cx.theme().radius)
                                     .disabled(self.uploading)
-                                    //.loading(self.uploading)
+                                    .loading(self.uploading)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.upload(window, cx);
                                     })),
@@ -337,14 +350,10 @@ impl Render for NewAccount {
                         v_flex()
                             .gap_1()
                             .text_sm()
-                            .child(shared_t!("new_account.name"))
-                            .child(
-                                Input::new(&self.name_input)
-                                    .disabled(self.submitting)
-                                    .small(),
-                            ),
+                            .text_color(cx.theme().muted_foreground)
+                            .child(SharedString::from("What should people call you?"))
+                            .child(Input::new(&self.name_input).disabled(self.submitting)),
                     )
-                    .child(Divider::horizontal())
                     .child(
                         Button::new("submit")
                             .label(t!("common.continue"))

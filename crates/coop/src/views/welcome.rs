@@ -7,26 +7,20 @@ use gpui_component::dock::{Panel, PanelEvent};
 use gpui_component::{v_flex, ActiveTheme, StyledExt};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Welcome> {
-    Welcome::new(window, cx)
+    cx.new(|cx| Welcome::new(window, cx))
 }
 
 pub struct Welcome {
-    name: SharedString,
     version: SharedString,
     focus_handle: FocusHandle,
 }
 
 impl Welcome {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::view(window, cx))
-    }
-
-    fn view(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(_window: &mut Window, cx: &mut App) -> Self {
         let version = SharedString::from(format!("Version: {}", env!("CARGO_PKG_VERSION")));
 
         Self {
             version,
-            name: "Welcome".into(),
             focus_handle: cx.focus_handle(),
         }
     }
@@ -42,7 +36,7 @@ impl Panel for Welcome {
             svg()
                 .path("brand/coop.svg")
                 .size_4()
-                .text_color(cx.theme().primary),
+                .text_color(cx.theme().secondary),
         )
     }
 }
@@ -80,6 +74,7 @@ impl Render for Welcome {
                             .text_center()
                             .child(
                                 div()
+                                    .text_sm()
                                     .font_semibold()
                                     .text_color(cx.theme().muted_foreground)
                                     .child(SharedString::from("coop on nostr")),
@@ -87,7 +82,7 @@ impl Render for Welcome {
                             .child(
                                 div()
                                     .id("version")
-                                    .text_color(cx.theme().info_foreground)
+                                    .text_color(cx.theme().muted_foreground)
                                     .text_xs()
                                     .child(self.version.clone())
                                     .on_click(|_, _window, cx| {

@@ -8,7 +8,6 @@ publish.workspace = true
 state = { path = "../state" }
 settings = { path = "../settings" }
 common = { path = "../common" }
-theme = { path = "../theme" }
 
 gpui.workspace = true
 nostr-sdk.workspace = true

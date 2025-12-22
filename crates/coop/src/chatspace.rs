@@ -20,8 +20,7 @@ use gpui_component::dock::{DockArea, DockItem, DockPlacement, PanelView};
 use gpui_component::menu::DropdownMenu;
 use gpui_component::popover::Popover;
 use gpui_component::{
-    h_flex, v_flex, ActiveTheme, IconName, Root, Sizable, StyledExt, Theme, ThemeMode, TitleBar,
-    WindowExt,
+    h_flex, v_flex, ActiveTheme, IconName, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
 };
 use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
@@ -39,6 +38,11 @@ use crate::{login, new_identity, sidebar, user};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<ChatSpace> {
     cx.new(|cx| ChatSpace::new(window, cx))
+}
+
+pub fn onboarding(window: &mut Window, cx: &mut App) {
+    let panel = onboarding::init(window, cx);
+    ChatSpace::set_center_panel(panel, window, cx);
 }
 
 pub fn login(window: &mut Window, cx: &mut App) {
@@ -163,11 +167,12 @@ impl ChatSpace {
 
         subscriptions.push(
             // Observe the chat registry
-            cx.observe(&chat, move |this, chat, cx| {
-                let ids = this.get_all_panels(cx);
+            cx.observe(&chat, move |_this, chat, cx| {
+                // let ids = this.get_all_panels(cx);
+                // TODO: rewrite
 
                 chat.update(cx, |this, cx| {
-                    this.refresh_rooms(ids, cx);
+                    this.refresh_rooms(None, cx);
                 });
             }),
         );
@@ -199,26 +204,32 @@ impl ChatSpace {
     }
 
     fn set_default_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let weak_dock = self.dock.downgrade();
-
         let sidebar = Arc::new(sidebar::init(window, cx));
         let center = Arc::new(welcome::init(window, cx));
+        let weak_dock = self.dock.downgrade();
 
-        let left = DockItem::panel(sidebar);
-        let center = DockItem::split_with_sizes(
-            Axis::Vertical,
-            vec![DockItem::tabs(vec![center], &weak_dock, window, cx)],
-            vec![None],
-            &weak_dock,
-            window,
-            cx,
-        );
-
-        self.ready = true;
         self.dock.update(cx, |this, cx| {
-            this.set_left_dock(left, Some(px(DEFAULT_SIDEBAR_WIDTH)), true, window, cx);
-            this.set_center(center, window, cx);
+            this.set_left_dock(
+                DockItem::panel(sidebar),
+                Some(px(DEFAULT_SIDEBAR_WIDTH)),
+                true,
+                window,
+                cx,
+            );
+            this.set_center(
+                DockItem::split_with_sizes(
+                    Axis::Vertical,
+                    vec![DockItem::tabs(vec![center], &weak_dock, window, cx)],
+                    vec![None],
+                    &weak_dock,
+                    window,
+                    cx,
+                ),
+                window,
+                cx,
+            );
         });
+        self.ready = true;
     }
 
     fn on_settings(&mut self, _ev: &Settings, window: &mut Window, cx: &mut Context<Self>) {
@@ -360,40 +371,6 @@ impl ChatSpace {
         });
     }
 
-    fn get_all_panels(&self, cx: &App) -> Option<Vec<u64>> {
-        /*
-        let ids: Vec<u64> = self
-            .dock
-            .read(cx)
-            .items
-            .panel_ids(cx)
-            .into_iter()
-            .filter_map(|panel| panel.parse::<u64>().ok())
-            .collect();
-        */
-
-        //Some(ids)
-        None
-    }
-
-    fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
-    where
-        P: PanelView,
-    {
-        if let Some(Some(root)) = window.root::<Root>() {
-            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
-                let panel = Arc::new(panel);
-                let center = DockItem::panel(panel);
-
-                chatspace.update(cx, |this, cx| {
-                    this.dock.update(cx, |this, cx| {
-                        this.set_center(center, window, cx);
-                    });
-                });
-            }
-        }
-    }
-
     fn titlebar_left(&mut self, _window: &mut Window, cx: &Context<Self>) -> impl IntoElement {
         let account = Account::global(cx);
         let chat = ChatRegistry::global(cx);
@@ -431,6 +408,7 @@ impl ChatSpace {
         let encryption_panel = self.encryption_panel.downgrade();
 
         h_flex()
+            .pr_2()
             .gap_2()
             .map(|this| match auto_update.read(cx).status.as_ref() {
                 AutoUpdateStatus::Checking => this.child(
@@ -512,11 +490,11 @@ impl ChatSpace {
                                 .trigger(
                                     Button::new("encryption-trigger")
                                         .tooltip("Manage Encryption Key")
-                                        //.icon(IconName::Encryption)
+                                        .icon(IconName::Plus)
                                         .rounded(cx.theme().radius)
                                         .small()
                                         .map(|this| match has_encryption {
-                                            true => this.link(),
+                                            true => this.ghost(),
                                             false => this.warning(),
                                         }),
                                 )
@@ -534,8 +512,8 @@ impl ChatSpace {
                             Button::new("user")
                                 .small()
                                 .text()
-                                //.icon(IconName::CaretDown)
-                                .child(Avatar::new().src(profile.avatar(proxy)).size(rems(1.45)))
+                                .child(Avatar::new().src(profile.avatar(proxy)).small())
+                                .dropdown_caret(true)
                                 .dropdown_menu(move |this, _window, _cx| {
                                     this.label(profile.display_name())
                                         .menu_with_icon(
@@ -578,41 +556,22 @@ impl ChatSpace {
             })
     }
 
-    fn titlebar_center(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let entity = cx.entity().downgrade();
-        let panel = self.dock.read(cx).items().view();
-        let title = panel.title(window, cx);
-        let name = panel.panel_name(cx);
+    fn set_center_panel<P>(panel: P, window: &mut Window, cx: &mut App)
+    where
+        P: PanelView,
+    {
+        if let Some(Some(root)) = window.root::<Root>() {
+            if let Ok(chatspace) = root.read(cx).view().clone().downcast::<ChatSpace>() {
+                let panel = Arc::new(panel);
+                let center = DockItem::panel(panel);
 
-        if name == "Onboarding" {
-            return div();
-        };
-
-        h_flex()
-            .flex_1()
-            .w_full()
-            .justify_center()
-            .text_center()
-            .font_semibold()
-            .text_sm()
-            .child(
-                div().flex_1().child(
-                    Button::new("back")
-                        .icon(IconName::ArrowLeft)
-                        .small()
-                        .ghost()
-                        .rounded(cx.theme().radius)
-                        .on_click(move |_ev, window, cx| {
-                            entity
-                                .update(cx, |this, cx| {
-                                    this.set_onboarding_layout(window, cx);
-                                })
-                                .expect("Entity has been released");
-                        }),
-                ),
-            )
-            .child(div().flex_1().child(title))
-            .child(div().flex_1())
+                chatspace.update(cx, |this, cx| {
+                    this.dock.update(cx, |this, cx| {
+                        this.set_center(center, window, cx);
+                    });
+                });
+            }
+        }
     }
 }
 
@@ -620,6 +579,8 @@ impl Render for ChatSpace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modal_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
+        let current_panel = self.dock.read(cx).items().view();
+        let panel_name = current_panel.panel_name(cx);
 
         div()
             .id(SharedString::from("chatspace"))
@@ -637,7 +598,25 @@ impl Render for ChatSpace {
                 v_flex()
                     .size_full()
                     // Title Bar
-                    .child(TitleBar::new())
+                    .child(
+                        TitleBar::new()
+                            .when(self.ready, |this| {
+                                this.child(self.titlebar_left(window, cx))
+                                    .child(self.titlebar_right(window, cx))
+                            })
+                            .when(!self.ready, |this| {
+                                this.bg(cx.theme().background)
+                                    .border_color(gpui::transparent_black())
+                            })
+                            .when(panel_name == "Login", |this| {
+                                let title = current_panel.title(window, cx);
+                                this.child(title)
+                            })
+                            .when(panel_name == "NewAccount", |this| {
+                                let title = current_panel.title(window, cx);
+                                this.child(title)
+                            }),
+                    )
                     // Dock
                     .child(self.dock.clone()),
             )

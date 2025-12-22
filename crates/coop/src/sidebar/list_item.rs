@@ -3,13 +3,13 @@ use std::rc::Rc;
 use chat::{ChatRegistry, RoomKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
+    div, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_component::avatar::Avatar;
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::skeleton::Skeleton;
-use gpui_component::{h_flex, ActiveTheme, StyledExt, WindowExt};
+use gpui_component::{h_flex, ActiveTheme, Sizable, StyledExt, WindowExt};
 use i18n::t;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
@@ -131,14 +131,7 @@ impl RenderOnce for RoomListItem {
             .text_sm()
             .rounded(cx.theme().radius)
             .when(!hide_avatar, |this| {
-                this.child(
-                    div()
-                        .flex_shrink_0()
-                        .size_6()
-                        .rounded_full()
-                        .overflow_hidden()
-                        .child(Avatar::new().src(avatar).size(rems(1.5))),
-                )
+                this.child(Avatar::new().src(avatar).small().flex_shrink_0())
             })
             .child(
                 div()

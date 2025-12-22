@@ -37,10 +37,8 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<Sidebar> {
     cx.new(|cx| Sidebar::new(window, cx))
 }
 
+/// Sidebar
 pub struct Sidebar {
-    name: SharedString,
-
-    /// Focus handle for the sidebar
     focus_handle: FocusHandle,
 
     /// Image cache
@@ -52,11 +50,19 @@ pub struct Sidebar {
     /// Async search operation
     search_task: Option<Task<()>>,
 
+    /// Input for searching
     find_input: Entity<InputState>,
+
+    /// Input debouncer
     find_debouncer: DebouncedDelay<Self>,
+
+    /// Whether searching is in progress
     finding: bool,
 
+    /// New message indicator
     indicator: Entity<Option<RoomKind>>,
+
+    /// Current chat rooms filter
     active_filter: Entity<RoomKind>,
 
     /// Event subscriptions
@@ -65,6 +71,7 @@ pub struct Sidebar {
 
 impl Sidebar {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let chat = ChatRegistry::global(cx);
         let active_filter = cx.new(|_| RoomKind::Ongoing);
         let indicator = cx.new(|_| None);
         let search_results = cx.new(|_| None);
@@ -72,7 +79,6 @@ impl Sidebar {
         let find_input =
             cx.new(|cx| InputState::new(window, cx).placeholder(t!("sidebar.search_label")));
 
-        let chat = ChatRegistry::global(cx);
         let mut subscriptions = smallvec![];
 
         subscriptions.push(
@@ -80,7 +86,7 @@ impl Sidebar {
             cx.on_release_in(window, move |this, window, cx| {
                 this.image_cache.update(cx, |this, cx| {
                     this.clear(window, cx);
-                })
+                });
             }),
         );
 
@@ -123,7 +129,6 @@ impl Sidebar {
         );
 
         Self {
-            name: "Sidebar".into(),
             focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             find_debouncer: DebouncedDelay::new(),
@@ -580,10 +585,6 @@ impl Panel for Sidebar {
     fn panel_name(&self) -> &'static str {
         "Sidebar"
     }
-
-    fn title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().child("Sidebar")
-    }
 }
 
 impl EventEmitter<PanelEvent> for Sidebar {}
@@ -628,47 +629,36 @@ impl Render for Sidebar {
             .gap_3()
             // Search Input
             .child(
-                div()
-                    .relative()
-                    .mt_3()
-                    .px_2p5()
-                    .w_full()
-                    .h_7()
-                    .flex_none()
-                    .flex()
-                    .child(
-                        Input::new(&self.find_input)
-                            .small()
-                            .cleanable(true)
-                            .appearance(true)
-                            .text_xs()
-                            .suffix(
+                div().flex_none().mt_2().px_2().child(
+                    Input::new(&self.find_input)
+                        .cleanable(true)
+                        .when(!self.finding, |this| {
+                            this.suffix(
                                 Button::new("find")
                                     .icon(IconName::Search)
-                                    .tooltip(t!("sidebar.search_tooltip"))
-                                    .text()
-                                    .small(),
-                            ),
-                    ),
+                                    .tooltip("Press Enter to search")
+                                    .small()
+                                    .text(),
+                            )
+                        }),
+                ),
             )
             // Chat Rooms
             .child(
                 v_flex()
-                    .gap_1()
                     .flex_1()
-                    .px_1p5()
-                    .w_full()
+                    .px_2()
+                    .gap_2()
                     .overflow_y_hidden()
                     .child(
                         div()
-                            .px_1()
+                            .flex_none()
                             .h_flex()
                             .gap_2()
-                            .flex_none()
                             .child(
                                 Button::new("all")
-                                    .label(t!("sidebar.all_button"))
-                                    .tooltip(t!("sidebar.all_conversations_tooltip"))
+                                    .label("All")
+                                    .tooltip("All ongoing conversations")
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind == &RoomKind::Ongoing, |this| {
                                             this.child(
@@ -686,8 +676,8 @@ impl Render for Sidebar {
                             )
                             .child(
                                 Button::new("requests")
-                                    .label(t!("sidebar.requests_button"))
-                                    .tooltip(t!("sidebar.requests_tooltip"))
+                                    .label("Requests")
+                                    .tooltip("Incoming new conversations")
                                     .when_some(self.indicator.read(cx).as_ref(), |this, kind| {
                                         this.when(kind != &RoomKind::Ongoing, |this| {
                                             this.child(
@@ -709,22 +699,15 @@ impl Render for Sidebar {
                                     .w_full()
                                     .justify_end()
                                     .items_center()
-                                    .text_xs()
                                     .child(
                                         Button::new("option")
                                             .icon(IconName::Ellipsis)
-                                            .xsmall()
+                                            .small()
                                             .ghost()
                                             .rounded(cx.theme().radius)
                                             .dropdown_menu(move |this, _window, _cx| {
-                                                this.menu(
-                                                    t!("sidebar.reload_menu"),
-                                                    Box::new(Reload),
-                                                )
-                                                .menu(
-                                                    t!("sidebar.status_menu"),
-                                                    Box::new(RelayStatus),
-                                                )
+                                                this.menu("Reload", Box::new(Reload))
+                                                    .menu("Relay Status", Box::new(RelayStatus))
                                             }),
                                     ),
                             ),

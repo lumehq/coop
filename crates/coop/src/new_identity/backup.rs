@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::divider::Divider;
 use gpui_component::input::{Input, InputState};
-use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, StyledExt};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, StyledExt};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
 
@@ -137,7 +137,11 @@ impl Render for Backup {
                     .child(
                         h_flex()
                             .gap_1()
-                            .child(Input::new(&self.pubkey_input).small().disabled(true))
+                            .child(
+                                Input::new(&self.pubkey_input)
+                                    .disabled(true)
+                                    .bordered(false),
+                            )
                             .child(
                                 Button::new("copy-pubkey")
                                     .icon({
@@ -173,7 +177,11 @@ impl Render for Backup {
                     .child(
                         h_flex()
                             .gap_1()
-                            .child(Input::new(&self.secret_input).small().disabled(true))
+                            .child(
+                                Input::new(&self.secret_input)
+                                    .disabled(true)
+                                    .bordered(false),
+                            )
                             .child(
                                 Button::new("copy-secret")
                                     .icon({
@@ -201,7 +209,7 @@ impl Render for Backup {
             .child(
                 div()
                     .text_xs()
-                    .text_color(cx.theme().danger_foreground)
+                    .text_color(cx.theme().danger)
                     .child(SharedString::from(WARN)),
             )
     }

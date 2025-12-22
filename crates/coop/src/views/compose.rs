@@ -29,36 +29,33 @@ pub fn compose_button(cx: &App) -> impl IntoElement {
     div().child(
         Button::new("compose")
             .icon(IconName::Plus)
-            .ghost()
+            .primary()
             .small()
+            .w_12()
             .rounded(cx.theme().radius)
             .on_click(move |_, window, cx| {
                 let compose = cx.new(|cx| Compose::new(window, cx));
                 let weak_view = compose.downgrade();
 
                 window.open_dialog(cx, move |modal, _window, cx| {
-                    let weak_view = weak_view.clone();
-                    let label = if compose.read(cx).selected(cx).len() > 1 {
-                        shared_t!("compose.create_group_dm_button")
-                    } else {
-                        shared_t!("compose.create_dm_button")
-                    };
+                    let view = weak_view.clone();
 
                     modal
                         .alert()
-                        .overlay_closable(true)
-                        .keyboard(true)
-                        .close_button(true)
-                        .button_props(DialogButtonProps::default().ok_text(label))
-                        .title(shared_t!("sidebar.direct_messages"))
+                        .title("Direct Messages")
+                        .button_props(DialogButtonProps::default().ok_text({
+                            if compose.read(cx).selected(cx).len() > 1 {
+                                "Create Group DM"
+                            } else {
+                                "Create DM"
+                            }
+                        }))
                         .child(compose.clone())
                         .on_ok(move |_, window, cx| {
-                            weak_view
-                                .update(cx, |this, cx| {
-                                    this.submit(window, cx);
-                                })
-                                .ok();
-
+                            view.update(cx, |this, cx| {
+                                this.submit(window, cx);
+                            })
+                            .ok();
                             // false to prevent the modal from closing
                             false
                         })
@@ -106,16 +103,15 @@ pub struct Compose {
     /// Error message
     error_message: Entity<Option<SharedString>>,
 
+    /// Image cache entity
     image_cache: Entity<RetainAllImageCache>,
+
     _subscriptions: SmallVec<[Subscription; 2]>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let contacts = cx.new(|_| vec![]);
         let error_message = cx.new(|_| None);
 
@@ -125,20 +121,9 @@ impl Compose {
         let title_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Family...(Optional)"));
 
+        let get_contacts = Self::get_contacts(cx);
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
-
-        let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let profiles = client.database().contacts(public_key).await?;
-            let contacts: Vec<Contact> = profiles
-                .into_iter()
-                .map(|profile| Contact::new(profile.public_key()))
-                .collect();
-
-            Ok(contacts)
-        });
 
         tasks.push(
             // Load all contacts
@@ -191,6 +176,23 @@ impl Compose {
             _subscriptions: subscriptions,
             _tasks: tasks,
         }
+    }
+
+    fn get_contacts(cx: &App) -> Task<Result<Vec<Contact>, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let profiles = client.database().contacts(public_key).await?;
+            let contacts: Vec<Contact> = profiles
+                .into_iter()
+                .map(|profile| Contact::new(profile.public_key()))
+                .collect();
+
+            Ok(contacts)
+        })
     }
 
     async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
@@ -378,16 +380,15 @@ impl Compose {
                 h_flex()
                     .id(ix)
                     .px_2()
-                    .h_11()
+                    .h_8()
                     .w_full()
                     .justify_between()
                     .rounded(cx.theme().radius)
                     .child(
-                        Avatar::new()
-                            .src(profile.avatar(proxy))
-                            .name(profile.display_name())
-                            .small()
-                            .gap_1p5(),
+                        h_flex()
+                            .gap_1p5()
+                            .child(Avatar::new().src(profile.avatar(proxy)).small())
+                            .child(div().text_sm().child(profile.display_name())),
                     )
                     .when(contact.selected, |this| {
                         this.child(
@@ -417,7 +418,8 @@ impl Render for Compose {
             .gap_2()
             .child(
                 div()
-                    .text_sm()
+                    .text_xs()
+                    .line_height(relative(1.25))
                     .text_color(cx.theme().muted_foreground)
                     .child(shared_t!("compose.description")),
             )
@@ -425,8 +427,8 @@ impl Render for Compose {
                 this.child(
                     div()
                         .italic()
-                        .text_sm()
-                        .text_color(cx.theme().danger_foreground)
+                        .text_xs()
+                        .text_color(cx.theme().danger)
                         .child(msg.clone()),
                 )
             })
@@ -446,11 +448,10 @@ impl Render for Compose {
             )
             .child(
                 v_flex()
-                    .pt_1()
                     .gap_2()
                     .child(
                         v_flex()
-                            .gap_2()
+                            .gap_1()
                             .child(
                                 div()
                                     .text_sm()
@@ -458,22 +459,26 @@ impl Render for Compose {
                                     .child(shared_t!("compose.to_label")),
                             )
                             .child(
-                                Input::new(&self.user_input).small().suffix(
-                                    Button::new("add")
-                                        .icon(IconName::Plus)
-                                        .ghost()
-                                        .small()
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.add_and_select_contact(window, cx);
-                                        })),
-                                ),
+                                Input::new(&self.user_input)
+                                    .appearance(false)
+                                    .rounded(cx.theme().radius)
+                                    .bg(cx.theme().muted)
+                                    .suffix(
+                                        Button::new("add")
+                                            .icon(IconName::Plus)
+                                            .ghost()
+                                            .small()
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.add_and_select_contact(window, cx);
+                                            })),
+                                    ),
                             ),
                     )
                     .map(|this| {
                         if contacts.is_empty() {
                             this.child(
                                 v_flex()
-                                    .h_24()
+                                    .h_20()
                                     .w_full()
                                     .items_center()
                                     .justify_center()
@@ -500,7 +505,7 @@ impl Render for Compose {
                                         this.list_items(range, cx)
                                     }),
                                 )
-                                .h(px(300.)),
+                                .h(px(240.)),
                             )
                         }
                     }),

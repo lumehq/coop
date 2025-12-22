@@ -4,14 +4,16 @@ use anyhow::anyhow;
 use common::BUNKER_TIMEOUT;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
+    div, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
+    ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::dock::{Panel, PanelEvent};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::notification::Notification;
-use gpui_component::{v_flex, ActiveTheme, Disableable, StyledExt, WindowExt};
+use gpui_component::{
+    h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, StyledExt, WindowExt,
+};
 use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
@@ -19,6 +21,7 @@ use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
 
 use crate::actions::CoopAuthUrlHandler;
+use crate::chatspace;
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Login> {
     cx.new(|cx| Login::new(window, cx))
@@ -348,7 +351,19 @@ impl Panel for Login {
     }
 
     fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child("Welcome Back")
+        h_flex()
+            .text_xs()
+            .gap_2()
+            .child(
+                Button::new("back")
+                    .icon(IconName::ArrowLeft)
+                    .small()
+                    .ghost()
+                    .on_click(|_ev, window, cx| {
+                        chatspace::onboarding(window, cx);
+                    }),
+            )
+            .child("Welcome Back!")
     }
 }
 
@@ -374,9 +389,8 @@ impl Render for Login {
                     .child(
                         div()
                             .text_center()
-                            .text_xl()
+                            .text_lg()
                             .font_semibold()
-                            .line_height(relative(1.3))
                             .child(SharedString::from("Continue with Private Key or Bunker")),
                     )
                     .child(
@@ -386,7 +400,6 @@ impl Render for Login {
                             .child(
                                 v_flex()
                                     .gap_1()
-                                    .text_sm()
                                     .text_color(cx.theme().muted_foreground)
                                     .child("nsec or bunker://")
                                     .child(Input::new(&self.key_input)),
@@ -395,7 +408,6 @@ impl Render for Login {
                                 this.child(
                                     v_flex()
                                         .gap_1()
-                                        .text_sm()
                                         .text_color(cx.theme().muted_foreground)
                                         .child("Password:")
                                         .child(Input::new(&self.pass_input)),
@@ -416,7 +428,7 @@ impl Render for Login {
                                     div()
                                         .text_xs()
                                         .text_center()
-                                        .text_color(cx.theme().muted_foreground)
+                                        .text_color(cx.theme().warning_foreground)
                                         .child(shared_t!("login.approve_message", i = i)),
                                 )
                             })

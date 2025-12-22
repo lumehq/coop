@@ -28,11 +28,15 @@ pub fn init(cre: Credential, window: &mut Window, cx: &mut App) -> Entity<Startu
 /// Startup
 #[derive(Debug)]
 pub struct Startup {
+    focus_handle: FocusHandle,
+
+    /// User's credential
     credential: Credential,
+
+    /// Whether the user is logged in
     loading: bool,
 
-    name: SharedString,
-    focus_handle: FocusHandle,
+    /// Image cache entity
     image_cache: Entity<RetainAllImageCache>,
 
     /// Event subscriptions
@@ -57,10 +61,9 @@ impl Startup {
         );
 
         Self {
+            focus_handle: cx.focus_handle(),
             credential,
             loading: false,
-            name: "Onboarding".into(),
-            focus_handle: cx.focus_handle(),
             image_cache: RetainAllImageCache::new(cx),
             _subscriptions: subscriptions,
             _tasks: tasks,
@@ -181,10 +184,6 @@ impl Panel for Startup {
     fn panel_name(&self) -> &'static str {
         "Startup"
     }
-
-    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child("Startup")
-    }
 }
 
 impl EventEmitter<PanelEvent> for Startup {}
@@ -219,20 +218,21 @@ impl Render for Startup {
                         svg()
                             .path("brand/coop.svg")
                             .size_16()
-                            .text_color(cx.theme().muted),
+                            .text_color(cx.theme().secondary),
                     )
                     .child(
                         div()
                             .text_center()
                             .child(
                                 div()
-                                    .text_xl()
+                                    .text_lg()
                                     .font_semibold()
                                     .line_height(relative(1.3))
-                                    .child(shared_t!("welcome.title")),
+                                    .child(SharedString::from("Welcome back!")),
                             )
                             .child(
                                 div()
+                                    .text_sm()
                                     .text_color(cx.theme().muted_foreground)
                                     .child(shared_t!("welcome.subtitle")),
                             ),
@@ -247,7 +247,7 @@ impl Render for Startup {
                             .h_10()
                             .w_72()
                             .bg(cx.theme().muted)
-                            .rounded_lg()
+                            .rounded(cx.theme().radius)
                             .text_sm()
                             .when(self.loading, |this| {
                                 this.child(
@@ -272,7 +272,13 @@ impl Render for Startup {
                                             h_flex()
                                                 .gap_1()
                                                 .child(Avatar::new().src(avatar).small())
-                                                .child(div().pb_px().font_semibold().child(name)),
+                                                .child(
+                                                    div()
+                                                        .pb_px()
+                                                        .text_sm()
+                                                        .font_semibold()
+                                                        .child(name),
+                                                ),
                                         )
                                         .child(div().when(bunker, |this| {
                                             let label = SharedString::from("Nostr Connect");
@@ -282,7 +288,7 @@ impl Render for Startup {
                                                     .py_0p5()
                                                     .px_2()
                                                     .text_xs()
-                                                    .bg(cx.theme().secondary_active)
+                                                    .bg(cx.theme().secondary)
                                                     .text_color(cx.theme().secondary_foreground)
                                                     .rounded_full()
                                                     .child(label),
@@ -297,16 +303,17 @@ impl Render for Startup {
                             })
                             .hover(|this| {
                                 this.text_color(cx.theme().primary_foreground)
-                                    .bg(cx.theme().primary_foreground)
+                                    .bg(cx.theme().primary_hover)
                             })
                             .on_click(cx.listener(move |this, _e, window, cx| {
                                 this.login(window, cx);
                             })),
                     )
                     .child(
-                        Button::new("logout")
-                            .label(t!("user.sign_out"))
-                            .ghost()
+                        Button::new("signout")
+                            .label("Sign out")
+                            .xsmall()
+                            .link()
                             .on_click(|_, _window, cx| {
                                 reset(cx);
                             }),
