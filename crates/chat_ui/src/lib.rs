@@ -66,7 +66,6 @@ pub struct ChatPanel {
     uploading: bool,
 
     // Panel
-    id: SharedString,
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
@@ -87,7 +86,6 @@ impl ChatPanel {
         let replies_to = cx.new(|_| HashSet::new());
         let options = cx.new(|_| SendOptions::default());
 
-        let id = room.read(cx).id.to_string().into();
         let messages = BTreeSet::from([Message::system()]);
         let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
 
@@ -180,7 +178,6 @@ impl ChatPanel {
         );
 
         Self {
-            id,
             messages,
             room,
             list_state,
@@ -707,7 +704,7 @@ impl ChatPanel {
                                 h_flex()
                                     .gap_2()
                                     .text_sm()
-                                    .text_color(cx.theme().muted)
+                                    .text_color(cx.theme().muted_foreground)
                                     .child(
                                         div()
                                             .font_semibold()
@@ -1311,7 +1308,11 @@ impl Panel for ChatPanel {
             let label = this.display_name(cx);
             let url = this.display_image(proxy, cx);
 
-            Avatar::new().src(url).name(label).xsmall()
+            h_flex()
+                .gap_1()
+                .text_xs()
+                .child(Avatar::new().src(url).xsmall())
+                .child(label)
         })
     }
 

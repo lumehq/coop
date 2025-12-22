@@ -36,7 +36,7 @@ impl Panel for Welcome {
             svg()
                 .path("brand/coop.svg")
                 .size_4()
-                .text_color(cx.theme().secondary),
+                .text_color(cx.theme().primary),
         )
     }
 }

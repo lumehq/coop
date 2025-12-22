@@ -240,7 +240,7 @@ impl Render for Startup {
             )
             .child(
                 v_flex()
-                    .gap_2()
+                    .gap_3()
                     .child(
                         div()
                             .id("account")
