@@ -3,15 +3,13 @@ use std::sync::Arc;
 use account::Account;
 use auto_update::{AutoUpdateStatus, AutoUpdater};
 use chat::{ChatEvent, ChatRegistry};
-use chat_ui::{CopyPublicKey, OpenPublicKey};
 use common::{RenderedProfile, DEFAULT_SIDEBAR_WIDTH};
 use encryption::Encryption;
 use encryption_ui::EncryptionPanel;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    deferred, div, px, App, AppContext, Axis, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use gpui_component::avatar::Avatar;
 use gpui_component::button::{Button, ButtonVariants};
@@ -24,14 +22,12 @@ use gpui_component::{
 };
 use i18n::{shared_t, t};
 use key_store::{Credential, KeyItem, KeyStore};
-use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 
 use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
-use crate::user::viewer;
 use crate::views::compose::compose_button;
 use crate::views::{onboarding, preferences, setup_relay, startup, welcome};
 use crate::{login, new_identity, sidebar, user};
@@ -326,6 +322,7 @@ impl ChatSpace {
         reset(cx);
     }
 
+    /*
     fn on_open_pubkey(&mut self, ev: &OpenPublicKey, window: &mut Window, cx: &mut Context<Self>) {
         let public_key = ev.0;
         let view = viewer::init(public_key, window, cx);
@@ -354,6 +351,7 @@ impl ChatSpace {
         cx.write_to_clipboard(ClipboardItem::new_string(bech32));
         window.push_notification(shared_t!("common.copied"), cx);
     }
+    */
 
     fn on_keyring(&mut self, _ev: &KeyringPopup, window: &mut Window, cx: &mut Context<Self>) {
         window.open_dialog(cx, move |this, _window, _cx| {
@@ -589,8 +587,6 @@ impl Render for ChatSpace {
             .on_action(cx.listener(Self::on_relays))
             .on_action(cx.listener(Self::on_dark_mode))
             .on_action(cx.listener(Self::on_sign_out))
-            .on_action(cx.listener(Self::on_open_pubkey))
-            .on_action(cx.listener(Self::on_copy_pubkey))
             .on_action(cx.listener(Self::on_keyring))
             .relative()
             .size_full()

@@ -18,11 +18,11 @@ use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::dock::{Panel, PanelEvent};
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::menu::{ContextMenuExt, DropdownMenu};
+use gpui_component::menu::{ContextMenuExt, DropdownMenu, PopupMenu};
 use gpui_component::notification::Notification;
 use gpui_component::{
-    h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, InteractiveElementExt, Sizable,
-    StyledExt, WindowExt,
+    h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, IconNamed, InteractiveElementExt,
+    Sizable, StyledExt, WindowExt,
 };
 use gpui_tokio::Tokio;
 use indexset::{BTreeMap, BTreeSet};
@@ -34,16 +34,37 @@ use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use state::NostrRegistry;
 
-use crate::emoji::EmojiPicker;
 use crate::text::RenderedText;
 
 mod actions;
-mod emoji;
 mod subject;
 mod text;
 
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
     cx.new(|cx| ChatPanel::new(room, window, cx))
+}
+
+pub enum CustomIconName {
+    Refresh,
+    Reply,
+    Edit,
+    Upload,
+    Encryption,
+    Emoji,
+}
+
+impl IconNamed for CustomIconName {
+    fn path(self) -> gpui::SharedString {
+        match self {
+            CustomIconName::Refresh => "icons/refresh.svg",
+            CustomIconName::Reply => "icons/reply.svg",
+            CustomIconName::Edit => "icons/edit.svg",
+            CustomIconName::Upload => "icons/upload.svg",
+            CustomIconName::Encryption => "icons/encryption.svg",
+            CustomIconName::Emoji => "icons/emoji.svg",
+        }
+        .into()
+    }
 }
 
 pub struct ChatPanel {
@@ -58,6 +79,7 @@ pub struct ChatPanel {
 
     // New Message
     input: Entity<InputState>,
+    sending: bool,
     options: Entity<SendOptions>,
     replies_to: Entity<HashSet<EventId>>,
 
@@ -129,8 +151,10 @@ impl ChatPanel {
                 &input,
                 window,
                 move |this: &mut Self, _input, event, window, cx| {
-                    if let InputEvent::PressEnter { .. } = event {
-                        this.send_message(window, cx);
+                    if let InputEvent::PressEnter { secondary } = event {
+                        if *secondary {
+                            this.send_message(window, cx);
+                        }
                     };
                 },
             ),
@@ -185,6 +209,7 @@ impl ChatPanel {
             replies_to,
             attachments,
             options,
+            sending: false,
             rendered_texts_by_id: BTreeMap::new(),
             reports_by_id: BTreeMap::new(),
             uploading: false,
@@ -255,10 +280,7 @@ impl ChatPanel {
         }
 
         // Temporary disable the message input
-        self.input.update(cx, |this, cx| {
-            this.set_loading(false, window, cx);
-            this.set_value("", window, cx);
-        });
+        self.set_sending(true, cx);
 
         // Get replies_to if it's present
         let replies: Vec<EventId> = self.replies_to.read(cx).iter().copied().collect();
@@ -286,8 +308,8 @@ impl ChatPanel {
                 this.insert_message(Message::user(rumor), true, cx);
                 this.remove_all_replies(cx);
                 this.remove_all_attachments(cx);
+                this.set_sending(false, cx);
                 this.input.update(cx, |this, cx| {
-                    this.set_loading(false, window, cx);
                     this.set_value("", window, cx);
                 });
             })
@@ -534,6 +556,11 @@ impl ChatPanel {
         .detach();
     }
 
+    fn set_sending(&mut self, sending: bool, cx: &mut Context<Self>) {
+        self.sending = sending;
+        cx.notify();
+    }
+
     fn set_uploading(&mut self, uploading: bool, cx: &mut Context<Self>) {
         self.uploading = uploading;
         cx.notify();
@@ -686,8 +713,8 @@ impl ChatPanel {
                                 .id(SharedString::from(format!("{ix}-avatar")))
                                 .child(Avatar::new().src(author.avatar(proxy)).small())
                                 .context_menu(move |this, _window, _cx| {
-                                    let view = Box::new(OpenPublicKey(public_key));
-                                    let copy = Box::new(CopyPublicKey(public_key));
+                                    let view = Box::new(RoomEvent::View(public_key));
+                                    let copy = Box::new(RoomEvent::Copy(public_key));
 
                                     this.menu("View Profile", view)
                                         .menu("Copy Public Key", copy)
@@ -817,7 +844,7 @@ impl ChatPanel {
         h_flex()
             .id(SharedString::from(id.to_hex()))
             .gap_0p5()
-            .text_color(cx.theme().danger_foreground)
+            .text_color(cx.theme().danger)
             .text_xs()
             .italic()
             .child(Icon::new(IconName::Info).xsmall())
@@ -1022,7 +1049,7 @@ impl ChatPanel {
             .bg(cx.theme().background)
             .child(
                 Button::new("reply")
-                    //.icon(IconName::Reply)
+                    .icon(CustomIconName::Reply)
                     .tooltip("Reply")
                     .small()
                     .ghost()
@@ -1048,13 +1075,16 @@ impl ChatPanel {
             )
             .child(div().flex_shrink_0().h_4().w_px().bg(cx.theme().border))
             .child(
-                Button::new("seen-on")
+                Button::new("more")
                     .icon(IconName::Ellipsis)
                     .small()
                     .ghost()
                     .dropdown_menu({
                         let id = id.to_owned();
-                        move |this, _, _| this.menu("Seen on", Box::new(SeenOn(id)))
+                        move |this, _, _| {
+                            this.label("More")
+                                .menu("Seen on", Box::new(RoomEvent::Relay(id)))
+                        }
                     }),
             )
             .group_hover("", |this| this.visible())
@@ -1128,7 +1158,7 @@ impl ChatPanel {
                                 .items_baseline()
                                 .gap_1()
                                 .text_xs()
-                                .text_color(cx.theme().muted)
+                                .text_color(cx.theme().muted_foreground)
                                 .child(SharedString::from("Replying to:"))
                                 .child(
                                     div()
@@ -1186,7 +1216,7 @@ impl ChatPanel {
             .map(|subject| subject.to_string());
 
         Button::new("subject")
-            //.icon(IconName::Edit)
+            .icon(CustomIconName::Edit)
             .tooltip("Change the subject of the conversation")
             .on_click(move |_, window, cx| {
                 let view = subject::init(subject.clone(), window, cx);
@@ -1221,7 +1251,7 @@ impl ChatPanel {
         let room = self.room.downgrade();
 
         Button::new("reload")
-            //.icon(IconName::Refresh)
+            .icon(CustomIconName::Refresh)
             .tooltip("Reload")
             .on_click(move |_ev, window, cx| {
                 _ = room.update(cx, |this, cx| {
@@ -1231,8 +1261,23 @@ impl ChatPanel {
             })
     }
 
-    fn on_open_seen_on(&mut self, ev: &SeenOn, window: &mut Window, cx: &mut Context<Self>) {
-        let id = ev.0;
+    fn on_room_event(&mut self, ev: &RoomEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match ev {
+            RoomEvent::Relay(id) => {
+                self.view_relay(id, window, cx);
+            }
+            RoomEvent::SetSigner(kind) => {
+                self.options.update(cx, move |this, cx| {
+                    this.signer_kind = kind.to_owned();
+                    cx.notify();
+                });
+            }
+            _ => {}
+        }
+    }
+
+    fn view_relay(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
+        let id = id.to_owned();
         let nostr = NostrRegistry::global(cx);
         let client = nostr.read(cx).client();
         let tracker = nostr.read(cx).tracker();
@@ -1288,13 +1333,6 @@ impl ChatPanel {
         })
         .detach();
     }
-
-    fn on_set_encryption(&mut self, ev: &SetSigner, _: &mut Window, cx: &mut Context<Self>) {
-        self.options.update(cx, move |this, cx| {
-            this.signer_kind = ev.0;
-            cx.notify();
-        });
-    }
 }
 
 impl Panel for ChatPanel {
@@ -1316,15 +1354,23 @@ impl Panel for ChatPanel {
         })
     }
 
-    fn toolbar_buttons(
+    fn dropdown_menu(
         &mut self,
+        this: PopupMenu,
         _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<Vec<Button>> {
-        let subject_button = self.subject_button(cx);
-        let reload_button = self.reload_button(cx);
-
-        Some(vec![subject_button, reload_button])
+        _cx: &mut Context<Self>,
+    ) -> PopupMenu {
+        this.label("Manage")
+            .menu_with_icon(
+                "Change subject",
+                CustomIconName::Edit,
+                Box::new(RoomEvent::SetSubject),
+            )
+            .menu_with_icon(
+                "Refresh",
+                CustomIconName::Refresh,
+                Box::new(RoomEvent::Refresh),
+            )
     }
 }
 
@@ -1341,8 +1387,7 @@ impl Render for ChatPanel {
         let kind = self.signer_kind(cx);
 
         v_flex()
-            .on_action(cx.listener(Self::on_open_seen_on))
-            .on_action(cx.listener(Self::on_set_encryption))
+            .on_action(cx.listener(Self::on_room_event))
             .image_cache(self.image_cache.clone())
             .size_full()
             .child(
@@ -1379,11 +1424,11 @@ impl Render for ChatPanel {
                                             .text_color(cx.theme().muted_foreground)
                                             .child(
                                                 Button::new("upload")
-                                                    //.icon(IconName::Upload)
+                                                    .icon(CustomIconName::Upload)
                                                     .loading(self.uploading)
                                                     .disabled(self.uploading)
                                                     .ghost()
-                                                    .large()
+                                                    .size(px(36.))
                                                     .on_click(cx.listener(
                                                         move |this, _, window, cx| {
                                                             this.upload(window, cx);
@@ -1391,34 +1436,68 @@ impl Render for ChatPanel {
                                                     )),
                                             )
                                             .child(
-                                                EmojiPicker::new()
-                                                    .target(self.input.downgrade())
-                                                    //.icon(IconName::EmojiFill)
-                                                    .large(),
+                                                Button::new("emoji")
+                                                    .icon(CustomIconName::Emoji)
+                                                    .ghost()
+                                                    .size(px(36.))
+                                                    .dropdown_menu(move |this, _window, _cx| {
+                                                        this.label("Emojis")
+                                                            .menu(
+                                                                "😀",
+                                                                Box::new(RoomEvent::SetEmoji(
+                                                                    "😀".into(),
+                                                                )),
+                                                            )
+                                                            .menu(
+                                                                "👍",
+                                                                Box::new(RoomEvent::SetEmoji(
+                                                                    "👍".into(),
+                                                                )),
+                                                            )
+                                                            .menu(
+                                                                "😂",
+                                                                Box::new(RoomEvent::SetEmoji(
+                                                                    "😂".into(),
+                                                                )),
+                                                            )
+                                                    }),
                                             ),
                                     )
-                                    .child(Input::new(&self.input))
+                                    .child(
+                                        Input::new(&self.input)
+                                            .disabled(self.sending)
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .rounded(cx.theme().radius)
+                                            .bg(cx.theme().muted),
+                                    )
                                     .child(
                                         Button::new("encryptions")
-                                            //.icon(IconName::Encryption)
+                                            .icon(CustomIconName::Encryption)
                                             .ghost()
-                                            .large()
+                                            .size(px(36.))
                                             .dropdown_menu(move |this, _window, _cx| {
                                                 this.label("Encrypt by:")
                                                     .menu_with_check(
                                                         "Encryption Key",
                                                         matches!(kind, SignerKind::Encryption),
-                                                        Box::new(SetSigner(SignerKind::Encryption)),
+                                                        Box::new(RoomEvent::SetSigner(
+                                                            SignerKind::Encryption,
+                                                        )),
                                                     )
                                                     .menu_with_check(
                                                         "User's Identity",
                                                         matches!(kind, SignerKind::User),
-                                                        Box::new(SetSigner(SignerKind::User)),
+                                                        Box::new(RoomEvent::SetSigner(
+                                                            SignerKind::User,
+                                                        )),
                                                     )
                                                     .menu_with_check(
                                                         "Auto",
                                                         matches!(kind, SignerKind::Auto),
-                                                        Box::new(SetSigner(SignerKind::Auto)),
+                                                        Box::new(RoomEvent::SetSigner(
+                                                            SignerKind::Auto,
+                                                        )),
                                                     )
                                             }),
                                     ),

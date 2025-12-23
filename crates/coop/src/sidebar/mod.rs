@@ -157,18 +157,20 @@ impl Sidebar {
 
         let mut results: Vec<Event> = Vec::with_capacity(FIND_LIMIT);
 
-        while let Some(event) = stream.next().await {
-            // Skip if author is match current user
-            if event.pubkey == public_key {
-                continue;
-            }
+        while let Some((_url, event)) = stream.next().await {
+            if let Ok(event) = event {
+                // Skip if author is match current user
+                if event.pubkey == public_key {
+                    continue;
+                }
 
-            // Skip if the event has already been added
-            if results.iter().any(|this| this.pubkey == event.pubkey) {
-                continue;
-            }
+                // Skip if the event has already been added
+                if results.iter().any(|this| this.pubkey == event.pubkey) {
+                    continue;
+                }
 
-            results.push(event);
+                results.push(event);
+            }
         }
 
         if results.is_empty() {

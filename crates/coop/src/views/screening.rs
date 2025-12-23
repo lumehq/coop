@@ -76,8 +76,10 @@ impl Screening {
                 .stream_events_from(BOOTSTRAP_RELAYS, filter, Duration::from_secs(2))
                 .await
             {
-                while let Some(event) = stream.next().await {
-                    activity = Some(event.created_at);
+                while let Some((_url, event)) = stream.next().await {
+                    if let Ok(event) = event {
+                        activity = Some(event.created_at);
+                    }
                 }
             }
 
