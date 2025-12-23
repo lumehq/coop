@@ -60,7 +60,7 @@ impl ContextModal for Window {
             }
 
             let focus_handle = cx.focus_handle();
-            focus_handle.focus(window);
+            focus_handle.focus(window, cx);
 
             root.active_modals.push(ActiveModal {
                 focus_handle,
@@ -81,7 +81,7 @@ impl ContextModal for Window {
 
             if let Some(top_modal) = root.active_modals.last() {
                 // Focus the next modal.
-                top_modal.focus_handle.focus(window);
+                top_modal.focus_handle.focus(window, cx);
             } else {
                 // Restore focus if there are no more modals.
                 root.focus_back(window, cx);
@@ -188,9 +188,9 @@ impl Root {
             .read(cx)
     }
 
-    fn focus_back(&mut self, window: &mut Window, _: &mut App) {
+    fn focus_back(&mut self, window: &mut Window, cx: &mut App) {
         if let Some(handle) = self.previous_focus_handle.clone() {
-            window.focus(&handle);
+            window.focus(&handle, cx);
         }
     }
 

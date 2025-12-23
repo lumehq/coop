@@ -33,7 +33,7 @@ pub trait FocusableCycle {
             .nth(1)
             .unwrap_or(fallback_handle);
 
-        target_focus_handle.focus(window);
+        target_focus_handle.focus(window, cx);
         cx.stop_propagation();
     }
 }

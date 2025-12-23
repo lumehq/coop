@@ -859,7 +859,7 @@ impl Element for TextElement {
                 let p = point(input_bounds.origin.x, origin.y + offset_y);
 
                 for line in lines {
-                    _ = line.paint(p, line_height, window, cx);
+                    _ = line.paint(p, line_height, TextAlign::Left, None, window, cx);
                     offset_y += line_height;
                 }
             }

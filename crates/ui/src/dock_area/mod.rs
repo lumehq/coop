@@ -309,7 +309,7 @@ impl DockItem {
 
     pub(crate) fn focus_tab_panel(&self, window: &mut Window, cx: &mut App) {
         if let DockItem::Tabs { view, .. } = self {
-            window.focus(&view.read(cx).focus_handle(cx));
+            window.focus(&view.read(cx).focus_handle(cx), cx);
         }
     }
 }

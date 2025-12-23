@@ -445,7 +445,7 @@ impl<M: ManagedView> Element for Popover<M> {
                                         if let Some(previous_focus_handle) =
                                             previous_focus_handle.as_ref()
                                         {
-                                            window.focus(previous_focus_handle);
+                                            window.focus(previous_focus_handle, cx);
                                         }
                                     }
                                     *old_content_view1.borrow_mut() = None;
@@ -455,7 +455,7 @@ impl<M: ManagedView> Element for Popover<M> {
                             )
                             .detach();
 
-                        window.focus(&new_content_view.focus_handle(cx));
+                        window.focus(&new_content_view.focus_handle(cx), cx);
                         *old_content_view.borrow_mut() = Some(new_content_view);
                         window.refresh();
                     }
