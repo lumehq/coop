@@ -3,19 +3,18 @@ use std::time::Duration;
 use common::{nip05_verify, shorten_pubkey, RenderedProfile};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, relative, rems, App, AppContext, ClipboardItem, Context, Entity, IntoElement,
-    ParentElement, Render, SharedString, Styled, Task, Window,
+    div, relative, App, AppContext, ClipboardItem, Context, Entity, IntoElement, ParentElement,
+    Render, SharedString, Styled, Task, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt};
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::{h_flex, v_flex, Icon, IconName, Sizable, StyledExt};
 
 pub fn init(public_key: PublicKey, window: &mut Window, cx: &mut App) -> Entity<ProfileViewer> {
     cx.new(|cx| ProfileViewer::new(public_key, window, cx))
@@ -147,7 +146,7 @@ impl Render for ProfileViewer {
                     .items_center()
                     .justify_center()
                     .text_center()
-                    .child(Avatar::new(self.profile.avatar(proxy)).size(rems(4.)))
+                    .child(Avatar::new().src(self.profile.avatar(proxy)).large())
                     .child(
                         v_flex()
                             .child(
@@ -162,15 +161,15 @@ impl Render for ProfileViewer {
                                         .justify_center()
                                         .gap_1()
                                         .text_xs()
-                                        .text_color(cx.theme().text_muted)
+                                        .text_color(cx.theme().muted_foreground)
                                         .child(address)
                                         .when(self.verified, |this| {
                                             this.child(
                                                 div()
                                                     .relative()
-                                                    .text_color(cx.theme().text_accent)
+                                                    .text_color(cx.theme().accent_foreground)
                                                     .child(
-                                                        Icon::new(IconName::CheckCircleFill)
+                                                        Icon::new(IconName::CircleCheck)
                                                             .small()
                                                             .block(),
                                                     ),
@@ -186,7 +185,7 @@ impl Render for ProfileViewer {
                                 .w_32()
                                 .p_1()
                                 .rounded_full()
-                                .bg(cx.theme().elevated_surface_background)
+                                .bg(cx.theme().muted)
                                 .text_xs()
                                 .font_semibold()
                                 .child(SharedString::from("Unknown contact")),
@@ -199,7 +198,7 @@ impl Render for ProfileViewer {
                     .text_sm()
                     .child(
                         div()
-                            .text_color(cx.theme().text_muted)
+                            .text_color(cx.theme().muted_foreground)
                             .child(SharedString::from("Bio:")),
                     )
                     .child(
@@ -207,7 +206,7 @@ impl Render for ProfileViewer {
                             .p_2()
                             .min_h_16()
                             .rounded(cx.theme().radius)
-                            .bg(cx.theme().elevated_surface_background)
+                            .bg(cx.theme().muted)
                             .child(
                                 self.profile
                                     .metadata()
@@ -224,7 +223,7 @@ impl Render for ProfileViewer {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(cx.theme().text_placeholder)
+                            .text_color(cx.theme().muted_foreground)
                             .font_semibold()
                             .child(SharedString::from("Public Key:")),
                     )
@@ -234,7 +233,7 @@ impl Render for ProfileViewer {
                             .w_full()
                             .h_12()
                             .justify_center()
-                            .bg(cx.theme().surface_background)
+                            .bg(cx.theme().muted)
                             .rounded(cx.theme().radius)
                             .text_sm()
                             .child(shared_bech32)
@@ -242,7 +241,7 @@ impl Render for ProfileViewer {
                                 Button::new("copy")
                                     .icon({
                                         if self.copied {
-                                            IconName::CheckCircleFill
+                                            IconName::CircleCheck
                                         } else {
                                             IconName::Copy
                                         }

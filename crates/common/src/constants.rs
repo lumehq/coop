@@ -11,11 +11,7 @@ pub const BOOTSTRAP_RELAYS: [&str; 5] = [
 ];
 
 /// Search Relays.
-pub const SEARCH_RELAYS: [&str; 3] = [
-    "wss://relay.nostr.band",
-    "wss://search.nos.today",
-    "wss://relay.noswhere.com",
-];
+pub const SEARCH_RELAYS: [&str; 2] = ["wss://search.nos.today", "wss://relay.noswhere.com"];
 
 /// Default relay for Nostr Connect
 pub const NOSTR_CONNECT_RELAY: &str = "wss://relay.nsec.app";

@@ -1,10 +1,15 @@
 use anyhow::{anyhow, Error};
 use common::{default_nip17_relays, default_nip65_relays, nip96_upload, BOOTSTRAP_RELAYS};
 use gpui::{
-    rems, AnyElement, App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle,
-    Focusable, IntoElement, ParentElement, PathPromptOptions, Render, SharedString, Styled, Task,
-    Window,
+    App, AppContext, Context, Entity, EventEmitter, Flatten, FocusHandle, Focusable, IntoElement,
+    ParentElement, PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dialog::DialogButtonProps;
+use gpui_component::dock::{Panel, PanelEvent};
+use gpui_component::input::{Input, InputState};
+use gpui_component::{h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, WindowExt};
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
@@ -12,12 +17,8 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
 use state::NostrRegistry;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::dock_area::panel::{Panel, PanelEvent};
-use ui::input::{InputState, TextInput};
-use ui::modal::ModalButtonProps;
-use ui::{divider, v_flex, ContextModal, Disableable, IconName, Sizable};
+
+use crate::chatspace;
 
 mod backup;
 
@@ -27,14 +28,22 @@ pub fn init(window: &mut Window, cx: &mut App) -> Entity<NewAccount> {
 
 #[derive(Debug)]
 pub struct NewAccount {
-    name_input: Entity<InputState>,
-    avatar_input: Entity<InputState>,
-    temp_keys: Entity<Keys>,
-    uploading: bool,
-    submitting: bool,
-    // Panel
-    name: SharedString,
     focus_handle: FocusHandle,
+
+    /// Input for user's display name
+    name_input: Entity<InputState>,
+
+    /// Input for user's avatar url (hidden)
+    avatar_input: Entity<InputState>,
+
+    /// Newly created account's keys
+    temp_keys: Entity<Keys>,
+
+    /// Whether the upload process is in progress
+    uploading: bool,
+
+    /// Whether the account creation process is in progress
+    submitting: bool,
 }
 
 impl NewAccount {
@@ -49,7 +58,6 @@ impl NewAccount {
             temp_keys,
             uploading: false,
             submitting: false,
-            name: "Create a new identity".into(),
             focus_handle: cx.focus_handle(),
         }
     }
@@ -62,7 +70,7 @@ impl NewAccount {
         let weak_view = view.downgrade();
         let current_view = cx.entity().downgrade();
 
-        window.open_modal(cx, move |modal, _window, _cx| {
+        window.open_dialog(cx, move |modal, _window, _cx| {
             let weak_view = weak_view.clone();
             let current_view = current_view.clone();
 
@@ -71,7 +79,7 @@ impl NewAccount {
                 .title(shared_t!("new_account.backup_label"))
                 .child(view.clone())
                 .button_props(
-                    ModalButtonProps::default().ok_text(t!("new_account.backup_download")),
+                    DialogButtonProps::default().ok_text(t!("new_account.backup_download")),
                 )
                 .on_ok(move |_, window, cx| {
                     weak_view
@@ -122,7 +130,7 @@ impl NewAccount {
         };
 
         // Close all modals if available
-        window.close_all_modals(cx);
+        window.close_all_dialogs(cx);
 
         // Set the client's signer with the current keys
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
@@ -274,12 +282,24 @@ impl NewAccount {
 }
 
 impl Panel for NewAccount {
-    fn panel_id(&self) -> SharedString {
-        self.name.clone()
+    fn panel_name(&self) -> &'static str {
+        "NewAccount"
     }
 
-    fn title(&self, _cx: &App) -> AnyElement {
-        self.name.clone().into_any_element()
+    fn title(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .text_xs()
+            .gap_2()
+            .child(
+                Button::new("back")
+                    .icon(IconName::ArrowLeft)
+                    .small()
+                    .ghost()
+                    .on_click(|_ev, window, cx| {
+                        chatspace::onboarding(window, cx);
+                    }),
+            )
+            .child("Create a new identity")
     }
 }
 
@@ -303,7 +323,7 @@ impl Render for NewAccount {
             .child(
                 v_flex()
                     .w_96()
-                    .gap_2()
+                    .gap_3()
                     .child(
                         v_flex()
                             .h_40()
@@ -311,16 +331,16 @@ impl Render for NewAccount {
                             .items_center()
                             .justify_center()
                             .gap_4()
-                            .child(Avatar::new(avatar).size(rems(4.25)))
+                            .child(Avatar::new().src(avatar).large())
                             .child(
                                 Button::new("upload")
-                                    .icon(IconName::PlusCircleFill)
+                                    .icon(IconName::Plus)
                                     .label("Add an avatar")
                                     .xsmall()
                                     .ghost()
-                                    .rounded()
+                                    .rounded(cx.theme().radius)
                                     .disabled(self.uploading)
-                                    //.loading(self.uploading)
+                                    .loading(self.uploading)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         this.upload(window, cx);
                                     })),
@@ -330,14 +350,10 @@ impl Render for NewAccount {
                         v_flex()
                             .gap_1()
                             .text_sm()
-                            .child(shared_t!("new_account.name"))
-                            .child(
-                                TextInput::new(&self.name_input)
-                                    .disabled(self.submitting)
-                                    .small(),
-                            ),
+                            .text_color(cx.theme().muted_foreground)
+                            .child(SharedString::from("What should people call you?"))
+                            .child(Input::new(&self.name_input).disabled(self.submitting)),
                     )
-                    .child(divider(cx))
                     .child(
                         Button::new("submit")
                             .label(t!("common.continue"))

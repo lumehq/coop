@@ -6,13 +6,13 @@ use gpui::{
     AnyElement, App, ElementId, HighlightStyle, InteractiveText, IntoElement, SharedString,
     StyledText, UnderlineStyle, Window,
 };
+use gpui_component::ActiveTheme;
 use nostr_sdk::prelude::*;
 use once_cell::sync::Lazy;
 use person::PersonRegistry;
 use regex::Regex;
-use theme::ActiveTheme;
 
-use crate::actions::OpenPublicKey;
+use crate::RoomEvent;
 
 static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)(?:^|\s)(?:https?://)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:/[^\s]*)?(?:\s|$)").unwrap()
@@ -62,7 +62,7 @@ impl RenderedText {
     }
 
     pub fn element(&self, id: ElementId, window: &Window, cx: &App) -> AnyElement {
-        let link_color = cx.theme().text_accent;
+        let link_color = cx.theme().primary_foreground;
 
         InteractiveText::new(
             id,
@@ -93,7 +93,7 @@ impl RenderedText {
 
                 if let Some(clean_url) = token.strip_prefix("nostr:") {
                     if let Ok(public_key) = PublicKey::parse(clean_url) {
-                        window.dispatch_action(Box::new(OpenPublicKey(public_key)), cx);
+                        window.dispatch_action(Box::new(RoomEvent::View(public_key)), cx);
                     }
                 } else if is_url(token) {
                     let url = if token.starts_with("http") {

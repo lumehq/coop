@@ -2,9 +2,8 @@ use gpui::{
     div, App, AppContext, Context, Entity, IntoElement, ParentElement, Render, SharedString,
     Styled, Window,
 };
-use theme::ActiveTheme;
-use ui::input::{InputState, TextInput};
-use ui::{v_flex, Sizable};
+use gpui_component::input::{Input, InputState};
+use gpui_component::{v_flex, ActiveTheme, Sizable};
 
 pub fn init(subject: Option<String>, window: &mut Window, cx: &mut App) -> Entity<Subject> {
     cx.new(|cx| Subject::new(subject, window, cx))
@@ -42,16 +41,16 @@ impl Render for Subject {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(cx.theme().text_muted)
+                            .text_color(cx.theme().muted_foreground)
                             .child(SharedString::from("Subject:")),
                     )
-                    .child(TextInput::new(&self.input).small()),
+                    .child(Input::new(&self.input).small()),
             )
             .child(
                 div()
                     .text_xs()
                     .italic()
-                    .text_color(cx.theme().text_placeholder)
+                    .text_color(cx.theme().muted_foreground)
                     .child(SharedString::from(
                         "Subject will be updated when you send a new message.",
                     )),

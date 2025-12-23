@@ -9,14 +9,13 @@ use gpui::{
     App, AppContext, Context, Entity, Global, IntoElement, ParentElement, SharedString, Styled,
     Subscription, Task, Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::notification::Notification;
+use gpui_component::{v_flex, ActiveTheme, Disableable, IconName, Sizable, WindowExt};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::notification::Notification;
-use ui::{v_flex, ContextModal, Disableable, IconName, Sizable};
 
 const AUTH_MESSAGE: &str =
     "Approve the authentication request to allow Coop to continue sending or receiving events.";
@@ -24,6 +23,8 @@ const AUTH_MESSAGE: &str =
 pub fn init(window: &mut Window, cx: &mut App) {
     RelayAuth::set_global(cx.new(|cx| RelayAuth::new(window, cx)), cx);
 }
+
+struct TaskNotification;
 
 struct GlobalRelayAuth(Entity<RelayAuth>);
 
@@ -236,7 +237,7 @@ impl RelayAuth {
                     Ok(_) => {
                         this.update_in(cx, |this, window, cx| {
                             // Clear the current notification
-                            window.clear_notification_by_id(SharedString::from(&challenge), cx);
+                            window.remove_notification::<TaskNotification>(cx);
 
                             // Push a new notification
                             window.push_notification(format!("{url} has been authenticated"), cx);
@@ -270,11 +271,11 @@ impl RelayAuth {
         let loading = Rc::new(Cell::new(false));
 
         let note = Notification::new()
-            .custom_id(SharedString::from(&req.challenge))
+            .id1::<TaskNotification>(SharedString::from(&req.challenge))
             .autohide(false)
             .icon(IconName::Info)
             .title(SharedString::from("Authentication Required"))
-            .content(move |_window, cx| {
+            .content(move |_this, _window, cx| {
                 v_flex()
                     .gap_2()
                     .text_sm()
@@ -285,13 +286,13 @@ impl RelayAuth {
                             .px_1p5()
                             .rounded_sm()
                             .text_xs()
-                            .bg(cx.theme().warning_background)
+                            .bg(cx.theme().warning)
                             .text_color(cx.theme().warning_foreground)
                             .child(url.clone()),
                     )
                     .into_any_element()
             })
-            .action(move |_window, _cx| {
+            .action(move |_this, _window, _cx| {
                 let entity = entity.clone();
                 let req = req.clone();
 
@@ -303,15 +304,17 @@ impl RelayAuth {
                     .disabled(loading.get())
                     .on_click({
                         let loading = Rc::clone(&loading);
+
                         move |_ev, window, cx| {
                             // Set loading state to true
                             loading.set(true);
+
                             // Process to approve the request
                             entity
                                 .update(cx, |this, cx| {
                                     this.response(req.clone(), window, cx);
                                 })
-                                .expect("Entity has been released");
+                                .ok();
                         }
                     })
             });

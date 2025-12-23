@@ -8,16 +8,17 @@ use gpui::{
     div, img, App, AppContext, ClipboardItem, Context, Entity, Flatten, IntoElement, ParentElement,
     PathPromptOptions, Render, SharedString, Styled, Task, Window,
 };
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::input::{Input, InputState};
+use gpui_component::{
+    h_flex, v_flex, ActiveTheme, Disableable, IconName, Sizable, StyledExt, WindowExt,
+};
 use gpui_tokio::Tokio;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::button::{Button, ButtonVariants};
-use ui::input::{InputState, TextInput};
-use ui::{h_flex, v_flex, ContextModal, Disableable, IconName, Sizable, StyledExt};
 
 pub mod viewer;
 
@@ -61,7 +62,7 @@ impl UserProfile {
         // Use multi-line input for bio
         let bio_input = cx.new(|cx| {
             InputState::new(window, cx)
-                .multi_line()
+                .multi_line(true)
                 .auto_grow(3, 8)
                 .placeholder("A short introduce about you.")
         });
@@ -298,7 +299,7 @@ impl Render for UserProfile {
                     .items_center()
                     .justify_center()
                     .gap_2()
-                    .bg(cx.theme().surface_background)
+                    .bg(cx.theme().muted)
                     .rounded(cx.theme().radius)
                     .map(|this| {
                         let picture = self.avatar_input.read(cx).value();
@@ -311,7 +312,7 @@ impl Render for UserProfile {
                     })
                     .child(
                         Button::new("upload")
-                            .icon(IconName::Upload)
+                            .icon(IconName::ArrowUp)
                             .label("Change")
                             .ghost()
                             .small()
@@ -326,21 +327,21 @@ impl Render for UserProfile {
                     .gap_1()
                     .text_sm()
                     .child(SharedString::from("Name:"))
-                    .child(TextInput::new(&self.name_input).small()),
+                    .child(Input::new(&self.name_input).small()),
             )
             .child(
                 v_flex()
                     .gap_1()
                     .text_sm()
                     .child(SharedString::from("Bio:"))
-                    .child(TextInput::new(&self.bio_input).small()),
+                    .child(Input::new(&self.bio_input).small()),
             )
             .child(
                 v_flex()
                     .gap_1()
                     .text_sm()
                     .child(SharedString::from("Website:"))
-                    .child(TextInput::new(&self.website_input).small()),
+                    .child(Input::new(&self.website_input).small()),
             )
             .when_some(self.profile.as_ref(), |this, profile| {
                 let public_key = profile.public_key();
@@ -353,7 +354,7 @@ impl Render for UserProfile {
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(cx.theme().text_placeholder)
+                                    .text_color(cx.theme().muted_foreground)
                                     .font_semibold()
                                     .child(SharedString::from("Public Key:")),
                             )
@@ -363,7 +364,7 @@ impl Render for UserProfile {
                                     .w_full()
                                     .h_12()
                                     .justify_center()
-                                    .bg(cx.theme().surface_background)
+                                    .bg(cx.theme().muted)
                                     .rounded(cx.theme().radius)
                                     .text_sm()
                                     .child(display)
@@ -371,7 +372,7 @@ impl Render for UserProfile {
                                         Button::new("copy")
                                             .icon({
                                                 if self.copied {
-                                                    IconName::CheckCircleFill
+                                                    IconName::CircleCheck
                                                 } else {
                                                     IconName::Copy
                                                 }

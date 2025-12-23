@@ -7,10 +7,16 @@ use chat::{ChatRegistry, Room};
 use common::{nip05_profile, RenderedProfile, TextUtils, BOOTSTRAP_RELAYS};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, px, relative, rems, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
+    div, px, relative, uniform_list, App, AppContext, Context, Entity, InteractiveElement,
     IntoElement, ParentElement, Render, RetainAllImageCache, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
+use gpui_component::avatar::Avatar;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::dialog::DialogButtonProps;
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::notification::Notification;
+use gpui_component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, WindowExt};
 use gpui_tokio::Tokio;
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
@@ -18,49 +24,38 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use state::NostrRegistry;
-use theme::ActiveTheme;
-use ui::avatar::Avatar;
-use ui::button::{Button, ButtonVariants};
-use ui::input::{InputEvent, InputState, TextInput};
-use ui::modal::ModalButtonProps;
-use ui::notification::Notification;
-use ui::{h_flex, v_flex, ContextModal, Disableable, Icon, IconName, Sizable, StyledExt};
 
-pub fn compose_button() -> impl IntoElement {
+pub fn compose_button(cx: &App) -> impl IntoElement {
     div().child(
         Button::new("compose")
             .icon(IconName::Plus)
-            .ghost_alt()
-            .cta()
+            .primary()
             .small()
-            .rounded()
+            .w_12()
+            .rounded(cx.theme().radius)
             .on_click(move |_, window, cx| {
                 let compose = cx.new(|cx| Compose::new(window, cx));
                 let weak_view = compose.downgrade();
 
-                window.open_modal(cx, move |modal, _window, cx| {
-                    let weak_view = weak_view.clone();
-                    let label = if compose.read(cx).selected(cx).len() > 1 {
-                        shared_t!("compose.create_group_dm_button")
-                    } else {
-                        shared_t!("compose.create_dm_button")
-                    };
+                window.open_dialog(cx, move |modal, _window, cx| {
+                    let view = weak_view.clone();
 
                     modal
                         .alert()
-                        .overlay_closable(true)
-                        .keyboard(true)
-                        .show_close(true)
-                        .button_props(ModalButtonProps::default().ok_text(label))
-                        .title(shared_t!("sidebar.direct_messages"))
+                        .title("Direct Messages")
+                        .button_props(DialogButtonProps::default().ok_text({
+                            if compose.read(cx).selected(cx).len() > 1 {
+                                "Create Group DM"
+                            } else {
+                                "Create DM"
+                            }
+                        }))
                         .child(compose.clone())
                         .on_ok(move |_, window, cx| {
-                            weak_view
-                                .update(cx, |this, cx| {
-                                    this.submit(window, cx);
-                                })
-                                .ok();
-
+                            view.update(cx, |this, cx| {
+                                this.submit(window, cx);
+                            })
+                            .ok();
                             // false to prevent the modal from closing
                             false
                         })
@@ -108,16 +103,15 @@ pub struct Compose {
     /// Error message
     error_message: Entity<Option<SharedString>>,
 
+    /// Image cache entity
     image_cache: Entity<RetainAllImageCache>,
+
     _subscriptions: SmallVec<[Subscription; 2]>,
     _tasks: SmallVec<[Task<()>; 1]>,
 }
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let contacts = cx.new(|_| vec![]);
         let error_message = cx.new(|_| None);
 
@@ -127,20 +121,9 @@ impl Compose {
         let title_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Family...(Optional)"));
 
+        let get_contacts = Self::get_contacts(cx);
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
-
-        let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
-            let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let profiles = client.database().contacts(public_key).await?;
-            let contacts: Vec<Contact> = profiles
-                .into_iter()
-                .map(|profile| Contact::new(profile.public_key()))
-                .collect();
-
-            Ok(contacts)
-        });
 
         tasks.push(
             // Load all contacts
@@ -195,6 +178,23 @@ impl Compose {
         }
     }
 
+    fn get_contacts(cx: &App) -> Task<Result<Vec<Contact>, Error>> {
+        let nostr = NostrRegistry::global(cx);
+        let client = nostr.read(cx).client();
+
+        cx.background_spawn(async move {
+            let signer = client.signer().await?;
+            let public_key = signer.get_public_key().await?;
+            let profiles = client.database().contacts(public_key).await?;
+            let contacts: Vec<Contact> = profiles
+                .into_iter()
+                .map(|profile| Contact::new(profile.public_key()))
+                .collect();
+
+            Ok(contacts)
+        })
+    }
+
     async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList];
@@ -234,11 +234,11 @@ impl Compose {
                 });
                 this.user_input.update(cx, |this, cx| {
                     this.set_value("", window, cx);
-                    this.set_loading(false, cx);
+                    this.set_loading(false, window, cx);
                 });
             });
         } else {
-            self.set_error(t!("compose.contact_existed"), cx);
+            self.set_error(t!("compose.contact_existed"), window, cx);
         }
     }
 
@@ -256,7 +256,7 @@ impl Compose {
 
         // Show loading indicator in the input
         self.user_input.update(cx, |this, cx| {
-            this.set_loading(true, cx);
+            this.set_loading(true, window, cx);
         });
 
         if let Ok(public_key) = content.to_public_key() {
@@ -283,8 +283,8 @@ impl Compose {
                         .ok();
                     }
                     Ok(Err(e)) => {
-                        this.update(cx, |this, cx| {
-                            this.set_error(e.to_string(), cx);
+                        this.update_in(cx, |this, window, cx| {
+                            this.set_error(e.to_string(), window, cx);
                         })
                         .ok();
                     }
@@ -330,13 +330,16 @@ impl Compose {
             this.push_room(cx.new(|_| Room::new(subject, public_key, receivers)), cx);
         });
 
-        window.close_modal(cx);
+        window.close_dialog(cx);
     }
 
-    fn set_error(&mut self, error: impl Into<SharedString>, cx: &mut Context<Self>) {
+    fn set_error<T>(&mut self, error: T, window: &mut Window, cx: &mut Context<Self>)
+    where
+        T: Into<SharedString>,
+    {
         // Unlock the user input
         self.user_input.update(cx, |this, cx| {
-            this.set_loading(false, cx);
+            this.set_loading(false, window, cx);
         });
 
         // Update error message
@@ -377,25 +380,24 @@ impl Compose {
                 h_flex()
                     .id(ix)
                     .px_2()
-                    .h_11()
+                    .h_8()
                     .w_full()
                     .justify_between()
                     .rounded(cx.theme().radius)
                     .child(
                         h_flex()
                             .gap_1p5()
-                            .text_sm()
-                            .child(Avatar::new(profile.avatar(proxy)).size(rems(1.75)))
-                            .child(profile.display_name()),
+                            .child(Avatar::new().src(profile.avatar(proxy)).small())
+                            .child(div().text_sm().child(profile.display_name())),
                     )
                     .when(contact.selected, |this| {
                         this.child(
-                            Icon::new(IconName::CheckCircleFill)
+                            Icon::new(IconName::CircleCheck)
                                 .small()
-                                .text_color(cx.theme().text_accent),
+                                .text_color(cx.theme().accent_foreground),
                         )
                     })
-                    .hover(|this| this.bg(cx.theme().elevated_surface_background))
+                    .hover(|this| this.bg(cx.theme().list_hover))
                     .on_click(cx.listener(move |this, _, _window, cx| {
                         this.select_contact(public_key, cx);
                     })),
@@ -409,7 +411,6 @@ impl Compose {
 impl Render for Compose {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let error = self.error_message.read(cx).as_ref();
-        let loading = self.user_input.read(cx).loading;
         let contacts = self.contacts.read(cx);
 
         v_flex()
@@ -417,16 +418,17 @@ impl Render for Compose {
             .gap_2()
             .child(
                 div()
-                    .text_sm()
-                    .text_color(cx.theme().text_muted)
+                    .text_xs()
+                    .line_height(relative(1.25))
+                    .text_color(cx.theme().muted_foreground)
                     .child(shared_t!("compose.description")),
             )
             .when_some(error, |this, msg| {
                 this.child(
                     div()
                         .italic()
-                        .text_sm()
-                        .text_color(cx.theme().danger_foreground)
+                        .text_xs()
+                        .text_color(cx.theme().danger)
                         .child(msg.clone()),
                 )
             })
@@ -442,15 +444,14 @@ impl Render for Compose {
                             .font_semibold()
                             .child(shared_t!("compose.subject_label")),
                     )
-                    .child(TextInput::new(&self.title_input).small().appearance(false)),
+                    .child(Input::new(&self.title_input).small().appearance(false)),
             )
             .child(
                 v_flex()
-                    .pt_1()
                     .gap_2()
                     .child(
                         v_flex()
-                            .gap_2()
+                            .gap_1()
                             .child(
                                 div()
                                     .text_sm()
@@ -458,15 +459,15 @@ impl Render for Compose {
                                     .child(shared_t!("compose.to_label")),
                             )
                             .child(
-                                TextInput::new(&self.user_input)
-                                    .small()
-                                    .disabled(loading)
+                                Input::new(&self.user_input)
+                                    .appearance(false)
+                                    .rounded(cx.theme().radius)
+                                    .bg(cx.theme().muted)
                                     .suffix(
                                         Button::new("add")
-                                            .icon(IconName::PlusCircleFill)
-                                            .transparent()
+                                            .icon(IconName::Plus)
+                                            .ghost()
                                             .small()
-                                            .disabled(loading)
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 this.add_and_select_contact(window, cx);
                                             })),
@@ -477,7 +478,7 @@ impl Render for Compose {
                         if contacts.is_empty() {
                             this.child(
                                 v_flex()
-                                    .h_24()
+                                    .h_20()
                                     .w_full()
                                     .items_center()
                                     .justify_center()
@@ -491,7 +492,7 @@ impl Render for Compose {
                                     )
                                     .child(
                                         div()
-                                            .text_color(cx.theme().text_muted)
+                                            .text_color(cx.theme().muted_foreground)
                                             .child(shared_t!("compose.no_contacts_description")),
                                     ),
                             )
@@ -504,7 +505,7 @@ impl Render for Compose {
                                         this.list_items(range, cx)
                                     }),
                                 )
-                                .h(px(300.)),
+                                .h(px(240.)),
                             )
                         }
                     }),
