@@ -16,14 +16,17 @@ impl PlatformKind {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_linux(&self) -> bool {
         matches!(self, Self::Linux)
     }
 
+    #[allow(dead_code)]
     pub fn is_windows(&self) -> bool {
         matches!(self, Self::Windows)
     }
 
+    #[allow(dead_code)]
     pub fn is_mac(&self) -> bool {
         matches!(self, Self::Mac)
     }

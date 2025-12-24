@@ -6572,6 +6572,9 @@ dependencies = [
  "anyhow",
  "gpui",
  "log",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
