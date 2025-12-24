@@ -122,7 +122,7 @@ impl Theme {
         M: Into<ThemeMode>,
     {
         if !cx.has_global::<Theme>() {
-            let default_theme = ThemeFamily::default();
+            let default_theme = ThemeFamily::from_assets("catppuccin-frappe").unwrap();
             let theme = Theme::from(default_theme);
 
             cx.set_global(theme);
@@ -151,6 +151,7 @@ impl Theme {
 impl From<ThemeFamily> for Theme {
     fn from(family: ThemeFamily) -> Self {
         let mode = ThemeMode::default();
+        // Define the theme colors based on the appearance
         let colors = match mode {
             ThemeMode::Light => family.light(),
             ThemeMode::Dark => family.dark(),
