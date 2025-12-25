@@ -1,6 +1,8 @@
 {
   "id": "example-theme",
   "name": "Example Theme",
+  "author": "Coop",
+  "url": "https://github.com/lumehq/coop",
   "light": {
     "background": "#ffffff",
     "surface_background": "#fafafa",

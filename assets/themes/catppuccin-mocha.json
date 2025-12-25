@@ -1,6 +1,8 @@
 {
   "id": "catppuccin-mocha",
   "name": "Catppuccin Mocha",
+  "author": "Catppuccino",
+  "url": "https://github.com/catppuccin/catppuccin",
   "light": {
     "background": "#1e1e2e",
     "surface_background": "#181825",

@@ -45,6 +45,12 @@ pub struct ThemeFamily {
     /// The name of the theme.
     pub name: SharedString,
 
+    /// The author of the theme.
+    pub author: SharedString,
+
+    /// The URL of the theme.
+    pub url: String,
+
     /// The light colors for the theme.
     pub light: ThemeColors,
 
@@ -57,6 +63,8 @@ impl Default for ThemeFamily {
         ThemeFamily {
             id: "coop".into(),
             name: "Coop Default Theme".into(),
+            author: "Coop".into(),
+            url: "https://github.com/lumehq/coop".into(),
             light: ThemeColors::light(),
             dark: ThemeColors::dark(),
         }
@@ -177,6 +185,8 @@ mod tests {
         let json_data = r##"{
             "id": "test-theme",
             "name": "Test Theme",
+            "author": "Coop",
+            "url": "https://github.com/lumehq/coop",
             "light": {
                 "background": "#ffffff",
                 "surface_background": "#fafafa",

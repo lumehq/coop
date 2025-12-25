@@ -1,6 +1,8 @@
 {
   "id": "catppuccin-macchiato",
   "name": "Catppuccin Macchiato",
+  "author": "Catppuccino",
+  "url": "https://github.com/catppuccin/catppuccin",
   "light": {
     "background": "#24273a",
     "surface_background": "#1e2030",
