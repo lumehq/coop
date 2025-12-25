@@ -191,7 +191,7 @@ impl Onboarding {
         div()
             .id(ix)
             .flex_1()
-            .rounded_md()
+            .rounded(cx.theme().radius)
             .py_0p5()
             .px_2()
             .bg(cx.theme().ghost_element_background_alt)
@@ -308,13 +308,13 @@ impl Render for Onboarding {
                     .p_2()
                     .flex_1()
                     .h_full()
-                    .rounded_2xl()
+                    .rounded(cx.theme().radius_lg)
                     .child(
                         v_flex()
                             .size_full()
                             .justify_center()
                             .bg(cx.theme().surface_background)
-                            .rounded_2xl()
+                            .rounded(cx.theme().radius_lg)
                             .child(
                                 v_flex()
                                     .gap_5()
@@ -324,8 +324,8 @@ impl Render for Onboarding {
                                         this.child(
                                             img(qr.clone())
                                                 .size(px(256.))
-                                                .rounded_xl()
-                                                .shadow_lg()
+                                                .rounded(cx.theme().radius_lg)
+                                                .when(cx.theme().shadow, |this| this.shadow_lg())
                                                 .border_1()
                                                 .border_color(cx.theme().element_active),
                                         )

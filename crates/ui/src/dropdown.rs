@@ -708,7 +708,7 @@ where
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded(cx.theme().radius)
-                    .shadow_sm()
+                    .when(cx.theme().shadow, |this| this.shadow_sm())
                     .overflow_hidden()
                     .input_font_size(self.size)
                     .map(|this| match self.width {
@@ -793,7 +793,7 @@ where
                                         .border_1()
                                         .border_color(cx.theme().border)
                                         .rounded(popup_radius)
-                                        .shadow_md()
+                                        .when(cx.theme().shadow, |this| this.shadow_md())
                                         .child(state.list.clone()),
                                 )
                                 .on_mouse_down_out(window.listener_for(

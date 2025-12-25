@@ -181,7 +181,7 @@ impl Element for Switch {
                                             // Switch Toggle
                                             div()
                                                 .rounded_full()
-                                                .shadow_sm()
+                                                .when(cx.theme().shadow, |this| this.shadow_sm())
                                                 .bg(toggle_bg)
                                                 .size(bar_width)
                                                 .map(|this| {

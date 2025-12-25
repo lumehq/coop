@@ -1,3 +1,4 @@
+use gpui::prelude::FluentBuilder;
 use gpui::{
     div, relative, App, AppContext, Context, Entity, IntoElement, ParentElement, Render,
     SharedString, Styled, Window,
@@ -24,8 +25,8 @@ impl Render for Tooltip {
                 .border_1()
                 .border_color(cx.theme().border)
                 .bg(cx.theme().surface_background)
-                .shadow_md()
-                .rounded_lg()
+                .when(cx.theme().shadow, |this| this.shadow_md())
+                .rounded(cx.theme().radius_lg)
                 .text_sm()
                 .text_color(cx.theme().text_muted)
                 .line_height(relative(1.25))

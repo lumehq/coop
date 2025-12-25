@@ -1021,8 +1021,8 @@ impl ChatPanel {
             .absolute()
             .right_4()
             .top_neg_2()
-            .shadow_sm()
-            .rounded_md()
+            .when(cx.theme().shadow, |this| this.shadow_sm())
+            .rounded(cx.theme().radius)
             .border_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
@@ -1074,7 +1074,7 @@ impl ChatPanel {
             .child(
                 img(url.as_str())
                     .size_16()
-                    .shadow_lg()
+                    .when(cx.theme().shadow, |this| this.shadow_lg())
                     .rounded(cx.theme().radius)
                     .object_fit(ObjectFit::ScaleDown),
             )
