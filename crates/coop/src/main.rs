@@ -83,6 +83,9 @@ fn main() {
                 // Initialize components
                 ui::init(cx);
 
+                // Initialize theme registry
+                theme::init(cx);
+
                 // Initialize backend for keys storage
                 key_store::init(cx);
 

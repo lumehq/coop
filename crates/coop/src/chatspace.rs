@@ -20,7 +20,7 @@ use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use theme::{ActiveTheme, Theme, ThemeMode};
+use theme::{ActiveTheme, Theme, ThemeMode, ThemeRegistry};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -32,7 +32,9 @@ use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
-use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
+use crate::actions::{
+    reset, DarkMode, KeyringPopup, Logout, Settings, Themes, ViewProfile, ViewRelays,
+};
 use crate::user::viewer;
 use crate::views::compose::compose_button;
 use crate::views::{onboarding, preferences, setup_relay, startup, welcome};
@@ -313,6 +315,14 @@ impl ChatSpace {
         }
     }
 
+    fn on_themes(&mut self, _ev: &Themes, window: &mut Window, cx: &mut Context<Self>) {
+        let registry = ThemeRegistry::global(cx);
+        let themes = registry.read(cx).themes();
+        let (_name, theme) = themes.iter().last().unwrap();
+
+        Theme::apply_theme(theme.to_owned(), Some(window), cx);
+    }
+
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         reset(cx);
     }
@@ -567,6 +577,7 @@ impl ChatSpace {
                                             IconName::Sun,
                                             Box::new(DarkMode),
                                         )
+                                        .menu_with_icon("Themes", IconName::Moon, Box::new(Themes))
                                         .menu_with_icon(
                                             "Settings",
                                             IconName::Settings,
@@ -646,6 +657,7 @@ impl Render for ChatSpace {
             .on_action(cx.listener(Self::on_profile))
             .on_action(cx.listener(Self::on_relays))
             .on_action(cx.listener(Self::on_dark_mode))
+            .on_action(cx.listener(Self::on_themes))
             .on_action(cx.listener(Self::on_sign_out))
             .on_action(cx.listener(Self::on_open_pubkey))
             .on_action(cx.listener(Self::on_copy_pubkey))

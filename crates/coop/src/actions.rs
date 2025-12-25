@@ -16,6 +16,7 @@ actions!(
         DarkMode,
         ViewProfile,
         ViewRelays,
+        Themes,
         Settings,
         Logout,
         Quit

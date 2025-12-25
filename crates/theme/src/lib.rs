@@ -4,11 +4,13 @@ use std::rc::Rc;
 use gpui::{px, App, Global, Pixels, SharedString, Window};
 
 mod colors;
+mod registry;
 mod scale;
 mod scrollbar_mode;
 mod theme;
 
 pub use colors::*;
+pub use registry::*;
 pub use scale::*;
 pub use scrollbar_mode::*;
 pub use theme::*;
@@ -20,6 +22,8 @@ pub const CLIENT_SIDE_DECORATION_ROUNDING: Pixels = px(10.0);
 pub const CLIENT_SIDE_DECORATION_SHADOW: Pixels = px(10.0);
 
 pub fn init(cx: &mut App) {
+    registry::init(cx);
+
     Theme::sync_system_appearance(None, cx);
     Theme::sync_scrollbar_appearance(cx);
 }
@@ -116,13 +120,23 @@ impl Theme {
         };
     }
 
+    /// Apply a new theme to the application.
+    pub fn apply_theme(new_theme: Rc<ThemeFamily>, window: Option<&mut Window>, cx: &mut App) {
+        let theme = cx.global_mut::<Theme>();
+        let mode = theme.mode;
+        // Update the theme
+        theme.theme = new_theme;
+        // Emit a theme change event
+        Self::change(mode, window, cx);
+    }
+
     /// Change the app's appearance
     pub fn change<M>(mode: M, window: Option<&mut Window>, cx: &mut App)
     where
         M: Into<ThemeMode>,
     {
         if !cx.has_global::<Theme>() {
-            let default_theme = ThemeFamily::from_assets("flexoki").unwrap();
+            let default_theme = ThemeFamily::default();
             let theme = Theme::from(default_theme);
 
             cx.set_global(theme);
