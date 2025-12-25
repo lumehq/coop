@@ -136,7 +136,7 @@ impl Theme {
         M: Into<ThemeMode>,
     {
         if !cx.has_global::<Theme>() {
-            let default_theme = ThemeFamily::default();
+            let default_theme = ThemeFamily::from_assets("catppuccin-frappe").unwrap();
             let theme = Theme::from(default_theme);
 
             cx.set_global(theme);
