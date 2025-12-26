@@ -9,7 +9,7 @@ use encryption::Encryption;
 use encryption_ui::EncryptionPanel;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
+    deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
@@ -316,11 +316,55 @@ impl ChatSpace {
     }
 
     fn on_themes(&mut self, _ev: &Themes, window: &mut Window, cx: &mut Context<Self>) {
-        let registry = ThemeRegistry::global(cx);
-        let themes = registry.read(cx).themes();
-        let (_name, theme) = themes.iter().last().unwrap();
+        window.open_modal(cx, move |this, _window, cx| {
+            let registry = ThemeRegistry::global(cx);
+            let themes = registry.read(cx).themes();
 
-        Theme::apply_theme(theme.to_owned(), Some(window), cx);
+            this.title("Select theme")
+                .show_close(true)
+                .overlay_closable(true)
+                .child(v_flex().gap_2().pb_4().children({
+                    let mut items = Vec::with_capacity(themes.len());
+
+                    for (name, theme) in themes.iter() {
+                        items.push(
+                            h_flex()
+                                .h_10()
+                                .justify_between()
+                                .child(
+                                    v_flex()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().text)
+                                                .line_height(relative(1.3))
+                                                .child(theme.name.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().text_muted)
+                                                .child(theme.author.clone()),
+                                        ),
+                                )
+                                .child(
+                                    Button::new(format!("change-{name}"))
+                                        .label("Set")
+                                        .small()
+                                        .ghost()
+                                        .on_click({
+                                            let theme = theme.clone();
+                                            move |_ev, window, cx| {
+                                                Theme::apply_theme(theme.clone(), Some(window), cx);
+                                            }
+                                        }),
+                                ),
+                        );
+                    }
+
+                    items
+                }))
+        })
     }
 
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {

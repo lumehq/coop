@@ -136,7 +136,7 @@ impl Theme {
         M: Into<ThemeMode>,
     {
         if !cx.has_global::<Theme>() {
-            let default_theme = ThemeFamily::from_assets("rose-pine-moon").unwrap();
+            let default_theme = ThemeFamily::default();
             let theme = Theme::from(default_theme);
 
             cx.set_global(theme);
