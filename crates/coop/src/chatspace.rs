@@ -9,7 +9,7 @@ use encryption::Encryption;
 use encryption_ui::EncryptionPanel;
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    deferred, div, px, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
+    deferred, div, px, relative, rems, App, AppContext, Axis, ClipboardItem, Context, Entity,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
@@ -20,7 +20,7 @@ use person::PersonRegistry;
 use relay_auth::RelayAuth;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use theme::{ActiveTheme, Theme, ThemeMode};
+use theme::{ActiveTheme, Theme, ThemeMode, ThemeRegistry};
 use title_bar::TitleBar;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -32,7 +32,9 @@ use ui::popover::{Popover, PopoverContent};
 use ui::popup_menu::PopupMenuExt;
 use ui::{h_flex, v_flex, ContextModal, IconName, Root, Sizable, StyledExt};
 
-use crate::actions::{reset, DarkMode, KeyringPopup, Logout, Settings, ViewProfile, ViewRelays};
+use crate::actions::{
+    reset, DarkMode, KeyringPopup, Logout, Settings, Themes, ViewProfile, ViewRelays,
+};
 use crate::user::viewer;
 use crate::views::compose::compose_button;
 use crate::views::{onboarding, preferences, setup_relay, startup, welcome};
@@ -313,6 +315,58 @@ impl ChatSpace {
         }
     }
 
+    fn on_themes(&mut self, _ev: &Themes, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_modal(cx, move |this, _window, cx| {
+            let registry = ThemeRegistry::global(cx);
+            let themes = registry.read(cx).themes();
+
+            this.title("Select theme")
+                .show_close(true)
+                .overlay_closable(true)
+                .child(v_flex().gap_2().pb_4().children({
+                    let mut items = Vec::with_capacity(themes.len());
+
+                    for (name, theme) in themes.iter() {
+                        items.push(
+                            h_flex()
+                                .h_10()
+                                .justify_between()
+                                .child(
+                                    v_flex()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(cx.theme().text)
+                                                .line_height(relative(1.3))
+                                                .child(theme.name.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().text_muted)
+                                                .child(theme.author.clone()),
+                                        ),
+                                )
+                                .child(
+                                    Button::new(format!("change-{name}"))
+                                        .label("Set")
+                                        .small()
+                                        .ghost()
+                                        .on_click({
+                                            let theme = theme.clone();
+                                            move |_ev, window, cx| {
+                                                Theme::apply_theme(theme.clone(), Some(window), cx);
+                                            }
+                                        }),
+                                ),
+                        );
+                    }
+
+                    items
+                }))
+        })
+    }
+
     fn on_sign_out(&mut self, _e: &Logout, _window: &mut Window, cx: &mut Context<Self>) {
         reset(cx);
     }
@@ -567,6 +621,7 @@ impl ChatSpace {
                                             IconName::Sun,
                                             Box::new(DarkMode),
                                         )
+                                        .menu_with_icon("Themes", IconName::Moon, Box::new(Themes))
                                         .menu_with_icon(
                                             "Settings",
                                             IconName::Settings,
@@ -646,6 +701,7 @@ impl Render for ChatSpace {
             .on_action(cx.listener(Self::on_profile))
             .on_action(cx.listener(Self::on_relays))
             .on_action(cx.listener(Self::on_dark_mode))
+            .on_action(cx.listener(Self::on_themes))
             .on_action(cx.listener(Self::on_sign_out))
             .on_action(cx.listener(Self::on_open_pubkey))
             .on_action(cx.listener(Self::on_copy_pubkey))

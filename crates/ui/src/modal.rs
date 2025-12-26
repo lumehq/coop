@@ -342,7 +342,7 @@ impl RenderOnce for Modal {
         });
 
         let window_paddings = crate::window_border::window_paddings(window, cx);
-        let radius = (cx.theme().radius * 2.).min(px(20.));
+        let radius = (cx.theme().radius_lg * 2.).min(px(20.));
 
         let view_size = window.viewport_size()
             - gpui::size(
@@ -407,7 +407,7 @@ impl RenderOnce for Modal {
                             .border_1()
                             .border_color(cx.theme().border.alpha(0.4))
                             .rounded(radius)
-                            .shadow_xl()
+                            .when(cx.theme().shadow, |this| this.shadow_xl())
                             .min_h_24()
                             .key_context(CONTEXT)
                             .track_focus(&self.focus_handle)
