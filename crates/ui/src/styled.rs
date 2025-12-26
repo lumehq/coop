@@ -78,7 +78,7 @@ pub trait StyledExt: Styled + Sized {
             .border_1()
             .border_color(cx.theme().border)
             .shadow_lg()
-            .rounded_lg()
+            .rounded(cx.theme().radius_lg)
     }
 }
 

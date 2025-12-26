@@ -120,8 +120,8 @@ impl RenderOnce for RoomListItem {
                         .flex_1()
                         .flex()
                         .justify_between()
-                        .child(Skeleton::new().w_32().h_2p5().rounded_sm())
-                        .child(Skeleton::new().w_6().h_2p5().rounded_sm()),
+                        .child(Skeleton::new().w_32().h_2p5().rounded(cx.theme().radius))
+                        .child(Skeleton::new().w_6().h_2p5().rounded(cx.theme().radius)),
                 );
         };
 

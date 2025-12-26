@@ -115,7 +115,7 @@ impl RenderOnce for Tab {
             .text_ellipsis()
             .text_color(text_color)
             .bg(bg_color)
-            .rounded(cx.theme().radius)
+            .rounded(cx.theme().radius_lg)
             .hover(|this| this.bg(hover_bg_color))
             .when_some(self.prefix, |this, prefix| {
                 this.child(prefix).text_color(text_color)

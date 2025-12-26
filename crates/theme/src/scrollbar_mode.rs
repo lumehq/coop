@@ -1,12 +1,15 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum ScrollBarMode {
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
+pub enum ScrollbarMode {
     #[default]
     Scrolling,
     Hover,
     Always,
 }
 
-impl ScrollBarMode {
+impl ScrollbarMode {
     pub fn is_scrolling(&self) -> bool {
         matches!(self, Self::Scrolling)
     }

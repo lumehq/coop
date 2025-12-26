@@ -9,7 +9,6 @@ use gpui::{
     IntoElement, LayoutId, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
     Position, ScrollHandle, ScrollWheelEvent, Size, UniformListScrollHandle, Window,
 };
-use theme::scrollbar_mode::ScrollBarMode;
 use theme::ActiveTheme;
 
 use crate::AxisExt;
@@ -355,9 +354,10 @@ impl Scrollbar {
     }
 
     fn style_for_idle(cx: &App) -> (Hsla, Hsla, Hsla, Pixels, Pixels, Pixels) {
-        let (width, inset, radius) = match cx.theme().scrollbar_mode {
-            ScrollBarMode::Scrolling => (THUMB_WIDTH, THUMB_INSET, THUMB_RADIUS),
-            _ => (THUMB_ACTIVE_WIDTH, THUMB_ACTIVE_INSET, THUMB_ACTIVE_RADIUS),
+        let (width, inset, radius) = if cx.theme().scrollbar_mode.is_scrolling() {
+            (THUMB_WIDTH, THUMB_INSET, THUMB_RADIUS)
+        } else {
+            (THUMB_ACTIVE_WIDTH, THUMB_ACTIVE_INSET, THUMB_ACTIVE_RADIUS)
         };
 
         (

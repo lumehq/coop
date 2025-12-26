@@ -426,8 +426,8 @@ where
         self.selected_value.as_ref()
     }
 
-    pub fn focus(&self, window: &mut Window, _: &mut App) {
-        self.focus_handle.focus(window);
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.focus_handle.focus(window, cx);
     }
 
     fn on_blur(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -445,7 +445,7 @@ where
             return;
         }
 
-        self.list.focus_handle(cx).focus(window);
+        self.list.focus_handle(cx).focus(window, cx);
         cx.propagate();
     }
 
@@ -454,7 +454,7 @@ where
             self.open = true;
         }
 
-        self.list.focus_handle(cx).focus(window);
+        self.list.focus_handle(cx).focus(window, cx);
         cx.propagate();
     }
 
@@ -466,7 +466,7 @@ where
             self.open = true;
             cx.notify();
         } else {
-            self.list.focus_handle(cx).focus(window);
+            self.list.focus_handle(cx).focus(window, cx);
         }
     }
 
@@ -475,7 +475,7 @@ where
 
         self.open = !self.open;
         if self.open {
-            self.list.focus_handle(cx).focus(window);
+            self.list.focus_handle(cx).focus(window, cx);
         }
         cx.notify();
     }
@@ -708,7 +708,7 @@ where
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded(cx.theme().radius)
-                    .shadow_sm()
+                    .when(cx.theme().shadow, |this| this.shadow_sm())
                     .overflow_hidden()
                     .input_font_size(self.size)
                     .map(|this| match self.width {
@@ -793,7 +793,7 @@ where
                                         .border_1()
                                         .border_color(cx.theme().border)
                                         .rounded(popup_radius)
-                                        .shadow_md()
+                                        .when(cx.theme().shadow, |this| this.shadow_md())
                                         .child(state.list.clone()),
                                 )
                                 .on_mouse_down_out(window.listener_for(

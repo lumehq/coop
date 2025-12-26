@@ -249,7 +249,7 @@ impl Render for Startup {
                             .h_10()
                             .w_72()
                             .bg(cx.theme().elevated_surface_background)
-                            .rounded_lg()
+                            .rounded(cx.theme().radius_lg)
                             .text_sm()
                             .when(self.loading, |this| {
                                 this.child(
