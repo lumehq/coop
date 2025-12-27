@@ -1,16 +1,20 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use nostr_sdk::prelude::*;
+use smol::lock::RwLock;
 
-static INITIALIZED_AT: OnceLock<Timestamp> = OnceLock::new();
+static EVENT_STORE: OnceLock<Arc<RwLock<EventStore>>> = OnceLock::new();
 
-pub fn initialized_at() -> &'static Timestamp {
-    INITIALIZED_AT.get_or_init(Timestamp::now)
+pub fn event_store() -> &'static Arc<RwLock<EventStore>> {
+    EVENT_STORE.get_or_init(|| Arc::new(RwLock::new(EventStore::new())))
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct EventTracker {
+pub struct EventStore {
+    /// Timestamp when the EventStore was initialized
+    pub initialized_at: Timestamp,
+
     /// Tracking events that have been resent by Coop in the current session
     pub resent_ids: Vec<Output<EventId>>,
 
@@ -24,7 +28,17 @@ pub struct EventTracker {
     pub seen_on_relays: HashMap<EventId, HashSet<RelayUrl>>,
 }
 
-impl EventTracker {
+impl EventStore {
+    pub fn new() -> Self {
+        Self {
+            initialized_at: Timestamp::now(),
+            resent_ids: Vec::new(),
+            resend_queue: HashMap::new(),
+            sent_ids: HashSet::new(),
+            seen_on_relays: HashMap::new(),
+        }
+    }
+
     pub fn resent_ids(&self) -> &Vec<Output<EventId>> {
         &self.resent_ids
     }

@@ -11,7 +11,7 @@ use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -210,10 +210,8 @@ impl Login {
     }
 
     fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         cx.background_spawn(async move {
+            let client = client();
             client.set_signer(signer).await;
         })
         .detach();
@@ -262,9 +260,6 @@ impl Login {
     pub fn login_with_keys(&mut self, keys: Keys, cx: &mut Context<Self>) {
         let keystore = KeyStore::global(cx).read(cx).backend();
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_hex().into_bytes();
 
@@ -284,6 +279,7 @@ impl Login {
 
             // Update the signer
             cx.background_spawn(async move {
+                let client = client();
                 client.set_signer(keys).await;
             })
             .detach();

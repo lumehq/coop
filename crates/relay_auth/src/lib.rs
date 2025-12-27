@@ -12,7 +12,7 @@ use gpui::{
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::{client, event_store};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::notification::Notification;
@@ -75,12 +75,13 @@ impl RelayAuth {
 
     /// Create a new relay auth instance
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let entity = cx.entity();
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
+
+        // Channel for communication between Nostr and GPUI
+        let (tx, rx) = flume::bounded::<AuthRequest>(100);
 
         subscriptions.push(
             // Observe the current state
@@ -103,8 +104,9 @@ impl RelayAuth {
         );
 
         tasks.push(
-            // Handle notifications
-            cx.spawn(async move |this, cx| {
+            // Handle nostr notifications
+            cx.background_spawn(async move {
+                let client = client();
                 let mut notifications = client.notifications();
                 let mut challenges: HashSet<Cow<'_, str>> = HashSet::new();
 
@@ -116,13 +118,23 @@ impl RelayAuth {
 
                     if let RelayMessage::Auth { challenge } = message {
                         if challenges.insert(challenge.clone()) {
-                            this.update(cx, |this, cx| {
-                                this.requests.insert(AuthRequest::new(challenge, relay_url));
-                                cx.notify();
-                            })
-                            .expect("Entity has been released");
+                            let auth = AuthRequest::new(challenge, relay_url);
+                            tx.send_async(auth).await.ok();
                         };
                     }
+                }
+            }),
+        );
+
+        tasks.push(
+            // Update GPUI state
+            cx.spawn(async move |this, cx| {
+                while let Ok(request) = rx.recv_async().await {
+                    this.update(cx, |this, cx| {
+                        this.requests.insert(request);
+                        cx.notify();
+                    })
+                    .ok();
                 }
             }),
         );
@@ -150,10 +162,6 @@ impl RelayAuth {
     fn response(&mut self, req: AuthRequest, window: &mut Window, cx: &mut Context<Self>) {
         let settings = AppSettings::global(cx);
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let tracker = nostr.read(cx).tracker();
-
         let challenge = req.challenge.to_owned();
         let url = req.url.to_owned();
 
@@ -161,6 +169,7 @@ impl RelayAuth {
         let url_clone = url.clone();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
 
             // Construct event
@@ -191,9 +200,9 @@ impl RelayAuth {
                             relay.resubscribe().await?;
 
                             // Get all failed events that need to be resent
-                            let mut tracker = tracker.write().await;
+                            let mut event_store = event_store().write().await;
 
-                            let ids: Vec<EventId> = tracker
+                            let ids: Vec<EventId> = event_store
                                 .resend_queue
                                 .iter()
                                 .filter(|(_, url)| relay_url == *url)
@@ -201,7 +210,7 @@ impl RelayAuth {
                                 .collect();
 
                             for id in ids.into_iter() {
-                                if let Some(relay_url) = tracker.resend_queue.remove(&id) {
+                                if let Some(relay_url) = event_store.resend_queue.remove(&id) {
                                     if let Some(event) = client.database().event_by_id(&id).await? {
                                         let event_id = relay.send_event(&event).await?;
 
@@ -211,8 +220,8 @@ impl RelayAuth {
                                             success: HashSet::from([relay_url]),
                                         };
 
-                                        tracker.sent_ids.insert(event_id);
-                                        tracker.resent_ids.push(output);
+                                        event_store.sent_ids.insert(event_id);
+                                        event_store.resent_ids.push(output);
                                     }
                                 }
                             }

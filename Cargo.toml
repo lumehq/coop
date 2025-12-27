@@ -23,6 +23,7 @@ reqwest_client = { git = "https://github.com/zed-industries/zed" }
 
 # Nostr
 nostr-lmdb = { git = "https://github.com/rust-nostr/nostr" }
+nostr-gossip-memory = { git = "https://github.com/rust-nostr/nostr" }
 nostr-connect = { git = "https://github.com/rust-nostr/nostr" }
 nostr-sdk = { git = "https://github.com/rust-nostr/nostr", features = [ "nip96", "nip59", "nip49", "nip44" ] }
 
