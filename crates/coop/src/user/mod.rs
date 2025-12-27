@@ -13,7 +13,7 @@ use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputState, TextInput};
@@ -94,10 +94,8 @@ impl UserProfile {
     }
 
     fn get_profile(cx: &App) -> Task<Result<Profile, Error>> {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
 
@@ -178,9 +176,6 @@ impl UserProfile {
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.uploading(true, cx);
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
@@ -197,7 +192,8 @@ impl UserProfile {
                 Ok(Some(mut paths)) => {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
-                        let url = nip96_upload(&client, &nip96_server, file).await?;
+                        let client = client();
+                        let url = nip96_upload(client, &nip96_server, file).await?;
 
                         Ok(url)
                     } else {
@@ -257,25 +253,15 @@ impl UserProfile {
             new_metadata = new_metadata.website(url);
         }
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let gossip = nostr.read(cx).gossip();
-
         cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-
-            let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&public_key);
-
-            // Ensure connections to the write relays
-            gossip.ensure_connections(&client, &write_relays).await;
 
             // Sign the new metadata event
             let event = EventBuilder::metadata(&new_metadata).sign(&signer).await?;
 
             // Send event to user's write relayss
-            client.send_event_to(write_relays, &event).await?;
+            client.send_event(&event).await?;
 
             // Return the updated profile
             let metadata = Metadata::from_json(&event.content).unwrap_or_default();

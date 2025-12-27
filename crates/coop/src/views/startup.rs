@@ -13,7 +13,7 @@ use key_store::{Credential, KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use person::PersonRegistry;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -106,8 +106,6 @@ impl Startup {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let keystore = KeyStore::global(cx).read(cx).backend();
 
         // Handle connection in the background
@@ -133,6 +131,7 @@ impl Startup {
                             cx.spawn_in(window, async move |this, cx| {
                                 match signer.bunker_uri().await {
                                     Ok(_) => {
+                                        let client = client();
                                         client.set_signer(signer).await;
                                     }
                                     Err(e) => {
@@ -162,12 +161,11 @@ impl Startup {
     }
 
     fn login_with_keys(&mut self, secret: SecretKey, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let keys = Keys::new(secret);
 
         // Update the signer
         cx.background_spawn(async move {
+            let client = client();
             client.set_signer(keys).await;
         })
         .detach();
@@ -201,9 +199,7 @@ impl Render for Startup {
     fn render(&mut self, _window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
         let bunker = self.credential.secret().starts_with("bunker://");
-        let profile = persons
-            .read(cx)
-            .get_person(&self.credential.public_key(), cx);
+        let profile = persons.read(cx).get(&self.credential.public_key(), cx);
 
         v_flex()
             .image_cache(self.image_cache.clone())

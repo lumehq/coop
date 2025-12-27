@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 pub use actions::*;
-use chat::{Message, RenderedMessage, Room, RoomKind, RoomSignal, SendOptions, SendReport};
+use chat::{Message, RenderedMessage, Room, RoomEvent, RoomKind, SendOptions, SendReport};
 use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
 use encryption::SignerKind;
 use gpui::prelude::FluentBuilder;
@@ -21,7 +21,7 @@ use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
 use smol::fs;
-use state::NostrRegistry;
+use state::{client, event_store};
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -78,6 +78,15 @@ pub struct ChatPanel {
 
 impl ChatPanel {
     pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let id = room.read(cx).id.to_string().into();
+
+        let attachments = cx.new(|_| vec![]);
+        let replies_to = cx.new(|_| HashSet::new());
+        let options = cx.new(|_| SendOptions::default());
+
+        let messages = BTreeSet::from([Message::system()]);
+        let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
+
         let input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Message...")
@@ -86,25 +95,23 @@ impl ChatPanel {
                 .clean_on_escape()
         });
 
-        let attachments = cx.new(|_| vec![]);
-        let replies_to = cx.new(|_| HashSet::new());
-        let options = cx.new(|_| SendOptions::default());
-
-        let id = room.read(cx).id.to_string().into();
-        let messages = BTreeSet::from([Message::system()]);
-        let list_state = ListState::new(messages.len(), ListAlignment::Bottom, px(1024.));
-
-        let connect = room.read(cx).connect(cx);
+        let get_relays = room.read(cx).get_relays(cx);
         let get_messages = room.read(cx).get_messages(cx);
 
         let mut subscriptions = smallvec![];
         let mut tasks = smallvec![];
 
         tasks.push(
-            // Get messaging relays and encryption keys announcement for each member
-            cx.background_spawn(async move {
-                if let Err(e) = connect.await {
-                    log::error!("Failed to initialize room: {}", e);
+            // Get messaging relays for each member
+            cx.spawn(async move |this, cx| {
+                if let Ok(relays) = get_relays.await {
+                    this.update(cx, |this, cx| {
+                        this.room.update(cx, |this, cx| {
+                            this.relays = relays;
+                            cx.notify();
+                        });
+                    })
+                    .ok();
                 }
             }),
         );
@@ -120,7 +127,7 @@ impl ChatPanel {
                             this.insert_messages(events, cx);
                         }
                         Err(e) => {
-                            window.push_notification(e.to_string(), cx);
+                            window.push_notification(Notification::error(e.to_string()), cx);
                         }
                     };
                 })
@@ -145,17 +152,16 @@ impl ChatPanel {
             // Subscribe to room events
             cx.subscribe_in(&room, window, move |this, _, signal, window, cx| {
                 match signal {
-                    RoomSignal::NewMessage((gift_wrap_id, event)) => {
-                        let nostr = NostrRegistry::global(cx);
-                        let tracker = nostr.read(cx).tracker();
-                        let gift_wrap_id = gift_wrap_id.to_owned();
-                        let message = Message::user(event.clone());
+                    RoomEvent::NewMessage(message) => {
+                        let gift_wrap_id = message.gift_wrap;
+                        let message = Message::user(message.rumor.clone());
 
                         cx.spawn_in(window, async move |this, cx| {
-                            let tracker = tracker.read().await;
+                            let event_store = event_store();
+                            let event_store = event_store.read().await;
 
                             this.update_in(cx, |this, _window, cx| {
-                                if !tracker.sent_ids().contains(&gift_wrap_id) {
+                                if !event_store.sent_ids().contains(&gift_wrap_id) {
                                     this.insert_message(message, false, cx);
                                 }
                             })
@@ -163,7 +169,7 @@ impl ChatPanel {
                         })
                         .detach();
                     }
-                    RoomSignal::Refresh => {
+                    RoomEvent::Refresh => {
                         this.load_messages(window, cx);
                     }
                 };
@@ -279,7 +285,7 @@ impl ChatPanel {
         let rumor_id = rumor.id.unwrap();
 
         // Create a task for sending the message in the background
-        let send_message = room.send_message(&rumor, opts, cx);
+        let send_message = room.send(&rumor, opts, cx);
 
         // Optimistically update message list
         cx.spawn_in(window, async move |this, cx| {
@@ -325,7 +331,6 @@ impl ChatPanel {
 
                             // Insert the sent reports
                             this.reports_by_id.insert(rumor_id, reports);
-
                             cx.notify();
                         }
                         Err(e) => {
@@ -343,7 +348,7 @@ impl ChatPanel {
     fn resend_message(&mut self, id: &EventId, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(reports) = self.reports_by_id.get(id).cloned() {
             let id_clone = id.to_owned();
-            let resend = self.room.read(cx).resend_message(reports, cx);
+            let resend = self.room.read(cx).resend(reports, cx);
 
             cx.spawn_in(window, async move |this, cx| {
                 let result = resend.await;
@@ -436,9 +441,9 @@ impl ChatPanel {
         })
     }
 
-    fn profile(&self, public_key: &PublicKey, cx: &Context<Self>) -> Profile {
+    fn profile(&self, public_key: &PublicKey, cx: &App) -> Profile {
         let persons = PersonRegistry::global(cx);
-        persons.read(cx).get_person(public_key, cx)
+        persons.read(cx).get(public_key, cx)
     }
 
     fn signer_kind(&self, cx: &App) -> SignerKind {
@@ -487,9 +492,6 @@ impl ChatPanel {
     }
 
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
@@ -506,7 +508,8 @@ impl ChatPanel {
 
             let upload = Tokio::spawn(cx, async move {
                 let file = fs::read(path).await.ok()?;
-                let url = nip96_upload(&client, &nip96_server, file).await.ok()?;
+                let client = client();
+                let url = nip96_upload(client, &nip96_server, file).await.ok()?;
 
                 Some(url)
             });
@@ -854,7 +857,7 @@ impl ChatPanel {
 
     fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&report.receiver, cx);
+        let profile = persons.read(cx).get(&report.receiver, cx);
         let name = profile.display_name();
         let avatar = profile.avatar(true);
 
@@ -1116,7 +1119,7 @@ impl ChatPanel {
     fn render_reply(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
         if let Some(text) = self.message(id) {
             let persons = PersonRegistry::global(cx);
-            let profile = persons.read(cx).get_person(&text.author, cx);
+            let profile = persons.read(cx).get(&text.author, cx);
 
             div()
                 .w_full()
@@ -1239,12 +1242,11 @@ impl ChatPanel {
 
     fn on_open_seen_on(&mut self, ev: &SeenOn, window: &mut Window, cx: &mut Context<Self>) {
         let id = ev.0;
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let tracker = nostr.read(cx).tracker();
 
         let task: Task<Result<Vec<RelayUrl>, Error>> = cx.background_spawn(async move {
-            let tracker = tracker.read().await;
+            let client = client();
+            let event_store = event_store();
+            let event_store = event_store.read().await;
             let mut relays: Vec<RelayUrl> = vec![];
 
             let filter = Filter::new()
@@ -1254,7 +1256,7 @@ impl ChatPanel {
 
             if let Some(event) = client.database().query(filter).await?.first_owned() {
                 if let Some(Ok(id)) = event.tags.identifier().map(EventId::parse) {
-                    if let Some(urls) = tracker.seen_on_relays.get(&id).cloned() {
+                    if let Some(urls) = event_store.seen_on_relays.get(&id).cloned() {
                         relays.extend(urls);
                     }
                 }

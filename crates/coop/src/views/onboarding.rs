@@ -12,7 +12,7 @@ use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -164,10 +164,8 @@ impl Onboarding {
     }
 
     fn connect(&mut self, signer: NostrConnect, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         cx.background_spawn(async move {
+            let client = client();
             client.set_signer(signer).await;
         })
         .detach();

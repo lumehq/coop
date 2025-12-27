@@ -1,11 +1,12 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use anyhow::Error;
 use common::BOOTSTRAP_RELAYS;
-use gpui::{App, AppContext, Context, Entity, Global, Task};
+use gpui::{App, AppContext, Context, Entity, Global, Subscription, Task};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::{client, GIFTWRAP_SUBSCRIPTION};
 
 pub fn init(cx: &mut App) {
     Account::set_global(cx.new(Account::new), cx);
@@ -15,15 +16,19 @@ struct GlobalAccount(Entity<Account>);
 
 impl Global for GlobalAccount {}
 
+/// Account
 pub struct Account {
     /// The public key of the account
     public_key: Option<PublicKey>,
 
     /// Status of the current user NIP-65 relays
-    pub nip65_status: Entity<RelayStatus>,
+    nip65_status: Entity<RelayStatus>,
 
     /// Status of the current user NIP-17 relays
-    pub nip17_status: Entity<RelayStatus>,
+    nip17_status: Entity<RelayStatus>,
+
+    /// Event subscriptions
+    _subscriptions: SmallVec<[Subscription; 2]>,
 
     /// Tasks for asynchronous operations
     _tasks: SmallVec<[Task<()>; 2]>,
@@ -60,19 +65,49 @@ impl Account {
 
     /// Create a new account instance
     fn new(cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let nip65_status = cx.new(|_| RelayStatus::default());
         let nip17_status = cx.new(|_| RelayStatus::default());
 
         let mut tasks = smallvec![];
+        let mut subscriptions = smallvec![];
+
+        subscriptions.push(
+            // Observe the current entity
+            cx.observe_self(move |this, cx| {
+                if this.has_account() {
+                    this.get_relay_list(cx);
+                }
+            }),
+        );
+
+        subscriptions.push(
+            // Observe the nip65 relay status
+            cx.observe(&nip65_status, move |this, state, cx| {
+                if state.read(cx) == &RelayStatus::Set {
+                    this.get_inbox_relay(cx);
+                }
+            }),
+        );
 
         tasks.push(
             // Observe the nostr signer and set the public key when it sets
             cx.spawn(async move |this, cx| {
+                // Observe the signer and return the public key when it sets
                 let result = cx
-                    .background_spawn(async move { Self::observe_signer(&client).await })
+                    .background_executor()
+                    .await_on_background(async move {
+                        let client = client();
+                        let loop_duration = Duration::from_millis(800);
+
+                        loop {
+                            if let Ok(signer) = client.signer().await {
+                                if let Ok(public_key) = signer.get_public_key().await {
+                                    return Some(public_key);
+                                }
+                            }
+                            smol::Timer::after(loop_duration).await;
+                        }
+                    })
                     .await;
 
                 if let Some(public_key) = result {
@@ -88,110 +123,189 @@ impl Account {
             public_key: None,
             nip65_status,
             nip17_status,
+            _subscriptions: subscriptions,
             _tasks: tasks,
         }
     }
 
-    /// Observe the signer and return the public key when it sets
-    async fn observe_signer(client: &Client) -> Option<PublicKey> {
-        let loop_duration = Duration::from_millis(800);
-
-        loop {
-            if let Ok(signer) = client.signer().await {
-                if let Ok(public_key) = signer.get_public_key().await {
-                    // Get current user's gossip relays
-                    Self::get_gossip_relays(client, public_key).await.ok()?;
-
-                    return Some(public_key);
-                }
-            }
-            smol::Timer::after(loop_duration).await;
-        }
-    }
-
-    /// Get gossip relays for a given public key
-    async fn get_gossip_relays(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+    /// Get the metadata for a given public key
+    async fn get_metadata(public_key: PublicKey) -> Result<(), Error> {
+        let client = client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
 
-        let filter = Filter::new()
-            .kind(Kind::RelayList)
+        // Construct filter for contact list
+        let contacts = Filter::new()
+            .kind(Kind::ContactList)
             .author(public_key)
             .limit(1);
 
-        // Subscribe to events from the bootstrapping relays
+        // Construct filter for profile
+        let profile = Filter::new()
+            .kind(Kind::Metadata)
+            .author(public_key)
+            .limit(1);
+
         client
-            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .subscribe(vec![contacts, profile], Some(opts))
             .await?;
 
         Ok(())
     }
 
-    /// Ensure the user has NIP-65 relays
-    async fn ensure_nip65_relays(client: &Client, public_key: PublicKey) -> Result<bool, Error> {
+    /// Get messages for a given public key
+    async fn get_messages(public_key: PublicKey) -> Result<(), Error> {
+        let client = client();
+        let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
+        let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
+
+        client.subscribe_with_id(id, vec![filter], None).await?;
+
+        Ok(())
+    }
+
+    /// Get relay list for a given public key
+    async fn get_relay_list_for(public_key: PublicKey) -> Result<RelayStatus, Error> {
+        let client = client();
+
+        // Construct filter for NIP-65 relays
         let filter = Filter::new()
             .kind(Kind::RelayList)
             .author(public_key)
             .limit(1);
 
-        // Count the number of nip65 relays event in the database
-        let total = client.database().count(filter).await.unwrap_or(0);
+        let mut processed_events = HashSet::new();
 
-        Ok(total > 0)
+        let mut stream = client
+            .stream_events_from(BOOTSTRAP_RELAYS, vec![filter], Duration::from_secs(3))
+            .await?;
+
+        while let Some((_url, res)) = stream.next().await {
+            let event = res?;
+
+            // Skip if the event has already been processed
+            if !processed_events.insert(event.id) {
+                continue;
+            }
+
+            // Check if the event is authored by the current user
+            if event.pubkey == public_key {
+                Self::get_metadata(public_key).await?;
+                return Ok(RelayStatus::Set);
+            }
+        }
+
+        log::error!("Failed to get relay list for current user");
+
+        Ok(RelayStatus::NotSet)
     }
 
-    /// Ensure the user has NIP-17 relays
-    async fn ensure_nip17_relays(client: &Client, public_key: PublicKey) -> Result<bool, Error> {
+    /// Get inbox relays for a given public key
+    async fn get_inbox_relay_for(public_key: PublicKey) -> Result<RelayStatus, Error> {
+        let client = client();
+
+        // Construct filter for NIP-65 relays
         let filter = Filter::new()
             .kind(Kind::InboxRelays)
             .author(public_key)
             .limit(1);
 
-        // Count the number of nip17 relays event in the database
-        let total = client.database().count(filter).await.unwrap_or(0);
+        let mut processed_events = HashSet::new();
 
-        Ok(total > 0)
+        let mut stream = client
+            .stream_events(vec![filter], Duration::from_secs(3))
+            .await?;
+
+        while let Some((_url, res)) = stream.next().await {
+            let event = res?;
+
+            // Skip if the event has already been processed
+            if !processed_events.insert(event.id) {
+                continue;
+            }
+
+            // Check if the event is authored by the current user
+            if event.pubkey == public_key {
+                Self::get_messages(public_key).await?;
+                return Ok(RelayStatus::Set);
+            }
+        }
+
+        log::error!("Failed to get inbox relay for current user");
+
+        Ok(RelayStatus::NotSet)
+    }
+
+    /// Get relay list for current user and update the status
+    fn get_relay_list(&mut self, cx: &mut Context<Self>) {
+        let public_key = self.public_key();
+
+        self._tasks.push(
+            // Run in the background thread
+            cx.spawn(async move |this, cx| {
+                let result: Result<RelayStatus, Error> = cx
+                    .background_executor()
+                    .await_on_background(async move { Self::get_relay_list_for(public_key).await })
+                    .await;
+
+                this.update(cx, |this, cx| {
+                    match result {
+                        Ok(status) => {
+                            this.nip65_status.update(cx, |this, cx| {
+                                *this = status;
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            this.nip65_status.update(cx, |this, cx| {
+                                *this = RelayStatus::NotSet;
+                                cx.notify();
+                            });
+                            log::error!("Error: {e}");
+                        }
+                    };
+                })
+                .ok();
+            }),
+        );
+    }
+
+    /// Get inbox relays for current user and update the status
+    fn get_inbox_relay(&mut self, cx: &mut Context<Self>) {
+        let public_key = self.public_key();
+
+        self._tasks.push(
+            // Run in the background thread
+            cx.spawn(async move |this, cx| {
+                let result: Result<RelayStatus, Error> = cx
+                    .background_executor()
+                    .await_on_background(async move { Self::get_inbox_relay_for(public_key).await })
+                    .await;
+
+                this.update(cx, |this, cx| {
+                    match result {
+                        Ok(status) => {
+                            this.nip17_status.update(cx, |this, cx| {
+                                *this = status;
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            this.nip17_status.update(cx, |this, cx| {
+                                *this = RelayStatus::NotSet;
+                                cx.notify();
+                            });
+                            log::error!("Error: {e}");
+                        }
+                    };
+                })
+                .ok();
+            }),
+        );
     }
 
     /// Set the public key of the account
     pub fn set_account(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
-        // Update account's public key
         self.public_key = Some(public_key);
-
-        // Add background task
-        self._tasks.push(
-            // Verify user's nip65 and nip17 relays
-            cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(Duration::from_secs(5)).await;
-
-                // Fetch the NIP-65 relays event in the local database
-                let ensure_nip65 = Self::ensure_nip65_relays(&client, public_key).await;
-
-                // Fetch the NIP-17 relays event in the local database
-                let ensure_nip17 = Self::ensure_nip17_relays(&client, public_key).await;
-
-                this.update(cx, |this, cx| {
-                    this.nip65_status.update(cx, |this, cx| {
-                        *this = match ensure_nip65 {
-                            Ok(true) => RelayStatus::Set,
-                            _ => RelayStatus::NotSet,
-                        };
-                        cx.notify();
-                    });
-                    this.nip17_status.update(cx, |this, cx| {
-                        *this = match ensure_nip17 {
-                            Ok(true) => RelayStatus::Set,
-                            _ => RelayStatus::NotSet,
-                        };
-                        cx.notify();
-                    });
-                })
-                .expect("Entity has been released")
-            }),
-        );
-
         cx.notify();
     }
 

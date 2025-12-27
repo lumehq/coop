@@ -14,7 +14,7 @@ use semver::Version;
 use smallvec::{smallvec, SmallVec};
 use smol::fs::File;
 use smol::process::Command;
-use state::NostrRegistry;
+use state::client;
 
 const APP_PUBKEY: &str = "npub1y9jvl5vznq49eh9f2gj7679v4042kj80lp7p8fte3ql2cr7hty7qsyca8q";
 
@@ -151,7 +151,7 @@ pub struct AutoUpdater {
     _subscriptions: SmallVec<[Subscription; 1]>,
 
     /// Background tasks
-    _tasks: SmallVec<[Task<()>; 2]>,
+    _tasks: SmallVec<[Task<Result<(), Error>>; 2]>,
 }
 
 impl AutoUpdater {
@@ -174,11 +174,11 @@ impl AutoUpdater {
 
         tasks.push(
             // Subscribe to get the new update event in the bootstrap relays
-            Self::subscribe_to_updates(cx),
+            cx.background_spawn(async move { Self::subscribe_to_updates().await }),
         );
 
         tasks.push(
-            // Subscribe to get the new update event in the bootstrap relays
+            // Check for updates
             cx.spawn(async move |this, cx| {
                 // Check for updates after 2 minutes
                 cx.background_executor()
@@ -186,11 +186,16 @@ impl AutoUpdater {
                     .await;
 
                 // Update the status to checking
-                _ = this.update(cx, |this, cx| {
+                this.update(cx, |this, cx| {
                     this.set_status(AutoUpdateStatus::Checking, cx);
-                });
+                })
+                .ok();
 
-                match Self::check_for_updates(async_version, cx).await {
+                let result = cx
+                    .background_spawn(async move { Self::check_for_updates(async_version).await })
+                    .await;
+
+                match result {
                     Ok(ids) => {
                         // Update the status to downloading
                         _ = this.update(cx, |this, cx| {
@@ -201,10 +206,11 @@ impl AutoUpdater {
                         _ = this.update(cx, |this, cx| {
                             this.set_status(AutoUpdateStatus::Idle, cx);
                         });
-
                         log::warn!("{e}");
                     }
                 }
+
+                Ok(())
             }),
         );
 
@@ -225,90 +231,71 @@ impl AutoUpdater {
         }
     }
 
-    fn set_status(&mut self, status: AutoUpdateStatus, cx: &mut Context<Self>) {
-        self.status = status;
-        cx.notify();
+    async fn subscribe_to_updates() -> Result<(), Error> {
+        let client = client();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let app_pubkey = PublicKey::parse(APP_PUBKEY)?;
+
+        let filter = Filter::new()
+            .kind(Kind::ReleaseArtifactSet)
+            .author(app_pubkey)
+            .limit(1);
+
+        client
+            .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+            .await?;
+
+        Ok(())
     }
 
-    fn subscribe_to_updates(cx: &App) -> Task<()> {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
+    async fn check_for_updates(version: Version) -> Result<Vec<EventId>, Error> {
+        let client = client();
+        let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
+        let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
 
-        cx.background_spawn(async move {
-            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-            let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
+        let filter = Filter::new()
+            .kind(Kind::ReleaseArtifactSet)
+            .author(app_pubkey)
+            .limit(1);
 
-            let filter = Filter::new()
-                .kind(Kind::ReleaseArtifactSet)
-                .author(app_pubkey)
-                .limit(1);
+        if let Some(event) = client.database().query(filter).await?.first_owned() {
+            let new_version: Version = event
+                .tags
+                .find(TagKind::d())
+                .and_then(|tag| tag.content())
+                .and_then(|content| content.split("@").last())
+                .and_then(|content| Version::parse(content).ok())
+                .context("Failed to parse version")?;
 
-            if let Err(e) = client
-                .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-                .await
-            {
-                log::error!("Failed to subscribe to updates: {e}");
-            };
-        })
-    }
+            if new_version > version {
+                // Get all file metadata event ids
+                let ids: Vec<EventId> = event.tags.event_ids().copied().collect();
 
-    fn check_for_updates(version: Version, cx: &AsyncApp) -> Task<Result<Vec<EventId>, Error>> {
-        let Ok(client) = cx.update(|cx| {
-            let nostr = NostrRegistry::global(cx);
-            nostr.read(cx).client()
-        }) else {
-            return Task::ready(Err(anyhow!("Entity has been released")));
-        };
+                let filter = Filter::new()
+                    .kind(Kind::FileMetadata)
+                    .author(app_pubkey)
+                    .ids(ids.clone());
 
-        cx.background_spawn(async move {
-            let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
-            let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
+                // Get all files for this release
+                client
+                    .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
+                    .await?;
 
-            let filter = Filter::new()
-                .kind(Kind::ReleaseArtifactSet)
-                .author(app_pubkey)
-                .limit(1);
-
-            if let Some(event) = client.database().query(filter).await?.first_owned() {
-                let new_version: Version = event
-                    .tags
-                    .find(TagKind::d())
-                    .and_then(|tag| tag.content())
-                    .and_then(|content| content.split("@").last())
-                    .and_then(|content| Version::parse(content).ok())
-                    .context("Failed to parse version")?;
-
-                if new_version > version {
-                    // Get all file metadata event ids
-                    let ids: Vec<EventId> = event.tags.event_ids().copied().collect();
-
-                    let filter = Filter::new()
-                        .kind(Kind::FileMetadata)
-                        .author(app_pubkey)
-                        .ids(ids.clone());
-
-                    // Get all files for this release
-                    client
-                        .subscribe_to(BOOTSTRAP_RELAYS, filter, Some(opts))
-                        .await?;
-
-                    Ok(ids)
-                } else {
-                    Err(anyhow!("No update available"))
-                }
+                Ok(ids)
             } else {
                 Err(anyhow!("No update available"))
             }
-        })
+        } else {
+            Err(anyhow!("No update available"))
+        }
     }
 
     fn get_latest_release(&mut self, ids: &[EventId], cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let http_client = cx.http_client();
         let ids = ids.to_vec();
 
         let task: Task<Result<(InstallerDir, PathBuf), Error>> = cx.background_spawn(async move {
+            let client = client();
             let app_pubkey = PublicKey::parse(APP_PUBKEY).unwrap();
             let os = std::env::consts::OS;
 
@@ -349,9 +336,10 @@ impl AutoUpdater {
         self._tasks.push(
             // Install the new release
             cx.spawn(async move |this, cx| {
-                _ = this.update(cx, |this, cx| {
+                this.update(cx, |this, cx| {
                     this.set_status(AutoUpdateStatus::Installing, cx);
-                });
+                })
+                .ok();
 
                 match task.await {
                     Ok((installer_dir, target_path)) => {
@@ -369,6 +357,8 @@ impl AutoUpdater {
                         });
                     }
                 }
+
+                Ok(())
             }),
         );
     }
@@ -393,6 +383,11 @@ impl AutoUpdater {
             "windows" => install_release_windows(target_path).await,
             unsupported_os => anyhow::bail!("Not supported: {unsupported_os}"),
         }
+    }
+
+    fn set_status(&mut self, status: AutoUpdateStatus, cx: &mut Context<Self>) {
+        self.status = status;
+        cx.notify();
     }
 }
 

@@ -11,7 +11,7 @@ use gpui::{
 use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::input::{InputEvent, InputState, TextInput};
@@ -38,9 +38,6 @@ pub struct SetupRelay {
 
 impl SetupRelay {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("wss://example.com"));
 
         let mut subscriptions = smallvec![];
@@ -49,9 +46,7 @@ impl SetupRelay {
         tasks.push(
             // Load user's relays in the local database
             cx.spawn_in(window, async move |this, cx| {
-                let result = cx
-                    .background_spawn(async move { Self::load(&client).await })
-                    .await;
+                let result = cx.background_spawn(async move { Self::load().await }).await;
 
                 if let Ok(relays) = result {
                     this.update(cx, |this, cx| {
@@ -85,7 +80,8 @@ impl SetupRelay {
         }
     }
 
-    async fn load(client: &Client) -> Result<Vec<RelayUrl>, Error> {
+    async fn load() -> Result<Vec<RelayUrl>, Error> {
+        let client = client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
@@ -153,19 +149,11 @@ impl SetupRelay {
             return;
         };
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-        let gossip = nostr.read(cx).gossip();
         let relays = self.relays.clone();
 
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
-            let public_key = signer.get_public_key().await?;
-            let gossip = gossip.read().await;
-            let write_relays = gossip.inbox_relays(&public_key);
-
-            // Ensure connections to the write relays
-            gossip.ensure_connections(&client, &write_relays).await;
 
             let tags: Vec<Tag> = relays
                 .iter()
@@ -178,7 +166,7 @@ impl SetupRelay {
                 .await?;
 
             // Set messaging relays
-            client.send_event_to(write_relays, &event).await?;
+            client.send_event(&event).await?;
 
             // Connect to messaging relays
             for relay in relays.iter() {

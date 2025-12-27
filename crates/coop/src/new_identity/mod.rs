@@ -11,7 +11,7 @@ use key_store::{KeyItem, KeyStore};
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smol::fs;
-use state::NostrRegistry;
+use state::client;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -106,9 +106,6 @@ impl NewAccount {
     pub fn set_signer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let keystore = KeyStore::global(cx).read(cx).backend();
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let keys = self.temp_keys.read(cx).clone();
         let username = keys.public_key().to_hex();
         let secret = keys.secret_key().to_secret_hex().into_bytes();
@@ -126,6 +123,7 @@ impl NewAccount {
 
         // Set the client's signer with the current keys
         let task: Task<Result<(), Error>> = cx.background_spawn(async move {
+            let client = client();
             let signer = keys.clone();
             let nip65_relays = default_nip65_relays();
             let nip17_relays = default_nip17_relays();
@@ -207,9 +205,6 @@ impl NewAccount {
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.uploading(true, cx);
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
 
@@ -226,7 +221,8 @@ impl NewAccount {
                 Ok(Some(mut paths)) => {
                     if let Some(path) = paths.pop() {
                         let file = fs::read(path).await?;
-                        let url = nip96_upload(&client, &nip96_server, file).await?;
+                        let client = client();
+                        let url = nip96_upload(client, &nip96_server, file).await?;
 
                         Ok(url)
                     } else {

@@ -17,7 +17,7 @@ use list_item::RoomListItem;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::{NostrRegistry, GIFTWRAP_SUBSCRIPTION};
+use state::{client, GIFTWRAP_SUBSCRIPTION};
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::dock_area::panel::{Panel, PanelEvent};
@@ -136,7 +136,8 @@ impl Sidebar {
         }
     }
 
-    async fn nip50(client: &Client, query: &str) -> Result<Vec<Event>, Error> {
+    async fn nip50(query: &str) -> Result<Vec<Event>, Error> {
+        let client = client();
         let signer = client.signer().await?;
         let public_key = signer.get_public_key().await?;
 
@@ -203,13 +204,10 @@ impl Sidebar {
         let account = Account::global(cx);
         let public_key = account.read(cx).public_key();
 
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let query = query.to_owned();
 
         self.search_task = Some(cx.spawn_in(window, async move |this, cx| {
-            let result = Self::nip50(&client, &query).await;
+            let result = Self::nip50(&query).await;
 
             this.update_in(cx, |this, window, cx| {
                 match result {
@@ -234,13 +232,12 @@ impl Sidebar {
     }
 
     fn search_by_nip05(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let address = query.to_owned();
 
         let task = Tokio::spawn(cx, async move {
             match common::nip05_profile(&address).await {
                 Ok(profile) => {
+                    let client = client();
                     let signer = client.signer().await?;
                     let public_key = signer.get_public_key().await?;
                     let receivers = vec![profile.public_key];
@@ -274,9 +271,6 @@ impl Sidebar {
     }
 
     fn search_by_pubkey(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let Ok(public_key) = query.to_public_key() else {
             window.push_notification("Public Key is invalid", cx);
             self.set_finding(false, window, cx);
@@ -284,6 +278,7 @@ impl Sidebar {
         };
 
         let task: Task<Result<Room, Error>> = cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
             let author = signer.get_public_key().await?;
 
@@ -460,10 +455,8 @@ impl Sidebar {
     }
 
     fn on_manage(&mut self, _ev: &RelayStatus, window: &mut Window, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let task: Task<Result<Vec<Relay>, Error>> = cx.background_spawn(async move {
+            let client = client();
             let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
             let subscription = client.subscription(&id).await;
 

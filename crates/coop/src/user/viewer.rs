@@ -11,7 +11,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -40,15 +40,13 @@ pub struct ProfileViewer {
 
 impl ProfileViewer {
     pub fn new(target: PublicKey, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let persons = PersonRegistry::global(cx);
-        let profile = persons.read(cx).get_person(&target, cx);
+        let profile = persons.read(cx).get(&target, cx);
 
         let mut tasks = smallvec![];
 
         let check_follow: Task<Result<bool, Error>> = cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let contact_list = client.database().contacts_public_keys(public_key).await?;

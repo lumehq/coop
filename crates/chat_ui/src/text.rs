@@ -254,7 +254,7 @@ fn render_pubkey(
     cx: &App,
 ) {
     let persons = PersonRegistry::global(cx);
-    let profile = persons.read(cx).get_person(&public_key, cx);
+    let profile = persons.read(cx).get(&public_key, cx);
     let display_name = format!("@{}", profile.display_name());
 
     text.replace_range(range.clone(), &display_name);

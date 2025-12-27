@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use common::shorten_pubkey;
-use encryption::Encryption;
+use encryption::{Announcement, Encryption};
 use futures::FutureExt;
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -13,7 +13,6 @@ use gpui::{
     Styled, Subscription, Window,
 };
 use smallvec::{smallvec, SmallVec};
-use state::Announcement;
 use theme::ActiveTheme;
 use ui::button::{Button, ButtonVariants};
 use ui::notification::Notification;

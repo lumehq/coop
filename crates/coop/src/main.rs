@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use assets::Assets;
-use common::{APP_ID, CLIENT_NAME};
+use common::{APP_ID, BOOTSTRAP_RELAYS, CLIENT_NAME, SEARCH_RELAYS};
 use gpui::{
     point, px, size, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SharedString,
     TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
     WindowOptions,
 };
+use state::{client, event_store};
 use ui::Root;
 
 use crate::actions::{load_embedded_fonts, quit, Quit};
@@ -25,10 +26,32 @@ fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    // Initialize the Application
+    // Initialize the nostr client
+    let client = client();
+    let _event_store = event_store();
+
+    // Initialize the application
     let app = Application::new()
         .with_assets(Assets)
         .with_http_client(Arc::new(reqwest_client::ReqwestClient::new()));
+
+    // Connect to the nostr client
+    app.background_executor()
+        .spawn_with_priority(gpui::Priority::High, async move {
+            // Get all bootstrapping relays
+            let mut urls = vec![];
+            urls.extend(BOOTSTRAP_RELAYS);
+            urls.extend(SEARCH_RELAYS);
+
+            // Add relay to the relay pool
+            for url in urls.into_iter() {
+                client.add_relay(url).await.ok();
+            }
+
+            // Connect to all added relays
+            client.connect().await;
+        })
+        .detach();
 
     // Run application
     app.run(move |cx| {
@@ -88,9 +111,6 @@ fn main() {
 
                 // Initialize backend for keys storage
                 key_store::init(cx);
-
-                // Initialize the nostr client
-                state::init(cx);
 
                 // Initialize person registry
                 person::init(cx);

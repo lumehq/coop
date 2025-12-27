@@ -17,7 +17,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
 use smallvec::{smallvec, SmallVec};
-use state::NostrRegistry;
+use state::client;
 use theme::ActiveTheme;
 use ui::avatar::Avatar;
 use ui::button::{Button, ButtonVariants};
@@ -115,9 +115,6 @@ pub struct Compose {
 
 impl Compose {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
-
         let contacts = cx.new(|_| vec![]);
         let error_message = cx.new(|_| None);
 
@@ -131,6 +128,7 @@ impl Compose {
         let mut tasks = smallvec![];
 
         let get_contacts: Task<Result<Vec<Contact>, Error>> = cx.background_spawn(async move {
+            let client = client();
             let signer = client.signer().await?;
             let public_key = signer.get_public_key().await?;
             let profiles = client.database().contacts(public_key).await?;
@@ -195,7 +193,8 @@ impl Compose {
         }
     }
 
-    async fn request_metadata(client: &Client, public_key: PublicKey) -> Result<(), Error> {
+    async fn request_metadata(public_key: PublicKey) -> Result<(), Error> {
+        let client = client();
         let opts = SubscribeAutoCloseOptions::default().exit_policy(ReqExitPolicy::ExitOnEOSE);
         let kinds = vec![Kind::Metadata, Kind::ContactList];
         let filter = Filter::new().author(public_key).kinds(kinds).limit(10);
@@ -218,13 +217,11 @@ impl Compose {
     }
 
     fn push_contact(&mut self, contact: Contact, window: &mut Window, cx: &mut Context<Self>) {
-        let nostr = NostrRegistry::global(cx);
-        let client = nostr.read(cx).client();
         let pk = contact.public_key;
 
         if !self.contacts.read(cx).iter().any(|c| c.public_key == pk) {
             self._tasks.push(cx.background_spawn(async move {
-                Self::request_metadata(&client, pk).await.ok();
+                Self::request_metadata(pk).await.ok();
             }));
 
             cx.defer_in(window, |this, window, cx| {
@@ -371,7 +368,7 @@ impl Compose {
             };
 
             let public_key = contact.public_key;
-            let profile = persons.read(cx).get_person(&public_key, cx);
+            let profile = persons.read(cx).get(&public_key, cx);
 
             items.push(
                 h_flex()
