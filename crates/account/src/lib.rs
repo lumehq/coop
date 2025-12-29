@@ -112,7 +112,7 @@ impl Account {
 
                 if let Some(public_key) = result {
                     this.update(cx, |this, cx| {
-                        this.set_account(public_key, cx);
+                        this.set_public_key(public_key, cx);
                     })
                     .expect("Entity has been released")
                 }
@@ -153,12 +153,14 @@ impl Account {
     }
 
     /// Get messages for a given public key
-    async fn get_messages(public_key: PublicKey) -> Result<(), Error> {
+    async fn get_messages(urls: Vec<&RelayUrl>, public_key: PublicKey) -> Result<(), Error> {
         let client = client();
         let id = SubscriptionId::new(GIFTWRAP_SUBSCRIPTION);
         let filter = Filter::new().kind(Kind::GiftWrap).pubkey(public_key);
 
-        client.subscribe_with_id(id, vec![filter], None).await?;
+        client
+            .subscribe_with_id_to(urls, id, vec![filter], None)
+            .await?;
 
         Ok(())
     }
@@ -187,11 +189,10 @@ impl Account {
                 continue;
             }
 
-            // Check if the event is authored by the current user
-            if event.pubkey == public_key {
-                Self::get_metadata(public_key).await?;
-                return Ok(RelayStatus::Set);
-            }
+            // Get profile and contact list for the current user
+            Self::get_metadata(public_key).await?;
+
+            return Ok(RelayStatus::Set);
         }
 
         log::error!("Failed to get relay list for current user");
@@ -223,11 +224,13 @@ impl Account {
                 continue;
             }
 
-            // Check if the event is authored by the current user
-            if event.pubkey == public_key {
-                Self::get_messages(public_key).await?;
-                return Ok(RelayStatus::Set);
-            }
+            // Extract relay from the event
+            let urls: Vec<&RelayUrl> = nip17::extract_relay_list(&event).collect();
+
+            // Get inbox messages for the current user
+            Self::get_messages(urls, public_key).await?;
+
+            return Ok(RelayStatus::Set);
         }
 
         log::error!("Failed to get inbox relay for current user");
@@ -303,15 +306,15 @@ impl Account {
         );
     }
 
-    /// Set the public key of the account
-    pub fn set_account(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
-        self.public_key = Some(public_key);
-        cx.notify();
-    }
-
     /// Check if the account entity has a public key
     pub fn has_account(&self) -> bool {
         self.public_key.is_some()
+    }
+
+    /// Set the public key of the account
+    pub fn set_public_key(&mut self, public_key: PublicKey, cx: &mut Context<Self>) {
+        self.public_key = Some(public_key);
+        cx.notify();
     }
 
     /// Get the public key of the account

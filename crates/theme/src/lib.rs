@@ -174,8 +174,8 @@ impl From<ThemeFamily> for Theme {
         Theme {
             font_size: px(15.),
             font_family: ".SystemUIFont".into(),
-            radius: px(5.),
-            radius_lg: px(10.),
+            radius: px(6.),
+            radius_lg: px(12.),
             shadow: true,
             scrollbar_mode: ScrollbarMode::default(),
             mode,

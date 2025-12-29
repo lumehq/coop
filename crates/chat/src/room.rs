@@ -13,7 +13,7 @@ use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use state::{client, event_store};
 
-use crate::NewMessage;
+use crate::{NewMessage, SendError, SendReport};
 
 const SEND_RETRY: usize = 10;
 
@@ -39,77 +39,6 @@ impl SendOptions {
 impl Default for SendOptions {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SendReport {
-    /// Receiver's public key.
-    pub receiver: PublicKey,
-
-    /// Status of the send operation.
-    pub status: Option<Output<EventId>>,
-
-    /// Error message for the send operation.
-    pub error: Option<SharedString>,
-
-    /// Message on hold for resending later.
-    pub on_hold: Option<Event>,
-
-    /// Whether the messaging relays were not found.
-    pub relays_not_found: bool,
-
-    /// Whether the encryption announcement was not found.
-    pub device_not_found: bool,
-}
-
-impl SendReport {
-    pub fn new(receiver: PublicKey) -> Self {
-        Self {
-            receiver,
-            status: None,
-            error: None,
-            on_hold: None,
-            relays_not_found: false,
-            device_not_found: false,
-        }
-    }
-
-    pub fn status(mut self, output: Output<EventId>) -> Self {
-        self.status = Some(output);
-        self
-    }
-
-    pub fn error(mut self, error: impl Into<SharedString>) -> Self {
-        self.error = Some(error.into());
-        self
-    }
-
-    pub fn on_hold(mut self, event: Event) -> Self {
-        self.on_hold = Some(event);
-        self
-    }
-
-    pub fn relays_not_found(mut self) -> Self {
-        self.relays_not_found = true;
-        self
-    }
-
-    pub fn device_not_found(mut self) -> Self {
-        self.device_not_found = true;
-        self
-    }
-
-    pub fn is_relay_error(&self) -> bool {
-        self.error.is_some() || self.relays_not_found
-    }
-
-    pub fn is_sent_success(&self) -> bool {
-        if let Some(output) = self.status.as_ref() {
-            !output.success.is_empty()
-        } else {
-            false
-        }
     }
 }
 
@@ -487,6 +416,9 @@ impl Room {
         // Get all members
         let mut members = self.members();
 
+        // Get relay list
+        let relay_list = self.relays.clone();
+
         let rumor = rumor.to_owned();
         let opts = opts.to_owned();
 
@@ -505,12 +437,20 @@ impl Room {
             let mut reports: Vec<SendReport> = vec![];
 
             for member in members.into_iter() {
+                let relays = relay_list.get(&member).cloned().unwrap_or(vec![]);
+
+                // Skip sending if relays are not found
+                if relays.is_empty() {
+                    reports.push(SendReport::new(member).error(SendError::RelayNotFound));
+                    continue;
+                }
+
                 // Construct the gift wrap event
                 let event =
                     EventBuilder::gift_wrap(&signer, &member, rumor.clone(), vec![]).await?;
 
                 // Send the gift wrap event to the messaging relays
-                match client.send_event(&event).await {
+                match client.send_event_to(relays, &event).await {
                     Ok(output) => {
                         let id = output.id().to_owned();
                         let auth = output.failed.iter().any(|(_, s)| s.starts_with("auth-"));
@@ -542,7 +482,8 @@ impl Room {
                         }
                     }
                     Err(e) => {
-                        reports.push(SendReport::new(member).error(e.to_string()));
+                        reports
+                            .push(SendReport::new(member).error(SendError::Custom(e.to_string())));
                     }
                 }
             }
@@ -551,6 +492,15 @@ impl Room {
             //
             // Coop will not send a gift wrap event to the current user.
             if !opts.backup() {
+                return Ok(reports);
+            }
+
+            // Get the relays for the current user
+            let relays = relay_list.get(&current_user).cloned().unwrap_or(vec![]);
+
+            // Skip sending if relays are not found
+            if relays.is_empty() {
+                reports.push(SendReport::new(current_user).error(SendError::RelayNotFound));
                 return Ok(reports);
             }
 
@@ -566,7 +516,9 @@ impl Room {
                         reports.push(SendReport::new(current_user).status(output));
                     }
                     Err(e) => {
-                        reports.push(SendReport::new(current_user).error(e.to_string()));
+                        reports.push(
+                            SendReport::new(current_user).error(SendError::Custom(e.to_string())),
+                        );
                     }
                 }
             } else {
@@ -619,7 +571,9 @@ impl Room {
                             resend_reports.push(SendReport::new(receiver).status(output));
                         }
                         Err(e) => {
-                            resend_reports.push(SendReport::new(receiver).error(e.to_string()));
+                            resend_reports.push(
+                                SendReport::new(receiver).error(SendError::Custom(e.to_string())),
+                            );
                         }
                     }
                 }

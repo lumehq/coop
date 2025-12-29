@@ -17,9 +17,11 @@ use smallvec::{smallvec, SmallVec};
 use state::{client, event_store, GIFTWRAP_SUBSCRIPTION};
 
 mod message;
+mod report;
 mod room;
 
 pub use message::*;
+pub use report::*;
 pub use room::*;
 
 pub fn init(cx: &mut App) {

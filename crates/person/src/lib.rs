@@ -44,22 +44,16 @@ impl PersonRegistry {
         tasks.push(
             // Load all user profiles from the database
             cx.spawn(async move |this, cx| {
-                let result = cx
+                if let Ok(profiles) = cx
                     .background_executor()
                     .await_on_background(async move { Self::init().await })
-                    .await;
-
-                match result {
-                    Ok(profiles) => {
-                        this.update(cx, |this, cx| {
-                            this.bulk_insert(profiles, cx);
-                        })
-                        .ok();
-                    }
-                    Err(e) => {
-                        log::error!("Failed to load persons: {e}");
-                    }
-                };
+                    .await
+                {
+                    this.update(cx, |this, cx| {
+                        this.bulk_insert(profiles, cx);
+                    })
+                    .ok();
+                }
             }),
         );
 
@@ -81,6 +75,7 @@ impl PersonRegistry {
                             continue;
                         }
 
+                        // Only process metadata events
                         if event.kind == Kind::Metadata {
                             let metadata = Metadata::from_json(&event.content).unwrap_or_default();
                             let profile = Profile::new(event.pubkey, metadata);

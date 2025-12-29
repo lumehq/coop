@@ -22,38 +22,7 @@ use ui::{divider, h_flex, v_flex, ContextModal, Icon, IconName, Sizable, StyledE
 use crate::chatspace::{self};
 
 pub fn init(window: &mut Window, cx: &mut App) -> Entity<Onboarding> {
-    Onboarding::new(window, cx)
-}
-
-#[derive(Debug, Clone)]
-pub enum NostrConnectApp {
-    Nsec(String),
-    Amber(String),
-    Aegis(String),
-}
-
-impl NostrConnectApp {
-    pub fn all() -> Vec<Self> {
-        vec![
-            NostrConnectApp::Nsec("https://nsec.app".to_string()),
-            NostrConnectApp::Amber("https://github.com/greenart7c3/Amber".to_string()),
-            NostrConnectApp::Aegis("https://github.com/ZharlieW/Aegis".to_string()),
-        ]
-    }
-
-    pub fn url(&self) -> &str {
-        match self {
-            Self::Nsec(url) | Self::Amber(url) | Self::Aegis(url) => url,
-        }
-    }
-
-    pub fn as_str(&self) -> String {
-        match self {
-            NostrConnectApp::Nsec(_) => "nsec.app (Desktop)".into(),
-            NostrConnectApp::Amber(_) => "Amber (Android)".into(),
-            NostrConnectApp::Aegis(_) => "Aegis (iOS)".into(),
-        }
-    }
+    cx.new(|cx| Onboarding::new(window, cx))
 }
 
 pub struct Onboarding {
@@ -69,14 +38,9 @@ pub struct Onboarding {
 }
 
 impl Onboarding {
-    pub fn new(window: &mut Window, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::view(window, cx))
-    }
-
-    fn view(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let app_keys = Keys::generate();
         let timeout = Duration::from_secs(NOSTR_CONNECT_TIMEOUT);
-
         let relay = RelayUrl::parse(NOSTR_CONNECT_RELAY).unwrap();
         let uri = NostrConnectUri::client(app_keys.public_key(), vec![relay], CLIENT_NAME);
         let qr_code = uri.to_string().to_qr();
@@ -170,37 +134,6 @@ impl Onboarding {
         })
         .detach();
     }
-
-    fn render_apps(&self, cx: &Context<Self>) -> impl IntoIterator<Item = impl IntoElement> {
-        let all_apps = NostrConnectApp::all();
-        let mut items = Vec::with_capacity(all_apps.len());
-
-        for (ix, item) in all_apps.into_iter().enumerate() {
-            items.push(self.render_app(ix, item.as_str(), item.url(), cx));
-        }
-
-        items
-    }
-
-    fn render_app<T>(&self, ix: usize, label: T, url: &str, cx: &Context<Self>) -> impl IntoElement
-    where
-        T: Into<SharedString>,
-    {
-        div()
-            .id(ix)
-            .flex_1()
-            .rounded(cx.theme().radius)
-            .py_0p5()
-            .px_2()
-            .bg(cx.theme().ghost_element_background_alt)
-            .child(label.into())
-            .on_click({
-                let url = url.to_owned();
-                move |_e, _window, cx| {
-                    cx.open_url(&url);
-                }
-            })
-    }
 }
 
 impl Panel for Onboarding {
@@ -229,7 +162,7 @@ impl Render for Onboarding {
                 v_flex()
                     .flex_1()
                     .h_full()
-                    .gap_10()
+                    .gap_12()
                     .items_center()
                     .justify_center()
                     .child(
@@ -351,7 +284,36 @@ impl Render for Onboarding {
                                                     .gap_1()
                                                     .text_xs()
                                                     .justify_center()
-                                                    .children(self.render_apps(cx)),
+                                                    .child(
+                                                        div()
+                                                            .id("amber")
+                                                            .flex_1()
+                                                            .rounded(cx.theme().radius)
+                                                            .py_0p5()
+                                                            .px_2()
+                                                            .bg(cx
+                                                                .theme()
+                                                                .ghost_element_background_alt)
+                                                            .child("Amber (Android)")
+                                                            .on_click(|_e, _window, cx| {
+                                                                cx.open_url("https://github.com/greenart7c3/Amber");
+                                                            }),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .id("aegis")
+                                                            .flex_1()
+                                                            .rounded(cx.theme().radius)
+                                                            .py_0p5()
+                                                            .px_2()
+                                                            .bg(cx
+                                                                .theme()
+                                                                .ghost_element_background_alt)
+                                                            .child("Aegis (iOS)")
+                                                            .on_click(|_e, _window, cx| {
+                                                                cx.open_url("https://github.com/ZharlieW/Aegis");
+                                                            }),
+                                                    ),
                                             ),
                                     ),
                             ),

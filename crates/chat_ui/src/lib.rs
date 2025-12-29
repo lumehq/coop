@@ -1,10 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-pub use actions::*;
 use chat::{Message, RenderedMessage, Room, RoomEvent, RoomKind, SendOptions, SendReport};
 use common::{nip96_upload, RenderedProfile, RenderedTimestamp};
-use encryption::SignerKind;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, img, list, px, red, relative, rems, svg, white, AnyElement, App, AppContext,
@@ -44,6 +42,8 @@ mod emoji;
 mod subject;
 mod text;
 
+pub use actions::*;
+
 pub fn init(room: Entity<Room>, window: &mut Window, cx: &mut App) -> Entity<ChatPanel> {
     cx.new(|cx| ChatPanel::new(room, window, cx))
 }
@@ -72,12 +72,12 @@ pub struct ChatPanel {
     focus_handle: FocusHandle,
     image_cache: Entity<RetainAllImageCache>,
 
-    _subscriptions: SmallVec<[Subscription; 3]>,
+    _subscriptions: SmallVec<[Subscription; 2]>,
     _tasks: SmallVec<[Task<()>; 2]>,
 }
 
 impl ChatPanel {
-    pub fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(room: Entity<Room>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let id = room.read(cx).id.to_string().into();
 
         let attachments = cx.new(|_| vec![]);
@@ -156,35 +156,25 @@ impl ChatPanel {
                         let gift_wrap_id = message.gift_wrap;
                         let message = Message::user(message.rumor.clone());
 
-                        cx.spawn_in(window, async move |this, cx| {
-                            let event_store = event_store();
-                            let event_store = event_store.read().await;
+                        this._tasks.push(
+                            // Run the task in the background
+                            cx.spawn_in(window, async move |this, cx| {
+                                let event_store = event_store();
+                                let event_store = event_store.read().await;
 
-                            this.update_in(cx, |this, _window, cx| {
-                                if !event_store.sent_ids().contains(&gift_wrap_id) {
-                                    this.insert_message(message, false, cx);
-                                }
-                            })
-                            .ok();
-                        })
-                        .detach();
+                                this.update_in(cx, |this, _window, cx| {
+                                    if !event_store.sent_ids().contains(&gift_wrap_id) {
+                                        this.insert_message(message, false, cx);
+                                    }
+                                })
+                                .ok();
+                            }),
+                        );
                     }
                     RoomEvent::Refresh => {
                         this.load_messages(window, cx);
                     }
                 };
-            }),
-        );
-
-        subscriptions.push(
-            // Observe when user close chat panel
-            cx.on_release_in(window, move |this, window, cx| {
-                this.messages.clear();
-                this.rendered_texts_by_id.clear();
-                this.reports_by_id.clear();
-                this.image_cache.update(cx, |this, cx| {
-                    this.clear(window, cx);
-                });
             }),
         );
 
@@ -403,13 +393,6 @@ impl ChatPanel {
         }
     }
 
-    /// Insert a warning message into the chat panel
-    #[allow(dead_code)]
-    fn insert_warning(&mut self, content: impl Into<String>, cx: &mut Context<Self>) {
-        let m = Message::warning(content.into());
-        self.insert_message(m, true, cx);
-    }
-
     /// Check if a message failed to send by its ID
     fn is_sent_failed(&self, id: &EventId) -> bool {
         self.reports_by_id
@@ -441,15 +424,13 @@ impl ChatPanel {
         })
     }
 
+    /// Get a profile by its public key
     fn profile(&self, public_key: &PublicKey, cx: &App) -> Profile {
         let persons = PersonRegistry::global(cx);
         persons.read(cx).get(public_key, cx)
     }
 
-    fn signer_kind(&self, cx: &App) -> SignerKind {
-        self.options.read(cx).signer_kind
-    }
-
+    /// Scroll to a message by its ID
     fn scroll_to(&self, id: EventId) {
         if let Some(ix) = self.messages.iter().position(|m| {
             if let Message::User(msg) = m {
@@ -462,12 +443,14 @@ impl ChatPanel {
         }
     }
 
+    /// Copy a message's content by its ID
     fn copy_message(&self, id: &EventId, cx: &Context<Self>) {
         if let Some(message) = self.message(id) {
             cx.write_to_clipboard(ClipboardItem::new_string(message.content.to_string()));
         }
     }
 
+    /// Reply to a message by its ID
     fn reply_to(&mut self, id: &EventId, cx: &mut Context<Self>) {
         if let Some(text) = self.message(id) {
             self.replies_to.update(cx, |this, cx| {
@@ -477,6 +460,7 @@ impl ChatPanel {
         }
     }
 
+    /// Remove a reply by its ID
     fn remove_reply(&mut self, id: &EventId, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
             this.remove(id);
@@ -484,6 +468,7 @@ impl ChatPanel {
         });
     }
 
+    /// Remove all replies
     fn remove_all_replies(&mut self, cx: &mut Context<Self>) {
         self.replies_to.update(cx, |this, cx| {
             this.clear();
@@ -491,6 +476,7 @@ impl ChatPanel {
         });
     }
 
+    /// Upload a file from the user's device
     fn upload(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Get the user's configured NIP96 server
         let nip96_server = AppSettings::get_media_server(cx);
@@ -545,11 +531,13 @@ impl ChatPanel {
         .detach();
     }
 
+    /// Set whether uploading is currently in progress
     fn set_uploading(&mut self, uploading: bool, cx: &mut Context<Self>) {
         self.uploading = uploading;
         cx.notify();
     }
 
+    /// Add an attachment
     fn add_attachment(&mut self, url: Url, cx: &mut Context<Self>) {
         self.attachments.update(cx, |this, cx| {
             this.push(url);
@@ -557,6 +545,7 @@ impl ChatPanel {
         });
     }
 
+    /// Remove an attachment by url
     fn remove_attachment(&mut self, url: &Url, _window: &mut Window, cx: &mut Context<Self>) {
         self.attachments.update(cx, |this, cx| {
             if let Some(ix) = this.iter().position(|this| this == url) {
@@ -566,6 +555,7 @@ impl ChatPanel {
         });
     }
 
+    /// Remove all attachments
     fn remove_all_attachments(&mut self, cx: &mut Context<Self>) {
         self.attachments.update(cx, |this, cx| {
             this.clear();
@@ -601,7 +591,10 @@ impl ChatPanel {
             .into_any_element()
     }
 
-    fn render_warning(&self, ix: usize, content: SharedString, cx: &Context<Self>) -> AnyElement {
+    fn render_warning<T>(&self, ix: usize, content: T, cx: &Context<Self>) -> AnyElement
+    where
+        T: Into<SharedString>,
+    {
         div()
             .id(ix)
             .relative()
@@ -615,7 +608,7 @@ impl ChatPanel {
                     .text_sm()
                     .text_color(cx.theme().warning_foreground)
                     .child(Avatar::new("brand/system.png").size(rems(2.)))
-                    .child(content),
+                    .child(content.into()),
             )
             .child(
                 div()
@@ -635,8 +628,8 @@ impl ChatPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if let Some(message) = self.messages.get_index(ix) {
-            match message {
+        match self.messages.get_index(ix) {
+            Some(message) => match message {
                 Message::User(rendered) => {
                     let text = self
                         .rendered_texts_by_id
@@ -646,13 +639,10 @@ impl ChatPanel {
 
                     self.render_text_message(ix, rendered, text, cx)
                 }
-                Message::Warning(content, _timestamp) => {
-                    self.render_warning(ix, SharedString::from(content), cx)
-                }
-                Message::System(_timestamp) => self.render_announcement(ix, cx),
-            }
-        } else {
-            self.render_warning(ix, SharedString::from("Message not found"), cx)
+                Message::Warning(content, ..) => self.render_warning(ix, content, cx),
+                Message::System(_) => self.render_announcement(ix, cx),
+            },
+            None => self.render_warning(ix, SharedString::from("Message not found"), cx),
         }
     }
 
@@ -737,7 +727,16 @@ impl ChatPanel {
                             }),
                     ),
             )
-            .child(self.render_border(cx))
+            .child(
+                div()
+                    .group_hover("", |this| this.bg(cx.theme().element_active))
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(2.))
+                    .h_full()
+                    .bg(cx.theme().border_transparent),
+            )
             .child(self.render_actions(&id, cx))
             .on_mouse_down(
                 MouseButton::Middle,
@@ -858,8 +857,6 @@ impl ChatPanel {
     fn render_report(report: &SendReport, cx: &App) -> impl IntoElement {
         let persons = PersonRegistry::global(cx);
         let profile = persons.read(cx).get(&report.receiver, cx);
-        let name = profile.display_name();
-        let avatar = profile.avatar(true);
 
         v_flex()
             .gap_2()
@@ -873,11 +870,11 @@ impl ChatPanel {
                         h_flex()
                             .gap_1()
                             .font_semibold()
-                            .child(Avatar::new(avatar).size(rems(1.25)))
-                            .child(name.clone()),
+                            .child(Avatar::new(profile.avatar(true)).size(rems(1.25)))
+                            .child(profile.display_name()),
                     ),
             )
-            .when(report.relays_not_found, |this| {
+            .when_some(report.error.as_ref(), |this, error| {
                 this.child(
                     h_flex()
                         .flex_wrap()
@@ -886,55 +883,14 @@ impl ChatPanel {
                         .h_20()
                         .w_full()
                         .text_sm()
+                        .text_center()
                         .rounded(cx.theme().radius)
                         .bg(cx.theme().danger_background)
                         .text_color(cx.theme().danger_foreground)
-                        .child(
-                            div()
-                                .flex_1()
-                                .w_full()
-                                .text_center()
-                                .child(SharedString::from("Messaging Relays not found")),
-                        ),
+                        .child(SharedString::from(error)),
                 )
             })
-            .when(report.device_not_found, |this| {
-                this.child(
-                    h_flex()
-                        .flex_wrap()
-                        .justify_center()
-                        .p_2()
-                        .h_20()
-                        .w_full()
-                        .text_sm()
-                        .rounded(cx.theme().radius)
-                        .bg(cx.theme().danger_background)
-                        .text_color(cx.theme().danger_foreground)
-                        .child(
-                            div()
-                                .flex_1()
-                                .w_full()
-                                .text_center()
-                                .child(SharedString::from("Encryption Key not found")),
-                        ),
-                )
-            })
-            .when_some(report.error.clone(), |this, error| {
-                this.child(
-                    h_flex()
-                        .flex_wrap()
-                        .justify_center()
-                        .p_2()
-                        .h_20()
-                        .w_full()
-                        .text_sm()
-                        .rounded(cx.theme().radius)
-                        .bg(cx.theme().danger_background)
-                        .text_color(cx.theme().danger_foreground)
-                        .child(div().flex_1().w_full().text_center().child(error)),
-                )
-            })
-            .when_some(report.status.clone(), |this, output| {
+            .when_some(report.status.as_ref(), |this, output| {
                 this.child(
                     v_flex()
                         .gap_2()
@@ -942,7 +898,7 @@ impl ChatPanel {
                         .children({
                             let mut items = Vec::with_capacity(output.failed.len());
 
-                            for (url, msg) in output.failed.into_iter() {
+                            for (url, msg) in output.failed.clone().into_iter() {
                                 items.push(
                                     v_flex()
                                         .gap_0p5()
@@ -973,7 +929,7 @@ impl ChatPanel {
                         .children({
                             let mut items = Vec::with_capacity(output.success.len());
 
-                            for url in output.success.into_iter() {
+                            for url in output.success.clone().into_iter() {
                                 items.push(
                                     v_flex()
                                         .gap_0p5()
@@ -1003,17 +959,6 @@ impl ChatPanel {
                         }),
                 )
             })
-    }
-
-    fn render_border(&self, cx: &Context<Self>) -> impl IntoElement {
-        div()
-            .group_hover("", |this| this.bg(cx.theme().element_active))
-            .absolute()
-            .left_0()
-            .top_0()
-            .w(px(2.))
-            .h_full()
-            .bg(cx.theme().border_transparent)
     }
 
     fn render_actions(&self, id: &EventId, cx: &Context<Self>) -> impl IntoElement {
@@ -1342,8 +1287,6 @@ impl Focusable for ChatPanel {
 
 impl Render for ChatPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let kind = self.signer_kind(cx);
-
         v_flex()
             .on_action(cx.listener(Self::on_open_seen_on))
             .on_action(cx.listener(Self::on_set_encryption))
@@ -1376,7 +1319,7 @@ impl Render for ChatPanel {
                                     .w_full()
                                     .flex()
                                     .items_end()
-                                    .gap_2p5()
+                                    .gap_2()
                                     .child(
                                         h_flex()
                                             .gap_1()
@@ -1401,31 +1344,7 @@ impl Render for ChatPanel {
                                                     .large(),
                                             ),
                                     )
-                                    .child(TextInput::new(&self.input))
-                                    .child(
-                                        Button::new("encryptions")
-                                            .icon(IconName::Encryption)
-                                            .ghost()
-                                            .large()
-                                            .popup_menu(move |this, _window, _cx| {
-                                                this.label("Encrypt by:")
-                                                    .menu_with_check(
-                                                        "Encryption Key",
-                                                        matches!(kind, SignerKind::Encryption),
-                                                        Box::new(SetSigner(SignerKind::Encryption)),
-                                                    )
-                                                    .menu_with_check(
-                                                        "User's Identity",
-                                                        matches!(kind, SignerKind::User),
-                                                        Box::new(SetSigner(SignerKind::User)),
-                                                    )
-                                                    .menu_with_check(
-                                                        "Auto",
-                                                        matches!(kind, SignerKind::Auto),
-                                                        Box::new(SetSigner(SignerKind::Auto)),
-                                                    )
-                                            }),
-                                    ),
+                                    .child(TextInput::new(&self.input)),
                             ),
                     ),
             )
