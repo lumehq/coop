@@ -12,7 +12,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
@@ -41,9 +40,9 @@ pub fn compose_button() -> impl IntoElement {
                 window.open_modal(cx, move |modal, _window, cx| {
                     let weak_view = weak_view.clone();
                     let label = if compose.read(cx).selected(cx).len() > 1 {
-                        shared_t!("compose.create_group_dm_button")
+                        SharedString::from("Create Group DM")
                     } else {
-                        shared_t!("compose.create_dm_button")
+                        SharedString::from("Create DM")
                     };
 
                     modal
@@ -52,7 +51,7 @@ pub fn compose_button() -> impl IntoElement {
                         .keyboard(true)
                         .show_close(true)
                         .button_props(ModalButtonProps::default().ok_text(label))
-                        .title(shared_t!("sidebar.direct_messages"))
+                        .title(SharedString::from("Direct Messages"))
                         .child(compose.clone())
                         .on_ok(move |_, window, cx| {
                             weak_view
@@ -235,7 +234,7 @@ impl Compose {
                 });
             });
         } else {
-            self.set_error(t!("compose.contact_existed"), cx);
+            self.set_error("Contact already added", cx);
         }
     }
 
@@ -416,7 +415,7 @@ impl Render for Compose {
                 div()
                     .text_sm()
                     .text_color(cx.theme().text_muted)
-                    .child(shared_t!("compose.description")),
+                    .child(SharedString::from("Start a conversation with someone using their npub or NIP-05 (like foo@bar.com).")),
             )
             .when_some(error, |this, msg| {
                 this.child(
@@ -437,7 +436,7 @@ impl Render for Compose {
                         div()
                             .text_sm()
                             .font_semibold()
-                            .child(shared_t!("compose.subject_label")),
+                            .child(SharedString::from("Subject:")),
                     )
                     .child(TextInput::new(&self.title_input).small().appearance(false)),
             )
@@ -452,7 +451,7 @@ impl Render for Compose {
                                 div()
                                     .text_sm()
                                     .font_semibold()
-                                    .child(shared_t!("compose.to_label")),
+                                    .child(SharedString::from("To:")),
                             )
                             .child(
                                 TextInput::new(&self.user_input)
@@ -484,12 +483,12 @@ impl Render for Compose {
                                         div()
                                             .font_semibold()
                                             .line_height(relative(1.2))
-                                            .child(shared_t!("compose.no_contacts_message")),
+                                            .child(SharedString::from("No contacts")),
                                     )
                                     .child(
                                         div()
                                             .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("compose.no_contacts_description")),
+                                            .child(SharedString::from("Your recently contacts will appear here.")),
                                     ),
                             )
                         } else {

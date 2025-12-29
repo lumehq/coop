@@ -7,7 +7,6 @@ use gpui::{
     div, relative, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle,
     Focusable, IntoElement, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
-use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -112,7 +111,7 @@ impl Login {
 
     fn login_with_bunker(&mut self, content: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(uri) = NostrConnectUri::parse(content) else {
-            self.set_error(t!("login.bunker_invalid"), cx);
+            self.set_error("Bunker is not valid", cx);
             return;
         };
 
@@ -392,7 +391,7 @@ impl Render for Login {
                             })
                             .child(
                                 Button::new("login")
-                                    .label(t!("common.continue"))
+                                    .label("Continue")
                                     .primary()
                                     .loading(self.logging_in)
                                     .disabled(self.logging_in)
@@ -406,7 +405,10 @@ impl Render for Login {
                                         .text_xs()
                                         .text_center()
                                         .text_color(cx.theme().text_muted)
-                                        .child(shared_t!("login.approve_message", i = i)),
+                                        .child(SharedString::from(format!(
+                                            "Approve connection request from your signer in {} seconds",
+                                            i
+                                        ))),
                                 )
                             })
                             .when_some(self.error.read(cx).as_ref(), |this, error| {

@@ -8,7 +8,6 @@ use gpui::{
     FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement, Render,
     SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
-use i18n::{shared_t, t};
 use key_store::{KeyItem, KeyStore};
 use nostr_connect::prelude::*;
 use smallvec::{smallvec, SmallVec};
@@ -184,12 +183,12 @@ impl Render for Onboarding {
                                             .text_xl()
                                             .font_semibold()
                                             .line_height(relative(1.3))
-                                            .child(shared_t!("welcome.title")),
+                                            .child(SharedString::from("Welcome to Coop")),
                                     )
                                     .child(
                                         div()
                                             .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("welcome.subtitle")),
+                                            .child(SharedString::from("Chat Freely, Stay Private on Nostr.")),
                                     ),
                             ),
                     )
@@ -200,7 +199,7 @@ impl Render for Onboarding {
                             .child(
                                 Button::new("continue_btn")
                                     .icon(Icon::new(IconName::ArrowRight))
-                                    .label(shared_t!("onboarding.start_messaging"))
+                                    .label(SharedString::from("Start Messaging on Nostr"))
                                     .primary()
                                     .large()
                                     .bold()
@@ -218,13 +217,13 @@ impl Render for Onboarding {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().text_muted)
-                                            .child(shared_t!("onboarding.divider")),
+                                            .child(SharedString::from("Already have an account? Continue with")),
                                     )
                                     .child(divider(cx)),
                             )
                             .child(
                                 Button::new("key")
-                                    .label(t!("onboarding.key_login"))
+                                    .label("Secret Key or Bunker")
                                     .large()
                                     .ghost_alt()
                                     .on_click(cx.listener(move |_, _, window, cx| {
@@ -270,13 +269,13 @@ impl Render for Onboarding {
                                                 div()
                                                     .font_semibold()
                                                     .line_height(relative(1.3))
-                                                    .child(shared_t!("onboarding.nostr_connect")),
+                                                    .child(SharedString::from("Continue with Nostr Connect")),
                                             )
                                             .child(
                                                 div()
                                                     .text_sm()
                                                     .text_color(cx.theme().text_muted)
-                                                    .child(shared_t!("onboarding.scan_qr")),
+                                                    .child(SharedString::from("Use Nostr Connect apps to scan the code")),
                                             )
                                             .child(
                                                 h_flex()

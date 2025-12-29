@@ -7,7 +7,6 @@ use gpui::{
     div, rems, App, ClickEvent, InteractiveElement, IntoElement, ParentElement as _, RenderOnce,
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use i18n::t;
 use nostr_sdk::prelude::*;
 use settings::AppSettings;
 use theme::ActiveTheme;
@@ -168,8 +167,8 @@ impl RenderOnce for RoomListItem {
             )
             .hover(|this| this.bg(cx.theme().elevated_surface_background))
             .context_menu(move |this, _window, _cx| {
-                this.menu(t!("profile.view"), Box::new(OpenPublicKey(public_key)))
-                    .menu(t!("profile.copy"), Box::new(CopyPublicKey(public_key)))
+                this.menu("View Profile", Box::new(OpenPublicKey(public_key)))
+                    .menu("Copy Public Key", Box::new(CopyPublicKey(public_key)))
             })
             .on_click(move |event, window, cx| {
                 handler(event, window, cx);
@@ -182,8 +181,8 @@ impl RenderOnce for RoomListItem {
                             .child(screening.clone())
                             .button_props(
                                 ModalButtonProps::default()
-                                    .cancel_text(t!("screening.ignore"))
-                                    .ok_text(t!("screening.response")),
+                                    .cancel_text("Ignore")
+                                    .ok_text("Response"),
                             )
                             .on_cancel(move |_event, _window, cx| {
                                 ChatRegistry::global(cx).update(cx, |this, cx| {

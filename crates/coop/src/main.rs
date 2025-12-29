@@ -20,8 +20,6 @@ mod sidebar;
 mod user;
 mod views;
 
-i18n::init!();
-
 fn main() {
     // Initialize logging
     tracing_subscriber::fmt::init();

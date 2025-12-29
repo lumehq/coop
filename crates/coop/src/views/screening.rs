@@ -7,7 +7,6 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, Render, SharedString, Styled, Task, Window,
 };
 use gpui_tokio::Tokio;
-use i18n::{shared_t, t};
 use nostr_sdk::prelude::*;
 use person::PersonRegistry;
 use settings::AppSettings;
@@ -172,7 +171,7 @@ impl Screening {
             if task.await.is_ok() {
                 cx.update(|window, cx| {
                     window.close_modal(cx);
-                    window.push_notification(t!("screening.report_msg"), cx);
+                    window.push_notification("Report submitted successfully", cx);
                 })
                 .ok();
             }
@@ -187,7 +186,7 @@ impl Screening {
             let contacts = contacts.clone();
             let total = contacts.len();
 
-            this.title(shared_t!("screening.mutual_label")).child(
+            this.title(SharedString::from("Mutual contacts")).child(
                 v_flex().gap_1().pb_4().child(
                     uniform_list("contacts", total, move |range, _window, cx| {
                         let mut items = Vec::with_capacity(total);
@@ -266,7 +265,7 @@ impl Render for Screening {
                             .gap_1()
                             .child(
                                 Button::new("njump")
-                                    .label(t!("profile.njump"))
+                                    .label("View on njump.me")
                                     .secondary()
                                     .small()
                                     .rounded()
@@ -276,7 +275,7 @@ impl Render for Screening {
                             )
                             .child(
                                 Button::new("report")
-                                    .tooltip(t!("screening.report"))
+                                    .tooltip("Report as a scam or impostor")
                                     .icon(IconName::Report)
                                     .danger()
                                     .rounded()
@@ -298,16 +297,16 @@ impl Render for Screening {
                             .child(
                                 v_flex()
                                     .text_sm()
-                                    .child(shared_t!("screening.contact_label"))
+                                    .child(SharedString::from("Contact"))
                                     .child(
                                         div()
                                             .line_clamp(1)
                                             .text_color(cx.theme().text_muted)
                                             .child({
                                                 if self.followed {
-                                                    shared_t!("screening.contact")
+                                                    SharedString::from("This person is one of your contacts.")
                                                 } else {
-                                                    shared_t!("screening.not_contact")
+                                                    SharedString::from("This person is not one of your contacts.")
                                                 }
                                             }),
                                     ),
@@ -325,14 +324,14 @@ impl Render for Screening {
                                     .child(
                                         h_flex()
                                             .gap_0p5()
-                                            .child(shared_t!("screening.active_label"))
+                                            .child(SharedString::from("Activity on Public Relays"))
                                             .child(
                                                 Button::new("active")
                                                     .icon(IconName::Info)
                                                     .xsmall()
                                                     .ghost()
                                                     .rounded()
-                                                    .tooltip(t!("screening.active_tooltip")),
+                                                    .tooltip("This may be inaccurate if the user only publishes to their private relays."),
                                             ),
                                     )
                                     .child(
@@ -342,12 +341,12 @@ impl Render for Screening {
                                             .text_color(cx.theme().text_muted)
                                             .map(|this| {
                                                 if let Some(date) = self.last_active {
-                                                    this.child(shared_t!(
-                                                        "screening.active_at",
-                                                        d = date.to_human_time()
-                                                    ))
+                                                    this.child(SharedString::from(format!(
+                                                        "Last active: {}.",
+                                                        date.to_human_time()
+                                                    )))
                                                 } else {
-                                                    this.child(shared_t!("screening.no_active"))
+                                                    this.child(SharedString::from("This person hasn't had any activity."))
                                                 }
                                             }),
                                     ),
@@ -363,9 +362,9 @@ impl Render for Screening {
                                     .text_sm()
                                     .child({
                                         if let Some(addr) = self.address(cx) {
-                                            shared_t!("screening.nip05_addr", addr = addr)
+                                            SharedString::from(format!("{} validation", addr))
                                         } else {
-                                            shared_t!("screening.nip05_label")
+                                            SharedString::from("Friendly Address (NIP-05) validation")
                                         }
                                     })
                                     .child(
@@ -375,12 +374,12 @@ impl Render for Screening {
                                             .child({
                                                 if self.address(cx).is_some() {
                                                     if self.verified {
-                                                        shared_t!("screening.nip05_ok")
+                                                        SharedString::from("The address matches the user's public key.")
                                                     } else {
-                                                        shared_t!("screening.nip05_failed")
+                                                        SharedString::from("The address does not match the user's public key.")
                                                     }
                                                 } else {
-                                                    shared_t!("screening.nip05_empty")
+                                                    SharedString::from("This person has not set up their friendly address")
                                                 }
                                             }),
                                     ),
@@ -397,7 +396,7 @@ impl Render for Screening {
                                     .child(
                                         h_flex()
                                             .gap_0p5()
-                                            .child(shared_t!("screening.mutual_label"))
+                                            .child(SharedString::from("Mutual contacts"))
                                             .child(
                                                 Button::new("mutuals")
                                                     .icon(IconName::Info)
@@ -417,9 +416,12 @@ impl Render for Screening {
                                             .text_color(cx.theme().text_muted)
                                             .child({
                                                 if total_mutuals > 0 {
-                                                    shared_t!("screening.mutual", u = total_mutuals)
+                                                    SharedString::from(format!(
+                                                        "You have {} mutual contacts with this person.",
+                                                        total_mutuals
+                                                    ))
                                                 } else {
-                                                    shared_t!("screening.no_mutual")
+                                                    SharedString::from("You don't have any mutual contacts with this person.")
                                                 }
                                             }),
                                     ),
